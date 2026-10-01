@@ -184,6 +184,79 @@ async function setup(location: VaultLocation) {
 }
 type Layout = Awaited<ReturnType<typeof setup>>;
 
+type IndexedItem = {
+  itemId?: string;
+  relativePath: string;
+  revision?: string;
+  fingerprint?: string;
+  deleted?: boolean;
+};
+
+async function hasPendingWork(layout: Layout): Promise<boolean> {
+  return (await fs.readdir(layout.pending)).length > 0;
+}
+
+type StableIndexedItem =
+  | { status: "retry" }
+  | { status: "missing" }
+  | {
+      status: "present";
+      item: IndexedItem;
+      metadataPath: string;
+      metadataFingerprint: string;
+      target: string;
+      targetFingerprint: string;
+      bytes?: Buffer;
+    };
+
+/** Read immutable-index and file snapshots without publishing any state. A
+ * writer may begin immediately after this returns; that simply linearizes the
+ * read before the writer. Changed fingerprints and durable pending intents
+ * fall back to the writer lock, where recovery and checkpoint fencing run. */
+async function stableIndexedItem(
+  layout: Layout,
+  itemId: string,
+  includeBytes = false,
+): Promise<StableIndexedItem> {
+  if (await hasPendingWork(layout)) return { status: "retry" };
+  const metadataPath = path.join(layout.items, `${itemId}.json`);
+  const metadataBefore = await fingerprint(metadataPath);
+  const raw = await maybeRead(metadataPath);
+  if (!metadataBefore || !raw) {
+    const metadataAfter = await fingerprint(metadataPath);
+    return metadataBefore === metadataAfter && !(await hasPendingWork(layout))
+      ? { status: "missing" }
+      : { status: "retry" };
+  }
+  const item = JSON.parse(raw.toString()) as IndexedItem;
+  if (item.itemId !== undefined && item.itemId !== itemId) throw new Error("Invalid vault item metadata");
+  if (item.deleted) {
+    const metadataAfter = await fingerprint(metadataPath);
+    return metadataBefore === metadataAfter && !(await hasPendingWork(layout))
+      ? { status: "missing" }
+      : { status: "retry" };
+  }
+  const target = await targetPath(layout, item.relativePath);
+  const targetBefore = await fingerprint(target);
+  const bytes = includeBytes && targetBefore ? await maybeRead(target) : undefined;
+  const [metadataAfter, targetAfter, pending] = await Promise.all([
+    fingerprint(metadataPath),
+    fingerprint(target),
+    hasPendingWork(layout),
+  ]);
+  if (pending || metadataBefore !== metadataAfter || targetBefore !== targetAfter) return { status: "retry" };
+  if (!targetBefore || (includeBytes && !bytes)) return { status: "retry" };
+  return {
+    status: "present",
+    item,
+    metadataPath,
+    metadataFingerprint: metadataBefore,
+    target,
+    targetFingerprint: targetBefore,
+    ...(bytes ? { bytes } : {}),
+  };
+}
+
 async function targetPath(layout: Layout, relativePath: string): Promise<string> {
   const parts = packPath(relativePath).split("/");
   let parent = layout.workspace;
@@ -554,14 +627,23 @@ async function observeCollaborationRevision(layout: Layout, itemId: string, revi
   if (state.revision && state.revision !== revision) await atomicWrite(file, json({ ...state, revision: "" }));
 }
 async function collaborationItem(layout: Layout, itemId: string) {
-  const raw = await maybeRead(path.join(layout.items, `${segment(itemId)}.json`));
+  const metadataPath = path.join(layout.items, `${segment(itemId)}.json`);
+  const raw = await maybeRead(metadataPath);
   if (!raw) return null;
   const item = JSON.parse(raw.toString()) as { relativePath: string; deleted?: boolean };
   if (item.deleted) return null;
-  const bytes = await maybeRead(await targetPath(layout, item.relativePath));
-  if (!bytes) return null;
-  validatePack(bytes, itemId);
-  return { relativePath: item.relativePath, bytes, revision: hash(bytes) };
+  const target = await targetPath(layout, item.relativePath);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const before = await fingerprint(target);
+    const bytes = before ? await maybeRead(target) : null;
+    const after = await fingerprint(target);
+    if (before !== after) continue;
+    if (!bytes || !after) return null;
+    validatePack(bytes, itemId);
+    return { relativePath: item.relativePath, bytes, revision: hash(bytes),
+      metadataPath, target, targetFingerprint: after };
+  }
+  throw new VaultBusyError();
 }
 async function collaborationCheckpoint(layout: Layout, itemId: string, item: NonNullable<Awaited<ReturnType<typeof collaborationItem>>>) {
   const file = path.join(layout.collaboration, `${itemId}.json`);
@@ -578,15 +660,94 @@ async function collaborationCheckpoint(layout: Layout, itemId: string, item: Non
   await atomicWrite(file, json(state));
   return state;
 }
+
+type CachedCollaboration = {
+  metadataPath: string;
+  metadataFingerprint: string;
+  target: string;
+  targetFingerprint: string;
+  checkpointPath: string;
+  checkpointFingerprint: string;
+  state: VaultCollaborationState & { relativePath: string };
+  weight: number;
+};
+const collaborationReadCache = new Map<string, CachedCollaboration>();
+const MAX_COLLABORATION_CACHE_ENTRIES = 32;
+const MAX_COLLABORATION_CACHE_WEIGHT = 16 * 1024 * 1024;
+let collaborationReadCacheWeight = 0;
+
+function collaborationCacheKey(layout: Layout, itemId: string) {
+  return `${layout.workspace}\0${itemId}`;
+}
+
+function dropCachedCollaboration(key: string) {
+  const previous = collaborationReadCache.get(key);
+  if (!previous) return;
+  collaborationReadCache.delete(key);
+  collaborationReadCacheWeight -= previous.weight;
+}
+
+function cacheCollaboration(key: string, value: CachedCollaboration) {
+  dropCachedCollaboration(key);
+  if (value.weight > MAX_COLLABORATION_CACHE_WEIGHT) return;
+  collaborationReadCache.set(key, value);
+  collaborationReadCacheWeight += value.weight;
+  while (collaborationReadCache.size > MAX_COLLABORATION_CACHE_ENTRIES ||
+      collaborationReadCacheWeight > MAX_COLLABORATION_CACHE_WEIGHT) {
+    const oldest = collaborationReadCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    dropCachedCollaboration(oldest);
+  }
+}
+
+async function readCachedCollaboration(layout: Layout, itemId: string) {
+  const key = collaborationCacheKey(layout, itemId);
+  const cached = collaborationReadCache.get(key);
+  if (!cached || await hasPendingWork(layout)) return null;
+  const [metadataFingerprint, targetFingerprint, checkpointFingerprint] = await Promise.all([
+    fingerprint(cached.metadataPath),
+    fingerprint(cached.target),
+    fingerprint(cached.checkpointPath),
+  ]);
+  if (await hasPendingWork(layout) || metadataFingerprint !== cached.metadataFingerprint ||
+      targetFingerprint !== cached.targetFingerprint || checkpointFingerprint !== cached.checkpointFingerprint) {
+    dropCachedCollaboration(key);
+    return null;
+  }
+  collaborationReadCache.delete(key);
+  collaborationReadCache.set(key, cached);
+  return { ...cached.state };
+}
+
 export async function readVaultCollaboration(input: VaultLocation & { itemId: string }) {
   segment(input.itemId);
   const layout = await setup(input);
-  return locked(layout, async () => {
+  const cached = await readCachedCollaboration(layout, input.itemId);
+  if (cached) return cached;
+  const key = collaborationCacheKey(layout, input.itemId);
+  const result = await locked(layout, async () => {
     await recover(layout);
     const item = await collaborationItem(layout, input.itemId);
     if (!item) return null;
-    return { ...await collaborationCheckpoint(layout, input.itemId, item), relativePath: item.relativePath };
+    const state = { ...await collaborationCheckpoint(layout, input.itemId, item), relativePath: item.relativePath };
+    const checkpointPath = path.join(layout.collaboration, `${input.itemId}.json`);
+    const [metadataFingerprint, targetFingerprint, checkpointFingerprint] = await Promise.all([
+      fingerprint(item.metadataPath),
+      fingerprint(item.target),
+      fingerprint(checkpointPath),
+    ]);
+    const cache = metadataFingerprint && targetFingerprint === item.targetFingerprint && checkpointFingerprint
+      ? { metadataPath: item.metadataPath, metadataFingerprint, target: item.target, targetFingerprint,
+          checkpointPath, checkpointFingerprint, state, weight: state.update.length * 2 + 512 }
+      : null;
+    return { state, cache };
   });
+  if (!result) {
+    dropCachedCollaboration(key);
+    return null;
+  }
+  if (result.cache) cacheCollaboration(key, result.cache);
+  return result.state;
 }
 
 /** Ephemeral human presence for file-backed items. Sessions live in separate
@@ -1033,6 +1194,15 @@ export async function readVaultTextpack(input: VaultLocation & { itemId: string 
 } | null> {
   segment(input.itemId);
   const layout = await setup(input);
+  const stable = await stableIndexedItem(layout, input.itemId, true);
+  if (stable.status === "missing") return null;
+  if (stable.status === "present" && stable.bytes &&
+      stable.item.fingerprint === stable.targetFingerprint &&
+      stable.item.revision && /^[a-f0-9]{64}$/.test(stable.item.revision) &&
+      hash(stable.bytes) === stable.item.revision) {
+    return { itemId: input.itemId, relativePath: stable.item.relativePath,
+      revision: stable.item.revision, bytes: stable.bytes };
+  }
   return locked(layout, async () => {
     await recover(layout);
     const raw = await maybeRead(path.join(layout.items, `${input.itemId}.json`));
@@ -1050,6 +1220,9 @@ export async function readVaultTextpack(input: VaultLocation & { itemId: string 
 export async function readVaultTextpackPath(input: VaultLocation & { itemId: string }): Promise<string | null> {
   segment(input.itemId);
   const layout = await setup(input);
+  const stable = await stableIndexedItem(layout, input.itemId);
+  if (stable.status === "missing") return null;
+  if (stable.status === "present") return stable.item.relativePath;
   return locked(layout, async () => {
     await recover(layout);
     const raw = await maybeRead(path.join(layout.items, `${input.itemId}.json`));
@@ -1070,6 +1243,12 @@ export async function readVaultTextpackIdentity(input: VaultLocation & { itemId:
 } | null> {
   segment(input.itemId);
   const layout = await setup(input);
+  const stable = await stableIndexedItem(layout, input.itemId);
+  if (stable.status === "missing") return null;
+  if (stable.status === "present" && stable.item.fingerprint === stable.targetFingerprint &&
+      stable.item.revision && /^[a-f0-9]{64}$/.test(stable.item.revision)) {
+    return { itemId: input.itemId, relativePath: stable.item.relativePath, revision: stable.item.revision };
+  }
   return locked(layout, async () => {
     await recover(layout);
     const metadataPath = path.join(layout.items, `${input.itemId}.json`);
