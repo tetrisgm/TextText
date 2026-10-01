@@ -5,6 +5,7 @@ import {
   readVaultTextpack as readDirectoryTextpack,
   readVaultCollaboration as readDirectoryCollaboration,
   readVaultPresence as readDirectoryPresence,
+  mutateVaultItemComments as mutateDirectoryItemComments,
   joinVaultPresence as joinDirectoryPresence,
   updateVaultPresence as updateDirectoryPresence,
   leaveVaultPresence as leaveDirectoryPresence,
@@ -24,6 +25,7 @@ import {
   type VaultMutationReceipt,
   type VaultEntryMutation,
 } from "./vault/server-store";
+import { readVaultItemCommentsFromPack, type VaultCommentActor, type VaultCommentMutation } from "./vault/item-comments";
 export { VaultBusyError, VaultCollaborationEpochError, VaultPresenceSessionError } from "./vault/server-store";
 export type { VaultPresencePeer } from "./vault/server-store";
 export type { VaultLocation, VaultWrite, VaultWriteResult, VaultEntryMutation, VaultEntryResult } from "./vault/server-store";
@@ -52,9 +54,9 @@ async function recordVaultReceipt(receipt: VaultMutationReceipt): Promise<void> 
     id,
     actorUserId: receipt.actorUserId,
     actorType: receipt.actorType,
-    actionName: ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete" })[receipt.result.status],
+    actionName: receipt.actionName ?? ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete" })[receipt.result.status],
     targetType: "item",
-    targetId: receipt.result.itemId,
+    targetId: receipt.actionName ? `${receipt.workspaceId}:${receipt.result.itemId}` : receipt.result.itemId,
     inputSummary: `operation ${receipt.operationId}`,
     outputSummary: `revision ${receipt.result.revision ?? "none"}`,
   }).onConflictDoNothing({ target: actionAudit.id });
@@ -78,6 +80,21 @@ export function readVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> &
 export function readVaultPresence(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
   return readDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+}
+export async function listVaultItemComments(input: Omit<VaultLocation, "onReceipt"> & {
+  itemId: string; limit?: number; after?: string | null;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  const item = await readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
+  return item ? { ...readVaultItemCommentsFromPack(item.bytes, input.itemId, input.limit, input.after),
+    relativePath: item.relativePath, revision: item.revision } : null;
+}
+export function mutateVaultItemComments(input: Omit<VaultLocation, "onReceipt"> & {
+  itemId: string; operationId: string; mutation: VaultCommentMutation; actor: VaultCommentActor;
+  beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return mutateDirectoryItemComments({ ...input, onReceipt: recordVaultReceipt });
 }
 type PresenceIdentity = {
   itemId: string; clientId: string; principal: string; epoch: number;

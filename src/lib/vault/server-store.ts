@@ -9,6 +9,7 @@ import { reconcileTextpacks } from "./pack-reconcile";
 import { seedVaultCollaboration, applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
+import { mutateVaultItemCommentsInPack, type VaultCommentActor, type VaultCommentMutation } from "./item-comments";
 
 /** The caller supplies a trusted, dedicated server directory and authorizes the
  * workspace before calling this store. Pack bytes, including assets, are saved
@@ -55,10 +56,12 @@ interface Intent {
   audit?: VaultWrite["audit"];
   deletedRevision?: string;
   collaboration?: VaultCollaborationState;
+  commentAction?: "vault.comment.create" | "vault.comment.reply" | "vault.comment.resolve" | "vault.comment.reopen";
 }
 export interface VaultMutationReceipt {
   workspaceId: string; operationId: string;
   actorUserId: string; actorType: "human" | "external_agent";
+  actionName?: Intent["commentAction"];
   result: VaultWriteResult | VaultEntryResult;
 }
 interface Receipt<T = VaultWriteResult | VaultEntryResult> { requestHash: string; result: T; mutation?: VaultMutationReceipt }
@@ -288,7 +291,8 @@ async function apply(layout: Layout, intent: Intent, pendingDir: string): Promis
     result = { status: "written", itemId: intent.itemId, relativePath: intent.relativePath, revision: intent.revision };
   }
   const receipt: Receipt = { requestHash: intent.requestHash, result, ...(intent.audit ? {
-    mutation: { workspaceId: intent.workspaceId, operationId: intent.operationId, ...intent.audit, result },
+    mutation: { workspaceId: intent.workspaceId, operationId: intent.operationId, ...intent.audit,
+      ...(intent.commentAction && result.status === "written" ? { actionName: intent.commentAction } : {}), result },
   } : {}) };
   await atomicWrite(receiptPath, json(receipt));
   await deliverReceipt(layout, receipt);
@@ -769,6 +773,58 @@ export async function pushVaultCollaboration(input: VaultLocation & {
     await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
     await syncDirectory(layout.pending);
     return apply(layout, intent, pendingDir);
+  });
+}
+
+/** Comments are a validated TextPack entry. The durable intent also adopts the
+ * new archive hash in the Yjs checkpoint, so a metadata-only comment does not
+ * eject live editors from an unchanged document. */
+export async function mutateVaultItemComments(input: VaultLocation & {
+  itemId: string; operationId: string; mutation: VaultCommentMutation; actor: VaultCommentActor;
+  beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
+}): Promise<(VaultWriteResult | { status: "unchanged"; itemId: string; relativePath: string; revision: string }) & { commentId: string }> {
+  segment(input.itemId); segment(input.operationId);
+  if (!input.onReceipt) throw new Error("Vault comments require an audit sink");
+  const audit = { actorUserId: input.actor.userId, actorType: input.actor.type };
+  const requestHash = hash(json(["vault-comment", input.itemId, input.mutation, input.actor.userId,
+    input.actor.type, input.actor.authorType ?? input.actor.type]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    input.signal?.throwIfAborted();
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      const current = await collaborationItem(layout, input.itemId);
+      if (!current) throw new Error("Comment file is missing or deleted");
+      await input.beforeCommit?.(current.relativePath);
+      input.signal?.throwIfAborted();
+      await deliverReceipt(layout, receipt);
+      return { ...receipt.result, commentId: input.mutation.kind === "create" ? input.operationId : input.mutation.commentId };
+    }
+    const item = await collaborationItem(layout, input.itemId);
+    if (!item) throw new Error("Comment file is missing or deleted");
+    const baseline = await collaborationCheckpoint(layout, input.itemId, item);
+    const next = mutateVaultItemCommentsInPack(item.bytes, input.itemId, input.operationId, input.mutation, input.actor);
+    await input.beforeCommit?.(item.relativePath);
+    input.signal?.throwIfAborted();
+    if (!next.changed) return { status: "unchanged", itemId: input.itemId, relativePath: item.relativePath,
+      revision: item.revision, commentId: next.commentId };
+    validatePack(next.bytes, input.itemId);
+    const revision = hash(next.bytes);
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), next.bytes);
+    const commentAction = input.mutation.kind === "create"
+      ? input.mutation.parentId ? "vault.comment.reply" : "vault.comment.create"
+      : input.mutation.resolved ? "vault.comment.resolve" : "vault.comment.reopen";
+    const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
+      relativePath: item.relativePath, baseRevision: item.revision, revision, requestHash,
+      workspaceId: input.workspaceId, audit, commentAction,
+      collaboration: { ...baseline, revision } };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return { ...await apply(layout, intent, pendingDir), commentId: next.commentId };
   });
 }
 
