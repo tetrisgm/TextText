@@ -103,7 +103,7 @@ async function ensureContainedParent(root: string, target: string): Promise<void
   }
 }
 
-async function writeExclusive(target: string, bytes: Uint8Array): Promise<void> {
+async function writeExclusive(target: string, bytes: Uint8Array): Promise<true> {
   const temporary = join(dirname(target), `.texttext-${randomUUID()}.tmp`);
   const handle = await open(temporary, "wx", 0o600);
   try {
@@ -117,6 +117,7 @@ async function writeExclusive(target: string, bytes: Uint8Array): Promise<void> 
   } finally {
     await unlink(temporary).catch(() => {});
   }
+  return true;
 }
 
 async function syncDirectory(path: string): Promise<void> {
@@ -186,12 +187,17 @@ export async function put(
     contentType: options.contentType,
     size: bytes.byteLength,
   } satisfies StoredMetadata));
+  let objectCreated = false;
+  let metadataCreated = false;
   try {
-    await writeExclusive(objectPath, bytes);
-    await writeExclusive(metadataPath, metadata);
+    objectCreated = await writeExclusive(objectPath, bytes);
+    metadataCreated = await writeExclusive(metadataPath, metadata);
     await Promise.all([syncDirectory(dirname(objectPath)), syncDirectory(dirname(metadataPath))]);
   } catch (error) {
-    await Promise.allSettled([rm(objectPath, { force: true }), rm(metadataPath, { force: true })]);
+    await Promise.allSettled([
+      objectCreated ? rm(objectPath, { force: true }) : Promise.resolve(),
+      metadataCreated ? rm(metadataPath, { force: true }) : Promise.resolve(),
+    ]);
     throw error;
   }
   return { url: mediaUrl(key), pathname: key, contentType: options.contentType };
