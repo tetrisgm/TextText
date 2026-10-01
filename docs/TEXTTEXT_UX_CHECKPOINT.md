@@ -6,9 +6,9 @@ Complete the [product brief](design/texttext-content-first-ux.md) on ordinary fo
 
 ## Canonical local state (2026-10-01)
 
-- Product code on `main` ends at `cdae9f90`; later commits only reconcile acceptance records. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header. `cdae9f90` reconnects focused vault editors automatically after service returns.
+- Product code on `main` ends at `2b47c500`. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header. `cdae9f90` reconnects focused vault editors automatically after service returns. `fbaec76a` adds an explicit Codex account disconnect with draft preservation, and `2b47c500` covers managed accounts whose account record has no email.
 - Dirty files owned by other work: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`. Do not alter, reset, clean, or commit them.
-- Installed app: `/Applications/TextText.app`, version 0.202 build 1147, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
+- Installed app: `/Applications/TextText.app`, version 0.202 build 1149, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1149.log` and `/tmp/texttext-install-1149.log`.
 - Local app server: `127.0.0.1:3000`, PID 50999, Codex session 12498, build output `.texttext/vault-perf-20261001k`.
 - Server command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001k node --env-file=.env.local node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000`.
 - No public push, deploy, release, or persistent job was performed.
@@ -56,10 +56,10 @@ See [performance receipt](file-vault-performance-2026-09-30.md) for conditions a
 
 ### Native application
 
-- Build 1147 is the canonical local app. It launched into the folder workspace with no false Offline banner.
-- Connect reused the saved agent authorization. A real read task returned `Untitled 2`. A real edit appended its line exactly once while a concurrent human line survived, and the canonical TextPack matched the visible document.
-- A controlled task-owned server outage displayed that pending edits were saved locally. After the server restarted, collaboration and background sync banners cleared automatically without Retry. After fixture cleanup, current sync state is 31 baselines, outbox 0, conflicts 0.
-- The disposable `Untitled 2` acceptance note was moved to recoverable Trash. The build and installer validated the app, all three extensions, and bundled helper; receipts are `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
+- Build 1149 is the canonical local app. It launched into the folder workspace with no false Offline banner, connected the bundled Codex runtime, and completed a real read-only task that returned `Things I keep relearning` without editing the TextPack.
+- Installed build 1148 acceptance disconnected the managed account, removed the helper process, preserved the unsent request across panel close and reopen, completed normal browser reauthorization, and successfully sent that preserved request. Focused native tests cover managed accounts with and without an email, external shared profiles, active-task fencing, and draft preservation; 12/12 pass on `2b47c500`.
+- Earlier build 1147 acceptance verified a real edit exactly once alongside a concurrent human line, plus a controlled task-owned server outage. Pending edits remained local and collaboration and background sync banners cleared automatically after restart without Retry. After fixture cleanup, current sync state is 31 baselines, outbox 0, conflicts 0.
+- The disposable `Untitled 2` acceptance note was moved to recoverable Trash. The final build and installer validated the app, all three extensions, and bundled helper; receipts are `/tmp/texttext-build-1149.log` and `/tmp/texttext-install-1149.log`.
 
 ## Remaining acceptance and external boundaries
 
