@@ -175,3 +175,33 @@ independently queried by item ID after cleanup. The passing JSON is 48 KiB in
 
 Harness: [`scripts/bench-file-vault-live.ts`](../scripts/bench-file-vault-live.ts).
 Read-only `--preflight`, TypeScript `tsc --noEmit`, and scoped ESLint passed.
+
+## Current 240-pack rerun after GET authorization change
+
+Build `.texttext/vault-perf-20261001` on the same Mac and local database completed
+the full three-round harness on source `d1c9b4cd`. Raw evidence is
+[`/tmp/texttext-vault-perf-vvYWym/result.json`](/tmp/texttext-vault-perf-vvYWym/result.json);
+the exact UUID fixture was removed. The 240 TextPacks held 72 galleries, 32
+articles, 32 bookmarks, 48 notes including one long note, 32 projects, and 23
+journal entries. Two accounts opened it. All six synthetic direct TextPack
+edits appeared in the already-open editor, unlike the earlier run.
+
+| Measure | Rerun |
+| --- | ---: |
+| Cold first visible heading | 602.1 ms (n=1) |
+| Warm first visible heading | 516.8 ms p95 (n=2) |
+| Folder click to visible heading | 96.4 ms p95 (n=9) |
+| Item click to visible body | 1,514.8 ms p95 (n=6) |
+| Input event to two visible frames | 20.7 ms p95 (n=123) |
+| Command-K to visible search | 185.3 ms p95 (n=3) |
+| Sampled server / Chromium process-tree peak RSS | 204.3 / 608.1 MiB |
+
+Gallery opens took 467.9–522.8 ms; the three 512 KiB long-note opens took
+1,170.3–1,514.8 ms. Folder navigation and typing met their initial targets.
+Item navigation and one Command-K sample missed. The ten-second editor-idle
+window had one presence POST and zero collaboration POSTs. Five pre-open idle
+CPU samples averaged 0.72% for the server tree and 0% for Chromium. Browser RSS
+2.5 seconds after each close was 124.9, 142.3, and 139.2 MiB. Three points
+cannot establish a leak or its absence. The synthetic agent writes verify file
+observation, while the separate installed-app Codex run verifies a real agent
+operation. No public deployment or release was involved.
