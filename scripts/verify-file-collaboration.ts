@@ -14,6 +14,7 @@ import { buildTextpack } from "../src/lib/github/textpack";
 import { emptyDocumentSnapshot } from "../src/lib/documents/model";
 import { openPack } from "../src/local-vault/pack";
 import { readDocument } from "../src/local-vault/model";
+import { readVaultItemCommentsFromPack } from "../src/lib/vault/item-comments";
 const origin = process.env.TEXTTEXT_VERIFY_ORIGIN ?? "http://localhost:3000";
 const root = path.resolve(process.env.TEXTTEXT_VAULT_ROOT ?? ".texttext/vault-server");
 const workspaceId = randomUUID(), itemId = randomUUID(), grantId = randomUUID(), ownerGrantId = randomUUID();
@@ -58,6 +59,24 @@ async function main() {
     let pushes = 0;
     for (const page of [alice, bob]) page.on("request", request => { if (request.method() === "POST" && request.url().endsWith("/collaboration")) pushes++; });
     await signIn(alice, emails[0]); await signIn(bob, emails[1]);
+    await until(async () => (await alice.getByLabel(/1 person here:/).count()) > 0 &&
+      (await bob.getByLabel(/1 person here:/).count()) > 0,
+    "both authenticated editors show the other active participant", 35000);
+    for (const page of [alice, bob]) await page.getByRole("button", { name: "Comments", exact: true }).click();
+    const commentMarker = `Comment-${workspaceId.slice(0, 8)}`;
+    await alice.getByRole("textbox", { name: "Add a comment" }).fill(commentMarker);
+    await alice.getByRole("button", { name: "Post comment" }).click();
+    await until(async () => await bob.getByText(commentMarker, { exact: true }).count() === 1,
+      "second account sees a new item comment without reloading", 35000);
+    await bob.getByRole("button", { name: "Reply", exact: true }).click();
+    await bob.getByRole("textbox", { name: "Reply", exact: true }).fill(`Reply-${commentMarker}`);
+    await bob.getByRole("button", { name: "Post reply" }).click();
+    await until(async () => await alice.getByText(`Reply-${commentMarker}`, { exact: true }).count() === 1,
+      "first account sees a reply without reloading", 35000);
+    const commented = await readVaultTextpack({ root, workspaceId, itemId });
+    check(commented && readVaultItemCommentsFromPack(commented.bytes, itemId).comments.length === 2,
+      "both comments are stored inside the canonical TextPack");
+    for (const page of [alice, bob]) await page.getByRole("button", { name: "Close comments" }).click();
     await Promise.all([append(alice, " ALICE-CONCURRENT"), append(bob, "BOB-CONCURRENT ", "start")]);
     const text = (page: Page) => page.getByRole("textbox", { name: "Document body", exact: true }).textContent();
     await until(async () => [await text(alice), await text(bob)].every(value => value?.includes("ALICE-CONCURRENT") && value.includes("BOB-CONCURRENT")), "two different accounts converge in already-open editors");
