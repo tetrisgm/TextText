@@ -12,6 +12,7 @@ const history = new Map();
 const importedPacks = [];
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
+let nextCreatedPath = null, delayedRemoval = null;
 const agentAccountEmail = "writer@example.test";
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
 files.set(initial.path, initial);
@@ -35,8 +36,14 @@ try {
   page.on("request", (request) => { if (/^https?:/.test(request.url())) network.push(request.url()); });
   await page.route(/^https?:/, (route) => route.abort());
   await page.exposeBinding("nativeVaultRequest", async ({ page }, request) => {
-    let result, error;
-    if (request.method === "list" || request.method === "open") result = { root: "/test/Workspace", folders: ["Empty"], items: [...files.values()].map((file) => ({ path: file.path })) };
+    let result, error, confirmsDelayedRemoval = false;
+    if (request.method === "list" || request.method === "open") {
+      result = { root: "/test/Workspace", folders: ["Empty"], items: [...files.values()].map((file) => ({ path: file.path })) };
+      if (request.method === "list" && delayedRemoval?.confirming) {
+        delayedRemoval.confirming = false;
+        confirmsDelayedRemoval = true;
+      }
+    }
     else if (request.method === "folderViews") result = { files: [...files.values()].filter((file) => file.path.split("/").slice(0, -1).join("/") === request.params.folder && JSON.parse(file.documentJSON).content.fields.texttextFolderView) };
     else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
@@ -45,6 +52,12 @@ try {
     } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
     else if (request.method === "search") result = { items: [...files.values()].filter((file) => file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
     else if (request.method === "read" || request.method === "template") {
+      const removal = delayedRemoval;
+      if (request.method === "read" && removal?.path === request.params.path && !files.has(request.params.path)) {
+        removal.started();
+        await removal.wait;
+        removal.confirming = true;
+      }
       result = files.get(request.params.path);
       if (!result) error = { message: "File not found", code: "not_found" };
     }
@@ -106,12 +119,17 @@ try {
       else if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
       else {
         files.delete(current.path);
-        if (request.method === "rename") { result = { ...current, path: request.params.newPath }; files.set(result.path, result); }
+        if (request.method === "rename") {
+          result = { ...current, path: request.params.newPath }; files.set(result.path, result);
+          if (delayedRemoval?.path === current.path) await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+        }
         else result = {};
       }
     } else if (request.method === "create") {
-      const name = `${request.params.folder || "Notes"}/Copy-${++revision}.textpack`;
-      result = { ...(request.params.sourcePath ? (files.get(request.params.sourcePath) ?? history.get(request.params.sourceHash)) : initial), path: name, hash: String(revision) };
+      const createRevision = ++revision;
+      const name = nextCreatedPath ?? `${request.params.folder || "Notes"}/Copy-${createRevision}.textpack`;
+      nextCreatedPath = null;
+      result = { ...(request.params.sourcePath ? (files.get(request.params.sourcePath) ?? history.get(request.params.sourceHash)) : initial), path: name, hash: String(createRevision) };
       result.markdown = result.markdown.replace(/textTextId: [^\n]+/, `textTextId: "copy-${revision}"`);
       if (!request.params.sourcePath && (typeof request.params.body === "string" || request.params.title === "Untitled")) {
         const body = typeof request.params.body === "string" ? request.params.body : "";
@@ -124,6 +142,7 @@ try {
       files.set(name, result);
     } else error = { message: `Unexpected operation ${request.method}` };
     await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail })), { id: request.id, result, error });
+    if (confirmsDelayedRemoval) delayedRemoval?.confirmed();
   });
   await page.addInitScript(() => {
     window.__networkAttempts = [];
@@ -348,7 +367,8 @@ try {
   await agentPanel.getByRole("button", { name: "Send", exact: true }).click();
   const fencedTaskId = lastAgentSend.taskId;
   await page.getByRole("button", { name: "Show folders", exact: true }).click();
-  await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Projects/Draft");
+  await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Notes");
+  nextCreatedPath = "Notes/Untitled 2.textpack";
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await expectAgentTarget(initial.path);
   await agentPanel.getByRole("button", { name: "Stop", exact: true }).click();
@@ -358,10 +378,35 @@ try {
     return Boolean(current && current !== previousPath);
   }, initial.path);
   const createdWhileOpen = await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).locator("small").textContent();
-  assert.ok(createdWhileOpen?.startsWith("Projects/Draft/"));
+  assert.equal(createdWhileOpen, "Notes/Untitled 2.textpack");
   assert.ok(files.has(createdWhileOpen));
   await expectAgentTarget(createdWhileOpen);
-  assert.ok([...files.keys()].some((name) => name.startsWith("Projects/Draft/")));
+  let releaseRemoval, markRemovalStarted, markRemovalConfirmed;
+  const removalStarted = new Promise((resolve) => { markRemovalStarted = resolve; });
+  const removalConfirmed = new Promise((resolve) => { markRemovalConfirmed = resolve; });
+  delayedRemoval = {
+    path: createdWhileOpen,
+    wait: new Promise((resolve) => { releaseRemoval = resolve; }),
+    started: markRemovalStarted,
+    confirmed: markRemovalConfirmed,
+    confirming: false,
+  };
+  const renamedWhileOpen = "Notes/Agent panel retarget 1145.textpack";
+  await page.getByRole("button", { name: "Rename or move", exact: true }).click();
+  await page.getByRole("textbox", { name: "New file path", exact: true }).fill(renamedWhileOpen);
+  await page.getByRole("button", { name: "Save path", exact: true }).click();
+  await removalStarted;
+  await page.locator(".vault-document-path").getByText(renamedWhileOpen, { exact: true }).waitFor();
+  await expectAgentTarget(renamedWhileOpen);
+  releaseRemoval();
+  await removalConfirmed;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator(".vault-document-path").getByText(renamedWhileOpen, { exact: true }).count(), 1);
+  assert.equal(await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).getByText(renamedWhileOpen, { exact: true }).count(), 1);
+  assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).count(), 1);
+  assert.ok(files.has(renamedWhileOpen));
+  assert.ok(!files.has(createdWhileOpen));
+  delayedRemoval = null;
   await page.getByRole("button", { name: "New from template", exact: true }).click();
   await page.getByRole("button", { name: "Agent made look", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));

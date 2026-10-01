@@ -437,7 +437,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [sidebarOpen, setSidebarVisible]);
   const [listing, setListing] = useState<VaultListing | null>(null);
-  const [selected, setSelected] = useState<VaultFile | null>(null);
+  const [selected, setSelectedState] = useState<VaultFile | null>(null);
+  const selectedRef = useRef<VaultFile | null>(null);
+  const setSelected = useCallback((file: VaultFile | null) => {
+    selectedRef.current = file;
+    setSelectedState(file);
+  }, []);
   const restoredLocationRoot = useRef("");
   const [locationReadyRoot, setLocationReadyRoot] = useState("");
   const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; root: string; itemId: string; origin: HTMLElement | null; focusPending: boolean; awaitSharedMode: boolean } | null>(null);
@@ -516,7 +521,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (restoredLocationRoot.current === root) setLocationReadyRoot(root);
       });
     });
-  }, [access, allowFolderPicker, folders, visibleListing, webWorkspaceId]);
+  }, [access, allowFolderPicker, folders, setSelected, visibleListing, webWorkspaceId]);
   useEffect(() => {
     if (!listing?.root || locationReadyRoot !== listing.root) return;
     try {
@@ -625,11 +630,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     } else {
       void Promise.resolve().then(() => { if (openedLink.current === key) { setSelected(null); setCommentsOpen(false); setDestinationFolder(target.path); } });
     }
-  }, [webWorkspaceId, listing, folders, hashRevision]);
-  const closeRemoved = useCallback(() => {
+  }, [webWorkspaceId, listing, folders, hashRevision, setSelected]);
+  const closeRemoved = useCallback((removedPath?: string) => {
+    if (removedPath && selectedRef.current?.path !== removedPath) return;
     setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
     flushRef.current = async () => true; publishFlushRef.current = async () => false;
-  }, []);
+  }, [setSelected]);
   const operate = async (action: () => Promise<void>, navigation = false) => {
     if (busy) return;
     setBusy(true); setError("");
@@ -895,7 +901,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {selectedFeed.error ? <div className="vault-notice" role="alert">{selectedFeed.error}</div> : selectedFeed.subscription
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />
-          : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved}
+          : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={() => closeRemoved(selected.path)}
               focusNewNote={!busy && newNoteFocus?.file === selected && newNoteFocus.focusPending}
               focusNewNoteOrigin={newNoteFocus?.file === selected ? newNoteFocus.origin : undefined}
               onNewNoteFocusHandled={() => setNewNoteFocus(current => {
