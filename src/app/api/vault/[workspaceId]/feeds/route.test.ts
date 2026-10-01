@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), discover: vi.fn(), read: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), discover: vi.fn(), read: vi.fn(), entry: vi.fn() }));
 vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultWorkspaceOrScoped: mocks.auth }));
 vi.mock("@/lib/vault/rss-feed.server", () => ({
-  discoverVaultFeeds: mocks.discover, readVaultFeed: mocks.read,
+  discoverVaultFeeds: mocks.discover, readVaultFeed: mocks.read, readVaultFeedEntry: mocks.entry,
   VaultFeedError: class VaultFeedError extends Error { constructor(message: string, readonly status: number) { super(message); } },
 }));
 import { POST } from "./route";
@@ -37,6 +37,16 @@ describe("workspace feed API", () => {
     mocks.auth.mockResolvedValueOnce({ fullAccess: true, actorUserId: "reader" })
       .mockResolvedValueOnce({ fullAccess: false, actorUserId: "reader" });
     expect((await POST(request({ action: "read", feedURL: "https://publisher.example/feed" }), context)).status).toBe(403);
+  });
+
+  it("serves a full selected entry only through the separately authorized action", async () => {
+    mocks.entry.mockResolvedValue({ feedTitle: "Daily", entry: { externalKey: "id:one", bodyMarkdown: "Complete source" } });
+    const response = await POST(request({ action: "entry", feedURL: "https://publisher.example/feed", externalKey: "id:one" }), context);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ entry: { bodyMarkdown: "Complete source" } });
+    expect(mocks.entry).toHaveBeenCalledWith("https://publisher.example/feed", "id:one");
+    expect(mocks.auth).toHaveBeenCalledTimes(2);
+    expect((await POST(request({ action: "entry", feedURL: "https://publisher.example/feed" }), context)).status).toBe(400);
   });
 
   it("bounds input and maps failures without returning internal details", async () => {

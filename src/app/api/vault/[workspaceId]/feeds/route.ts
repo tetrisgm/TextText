@@ -1,6 +1,6 @@
 import { authorizeVaultWorkspaceOrScoped } from "@/app/api/vault/scoped-auth";
 import { readBoundedJson } from "@/lib/http/bounded-json";
-import { discoverVaultFeeds, readVaultFeed, VaultFeedError } from "@/lib/vault/rss-feed.server";
+import { discoverVaultFeeds, readVaultFeed, readVaultFeedEntry, VaultFeedError } from "@/lib/vault/rss-feed.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,15 +12,18 @@ export async function POST(request: Request, context: Context) {
   const access = await authorizeVaultWorkspaceOrScoped(request, workspaceId);
   if (access instanceof Response) return access;
   if (!access.fullAccess) return Response.json({ error: "Workspace read access is required." }, { status: 403, headers });
-  const body = await readBoundedJson<{ action?: unknown; address?: unknown; feedURL?: unknown }>(request, 8192);
+  const body = await readBoundedJson<{ action?: unknown; address?: unknown; feedURL?: unknown; externalKey?: unknown }>(request, 8192);
   if ("error" in body || !body.value || !(
     body.value.action === "discover" && typeof body.value.address === "string" ||
-    body.value.action === "read" && typeof body.value.feedURL === "string"
+    body.value.action === "read" && typeof body.value.feedURL === "string" ||
+    body.value.action === "entry" && typeof body.value.feedURL === "string" && typeof body.value.externalKey === "string"
   )) return Response.json({ error: "Choose a feed address to discover or read." }, { status: 400, headers });
   try {
     const result = body.value.action === "discover"
       ? await discoverVaultFeeds(body.value.address as string)
-      : await readVaultFeed(body.value.feedURL as string);
+      : body.value.action === "entry"
+        ? await readVaultFeedEntry(body.value.feedURL as string, body.value.externalKey as string)
+        : await readVaultFeed(body.value.feedURL as string);
     // A shared grant or session may change while a publisher is being fetched.
     const current = await authorizeVaultWorkspaceOrScoped(request, workspaceId);
     if (current instanceof Response) return current;
