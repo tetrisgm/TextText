@@ -57,6 +57,8 @@ export function ArticleReader({ document, template, update }: {
     return () => { globalThis.document.removeEventListener("selectionchange", observe); registry?.delete("texttext-reader"); };
   }, [document]);
   return <section className="vault-reading" aria-label="Article reader">
+    {/* Next's CSS transform rejects this standard named-highlight selector in imported CSS. */}
+    <style>{"::highlight(texttext-reader){background:#eabf4670;color:inherit}"}</style>
     {update && <div className="vault-reader-tools"><button disabled={!selectionAvailable} onMouseDown={(event) => event.preventDefault()} onClick={() => {
       if (!selected.current) return;
       const highlight = selected.current;
