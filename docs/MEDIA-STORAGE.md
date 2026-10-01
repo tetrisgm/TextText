@@ -8,6 +8,7 @@ Set these server-only variables in the root-owned Oracle runtime environment:
 
 - `TEXTTEXT_MEDIA_ROOT=/home/ubuntu/texttext/state/media`
 - `MEDIA_ORIGIN=https://texttext.app`
+- `TEXTTEXT_STORAGE_MIN_FREE_BYTES=2147483648` reserves 2 GiB for PostgreSQL and the operating system.
 
 The service account must own the media root. Keep it mode `0700`. The adapter creates object and metadata directories beneath it and writes files mode `0600`. Local development may use another absolute root and `http://localhost:3000`.
 
@@ -25,6 +26,8 @@ No document-body or full-workspace scan runs during a media read. Export clients
 ## Durability and cleanup
 
 Uploads are limited to 50 MiB and image or video types. Each object gets a random immutable filename. The adapter writes and syncs a separate object and bounded metadata record, creates final names without replacement, refuses symbolic-link storage roots, validates every path segment, and checks stored size before streaming.
+
+Before writing, the adapter checks the filesystem's available bytes and refuses the upload if it would cross the shared free-space floor. A refused upload leaves no final object or metadata file.
 
 Workspace deletion sweeps only that workspace's prefixes. Pagination uses the last immutable key as its cursor, so deleting one page cannot skip the next. Unrelated origins, neighboring workspaces, deleted Blob URLs, query variants, and malformed paths are never removed. Unbound staging objects remain until workspace deletion; no background purge job is installed.
 

@@ -8,6 +8,7 @@ import {
   readFile,
   rm,
   rmdir,
+  statfs,
   unlink,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -23,6 +24,7 @@ type Configuration = {
   objects: string;
   metadata: string;
   origin: string;
+  minFreeBytes: number;
 };
 
 type StoredMetadata = {
@@ -56,7 +58,17 @@ function configuration(): Configuration {
     throw new Error("Invalid media storage root configuration.");
   }
   const root = resolve(configured);
-  return { root, objects: join(root, "objects"), metadata: join(root, "metadata"), origin: configuredOrigin() };
+  const minFreeBytes = Number(process.env.TEXTTEXT_STORAGE_MIN_FREE_BYTES || String(2 * 1024 ** 3));
+  if (!Number.isSafeInteger(minFreeBytes) || minFreeBytes < 256 * 1024 ** 2 || minFreeBytes > 1024 ** 4) {
+    throw new Error("Invalid storage free-space floor.");
+  }
+  return {
+    root,
+    objects: join(root, "objects"),
+    metadata: join(root, "metadata"),
+    origin: configuredOrigin(),
+    minFreeBytes,
+  };
 }
 
 async function ensureStorage(config: Configuration): Promise<void> {
@@ -176,6 +188,11 @@ export async function put(
   const key = `${pathname.slice(0, slash + 1)}${randomUUID()}-${pathname.slice(slash + 1)}`;
   const config = configuration();
   await ensureStorage(config);
+  const filesystem = await statfs(config.root);
+  const available = filesystem.bavail * filesystem.bsize;
+  if (!Number.isSafeInteger(available) || available - bytes.byteLength < config.minFreeBytes) {
+    throw new Error("Media storage has reached its reserved free-space floor.");
+  }
   const objectPath = containedPath(config.objects, key);
   const metadataPath = containedPath(config.metadata, key, ".json");
   await Promise.all([
