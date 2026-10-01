@@ -11,7 +11,8 @@ const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
 let revision = 1;
-let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, lastAgentSend = null;
+let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
+const agentAccountEmail = "writer@example.test";
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
 files.set(initial.path, initial);
 const preset = unzipSync(await readFile("presets/builtin/note.textpack"));
@@ -69,9 +70,15 @@ try {
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
-    else if (request.method === "agentStatus") result = { state: agentState };
-    else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState }; }
+    else if (request.method === "agentStatus") result = { state: agentState, ...(agentState === "ready" ? { accountEmail: agentAccountEmail } : {}) };
+    else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState, accountEmail: agentAccountEmail }; }
     else if (request.method === "agentProposalResult") { proposalFeedback.push(request.params); result = {}; }
+    else if (request.method === "agentCancel") {
+      lastAgentCancel = request.params; result = {};
+      await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail })), {
+        type: "turn-cancelled", taskId: request.params.taskId, message: "Stopped. Your task is ready to send again.",
+      });
+    }
     else if (request.method === "agentSend") {
       agentSendCount++; lastAgentSend = request.params;
       result = {};
@@ -82,10 +89,11 @@ try {
         await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail })),
           { type: "template-proposal", taskId: request.params.taskId, path: current.path, hash: current.hash, templateJSON: JSON.stringify(proposed) });
       }
-      await page.evaluate((taskId) => {
-        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "final-text", taskId, text: "I can work with these local files." } }));
-        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed", taskId } }));
-      }, request.params.taskId);
+      if (holdAgentTurn) holdAgentTurn = false;
+      else await page.evaluate((taskId) => {
+          window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "final-text", taskId, text: "I can work with these local files." } }));
+          window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed", taskId } }));
+        }, request.params.taskId);
     }
     else if (request.method === "write") {
       const current = files.get(request.params.path);
@@ -186,10 +194,13 @@ try {
   let agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
   await agentPanel.waitFor();
   await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).getByText("This item · Read and edit", { exact: true }).waitFor();
+  await agentPanel.getByText("Codex uses your ChatGPT account. Authorization opens in your browser. Your request stays here while you sign in. You won’t need to paste a token or use Terminal.", { exact: true }).waitFor();
+  assert.equal(await agentPanel.getByText(`Connected as ${agentAccountEmail}`, { exact: true }).count(), 0);
   const taskComposer = agentPanel.getByRole("textbox", { name: "Message assistant", exact: true });
   await taskComposer.fill("Read the selected file.");
   await agentPanel.getByRole("button", { name: "Connect Codex", exact: true }).click();
   await agentPanel.getByRole("button", { name: "Start task", exact: true }).waitFor();
+  await agentPanel.getByText(`Connected as ${agentAccountEmail}`, { exact: true }).waitFor();
   assert.equal(await taskComposer.inputValue(), "Read the selected file.");
   await page.waitForFunction(() => Object.entries(localStorage).some(([key, value]) => key.startsWith("texttext:agent-task:") && JSON.parse(value).prompt === "Read the selected file."));
   assert.equal(agentSendCount, 0);
@@ -216,6 +227,7 @@ try {
   const narrowAgentLayout = await page.evaluate(() => {
     const panel = document.querySelector(".vault-assistant");
     const target = document.querySelector(".vault-assistant-setup");
+    const account = document.querySelector(".vault-assistant-account");
     const composer = document.querySelector('.vault-assistant textarea[aria-label="Message assistant"]');
     const visibleAndClear = (element) => {
       if (!(element instanceof HTMLElement)) return { clear: false, box: null, hit: null };
@@ -225,10 +237,11 @@ try {
         box.top >= 0 && box.bottom <= innerHeight && Boolean(point && (point === element || element.contains(point))),
       box: { left: box.left, right: box.right, top: box.top, bottom: box.bottom }, hit: point?.className ?? point?.tagName ?? null };
     };
-    return { panelWidth: panel?.getBoundingClientRect().width ?? 0, target: visibleAndClear(target), composer: visibleAndClear(composer) };
+    return { panelWidth: panel?.getBoundingClientRect().width ?? 0, target: visibleAndClear(target), account: visibleAndClear(account), composer: visibleAndClear(composer) };
   });
   assert.ok(narrowAgentLayout.panelWidth <= 390);
   assert.equal(narrowAgentLayout.target.clear, true, JSON.stringify(narrowAgentLayout));
+  assert.equal(narrowAgentLayout.account.clear, true, JSON.stringify(narrowAgentLayout));
   assert.equal(narrowAgentLayout.composer.clear, true, JSON.stringify(narrowAgentLayout));
   await page.screenshot({ path: "/tmp/texttext-add-agent-narrow-dark.png" });
   await page.keyboard.press("Escape");
@@ -249,8 +262,18 @@ try {
     detail: { type: "final-text", taskId: "different-task", text: "Late message from another task" },
   })));
   assert.equal(await page.getByText("Late message from another task", { exact: true }).count(), 0);
+  holdAgentTurn = true;
+  await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Keep this request after Stop.");
+  await agentPanel.getByRole("button", { name: "Send", exact: true }).click();
+  await agentPanel.getByRole("button", { name: "Stop", exact: true }).click();
+  await agentPanel.getByText("Stopped. Your task is ready to send again.", { exact: true }).waitFor();
+  assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), "Keep this request after Stop.");
+  assert.equal(lastAgentCancel.scope, "item");
+  assert.equal(lastAgentCancel.taskId, lastAgentSend.taskId);
+  assert.equal(await agentPanel.getByRole("button", { name: "Send", exact: true }).isEnabled(), true);
   // UI state-machine fixture only: genuine provider behavior is verified in the installed app.
   const beforeDesign = JSON.stringify(files.get(initial.path));
+  holdAgentTurn = true;
   await page.getByRole("button", { name: "Customize", exact: true }).click();
   await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Propose a design");
   await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -272,6 +295,9 @@ try {
     window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { ...valid, type: "template-proposal", proposalId: "repaired-fixture" } }));
   });
   await page.getByText(/The proposed design needs a correction/).waitFor({ state: "hidden" });
+  await page.evaluate((taskId) => window.dispatchEvent(new CustomEvent("texttext:vault-agent", {
+    detail: { type: "turn-completed", taskId },
+  })), lastAgentSend.taskId);
   await designPreview.getByRole("button", { name: "Compare original", exact: true }).click();
   await designPreview.getByRole("button", { name: "Show proposed design", exact: true }).click();
   await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Refine this design");
@@ -298,10 +324,20 @@ try {
   await addAgent.click();
   agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
   await agentPanel.waitFor();
+  agentState = "disconnected";
   await page.evaluate(() => {
     window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "status", state: "disconnected" } }));
   });
+  await page.waitForFunction(() => {
+    const button = [...document.querySelectorAll(".vault-assistant button")].find((element) => element.textContent === "Send");
+    return button instanceof HTMLButtonElement && button.disabled;
+  });
   assert.equal(await agentPanel.getByRole("button", { name: "Send", exact: true }).isEnabled(), false);
+  assert.equal(await agentPanel.getByText(`Connected as ${agentAccountEmail}`, { exact: true }).count(), 0);
+  agentState = "ready";
+  await page.evaluate((accountEmail) => {
+    window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "status", state: "ready", accountEmail } }));
+  }, agentAccountEmail);
   await agentPanel.getByRole("button", { name: "Close assistant", exact: true }).click();
   await page.getByRole("button", { name: "Show folders", exact: true }).click();
   await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Projects/Draft");

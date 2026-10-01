@@ -41,4 +41,14 @@ describe("local item agent task", () => {
     expect(updated?.prompt).toHaveLength(MAX_AGENT_TASK_LENGTH);
     expect(readAgentTask(storage, task.root, task.target)?.phase).toBe("submitted");
   });
+
+  it("returns a cancelled submitted task to draft without clearing its prompt", () => {
+    const storage = memoryStorage();
+    const task = createAgentTask("/Writing", "Notes/One.textpack", "task-current", 1);
+    writeAgentTask(storage, { ...task, prompt: "Keep this after Stop", phase: "submitted" });
+
+    expect(updateAgentTask(storage, task, { phase: "draft" }, 2)).toMatchObject({
+      prompt: "Keep this after Stop", phase: "draft",
+    });
+  });
 });

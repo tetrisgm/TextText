@@ -7,6 +7,7 @@ import type { TemplateProposal } from "./template-proposal";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { agentTaskMatches, readAgentTask, resumeAgentTask, updateAgentTask,
   type AgentTask, type AgentTaskFence } from "./agent-task";
+import { connectedAccountLabel } from "./agent-account";
 
 type AgentState = "disconnected" | "connecting" | "signed-out" | "ready" | "working" | "failed";
 type Status = { state: AgentState; message?: string; accountEmail?: string };
@@ -151,10 +152,22 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       } else if (detail.type === "tool-call") setAction(detail.path ? `Working with ${detail.path}` : "Working with this item");
       else if (detail.type === "turn-completed") {
         if (turnFence && agentTaskMatches(taskRef.current, turnFence)) { changeTask(turnFence, { prompt: "", phase: "draft" }); setPrompt(""); }
+        activeTaskFence.current = null;
         setStatus((current) => current.state === "working" ? { ...current, state: "ready" } : current); setAction(""); replyId.current = null;
+      }
+      else if (detail.type === "turn-cancelled") {
+        if (turnFence && agentTaskMatches(taskRef.current, turnFence)) {
+          const preserved = taskRef.current?.prompt ?? "";
+          changeTask(turnFence, { phase: "draft" }); setPrompt(preserved);
+        } else setPrompt(requested.current);
+        activeTaskFence.current = null;
+        setNotice(detail.message || "Stopped. Your task is ready to send again.");
+        setStatus((current) => ({ ...current, state: "ready" })); setAction(""); replyId.current = null;
       }
       else if (detail.type === "error") {
         if (turnFence && agentTaskMatches(taskRef.current, turnFence)) { changeTask(turnFence, { phase: "draft" }); setPrompt(taskRef.current?.prompt ?? ""); }
+        else setPrompt(requested.current);
+        activeTaskFence.current = null;
         setNotice(detail.message || "The assistant could not finish this request."); setStatus((current) => ({ ...current, state: "failed" })); setAction("");
       }
     };
@@ -234,6 +247,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   if (!open) return null;
   const working = submitting || status.state === "working";
   const itemTask = task && task.root === root && task.target === path ? task : null;
+  const accountLabel = connectedAccountLabel(status.accountEmail);
   const heading = customizing ? "Customize" : "Add agent";
   return <><aside className={`vault-assistant${proposal ? " has-design-preview" : ""}`} aria-label={heading}>
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
@@ -242,8 +256,9 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       <p>This item · Read and edit</p>
       <small>{itemTask.target}</small>
     </div>}
+    {accountLabel && <p className="vault-assistant-account">{accountLabel}</p>}
     {status.state !== "ready" && status.state !== "working" && <div className="vault-assistant-connect">
-      <p>{itemTask ? "Connect Codex to work on this item. Your task stays here while you sign in." : "Connect Codex to preview this design change."}</p>
+      <p>Codex uses your ChatGPT account. Authorization opens in your browser. Your request stays here while you sign in. You won’t need to paste a token or use Terminal.</p>
       <button disabled={status.state === "connecting"} onClick={() => void connect()}>{status.state === "connecting" ? "Connecting…" : "Connect Codex"}</button>
     </div>}
     {(notice || status.message) && <p role="status" className="vault-assistant-notice">{notice || status.message}</p>}
