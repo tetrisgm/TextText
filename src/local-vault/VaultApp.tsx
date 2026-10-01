@@ -28,14 +28,15 @@ import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
 import { packIdentity } from "./pack";
 import { prepareSharedNote } from "./new-note-promotion";
-import { readFolderView } from "./folder-view";
-import { VaultSearch } from "./VaultSearch";
+import { readFolderView, resolveFolderView, type FolderViewMetadata } from "./folder-view";
+import { VaultSearch, type VaultSearchAction } from "./VaultSearch";
 import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
 import { VaultPublishDialog } from "./VaultPublishDialog";
 import { VaultComments } from "./VaultComments";
 import { vaultCommentCapabilities } from "./vault-comments";
 import { canCreateInVaultFolder, parseVaultAccess, sharedVaultHashTarget, type VaultAccess } from "./shared-vaults";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
+import { readVaultLocation, resolveVaultLocation, writeVaultLocation } from "./vault-location";
 import "./style.css";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -435,6 +436,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [sidebarOpen, setSidebarVisible]);
   const [listing, setListing] = useState<VaultListing | null>(null);
   const [selected, setSelected] = useState<VaultFile | null>(null);
+  const restoredLocationRoot = useRef("");
+  const [locationReadyRoot, setLocationReadyRoot] = useState("");
   const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; root: string; itemId: string; origin: HTMLElement | null; focusPending: boolean; awaitSharedMode: boolean } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -472,6 +475,43 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [listing, access]);
   const tree = useMemo(() => folderTree(visibleListing?.items ?? [], visibleListing?.folders), [visibleListing]);
   const folders = useMemo(() => folderPaths(tree), [tree]);
+  useEffect(() => {
+    if (!visibleListing?.root || (!allowFolderPicker && !access) || restoredLocationRoot.current === visibleListing.root) return;
+    const root = visibleListing.root;
+    restoredLocationRoot.current = root;
+    void Promise.resolve().then(() => {
+      if (webWorkspaceId && sharedVaultHashTarget(window.location.hash, visibleListing.items.map(item => item.path), folders)) {
+        setLocationReadyRoot(root);
+        return;
+      }
+      const saved = readVaultLocation(localStorage, root);
+      const location = resolveVaultLocation(saved, visibleListing.items.map(item => item.path), folders);
+      setDestinationFolder(location.folder);
+      if (!location.path) {
+        setSelected(null);
+        setLocationReadyRoot(root);
+        return;
+      }
+      void readForOpen(location.path, !allowFolderPicker).then(file => {
+        if (restoredLocationRoot.current === root) setSelected(file);
+      }).catch(reason => {
+        if (restoredLocationRoot.current === root) {
+          setSelected(null);
+          setError(reason instanceof Error ? `Could not reopen ${location.path}: ${reason.message}` : `Could not reopen ${location.path}.`);
+        }
+      }).finally(() => {
+        if (restoredLocationRoot.current === root) setLocationReadyRoot(root);
+      });
+    });
+  }, [access, allowFolderPicker, folders, visibleListing, webWorkspaceId]);
+  useEffect(() => {
+    if (!listing?.root || locationReadyRoot !== listing.root) return;
+    try {
+      writeVaultLocation(localStorage, listing.root, selected
+        ? { folder: folderForItem(selected.path), path: selected.path }
+        : { folder: destinationFolder.trim() });
+    } catch { /* Browsing still works when local storage is disabled. */ }
+  }, [destinationFolder, listing?.root, locationReadyRoot, selected]);
   const flushRef = useRef<(navigation?: boolean) => Promise<boolean>>(async () => true);
   const publishFlushRef = useRef<() => Promise<string | false>>(async () => false);
   const registerFlush = useCallback((flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => {
@@ -584,7 +624,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     catch (error) { setError(error instanceof Error ? error.message : "The file operation failed."); }
     finally { setBusy(false); }
   };
-  const createNote = (origin: HTMLElement | null) => void operate(async () => {
+  const createNote = (origin: HTMLElement | null) => operate(async () => {
     const created = await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() });
     setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin,
       focusPending: true, awaitSharedMode: allowFolderPicker });
@@ -630,6 +670,21 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     restoreDialogFocus(feedSubscribeReturnFocus.current, feedSubscribeButton.current, searchButton.current);
     feedSubscribeReturnFocus.current = null;
   }, []);
+  const beginCustomize = useCallback((path: string) => {
+    setAssistantOpen(true);
+    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })));
+  }, []);
+  const customizeCurrent = useCallback(async () => {
+    let path = selected?.path;
+    if (!path) {
+      const folder = destinationFolder.trim();
+      const definitions = await vaultRequest<{ files: FolderViewMetadata[] }>("folderViews", { folder });
+      const view = resolveFolderView(definitions.files, folder);
+      if (!view) throw new Error("Choose a folder design first, then customize this folder.");
+      path = view.path;
+    }
+    beginCustomize(path);
+  }, [beginCustomize, destinationFolder, selected?.path]);
   useEffect(() => {
     const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true); };
     const newFile = () => { if (canCreate) createNote(focusedControl()); };
@@ -648,6 +703,19 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     window.addEventListener("texttext:vault-search", openSearch);
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", openSearch); };
   }, [openSearch]);
+  const commandActions: VaultSearchAction[] = [];
+  const commandFolder = destinationFolder.trim();
+  const commandLocation = commandFolder || "the workspace root";
+  if (canCreate) commandActions.push(
+    { id: "new-note", label: "New note", description: `Create a note in ${commandLocation}.` },
+    { id: "capture", label: "Capture", description: `Save a link or note in ${commandLocation}.`, keywords: ["save", "link", "note", "bookmark"] },
+  );
+  if (allowFolderPicker && listing?.root) commandActions.push({
+    id: "customize",
+    label: selected ? "Customize this item" : "Customize this folder",
+    description: selected ? "Change how the open item looks." : `Change how ${commandLocation} looks.`,
+    keywords: ["design", "look", "template"],
+  });
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
     onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
@@ -669,6 +737,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {!allowFolderPicker && <nav className="vault-other-workspaces" aria-label="Shared workspaces"><a href="/shared">Shared with me</a></nav>}
       {allowFolderPicker && <button disabled={busy} onClick={() => void operate(async () => {
         const opened = await vaultRequest<VaultListing>("open");
+        restoredLocationRoot.current = ""; setLocationReadyRoot("");
         setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true;
       })}>Open folder</button>}
       {listing?.root && <>
@@ -696,7 +765,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             if (result.file) { setSelected(result.file); refresh(); }
           })}>Import file…</button>
         </>}
-        <button ref={searchButton} disabled={busy} onClick={openSearch}>Search files ⌘K</button>
+        <button ref={searchButton} disabled={busy} onClick={openSearch}>Search and actions ⌘K</button>
         {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>}
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); }, true)} onOpen={(item) => void operate(async () => {
@@ -719,7 +788,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {canPublish && sharingWorkspaceId && selectedItemId && <button disabled={busy} onClick={() => setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Publish</button>}
         {canManageFiles && <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
         {canManageFiles && <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>}
-        {allowFolderPicker && <button disabled={busy} onClick={() => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path: selected.path } })); }}>Customize</button>}
+        {allowFolderPicker && <button disabled={busy} onClick={() => beginCustomize(selected.path)}>Customize</button>}
         {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({ path: selected.path }))}>Version history</button>}
         {canManageFiles && fileAction === "rename" && <form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
           const observed = currentFileRef.current?.();
@@ -768,7 +837,11 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {feedSubscribeOpen && <FeedSubscribeDialog folder={destinationFolder.trim()} folders={folders} onClose={closeFeedSubscribe} onSaved={file => {
         closeRemoved(); setSelected(file); setDestinationFolder(folderForItem(file.path)); refresh();
       }} />}
-      {searchOpen && <VaultSearch namesOnly={!allowFolderPicker} onClose={closeSearch} onOpen={async (path) => {
+      {searchOpen && <VaultSearch actions={commandActions} namesOnly={!allowFolderPicker} onClose={closeSearch} onAction={(action) => {
+        if (action.id === "new-note") return createNote(null);
+        if (action.id === "capture") { setCaptureOpen(true); return; }
+        if (action.id === "customize") return customizeCurrent();
+      }} onOpen={async (path) => {
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
       }} />}
@@ -801,7 +874,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : visibleListing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={visibleListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
         onShare={canShare && sharingWorkspaceId ? (folder) => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}
-        onCustomize={allowFolderPicker ? (path) => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })); } : undefined}
+        onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onFolder={(path) => setDestinationFolder(path)}
         onOpen={(path) => void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)}
         onCreate={(path, folder) => void operate(async () => {
