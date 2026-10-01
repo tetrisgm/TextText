@@ -1,6 +1,6 @@
 # File-vault local performance receipt
 
-## Final production benchmark
+## Historical production baseline
 
 The final bounded run used production build `.texttext/vault-perf-20261001j` on source `08366635`, local Postgres, and one headless Chromium browser. The host was a MacBook Pro Mac16,1 with Apple M4, 16 GiB RAM, and macOS 27.0 (26A428). Browser requests to external origins were blocked; none was attempted.
 
@@ -25,16 +25,17 @@ The five idle CPU samples averaged 0.06% for the server process tree and 0% for 
 - A preceding two-pack diagnosis passed on the same source: Gallery folder 122.9 ms, Gallery item 150.0 ms, 512 KiB note 288.5 ms, and cached long note 428.9 ms. A direct external write appeared in the already-open editor without reopen. Receipt: `/tmp/texttext-vault-perf-tnEyEF/result.json`.
 - The final offline browser run after natural folder ordering passed: `/tmp/texttext-final-browser-order.log`.
 - The contextual-header change in `31281f03` does not change the measured storage or navigation path. Its production build and full offline browser suite passed separately: `/tmp/texttext-vault-perf-k-build.log` and `/tmp/texttext-header-portal-browser.log`.
+- The cached-open change in `7f59e8fd` kept the active shared editor available across repeated opens. A bounded six-sample comparison reduced cached item open from 590.9 ms to 339.6 ms p95, or 42.5%. A later full production run at `/tmp/texttext-vault-perf-XvqO83/result.json` measured input visibility at 17.9 ms p95. These later samples supplement the baseline rather than rewriting its historical measurements.
 
-## Final native recovery check
+## Historical native recovery check
 
-The final local artifact is `/Applications/TextText.app` 0.202 build 1149 on `2b47c500`. It launched without a false Offline banner and completed a real read-only bundled-agent task. Build 1148 separately verified account disconnect, helper termination, draft preservation, normal browser reauthorization, and successful use of the preserved request. Earlier build 1147 acceptance verified that a controlled outage preserved pending edits locally; after the task-owned server returned, collaboration and background sync notices cleared automatically without Retry. After fixture cleanup, current sync state is 31 baselines, outbox 0, and conflicts 0. A real agent edit also converged with a concurrent human line and matched the canonical TextPack. These are installed-app acceptance results, not additional benchmark samples. Final build and install receipts are `/tmp/texttext-build-1149.log` and `/tmp/texttext-install-1149.log`.
+The local artifact used for this receipt was `/Applications/TextText.app` 0.202 build 1149 on `2b47c500`. It launched without a false Offline banner and completed a real read-only bundled-agent task. Build 1148 separately verified account disconnect, helper termination, draft preservation, normal browser reauthorization, and successful use of the preserved request. Earlier build 1147 acceptance verified that a controlled outage preserved pending edits locally; after the task-owned server returned, collaboration and background sync notices cleared automatically without Retry. After fixture cleanup, sync state was 31 baselines, outbox 0, and conflicts 0. A real agent edit also converged with a concurrent human line and matched the canonical TextPack. These are historical installed-app acceptance results, not additional benchmark samples. TextText 0.203 build 1150 later replaced this artifact through the full release gate.
 
 Spot samples during the live native agent checks observed TextText at 35.0 MiB RSS and its bundled Codex helper at 62.9 MiB while working. The helper was 43.9 MiB after completion; after the panel closed and settled, TextText/helper samples were 12.3/6.7 MiB. These bounded `ps` observations confirm the active agent was included in memory inspection, but they are not continuous peak measurements or a long-run leak proof.
 
 ## Interpretation
 
-Typing and idle behavior meet the initial targets. Folder navigation is close to its target but measured 4.1 ms over it. Warm Command-K is comfortably within target, while its first cold call is 8.5 ms over. Cached item open remains the material performance miss at 590.9 ms p95. The six item samples range from fast gallery opens to the 512 KiB note tail, so further work should begin with a bounded item-open trace rather than another full fixture.
+Typing and idle behavior meet the initial targets. Folder navigation is close to its target but measured 4.1 ms over it. Warm Command-K is comfortably within target, while its first cold call is 8.5 ms over. The later cached-open work improved p95 from 590.9 ms to 339.6 ms, but it remains above the 100 ms target. Further work should begin with a bounded item-open trace rather than another full fixture.
 
 The three after-close browser readings end below the first reading and show no sustained growth in this run. Three rounds cannot prove the absence of a memory leak, and process-tree RSS can count shared pages more than once or miss peaks between samples. The result supports bounded stability only under the stated workload.
 
@@ -42,6 +43,6 @@ The three after-close browser readings end below the first reading and show no s
 
 The p95 values are nearest-rank statistics from small samples. Folder and item metrics include Playwright dispatch, app work, readiness polling, and two animation frames. Input timing uses browser event timestamps through two frames. CPU is a sampled `ps` process-tree observation rather than continuous energy measurement.
 
-The passing harness deleted the exact test audit rows, grants, UUID workspace row, and marked UUID vault subtree. Its result records that cleanup. The isolated PostgreSQL instance on port 55432 was stopped after the final checks. No public deployment, release, owner workspace, private R2 bucket, or production account was involved.
+The passing harness deleted the exact test audit rows, grants, UUID workspace row, and marked UUID vault subtree. Its result records that cleanup. The isolated PostgreSQL instance on port 55432 was stopped after the final checks. No public deployment, release, owner workspace, or production account was involved.
 
 Harness: [`scripts/bench-file-vault-live.ts`](../scripts/bench-file-vault-live.ts). Read-only preflight, TypeScript, scoped ESLint, production build, and the local browser fixture passed for this acceptance sequence.

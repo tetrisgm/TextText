@@ -1,73 +1,53 @@
 # TextText content-first checkpoint
 
-## Goal and settled decisions
+## Settled product
 
-Complete the [product brief](design/texttext-content-first-ux.md) on ordinary folder workspaces and self-contained TextPacks. The [file-vault architecture](design/texttext-file-vault-migration.md) is authoritative. The owner authorizes replacing the local `/Applications/TextText.app` with work-in-progress builds. Deleted Vercel Blob objects are disposable; continue from current files instead of recovering them. Preserve active TextPacks and unrelated dirty source.
+TextText works from ordinary folders of self-contained TextPacks. A person can edit, rename, and move those files directly. The Mac app, web workspace, Finder projection, and agent tools use the same validated document primitives. The [file-vault architecture](design/texttext-file-vault-migration.md) governs storage, collaboration, recovery, and conflicts.
 
-## Canonical local state (2026-10-01)
+Article, Bookmark, Brief, Case study, Gallery, Note, Page, Project, Talk, Timeline, and To-do are editable starter TextPacks. Reading list, Contact sheet, and Reference index are folder presets over the same primitives. Templates can be created or changed by an agent without adding another content model or executable presentation code.
 
-- Product code on `main` ends at `2b47c500`. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header. `cdae9f90` reconnects focused vault editors automatically after service returns. `fbaec76a` adds an explicit Codex account disconnect with draft preservation, and `2b47c500` covers managed accounts whose account record has no email.
-- Dirty files owned by other work: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and the stashed untracked local editor probe. Do not alter, reset, clean, or commit them.
-- Installed app: `/Applications/TextText.app`, version 0.202 build 1149, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1149.log` and `/tmp/texttext-install-1149.log`.
-- Local app server: `127.0.0.1:3000`, PID 50999, Codex session 12498, build output `.texttext/vault-perf-20261001k`.
-- Server command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001k node --env-file=.env.local node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000`.
-- No public push, deploy, release, or persistent job was performed.
+## Shipped state
 
-## Current acceptance evidence
+- Version 0.203 build 1150 shipped from `eef38b7e` and is recorded by `e3f75ce7`.
+- `/Applications/TextText.app` is the single installed copy. It is notarized, Developer ID signed, arm64, and contains three extensions and `Contents/Helpers/texttext`.
+- `texttext.app`, media, PostgreSQL, retained backups, and Mac update files run from Oracle. No TextText storage uses Cloudflare R2 or Vercel Blob.
+- The product changelog has one newest `0.203` section and passes TextPack lint.
 
-### Folder shell and local editing
+## Acceptance evidence
 
-- The offline vault browser suite passes the folder shell, creation and capture paths, image paste, reader behavior, recovery, narrow layout, keyboard behavior, light/dark rendering, and reduced motion. Current receipts: `/tmp/texttext-final-local-vault-build.log`, `/tmp/texttext-final-browser-order.log`, and `/tmp/texttext-header-portal-browser.log`.
-- Folder-backed collections now use natural path order before pagination, so repeated requests return stable first pages. Focused tests, TypeScript, ESLint, and the full browser fixture passed for `08366635`.
-- The contextual header now lays out editor, people/agent, comment, sharing, and overflow controls in document flow instead of covering each other. TypeScript, ESLint, production build, and light/dark visual inspection passed for `31281f03`.
+### Folders, templates, and agents
 
-### Collaboration and permissions
+- The offline folder browser suite covers creation, templates, capture, image paste, reading, search, recovery, keyboard use, narrow layout, light and dark themes, and reduced motion.
+- Local file editing and external atomic edits pass through the real native window. Agent commands address the same paths, use hash guards for writes, attribute mutations, and keep edits visible in the document.
+- Starter template assets are bundled in the signed app and validated as TextPacks. Folder presets and agent-authored template proposals have focused coverage.
 
-`/tmp/texttext-file-collaboration-header-fix-4.log` passes all 26 checks with two signed-in accounts:
+### Collaboration and sync
 
-- live presence plus comment and reply propagation without reload;
-- comments persisted inside the canonical TextPack;
-- concurrent edit convergence, writer-scoped undo and redo, and exact canonical bytes;
-- offline convergence, separate Web Locks and recovery journals for same-origin tabs, reload recovery, and exact three-editor convergence;
-- one presence POST and zero repeat content mutation uploads during the idle check;
-- creation of a folder and note, followed by discovery and open from the second account without reload;
-- permission downgrade enforcement and notice in the open editor;
-- zero browser runtime errors.
+- Two-account acceptance covers presence, persisted comments and replies, concurrent convergence, writer-scoped undo and redo, offline recovery, three-editor reload convergence, folder and note discovery, and permission downgrade enforcement.
+- A settled editor sends one presence heartbeat and no repeated content mutation uploads. Content sync resumes after a real change or reconnects after an outage without a Retry action.
+- Hash and epoch guards reject stale destructive writes while preserving the other writer's bytes.
 
-Visual receipts: `/tmp/texttext-file-collaboration-light.png` and `/tmp/texttext-file-collaboration-dark.png`.
+### Release and hosting
 
-### Performance and memory
+- The exact release gate passed web, database, live workflow, sync, collaboration, native, TestFlight, Apple, TypeScript, and production build checks.
+- Production authenticated smoke tests created, read, edited, audited, and removed a scratch note after migration.
+- Public 0.203 appcast and ZIP match Oracle byte for byte. Stable and immutable download routes, byte ranges, the version endpoint, and sign-in page pass.
+- TextText and Algorave services are active with zero restarts. Both backup timers are active and their newest dumps have readable tables of contents.
 
-The final 240-pack production benchmark on source `08366635` passed its bounded harness and exact cleanup. It verified two accounts, all six external direct writes in the already-open editor, zero blocked external requests, and no repeat collaboration uploads during ten idle seconds. Raw evidence: `/tmp/texttext-vault-perf-sGvfUt/result.json`.
+### Performance
 
-| Measure | Final observation | Initial target status |
-| --- | ---: | --- |
-| Cold / warm first visible heading | 748.1 ms / 568.4 ms p95 | Reported |
-| Folder navigation p95 | 104.1 ms | Narrow miss against 100 ms |
-| Item / cached item navigation p95 | 605.9 / 590.9 ms | Cached item misses 100 ms |
-| Input to two visible frames p95 | 13.8 ms | Meets 50 ms |
-| Command-K samples | 108.5, 19.6, 23.9 ms | Cold call misses 100 ms; warm calls meet it |
-| Server / browser peak RSS | 220.1 / 682.7 MiB | Within harness bounds |
-| Browser RSS after close | 144.3, 148.1, 130.6 MiB | Ends lower; three rounds do not prove leak absence |
-| Idle CPU, server / browser | 0.06% / 0% | Reported |
-| Ten-second editor idle network | one presence POST; zero collaboration POSTs | No content-upload spam |
+The historical 240-pack run measured cached item open at 590.9 ms p95. `7f59e8fd` reduced the bounded six-sample comparison to 339.6 ms p95, a 42.5% improvement. A later full production run measured input visibility at 17.9 ms p95. Cached open still misses the original 100 ms target, and the bounded memory samples do not prove leak absence. See the [performance receipt](file-vault-performance-2026-09-30.md).
 
-See [performance receipt](file-vault-performance-2026-09-30.md) for conditions and limits.
+## Remaining refinement
 
-### Native application
-
-- Build 1149 is the canonical local app. It launched into the folder workspace with no false Offline banner, connected the bundled Codex runtime, and completed a real read-only task that returned `Things I keep relearning` without editing the TextPack.
-- Installed build 1148 acceptance disconnected the managed account, removed the helper process, preserved the unsent request across panel close and reopen, completed normal browser reauthorization, and successfully sent that preserved request. Focused native tests cover managed accounts with and without an email, external shared profiles, active-task fencing, and draft preservation; 12/12 pass on `2b47c500`.
-- Earlier build 1147 acceptance verified a real edit exactly once alongside a concurrent human line, plus a controlled task-owned server outage. Pending edits remained local and collaboration and background sync banners cleared automatically after restart without Retry. After fixture cleanup, current sync state is 31 baselines, outbox 0, conflicts 0.
-- The disposable `Untitled 2` acceptance note was moved to recoverable Trash. The final build and installer validated the app, all three extensions, and bundled helper; receipts are `/tmp/texttext-build-1149.log` and `/tmp/texttext-install-1149.log`.
-
-## Remaining acceptance and external boundaries
-
-1. Profile cached item open only if the product decision still requires the initial 100 ms target. The measured p95 is 590.9 ms; do not claim it as met.
-2. Live private R2 upload/read, backup restore, Oracle switch, public deploy/appcast, public sign-in, and production external-agent authorization remain unverified. The deleted Blob data is intentionally out of scope.
-3. Keep `/Applications/TextText.app` usable while its local server is needed. Recheck the listener before cleanup. The isolated benchmark PostgreSQL instance on port 55432 is stopped; the normal local database remains running.
+- Continue profiling cached item open only if the 100 ms target remains a product requirement.
+- Oracle-local backups do not survive loss of the Oracle VM or its block storage. That is the explicit Oracle-only durability boundary.
+- Interactive production OAuth was not re-entered during the automated release. The public sign-in page is live, native Apple sign-in passed its release checks, and the prior installed flow was accepted manually.
 
 ## References
 
-- [Handoff](HANDOFF.md), [performance receipt](file-vault-performance-2026-09-30.md), [implementation receipt](file-vault-implementation-2026-09-30.md), [collaboration receipt](file-vault-collaboration-2026-09-30.md), [recovery receipt](file-vault-recovery-2026-09-30.md), and [AI sidebar architecture](ai-sidebar-architecture.md).
-- Other focused receipts remain under `docs/file-vault-*-2026-09-30.md`. Historical process IDs and installed versions are evidence only, not live state.
+- [Handoff](HANDOFF.md)
+- [Implementation receipt](file-vault-implementation-2026-09-30.md)
+- [Collaboration receipt](file-vault-collaboration-2026-09-30.md)
+- [Recovery receipt](file-vault-recovery-2026-09-30.md)
+- [AI sidebar architecture](ai-sidebar-architecture.md)

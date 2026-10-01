@@ -1,16 +1,15 @@
 # TextText: architecture
 
-A multi-tenant publishing platform: Next.js App Router on Vercel, plus a native
-macOS app that mounts the workspace as a Finder location.
+A folder-based writing and publishing product: Next.js App Router on the Oracle
+host, plus a native macOS app that opens ordinary folders and exposes a Finder
+location.
 
 This is the current architecture map. Verify live behavior and generated
 release metadata rather than relying on historical handoffs.
 
-The current database-centered content storage falls short of the settled
-[file vault contract](docs/design/texttext-file-vault-migration.md). The owner
-has directed its replacement: ordinary folders of TextPacks, direct local file
-edits, web replicas, and conflict-aware sync. The implementation details below
-describe the existing system until that replacement is wired through.
+The [file vault contract](docs/design/texttext-file-vault-migration.md) is the
+storage model: ordinary folders of self-contained TextPacks, direct local file
+edits, web replicas, and conflict-aware sync.
 
 ## Tenancy and URLs
 
@@ -43,10 +42,13 @@ Notes and bookmarks stay unlisted forever. Visibility fails closed
 - Postgres. `src/lib/db/client.ts` picks the driver by URL: a `neon.tech` URL
   uses the Neon HTTP driver, anything else uses node-postgres. Schema in
   `src/lib/db/schema.ts`.
-- `src/lib/store.ts` is the ONLY content access point. Postgres is the sole
-  backing store; a missing `DATABASE_URL` fails loudly.
+- `src/lib/store.ts` is the only hosted-replica content access point. Postgres
+  backs the web service; a missing `DATABASE_URL` fails loudly. Local folder
+  work remains ordinary TextPacks on disk.
 - Every mutation writes an `action_audit` row.
-- Media goes to Vercel Blob.
+- Hosted media uses private Oracle filesystem storage and authenticated
+  same-origin reads. Mac releases and retained database dumps also stay on
+  Oracle. TextText has no R2 or Vercel Blob storage dependency.
 
 ## Rendering
 
