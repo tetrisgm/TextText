@@ -8,8 +8,8 @@ Article, Bookmark, Brief, Case study, Gallery, Note, Page, Project, Talk, Timeli
 
 ## Shipped state
 
-- Version 0.203 build 1150 shipped from `eef38b7e` and is recorded by `e3f75ce7`.
-- `/Applications/TextText.app` is the single installed copy. It is notarized, Developer ID signed, arm64, and contains three extensions and `Contents/Helpers/texttext`.
+- Public version 0.203 build 1150 shipped from `eef38b7e` and is recorded by `e3f75ce7`. It remains the notarized Sparkle artifact.
+- Clean `main` at `012d78bc` was promoted to Oracle as `tt-1151-012d78bc-6abe91a4`. `/Applications/TextText.app` is the single installed copy at 0.203 build 1151. It is Developer ID signed, arm64, and contains three extensions and `Contents/Helpers/texttext`.
 - `texttext.app`, media, PostgreSQL, retained backups, and Mac update files run from Oracle. No TextText storage uses Cloudflare R2 or Vercel Blob.
 - The product changelog has one newest `0.203` section and passes TextPack lint.
 
