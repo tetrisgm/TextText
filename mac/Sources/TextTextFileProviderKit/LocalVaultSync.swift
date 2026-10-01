@@ -105,6 +105,21 @@ public actor LocalVaultSync {
         return try JSONDecoder().decode(State.self, from: Data(contentsOf: url)).binding
     }
 
+    /// Collaboration may take over only after these exact local bytes have an acknowledged remote baseline.
+    public static func collaborationReady(root: URL, path: String, itemId: String, localHash: String) throws -> Bool {
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let url = canonicalRoot.appendingPathComponent(".texttext/sync/state.json")
+        guard url.resolvingSymlinksInPath().path == url.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16 * 1024 * 1024 else { throw LocalVaultDocumentStore.Failure.tooLarge }
+        let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: url))
+        guard let baseline = state.baselines[itemId], baseline.path == path,
+              baseline.localHash == localHash, baseline.revision.count == 64,
+              baseline.revision.allSatisfy({ $0.isHexDigit }),
+              state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { return false }
+        return true
+    }
+
     private func persist() throws {
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         try writeVaultSyncJournal(JSONEncoder().encode(state), to: directory.appendingPathComponent("state.json"))

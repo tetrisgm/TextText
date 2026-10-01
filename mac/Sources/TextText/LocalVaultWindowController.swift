@@ -26,6 +26,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private var loaded = false
     private let credentials: LocalVaultConnectionController.CredentialsProvider
     private var connection: LocalVaultConnectionController?
+    private var collaboration: LocalVaultCollaboration?
     private var agent: LocalVaultAgentController?
     var onSelectedFolder: (() -> Void)?
     var onSignIn: (() -> Void)?
@@ -71,7 +72,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     }
     deinit { watcher?.stop(); if scoped { root?.stopAccessingSecurityScopedResource() } }
 
-    func windowWillClose(_ notification: Notification) { agent?.cancel(); agent = nil }
+    func windowWillClose(_ notification: Notification) { collaboration?.cancelAll(); collaboration = nil; agent?.cancel(); agent = nil }
     func present() { NSApp.activate(ignoringOtherApps: true); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
 
     func openFile(_ url: URL) -> Bool {
@@ -84,6 +85,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         present(); return true
     }
     func credentialsChanged() {
+        collaboration?.cancelAll(); collaboration = nil
         guard let root else { return }
         connection = LocalVaultConnectionController(root: root, credentials: credentials)
         connection?.onChange = { [weak self] state, changed in
@@ -146,6 +148,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     }
 
     private func selectRoot(_ url: URL) throws {
+        collaboration?.cancelAll(); collaboration = nil
         agent?.stop(); agent = nil
         watcher?.stop()
         if scoped { root?.stopAccessingSecurityScopedResource() }
@@ -198,6 +201,27 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
               let body = message.body as? [String: Any], let id = body["id"] as? String, id.count <= 100,
               let method = body["method"] as? String else { return }
         let params = body["params"] as? [String: Any] ?? [:]
+        if ["collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel"].contains(method) {
+            if method == "collaborationCancel" {
+                if let requestId = params["requestId"] as? String, requestId.count <= 100 { collaboration?.cancel(requestId) }
+                reply(id, result: .success([:])); return
+            }
+            guard let root else {
+                if method == "collaborationConfig" { emit("texttext:vault-reply", value: ["id": id, "result": NSNull()]) }
+                else { reply(id, result: .failure(VaultBridgeError("Open a workspace folder first."))) }
+                return
+            }
+            if collaboration == nil { collaboration = LocalVaultCollaboration(credentials: credentials) }
+            collaboration?.start(id: id, method: method, params: params, root: root) { [weak self] result in
+                switch result {
+                case .success(let value): self?.emit("texttext:vault-reply", value: ["id": id, "result": value as Any? ?? NSNull()])
+                case .failure(let error):
+                    let code = (error as? LocalVaultCollaborationError)?.code ?? ((error is CancellationError || (error as? URLError)?.code == .cancelled) ? "cancelled" : "503")
+                    self?.emit("texttext:vault-reply", value: ["id": id, "error": ["code": code, "message": error.localizedDescription]])
+                }
+            }
+            return
+        }
         if method == "open" {
             chooseFolder { [weak self] result in self?.reply(id, result: result) }; return
         }
