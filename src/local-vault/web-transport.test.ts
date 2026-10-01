@@ -71,6 +71,26 @@ describe("web file vault transport", () => {
     await expect(transport.request("collaborationRead", { itemId: "stable-id" })).rejects.toThrow("closed");
   });
 
+  it("routes item presence with only session fields and the caller's abort signal", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {
+      calls.push({ url: String(url), init });
+      return Response.json({ epoch: 1, presence: [] });
+    });
+    const abort = new AbortController();
+    await transport.request("presenceRead", { itemId: "stable-id", root: "/private" }, abort.signal);
+    expect(calls[0].url).toBe("/api/vault/workspace/items/stable-id/presence");
+    expect(calls[0].init?.method).toBe("GET");
+    expect(calls[0].init?.signal).toBe(abort.signal);
+    await transport.request("presenceJoin", { itemId: "stable-id", awarenessClientId: 42, actorUserId: "forged" });
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ join: true, awarenessClientId: 42 });
+    await transport.request("presenceUpdate", { itemId: "stable-id", clientId: "session", sessionCredential: "v1:token", awareness: "AAA=", root: "/private" });
+    expect(JSON.parse(String(calls[2].init?.body))).toEqual({ clientId: "session", sessionCredential: "v1:token", awareness: "AAA=" });
+    await transport.request("presenceLeave", { itemId: "stable-id", clientId: "session", sessionCredential: "v1:token", root: "/private" });
+    expect(JSON.parse(String(calls[3].init?.body))).toEqual({ clientId: "session", sessionCredential: "v1:token", leave: true });
+    transport.destroy();
+  });
+
   it("reads a retained complete pack without writing and verifies its hash", async () => {
     const seed = fixture();
     const requests: string[] = [];

@@ -30,7 +30,7 @@ async function humanAccess(request: Request, context: Context) {
   const { workspaceId, itemId } = await context.params;
   const access = await authorizeVaultItem(request, workspaceId, itemId, "read");
   if (access instanceof Response) return access;
-  if (access.actorType !== "human" || !access.actorUserId) return respond({ error: "Human sign-in is required for item presence" }, 403);
+  if (!access.canUseHumanPresence || !access.actorUserId) return respond({ error: "Human sign-in is required for item presence" }, 403);
   return access;
 }
 
@@ -71,7 +71,7 @@ export async function POST(request: Request, context: Context) {
     const beforeCommit = async (relativePath: string) => {
       const latest = await authorizeVaultItemAtPath(request, access.workspaceId, access.itemId, relativePath, "read");
       if (latest instanceof Response) throw latest;
-      if (latest.actorType !== "human" || latest.actorUserId !== access.actorUserId) throw respond({ error: "Session changed" }, 403);
+      if (!latest.canUseHumanPresence || latest.actorUserId !== access.actorUserId) throw respond({ error: "Session changed" }, 403);
       if (latest.canEditContent !== access.canEditContent) throw respond({ error: "Item role changed. Join presence again." }, 409);
       request.signal.throwIfAborted();
     };

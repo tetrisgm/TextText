@@ -19,7 +19,7 @@ import { VaultCollaborationEpochError } from "@/lib/store";
 const url = "https://texttext.test/api/vault/workspace-1/items/item-1/presence";
 const context = { params: Promise.resolve({ workspaceId: "workspace-1", itemId: "item-1" }) };
 const access = { root: "/trusted", workspaceId: "workspace-1", itemId: "item-1", actorUserId: "user-1", actorType: "human",
-  actorName: "Ava", canEditContent: true, canComment: true };
+  actorName: "Ava", canUseHumanPresence: true, canEditContent: true, canComment: true };
 const state = { epoch: 2, seq: 0, revision: "a".repeat(64), update: "AAA=", relativePath: "Notes/Shared.textpack" };
 const post = (value: unknown) => new Request(url, { method: "POST", headers: { origin: "https://texttext.test" }, body: JSON.stringify(value) });
 
@@ -47,7 +47,7 @@ describe("file vault human presence route", () => {
     expect(mocks.readPresence).not.toHaveBeenCalled();
     mocks.authorize.mockResolvedValueOnce(access).mockResolvedValueOnce(new Response(null, { status: 403 }));
     expect((await GET(new Request(url), context)).status).toBe(403);
-    mocks.authorize.mockResolvedValueOnce({ ...access, actorType: "external_agent" });
+    mocks.authorize.mockResolvedValueOnce({ ...access, actorType: "external_agent", canUseHumanPresence: false });
     expect((await POST(post({ join: true, awarenessClientId: 42 }), context)).status).toBe(403);
     expect(mocks.join).not.toHaveBeenCalled();
   });
@@ -61,6 +61,12 @@ describe("file vault human presence route", () => {
     }));
     expect(mocks.authorizeAtPath).toHaveBeenCalledWith(expect.any(Request), "workspace-1", "item-1", "Notes/Shared.textpack", "read");
     expect((await POST(post({ clientId: "p-forged", sessionCredential: session.sessionCredential }), context)).status).toBe(409);
+  });
+
+  it("admits the verified Mac app token as a human presence session", async () => {
+    mocks.authorize.mockResolvedValue({ ...access, actorType: "external_agent", canUseHumanPresence: true });
+    mocks.authorizeAtPath.mockResolvedValue({ ...access, actorType: "external_agent", canUseHumanPresence: true });
+    expect((await POST(post({ join: true, awarenessClientId: 42 }), context)).status).toBe(200);
   });
 
   it("sanitizes awareness identity and closes the exact registered session", async () => {

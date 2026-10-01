@@ -115,6 +115,8 @@ type UnifiedDocumentEditorProps = {
   externalDocument?: DocumentSnapshot;
   /** An authoritative file-relay Y.Doc, owned and persisted by the caller. */
   localDocument?: Y.Doc;
+  /** A file-vault session owns awareness beyond edit mode, including reading. */
+  localPresence?: { awareness: Awareness; peers: PresencePeer[] };
   /** Resolve embedded assets for rendering without changing canonical Yjs data. */
   resolveDocumentAssets?: (document: DocumentSnapshot) => DocumentSnapshot;
   renderTemplateLibrary?: (props: {
@@ -480,6 +482,7 @@ export function UnifiedDocumentEditor({
   transport = "cloud",
   externalDocument,
   localDocument,
+  localPresence,
   resolveDocumentAssets,
   renderTemplateLibrary,
   focusNewNote = false,
@@ -670,9 +673,16 @@ export function UnifiedDocumentEditor({
       doc.off("update", invalidate);
     };
   }, [doc]);
-  const [awareness] = useState(() => new Awareness(doc));
+  const [awareness] = useState(() => localPresence?.awareness ?? new Awareness(doc));
+  const [ownsAwareness] = useState(() => !localPresence);
   const [peers, setPeers] = useState<PresencePeer[]>([]);
+  const visiblePeers = localPresence?.peers ?? peers;
   const [remoteRevision, setRemoteRevision] = useState(0);
+  useEffect(() => {
+    const changed = () => setRemoteRevision(value => value + 1);
+    awareness.on("change", changed);
+    return () => awareness.off("change", changed);
+  }, [awareness]);
   const [ready, setReady] = useState(false);
   const readyRef = useRef(false);
 
@@ -791,8 +801,8 @@ export function UnifiedDocumentEditor({
     setReady(true);
     const publish = () => localPublishRef.current(documentSnapshotFromYDoc(doc));
     doc.on("update", publish);
-    return () => { doc.off("update", publish); awareness.destroy(); if (!localDocument) doc.destroy(); };
-  }, [awareness, doc, transport, localDocument]);
+    return () => { doc.off("update", publish); if (ownsAwareness) awareness.destroy(); if (!localDocument) doc.destroy(); };
+  }, [awareness, doc, transport, localDocument, ownsAwareness]);
 
   useEffect(() => {
     if (transport !== "local" || localDocument || !externalDocument) return;
@@ -1188,9 +1198,6 @@ export function UnifiedDocumentEditor({
         localMaterializationVersionRef.current > savedMaterializationVersionRef.current ? "local" : "saved");
     });
 
-    const handleAwareness = () => setRemoteRevision((value) => value + 1);
-    awareness.on("change", handleAwareness);
-
     const handlePageHide = () => {
       void flushMaterialization(true);
     };
@@ -1200,7 +1207,6 @@ export function UnifiedDocumentEditor({
       cancelled = true;
       if (startupRetryTimer) clearTimeout(startupRetryTimer);
       window.removeEventListener("pagehide", handlePageHide);
-      awareness.off("change", handleAwareness);
       doc.off("update", handleDocumentUpdate);
       if (materializeTimerRef.current) clearTimeout(materializeTimerRef.current);
       // Catch-up may still be pending. The ledger has not entered the outbox
@@ -1377,12 +1383,12 @@ export function UnifiedDocumentEditor({
       // Awareness mutates in place. Its event revision invalidates this cache.
       void remoteRevision;
       return {
-      title: selectionForField(awareness, doc, "title", peers),
-      subtitle: selectionForField(awareness, doc, "subtitle", peers),
-      body: selectionForField(awareness, doc, "body", peers),
+      title: selectionForField(awareness, doc, "title", visiblePeers),
+      subtitle: selectionForField(awareness, doc, "subtitle", visiblePeers),
+      body: selectionForField(awareness, doc, "body", visiblePeers),
       };
     },
-    [awareness, doc, peers, remoteRevision],
+    [awareness, doc, visiblePeers, remoteRevision],
   );
 
   const stopEditing = useCallback(async () => {

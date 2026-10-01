@@ -9,6 +9,9 @@ import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { FileCollaborationClient, type FileCollaborationStatus } from "./collaboration-client";
+import { FilePresenceClient, type FilePresenceMethod } from "./presence-client";
+import type { PresencePeer } from "@/lib/collab/provider";
+import { Awareness } from "y-protocols/awareness";
 import { VaultError, vaultRequest, type VaultFile } from "./bridge";
 import { asPost, localBlog, readDocument, readTemplate, writePayload } from "./model";
 import { ArticleReader } from "./ArticleReader";
@@ -36,6 +39,9 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
   const [opened, setOpened] = useState(initial);
   const [snapshot, setSnapshot] = useState(() => readDocument(initial));
   const [client, setClient] = useState<FileCollaborationClient | null>(null);
+  const awareness = useMemo(() => client ? new Awareness(client.doc) : null, [client]);
+  const presenceRef = useRef<FilePresenceClient | null>(null);
+  const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const clientRef = useRef<FileCollaborationClient | null>(null);
   const nativeSessionRef = useRef<NativeSharedSession | null>(null);
   const [status, setStatus] = useState<FileCollaborationStatus>("offline");
@@ -44,6 +50,28 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
   const [generation, setGeneration] = useState(0);
   const [reading, setReading] = useState(!!articleSource(snapshot));
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!awareness || !client?.hasBaseline) return;
+    const presence = new FilePresenceClient({ itemId: config.itemId, awareness,
+      request: (method: FilePresenceMethod, params, signal) => vaultRequest(method, params, signal),
+      onPresence: setPresencePeers,
+    });
+    presenceRef.current = presence;
+    return () => { presence.destroy(); if (presenceRef.current === presence) presenceRef.current = null; };
+  }, [awareness, client?.hasBaseline, config.itemId]);
+  useEffect(() => () => awareness?.destroy(), [awareness]);
+  useEffect(() => {
+    const active = () => presenceRef.current?.setActive(status === "ready" && !busy &&
+      document.visibilityState === "visible" && navigator.onLine);
+    active();
+    document.addEventListener("visibilitychange", active);
+    window.addEventListener("online", active); window.addEventListener("offline", active);
+    return () => {
+      document.removeEventListener("visibilitychange", active);
+      window.removeEventListener("online", active); window.removeEventListener("offline", active);
+    };
+  }, [awareness, status, busy]);
+  useEffect(() => { if (reading || !canEdit) awareness?.setLocalStateField("selection", null); }, [awareness, reading, canEdit]);
   const latestSnapshot = useRef(snapshot);
   useEffect(() => { latestSnapshot.current = snapshot; }, [snapshot]);
   const template = useMemo(() => readTemplate(opened, snapshot), [opened, snapshot]);
@@ -204,7 +232,18 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
   const editable = ready && canEdit && !blocked && !busy;
   const display = resolveAssets(snapshot);
   return <section className="vault-document">
-    <header className="vault-document-path">{client?.relativePath ?? opened.path}</header>
+    <header className="vault-document-path" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <span>{client?.relativePath ?? opened.path}</span>
+      {presencePeers.length > 0 && <span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here`}
+        style={{ display: "inline-flex", alignItems: "center", flexShrink: 0, gap: 3 }}>
+        {presencePeers.slice(0, 3).map(peer => <span key={peer.clientId} title={`${peer.userName} is here`}
+          style={{ display: "inline-grid", placeItems: "center", width: 22, height: 22, borderRadius: "50%",
+            background: peer.color, color: "#fff", fontSize: 11, fontWeight: 700 }} aria-hidden="true">
+          {peer.userName.trim().slice(0, 1).toUpperCase() || "?"}
+        </span>)}
+        <span>{presencePeers.length > 3 ? `+${presencePeers.length - 3}` : presencePeers.length === 1 ? presencePeers[0].userName : `${presencePeers.length} here`}</span>
+      </span>}
+    </header>
     {(!ready || blocked || status === "offline" || detail) && <div className="vault-notice" role="status">
       {detail || (ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
       {config.localFiles && status === "offline" && !ready && client && !client.hasPendingChanges && !client.hasUnreadableJournal &&
@@ -215,7 +254,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} />}
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
       {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : <DocumentRenderer document={display} template={template} />) :
-        <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} resolveDocumentAssets={resolveAssets}
+        <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
           onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { await flush(); }}
           renderTemplateLibrary={props => <WorkspaceTypeLibrary currentTemplate={template} onClose={props.onClose} onApply={(nextTemplate, sourceJSON) => {

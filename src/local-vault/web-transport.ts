@@ -101,6 +101,21 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (response.status === 204) throw new DOMException("Request canceled", "AbortError");
       return response.json();
     }
+    if (["presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave"].includes(method)) {
+      const itemId = String(params.itemId);
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Invalid presence item.");
+      const body = method === "presenceJoin" ? { join: true, awarenessClientId: params.awarenessClientId }
+        : method === "presenceUpdate" ? { clientId: params.clientId, sessionCredential: params.sessionCredential, awareness: params.awareness }
+        : method === "presenceLeave" ? { clientId: params.clientId, sessionCredential: params.sessionCredential, leave: true }
+        : null;
+      const response = await request(`${base}/${encodeURIComponent(itemId)}/presence`, {
+        method: body ? "POST" : "GET", credentials: "same-origin", cache: "no-store", signal,
+        ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) throw await failure(response);
+      if (response.status === 204) throw new DOMException("Request canceled", "AbortError");
+      return response.json();
+    }
     if (method === "list" || method === "open") return listing();
     if (method === "recoveryList" || method === "recoveryRead") {
       const query = new URLSearchParams();

@@ -66,4 +66,29 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
             method: "collaborationPush", params: ["itemId": "item", "operationId": "op", "epoch": 1, "updates": [String(repeating: "a", count: 512 * 1024 + 1)]]))
     }
+    func testPresenceUsesBoundItemEndpointAndWhitelistedSessions() throws {
+        let read = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "presenceRead", params: ["itemId": "item-1"])
+        XCTAssertEqual(read.url?.absoluteString, "https://texttext.app/api/vault/workspace/items/item-1/presence")
+        XCTAssertEqual(read.httpMethod, "GET")
+        let join = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "presenceJoin", params: ["itemId": "item-1", "awarenessClientId": 42])
+        let joinBody = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(join.httpBody)) as? [String: Any])
+        XCTAssertEqual(Set(joinBody.keys), ["join", "awarenessClientId"])
+        let session: [String: Any] = ["itemId": "item-1", "clientId": "p-00000000-0000-4000-8000-000000000001", "sessionCredential": "v1:fixture"]
+        let update = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "presenceUpdate", params: session.merging(["awareness": "AAA="]) { _, new in new })
+        let updateBody = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(update.httpBody)) as? [String: Any])
+        XCTAssertEqual(Set(updateBody.keys), ["clientId", "sessionCredential", "awareness"])
+        let leave = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "presenceLeave", params: session)
+        let leaveBody = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(leave.httpBody)) as? [String: Any])
+        XCTAssertEqual(leaveBody["leave"] as? Bool, true)
+        for invalid in [session.merging(["url": "https://outside.example"]) { _, new in new },
+                        session.merging(["clientId": "../outside"]) { _, new in new },
+                        session.merging(["sessionCredential": String(repeating: "x", count: 4097)]) { _, new in new }] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+                method: "presenceLeave", params: invalid))
+        }
+    }
 }

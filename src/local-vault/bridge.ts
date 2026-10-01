@@ -36,7 +36,7 @@ export function vaultRequest<T>(method: string, params: Record<string, unknown> 
       reject(new Error("Open this workspace in the TextText Mac app.")); return;
     }
     const cancelNative = () => {
-      if (method === "collaborationRead" || method === "collaborationPush") {
+      if (method === "collaborationRead" || method === "collaborationPush" || method.startsWith("presence")) {
         try { bridge.postMessage({ id: crypto.randomUUID(), method: "collaborationCancel", params: { requestId: id } }); } catch { /* The window may already be closed. */ }
       }
     };

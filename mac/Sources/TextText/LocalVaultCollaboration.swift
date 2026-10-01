@@ -67,7 +67,8 @@ final class LocalVaultCollaboration {
             throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration item.")
         }
         let endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId)
-            .appendingPathComponent("items").appendingPathComponent(itemId).appendingPathComponent("collaboration")
+            .appendingPathComponent("items").appendingPathComponent(itemId)
+            .appendingPathComponent(method.hasPrefix("presence") ? "presence" : "collaboration")
         var request = URLRequest(url: endpoint, timeoutInterval: 35)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -94,6 +95,39 @@ final class LocalVaultCollaboration {
             let epoch = try integer(params["epoch"], minimum: 1, maximum: 9_007_199_254_740_991)
             let data = try JSONSerialization.data(withJSONObject: ["operationId": operationId, "epoch": epoch, "updates": updates])
             guard data.count <= 6 * 1024 * 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Collaboration update exceeds its size limit.") }
+            request.httpMethod = "POST"; request.httpBody = data
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else if method == "presenceRead" {
+            guard Set(params.keys) == ["itemId"] else { throw LocalVaultCollaborationError(code: "400", message: "Invalid presence read parameters.") }
+        } else if ["presenceJoin", "presenceUpdate", "presenceLeave"].contains(method) {
+            var body: [String: Any]
+            if method == "presenceJoin" {
+                guard Set(params.keys) == ["itemId", "awarenessClientId"] else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Invalid presence join parameters.")
+                }
+                let awarenessClientId = try integer(params["awarenessClientId"], minimum: 0, maximum: 4_294_967_295)
+                body = ["join": true, "awarenessClientId": awarenessClientId]
+            } else {
+                let expected: Set<String> = method == "presenceUpdate"
+                    ? ["itemId", "clientId", "sessionCredential", "awareness"]
+                    : ["itemId", "clientId", "sessionCredential"]
+                guard Set(params.keys) == expected,
+                      let clientId = params["clientId"] as? String,
+                      clientId.range(of: "^p-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", options: .regularExpression) != nil,
+                      let credential = params["sessionCredential"] as? String,
+                      credential.hasPrefix("v1:"), credential.utf8.count <= 4096 else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Invalid presence session.")
+                }
+                body = ["clientId": clientId, "sessionCredential": credential]
+                if method == "presenceUpdate" {
+                    guard let awareness = params["awareness"] as? String, awareness.utf8.count <= 20 * 1024 else {
+                        throw LocalVaultCollaborationError(code: "400", message: "Invalid presence awareness.")
+                    }
+                    body["awareness"] = awareness
+                } else { body["leave"] = true }
+            }
+            let data = try JSONSerialization.data(withJSONObject: body)
+            guard data.count <= 96 * 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Presence request exceeds its size limit.") }
             request.httpMethod = "POST"; request.httpBody = data
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         } else { throw LocalVaultCollaborationError(code: "400", message: "Unknown collaboration operation.") }
