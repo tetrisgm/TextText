@@ -1,63 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import {
-  blobBaseUrl,
-  getAdvertisedVersion,
-  parseAdvertisedVersion,
-  releaseAppcastUrl,
-  releaseZipUrl,
-} from "@/lib/app-release";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const manifest = vi.hoisted(() => ({ version: "1.2", buildNumber: 1200, appcastUrl: "https://downloads.example/downloads/appcast-1.2.xml", zipUrl: "https://downloads.example/downloads/TextText-1.2.zip" }));
+vi.mock("@/generated/app-release", () => ({ generatedAppRelease: manifest }));
+import { getAdvertisedVersion, parseAdvertisedVersion, releaseAppcastUrl, releaseZipUrl } from "@/lib/app-release";
 import { generatedAppRelease } from "@/generated/app-release";
-
-const ENV_KEYS = ["TEXTTEXT_RELEASE_BLOB_BASE", "BLOB_READ_WRITE_TOKEN"] as const;
-const savedEnv = new Map<string, string | undefined>();
-
-beforeEach(() => {
-  for (const key of ENV_KEYS) savedEnv.set(key, process.env[key]);
-  for (const key of ENV_KEYS) delete process.env[key];
-});
-
-afterEach(() => {
-  for (const key of ENV_KEYS) {
-    const value = savedEnv.get(key);
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-});
-
-describe("blobBaseUrl", () => {
-  it("is null with no Blob env at all", () => {
-    expect(blobBaseUrl()).toBeNull();
-  });
-
-  it("derives the public origin from BLOB_READ_WRITE_TOKEN", () => {
-    process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_Abc123XYZ_secretpart";
-    expect(blobBaseUrl()).toBe("https://abc123xyz.public.blob.vercel-storage.com");
-  });
-
-  it("prefers TEXTTEXT_RELEASE_BLOB_BASE and trims trailing slashes", () => {
-    process.env.TEXTTEXT_RELEASE_BLOB_BASE = "https://cdn.example.com/";
-    process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_Abc123_secret";
-    expect(blobBaseUrl()).toBe("https://cdn.example.com");
-  });
-
-  it("ignores a malformed token", () => {
-    process.env.BLOB_READ_WRITE_TOKEN = "not-a-blob-token";
-    expect(blobBaseUrl()).toBeNull();
-  });
-});
-
+beforeEach(() => { manifest.appcastUrl = "https://downloads.example/downloads/appcast-1.2.xml"; manifest.zipUrl = "https://downloads.example/downloads/TextText-1.2.zip"; });
 describe("release URLs", () => {
-  it("use the generated immutable release URLs", () => {
-    process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_Store9_secret";
-    expect(releaseAppcastUrl()).toBe(generatedAppRelease.appcastUrl);
-    expect(releaseZipUrl()).toBe(generatedAppRelease.zipUrl);
+  it("advertises only the generated immutable release pair", () => {
+    expect(releaseAppcastUrl()).toBe(manifest.appcastUrl); expect(releaseZipUrl()).toBe(manifest.zipUrl);
   });
-
-  it("keep the Blob-base fallback derivation available", () => {
-    process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_Store9_secret";
-    const base = "https://store9.public.blob.vercel-storage.com";
-    expect(blobBaseUrl()).toBe(base);
+  it.each(["https://old.public.blob.vercel-storage.com/downloads/appcast.xml", "http://downloads.example/appcast.xml", "https://user:secret@downloads.example/appcast.xml", "javascript:alert(1)"])("fails closed for unavailable or unsafe manifest URL %s", async url => {
+    manifest.appcastUrl = url;
+    expect(releaseAppcastUrl()).toBeNull(); expect(releaseZipUrl()).toBeNull(); expect(await getAdvertisedVersion()).toBeNull();
   });
 });
 

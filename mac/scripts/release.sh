@@ -45,6 +45,8 @@ require_release_env TEXTTEXT_BUNDLE_ID
 require_release_env TEXTTEXT_APP_GROUP
 
 ORIGIN="${TEXTTEXT_PRODUCT_ORIGIN%/}"
+# Validate destination and separate release credentials before changing/building anything.
+RELEASE_BASE="$(node "$MAC/../scripts/publish-mac-release.mjs" --print-base)"
 
 # 1. Bump. CFBundleVersion is Sparkle's monotonic comparison key; it is
 # auto-incremented here so no human ever hand-edits it. Advance past BOTH the
@@ -87,28 +89,15 @@ if [ ! -x "$SPK/generate_appcast" ]; then
   echo "Sparkle tools missing; run: swift build --package-path mac" >&2
   exit 1
 fi
-if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
-  echo "BLOB_READ_WRITE_TOKEN must be set to publish (pull it from Vercel)." >&2
-  exit 1
-fi
-# The appcast enclosure must be the IMMUTABLE Blob URL of the zip, not an
-# /download/ route (that route only serves the stable TextText.zip alias, which
-# resolves through the release pointer). Derive the public Blob base from the
-# token exactly as src/lib/app-release.ts does.
-STORE_ID="$(printf '%s' "$BLOB_READ_WRITE_TOKEN" | sed -n 's/^vercel_blob_rw_\([A-Za-z0-9]*\)_.*$/\1/p' | tr 'A-Z' 'a-z')"
-if [ -z "$STORE_ID" ]; then
-  echo "Could not derive the Blob base from BLOB_READ_WRITE_TOKEN." >&2
-  exit 1
-fi
-BLOB_BASE="https://$STORE_ID.public.blob.vercel-storage.com"
+# The signed enclosure points to an immutable object on the configured public R2 origin.
 # Key source: SPARKLE_ED_KEY_FILE if set, else the login keychain (prompts
 # once; click "Always Allow"). generate_appcast aborts if dist holds two
 # archives of one version, which is why dist was recreated above.
 if [ -n "${SPARKLE_ED_KEY_FILE:-}" ]; then
   "$SPK/generate_appcast" --ed-key-file "$SPARKLE_ED_KEY_FILE" \
-    --download-url-prefix "$BLOB_BASE/downloads/" "$MAC/dist"
+    --download-url-prefix "$RELEASE_BASE/downloads/" "$MAC/dist"
 else
-  "$SPK/generate_appcast" --download-url-prefix "$BLOB_BASE/downloads/" "$MAC/dist"
+  "$SPK/generate_appcast" --download-url-prefix "$RELEASE_BASE/downloads/" "$MAC/dist"
 fi
 
 echo ">> verify staged appcast"
@@ -123,7 +112,7 @@ APPCAST_VERSION="$(sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:sh
 APPCAST_HARDWARE_REQUIREMENTS="$(sed -n 's|.*<sparkle:hardwareRequirements>\([^<]*\)</sparkle:hardwareRequirements>.*|\1|p' "$APPCAST" | head -1)"
 APPCAST_ZIP_URL="$(sed -n 's|.*<enclosure[^>]* url="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
 APPCAST_SIGNATURE="$(sed -n 's|.*<enclosure[^>]* sparkle:edSignature="\([^"]*\)".*|\1|p' "$APPCAST" | head -1)"
-EXPECTED_ZIP_URL="$BLOB_BASE/downloads/TextText-$VERSION.zip"
+EXPECTED_ZIP_URL="$RELEASE_BASE/downloads/TextText-$VERSION.zip"
 
 [ "$APP_VERSION" = "$VERSION" ] || { echo "Built app version is $APP_VERSION, expected $VERSION." >&2; exit 1; }
 [ "$APP_BUILD" = "$BUILD" ] || { echo "Built app build is $APP_BUILD, expected $BUILD." >&2; exit 1; }

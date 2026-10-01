@@ -209,12 +209,14 @@ if [ "$NO_PUBLISH" = "1" ]; then
 fi
 
 if [ "$LOCAL_INSTALL" != "1" ]; then
+# Fail before infrastructure changes if the future public release destination is unset.
+for release_credential in TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY; do
+  if [ -z "${!release_credential:-}" ]; then require_release_secret "$release_credential"; fi
+done
+node "$ROOT/scripts/publish-mac-release.mjs" --print-base >/dev/null
+
 echo ">> back up and migrate the Oracle database"
 "$ROOT/release/oracle/database.sh" --migrate
-
-if [ -z "${BLOB_READ_WRITE_TOKEN:-}" ]; then
-  require_release_secret BLOB_READ_WRITE_TOKEN
-fi
 
 echo ">> release Mac app"
 npx tsx "$ROOT/scripts/work-unit.ts" run \

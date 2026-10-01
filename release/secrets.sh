@@ -2,13 +2,14 @@
 # Release credentials live in the macOS login Keychain, not in a plaintext file.
 #
 #   service: texttext-release
-#   accounts: BLOB_READ_WRITE_TOKEN (media and signed Mac release artifacts)
+#   accounts: TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID and
+#             TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY (release bucket only)
 #
 # Read one with `release_secret NAME`. Values are never passed as command
 # arguments (so they cannot appear in `ps`), never echoed, and never written to
 # a log. Store or rotate one with:
 #
-#   release/secrets.sh store DATABASE_URL      # prompts, input hidden
+#   release/secrets.sh store TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY      # prompts, input hidden
 #
 # Notarization keeps using its own notarytool Keychain profile
 # (TEXTTEXT_NOTARY_PROFILE), which is already the correct storage.

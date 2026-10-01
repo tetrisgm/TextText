@@ -1,70 +1,20 @@
 import { generatedAppRelease } from "@/generated/app-release";
 
-// The Mac app release lives at immutable Blob paths selected by a generated
-// manifest.
-// Each release uploads (via scripts/publish-mac-release.mjs):
-//   downloads/TextText-<version>.zip  immutable, referenced by the appcast enclosure
-//   downloads/appcast-<version>.xml immutable, proxied by /appcast.xml
-// The public website deployment is the final version marker: it includes the
-// generated manifest that points /appcast.xml, /download/TextText.zip, and
-// /api/app/version at the same immutable release.
-//
-// The Blob-base fallback remains for older deployments and local experiments.
-
-const DOWNLOADS_PREFIX = "downloads";
-
-/**
- * The public Blob origin, without a trailing slash.
- *
- * TEXTTEXT_RELEASE_BLOB_BASE wins when set (dev or a future store move);
- * otherwise the origin is derived from BLOB_READ_WRITE_TOKEN, whose store id
- * segment is the public hostname's first label
- * (vercel_blob_rw_{storeId}_{secret} -> {storeid}.public.blob.vercel-storage.com).
- */
-export function blobBaseUrl(): string | null {
-  const explicit = process.env.TEXTTEXT_RELEASE_BLOB_BASE?.trim().replace(/\/+$/, "");
-  if (explicit) {
-    try {
-      const url = new URL(explicit);
-      if (url.protocol === "https:" || url.protocol === "http:") return explicit;
-    } catch {
-      // Fall through to token derivation.
-    }
-  }
-
-  const token = process.env.BLOB_READ_WRITE_TOKEN ?? "";
-  const match = token.match(/^vercel_blob_rw_([A-Za-z0-9]+)_/);
-  if (!match) return null;
-  return `https://${match[1].toLowerCase()}.public.blob.vercel-storage.com`;
-}
-
-function isHttpUrl(value: string | undefined): value is string {
+// Signed immutable releases are selected only by the generated manifest.
+// Deleted legacy Blob URLs must never be advertised as available releases.
+function isReleaseUrl(value: string | undefined): value is string {
   if (!value) return false;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
-  } catch {
-    return false;
-  }
+    return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash &&
+      !url.hostname.toLowerCase().endsWith(".blob.vercel-storage.com");
+  } catch { return false; }
 }
-
-/** Current signed appcast URL, or null when no release is configured. */
-export function releaseAppcastUrl(): string | null {
-  if (isHttpUrl(generatedAppRelease.appcastUrl)) {
-    return generatedAppRelease.appcastUrl;
-  }
-  const base = blobBaseUrl();
-  return base ? `${base}/${DOWNLOADS_PREFIX}/appcast.xml` : null;
+function hasRelease(): boolean {
+  return isReleaseUrl(generatedAppRelease.appcastUrl) && isReleaseUrl(generatedAppRelease.zipUrl);
 }
-
-/** Current app zip URL, or null when no release is configured. */
-export function releaseZipUrl(): string | null {
-  if (isHttpUrl(generatedAppRelease.zipUrl)) {
-    return generatedAppRelease.zipUrl;
-  }
-  const base = blobBaseUrl();
-  return base ? `${base}/${DOWNLOADS_PREFIX}/TextText.zip` : null;
-}
+export function releaseAppcastUrl(): string | null { return hasRelease() ? generatedAppRelease.appcastUrl : null; }
+export function releaseZipUrl(): string | null { return hasRelease() ? generatedAppRelease.zipUrl : null; }
 
 interface AdvertisedVersion {
   /** marketing version (CFBundleShortVersionString), e.g. "0.2" */
@@ -97,6 +47,7 @@ export function parseAdvertisedVersion(appcastXml: string): AdvertisedVersion | 
 
 /** The advertised version, read from the live appcast, or null. */
 export async function getAdvertisedVersion(): Promise<AdvertisedVersion | null> {
+  if (!hasRelease()) return null;
   if (
     generatedAppRelease.version &&
     Number.isInteger(generatedAppRelease.buildNumber) &&
