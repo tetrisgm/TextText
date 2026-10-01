@@ -66,6 +66,11 @@ export function DocumentGallery({
     setSelectedIndex((selectedIndex + step + visible.length) % visible.length);
   };
   const onViewerKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      dialogRef.current?.close();
+      return;
+    }
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       move(event.key === "ArrowLeft" ? -1 : 1);

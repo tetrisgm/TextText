@@ -98,6 +98,7 @@ describe("gallery node", () => {
   it("carries the column count so a template can lay the grid out", () => {
     const html = render([
       { id: "a1", src: "https://cdn.example.com/one.jpg", kind: "image" },
+      { id: "a2", src: "https://cdn.example.com/two.jpg", kind: "image" },
     ]);
     expect(html).toContain("--tt-gallery-columns:2");
   });
