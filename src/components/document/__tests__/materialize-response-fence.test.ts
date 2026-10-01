@@ -71,11 +71,12 @@ function harness({ pending = true, idle = false } = {}) {
   const onMaterialized = vi.fn(() => { dirty = false; });
   const setSaveState = vi.fn();
   const setError = vi.fn();
+  const preserveRecovery = vi.fn();
   const bindings = {
     ...refs, doc, Y, replaceSharedText, hasDocumentSnapshot, documentSnapshotFromYDoc, applyDocumentSnapshot,
     useCallback: (callback: unknown) => callback,
     networkEnabled: true, collab: { canEdit: true, postId: "probe" }, blog: { handle: "probe" },
-    publishDocument, onMaterialized, setSaveState, setError,
+    publishDocument, onMaterialized, setSaveState, setError, preserveRecovery,
     navigator: { onLine: true },
     bytesToBase64: (bytes: Uint8Array) => Buffer.from(bytes).toString("base64"),
     requestIdleCallback: idle ? (callback: () => void) => { idleCallbacks.push(callback); } : undefined,

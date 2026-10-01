@@ -33,6 +33,7 @@ describe("editor materialization retirement", () => {
     const provider = { materializationBlocked: false, materialize: vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })) };
     const onMaterialized = vi.fn();
     const publishDocument = vi.fn();
+    const preserveRecovery = vi.fn();
     const flush = editorFlush({
       useCallback: (fn: unknown) => fn,
       networkEnabled: true, collab: { canEdit: true, postId: "post" }, blog: { handle: "demo" },
@@ -41,7 +42,7 @@ describe("editor materialization retirement", () => {
       materializeTimerRef: { current: null }, materializeQueueRef: { current: Promise.resolve() },
       localMaterializationVersionRef: { current: 1 }, savedMaterializationVersionRef,
       documentMutationVersionRef: { current: 0 },
-      setSaveState: vi.fn(), setError: vi.fn(), publishDocument, onMaterialized,
+      setSaveState: vi.fn(), setError: vi.fn(), publishDocument, onMaterialized, preserveRecovery,
     });
     const first = flush(keepalive);
     const queued = flush(true);

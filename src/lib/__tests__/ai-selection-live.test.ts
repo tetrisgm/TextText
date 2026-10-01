@@ -56,12 +56,14 @@ describe("selection apply at the live write boundary", () => {
     doc.destroy();
   });
 
-  it("refuses a revision that changed after command validation, before appending", async () => {
-    mocks.context.mockResolvedValueOnce({ handle: "writer", post })
-      .mockResolvedValueOnce({ handle: "writer", post: { ...post, revision: 43 } });
+  it("refuses a revision that changes at the atomic append fence", async () => {
+    mocks.execute.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
     await expect(applyLiveDocumentMutation(id, await mutation(), audit)).rejects.toThrow(SELECTION_STALE_ERROR);
-    // Baseline initialization is the only SQL execution; no delta or audit.
-    expect(mocks.execute).toHaveBeenCalledTimes(1);
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    const query = new PgDialect().sqlToQuery(mocks.execute.mock.calls.at(-1)![0]);
+    expect(query.sql).toMatch(/AND revision = \$\d+/);
+    expect(query.sql).toContain("FOR UPDATE");
+    expect(query.params).toContain(42);
   });
 
   it("refuses a stale live Yjs range even when canonical revision is unchanged", async () => {
