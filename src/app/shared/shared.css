@@ -20,32 +20,44 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--ac-text-secondary, #6e6e73);
+  color: var(--ac-label-2, #6e6e73);
   text-decoration: none;
   margin-bottom: 20px;
 }
 
 .shared-back:hover {
-  color: var(--ac-text, #1d1d1f);
+  color: var(--ac-label, #1d1d1f);
 }
 
 .shared-title {
   font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  color: var(--ac-text, #1d1d1f);
+  color: var(--ac-label, #1d1d1f);
   margin: 0 0 6px;
 }
 
 .shared-lede {
   font-size: 15px;
   line-height: 1.5;
-  color: var(--ac-text-secondary, #6e6e73);
+  color: var(--ac-label-2, #6e6e73);
   margin: 0 0 28px;
 }
 
 .shared-empty {
   font-size: 15px;
-  color: var(--ac-text-secondary, #6e6e73);
+  color: var(--ac-label-2, #6e6e73);
   padding: 32px 0;
 }
+
+.shared-section { margin-top: 36px; }
+.shared-section h2 { color: var(--ac-label, #1d1d1f); font-size: 18px; margin: 0 0 14px; }
+.shared-section > p { color: var(--ac-label-2, #6e6e73); line-height: 1.5; }
+.shared-section button { border: 0; background: none; color: var(--ac-accent, #0050ac); font: inherit; cursor: pointer; text-decoration: underline; }
+.shared-vault-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.shared-vault-card { padding: 16px 18px; border: 1px solid var(--ac-hairline, #dedee2); border-radius: 10px; background: var(--ac-bg-2, #f2f2f7); }
+.shared-vault-card a { color: var(--ac-accent, #0050ac); overflow-wrap: anywhere; }
+.shared-vault-card .shared-vault-title { display: inline-block; font-weight: 650; font-size: 16px; margin-bottom: 8px; }
+.shared-vault-card ul { list-style: none; padding: 0; margin: 4px 0 0; }
+.shared-vault-card li { padding: 3px 0; font-size: 13px; }
+.shared-vault-card p { color: var(--ac-label-2, #6e6e73); font-size: 13px; margin: 8px 0 0; }

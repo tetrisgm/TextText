@@ -7,8 +7,8 @@ import { prepareTemplateProposal } from "./template-proposal";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { VaultDocumentGrid } from "./VaultDocumentGrid";
 
-export function FolderPresentation({ listing, folder, busy, onOpen, onCustomize }: {
-  listing: VaultListing; folder: string; busy: boolean; onOpen: (path: string) => void; onCustomize?: (path: string) => void;
+export function FolderPresentation({ listing, folder, busy, editable = true, onOpen, onCustomize }: {
+  listing: VaultListing; folder: string; busy: boolean; editable?: boolean; onOpen: (path: string) => void; onCustomize?: (path: string) => void;
 }) {
   const [view, setView] = useState<FolderView | null>(null);
   const [draft, setDraft] = useState<TemplateDefinition | null>(null);
@@ -26,7 +26,7 @@ export function FolderPresentation({ listing, folder, busy, onOpen, onCustomize 
     return () => { active = false; };
   }, [listing, folder]);
   const keep = async () => {
-    if (!draft || saving || loading || busy) return;
+    if (!editable || !draft || saving || loading || busy) return;
     setSaving(true); setError("");
     try {
       const fresh = await vaultRequest<{ files: FolderViewMetadata[] }>("folderViews", { folder });
@@ -49,15 +49,15 @@ export function FolderPresentation({ listing, folder, busy, onOpen, onCustomize 
   };
   return <section aria-label="Folder presentation">
     <div className="vault-folder-design-controls">
-      <label>Folder design <select aria-label="Folder design" disabled={busy || loading || saving} value={draft?.id ?? ""} onChange={(event) => { draftBase.current = view; setDraft(FOLDER_PRESETS.find((template) => template.id === event.target.value) ?? null); }}>
+      {editable && <label>Folder design <select aria-label="Folder design" disabled={busy || loading || saving} value={draft?.id ?? ""} onChange={(event) => { draftBase.current = view; setDraft(FOLDER_PRESETS.find((template) => template.id === event.target.value) ?? null); }}>
         <option value="">{view?.template.name || "Standard view"}</option>
         {FOLDER_PRESETS.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-      </select></label>
-      {draft && <><button disabled={busy || saving} onClick={() => void keep()}>{saving ? "Saving…" : "Keep folder design"}</button><button disabled={saving} onClick={() => setDraft(null)}>Cancel preview</button></>}
+      </select></label>}
+      {editable && draft && <><button disabled={busy || saving} onClick={() => void keep()}>{saving ? "Saving…" : "Keep folder design"}</button><button disabled={saving} onClick={() => setDraft(null)}>Cancel preview</button></>}
       {!draft && view && <><button disabled={busy || saving} onClick={() => onOpen(view.path)}>Open design file</button>{onCustomize && <button disabled={busy || saving} onClick={() => onCustomize(view.path)}>Customize folder</button>}</>}
     </div>
-    {draft && <p role="status">Previewing {draft.name}. Keeping this design changes only the folder’s design file.</p>}
+    {editable && draft && <p role="status">Previewing {draft.name}. Keeping this design changes only the folder’s design file.</p>}
     {error && <p role="alert">{error} Your files remain available below.</p>}
-    <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy || saving} onOpen={onOpen} folderTemplate={draft ?? view?.template} excludedPath={view?.path} />
+    <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy || saving} onOpen={onOpen} folderTemplate={editable ? draft ?? view?.template : view?.template} excludedPath={view?.path} emptyMessage={editable ? undefined : "No files in this folder."} />
   </section>;
 }

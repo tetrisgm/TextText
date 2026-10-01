@@ -29,9 +29,9 @@ function PreviewImage({ preview, children }: { preview?: FolderPreview; children
   }, [image]);
   return children(source?.image === image ? source?.url : undefined);
 }
-export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplate, excludedPath, previewOnly = false }: {
+export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplate, excludedPath, previewOnly = false, emptyMessage }: {
   listing: VaultListing; folder: string; busy: boolean; onOpen: (path: string) => void;
-  folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean;
+  folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string;
 }) {
   const [page, setPage] = useState(0);
   const [view, setView] = useState("");
@@ -124,7 +124,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
         {preview?.sourceURL && <small className="vault-file-source">{preview.sourceURL}</small>}<span>Open →</span>
       </button>}</PreviewImage>;
     })}</div>}
-    {!items.length && <p>{members.length ? "No files match this view." : "No files here yet. Choose a template to get started."}</p>}
+    {!items.length && <p>{members.length ? "No files match this view." : emptyMessage ?? "No files here yet. Choose a template to get started."}</p>}
     {lastPage > 0 && <nav className="vault-file-pages" aria-label="File pages"><button disabled={busy || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage + 1} of {lastPage + 1}</span><button disabled={busy || currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next</button></nav>}
   </section>;
 }

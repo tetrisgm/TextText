@@ -27,6 +27,7 @@ import { packIdentity } from "./pack";
 import { readFolderView } from "./folder-view";
 import { VaultSearch } from "./VaultSearch";
 import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
+import { canCreateInVaultFolder, parseVaultAccess, sharedVaultHashTarget, type VaultAccess } from "./shared-vaults";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import "./style.css";
 
@@ -320,14 +321,78 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const imageInput = useRef<HTMLInputElement>(null);
   const importing = useRef(false);
   const [importStatus, setImportStatus] = useState("");
+  const [webAccess, setWebAccess] = useState<{ workspaceId: string; value: VaultAccess } | null>(null);
+  const [nativeConnection, setNativeConnection] = useState<{ root: string; workspaceId: string } | null>(null);
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
-  const tree = useMemo(() => folderTree(listing?.items ?? [], listing?.folders), [listing]);
+  const webWorkspaceId = !allowFolderPicker && listing?.root.startsWith("vault:") ? listing.root.slice("vault:".length) : null;
+  const access = webWorkspaceId === webAccess?.workspaceId ? webAccess.value : null;
+  const visibleListing = useMemo(() => {
+    if (!listing || !access || access.fullAccess) return listing;
+    const folders = access.grants.filter(grant => grant.scopeType === "folder").map(grant => grant.scopeKey);
+    return { ...listing, folders: [...new Set([...(listing.folders ?? []), ...folders])] };
+  }, [listing, access]);
+  const tree = useMemo(() => folderTree(visibleListing?.items ?? [], visibleListing?.folders), [visibleListing]);
   const folders = useMemo(() => folderPaths(tree), [tree]);
   const flushRef = useRef<() => Promise<boolean>>(async () => true);
   const registerFlush = useCallback((flush: () => Promise<boolean>, currentFile: () => VaultFile) => { flushRef.current = flush; currentFileRef.current = currentFile; }, []);
-  const webWorkspaceId = !allowFolderPicker && listing?.root.startsWith("vault:") ? listing.root.slice("vault:".length) : null;
+  const canCreate = allowFolderPicker || canCreateInVaultFolder(access, destinationFolder.trim());
+  const canManageFiles = allowFolderPicker || Boolean(access?.fullAccess && access.canEditContent);
+  const canOpenRecovery = allowFolderPicker || Boolean(access?.isOwner);
+  const nativeWorkspaceId = allowFolderPicker && nativeConnection?.root === listing?.root ? nativeConnection?.workspaceId ?? null : null;
+  const sharingWorkspaceId = webWorkspaceId ?? nativeWorkspaceId;
+  const canShare = Boolean(webWorkspaceId ? access?.canManageShares : nativeWorkspaceId);
   const refresh = useCallback(() => { void vaultRequest<VaultListing>("list").then(setListing).catch((error: Error) => setError(error.message)); }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);
+  useEffect(() => {
+    if (!webWorkspaceId) return;
+    const controller = new AbortController();
+    void fetch(`/api/vault/${encodeURIComponent(webWorkspaceId)}/access`, { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error("Workspace permissions could not be loaded.");
+        return parseVaultAccess(await response.json());
+      })
+      .then(value => { if (!controller.signal.aborted) setWebAccess({ workspaceId: webWorkspaceId, value }); })
+      .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Workspace permissions could not be loaded."); });
+    return () => controller.abort();
+  }, [webWorkspaceId]);
+  useEffect(() => {
+    if (!allowFolderPicker || !listing?.root) return;
+    const root = listing.root;
+    let active = true;
+    const accept = (value: { connected?: unknown; workspaceId?: unknown } | null | undefined) => {
+      const workspaceId = value?.workspaceId;
+      if (!active) return;
+      setNativeConnection(value?.connected === true && typeof workspaceId === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)
+        ? { root, workspaceId } : null);
+    };
+    const status = () => { void vaultRequest<{ connected?: boolean; workspaceId?: string }>("connection").then(accept).catch(() => accept(null)); };
+    window.addEventListener("texttext:vault-sync-status", status);
+    status();
+    return () => { active = false; window.removeEventListener("texttext:vault-sync-status", status); };
+  }, [allowFolderPicker, listing?.root]);
+  const [hashRevision, setHashRevision] = useState(0);
+  useEffect(() => {
+    const changed = () => setHashRevision(value => value + 1);
+    window.addEventListener("hashchange", changed);
+    return () => window.removeEventListener("hashchange", changed);
+  }, []);
+  const openedLink = useRef("");
+  useEffect(() => {
+    if (!webWorkspaceId || !listing) return;
+    const target = sharedVaultHashTarget(window.location.hash, listing.items.map(item => item.path), folders);
+    if (!target) { openedLink.current = ""; return; }
+    const key = `${target.type}:${target.path}`;
+    if (openedLink.current === key) return;
+    openedLink.current = key;
+    if (target.type === "file") {
+      void vaultRequest<VaultFile>("read", { path: target.path })
+        .then(value => { if (openedLink.current === key) { setSelected(value); setDestinationFolder(folderForItem(target.path)); } })
+        .catch(reason => { if (openedLink.current === key) setError(reason instanceof Error ? reason.message : "The shared file could not be opened."); });
+    } else {
+      void Promise.resolve().then(() => { if (openedLink.current === key) { setSelected(null); setDestinationFolder(target.path); } });
+    }
+  }, [webWorkspaceId, listing, folders, hashRevision]);
   const closeRemoved = useCallback(() => {
     setSelected(null); setFileAction(null); currentFileRef.current = null;
     flushRef.current = async () => true;
@@ -340,7 +405,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     finally { setBusy(false); }
   };
   const importImages = async (files: File[]) => {
-    if (!files.length || importing.current || busy || !listing?.root) return;
+    if (!files.length || importing.current || busy || !listing?.root || !canCreate) return;
     if (files.length > 20) { setError("Choose up to 20 images at a time."); return; }
     importing.current = true;
     try {
@@ -365,7 +430,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   };
   useEffect(() => {
     const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }); };
-    const newFile = () => { void operate(async () => { setSelected(await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() })); refresh(); }); };
+    const newFile = () => { if (canCreate) void operate(async () => { setSelected(await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() })); refresh(); }); };
     window.addEventListener("texttext:vault-open", openFile);
     window.addEventListener("texttext:vault-new", newFile);
     return () => { window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
@@ -383,29 +448,30 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [allowFolderPicker]);
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
-    onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); void importImages(Array.from(event.dataTransfer.files)); } }}
+    onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
     onPaste={(event) => {
       const target = event.target as HTMLElement;
       if (selected || target.closest("input,textarea,[contenteditable=true]")) return;
       const files = Array.from(event.clipboardData.files);
-      if (files.length) { event.preventDefault(); void importImages(files); }
+      if (files.length) { event.preventDefault(); if (canCreate) void importImages(files); }
     }}>
     <DocumentEngineStyles />
     <aside className="vault-sidebar">
       <h1>TextText</h1>
+      {!allowFolderPicker && <nav className="vault-other-workspaces" aria-label="Shared workspaces"><a href="/shared">Shared with me</a></nav>}
       {allowFolderPicker && <button disabled={busy} onClick={() => void operate(async () => {
         const opened = await vaultRequest<VaultListing>("open");
         setListing(opened); setSelected(null); setDestinationFolder(""); flushRef.current = async () => true;
       })}>Open folder</button>}
       {listing?.root && <>
-        <button disabled={busy} onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); })}>All files</button>
+        <button disabled={busy} onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); })}>{access && !access.fullAccess ? "Shared files" : "All files"}</button>
         <p className="vault-root" title={listing.root}>{listing.name || listing.root.split("/").filter(Boolean).at(-1)}</p>
-        <label className="vault-folder-destination">Folder for new notes
+        {canCreate && <label className="vault-folder-destination">Folder for new notes
           <input list="vault-folders" aria-label="Folder for new notes" value={destinationFolder} placeholder="Workspace root"
             onChange={(event) => setDestinationFolder(event.target.value)} />
           <datalist id="vault-folders">{folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
-        </label>
-        <button disabled={busy} onClick={() => void operate(async () => {
+        </label>}
+        {canCreate && <><button disabled={busy} onClick={() => void operate(async () => {
           const created = await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() });
           setSelected(created); refresh();
         })}>New note</button>
@@ -414,7 +480,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images" onChange={(event) => {
           const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
         }} />
-        <button disabled={busy} onClick={() => imageInput.current?.click()}>Import images…</button>
+        <button disabled={busy} onClick={() => imageInput.current?.click()}>Import images…</button></>}
         {allowFolderPicker && <>
           <button disabled={busy} onClick={() => void operate(async () => {
             const result = await vaultRequest<{ file?: VaultFile }>("import", { folder: destinationFolder.trim() });
@@ -422,7 +488,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           })}>Import file…</button>
           <button disabled={busy} onClick={() => setSearchOpen(true)}>Search files ⌘K</button>
         </>}
-        <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>
+        {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>}
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); })} onOpen={(item) => void operate(async () => {
             setSelected(await vaultRequest<VaultFile>("read", { path: item.path })); setDestinationFolder(folderForItem(item.path));
@@ -434,12 +500,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     <main>
       {importStatus && <p role="status">{importStatus}</p>}
       {selected && <div className="vault-file-actions">
-        {webWorkspaceId && <button disabled={busy} onClick={() => setSharing({ workspaceId: webWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Share</button>}
-        <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>
-        <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>
+        {canShare && sharingWorkspaceId && <button disabled={busy} onClick={() => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Share</button>}
+        {canManageFiles && <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
+        {canManageFiles && <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>}
         {allowFolderPicker && <button disabled={busy} onClick={() => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path: selected.path } })); }}>Customize</button>}
-        <button disabled={busy} onClick={() => void operate(async () => setRecovery({ path: selected.path }))}>Version history</button>
-        {fileAction === "rename" && <form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
+        {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({ path: selected.path }))}>Version history</button>}
+        {canManageFiles && fileAction === "rename" && <form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
           const observed = currentFileRef.current?.();
           if (!observed || observed.path !== selected.path) throw new Error("Wait for this file to finish opening.");
           const renamed = await vaultRequest<VaultFile>("rename", { path: observed.path, hash: observed.hash, newPath: newPath.trim() });
@@ -449,7 +515,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           <button disabled={busy || !newPath.trim()} type="submit">Save path</button>
           <button type="button" onClick={() => setFileAction(null)}>Cancel</button>
         </form>}
-        {fileAction === "delete" && <div role="group" aria-label="Confirm file deletion">
+        {canManageFiles && fileAction === "delete" && <div role="group" aria-label="Confirm file deletion">
           <p>Delete <strong>{selected.path}</strong>?</p>
           <button disabled={busy} onClick={() => void operate(async () => {
             const observed = currentFileRef.current?.();
@@ -470,7 +536,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         const restored = await vaultRequest<VaultFile>("importPack", { title, data: file.data, folder });
         closeRemoved(); setSelected(restored); setDestinationFolder(folderForItem(restored.path)); refresh();
       }} />}
-      {sharing && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} onClose={() => setSharing(null)} />}
+      {sharing && canShare && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} onClose={() => setSharing(null)} />}
       {captureOpen && <CaptureDialog onClose={() => setCaptureOpen(false)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });
@@ -489,8 +555,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {error && <div className="vault-notice" role="alert">{error}</div>}
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
         <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>
-      </DocumentBoundary> : listing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={listing} folder={destinationFolder} busy={busy}
-        onShare={webWorkspaceId ? (folder) => setSharing({ workspaceId: webWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}
+      </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
+      : visibleListing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={visibleListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
+        onShare={canShare && sharingWorkspaceId ? (folder) => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}
         onCustomize={allowFolderPicker ? (path) => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })); } : undefined}
         onFolder={(path) => setDestinationFolder(path)}
         onOpen={(path) => void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); })}

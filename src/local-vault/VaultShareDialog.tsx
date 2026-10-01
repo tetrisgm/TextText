@@ -59,11 +59,11 @@ export function VaultShareDialog({ scope, onClose }: { scope: VaultShareScope; o
   return <div className="vault-sharing-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section ref={dialog} className="vault-sharing-dialog" role="dialog" aria-modal="true" aria-label={`Share ${scope.label}`}>
       <header><div><p className="vault-eyebrow">{scope.scopeType === "folder" ? "Folder access" : "File access"}</p><h2>Share {scope.label}</h2></div><button type="button" aria-label="Close sharing" onClick={onClose}>Close</button></header>
-      <p className="vault-sharing-intro">People you invite can open this {scope.scopeType === "folder" ? "folder and its files" : "file"} in TextText. Editors can change its content.</p>
+      <p className="vault-sharing-intro">Add access by email. They can find this {scope.scopeType === "folder" ? "folder and its files" : "file"} in Shared with me after signing in. TextText does not send an invitation email.</p>
       <form onSubmit={invite} className="vault-sharing-invite">
         <label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" /></label>
         <label>Access<select value={role} onChange={(event) => setRole(event.target.value as Grant["role"])}><option value="viewer">Can view</option><option value="commenter">Can comment</option><option value="editor">Can edit</option></select></label>
-        <button type="submit" disabled={busy || !loaded || !email.trim()}>Invite</button>
+        <button type="submit" disabled={busy || !loaded || !email.trim()}>Add access</button>
       </form>
       <h3>People with access</h3>
       {loading ? <p role="status">Loading access…</p> : !loaded ? null : grants.length ? <ul className="vault-sharing-list">{grants.map((grant) => <li key={grant.id}>

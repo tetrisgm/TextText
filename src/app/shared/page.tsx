@@ -8,6 +8,7 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
 import { getSharedPostsForUser } from "@/lib/shares";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
+import { SharedVaults } from "./SharedVaults";
 import "./shared.css";
 
 export const metadata: Metadata = {
@@ -53,11 +54,11 @@ export default async function SharedPage() {
         <p className="shared-lede">
           Items and workspaces other people invited you to join, view, comment on, or edit.
         </p>
-        {entries.length === 0 ? (
-          <p className="shared-empty">Nothing has been shared with you yet.</p>
-        ) : (
-          <SharedWithMe entries={entries} />
-        )}
+        <SharedVaults />
+        <section className="shared-section" aria-labelledby="shared-posts-title">
+          <h2 id="shared-posts-title">Shared posts</h2>
+          {entries.length === 0 ? <p className="shared-empty">No posts have been shared with you yet.</p> : <SharedWithMe entries={entries} />}
+        </section>
       </main>
     </div>
   );
