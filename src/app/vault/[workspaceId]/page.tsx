@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { getVaultWorkspaceIdentity } from "@/lib/store";
 import { resolveWorkspaceAccess } from "@/lib/permissions";
+import { activeVaultGrants } from "@/lib/vault/grants";
 import { WebVault } from "@/local-vault/WebVault";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,10 @@ export default async function VaultPage({ params }: { params: Promise<{ workspac
   const blog = await getVaultWorkspaceIdentity(workspaceId);
   if (!blog) notFound();
   const access = await resolveWorkspaceAccess({ handle: blog.handle, user, fresh: true });
-  if ((!access.isOwner && !access.canView) || access.blogId !== workspaceId) notFound();
+  if (access.blogId !== workspaceId || !access.userId) notFound();
+  if (!access.isOwner && !access.canView) {
+    const root = process.env.TEXTTEXT_VAULT_ROOT;
+    if (!root || !(await activeVaultGrants({ root, workspaceId, userId: access.userId })).length) notFound();
+  }
   return <WebVault workspaceId={workspaceId} name={blog.name} />;
 }

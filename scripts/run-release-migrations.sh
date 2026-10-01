@@ -29,6 +29,7 @@ migrations=(
   scripts/migrate-add-item-comments.mjs
   scripts/migrate-add-revision.mjs
   scripts/migrate-add-collab-epoch.mjs
+  scripts/migrate-add-vault-grants.mjs
   scripts/migrate-unified-documents.mjs
   scripts/migrate-enforce-canonical-documents.mjs
   scripts/migrate-flip-representation-to-markdown.mjs

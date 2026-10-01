@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ authorize: vi.fn(), read: vi.fn(), wait: vi.fn(), push: vi.fn() }));
-vi.mock("@/app/api/vault/collaboration-auth", () => ({ authorizeVaultCollaboration: mocks.authorize }));
+vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.authorize, authorizeVaultItemAtPath: mocks.authorize }));
 vi.mock("@/lib/store", () => ({ readVaultCollaboration: mocks.read, waitVaultCollaboration: mocks.wait, pushVaultCollaboration: mocks.push,
   VaultBusyError: class extends Error {}, VaultCollaborationEpochError: class extends Error { constructor(readonly epoch: number) { super("File changed"); } } }));
 import { GET, POST } from "./route";
 import { VaultCollaborationEpochError } from "@/lib/store";
 const url = "https://texttext.test/api/vault/workspace/items/item-1/collaboration";
 const context = { params: Promise.resolve({ workspaceId: "workspace", itemId: "item-1" }) };
-const identity = { root: "/trusted", workspaceId: "workspace", actorUserId: "user-1", actorType: "human", canEditContent: true, canComment: true };
+const identity = { root: "/trusted", workspaceId: "workspace", actorUserId: "user-1", actorType: "human", canEditContent: true, canComment: true, relativePath: "Notes/Shared.textpack" };
 const state = { epoch: 1, seq: 2, revision: "a".repeat(64), update: "AAA=", relativePath: "Notes/Shared.textpack" };
 const post = (value: unknown) => new Request(url, { method: "POST", headers: { Origin: "https://texttext.test" }, body: JSON.stringify(value) });
 const mutation = { operationId: "operation-1", epoch: 1, updates: ["AAA="] };
 describe("file collaboration route", () => {
-  beforeEach(() => { vi.resetAllMocks(); mocks.authorize.mockResolvedValue(identity); mocks.read.mockResolvedValue(state); mocks.wait.mockResolvedValue(state); mocks.push.mockImplementation(async input => { await input.beforeCommit?.(); return { status: "written", revision: state.revision }; }); });
+  beforeEach(() => { vi.resetAllMocks(); mocks.authorize.mockResolvedValue(identity); mocks.read.mockResolvedValue(state); mocks.wait.mockResolvedValue(state); mocks.push.mockImplementation(async input => { await input.beforeCommit?.(state.relativePath); return { status: "written", revision: state.revision }; }); });
   it("authorizes before reading or parsing writes", async () => {
     mocks.authorize.mockResolvedValue(new Response(null, { status: 403 }));
     expect((await GET(new Request(url), context)).status).toBe(403);
@@ -46,7 +46,7 @@ describe("file collaboration route", () => {
   });
   it("passes a fresh authorization check into the store commit boundary", async () => {
     mocks.authorize.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 403 }));
-    mocks.push.mockImplementation(async (input) => { await input.beforeCommit(); return { status: "written" }; });
+    mocks.push.mockImplementation(async (input) => { await input.beforeCommit(state.relativePath); return { status: "written" }; });
     expect((await POST(post(mutation), context)).status).toBe(403);
   });
   it("rejects malformed cursors, bodies and declared or streamed oversized bodies", async () => {

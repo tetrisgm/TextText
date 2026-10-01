@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), read: vi.fn(), preview: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
-vi.mock("@/app/api/vault/collaboration-auth", () => ({ authorizeVaultCollaboration: mocks.auth }));
+vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.auth, authorizeVaultItemAtPath: mocks.auth }));
 vi.mock("@/lib/store", () => ({
   readVaultTextpack: mocks.read,
   readVaultPreview: mocks.preview,
@@ -23,7 +23,7 @@ describe("workspace vault API", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/tmp/test-vault");
-    mocks.auth.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "user-1", actorType: "external_agent" });
+    mocks.auth.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "user-1", actorType: "external_agent", fullAccess: true, relativePath: "Notes/A note.textpack" });
   });
 
   it("rejects unauthenticated reads and cross-workspace writes before file access", async () => {
@@ -38,8 +38,8 @@ describe("workspace vault API", () => {
   });
 
   it("allows collaborator reads but requires edit access for every mutation", async () => {
-    mocks.auth.mockImplementation(async (_request, _workspace, capability) => capability === "read"
-      ? { root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "viewer", actorType: "human" }
+    mocks.auth.mockImplementation(async (...args) => args.at(-1) === "read"
+      ? { root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "viewer", actorType: "human", fullAccess: true, relativePath: "Note.textpack" }
       : new Response(null, { status: 403 }));
     mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), revision: "a".repeat(64), relativePath: "Note.textpack" });
     expect((await GET(new Request("https://texttext.test"), context())).status).toBe(200);
@@ -59,7 +59,7 @@ describe("workspace vault API", () => {
   it("rejects a changed actor inside move/delete commit guards and maps cancellation", async () => {
     const guarded = { "X-TextText-Operation-Id": "operation-2", "If-Match": `"${"a".repeat(64)}"`, "X-TextText-Base-Path": "Note.textpack" };
     for (const [method, handler, store] of [["PATCH", PATCH, mocks.move], ["DELETE", DELETE, mocks.remove]] as const) {
-      mocks.auth.mockResolvedValueOnce({ actorUserId: "initial" }).mockResolvedValueOnce({ actorUserId: "changed" });
+      mocks.auth.mockResolvedValueOnce({ actorUserId: "initial", fullAccess: true }).mockResolvedValueOnce({ actorUserId: "changed", fullAccess: true });
       store.mockImplementationOnce(async (input) => { await input.beforeCommit(); throw new Error("Unexpected commit"); });
       const response = await handler(new Request("https://texttext.test", { method, headers: guarded, ...(method === "PATCH" ? { body: JSON.stringify({ relativePath: "Moved.textpack" }) } : {}) }), context());
       expect(response.status).toBe(403);
