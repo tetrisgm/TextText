@@ -116,11 +116,29 @@ final class LocalVaultCollaboration {
         }
         let endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId)
             .appendingPathComponent("items").appendingPathComponent(itemId)
-            .appendingPathComponent(method.hasPrefix("presence") ? "presence" : method.hasPrefix("comments") ? "comments" : "collaboration")
+            .appendingPathComponent(method.hasPrefix("presence") ? "presence" : method.hasPrefix("comments") ? "comments" : method.hasPrefix("publication") ? "publication" : "collaboration")
         var request = URLRequest(url: endpoint, timeoutInterval: 35)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if method == "commentsRead" {
+        if method == "publicationRead" {
+            guard Set(params.keys) == ["itemId"] else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid publication read request.")
+            }
+        } else if method == "publicationSet" {
+            guard Set(params.keys) == ["itemId", "operationId", "baseRevision", "published"],
+                  let operationId = params["operationId"] as? String, UUID(uuidString: operationId) != nil,
+                  let baseRevision = params["baseRevision"] as? String,
+                  baseRevision.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+                  let published = params["published"] as? NSNumber,
+                  CFGetTypeID(published) == CFBooleanGetTypeID() else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid publication change.")
+            }
+            let data = try JSONSerialization.data(withJSONObject: ["operationId": operationId,
+                "baseRevision": baseRevision, "published": published.boolValue])
+            guard data.count <= 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Publication request exceeds its size limit.") }
+            request.httpMethod = "POST"; request.httpBody = data
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else if method == "commentsRead" {
             guard Set(params.keys).isSubset(of: ["itemId", "limit", "after"]) else {
                 throw LocalVaultCollaborationError(code: "400", message: "Invalid comments request.")
             }
@@ -231,6 +249,45 @@ final class LocalVaultCollaboration {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         } else { throw LocalVaultCollaborationError(code: "400", message: "Unknown collaboration operation.") }
         return request
+    }
+    /// Turn the server's relative public path into a URL on the bound origin.
+    /// Only the known publication DTO crosses into the file:// web view.
+    nonisolated static func publicationResponse(origin: URL, workspaceId: String, itemId: String,
+                                               payload: [String: Any]) throws -> [String: Any] {
+        _ = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId)
+        let expectedPath = "/v/\(workspaceId)/\(itemId)"
+        let fields: Set<String> = ["itemId", "revision", "published", "publishedAt", "publicPath"]
+        let keys = Set(payload.keys)
+        guard identifier(workspaceId), identifier(itemId),
+              (keys == fields || keys == fields.union(["status"])),
+              payload["itemId"] as? String == itemId,
+              let revision = payload["revision"] as? String,
+              revision.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              let published = payload["published"] as? NSNumber,
+              CFGetTypeID(published) == CFBooleanGetTypeID(),
+              payload["publicPath"] as? String == expectedPath else {
+            throw LocalVaultCollaborationError(code: "503", message: "Invalid publication response.")
+        }
+        let publishedAt = payload["publishedAt"]
+        guard publishedAt == nil || publishedAt is NSNull ||
+                (publishedAt as? String).map({ $0.utf8.count <= 40 &&
+                    $0.range(of: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$", options: .regularExpression) != nil }) == true,
+              published.boolValue == (publishedAt is String) else {
+            throw LocalVaultCollaborationError(code: "503", message: "Invalid publication response.")
+        }
+        if keys.contains("status") {
+            guard let status = payload["status"] as? String,
+                  ["written", "unchanged", "stale", "conflict"].contains(status) else {
+                throw LocalVaultCollaborationError(code: "503", message: "Invalid publication response.")
+            }
+        }
+        let publicURL = origin.appendingPathComponent("v").appendingPathComponent(workspaceId)
+            .appendingPathComponent(itemId).absoluteString
+        var result: [String: Any] = ["itemId": itemId, "revision": revision,
+            "published": published.boolValue, "publishedAt": publishedAt ?? NSNull(),
+            "publicPath": expectedPath, "publicURL": publicURL]
+        if let status = payload["status"] as? String { result["status"] = status }
+        return result
     }
     /// Streaming runs on the generic executor, keeping large replies off AppKit's main actor.
     nonisolated private static func responseData(session: URLSession, request: URLRequest, maxBytes: Int = 16 * 1024 * 1024) async throws -> (Data, Int) {
@@ -345,14 +402,22 @@ final class LocalVaultCollaboration {
                 }
                 let request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)
                 let (data, status) = try await Self.responseData(session: self.session, request: request,
-                    maxBytes: method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") ? 2 * 1024 * 1024 : 16 * 1024 * 1024)
+                    maxBytes: method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") ? 2 * 1024 * 1024 : 16 * 1024 * 1024)
                 try Task.checkCancellation()
                 let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 guard status == 200, let value else {
                     let message = (value?["error"] as? String).map { String($0.prefix(1000)) } ?? "Workspace request could not complete."
                     throw LocalVaultCollaborationError(code: String(status), message: message)
                 }
-                completion(.success(value))
+                if method.hasPrefix("publication") {
+                    guard let itemId = params["itemId"] as? String else {
+                        throw LocalVaultCollaborationError(code: "400", message: "Invalid publication item.")
+                    }
+                    completion(.success(try Self.publicationResponse(origin: context.binding.origin,
+                        workspaceId: context.binding.workspaceId, itemId: itemId, payload: value)))
+                } else {
+                    completion(.success(value))
+                }
             } catch { completion(.failure(error)) }
         }
     }

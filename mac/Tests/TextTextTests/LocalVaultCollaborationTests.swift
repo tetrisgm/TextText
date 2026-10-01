@@ -145,4 +145,43 @@ final class LocalVaultCollaborationTests: XCTestCase {
                 method: method, params: invalid))
         }
     }
+    func testPublicationUsesBoundItemAndBuildsAValidatedPublicURL() throws {
+        let itemId = "item-1", revision = String(repeating: "a", count: 64)
+        let operationId = "2bd05f92-c562-4a78-8c0d-b5e41ca3215d"
+        let read = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "publicationRead", params: ["itemId": itemId])
+        XCTAssertEqual(read.url?.absoluteString, "https://texttext.app/api/vault/workspace/items/item-1/publication")
+        XCTAssertEqual(read.httpMethod, "GET")
+        XCTAssertEqual(read.value(forHTTPHeaderField: "Authorization"), "Bearer app-token")
+        let set = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "publicationSet", params: ["itemId": itemId, "operationId": operationId,
+                "baseRevision": revision, "published": true])
+        XCTAssertEqual(set.url, read.url)
+        XCTAssertEqual(set.httpMethod, "POST")
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(set.httpBody)) as? [String: Any])
+        XCTAssertEqual(Set(body.keys), ["operationId", "baseRevision", "published"])
+        XCTAssertEqual(body["operationId"] as? String, operationId)
+        let response = try LocalVaultCollaboration.publicationResponse(origin: origin, workspaceId: "workspace", itemId: itemId,
+            payload: ["itemId": itemId, "revision": revision, "published": true,
+                "publishedAt": "2026-09-30T19:00:00.000Z", "publicPath": "/v/workspace/item-1", "status": "written"])
+        XCTAssertEqual(response["publicURL"] as? String, "https://texttext.app/v/workspace/item-1")
+        XCTAssertNil(response["token"])
+        for invalid: [String: Any] in [["itemId": itemId, "operationId": operationId,
+                                          "baseRevision": revision, "published": "true"],
+                                         ["itemId": itemId, "operationId": operationId,
+                                          "baseRevision": "../wrong", "published": true],
+                                         ["itemId": itemId, "operationId": operationId,
+                                          "baseRevision": revision, "published": true, "url": "https://outside.example"]] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+                method: "publicationSet", params: invalid))
+        }
+        XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "publicationRead", params: ["itemId": itemId, "url": "https://outside.example"]))
+        XCTAssertThrowsError(try LocalVaultCollaboration.publicationResponse(origin: origin, workspaceId: "workspace", itemId: itemId,
+            payload: ["itemId": itemId, "revision": revision, "published": true,
+                "publishedAt": "2026-09-30T19:00:00.000Z", "publicPath": "https://outside.example/v/workspace/item-1"]))
+        XCTAssertThrowsError(try LocalVaultCollaboration.publicationResponse(origin: origin, workspaceId: "workspace", itemId: itemId,
+            payload: ["itemId": itemId, "revision": revision, "published": false,
+                "publishedAt": NSNull(), "publicPath": "/v/workspace/item-1", "token": "unexpected"]))
+    }
 }
