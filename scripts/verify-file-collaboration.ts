@@ -34,8 +34,23 @@ async function signIn(page: Page, email: string) {
   const response = await page.request.post(`${origin}/api/auth/callback/dev-login`, { form: { csrfToken: csrf.csrfToken, email, callbackUrl: `${origin}/vault/${workspaceId}` } });
   check(response.ok(), "existing test account signed in");
   await page.goto(`${origin}/vault/${workspaceId}`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: new RegExp(title) }).first().click();
-  await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20000 });
+  await openTestNote(page);
+}
+async function openTestNote(page: Page) {
+  const body = page.getByRole("textbox", { name: "Document body", exact: true });
+  const heading = page.locator(".vault-context-location h2");
+  await heading.waitFor({ timeout: 20000 });
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    if (await body.isVisible().catch(() => false) && (await heading.textContent())?.trim() === title) return;
+    if ((await heading.textContent())?.trim() !== "All files") {
+      await page.getByRole("button", { name: "All files", exact: true }).click({ timeout: 3000 }).catch(() => {});
+    }
+    const card = page.locator("main .vault-document-grid > button").filter({ hasText: title });
+    if (await card.isVisible().catch(() => false)) await card.click({ timeout: 3000 }).catch(() => {});
+    await body.waitFor({ timeout: 3000 }).catch(() => {});
+  }
+  throw new Error(`Could not open ${title}`);
 }
 async function append(page: Page, text: string, edge: "start" | "end" = "end") {
   const body = page.getByRole("textbox", { name: "Document body", exact: true });
@@ -96,8 +111,7 @@ async function main() {
     const sessionCopy = await alice.evaluate(() => Object.entries(sessionStorage));
     await sibling.addInitScript(entries => { for (const [key, value] of entries) sessionStorage.setItem(key, value); }, sessionCopy);
     await sibling.goto(`${origin}/vault/${workspaceId}`, { waitUntil: "domcontentloaded" });
-    await sibling.getByRole("button", { name: new RegExp(title) }).first().click();
-    await sibling.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20000 });
+    await openTestNote(sibling);
     const ownedKeys = await alice.evaluate(async id => (await navigator.locks.query()).held?.filter(lock => lock.name?.includes(id)).map(lock => lock.name), itemId);
     check(ownedKeys?.length === 2 && new Set(ownedKeys).size === 2, "same-origin tabs with cloned sessionStorage own separate Web Locks and journals");
     const beforeTabs = await text(alice);
@@ -110,7 +124,7 @@ async function main() {
     await a.route(collaborationRoute, route => route.abort("internetdisconnected"));
     await a.setOffline(false);
     await alice.reload({ waitUntil: "domcontentloaded" });
-    await alice.getByRole("button", { name: new RegExp(title) }).first().click();
+    await openTestNote(alice);
     await until(async () => await text(alice) === `${beforeTabs} SAME-TAB-A`, "reloaded tab restores its own unsent edits while collaboration is offline");
     check(await text(sibling) === `SAME-TAB-B ${beforeTabs}`, "reloading one tab preserves the other tab's unsent edits");
     await a.unroute(collaborationRoute);
@@ -126,10 +140,11 @@ async function main() {
     await alice.screenshot({ path: "/tmp/texttext-file-collaboration-dark.png", fullPage: true });
     await alice.getByRole("button", { name: "All files", exact: true }).click();
     await alice.locator("details.vault-context-menu").getByLabel("More actions", { exact: true }).click();
-    await alice.getByRole("textbox", { name: "Current folder", exact: true }).fill(newFolder);
+    await alice.getByLabel("Current folder", { exact: true }).fill(newFolder);
     await alice.keyboard.press("Escape");
     await alice.getByRole("button", { name: "New note", exact: true }).click();
-    await alice.getByText(`${newFolder}/Untitled.textpack`, { exact: true }).waitFor();
+    await until(async () => await alice.locator(".vault-context-location h2").getAttribute("title") === `${newFolder}/Untitled.textpack`,
+      "new note opens at the selected folder path");
     await alice.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
     await append(alice, "Created together in a new folder.");
     await until(async () => {
@@ -143,8 +158,7 @@ async function main() {
     await bob.locator("main .vault-document-grid > button").filter({ hasText: "Untitled" }).click();
     await until(async () => (await text(bob)) === "Created together in a new folder.",
       "second account opens the new folder's note with its live content", 35000);
-    await bob.getByRole("button", { name: new RegExp(title) }).first().click();
-    await bob.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
+    await openTestNote(bob);
     await db.update(collaborators).set({ role: "viewer" }).where(eq(collaborators.id, grantId));
     const denied = await bob.request.post(`${origin}/api/vault/${workspaceId}/items/${itemId}/collaboration`, { headers: { Origin: origin }, data: { operationId: randomUUID(), epoch: 1, updates: ["AAA="] } });
     check(denied.status() === 403, "downgraded participant cannot write");

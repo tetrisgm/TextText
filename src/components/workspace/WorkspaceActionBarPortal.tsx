@@ -21,10 +21,13 @@ export function WorkspaceActionBarPortal({
 
   useLayoutEffect(() => {
     const findSlot = () => {
-      const selector =
+      const workspaceSelector =
         slot === "middle"
           ? ".post-editor-content > .workspace-action-bar-host .workspace-action-bar-slot.is-middle"
           : ".post-editor-content > .workspace-action-bar-host .workspace-action-bar-slot.is-right";
+      const selector = slot === "right"
+        ? `${workspaceSelector}, .vault-app .vault-editor-actions > .workspace-action-bar-slot.is-right`
+        : workspaceSelector;
       const nextSlot = document.querySelector<HTMLElement>(
         selector,
       );

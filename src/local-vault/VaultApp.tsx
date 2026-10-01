@@ -879,6 +879,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         </div>
         <div className="vault-context-actions">
           {canCreate && <button className="vault-primary-action" disabled={busy} onClick={() => createNote(focusedControl())}>New note</button>}
+          {selected && <div className="vault-editor-actions workspace-action-bar-host">
+            <div className="workspace-action-bar-slot is-right" />
+          </div>}
           {selected && allowFolderPicker && <LocalParticipantsRow postId={selected.path} />}
           {selected && canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
             disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
