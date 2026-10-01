@@ -132,12 +132,34 @@ recovery and two native concurrent writers remain separate checks.
 
 ## Remaining integration and limits
 
+### Follow-up: separate browser journals and clean reopening
+
+`74c6e69b` gives simultaneous browser tabs separate recovery records with
+exclusive Web Locks. Reload resumes a retained record; unowned pending records
+are discoverable and adopted individually. Records are removed only while owned.
+Native generation selection remains unchanged. Web Locks are required; quota,
+unreadable history and excessive recovery records fail visibly without deletion.
+
+The extended actual-browser verifier passed two tabs in one context with cloned
+sessionStorage: distinct ownership locks, independent offline edits, reload of
+one disconnected tab, exact convergence across three editors, idle mutation
+silence, canonical file equality, permission downgrade and zero runtime errors.
+Log: `/tmp/texttext-file-collaboration-tab-journal-browser.log`.
+Production build: `/tmp/texttext-vault-tab-journal-build.log`.
+
+Installed 1135 direct-file testing preserved an agent's added sentence locally
+and on the server but found a closed-session/clean-checkpoint reopen trap.
+`3a2b29b5` makes repeated close idempotent without allowing expired writes; five
+bridge tests pass (`/tmp/texttext-native-session-close-tests.log`). The editor
+also reads the current file before reopening and permits a clean retired journal
+to be discarded while preserving genuine unsent or unreadable history. Native
+1136 acceptance is pending; do not count the UI fix as installed proof yet.
+
 Build 1135 is installed. The current local server uses
 `.texttext/vault-native-checkpoint-build`; no public deployment occurred.
 
 Next: scoped item/folder grants and sharing UI, presence/comments, installed
-concurrent-edit/direct-file recovery acceptance and same-origin multi-tab journal
-ownership. Independent tabs must not overwrite each other's unsent journals.
+concurrent-edit/direct-file recovery acceptance.
 
 Extend installed acceptance across in-flight sync races, direct agent edits,
 rename/delete, revocation and complete-pack preservation. Unit coverage alone

@@ -125,15 +125,21 @@ and two-account browser acceptance (`23758ecb`). Installed keyboard edits reache
 the actual TextPack online and during server outage, survived quitting/reopening,
 and converged to the server after reconnection with pending cleared. The
 disposable `Untitled.textpack` (title `Shared file verification 1135`, identity
-`2880a21d-7414-438d-a238-0e6cfcba98d9`) remains for direct-file-edit recovery checks
-and recoverable cleanup. Next: that installed recovery check, scoped sharing,
-presence and comments. Same-origin multi-tab journal ownership remains open.
+`2880a21d-7414-438d-a238-0e6cfcba98d9`) remains for recovery checks and recoverable
+cleanup. A direct agent edit reached local/server copies but exposed a clean
+reopen trap. Fixes `3a2b29b5` and `74c6e69b` pass five native bridge tests and the
+production web build; native 1136 build is running (session 42614,
+`/tmp/texttext-build-1136.log`). Restore its known Package.resolved side effect
+after completion, install and verify Reopen before claiming the native fix.
+Same-origin independent journals now pass actual two-tab offline/reload/three-
+editor convergence acceptance. Next: native recovery, scoped sharing, presence
+and comments.
 
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-native-checkpoint-build`, build identity `texttext-vault-native-checkpoint-20260930` (exec session 99103). No persistent
+  runtime path), output `.texttext/vault-tab-journal-build`, build identity `texttext-vault-tab-journal-20260930` (exec session 90161). No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,
