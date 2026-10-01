@@ -21,10 +21,10 @@ function failure(error: unknown): Response {
   return fail(503, "Publication is temporarily unavailable");
 }
 
-function state(workspaceId: string, itemId: string, item: NonNullable<Awaited<ReturnType<typeof readVaultPublication>>>) {
+function state(workspaceId: string, itemId: string, item: NonNullable<Awaited<ReturnType<typeof readVaultPublication>>>, canPublish: boolean) {
   return { itemId, revision: item.revision, published: Boolean(item.publication),
     publishedAt: item.publication?.publishedAt ?? null,
-    publicPath: `/v/${encodeURIComponent(workspaceId)}/${encodeURIComponent(itemId)}` };
+    publicPath: `/v/${encodeURIComponent(workspaceId)}/${encodeURIComponent(itemId)}`, canPublish };
 }
 
 export async function GET(request: Request, context: Context) {
@@ -38,7 +38,7 @@ export async function GET(request: Request, context: Context) {
     if (latest instanceof Response) return latest;
     if (latest.actorUserId !== allowed.actorUserId || latest.relativePath !== item.relativePath) return fail(409, "Reopen this item");
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
-    return respond(state(workspaceId, itemId, item));
+    return respond(state(workspaceId, itemId, item, latest.canManageShares));
   } catch (error) { return failure(error); }
 }
 
@@ -74,7 +74,7 @@ export async function POST(request: Request, context: Context) {
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
     const item = await readVaultPublication({ root: latest.root, workspaceId, itemId });
     if (!item) return fail(404, "Item not found");
-    return respond({ ...state(workspaceId, itemId, item), status: result.status },
+    return respond({ ...state(workspaceId, itemId, item, latest.canManageShares), status: result.status },
       result.status === "stale" || result.status === "conflict" ? 409 : 200);
   } catch (error) { return failure(error); }
 }

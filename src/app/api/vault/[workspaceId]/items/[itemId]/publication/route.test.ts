@@ -34,15 +34,20 @@ describe("file-vault publication route", () => {
     const response = await GET(new Request(url), context);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(await response.json()).toMatchObject({ published: false, revision: baseRevision });
+    expect(await response.json()).toMatchObject({ published: false, revision: baseRevision, canPublish: true });
     expect(mocks.authorize).toHaveBeenCalledTimes(2);
+    mocks.authorize.mockResolvedValue({ ...owner, canManageShares: false });
+    expect(await (await GET(new Request(url), context)).json()).toMatchObject({ canPublish: false });
+    mocks.authorize.mockResolvedValue(owner);
     mocks.authorize.mockResolvedValueOnce(owner).mockResolvedValueOnce(new Response(null, { status: 404 }));
     expect((await GET(new Request(url), context)).status).toBe(404);
   });
 
   it("allows only a workspace owner to publish and rechecks that role under the lock", async () => {
     const input = { operationId, baseRevision, published: true };
-    expect((await POST(post(input), context)).status).toBe(200);
+    const published = await POST(post(input), context);
+    expect(published.status).toBe(200);
+    expect(await published.json()).toMatchObject({ canPublish: true });
     expect(mocks.mutate).toHaveBeenCalledWith(expect.objectContaining({ operationId,
       published: true, actorUserId: owner.actorUserId, beforeCommit: expect.any(Function) }));
     expect(mocks.authorizeAtPath).toHaveBeenCalledWith(expect.any(Request), "workspace-1", "item-1",

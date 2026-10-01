@@ -256,7 +256,7 @@ final class LocalVaultCollaboration {
                                                payload: [String: Any]) throws -> [String: Any] {
         _ = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId)
         let expectedPath = "/v/\(workspaceId)/\(itemId)"
-        let fields: Set<String> = ["itemId", "revision", "published", "publishedAt", "publicPath"]
+        let fields: Set<String> = ["itemId", "revision", "published", "publishedAt", "publicPath", "canPublish"]
         let keys = Set(payload.keys)
         guard identifier(workspaceId), identifier(itemId),
               (keys == fields || keys == fields.union(["status"])),
@@ -265,6 +265,8 @@ final class LocalVaultCollaboration {
               revision.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
               let published = payload["published"] as? NSNumber,
               CFGetTypeID(published) == CFBooleanGetTypeID(),
+              let canPublish = payload["canPublish"] as? NSNumber,
+              CFGetTypeID(canPublish) == CFBooleanGetTypeID(),
               payload["publicPath"] as? String == expectedPath else {
             throw LocalVaultCollaborationError(code: "503", message: "Invalid publication response.")
         }
@@ -285,6 +287,7 @@ final class LocalVaultCollaboration {
             .appendingPathComponent(itemId).absoluteString
         var result: [String: Any] = ["itemId": itemId, "revision": revision,
             "published": published.boolValue, "publishedAt": publishedAt ?? NSNull(),
+            "canPublish": canPublish.boolValue,
             "publicPath": expectedPath, "publicURL": publicURL]
         if let status = payload["status"] as? String { result["status"] = status }
         return result

@@ -152,11 +152,12 @@ export function publishedVaultView(bytes: Uint8Array, workspaceId: string, itemI
   const bindings = itemBindings(template);
   const fields = Object.fromEntries(Object.entries(document.content.fields)
     .filter(([key]) => bindings.has(`content.fields.${key}`)));
+  const tags = bindings.has("content.tags") ? document.content.tags : [];
   const visibleText = [document.content.body, document.content.subtitle ?? "", ...Object.values(fields)
     .filter((value): value is string => typeof value === "string")].join("\n");
   const assets = bindings.has("content.assets") ? document.content.assets : document.content.assets.filter(asset =>
     visibleText.includes(asset.src) || Boolean(asset.poster && visibleText.includes(asset.poster)));
-  const projected = validateDocumentSnapshot({ ...document, content: { ...document.content, fields, assets } });
+  const projected = validateDocumentSnapshot({ ...document, content: { ...document.content, fields, tags, assets } });
   const assetPaths = referencedAssets(projected);
   const substitutions = [...assetPaths].sort((a, b) => b.length - a.length)
     .map(value => [value, assetUrl(workspaceId, itemId, value)] as const);
@@ -166,7 +167,15 @@ export function publishedVaultView(bytes: Uint8Array, workspaceId: string, itemI
     if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, replace(child)]));
     return value;
   };
-  return { document: validateDocumentSnapshot(replace(projected)), template, publication, assetPaths };
+  // The public item renderer uses only the item tree, its bound field definitions, and theme.
+  // Starter/example content and collection layouts belong to the private template editor.
+  const publicTemplate: TemplateDefinition = { ...template, name: "Published look", description: undefined,
+    starter: undefined, example: undefined,
+    fields: template.fields.filter(field => bindings.has(`content.fields.${field.id}`))
+      .map(field => ({ ...field, help: undefined })),
+    collection: { layout: "list", columns: 1, gap: "md", sort: [], filters: [], views: [],
+      item: { type: "text", bind: "content.title", role: "title" } } };
+  return { document: validateDocumentSnapshot(replace(projected)), template: publicTemplate, publication, assetPaths };
 }
 
 export function publishedVaultAsset(bytes: Uint8Array, workspaceId: string, itemId: string, assetPath: string) {

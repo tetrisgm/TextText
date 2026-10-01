@@ -162,9 +162,10 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertEqual(Set(body.keys), ["operationId", "baseRevision", "published"])
         XCTAssertEqual(body["operationId"] as? String, operationId)
         let response = try LocalVaultCollaboration.publicationResponse(origin: origin, workspaceId: "workspace", itemId: itemId,
-            payload: ["itemId": itemId, "revision": revision, "published": true,
+            payload: ["itemId": itemId, "revision": revision, "published": true, "canPublish": true,
                 "publishedAt": "2026-09-30T19:00:00.000Z", "publicPath": "/v/workspace/item-1", "status": "written"])
         XCTAssertEqual(response["publicURL"] as? String, "https://texttext.app/v/workspace/item-1")
+        XCTAssertEqual(response["canPublish"] as? Bool, true)
         XCTAssertNil(response["token"])
         for invalid: [String: Any] in [["itemId": itemId, "operationId": operationId,
                                           "baseRevision": revision, "published": "true"],
@@ -178,10 +179,13 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
             method: "publicationRead", params: ["itemId": itemId, "url": "https://outside.example"]))
         XCTAssertThrowsError(try LocalVaultCollaboration.publicationResponse(origin: origin, workspaceId: "workspace", itemId: itemId,
-            payload: ["itemId": itemId, "revision": revision, "published": true,
+            payload: ["itemId": itemId, "revision": revision, "published": true, "canPublish": true,
                 "publishedAt": "2026-09-30T19:00:00.000Z", "publicPath": "https://outside.example/v/workspace/item-1"]))
         XCTAssertThrowsError(try LocalVaultCollaboration.publicationResponse(origin: origin, workspaceId: "workspace", itemId: itemId,
-            payload: ["itemId": itemId, "revision": revision, "published": false,
+            payload: ["itemId": itemId, "revision": revision, "published": false, "canPublish": false,
                 "publishedAt": NSNull(), "publicPath": "/v/workspace/item-1", "token": "unexpected"]))
+        XCTAssertThrowsError(try LocalVaultCollaboration.publicationResponse(origin: origin, workspaceId: "workspace", itemId: itemId,
+            payload: ["itemId": itemId, "revision": revision, "published": false, "canPublish": "true",
+                "publishedAt": NSNull(), "publicPath": "/v/workspace/item-1"]))
     }
 }

@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import { strToU8, unzipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { openPack, encodePack } from "@/local-vault/pack";
 import { readDocument, writePayload } from "@/local-vault/model";
 import { publishedVaultAsset, publishedVaultView, readVaultPublicationFromPack } from "./publication";
@@ -17,13 +19,14 @@ const workspaceId = "workspace-1", itemId = "item-1";
 const actor = { actorUserId: randomUUID(), actorType: "human" as const };
 const originalPath = "Notes/Shared.textpack";
 
-function pack(body: string, publication?: Uint8Array) {
+function pack(body: string, publication?: Uint8Array, template?: TemplateDefinition) {
   const document = emptyDocumentSnapshot();
   document.content.title = "Shared";
   document.content.body = body;
+  document.content.tags = ["Private planning"];
   document.content.fields.secret = "Never in the public projection";
   document.content.assets = [{ id: "picture", kind: "image", src: "assets/picture.png" }];
-  return buildTextpack("Shared", { document, markdown: `---\ntextTextId: ${itemId}\n---\n\n${body}`,
+  return buildTextpack("Shared", { document, template, markdown: `---\ntextTextId: ${itemId}\n---\n\n${body}`,
     files: { "assets/picture.png": png, "comments.json": strToU8("private discussion"),
       ...(publication ? { "publication.json": publication } : {}) } });
 }
@@ -54,6 +57,8 @@ describe("file-backed vault publication", () => {
     const view = publishedVaultView(published.bytes, workspaceId, itemId)!;
     expect(view.document.content.body).toContain("First version");
     expect(view.document.content.fields).not.toHaveProperty("secret");
+    expect(view.document.content.tags).toEqual([]);
+    expect(JSON.stringify(view)).not.toContain("Private planning");
     expect(JSON.stringify(view)).not.toContain("private discussion");
     expect(view.document.content.assets[0].src).toContain(`/api/public/vault/${workspaceId}/${itemId}/assets/picture.png`);
     expect(Buffer.from(publishedVaultAsset(published.bytes, workspaceId, itemId, "assets/picture.png")!.data).equals(png)).toBe(true);
@@ -69,6 +74,24 @@ describe("file-backed vault publication", () => {
     expect(publishedVaultView(privateAgain.bytes, workspaceId, itemId)).toBeNull();
     expect(publishedVaultAsset(privateAgain.bytes, workspaceId, itemId, "assets/picture.png")).toBeNull();
     expect(receipts.mock.calls.at(-1)?.[0].actionName).toBe("vault.unpublish");
+  });
+
+  it("omits private template editor data from the public renderer props", () => {
+    const source = requireBuiltinTemplate("texttext.article");
+    const template: TemplateDefinition = { ...source, name: "Private look name", description: "Private look description",
+      starter: { body: "Private starter" },
+      example: { title: "Private example", body: "Private example body", fields: {}, tags: [] },
+      collection: { ...source.collection, item: { type: "text", bind: "content.title", role: "title",
+        fallback: "Private collection fallback" } } };
+    const marker = strToU8(JSON.stringify({ schemaVersion: 1, status: "public",
+      publishedAt: new Date().toISOString(), operationId: randomUUID() }));
+    const view = publishedVaultView(pack("Published body", marker, template), workspaceId, itemId)!;
+    expect(view.document.content.body).toBe("Published body");
+    const clientProps = JSON.stringify(view);
+    for (const value of ["Private look name", "Private look description", "Private starter",
+      "Private example", "Private collection fallback", "Private planning"]) {
+      expect(clientProps).not.toContain(value);
+    }
   });
 
   it("rejects marker injection/removal through ordinary writes, while stale document edits merge around a publish", async () => {
