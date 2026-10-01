@@ -28,3 +28,5 @@ The Mac release script validates configuration before bumping/building. The oute
 5. Atomically replace `src/generated/app-release.ts`. The later web deployment switches the existing feed/download/version routes together.
 
 No mutable aliases are required or uploaded. A failed public-domain check leaves the generated marker unchanged. Uploaded immutable objects may remain for a safe retry. The current historical generated manifest remains on disk as history, but application routes reject its deleted Vercel Blob URLs and return no available release until a real replacement is published.
+
+Check the release storage contract with `node --test scripts/release-storage.test.mjs`. This uses fixture credentials and does not access a live bucket.
