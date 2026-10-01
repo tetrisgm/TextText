@@ -1393,7 +1393,11 @@ export function MarkdownSurface({
     }
   };
 
-  useLayoutEffect(reconcile);
+  const reconcileRef = useRef(reconcile);
+  useLayoutEffect(() => {
+    reconcileRef.current = reconcile;
+    reconcile();
+  });
 
   useLayoutEffect(() => {
     const root = ref.current;
@@ -1433,35 +1437,53 @@ export function MarkdownSurface({
     }));
   }, [ref]);
 
-  // Undo puts the caret back where the edit happened, the way Sublime does.
-  // pendingCaretRef is the surface's own "place the caret on the next
-  // reconcile" channel, and the value change from the CRDT is what triggers
-  // that reconcile, so setting it here lands the caret with the undone text.
+  // Undo dispatches after the model render. Consume its caret request now;
+  // leaving it pending would move the caret during the next unrelated input.
   useEffect(() => {
+    let frame = 0;
+    const cancelScroll = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = 0;
+    };
     const handler = (event: Event) => {
       const detail = (
         event as CustomEvent<{ anchor?: number; head?: number; align?: "top" }>
       ).detail;
-      const head = detail?.head;
-      if (typeof head !== "number") return;
-      const alignTop = detail?.align === "top";
-      pendingCaretRef.current = head;
+      if (typeof detail?.head !== "number" || !Number.isFinite(detail.head) || composingRef.current) return;
       const root = ref.current;
-      if (root && document.activeElement !== root) root.focus({ preventScroll: true });
-      // The line may be far off screen after a big undo, or be the block the
-      // reader was on when edit began (reading-anchor.ts). Reveal opens its
-      // syntax; a line outside the viewport is also scrolled to.
-      window.requestAnimationFrame(() => {
+      if (!root?.isConnected) return;
+      cancelScroll();
+      const head = Math.min(Math.max(detail.head, 0), valueRef.current.length);
+      const alignTop = detail.align === "top";
+      pendingCaretRef.current = head;
+      if (document.activeElement !== root) root.focus({ preventScroll: true });
+      reconcileRef.current();
+      // Keep scrolling deferred for layout, but never replay it over a later
+      // navigation or input. Selection placement has already completed.
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        if (!root.isConnected || document.activeElement !== root) return;
+        const at = selectionOffsets();
+        if (!at || at.anchor !== head || at.head !== head) return;
         const line = lineAtOffset(lineStartsRef.current, head);
         revealLine(line);
-        // The reading anchor wants its line at the top, as the reader had it;
-        // undo only needs the line on screen.
-        if (alignTop || !lineInView(line)) jumpToLine(line);
+        if (alignTop || !lineInView(line)) jumpRef.current(line);
       });
     };
     window.addEventListener(DOCUMENT_SET_CARET_EVENT, handler);
-    return () => window.removeEventListener(DOCUMENT_SET_CARET_EVENT, handler);
-  }, []);
+    document.addEventListener("keydown", cancelScroll, true);
+    document.addEventListener("pointerdown", cancelScroll, true);
+    document.addEventListener("beforeinput", cancelScroll, true);
+    return () => {
+      cancelScroll();
+      window.removeEventListener(DOCUMENT_SET_CARET_EVENT, handler);
+      document.removeEventListener("keydown", cancelScroll, true);
+      document.removeEventListener("pointerdown", cancelScroll, true);
+      document.removeEventListener("beforeinput", cancelScroll, true);
+    };
+    // Position helpers read live refs; model reconciliation uses the current closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref]);
 
   return (
     <div

@@ -6,7 +6,7 @@ import { addReaderHighlight, locateHighlight, readerHighlights, type ReaderHighl
 
 export function ArticleReader({ document, template, update }: {
   document: DocumentSnapshot; template: TemplateDefinition;
-  update: (transform: (document: DocumentSnapshot) => DocumentSnapshot) => void;
+  update?: (transform: (document: DocumentSnapshot) => DocumentSnapshot) => void;
 }) {
   const content = useRef<HTMLDivElement>(null);
   const selected = useRef<ReaderHighlight | null>(null);
@@ -57,19 +57,19 @@ export function ArticleReader({ document, template, update }: {
     return () => { globalThis.document.removeEventListener("selectionchange", observe); registry?.delete("texttext-reader"); };
   }, [document]);
   return <section className="vault-reading" aria-label="Article reader">
-    <div className="vault-reader-tools"><button disabled={!selectionAvailable} onMouseDown={(event) => event.preventDefault()} onClick={() => {
+    {update && <div className="vault-reader-tools"><button disabled={!selectionAvailable} onMouseDown={(event) => event.preventDefault()} onClick={() => {
       if (!selected.current) return;
       const highlight = selected.current;
       try { update((current) => addReaderHighlight(current, highlight)); setError(""); }
       catch (error) { setError(error instanceof Error ? error.message : "Could not save the highlight."); }
-    }}>Highlight selection</button><span>Select text to keep a cited excerpt.</span></div>
+    }}>Highlight selection</button><span>Select text to keep a cited excerpt.</span></div>}
     {error && <p role="alert">{error}</p>}
     <div ref={content}><DocumentRenderer documentId="vault-reader" document={document} template={template} /></div>
     {!!highlights.length && <details className="vault-highlights" open><summary>Highlights ({highlights.length})</summary>{highlights.map((highlight) => <div key={highlight.id}>
-      <blockquote>{highlight.quote}</blockquote><label>Note about this highlight<textarea maxLength={20_000} value={highlight.note} onChange={(event) => {
+      <blockquote>{highlight.quote}</blockquote><label>Note about this highlight<textarea readOnly={!update} maxLength={20_000} value={highlight.note} onChange={(event) => {
         const note = event.target.value;
-        update((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).map((row) => row.id === highlight.id ? { ...row, note } : row) } } }));
-      }} /></label><button onClick={() => update((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).filter((row) => row.id !== highlight.id) } } }))}>Remove highlight</button>
+        update?.((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).map((row) => row.id === highlight.id ? { ...row, note } : row) } } }));
+      }} /></label>{update && <button onClick={() => update((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).filter((row) => row.id !== highlight.id) } } }))}>Remove highlight</button>}
     </div>)}</details>}
   </section>;
 }

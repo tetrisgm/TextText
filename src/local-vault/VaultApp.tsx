@@ -22,6 +22,8 @@ import { articleSource } from "@/lib/vault/article-capture";
 import { ArticleCapture } from "./ArticleCapture";
 import { CaptureDialog } from "./CaptureDialog";
 import { RecoveryDialog } from "./RecoveryDialog";
+import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
+import { packIdentity } from "./pack";
 import { readFolderView } from "./folder-view";
 import { VaultSearch } from "./VaultSearch";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
@@ -254,6 +256,46 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { o
   }} />} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { await flush(); }} />}</section>;
 }
 
+function OpenVaultEditor(props: VaultEditorProps) {
+  const [mode, setMode] = useState<VaultCollaborationConfig | "local" | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let stopped = false;
+    const cacheKey = `texttext:collaboration-config:${props.root}:${packIdentity(props.initial.markdown)}`;
+    // Finish a recoverable file draft before switching its persistence mechanism.
+    if (localStorage.getItem(`texttext:vault-draft:${props.root}:${props.initial.path}`)) {
+      queueMicrotask(() => { if (!stopped) setMode("local"); });
+      return () => { stopped = true; };
+    }
+    void vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path: props.initial.path }).then(config => {
+      if (stopped) return;
+      if (config) { localStorage.setItem(cacheKey, JSON.stringify(config)); setMode(config); return; }
+      const stored = localStorage.getItem(cacheKey);
+      if (stored) {
+        const previous = JSON.parse(stored) as VaultCollaborationConfig;
+        const key = `texttext:file-collaboration:v1:${JSON.stringify([previous.namespace.replace(/\/$/, ""), previous.workspaceId, previous.itemId])}`;
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const journal = JSON.parse(raw);
+            if (journal.retired || journal.unqueuedDirty || journal.batch || journal.pending?.length) { setMode(previous); return; }
+          } catch {
+            // Let the shared client expose the intact unreadable journal for
+            // recovery instead of silently opening another persistence path.
+            setMode(previous); return;
+          }
+        }
+      }
+      setMode("local");
+    }).catch(reason => { if (!stopped) setError(reason instanceof Error ? reason.message : "Could not open this document."); });
+    return () => { stopped = true; };
+  }, [props.root, props.initial.path, props.initial.markdown, retry]);
+  if (mode === "local") return <VaultEditor {...props} />;
+  if (mode) return <CollaborativeVaultEditor {...props} config={mode} />;
+  return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;
+}
+
 class DocumentBoundary extends Component<{ children: ReactNode }, { error: string }> {
   state = { error: "" };
   static getDerivedStateFromError(error: Error) { return { error: error.message }; }
@@ -441,7 +483,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
-        <div inert={busy}><VaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>
+        <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>
       </DocumentBoundary> : listing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={listing} folder={destinationFolder} busy={busy}
         onCustomize={allowFolderPicker ? (path) => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })); } : undefined}
         onFolder={(path) => setDestinationFolder(path)}

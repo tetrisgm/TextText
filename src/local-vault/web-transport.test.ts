@@ -53,6 +53,24 @@ function fixture() {
 }
 
 describe("web file vault transport", () => {
+  it("forwards only collaboration fields with cancellation and stable item identity", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("/items")) return Response.json({ items: [{ itemId: "stable-id", relativePath: "Note.textpack", revision: "a".repeat(64) }], revision: "manifest" });
+      return Response.json({ epoch: 1, seq: 0, update: "AAA=" });
+    });
+    expect(await transport.request("collaborationConfig", { path: "Note.textpack" })).toMatchObject({ workspaceId: "workspace", itemId: "stable-id" });
+    const abort = new AbortController();
+    await transport.request("collaborationRead", { itemId: "stable-id", epoch: 1, seq: 0, waitMs: 25000 }, abort.signal);
+    expect(calls.at(-1)?.url).toBe("/api/vault/workspace/items/stable-id/collaboration?epoch=1&seq=0&waitMs=25000");
+    expect(calls.at(-1)?.init?.signal).toBe(abort.signal);
+    await transport.request("collaborationPush", { itemId: "stable-id", operationId: "op", epoch: 1, updates: ["AAA="], root: "/outside", actorUserId: "fake" }, abort.signal);
+    expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual({ operationId: "op", epoch: 1, updates: ["AAA="] });
+    transport.destroy();
+    await expect(transport.request("collaborationRead", { itemId: "stable-id" })).rejects.toThrow("closed");
+  });
+
   it("reads a retained complete pack without writing and verifies its hash", async () => {
     const seed = fixture();
     const requests: string[] = [];

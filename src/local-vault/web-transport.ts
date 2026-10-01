@@ -80,8 +80,27 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     if (result.revision !== revision) return read(path); // The server merged another replica.
     return remember(openPack(bytes, path, revision, itemId));
   };
-  const transport: VaultTransport = async (method, params) => {
+  const transport: VaultTransport = async (method, params, signal) => {
     if (destroyed) throw new Error("This workspace has closed.");
+    if (method === "collaborationConfig") {
+      if (!manifest) await listing();
+      const item = manifest!.items.find(entry => entry.relativePath === params.path);
+      if (!item) throw new VaultError("This file no longer exists.", "not_found");
+      return { namespace: typeof location === "undefined" ? "web" : location.origin, workspaceId, itemId: item.itemId };
+    }
+    if (method === "collaborationRead" || method === "collaborationPush") {
+      const itemId = String(params.itemId);
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Invalid collaboration item.");
+      const query = new URLSearchParams();
+      for (const key of ["epoch", "seq", "waitMs"]) if (params[key] !== undefined) query.set(key, String(params[key]));
+      const response = await request(`${base}/${encodeURIComponent(itemId)}/collaboration${method === "collaborationRead" && query.size ? `?${query}` : ""}`, {
+        method: method === "collaborationRead" ? "GET" : "POST", credentials: "same-origin", cache: "no-store", signal,
+        ...(method === "collaborationPush" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operationId: params.operationId, epoch: params.epoch, updates: params.updates }) } : {}),
+      });
+      if (!response.ok) throw await failure(response);
+      if (response.status === 204) throw new DOMException("Request canceled", "AbortError");
+      return response.json();
+    }
     if (method === "list" || method === "open") return listing();
     if (method === "recoveryList" || method === "recoveryRead") {
       const query = new URLSearchParams();

@@ -114,15 +114,20 @@ File-backed full-document Yjs merging and durable checkpoint/pack transactions
 are implemented with concurrent-client, epoch-fence, deletion, audit and crash
 recovery tests (`6ac655fb`). Named-workspace authenticated relay routes now enforce
 read/edit roles and reauthorization after waits/uploads; local Postgres grant
-revocation and scope tests pass. Editor/transport integration, scoped grants,
-presence and comments are next. See [collaboration checkpoint](file-vault-collaboration-2026-09-30.md).
-Installed build and running server remain 1134/recovery.
+revocation and scope tests pass. Editor/client/browser transport and bounded
+native bridge are now implemented; current browser acceptance tests real
+two-account typing, Undo/Redo, offline reconnection, idle mutation silence and
+permission downgrade. See [collaboration checkpoint](file-vault-collaboration-2026-09-30.md).
+Installed build remains 1134. Before installing shared native editing, complete
+local TextPack materialization of offline shared edits; browser-journal-only
+durability is insufficient for direct agent file access. Then verify native
+concurrency and proceed to scoped sharing, presence and comments.
 
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-recovery-build`, build identity `texttext-vault-recovery-20260930` (exec session 44773). No persistent
+  runtime path), output `.texttext/vault-collaboration-current-build`, build identity `texttext-vault-collaboration-current-20260930` (exec session 48998). No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,

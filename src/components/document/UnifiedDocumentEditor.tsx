@@ -113,6 +113,10 @@ type UnifiedDocumentEditorProps = {
   /** Local vaults persist through their native file bridge. */
   transport?: "cloud" | "local";
   externalDocument?: DocumentSnapshot;
+  /** An authoritative file-relay Y.Doc, owned and persisted by the caller. */
+  localDocument?: Y.Doc;
+  /** Resolve embedded assets for rendering without changing canonical Yjs data. */
+  resolveDocumentAssets?: (document: DocumentSnapshot) => DocumentSnapshot;
   renderTemplateLibrary?: (props: {
     onApply: (template: TemplateDefinition) => void;
     onClose: () => void;
@@ -475,6 +479,8 @@ export function UnifiedDocumentEditor({
   active = true,
   transport = "cloud",
   externalDocument,
+  localDocument,
+  resolveDocumentAssets,
   renderTemplateLibrary,
   focusNewNote = false,
   blog,
@@ -538,7 +544,7 @@ export function UnifiedDocumentEditor({
   // typing in the pre-ready ledger until creation gives it a server ID and
   // the provider catches up. Seeding a second root here makes the server's
   // blank root compete with (and sometimes replace) the person's first edit.
-  const [doc] = useState(() => new Y.Doc());
+  const [doc] = useState(() => localDocument ?? new Y.Doc());
   /** Body-text mirror for replaceYText; see YTextMirror. */
   const bodyMirrorRef = useRef<YTextMirror>({ applying: false });
   // Undo, from the CRDT rather than the browser. The editable surface is
@@ -778,23 +784,23 @@ export function UnifiedDocumentEditor({
   useEffect(() => { localPublishRef.current = publishDocument; }, [publishDocument]);
   useEffect(() => {
     if (transport !== "local") return;
-    applyDocumentSnapshot(doc, initialDocumentRef.current, localOrigin.current);
+    if (!localDocument) applyDocumentSnapshot(doc, initialDocumentRef.current, localOrigin.current);
     readyRef.current = true;
     // The local Yjs document has now been seeded; expose that external readiness.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReady(true);
     const publish = () => localPublishRef.current(documentSnapshotFromYDoc(doc));
     doc.on("update", publish);
-    return () => { doc.off("update", publish); awareness.destroy(); doc.destroy(); };
-  }, [awareness, doc, transport]);
+    return () => { doc.off("update", publish); awareness.destroy(); if (!localDocument) doc.destroy(); };
+  }, [awareness, doc, transport, localDocument]);
 
   useEffect(() => {
-    if (transport !== "local" || !externalDocument) return;
+    if (transport !== "local" || localDocument || !externalDocument) return;
     // A disk change has already passed the vault's three-way reconciliation.
     // Keep this Y.Doc and its undo history alive while replacing its snapshot.
     preReadyLocalRef.current = null;
     applyDocumentSnapshot(doc, externalDocument, localOrigin.current);
-  }, [doc, transport, externalDocument]);
+  }, [doc, transport, externalDocument, localDocument]);
 
   // Mount included: publishDocument only fires on CHANGES, so an untouched
   // document would never register its body and the outline would be empty on
@@ -1387,6 +1393,18 @@ export function UnifiedDocumentEditor({
   const handleKeyboard = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
       if (event.defaultPrevented || dismissOpenDetails(event.target, event)) return;
+      // Folder workspaces do not mount the cloud workspace command dispatcher.
+      // Handle history at the editor so browser undo cannot change only the DOM.
+      if (transport === "local" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === "z" || key === "y") {
+          event.preventDefault();
+          event.stopPropagation();
+          if (key === "y" || event.shiftKey) undoManagerRef.current?.redo();
+          else undoManagerRef.current?.undo();
+          return;
+        }
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         void stopEditing();
@@ -1402,7 +1420,7 @@ export function UnifiedDocumentEditor({
         void flushMaterialization();
       }
     },
-    [flushMaterialization, stopEditing],
+    [flushMaterialization, stopEditing, transport],
   );
 
   // When this was written. A look that declares a metadata node is asking for
@@ -1499,7 +1517,7 @@ export function UnifiedDocumentEditor({
     setSaveState("local");
     setProviderAttempt((attempt) => attempt + 1);
   }, []);
-  const saveStateLabel = editorSaveLabel(saveState, networkEnabled, ready, error);
+  const saveStateLabel = localDocument ? "" : editorSaveLabel(saveState, networkEnabled, ready, error);
 
   if (!active) return null;
   if (recoveryCopies.length) {
@@ -1792,7 +1810,7 @@ export function UnifiedDocumentEditor({
           </div>
         </div>
       )}
-      <EditorSaveNotice state={saveState} onRetry={retrySaving} />
+      {!localDocument && <EditorSaveNotice state={saveState} onRetry={retrySaving} />}
       {!document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
       {/* No byline while writing: an author and a reading time are reader
           chrome, and showing them here turns the page into a preview of
@@ -1804,7 +1822,7 @@ export function UnifiedDocumentEditor({
           type. Withholding it meant a look could ask for a date line and get
           nothing in the one place its author was looking. */}
       <DocumentRenderer
-        document={document}
+        document={resolveDocumentAssets ? resolveDocumentAssets(document) : document}
         documentId={networkEnabled ? (post.id ?? post.slug) : undefined}
         template={activeTemplate}
         metadata={{ date: editorDate }}

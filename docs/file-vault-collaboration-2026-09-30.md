@@ -57,17 +57,63 @@ it installs no persistent worker. Store access remains through store.ts.
   and `/tmp/texttext-vault-collaboration-api-eslint.log` (two pre-existing store
   unused-symbol warnings).
 
+## Editor and transport integration
+
+The folder editor now opens the authoritative shared Y.Doc for acknowledged
+files. Shared editing disables the competing whole-snapshot autosave. Browser
+and native transports support cancellation; native credentials stay in Swift,
+and bounded response accumulation runs off the main actor. Native configuration
+requires an acknowledged unchanged local file without pending sync work.
+
+The client durably journals pending updates before upload, retries a lost
+acknowledgement using the same operation ID, suspends change waits when hidden,
+and preserves retired/oversized/unreadable journals. Recovery download includes
+unreadable original bytes; an undecodable journal cannot be cleared by reopening
+or copying only its visible snapshot. Template changes use the fresh file's
+content and revision so a newer collaborator edit is preserved.
+
+Ordinary file reads and mutations now honor named-workspace grants. Writes,
+moves and deletes recheck actor and permissions under the storage lock and
+honor cancellation. Commits: `a9e4725d`, `827725bc` (native bridge).
+
+- 59 client, bridge, web transport, route and filesystem checks pass:
+  `/tmp/texttext-file-integration-current-tests.log`.
+- Four native bridge/readiness tests pass:
+  `/tmp/native-collaboration-stream-tests.log`.
+- Production build including TypeScript passes:
+  `/tmp/texttext-vault-collaboration-current-build.log`.
+- The two-account browser verifier is `scripts/verify-file-collaboration.ts`.
+  It uses existing local Ada/Grace accounts and removes its disposable workspace.
+  Strict acceptance passed: concurrent visible edits, exact independent Undo
+  and Redo, offline/online convergence without relocated text, no idle mutation
+  uploads, actual pack matching visible text, denied downgraded writes, open
+  editor noticing permission loss, and zero browser runtime errors.
+  Log: `/tmp/texttext-file-collaboration-browser.log`. Light/dark screenshots:
+  `/tmp/texttext-file-collaboration-{light,dark}.png`.
+  This caught and fixed missing browser Undo/Redo and a deferred caret request
+  that relocated the next typed space. It does not prove native gestures.
+
 ## Remaining integration and limits
 
-This is backend groundwork, not user-visible multiplayer. The new endpoint is
-implemented but not yet built into the running server or connected to an editor.
-No installed build changed and no live two-person acceptance is claimed. Build
-1134 and the recovery web server remain in use.
+Build 1134 remains installed. The current local server uses
+`.texttext/vault-collaboration-current-build`; no public deployment occurred.
+Native shared editing still needs installed acceptance and local TextPack
+materialization of offline shared edits. The browser journal alone does not
+satisfy the requirement that another agent can read current edits from files.
+Do not enable the new native editor in an installed build until that path is
+integrated and verified.
 
-Next: scoped item/folder grants and sharing UI, provider transport/outbox
-namespace injection, native credential-safe bridge,
-authoritative editor baseline and disabling competing snapshot autosaves,
-presence/comments, independent undo and reconnect/revocation acceptance.
+Next: local materialization/outbox integration, scoped item/folder grants and
+sharing UI, presence/comments, installed concurrent-edit/recovery acceptance.
+
+Native materialization must persist a replayable journal/pack intent, track the
+exact projected file hash separately from the acknowledged remote revision,
+exclude only that exact projection from ordinary sync uploads, and protect
+pending shared edits from ordinary downloads. A different file hash is an
+external edit and must fence the session while preserving both versions.
+Acknowledging one relay batch must not clear later local updates. Verify crash
+replay, in-flight sync races, direct agent edits, rename/delete, revocation and
+complete-pack preservation before enabling this path in the installed app.
 
 Every accepted batch currently materializes a complete pack. Before enabling
 interactive traffic, measure/reduce write amplification for large assets and
