@@ -32,6 +32,11 @@ function substitute<T>(value: T, assets: Map<string, string>): T {
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, substitute(entry, assets)])) as T;
   return value;
 }
+function avatarTextColor(color: string): string {
+  const rgb = [1, 3, 5].map(index => Number.parseInt(color.slice(index, index + 2), 16) / 255);
+  const linear = rgb.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722 > 0.179 ? "#000" : "#fff";
+}
 
 /** The relay owns shared writes; this component never snapshot-autosaves them. */
 export function CollaborativeVaultEditor({ initial, config, registerFlush, onChanged, onLocalFallback }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
@@ -233,15 +238,17 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
   const display = resolveAssets(snapshot);
   return <section className="vault-document">
     <header className="vault-document-path" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <span>{client?.relativePath ?? opened.path}</span>
-      {presencePeers.length > 0 && <span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here`}
+      <span style={{ minWidth: 0 }}>{client?.relativePath ?? opened.path}</span>
+      {presencePeers.length > 0 && <span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here: ${presencePeers.slice(0, 3).map(peer => peer.userName).join(", ")}${presencePeers.length > 3 ? ` and ${presencePeers.length - 3} more` : ""}`}
         style={{ display: "inline-flex", alignItems: "center", flexShrink: 0, gap: 3 }}>
         {presencePeers.slice(0, 3).map(peer => <span key={peer.clientId} title={`${peer.userName} is here`}
           style={{ display: "inline-grid", placeItems: "center", width: 22, height: 22, borderRadius: "50%",
-            background: peer.color, color: "#fff", fontSize: 11, fontWeight: 700 }} aria-hidden="true">
+            background: peer.color, color: avatarTextColor(peer.color), fontSize: 11, fontWeight: 700 }} aria-hidden="true">
           {peer.userName.trim().slice(0, 1).toUpperCase() || "?"}
         </span>)}
-        <span>{presencePeers.length > 3 ? `+${presencePeers.length - 3}` : presencePeers.length === 1 ? presencePeers[0].userName : `${presencePeers.length} here`}</span>
+        <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {presencePeers.length > 3 ? `+${presencePeers.length - 3}` : presencePeers.length === 1 ? presencePeers[0].userName : `${presencePeers.length} here`}
+        </span>
       </span>}
     </header>
     {(!ready || blocked || status === "offline" || detail) && <div className="vault-notice" role="status">
