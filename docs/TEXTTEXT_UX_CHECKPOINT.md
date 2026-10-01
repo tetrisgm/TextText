@@ -6,10 +6,10 @@ Complete the [product brief](design/texttext-content-first-ux.md) on ordinary fo
 
 ## Canonical local state (2026-10-01)
 
-- Source: `main` at `31281f03`. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header and brings the verifier in line with the quiet shell.
+- Source: `main` at `cdae9f90`. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header. `cdae9f90` reconnects focused vault editors automatically after service returns.
 - Dirty files owned by other work: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`. Do not alter, reset, clean, or commit them.
-- Installed app: `/Applications/TextText.app`, version 0.202 build 1146, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1146.log` and `/tmp/texttext-install-1146.log`.
-- Local app server: `127.0.0.1:3000`, PID 22454, Codex session 86821, build output `.texttext/vault-perf-20261001k`.
+- Installed app: `/Applications/TextText.app`, version 0.202 build 1147, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
+- Local app server: `127.0.0.1:3000`, PID 50999, Codex session 12498, build output `.texttext/vault-perf-20261001k`.
 - Server command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001k node --env-file=.env.local node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000`.
 - No public push, deploy, release, or persistent job was performed.
 
@@ -56,16 +56,16 @@ See [performance receipt](file-vault-performance-2026-09-30.md) for conditions a
 
 ### Native application
 
-- Build 1146 is the canonical local app and opens the folder workspace with the quiet shell and contextual header.
-- The build and install gates passed. The installer cannot read the sandbox-private runtime health report for this local Apple Development build, so helper validation is packaging evidence rather than a live provider operation.
-- Earlier installed builds proved a real scoped Codex edit, same-note human/agent convergence, correct human/external-agent audit attribution, template customization, image gallery navigation, RSS keep flow, and focus on new-note creation. Those remain supporting evidence, not a substitute for final build 1146 checks.
+- Build 1147 is the canonical local app. It launched into the folder workspace with no false Offline banner.
+- Connect reused the saved agent authorization. A real read task returned `Untitled 2`. A real edit appended its line exactly once while a concurrent human line survived, and the canonical TextPack matched the visible document.
+- A controlled task-owned server outage displayed that pending edits were saved locally. After the server restarted, collaboration and background sync banners cleared automatically without Retry. Final sync state was 32 baselines, outbox 0, conflicts 0.
+- The disposable `Untitled 2` acceptance note was moved to recoverable Trash. The build and installer validated the app, all three extensions, and bundled helper; receipts are `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
 
 ## Remaining acceptance and external boundaries
 
-1. Finish build 1146 installed-app checks: restore online state if the current Offline banner persists, verify New note focus and typing, exercise the installed Add agent path, then show an outage banner and verify it clears automatically after the task-owned server returns.
-2. Profile cached item open only if the product decision still requires the initial 100 ms target. The measured p95 is 590.9 ms; do not claim it as met.
-3. Live private R2 upload/read, backup restore, Oracle switch, public deploy/appcast, public sign-in, and production external-agent authorization remain unverified. The deleted Blob data is intentionally out of scope.
-4. Keep `/Applications/TextText.app` usable while its local server is needed. Recheck the listener before cleanup. Stop the isolated benchmark Postgres only after no verifier depends on it; never stop the normal local database.
+1. Profile cached item open only if the product decision still requires the initial 100 ms target. The measured p95 is 590.9 ms; do not claim it as met.
+2. Live private R2 upload/read, backup restore, Oracle switch, public deploy/appcast, public sign-in, and production external-agent authorization remain unverified. The deleted Blob data is intentionally out of scope.
+3. Keep `/Applications/TextText.app` usable while its local server is needed. Recheck the listener before cleanup. Stop the isolated benchmark Postgres only after no verifier depends on it; never stop the normal local database.
 
 ## References
 
