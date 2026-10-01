@@ -88,6 +88,59 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(origins, [false, true])
     }
 
+    func testAgentRestoreOfConsumedNativeRevisionIsNotAttributedToHuman() async throws {
+        try putLocal(pack("Original"))
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+
+        let journal = LocalVaultEditOriginJournal(root: root)
+        let nativeBytes = try pack("Native edit")
+        let native = try journal.recordingNativeSave {
+            try putLocal(nativeBytes)
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        let uploaded = try await sync.sync()
+        XCTAssertEqual(uploaded.uploaded, 1)
+        XCTAssertFalse(try journal.isNativeSave(path: path, hash: native.hash))
+
+        await transport.set(itemId: itemId, path: path, data: try pack("Remote change"))
+        let downloaded = try await sync.sync()
+        XCTAssertEqual(downloaded.downloaded, 1)
+        try putLocal(nativeBytes) // An agent restores the old bytes after the baseline advanced.
+        let restored = try await sync.sync()
+        let origins = await transport.uploadOrigins()
+        XCTAssertEqual(restored.uploaded, 1)
+        XCTAssertEqual(origins, [false, true, false])
+    }
+
+    func testAgentUploadConsumesOlderNativeMarkerBeforeLaterRestore() async throws {
+        try putLocal(pack("Original"))
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+
+        let journal = LocalVaultEditOriginJournal(root: root)
+        let nativeBytes = try pack("Unsynced native edit")
+        let native = try journal.recordingNativeSave {
+            try putLocal(nativeBytes)
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        try putLocal(pack("Agent edit"))
+        let agentUpload = try await sync.sync()
+        XCTAssertEqual(agentUpload.uploaded, 1)
+        XCTAssertFalse(try journal.isNativeSave(path: path, hash: native.hash))
+
+        await transport.set(itemId: itemId, path: path, data: try pack("Remote change"))
+        let downloaded = try await sync.sync()
+        XCTAssertEqual(downloaded.downloaded, 1)
+        try putLocal(nativeBytes)
+        let restored = try await sync.sync()
+        let origins = await transport.uploadOrigins()
+        XCTAssertEqual(restored.uploaded, 1)
+        XCTAssertEqual(origins, [false, false, false])
+    }
+
     func testAgentRevisionAfterNativeSaveUsesExternalAttribution() async throws {
         let original = try pack("First")
         try putLocal(original)
@@ -126,18 +179,37 @@ final class LocalVaultSyncTests: XCTestCase {
 
     func testNativeOriginSurvivesLostReplyAndRestart() async throws {
         let journal = LocalVaultEditOriginJournal(root: root)
-        _ = try journal.recordingNativeSave {
+        let native = try journal.recordingNativeSave {
             try putLocal(pack("Human offline create"))
             return try LocalVaultDocumentStore(root: root).read(path: path)
         }
         let transport = FakeVaultTransport()
         await transport.loseNextReply()
         let first = try await engine(transport).sync()
+        XCTAssertFalse(try journal.isNativeSave(path: path, hash: native.hash))
         let second = try await engine(transport).sync()
         let origins = await transport.uploadOrigins()
         XCTAssertEqual(first.errors.count, 1)
         XCTAssertTrue(second.errors.isEmpty)
         XCTAssertEqual(origins, [true, true])
+    }
+
+    func testFailedOutboxStageKeepsNativeOriginMarker() async throws {
+        let journal = LocalVaultEditOriginJournal(root: root)
+        let native = try journal.recordingNativeSave {
+            try putLocal(pack("Human offline create"))
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        let sync = try engine(FakeVaultTransport())
+        let stateURL = root.appendingPathComponent(".texttext/sync/state.json")
+        try FileManager.default.removeItem(at: stateURL)
+        try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: false)
+        do {
+            _ = try await sync.sync()
+            XCTFail("Staging should fail when its durable state cannot be written")
+        } catch {
+            XCTAssertTrue(try journal.isNativeSave(path: path, hash: native.hash))
+        }
     }
 
     func testRemoteOnlyChangeDownloadsAndPreservesPriorPack() async throws {

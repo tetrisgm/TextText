@@ -40,7 +40,28 @@ public struct LocalVaultEditOriginJournal: Sendable {
     /// Called while holding `withLock` around the exact bytes being staged.
     public func isNativeSave(path: String, hash: String) throws -> Bool {
         try validate(path: path, hash: hash)
-        return try read()[path] == hash
+        return try nativeSaveHash(path: path) == hash
+    }
+
+    /// The marker may name an older native revision when an agent saved the
+    /// current bytes. Sync consumes that older marker after staging as well.
+    public func nativeSaveHash(path: String) throws -> String? {
+        _ = try LocalVaultDocumentStore(root: root).url(for: path)
+        let hash = try read()[path]
+        if let hash { try validate(path: path, hash: hash) }
+        return hash
+    }
+
+    /// Safe to repeat after a crash. A newer native save for the same path is
+    /// left intact because its hash no longer matches this staged revision.
+    public func consumeNativeSave(path: String, hash: String) throws {
+        try withLock {
+            try validate(path: path, hash: hash)
+            var entries = try read()
+            guard entries[path] == hash else { return }
+            entries.removeValue(forKey: path)
+            try write(entries)
+        }
     }
 
     private func validate(path: String, hash: String) throws {

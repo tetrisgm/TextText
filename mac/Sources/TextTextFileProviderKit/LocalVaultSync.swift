@@ -52,6 +52,7 @@ public actor LocalVaultSync {
         var action: String? = nil
         var newPath: String? = nil
         var nativeEditor: Bool? = nil
+        var originMarkerHash: String? = nil
     }
     private struct Conflict: Codable {
         var localHash: String
@@ -353,14 +354,18 @@ public actor LocalVaultSync {
 
     private func stage(itemId: String, path: String, hash: String, base: String?,
                        bytes: Data?, action: String? = nil, newPath: String? = nil,
-                       nativeEditor: Bool = false) throws -> Pending {
+                       originMarkerHash: String? = nil) throws -> Pending {
         guard try !sharedProtection(itemId: itemId) else { throw LocalVaultSharedFailure.protected }
         let pending = Pending(itemId: itemId, path: path, hash: hash, baseRevision: base,
                               operationId: UUID().uuidString.lowercased(), action: action, newPath: newPath,
-                              nativeEditor: nativeEditor)
+                              nativeEditor: originMarkerHash == hash,
+                              originMarkerHash: originMarkerHash)
         if let bytes { try writeVaultSyncJournal(bytes, to: payload(pending)) }
         state.outbox[itemId] = pending
         try persist()
+        // The outbox now owns this origin through retries. Never consume the
+        // marker before its pending upload and origin are durable together.
+        if let originMarkerHash { try editOrigins.consumeNativeSave(path: path, hash: originMarkerHash) }
         return pending
     }
 
@@ -381,6 +386,11 @@ public actor LocalVaultSync {
             } else {
                 let bytes = try Data(contentsOf: payload(pending))
                 guard TextTextStableDigest.sha256Hex(bytes) == pending.hash else { throw LocalVaultSyncFailure.invalidResponse }
+                // A crash or failed journal write after staging may leave the
+                // marker behind. Consume it before replaying the upload.
+                if let originMarkerHash = pending.originMarkerHash ?? (pending.nativeEditor == true ? pending.hash : nil) {
+                    try editOrigins.consumeNativeSave(path: pending.path, hash: originMarkerHash)
+                }
                 let revision = try await transport.upload(itemId: pending.itemId, path: pending.path, data: bytes,
                     baseRevision: pending.baseRevision, operationId: pending.operationId,
                     nativeEditor: pending.nativeEditor == true)
@@ -608,9 +618,9 @@ public actor LocalVaultSync {
                 let pending = try editOrigins.withLock {
                     let bytes = try Data(contentsOf: store.url(for: path))
                     guard TextTextStableDigest.sha256Hex(bytes) == current.hash else { throw LocalVaultSyncFailure.changed }
-                    let nativeEditor = try editOrigins.isNativeSave(path: path, hash: current.hash)
+                    let originMarkerHash = try editOrigins.nativeSaveHash(path: path)
                     return try stage(itemId: id, path: path, hash: current.hash, base: baseline?.revision,
-                        bytes: bytes, nativeEditor: nativeEditor)
+                        bytes: bytes, originMarkerHash: originMarkerHash)
                 }
                 try await send(pending, report: &report)
             } catch LocalVaultSharedFailure.protected { continue }
