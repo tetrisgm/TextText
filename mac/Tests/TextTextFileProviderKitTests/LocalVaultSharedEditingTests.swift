@@ -291,7 +291,7 @@ private actor SharedTransport: LocalVaultSyncTransport {
     func counts() -> (Int, Int) { (uploads, downloads) }
     func manifest() async throws -> [LocalVaultRemoteItem] { Array(items.values) }
     func download(itemId: String) async throws -> LocalVaultRemotePack { downloads += 1; return LocalVaultRemotePack(data: bytes[itemId]!, relativePath: items[itemId]!.relativePath, revision: items[itemId]!.revision) }
-    func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String) async throws -> String {
+    func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String {
         uploads += 1; let revision = TextTextStableDigest.sha256Hex(data); bodies.append((itemId, revision))
         set(itemId: itemId, path: path, data: data); return revision
     }

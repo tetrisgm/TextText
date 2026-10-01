@@ -8,7 +8,8 @@ import { activeVaultGrants, roleForVaultItem, roleForVaultFolder, type ActiveVau
 import { validVaultItemId, validVaultTextpackPath, validVaultFolderPath } from "@/lib/vault/folder-identity";
 
 export type VaultCapability = "read" | "comment" | "edit";
-type Principal = { user: AccessUser; actorType: "human" | "external_agent"; actorName: string; trustedAppOrSession: boolean };
+type Principal = { user: AccessUser; actorType: "human" | "external_agent"; actorName: string;
+  trustedAppOrSession: boolean; nativeAppToken: boolean };
 const noCache = { "Cache-Control": "no-store" };
 const deny = (status: number, error: string) => Response.json({ error }, { status, headers: noCache });
 
@@ -22,14 +23,16 @@ async function principal(request: Request): Promise<Principal | Response> {
     if (!token) return deny(401, "A valid API token is required");
     const scopes = token.scopes.split(/\s+/);
     if (!scopes.includes("sync") || hasItemAgentScope(scopes)) return deny(403, "This token does not have file vault access");
-    return { user: token, actorType: "external_agent", actorName: safeName(token.name), trustedAppOrSession: token.kind === "app" };
+    return { user: token, actorType: "external_agent", actorName: safeName(token.name),
+      trustedAppOrSession: token.kind === "app", nativeAppToken: token.kind === "app" };
   }
   const session = await getCurrentUser();
   if (!session) return deny(401, "Sign in required");
   if (!["GET", "HEAD"].includes(request.method) && request.headers.get("origin") !== new URL(request.url).origin) {
     return deny(403, "A same-origin request is required");
   }
-  return { user: session, actorType: "human", actorName: safeName(session.name), trustedAppOrSession: true };
+  return { user: session, actorType: "human", actorName: safeName(session.name),
+    trustedAppOrSession: true, nativeAppToken: false };
 }
 
 export async function authorizeVaultWorkspaceOrScoped(request: Request, workspaceId: string) {
@@ -47,6 +50,7 @@ export async function authorizeVaultWorkspaceOrScoped(request: Request, workspac
   if (!fullAccess && !grants.length) return deny(404, "Workspace not found");
   return { root, workspaceId, name: workspace.name, actorUserId: access.userId, actorType: identity.actorType,
     actorName: identity.actorName, canUseHumanPresence: identity.trustedAppOrSession,
+    canAttributeNativeEditor: identity.nativeAppToken,
     canManageShares: identity.trustedAppOrSession && access.isOwner, fullAccess, isOwner: access.isOwner,
     canEditContent: access.isOwner || access.canEditContent, canComment: access.isOwner || access.canComment,
     grants };
@@ -65,7 +69,8 @@ function authorizePath(access: WorkspaceAuthorization, itemId: string, relativeP
   return { root: access.root, workspaceId: access.workspaceId, name: access.name,
     actorUserId: access.actorUserId, actorType: access.actorType, actorName: access.actorName,
     itemId, relativePath, canEditContent, canComment, fullAccess: access.fullAccess,
-    canUseHumanPresence: access.canUseHumanPresence, canManageShares: access.canManageShares };
+    canUseHumanPresence: access.canUseHumanPresence, canAttributeNativeEditor: access.canAttributeNativeEditor,
+    canManageShares: access.canManageShares };
 }
 
 /** Safe inside a vault writer's lock: this rechecks current database grants and

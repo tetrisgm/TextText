@@ -65,6 +65,81 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertFalse(state.contains("Bearer"))
     }
 
+    func testNativeEditorRevisionIsAttributedAfterOfflineSaves() async throws {
+        let original = try pack("First")
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+
+        let journal = LocalVaultEditOriginJournal(root: root)
+        _ = try journal.recordingNativeSave {
+            try putLocal(pack("Human one"))
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        _ = try journal.recordingNativeSave {
+            try putLocal(pack("Human two"))
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        let resumed = try engine(transport)
+        let report = try await resumed.sync()
+        let origins = await transport.uploadOrigins()
+        XCTAssertEqual(report.uploaded, 1)
+        XCTAssertEqual(origins, [false, true])
+    }
+
+    func testAgentRevisionAfterNativeSaveUsesExternalAttribution() async throws {
+        let original = try pack("First")
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+
+        let journal = LocalVaultEditOriginJournal(root: root)
+        _ = try journal.recordingNativeSave {
+            try putLocal(pack("Human"))
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        let agent = try pack("Human and agent")
+        try putLocal(agent)
+        let report = try await sync.sync()
+        let origins = await transport.uploadOrigins()
+        XCTAssertEqual(report.uploaded, 1)
+        XCTAssertEqual(origins, [false, false])
+    }
+
+    func testNativeSaveAfterAgentEditUsesNativeAttribution() async throws {
+        try putLocal(pack("First"))
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        try putLocal(pack("Agent"))
+        _ = try LocalVaultEditOriginJournal(root: root).recordingNativeSave {
+            try putLocal(pack("Agent, then human"))
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        let report = try await sync.sync()
+        let origins = await transport.uploadOrigins()
+        XCTAssertEqual(report.uploaded, 1)
+        XCTAssertEqual(origins, [false, true])
+    }
+
+    func testNativeOriginSurvivesLostReplyAndRestart() async throws {
+        let journal = LocalVaultEditOriginJournal(root: root)
+        _ = try journal.recordingNativeSave {
+            try putLocal(pack("Human offline create"))
+            return try LocalVaultDocumentStore(root: root).read(path: path)
+        }
+        let transport = FakeVaultTransport()
+        await transport.loseNextReply()
+        let first = try await engine(transport).sync()
+        let second = try await engine(transport).sync()
+        let origins = await transport.uploadOrigins()
+        XCTAssertEqual(first.errors.count, 1)
+        XCTAssertTrue(second.errors.isEmpty)
+        XCTAssertEqual(origins, [true, true])
+    }
+
     func testRemoteOnlyChangeDownloadsAndPreservesPriorPack() async throws {
         let first = try pack("Remote first")
         let second = try pack("Remote second")
@@ -199,6 +274,7 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     private var receipts: [String: String] = [:]
     private var tombstones: [String: LocalVaultRemoteItem] = [:]
     private var uploadedOperations: [String] = []
+    private var nativeOrigins: [Bool] = []
     private var downloads = 0
     private var loseReply = false
     private var merged: Data?
@@ -208,6 +284,7 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     func loseNextReply() { loseReply = true }
     func mergeNextUpload(with data: Data) { merged = data }
     func operations() -> [String] { uploadedOperations }
+    func uploadOrigins() -> [Bool] { nativeOrigins }
     func counts() -> (upload: Int, download: Int) { (uploadedOperations.count, downloads) }
     func manifest() -> [LocalVaultRemoteItem] {
         items.map { .init(itemId: $0.key, relativePath: $0.value.relativePath, revision: $0.value.revision) } + Array(tombstones.values)
@@ -217,8 +294,9 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
         guard let item = items[itemId] else { throw LocalVaultSyncFailure.invalidResponse }
         return item
     }
-    func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String) throws -> String {
+    func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) throws -> String {
         uploadedOperations.append(operationId)
+        nativeOrigins.append(nativeEditor)
         if let receipt = receipts[operationId] { return receipt }
         if let merged {
             self.merged = nil

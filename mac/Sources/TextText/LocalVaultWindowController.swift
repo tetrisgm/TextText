@@ -107,8 +107,11 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 while FileManager.default.fileExists(atPath: root.appendingPathComponent(DocumentCreation.filename(for: title) + ".textpack").path) {
                     title = "\(stem) \(suffix)"; suffix += 1
                 }
-                let created = try files.create(title: title, body: url.absoluteString, kind: "bookmark", sourceURL: url.absoluteString)
-                DispatchQueue.main.async { _ = self?.openFile(created); self?.emit("texttext:vault-changed", value: [:]) }
+                let created = try LocalVaultEditOriginJournal(root: root).recordingNativeSave {
+                    let created = try files.create(title: title, body: url.absoluteString, kind: "bookmark", sourceURL: url.absoluteString)
+                    return try LocalVaultDocumentStore(root: root).read(path: files.relativePath(of: created))
+                }
+                DispatchQueue.main.async { _ = self?.openFile(root.appendingPathComponent(created.path)); self?.emit("texttext:vault-changed", value: [:]) }
             } catch {
                 DispatchQueue.main.async { NSAlert(error: error).runModal() }
             }
@@ -135,7 +138,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     while FileManager.default.fileExists(atPath: try store.url(for: path).path) {
                         path = prefix + stem + " \(suffix).textpack"; suffix += 1
                     }
-                    return ["file": try Self.payload(store.importFile(from: source, newPath: path))]
+                    let document = try LocalVaultEditOriginJournal(root: root).recordingNativeSave {
+                        try store.importFile(from: source, newPath: path)
+                    }
+                    return ["file": Self.payload(document)]
                 }
                 DispatchQueue.main.async { completion(result); self.emit("texttext:vault-changed", value: [:]) }
             }
@@ -351,7 +357,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     defer { try? FileManager.default.removeItem(at: temporary) }
                     let source = temporary.appendingPathComponent(stem + ".textpack")
                     try data.write(to: source, options: .withoutOverwriting)
-                    return try Self.payload(store.importFile(from: source, newPath: path))
+                    return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
+                        try store.importFile(from: source, newPath: path)
+                    })
                 case "rename":
                     return try Self.payload(store.rename(path: Self.string(params, "path"),
                         expectedHash: Self.string(params, "hash"), newPath: Self.string(params, "newPath")))
@@ -364,11 +372,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                         "templateJSON": document.contents.templateJSON as Any? ?? NSNull(),
                         "templateAuthoringSourceJSON": document.contents.templateAuthoringSourceJSON as Any? ?? NSNull()]
                 case "write":
-                    return try Self.payload(store.write(path: Self.string(params, "path"),
-                        expectedHash: Self.string(params, "hash"), markdown: Self.string(params, "markdown"),
-                        documentJSON: params["documentJSON"] as? String,
-                        templateJSON: params["templateJSON"] as? String,
-                        templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String))
+                    let expectedHash = try Self.string(params, "hash")
+                    return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
+                        try store.write(path: Self.string(params, "path"),
+                            expectedHash: expectedHash, markdown: Self.string(params, "markdown"),
+                            documentJSON: params["documentJSON"] as? String,
+                            templateJSON: params["templateJSON"] as? String,
+                            templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String)
+                    })
                 case "create":
                     let files = DocumentStore(root: root)
                     let title = try Self.string(params, "title")
@@ -383,9 +394,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                         (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack")
                     try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                     if let source = params["sourcePath"] as? String {
-                        return try Self.payload(store.clone(path: source,
-                            sourceHash: params["sourceHash"] as? String,
-                            newPath: (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack"))
+                        return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
+                            try store.clone(path: source, sourceHash: params["sourceHash"] as? String,
+                                newPath: (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack")
+                        })
                     }
                     let kind = params["kind"] as? String ?? "note"
                     guard kind == "note" || kind == "bookmark" else { throw VaultBridgeError("Unsupported capture type.") }
@@ -394,9 +406,11 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                         guard let url = URL(string: source), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
                               url.host != nil, url.user == nil, url.password == nil else { throw VaultBridgeError("Choose an HTTP or HTTPS link without credentials.") }
                     }
-                    let created = try files.create(title: uniqueTitle, body: params["body"] as? String ?? "",
-                        folder: folder, kind: kind, sourceURL: source)
-                    return try Self.payload(store.read(path: files.relativePath(of: created)))
+                    return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
+                        let created = try files.create(title: uniqueTitle, body: params["body"] as? String ?? "",
+                            folder: folder, kind: kind, sourceURL: source)
+                        return try store.read(path: files.relativePath(of: created))
+                    })
                 default: throw VaultBridgeError("Unknown file operation.")
                 }
             }

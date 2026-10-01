@@ -47,10 +47,12 @@ describe("file-vault item authorization", () => {
   it("recognizes verified app tokens for human presence without changing audit actor type", async () => {
     mocks.token.mockResolvedValue({ userId: access.userId, sub: "owner", name: "TextText Mac", scopes: "sync", kind: "app" });
     const app = await authorizeVaultItemAtPath(request("POST", { authorization: "Bearer opaque" }), workspaceId, itemId, "Private/One.textpack", "edit");
-    expect(app).toMatchObject({ actorType: "external_agent", actorName: "TextText Mac", canUseHumanPresence: true });
+    expect(app).toMatchObject({ actorType: "external_agent", actorName: "TextText Mac",
+      canUseHumanPresence: true, canAttributeNativeEditor: true });
     mocks.token.mockResolvedValue({ userId: access.userId, sub: "owner", name: "Agent", scopes: "sync", kind: "manual" });
     const agent = await authorizeVaultItemAtPath(request("POST", { authorization: "Bearer opaque" }), workspaceId, itemId, "Private/One.textpack", "edit");
-    expect(agent).toMatchObject({ actorType: "external_agent", canUseHumanPresence: false, canManageShares: false });
+    expect(agent).toMatchObject({ actorType: "external_agent", canUseHumanPresence: false,
+      canAttributeNativeEditor: false, canManageShares: false });
   });
 
   it("checks same-origin cookie mutations and refuses invalid bearer fallback", async () => {

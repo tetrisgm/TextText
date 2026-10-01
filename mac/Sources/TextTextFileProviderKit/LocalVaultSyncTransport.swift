@@ -37,7 +37,7 @@ public enum LocalVaultSyncFailure: Error, LocalizedError {
 public protocol LocalVaultSyncTransport: Sendable {
     func manifest() async throws -> [LocalVaultRemoteItem]
     func download(itemId: String) async throws -> LocalVaultRemotePack
-    func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String) async throws -> String
+    func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String
     func rename(itemId: String, from: String, to: String, baseRevision: String, operationId: String) async throws -> String
     func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws
 }
@@ -118,12 +118,13 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         return .init(data: data, relativePath: path, revision: etag.trimmingCharacters(in: CharacterSet(charactersIn: "\"")))
     }
 
-    public func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String) async throws -> String {
+    public func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String {
         var request = request(endpoint.appendingPathComponent(itemId))
         request.httpMethod = "PUT"; request.httpBody = data
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.setValue(path.addingPercentEncoding(withAllowedCharacters: .alphanumerics), forHTTPHeaderField: "X-TextText-Path")
         request.setValue(operationId, forHTTPHeaderField: "X-TextText-Operation-Id")
+        if nativeEditor { request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin") }
         if let baseRevision { request.setValue("\"\(baseRevision)\"", forHTTPHeaderField: "If-Match") }
         else { request.setValue("*", forHTTPHeaderField: "If-None-Match") }
         struct Receipt: Decodable { let revision: String }

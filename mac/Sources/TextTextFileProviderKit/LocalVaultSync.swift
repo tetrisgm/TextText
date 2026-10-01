@@ -51,6 +51,7 @@ public actor LocalVaultSync {
         var operationId: String
         var action: String? = nil
         var newPath: String? = nil
+        var nativeEditor: Bool? = nil
     }
     private struct Conflict: Codable {
         var localHash: String
@@ -70,6 +71,7 @@ public actor LocalVaultSync {
     private let root: URL
     private let directory: URL
     private let transport: any LocalVaultSyncTransport
+    private let editOrigins: LocalVaultEditOriginJournal
     private var state: State
     private var running = false
     private struct SharedSession { var token: String; var path: String; var hash: String; var retired = false }
@@ -80,6 +82,7 @@ public actor LocalVaultSync {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
         self.directory = self.root.appendingPathComponent(".texttext/sync", isDirectory: true)
         self.transport = transport
+        self.editOrigins = LocalVaultEditOriginJournal(root: self.root)
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         let stateURL = directory.appendingPathComponent("state.json")
         guard stateURL.resolvingSymlinksInPath().path == stateURL.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
@@ -349,10 +352,12 @@ public actor LocalVaultSync {
     }
 
     private func stage(itemId: String, path: String, hash: String, base: String?,
-                       bytes: Data?, action: String? = nil, newPath: String? = nil) throws -> Pending {
+                       bytes: Data?, action: String? = nil, newPath: String? = nil,
+                       nativeEditor: Bool = false) throws -> Pending {
         guard try !sharedProtection(itemId: itemId) else { throw LocalVaultSharedFailure.protected }
         let pending = Pending(itemId: itemId, path: path, hash: hash, baseRevision: base,
-                              operationId: UUID().uuidString.lowercased(), action: action, newPath: newPath)
+                              operationId: UUID().uuidString.lowercased(), action: action, newPath: newPath,
+                              nativeEditor: nativeEditor)
         if let bytes { try writeVaultSyncJournal(bytes, to: payload(pending)) }
         state.outbox[itemId] = pending
         try persist()
@@ -377,7 +382,8 @@ public actor LocalVaultSync {
                 let bytes = try Data(contentsOf: payload(pending))
                 guard TextTextStableDigest.sha256Hex(bytes) == pending.hash else { throw LocalVaultSyncFailure.invalidResponse }
                 let revision = try await transport.upload(itemId: pending.itemId, path: pending.path, data: bytes,
-                    baseRevision: pending.baseRevision, operationId: pending.operationId)
+                    baseRevision: pending.baseRevision, operationId: pending.operationId,
+                    nativeEditor: pending.nativeEditor == true)
                 if revision != pending.hash {
                     let remote = try await transport.download(itemId: pending.itemId)
                     try install(remote, itemId: pending.itemId, path: pending.path, expectedLocal: pending.hash)
@@ -599,9 +605,13 @@ public actor LocalVaultSync {
                     try persist(); report.downloaded += 1
                     continue
                 }
-                let bytes = try Data(contentsOf: store.url(for: path))
-                guard TextTextStableDigest.sha256Hex(bytes) == current.hash else { throw LocalVaultSyncFailure.changed }
-                let pending = try stage(itemId: id, path: path, hash: current.hash, base: baseline?.revision, bytes: bytes)
+                let pending = try editOrigins.withLock {
+                    let bytes = try Data(contentsOf: store.url(for: path))
+                    guard TextTextStableDigest.sha256Hex(bytes) == current.hash else { throw LocalVaultSyncFailure.changed }
+                    let nativeEditor = try editOrigins.isNativeSave(path: path, hash: current.hash)
+                    return try stage(itemId: id, path: path, hash: current.hash, base: baseline?.revision,
+                        bytes: bytes, nativeEditor: nativeEditor)
+                }
                 try await send(pending, report: &report)
             } catch LocalVaultSharedFailure.protected { continue }
             catch { report.errors.append("\(activePath): \(error.localizedDescription)") }

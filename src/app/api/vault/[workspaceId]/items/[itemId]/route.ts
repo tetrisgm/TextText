@@ -16,13 +16,15 @@ async function authorize(request: Request, context: Context, capability: "read" 
   return { ...identity, itemId: params.itemId };
 }
 
-function commitGuard(request: Request, context: Context, actorUserId: string, requireWorkspaceEdit = false) {
+function commitGuard(request: Request, context: Context, actorUserId: string,
+  requireWorkspaceEdit = false, requireNativeEditor = false) {
   return { signal: request.signal, beforeCommit: async (relativePath: string) => {
     const { workspaceId, itemId } = await context.params;
     const latest = await authorizeVaultItemAtPath(request, workspaceId, itemId, relativePath, "edit");
     if (latest instanceof Response) throw latest;
     if (latest.actorUserId !== actorUserId) throw Response.json({ error: "Session changed" }, { status: 403, headers: noCache });
     if (requireWorkspaceEdit && !latest.fullAccess) throw Response.json({ error: "Workspace editing permission is required" }, { status: 403, headers: noCache });
+    if (requireNativeEditor && !latest.canAttributeNativeEditor) throw Response.json({ error: "An app token is required for native editor attribution" }, { status: 403, headers: noCache });
   } };
 }
 
@@ -93,6 +95,13 @@ export async function PUT(request: Request, context: Context) {
   const { workspaceId, itemId } = await context.params;
   const authorized = await authorizeVaultItemAtPath(request, workspaceId, itemId, relativePath, "edit");
   if (authorized instanceof Response) return authorized;
+  const editOrigin = request.headers.get("X-TextText-Edit-Origin");
+  if (editOrigin !== null && editOrigin !== "native-editor") {
+    return Response.json({ error: "Invalid edit origin" }, { status: 400, headers: noCache });
+  }
+  if (editOrigin && !authorized.canAttributeNativeEditor) {
+    return Response.json({ error: "An app token is required for native editor attribution" }, { status: 403, headers: noCache });
+  }
   const contentLength = Number(request.headers.get("Content-Length"));
   if (contentLength > MAX_BYTES) return Response.json({ error: "TextPack exceeds 64 MiB" }, { status: 413, headers: noCache });
   if (!request.body) return Response.json({ error: "TextPack body is required" }, { status: 400, headers: noCache });
@@ -112,7 +121,9 @@ export async function PUT(request: Request, context: Context) {
     }
     const current = authorized;
     if (request.signal.aborted) return new Response(null, { status: 204, headers: noCache });
-    const result = await writeVaultTextpack({ ...current, ...commitGuard(request, context, current.actorUserId), operationId, relativePath,
+    const result = await writeVaultTextpack({ ...current,
+      actorType: editOrigin ? "human" : current.actorType,
+      ...commitGuard(request, context, current.actorUserId, false, editOrigin !== null), operationId, relativePath,
       baseRevision: match ? match.slice(1, -1) : null,
       bytes: Buffer.concat(chunks, size),
     });

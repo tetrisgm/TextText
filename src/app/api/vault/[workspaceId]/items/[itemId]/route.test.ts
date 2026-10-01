@@ -105,6 +105,30 @@ describe("workspace vault API", () => {
     }));
   });
 
+  it("accepts native editor attribution only with a verified app token", async () => {
+    const nativeHeaders = { ...headers, "X-TextText-Edit-Origin": "native-editor" };
+    expect((await PUT(new Request("https://texttext.test", { method: "PUT", headers: nativeHeaders, body: "pack" }), context())).status).toBe(403);
+    expect(mocks.write).not.toHaveBeenCalled();
+
+    mocks.auth.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "user-1",
+      actorType: "external_agent", canAttributeNativeEditor: true, fullAccess: true, relativePath: "Notes/A note.textpack" });
+    mocks.write.mockResolvedValue({ status: "written", revision: "b".repeat(64) });
+    const result = await PUT(new Request("https://texttext.test", { method: "PUT", headers: nativeHeaders, body: "pack" }), context());
+    expect(result.status).toBe(200);
+    expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ actorType: "human" }));
+  });
+
+  it("rechecks the app token before committing a native editor upload", async () => {
+    mocks.auth.mockResolvedValueOnce({ actorUserId: "user-1", actorType: "external_agent", canAttributeNativeEditor: true })
+      .mockResolvedValueOnce({ actorUserId: "user-1", actorType: "external_agent", canAttributeNativeEditor: false });
+    mocks.write.mockImplementationOnce(async (input) => { await input.beforeCommit(); throw new Error("Unexpected commit"); });
+    const result = await PUT(new Request("https://texttext.test", { method: "PUT",
+      headers: { ...headers, "X-TextText-Edit-Origin": "native-editor" }, body: "pack",
+    }), context());
+    expect(result.status).toBe(403);
+    expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ actorType: "human" }));
+  });
+
   it("returns a preserved conflict as 409", async () => {
     mocks.write.mockResolvedValue({ status: "conflict", conflictPath: ".texttext/conflicts/operation-1.textpack" });
     const result = await PUT(new Request("https://texttext.test", { method: "PUT", headers, body: "pack" }), context());
