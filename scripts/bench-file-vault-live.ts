@@ -155,8 +155,8 @@ async function measuredClick(page: Page, locator: ReturnType<Page["locator"]>, s
     }, { targetSelector: selector, expected: text, partial: contains }, { timeout: 15_000 });
   } catch {
     const state = await page.evaluate((targetSelector) => ({
-      heading: document.querySelector(".vault-overview h2")?.textContent?.trim() ?? null,
-      path: document.querySelector(".vault-document-path")?.textContent?.trim() ?? null,
+      heading: document.querySelector(".vault-context-location h2")?.textContent?.trim() ?? null,
+      path: document.querySelector(".vault-context-location h2")?.getAttribute("title") ?? null,
       target: document.querySelector(targetSelector)?.textContent?.trim().slice(0, 100) ?? null,
       notice: document.querySelector('[role="alert"]')?.textContent?.trim().slice(0, 160) ?? null,
     }), selector);
@@ -165,13 +165,19 @@ async function measuredClick(page: Page, locator: ReturnType<Page["locator"]>, s
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   return performance.now() - started;
 }
-function sidebarItem(page: Page, relativePath: string) {
-  return page.locator(`nav[aria-label="Workspace files"] button[title="${relativePath}"]`);
+function folderButton(page: Page, name: string) {
+  return page.locator('nav[aria-label="Folders"] summary', { hasText: name }).first();
 }
-async function checkSidebarItem(page: Page, account: string, relativePath: string, result: Result) {
-  const button = sidebarItem(page, relativePath);
+function documentItem(page: Page, relativePath: string) {
+  const parts = relativePath.split("/");
+  const title = parts.at(-1)?.replace(/\.textpack$/i, "") ?? relativePath;
+  const folder = parts.length > 1 ? parts.at(-2)! : "Workspace";
+  return page.getByRole("button", { name: `${title} ${folder} Open →`, exact: true });
+}
+async function checkDocumentItem(page: Page, account: string, relativePath: string, result: Result) {
+  const button = documentItem(page, relativePath);
   await button.waitFor({ timeout: 20_000 });
-  check(await button.count() === 1, `Expected one sidebar item for ${relativePath}`);
+  check(await button.count() === 1, `Expected one document item for ${relativePath}`);
   const observed = await button.evaluate(element => ({ title: element.getAttribute("title"), ariaLabel: element.getAttribute("aria-label") }));
   result.locatorChecks.push({ account, relativePath, ...observed });
   return button;
@@ -233,7 +239,7 @@ const firstVisibleInit = `globalThis.__name = (fn) => fn;
   } catch {}
   let finished = false;
   const observer = new MutationObserver(() => {
-    if (finished || !document.querySelector('.vault-overview h2')) return;
+    if (finished || !document.querySelector('.vault-context-location h2')) return;
     finished = true; observer.disconnect();
     requestAnimationFrame(() => requestAnimationFrame(() => { globalThis.__ttBenchFirstVisible = performance.now(); }));
   });
@@ -407,8 +413,8 @@ async function main() {
         if (event) event.finished = performance.now();
       });
       await page.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
-      await page.locator(".vault-overview h2").waitFor({ timeout: 20_000 });
-      const folder = (name: string) => page.locator(".vault-folder-grid button", { hasText: name }).first();
+      await page.locator(".vault-context-location h2").waitFor({ timeout: 20_000 });
+      const folder = (name: string) => folderButton(page, name);
       const tracedClick = async (label: string, locator: ReturnType<Page["locator"]>, selector: string, expected: string, contains = false) => {
         const start = performance.now();
         const elapsedMs = await measuredClick(page, locator, selector, expected, contains);
@@ -420,17 +426,17 @@ async function main() {
         })) };
       };
       const navigation = [];
-      navigation.push(await tracedClick("Gallery folder", folder("Gallery"), ".vault-overview h2", "Gallery"));
+      navigation.push(await tracedClick("Gallery folder", folder("Gallery"), ".vault-context-location h2", "Gallery"));
       const imageStart = performance.now();
       await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].some(image => image.complete && image.naturalWidth > 0), null, { timeout: 20_000 });
       const galleryDecodeMs = performance.now() - imageStart;
-      navigation.push(await tracedClick("Gallery item", await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
-      navigation.push(await tracedClick("All files", page.getByRole("button", { name: "All files", exact: true }), ".vault-overview h2", "Your workspace"));
-      navigation.push(await tracedClick("Notes folder", folder("Notes"), ".vault-overview h2", "Notes"));
-      navigation.push(await tracedClick("Long note item", await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
-      navigation.push(await tracedClick("All files after Long note", page.getByRole("button", { name: "All files", exact: true }), ".vault-overview h2", "Your workspace"));
-      navigation.push(await tracedClick("Notes folder after Long note", folder("Notes"), ".vault-overview h2", "Notes"));
-      navigation.push(await tracedClick("Cached Long note item", await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      navigation.push(await tracedClick("Gallery item", await checkDocumentItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
+      navigation.push(await tracedClick("All files", page.getByRole("button", { name: "All files", exact: true }), ".vault-context-location h2", "All files"));
+      navigation.push(await tracedClick("Notes folder", folder("Notes"), ".vault-context-location h2", "Notes"));
+      navigation.push(await tracedClick("Long note item", await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      navigation.push(await tracedClick("All files after Long note", page.getByRole("button", { name: "All files", exact: true }), ".vault-context-location h2", "All files"));
+      navigation.push(await tracedClick("Notes folder after Long note", folder("Notes"), ".vault-context-location h2", "Notes"));
+      navigation.push(await tracedClick("Cached Long note item", await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
       await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20_000 });
       const target = items.find(item => item.title === "Long note")!;
       const before = await store.readVaultCollaboration({ root: ROOT, workspaceId, itemId: target.id });
@@ -473,21 +479,21 @@ async function main() {
       phase = "locator smoke";
       const page = await context.newPage();
       await page.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
-      await page.locator(".vault-overview h2").waitFor({ timeout: 20_000 });
-      const folder = (name: string) => page.locator(".vault-folder-grid button", { hasText: name }).first();
+      await page.locator(".vault-context-location h2").waitFor({ timeout: 20_000 });
+      const folder = (name: string) => folderButton(page, name);
       if (agentSmoke) {
         await folder("Notes").waitFor({ timeout: 20_000 });
-        await measuredClick(page, folder("Notes"), ".vault-overview h2", "Notes");
-        await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Agent activity.textpack", result), ".tt-md-surface", "The agent-like mutation target.", true);
+        await measuredClick(page, folder("Notes"), ".vault-context-location h2", "Notes");
+        await measuredClick(page, await checkDocumentItem(page, EMAILS[0], "Notes/Agent activity.textpack", result), ".tt-md-surface", "The agent-like mutation target.", true);
       } else {
         await folder("Gallery").waitFor({ timeout: 20_000 });
         await folder("Notes").waitFor({ timeout: 20_000 });
-        await measuredClick(page, folder("Gallery"), ".vault-overview h2", "Gallery");
+        await measuredClick(page, folder("Gallery"), ".vault-context-location h2", "Gallery");
         await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].some(image => image.complete && image.naturalWidth > 0), null, { timeout: 20_000 });
-        await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true);
-        await measuredClick(page, page.getByRole("button", { name: "All files", exact: true }), ".vault-overview h2", "Your workspace");
-        await measuredClick(page, folder("Notes"), ".vault-overview h2", "Notes");
-        await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true);
+        await measuredClick(page, await checkDocumentItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true);
+        await measuredClick(page, page.getByRole("button", { name: "All files", exact: true }), ".vault-context-location h2", "All files");
+        await measuredClick(page, folder("Notes"), ".vault-context-location h2", "Notes");
+        await measuredClick(page, await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true);
         await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20_000 });
         await typeAndMeasure(page);
         await commandKAndMeasure(page);
@@ -503,12 +509,13 @@ async function main() {
         check(memberLogin.ok(), "Existing second test-account sign-in failed");
         const memberPage = await memberContext.newPage();
         await memberPage.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
-        await measuredClick(memberPage, await checkSidebarItem(memberPage, EMAILS[1], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true);
+        await measuredClick(memberPage, folderButton(memberPage, "Gallery"), ".vault-context-location h2", "Gallery");
+        await measuredClick(memberPage, await checkDocumentItem(memberPage, EMAILS[1], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true);
         result.fixture.memberVerified = true;
         await memberPage.close();
       }
       result.status = "passed";
-      console.log(`LOCATOR SMOKE ${result.locatorChecks.length} exact sidebar checks passed`);
+      console.log(`LOCATOR SMOKE ${result.locatorChecks.length} exact document checks passed`);
       return;
     }
     const idleStart = result.samples.length;
@@ -523,21 +530,21 @@ async function main() {
       await page.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
       const visible = await openVisible(page);
       (round === 0 ? result.coldVisibleMs : result.warmVisibleMs).push(visible);
-      const folder = (name: string) => page.locator(".vault-folder-grid button", { hasText: name }).first();
+      const folder = (name: string) => folderButton(page, name);
       const allFiles = () => page.getByRole("button", { name: "All files", exact: true });
-      result.folderNavMs.push(await measuredClick(page, folder("Gallery"), ".vault-overview h2", "Gallery"));
+      result.folderNavMs.push(await measuredClick(page, folder("Gallery"), ".vault-context-location h2", "Gallery"));
       await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].filter(image => image.complete && image.naturalWidth > 0).length >= 1, null, { timeout: 20_000 });
       result.galleryImages.push(await page.locator(".vault-document-grid img").count());
-      result.itemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
-      await allFiles().click(); await page.locator(".vault-overview h2", { hasText: "Your workspace" }).waitFor();
-      await folder("Gallery").click(); await page.locator(".vault-overview h2", { hasText: "Gallery" }).waitFor();
-      result.cachedItemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
-      result.folderNavMs.push(await measuredClick(page, allFiles(), ".vault-overview h2", "Your workspace"));
-      result.folderNavMs.push(await measuredClick(page, folder("Notes"), ".vault-overview h2", "Notes"));
-      result.itemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
-      await allFiles().click(); await page.locator(".vault-overview h2", { hasText: "Your workspace" }).waitFor();
-      await folder("Notes").click(); await page.locator(".vault-overview h2", { hasText: "Notes" }).waitFor();
-      result.cachedItemNavMs.push(await measuredClick(page, await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      result.itemNavMs.push(await measuredClick(page, await checkDocumentItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
+      await allFiles().click(); await page.locator(".vault-context-location h2", { hasText: "All files" }).waitFor();
+      await folder("Gallery").click(); await page.locator(".vault-context-location h2", { hasText: "Gallery" }).waitFor();
+      result.cachedItemNavMs.push(await measuredClick(page, await checkDocumentItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
+      result.folderNavMs.push(await measuredClick(page, allFiles(), ".vault-context-location h2", "All files"));
+      result.folderNavMs.push(await measuredClick(page, folder("Notes"), ".vault-context-location h2", "Notes"));
+      result.itemNavMs.push(await measuredClick(page, await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      await allFiles().click(); await page.locator(".vault-context-location h2", { hasText: "All files" }).waitFor();
+      await folder("Notes").click(); await page.locator(".vault-context-location h2", { hasText: "Notes" }).waitFor();
+      result.cachedItemNavMs.push(await measuredClick(page, await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
       result.inputToVisibleMs.push(...await typeAndMeasure(page));
       if (round === 0) {
         // Save/transport has three seconds to settle. Count all requests over
@@ -575,8 +582,9 @@ async function main() {
         }
       } catch {}` });
     await activePage.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
-    await activePage.locator(".vault-overview h2").waitFor({ timeout: 20_000 });
-    await (await checkSidebarItem(activePage, EMAILS[0], "Notes/Agent activity.textpack", result)).click();
+    await activePage.locator(".vault-context-location h2").waitFor({ timeout: 20_000 });
+    await measuredClick(activePage, folderButton(activePage, "Notes"), ".vault-context-location h2", "Notes");
+    await (await checkDocumentItem(activePage, EMAILS[0], "Notes/Agent activity.textpack", result)).click();
     const activeBody = activePage.getByRole("textbox", { name: "Document body", exact: true });
     await activeBody.waitFor({ timeout: 20_000 });
     const target = items.find(value => value.title === "Agent activity")!;
@@ -612,7 +620,8 @@ async function main() {
     check(memberLogin.ok(), "Existing second test-account sign-in failed");
     const memberPage = await memberContext.newPage();
     await memberPage.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
-    await checkSidebarItem(memberPage, EMAILS[1], "Gallery/Gallery 001.textpack", result);
+    await measuredClick(memberPage, folderButton(memberPage, "Gallery"), ".vault-context-location h2", "Gallery");
+    await checkDocumentItem(memberPage, EMAILS[1], "Gallery/Gallery 001.textpack", result);
     result.fixture.memberVerified = true;
     await memberPage.close();
     phase = "after close idle";
