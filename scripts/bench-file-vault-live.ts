@@ -212,7 +212,7 @@ async function typeAndMeasure(page: Page): Promise<number[]> {
   return values;
 }
 async function commandKAndMeasure(page: Page): Promise<number> {
-  const dialog = page.getByRole("dialog", { name: "Search files", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Search and actions", exact: true });
   const started = performance.now();
   await page.keyboard.press("Meta+k");
   await dialog.locator('input[aria-label="Search workspace"]').waitFor({ timeout: 10_000 });
@@ -225,6 +225,12 @@ async function commandKAndMeasure(page: Page): Promise<number> {
 
 const firstVisibleInit = `globalThis.__name = (fn) => fn;
 (() => {
+  try {
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+      const key = localStorage.key(index);
+      if (key?.startsWith("texttext:vault-location:")) localStorage.removeItem(key);
+    }
+  } catch {}
   let finished = false;
   const observer = new MutationObserver(() => {
     if (finished || !document.querySelector('.vault-overview h2')) return;
@@ -558,7 +564,13 @@ async function main() {
     // provider operation. It is separate from cold and warm navigation rows.
     phase = "active agent-like mutation";
     const activePage = await context.newPage();
-    await activePage.addInitScript({ content: "globalThis.__name = (fn) => fn;" });
+    await activePage.addInitScript({ content: `globalThis.__name = (fn) => fn;
+      try {
+        for (let index = localStorage.length - 1; index >= 0; index--) {
+          const key = localStorage.key(index);
+          if (key?.startsWith("texttext:vault-location:")) localStorage.removeItem(key);
+        }
+      } catch {}` });
     await activePage.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
     await activePage.locator(".vault-overview h2").waitFor({ timeout: 20_000 });
     await (await checkSidebarItem(activePage, EMAILS[0], "Notes/Agent activity.textpack", result)).click();
