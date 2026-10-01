@@ -37,6 +37,13 @@ import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from ".
 import "./style.css";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+function focusedControl(): HTMLElement | null {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active !== document.body ? active : null;
+}
+function restoreDialogFocus(...targets: (HTMLElement | null)[]) {
+  requestAnimationFrame(() => { targets.find(target => target?.isConnected)?.focus(); });
+}
 function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   if (typeof value === "string") {
     let mapped = value as string;
@@ -333,6 +340,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const feedSubscribeButton = useRef<HTMLButtonElement>(null);
+  const searchReturnFocus = useRef<HTMLElement | null>(null);
+  const feedSubscribeReturnFocus = useRef<HTMLElement | null>(null);
   const commentsButton = useRef<HTMLButtonElement>(null);
   const importing = useRef(false);
   const [importStatus, setImportStatus] = useState("");
@@ -485,6 +496,21 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       });
     } finally { importing.current = false; }
   };
+  const openSearch = useCallback(() => {
+    if (searchOpen || document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
+    searchReturnFocus.current = focusedControl();
+    setSearchOpen(true);
+  }, [searchOpen]);
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    restoreDialogFocus(searchReturnFocus.current, searchButton.current);
+    searchReturnFocus.current = null;
+  }, []);
+  const closeFeedSubscribe = useCallback(() => {
+    setFeedSubscribeOpen(false);
+    restoreDialogFocus(feedSubscribeReturnFocus.current, feedSubscribeButton.current, searchButton.current);
+    feedSubscribeReturnFocus.current = null;
+  }, []);
   useEffect(() => {
     const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path)); }); };
     const newFile = () => { if (canCreate) void operate(async () => { setSelected(await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() })); refresh(); }); };
@@ -493,17 +519,16 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     return () => { window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
   });
   useEffect(() => {
-    const search = () => setSearchOpen(true);
     const key = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" &&
-          !document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) {
-        event.preventDefault(); search();
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        if (document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
+        event.preventDefault(); openSearch();
       }
     };
     window.addEventListener("keydown", key);
-    window.addEventListener("texttext:vault-search", search);
-    return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", search); };
-  }, []);
+    window.addEventListener("texttext:vault-search", openSearch);
+    return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", openSearch); };
+  }, [openSearch]);
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
     onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
@@ -535,7 +560,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         })}>New note</button>
         <button disabled={busy} onClick={() => void operate(async () => setTemplatePicker(true))}>New from template</button>
         <button disabled={busy} onClick={() => void operate(async () => setCaptureOpen(true))}>Save a link or note</button>
-        {canSubscribeFeed && <button disabled={busy} onClick={() => void operate(async () => setFeedSubscribeOpen(true))}>Subscribe to a feed</button>}
+        {canSubscribeFeed && <button ref={feedSubscribeButton} disabled={busy} onClick={() => {
+          feedSubscribeReturnFocus.current = focusedControl();
+          void operate(async () => setFeedSubscribeOpen(true));
+        }}>Subscribe to a feed</button>}
         <input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images" onChange={(event) => {
           const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
         }} />
@@ -546,7 +574,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             if (result.file) { setSelected(result.file); refresh(); }
           })}>Import file…</button>
         </>}
-        <button disabled={busy} onClick={() => setSearchOpen(true)}>Search files ⌘K</button>
+        <button ref={searchButton} disabled={busy} onClick={openSearch}>Search files ⌘K</button>
         {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>}
         <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); })} onOpen={(item) => void operate(async () => {
@@ -611,10 +639,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });
         setSelected(created); refresh();
       }} />}
-      {feedSubscribeOpen && <FeedSubscribeDialog folder={destinationFolder.trim()} folders={folders} onClose={() => setFeedSubscribeOpen(false)} onSaved={file => {
+      {feedSubscribeOpen && <FeedSubscribeDialog folder={destinationFolder.trim()} folders={folders} onClose={closeFeedSubscribe} onSaved={file => {
         closeRemoved(); setSelected(file); setDestinationFolder(folderForItem(file.path)); refresh();
       }} />}
-      {searchOpen && <VaultSearch namesOnly={!allowFolderPicker} onClose={() => setSearchOpen(false)} onOpen={async (path) => {
+      {searchOpen && <VaultSearch namesOnly={!allowFolderPicker} onClose={closeSearch} onOpen={async (path) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await vaultRequest<VaultFile>("read", { path })); setDestinationFolder(folderForItem(path));
       }} />}
