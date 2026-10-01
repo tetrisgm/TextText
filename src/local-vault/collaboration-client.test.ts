@@ -287,6 +287,62 @@ describe("durable file collaboration client", () => {
     expect(server.pushes).toHaveLength(0);
   });
 
+  it("offers a clean external file change for reopening without retiring its journal", async () => {
+    const server = new Server(), journal = new Journal();
+    let changed = false;
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async () => { if (changed) throw Object.assign(new Error("Changed outside TextText"), { code: "local_changed" }); } });
+    clients.push(editor); await editor.start();
+    expect(await editor.flushLocal()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    changed = true;
+    server.state = { ...server.state, seq: 1, revision: "a".repeat(64) }; server.wake();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(editor.status).toBe("stale-file"); expect(editor.canEdit).toBe(false);
+    expect(editor.hasPendingChanges).toBe(false); expect(editor.recoveryJournal?.retired).toBeUndefined();
+    expect(() => editor.discardCleanJournal()).not.toThrow();
+    expect(journal.load(editor.journalKey)).toBeNull();
+    expect(server.pushes).toHaveLength(0);
+  });
+
+  it("preserves pending edits when the native file changes during a checkpoint", async () => {
+    const server = new Server(), journal = new Journal();
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async value => { if (value.journal.batch) throw Object.assign(new Error("Changed outside TextText"), { code: "local_changed" }); } });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    editor.mutate(doc => documentText(doc, "body").insert(5, " human edit"));
+    expect(await editor.flush()).toBe(false);
+    expect(editor.status).toBe("error"); expect(editor.hasPendingChanges).toBe(true);
+    expect(() => editor.discardCleanJournal()).toThrow();
+    expect(journal.load(editor.journalKey)).not.toBeNull();
+    expect(documentText(editor.doc, "body").toString()).toContain("human edit");
+    expect(server.pushes).toHaveLength(0);
+  });
+
+  it("does not treat an old clean checkpoint as disposable after a newer local edit", async () => {
+    const server = new Server(), journal = new Journal();
+    let rejectCheckpoint: ((error: Error) => void) | null = null;
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async value => {
+        if (value.journal.seq === 1 && !value.journal.pending.length) {
+          await new Promise<void>((_resolve, reject) => { rejectCheckpoint = reject; });
+        }
+      } });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    await vi.advanceTimersByTimeAsync(1);
+    server.state = { ...server.state, seq: 1, revision: "b".repeat(64) }; server.wake();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(rejectCheckpoint).not.toBeNull();
+    editor.mutate(doc => documentText(doc, "body").insert(5, " newer local edit"));
+    rejectCheckpoint!(Object.assign(new Error("Changed outside TextText"), { code: "local_changed" }));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(editor.status).toBe("error"); expect(editor.hasPendingChanges).toBe(true);
+    expect(editor.recoveryJournal?.pending).toHaveLength(1);
+    expect(journal.load(editor.journalKey)).not.toBeNull();
+    expect(() => editor.discardCleanJournal()).toThrow();
+    expect(server.pushes).toHaveLength(0);
+  });
+
   it("keeps an acknowledged batch pending until authoritative read and retains later edits", async () => {
     const server = new Server(), saved: FileCollaborationCheckpoint[] = [];
     let failRead = false, acknowledged = false;

@@ -413,7 +413,10 @@ final class LocalVaultCollaboration {
                         ? "Connect this folder to TextText to read feeds." : "Connect this folder to TextText to collaborate.")
                 }
                 if method == "collaborationConfig" {
-                    guard Set(params.keys) == ["path"], let path = params["path"] as? String else { throw LocalVaultCollaborationError(code: "400", message: "Choose a file to collaborate on.") }
+                    let keys = Set(params.keys)
+                    guard (keys == ["path"] || keys == ["path", "readyOnly"] && params["readyOnly"] is Bool),
+                          let path = params["path"] as? String else { throw LocalVaultCollaborationError(code: "400", message: "Choose a file to collaborate on.") }
+                    let readyOnly = params["readyOnly"] as? Bool ?? false
                     let candidate = await Task.detached(priority: .utility) { () -> (String, Bool)? in
                         guard let file = try? LocalVaultDocumentStore(root: root).readMetadata(path: path),
                               let itemId = MarkdownIdentityCodec.extract(from: file.contents.markdown)?.itemId, Self.identifier(itemId) else { return nil }
@@ -421,7 +424,7 @@ final class LocalVaultCollaboration {
                     }.value
                     var configuration: Configuration?
                     if let candidate, let engine = self.engine() {
-                        let retained = try await engine.readSharedCheckpoint(itemId: candidate.0)
+                        let retained = readyOnly ? nil : try await engine.readSharedCheckpoint(itemId: candidate.0)
                         if candidate.1 || retained != nil {
                             configuration = Configuration(namespace: context.binding.origin.absoluteString, workspaceId: context.binding.workspaceId, itemId: candidate.0)
                         }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { setTimeout as wait } from "node:timers/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,8 +8,10 @@ import { chromium } from "playwright";
 import { buildLocalVault } from "../../../scripts/build-local-vault.mjs";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { seedVaultCollaboration } from "@/lib/vault/collaboration";
+import { applyVaultCollaboration, seedVaultCollaboration, type VaultCollaborationState } from "@/lib/vault/collaboration";
 import { openPack } from "../pack";
+
+const Y = createRequire(import.meta.url)("yjs") as typeof import("yjs");
 
 const itemId = "new-note-promotion-test";
 const notePath = "Notes/Untitled.textpack";
@@ -24,7 +27,8 @@ const pack = (text: string, json: string) => {
 };
 let current = pack(markdown, JSON.stringify(initial));
 let exists = false, syncedHash: string | null = null;
-let localWrites = 0, sharedOpens = 0, sharedPushes = 0, publicationReads = 0;
+let remoteState: VaultCollaborationState | null = null;
+let localWrites = 0, sharedOpens = 0, sharedPushes = 0, publicationReads = 0, checkpointConflicts = 0;
 const until = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
     if (condition()) return;
@@ -58,16 +62,23 @@ try {
         case "collaborationOpen":
           assert.equal(request.params.hash, current.file.hash, "Shared editing must open the latest saved local file.");
           sharedOpens++;
+          remoteState ??= seedVaultCollaboration(current.bytes, itemId, 1);
           result = { sessionToken: "session", path: notePath, hash: current.file.hash,
             acknowledgedRevision: current.file.hash, journal: null, retiredReason: null };
           break;
         case "collaborationRead": {
-          const state = seedVaultCollaboration(current.bytes, itemId, 1);
-          result = request.params.waitMs ? { ...state, unchanged: true, canEditContent: true, canComment: true }
+          const state = remoteState ?? seedVaultCollaboration(current.bytes, itemId, 1);
+          result = request.params.waitMs && request.params.seq === state.seq
+            ? { ...state, unchanged: true, canEditContent: true, canComment: true }
             : { ...state, relativePath: notePath, canEditContent: true, canComment: true };
           break;
         }
-        case "collaborationCheckpoint": result = { path: notePath, hash: current.file.hash }; break;
+        case "collaborationCheckpoint":
+          if (request.params.hash !== current.file.hash) {
+            checkpointConflicts++;
+            error = { code: "local_changed", message: "The local file changed during sync." };
+          } else result = { path: notePath, hash: current.file.hash };
+          break;
         case "collaborationPush": sharedPushes++; throw new Error("Clean promotion must not push a duplicate edit.");
         case "presenceJoin": result = { epoch: 1, presence: [], session: { clientId: "p-11111111-1111-4111-8111-111111111111",
           sessionCredential: "v1:test", expiresAt: Date.now() + 60_000 } }; break;
@@ -111,5 +122,30 @@ try {
   assert.equal(localWrites, 1);
   assert.equal(sharedPushes, 0);
   assert.deepEqual(errors, []);
-  console.log("New note promoted after exact local bytes synced; focus, content, and publish access survived without repeat writes.");
+  const agent = new Y.Doc();
+  try {
+    assert.ok(remoteState);
+    Y.applyUpdate(agent, Uint8Array.from(Buffer.from(remoteState.update, "base64")));
+    const body = agent.getMap("document").get("body") as import("yjs").Text;
+    body.insert(body.length, " Agent external edit.");
+    const update = Buffer.from(Y.encodeStateAsUpdate(agent)).toString("base64");
+    const next = applyVaultCollaboration(remoteState, current.bytes, [update]);
+    remoteState = next.state;
+    current = { bytes: next.bytes, file: openPack(next.bytes, notePath, next.state.revision).file };
+    syncedHash = null;
+  } finally { agent.destroy(); }
+  await until(() => checkpointConflicts === 1, "the stale local checkpoint");
+  await page.getByText("Waiting for the updated file to sync…").waitFor();
+  assert.equal(sharedOpens, 1, "A stale file must not reopen before sync acknowledges it.");
+  assert.equal(await page.getByRole("button", { name: "Download recovery" }).count(), 0);
+  syncedHash = current.file.hash;
+  await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", {
+    detail: { connected: true, available: true, workspaceId },
+  })), config.workspaceId);
+  await until(() => sharedOpens === 2, "the clean shared session reopening");
+  await page.getByText("Typed before the first sync. Agent external edit.").waitFor();
+  assert.equal(localWrites, 1); assert.equal(sharedPushes, 0);
+  assert.equal(await page.getByRole("button", { name: "Download recovery" }).count(), 0);
+  assert.deepEqual(errors, []);
+  console.log("New note promotion and clean external agent edit reopened after exact sync without duplicate writes or recovery.");
 } finally { await browser.close(); }

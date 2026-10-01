@@ -220,7 +220,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 switch result {
                 case .success(let value): self?.emit("texttext:vault-reply", value: ["id": id, "result": value as Any? ?? NSNull()])
                 case .failure(let error):
-                    let code = (error as? LocalVaultCollaborationError)?.code ?? ((error is CancellationError || (error as? URLError)?.code == .cancelled) ? "cancelled" : "503")
+                    let code = Self.collaborationErrorCode(error, method: method)
                     self?.emit("texttext:vault-reply", value: ["id": id, "error": ["code": code, "message": error.localizedDescription]])
                 }
             }
@@ -404,6 +404,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             let conflictCurrent = current
             DispatchQueue.main.async { self?.reply(id, result: result, current: conflictCurrent) }
         }
+    }
+    static func collaborationErrorCode(_ error: Error, method: String) -> String {
+        if let typed = error as? LocalVaultCollaborationError { return typed.code }
+        if ["collaborationOpen", "collaborationCheckpoint"].contains(method), let sync = error as? LocalVaultSyncFailure, case .changed = sync { return "local_changed" }
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return "cancelled" }
+        return "503"
     }
 
     private static func string(_ params: [String: Any], _ key: String) throws -> String {

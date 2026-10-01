@@ -5,7 +5,7 @@ import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 
 const REMOTE = Symbol("file-collaboration-remote");
 const LIMIT = 4 * 1024 * 1024;
-export type FileCollaborationStatus = "ready" | "saving" | "offline" | "recovery" | "error";
+export type FileCollaborationStatus = "ready" | "saving" | "offline" | "stale-file" | "recovery" | "error";
 export type FileCollaborationRequest = (method: "read" | "push", params: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
 export interface FileCollaborationJournalStore { load(key: string): string | null; save(key: string, value: string): void; remove(key: string): void }
 type Batch = { operationId: string; updates: string[]; acknowledged?: boolean; revision?: string };
@@ -248,7 +248,13 @@ export class FileCollaborationClient {
       try { await this.options.checkpoint!(value); this.checkpointSavedGeneration = value.journal.journalGeneration!; }
       catch (error) {
         this.checkpointError = error; this.checkpointQueued = null;
-        if (!this.dead) this.fatal(new Error(`The local document checkpoint could not be saved. Pending edits are kept for recovery. ${String(error)}`));
+        if (this.dead) continue;
+        const clean = !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement &&
+          !value.journal.pending.length && !value.journal.batch && !value.journal.unqueuedDirty && !value.journal.retired;
+        if ((error as { code?: string } | null)?.code === "local_changed" && clean) {
+          this.frozen = true; this.canEdit = false; this.cancelWork();
+          this.report("stale-file", "Refreshing the file changed outside TextText…");
+        } else this.fatal(new Error(`The local document checkpoint could not be saved. Pending edits are kept for recovery. ${String(error)}`));
       }
     }
   }

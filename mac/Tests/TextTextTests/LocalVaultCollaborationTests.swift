@@ -5,6 +5,13 @@ import TextTextFileProviderKit
 final class LocalVaultCollaborationTests: XCTestCase {
     private let origin = URL(string: "https://texttext.app")!
     @MainActor
+    func testNativeCheckpointReportsExternalFileChangeSeparatelyFromOtherFailures() {
+        XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.changed, method: "collaborationCheckpoint"), "local_changed")
+        XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.changed, method: "collaborationOpen"), "local_changed")
+        XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.changed, method: "collaborationRead"), "503")
+        XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.busy, method: "collaborationCheckpoint"), "503")
+    }
+    @MainActor
     func testClosingExpiredSessionIsIdempotentButCannotCheckpoint() async {
         let relay = LocalVaultCollaboration(credentials: { nil })
         for attempt in 0..<2 {

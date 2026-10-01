@@ -56,6 +56,9 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
   const [generation, setGeneration] = useState(0);
   const [reading, setReading] = useState(!!articleSource(snapshot));
   const [busy, setBusy] = useState(false);
+  const [waitingForExternalSync, setWaitingForExternalSync] = useState(false);
+  const externalReloadRef = useRef(false);
+  const autoResettingRef = useRef(false);
   useEffect(() => {
     if (!awareness || !client?.hasBaseline) return;
     const presence = new FilePresenceClient({ itemId: config.itemId, awareness,
@@ -147,8 +150,14 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
     clientRef.current = shared;
     document.addEventListener("visibilitychange", visibility); window.addEventListener("online", visibility); window.addEventListener("offline", visibility);
     await shared.start();
+    if (!stopped) externalReloadRef.current = false;
     };
-    void begin().catch(error => { if (!stopped) { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); } });
+    void begin().catch(error => {
+      if (stopped) return;
+      if (config.localFiles && externalReloadRef.current && error instanceof VaultError && error.code === "local_changed") {
+        setWaitingForExternalSync(true); setStatus("offline"); setDetail("Waiting for the updated file to sync…");
+      } else { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); }
+    });
     return () => {
       stopped = true;
       const saved = shared?.flushLocal() ?? Promise.resolve(true);
@@ -198,7 +207,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
     if (!shared) throw new Error("The shared document is still opening.");
     shared.mutate(doc => applyDocumentSnapshot(doc, transform(documentSnapshotFromYDoc(doc)), "file-article-edit"));
   }, []);
-  const reset = async (recovered = false) => {
+  const reset = useCallback(async (recovered = false, waitForSync = false) => {
     const shared = clientRef.current;
     try {
       const native = nativeSessionRef.current;
@@ -212,11 +221,52 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
         if (recovered) shared.clearRetiredAfterRecovery();
         else shared.discardCleanJournal();
         shared.destroy();
+        if (clientRef.current === shared) clientRef.current = null;
       }
       file.current = fresh; setOpened(fresh); setSnapshot(readDocument(fresh));
-      setClient(null); setStatus("offline"); setDetail(""); setGeneration(value => value + 1);
-    } catch (error) { setDetail(error instanceof Error ? error.message : "Could not reopen the file."); }
-  };
+      setClient(null); setStatus("offline");
+      if (waitForSync) {
+        externalReloadRef.current = true;
+        setDetail("Waiting for the updated file to sync…"); setWaitingForExternalSync(true);
+      } else {
+        externalReloadRef.current = false; setWaitingForExternalSync(false);
+        setDetail(""); setGeneration(value => value + 1);
+      }
+      onChanged();
+    } catch (error) {
+      if (waitForSync) setStatus("error");
+      setDetail(error instanceof Error ? error.message : "Could not reopen the file.");
+    }
+  }, [config.itemId, onChanged]);
+  useEffect(() => {
+    if (status !== "stale-file" || !config.localFiles || autoResettingRef.current) return;
+    autoResettingRef.current = true;
+    void reset(false, true).finally(() => { autoResettingRef.current = false; });
+  }, [status, config.localFiles, reset]);
+  useEffect(() => {
+    if (!waitingForExternalSync || !config.localFiles) return;
+    let stopped = false, running = false;
+    const check = () => {
+      if (stopped || running) return;
+      running = true;
+      void (async () => {
+        const path = file.current.path;
+        const candidate = await vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path, readyOnly: true });
+        if (!candidate || candidate.itemId !== config.itemId || candidate.workspaceId !== config.workspaceId || candidate.namespace !== config.namespace) return;
+        const fresh = await vaultRequest<VaultFile>("read", { path });
+        const confirmed = await vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path, readyOnly: true });
+        if (stopped || fresh.path !== path || !confirmed || confirmed.itemId !== candidate.itemId || confirmed.workspaceId !== candidate.workspaceId || confirmed.namespace !== candidate.namespace) return;
+        stopped = true;
+        file.current = fresh; setOpened(fresh); setSnapshot(readDocument(fresh));
+        setWaitingForExternalSync(false); setDetail(""); setGeneration(value => value + 1);
+      })().catch(() => { /* A sync completion or connection change will check again. */ })
+        .finally(() => { running = false; });
+    };
+    const onSync = (event: Event) => { if ((event as CustomEvent<{ connected?: boolean }>).detail?.connected) check(); };
+    window.addEventListener("texttext:vault-sync-status", onSync);
+    check();
+    return () => { stopped = true; window.removeEventListener("texttext:vault-sync-status", onSync); };
+  }, [waitingForExternalSync, config.localFiles, config.itemId, config.workspaceId, config.namespace]);
   const downloadRecovery = () => {
     const journal = clientRef.current?.recoveryJournal;
     const rawJournal = clientRef.current?.recoveryRawJournal;
@@ -278,7 +328,8 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       {detail || (ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
       {config.localFiles && status === "offline" && !ready && client && !client.hasPendingChanges && !client.hasUnreadableJournal &&
         <button onClick={onLocalFallback}>Edit local file</button>}
-      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && <button onClick={() => void clientRef.current?.retry()}>Retry</button>}
+      {waitingForExternalSync && !client && onLocalFallback && <button onClick={onLocalFallback}>Edit local file</button>}
+      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && !waitingForExternalSync && <button onClick={() => void clientRef.current?.retry()}>Retry</button>}
     </div>}
     {ready && <>
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} />}
