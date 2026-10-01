@@ -12,6 +12,10 @@ interface Props {
   params: Promise<{ handle: string }>;
 }
 
+// Published items change independently of a deployment. Keep sitemap reads at
+// request time so builds never freeze a workspace's publication state.
+export const dynamic = "force-dynamic";
+
 const FALLBACK_DATE = new Date("1970-01-01T00:00:00.000Z");
 
 export async function GET(_request: Request, { params }: Props) {
