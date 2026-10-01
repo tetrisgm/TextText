@@ -18,6 +18,11 @@ function backupDirectory(environment) {
   return directory;
 }
 
+function syncDirectory(directory) {
+  const descriptor = openSync(directory, "r");
+  try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
+}
+
 export function backupConnection(environment) {
   const url = localDatabase(environment.DATABASE_URL);
   // No connection string or password appears in command arguments or output.
@@ -49,7 +54,7 @@ export function retainedArchives(directory, { keep, maxBytes, requiredPath }) {
   });
 }
 
-export async function createBackup(environment) {
+export async function createBackup(environment, { syncDirectoryImpl = syncDirectory } = {}) {
   const childEnvironment = backupConnection(environment);
   const directory = backupDirectory(environment);
   const keep = Number(environment.TEXTTEXT_BACKUP_KEEP || "7");
@@ -95,9 +100,16 @@ export async function createBackup(environment) {
     const descriptor = openSync(temporary, "r");
     try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
     renameSync(temporary, final);
+    // Commit the new directory entry before removing any known-good archive.
+    syncDirectoryImpl(directory);
+    let removed = false;
     for (const archive of retainedArchives(directory, { keep, maxBytes, requiredPath: final })) {
-      if (archive.remove) rmSync(archive.path);
+      if (archive.remove) {
+        rmSync(archive.path);
+        removed = true;
+      }
     }
+    if (removed) syncDirectoryImpl(directory);
     console.log("TextText database backup completed.");
     return final;
   } finally {
@@ -131,6 +143,9 @@ if (isEntrypoint(import.meta.url)) {
       environment = { ...process.env, ...protectedEnvironment(args[1]) };
       args.splice(0, 2);
     }
+    // One-release compatibility for the installed pre-cutover service. Backups
+    // are local regardless of this retired upload-enforcement flag.
+    if (args[0] === "--require-upload") args.shift();
     if (args.length === 0) await backupCLI(environment);
     else throw new Error("Usage: backup.mjs [--env-file <private file>]");
   } catch (error) {

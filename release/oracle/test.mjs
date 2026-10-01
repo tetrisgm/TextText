@@ -141,6 +141,12 @@ test("deployment validates an incoming local backup before migration", () => {
   assert.doesNotMatch(deploy, /systemctl start texttext-backup\.service/);
   assert.match(deploy, /stat -c '%u:%g:%a' \/etc\/texttext\/backup\.env/);
   assert.match(deploy, /The TextText deployment root cannot overlap Algorave/);
+  const smoke = deploy.indexOf('"$release/release/oracle/smoke.mjs"');
+  const unitInstall = deploy.indexOf('install -o root -g root -m 0644 "$backup_unit_rendered"', smoke);
+  const daemonReload = deploy.indexOf("systemctl daemon-reload", unitInstall);
+  assert.ok(smoke >= 0 && unitInstall > smoke && daemonReload > unitInstall, "the reviewed backup unit must cut over only after application verification");
+  assert.match(deploy, /mv -Tf "\$backup_unit_previous" "\$backup_unit"/);
+  assert.match(deploy, /systemd-analyze verify "\$backup_unit_rendered"/);
 
   const service = readFileSync(new URL("./texttext-backup.service", import.meta.url), "utf8");
   assert.match(service, /ExecStart=.*backup\.mjs$/m);
@@ -149,6 +155,16 @@ test("deployment validates an incoming local backup before migration", () => {
   assert.doesNotMatch(service, /upload|R2|BLOB/i);
   const packaging = readFileSync(new URL("./package.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(packaging, /backup-remote|r2-backup-client/);
+  assert.match(packaging, /"texttext-backup\.service"/);
+
+  const database = readFileSync(new URL("./database.sh", import.meta.url), "utf8");
+  assert.doesNotMatch(database, /systemctl start texttext-backup\.service/);
+  assert.match(database, /--unit=texttext-release-backup\.service/);
+  assert.match(database, /"\$prepared\/release\/oracle\/backup\.mjs"/);
+  assert.ok(database.indexOf("texttext-release-backup.service") < database.indexOf('"$root/current/release/oracle/bootstrap-database.mjs"'));
+
+  const backupSource = readFileSync(new URL("./backup.mjs", import.meta.url), "utf8");
+  assert.match(backupSource, /args\[0\] === "--require-upload"/);
 });
 
 test("backup creates one atomic validated local archive without upload settings", async (t) => {
@@ -170,6 +186,35 @@ test("backup creates one atomic validated local archive without upload settings"
   assert.equal(readFileSync(archive, "utf8"), "validated local archive");
   assert.equal(lstatSync(archive).mode & 0o077, 0);
   assert.deepEqual(readdirSync(backups), [archive.split("/").at(-1)]);
+});
+
+test("backup commits its new directory entry before committing retention deletions", async (t) => {
+  const directory = temporary(t);
+  const backups = join(directory, "backups");
+  const dump = join(directory, "pg_dump");
+  const restore = join(directory, "pg_restore");
+  const priorName = "texttext-20260901T120000Z-12345678.dump";
+  mkdirSync(backups, { mode: 0o700 });
+  writeFileSync(join(backups, priorName), "previous good backup", { mode: 0o600 });
+  writeFileSync(dump, "#!/bin/sh\nprintf 'new validated archive'\n", { mode: 0o700 });
+  writeFileSync(restore, "#!/bin/sh\n[ \"$1\" = --list ]\n", { mode: 0o700 });
+  const committedInventories = [];
+  const archive = await createBackup({
+    DATABASE_URL: "postgres://test:test@127.0.0.1:5433/texttext",
+    PG_DUMP: dump, PG_RESTORE: restore, TEXTTEXT_BACKUP_DIR: backups,
+    TEXTTEXT_BACKUP_FLOCK_PARENT: String(process.ppid), TEXTTEXT_BACKUP_KEEP: "1",
+    TEXTTEXT_BACKUP_MAX_BYTES: "1024", TEXTTEXT_STORAGE_MIN_FREE_BYTES: "0",
+  }, {
+    syncDirectoryImpl(path) {
+      committedInventories.push(readdirSync(path).filter(name => name.endsWith(".dump")).sort());
+    },
+  });
+  const archiveName = archive.split("/").at(-1);
+  assert.deepEqual(committedInventories, [
+    [priorName, archiveName].sort(),
+    [archiveName],
+  ]);
+  assert.deepEqual(readdirSync(backups), [archiveName]);
 });
 
 test("local retention ignores unrelated files and backup failure preserves the previous dump", async (t) => {
