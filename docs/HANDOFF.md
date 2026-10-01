@@ -4,7 +4,7 @@
 
 Finish the [content-first product brief](design/texttext-content-first-ux.md) on ordinary folder workspaces and self-contained TextPacks. The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) is the operational status. The [file-vault architecture](design/texttext-file-vault-migration.md) governs storage and sync.
 
-Current source is `main` at `cdae9f90`. `08366635` made folder pagination deterministic with natural path order, `31281f03` moved editor actions into the vault header, and `cdae9f90` makes a focused vault editor reconnect automatically after the server returns. No public push, deployment, or release was performed.
+Current product code on `main` ends at `cdae9f90`; later commits only reconcile these acceptance records. `08366635` made folder pagination deterministic with natural path order, `31281f03` moved editor actions into the vault header, and `cdae9f90` makes a focused vault editor reconnect automatically after the server returns. No public push, deployment, or release was performed.
 
 The owner authorized local replacement of `/Applications/TextText.app`. The sole installed copy is native 0.202 build 1147, Apple Development signed with three extensions and the bundled Codex helper. It targets the task-owned production build on `http://localhost:3000`. Build and install receipts are `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
 

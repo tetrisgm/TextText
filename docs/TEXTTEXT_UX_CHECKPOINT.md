@@ -6,7 +6,7 @@ Complete the [product brief](design/texttext-content-first-ux.md) on ordinary fo
 
 ## Canonical local state (2026-10-01)
 
-- Source: `main` at `cdae9f90`. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header. `cdae9f90` reconnects focused vault editors automatically after service returns.
+- Product code on `main` ends at `cdae9f90`; later commits only reconcile acceptance records. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header. `cdae9f90` reconnects focused vault editors automatically after service returns.
 - Dirty files owned by other work: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`. Do not alter, reset, clean, or commit them.
 - Installed app: `/Applications/TextText.app`, version 0.202 build 1147, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
 - Local app server: `127.0.0.1:3000`, PID 50999, Codex session 12498, build output `.texttext/vault-perf-20261001k`.
