@@ -11,7 +11,7 @@ const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
 let revision = 1;
-let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
+let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
 const agentAccountEmail = "writer@example.test";
 const workspaceId = "7a32c401-f041-4bc1-bbfd-f60317797873";
@@ -86,6 +86,7 @@ try {
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "agentStatus") result = { state: agentState, ...(agentState === "ready" ? { accountEmail: agentAccountEmail } : {}) };
     else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState, accountEmail: agentAccountEmail }; }
+    else if (request.method === "agentDisconnect") { agentDisconnectCount++; agentState = "disconnected"; result = { state: agentState }; }
     else if (request.method === "agentProposalResult") { proposalFeedback.push(request.params); result = {}; }
     else if (request.method === "agentCancel") {
       lastAgentCancel = request.params; result = {};
@@ -278,6 +279,15 @@ try {
   await agentPanel.getByText(/was not sent again/).waitFor();
   await agentPanel.getByRole("button", { name: "Send again", exact: true }).waitFor();
   assert.equal(agentSendCount, 0);
+  await agentPanel.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await agentPanel.getByRole("button", { name: "Connect Codex", exact: true }).waitFor();
+  assert.equal(agentDisconnectCount, 1);
+  assert.equal(await agentPanel.getByText(`Connected as ${agentAccountEmail}`, { exact: true }).count(), 0);
+  assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), "Read the selected file.");
+  assert.equal(agentSendCount, 0);
+  await agentPanel.getByRole("button", { name: "Connect Codex", exact: true }).click();
+  await agentPanel.getByRole("button", { name: "Disconnect", exact: true }).waitFor();
+  assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), "Read the selected file.");
   await page.setViewportSize({ width: 390, height: 780 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await page.waitForFunction(() => document.querySelector(".vault-app")?.classList.contains("sidebar-collapsed"));
@@ -309,7 +319,7 @@ try {
   await agentPanel.waitFor();
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
-  await agentPanel.getByRole("button", { name: "Send again", exact: true }).click();
+  await agentPanel.getByRole("button", { name: "Start task", exact: true }).click();
   await page.getByText("I can work with these local files.").waitFor();
   assert.equal(agentSendCount, 1);
   assert.equal(lastAgentSend.path, initial.path);
@@ -322,6 +332,7 @@ try {
   holdAgentTurn = true;
   await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Keep this request after Stop.");
   await agentPanel.getByRole("button", { name: "Send", exact: true }).click();
+  assert.equal(await agentPanel.getByRole("button", { name: "Disconnect", exact: true }).isDisabled(), true);
   await agentPanel.getByRole("button", { name: "Stop", exact: true }).click();
   await agentPanel.getByText("Stopped. Your task is ready to send again.", { exact: true }).waitFor();
   assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), "Keep this request after Stop.");

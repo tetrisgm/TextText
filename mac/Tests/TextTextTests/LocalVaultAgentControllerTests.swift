@@ -75,13 +75,14 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     private struct Timeout: Error {}
 
     @MainActor
-    private func fixture(cancellationTimeout: TimeInterval = 15) async throws
+    private func fixture(ownsProfile: Bool = false, cancellationTimeout: TimeInterval = 15) async throws
         -> (URL, LocalVaultAgentController, VaultAgentTestServer) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-agent-task-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let server = VaultAgentTestServer()
         let controller = LocalVaultAgentController(root: root, serverFactory: { server },
+            ownsProfile: ownsProfile,
             cancellationTimeout: cancellationTimeout)
         try controller.connect()
         try await eventually { controller.status["state"] as? String == "ready" }
@@ -271,6 +272,42 @@ final class LocalVaultAgentControllerTests: XCTestCase {
         try controller.send(taskID: "task-next", prompt: "Continue")
         try await eventually("next private thread") { server.requests("thread/start").count == 2 }
         XCTAssertEqual(server.stopCount, 0)
+    }
+
+    @MainActor
+    func testManagedProfileDisconnectLogsOutStopsAndCanReconnect() async throws {
+        let (root, controller, server) = try await fixture(ownsProfile: true)
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+
+        try controller.disconnect()
+        try await eventually("managed account logout") { server.requests("account/logout").count == 1 }
+        XCTAssertEqual(controller.status["state"] as? String, "connecting")
+        XCTAssertEqual(server.stopCount, 0)
+
+        server.emitResponse(server.requests("account/logout")[0], result: [:])
+        try await eventually("disconnected state") {
+            controller.status["state"] as? String == "disconnected"
+        }
+        XCTAssertNil(controller.status["accountEmail"])
+        XCTAssertEqual(server.stopCount, 1)
+
+        try controller.connect()
+        try await eventually("reconnected state") { controller.status["state"] as? String == "ready" }
+        XCTAssertEqual(server.requests("initialize").count, 2)
+        XCTAssertEqual(controller.status["accountEmail"] as? String, "writer@example.com")
+    }
+
+    @MainActor
+    func testExternalProfileDisconnectStopsOnlyTextTextSession() async throws {
+        let (root, controller, server) = try await fixture()
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+
+        try controller.disconnect()
+
+        XCTAssertTrue(server.requests("account/logout").isEmpty)
+        XCTAssertEqual(server.stopCount, 1)
+        XCTAssertEqual(controller.status["state"] as? String, "disconnected")
+        XCTAssertNil(controller.status["accountEmail"])
     }
 
     @MainActor

@@ -41,6 +41,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   const taskRef = useRef<AgentTask | null>(null);
   const lastItemTarget = useRef<Pick<AgentTask, "root" | "target"> | null>(null);
   const activeTaskFence = useRef<ActiveTurnFence | null>(null);
+  const disconnectRequested = useRef(false);
   const queuedRetarget = useRef(false);
   const handledRequestId = useRef(0);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -165,6 +166,10 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       else if (detail.type === "status" && detail.state) {
         setStatus({ state: detail.state, message: detail.message, accountEmail: detail.accountEmail,
           diagnosticId: detail.diagnosticId, failureCode: detail.failureCode, recoveryAction: detail.recoveryAction });
+        if (detail.state === "disconnected" && disconnectRequested.current) {
+          disconnectRequested.current = false;
+          setNotice("Codex disconnected. Your task is still here.");
+        }
         const current = taskRef.current;
         if (current?.phase === "connecting" && detail.state === "ready") changeTask(current, { phase: "draft" });
       }
@@ -269,6 +274,22 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
     }
     finally { setSubmitting(false); }
   };
+  const disconnect = async () => {
+    if (submitting || status.state !== "ready") return;
+    disconnectRequested.current = true;
+    setNotice("Disconnecting Codex. Your task stays here.");
+    try {
+      const next = await vaultRequest<Status>("agentDisconnect");
+      setStatus(next);
+      if (next.state === "disconnected") {
+        disconnectRequested.current = false;
+        setNotice("Codex disconnected. Your task is still here.");
+      }
+    } catch (error) {
+      disconnectRequested.current = false;
+      setNotice(error instanceof Error ? error.message : "Codex could not disconnect.");
+    }
+  };
   const cancel = async () => {
     const fence = activeTaskFence.current;
     await vaultRequest("agentCancel", { scope: "item", ...(fence ? { taskId: fence.taskId } : { customizing: true }) });
@@ -277,7 +298,8 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   const working = submitting || status.state === "working";
   const runningFence = activeTurn?.type === "agent" ? activeTurn : null;
   const itemTask = task && task.root === root && (task.target === path || (runningFence && agentTaskMatches(task, runningFence))) ? task : null;
-  const accountLabel = connectedAccountLabel(status.accountEmail);
+  const accountLabel = connectedAccountLabel(status.accountEmail)
+    ?? (status.state === "ready" || status.state === "working" ? "Codex connected" : null);
   const diagnosticReference = status.state === "failed" && status.diagnosticId && /^[A-Z0-9-]{4,64}$/.test(status.diagnosticId)
     ? status.diagnosticId : null;
   const heading = customizing ? "Customize" : "Add agent";
@@ -288,7 +310,10 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       <p>This item · Read and edit</p>
       <small>{itemTask.target}</small>
     </div>}
-    {accountLabel && <p className="vault-assistant-account">{accountLabel}</p>}
+    {accountLabel && <div className="vault-assistant-account" role="group" aria-label="Codex account">
+      <span>{accountLabel}</span>
+      <button type="button" disabled={working || status.state !== "ready"} onClick={() => void disconnect()}>Disconnect</button>
+    </div>}
     {status.state !== "ready" && status.state !== "working" && <div className="vault-assistant-connect">
       <p>Codex uses your ChatGPT account. Authorization opens in your browser. Your request stays here while you sign in. You won’t need to paste a token or use Terminal.</p>
       <button disabled={status.state === "connecting"} onClick={() => void connect()}>{status.state === "connecting" ? "Connecting…" : "Connect Codex"}</button>

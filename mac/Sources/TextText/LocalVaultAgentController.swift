@@ -30,6 +30,7 @@ final class LocalVaultAgentController {
     private let makePresencePublisher: () -> PresencePublisher
     private let makeServer: (() throws -> any LocalVaultAgentServer)?
     private let cancellationTimeout: TimeInterval
+    private var ownsProfile: Bool
     private var server: (any LocalVaultAgentServer)?
     private struct PendingRequest {
         let method: String
@@ -52,6 +53,7 @@ final class LocalVaultAgentController {
     private var pendingProposals: [String: PendingProposal] = [:]
     private var loginID: String?
     private var attemptedLogin = false
+    private var disconnecting = false
     private var deadline: DispatchWorkItem?
     private var generation = UUID()
     private var phases: [String: CodexAgentMessage.Phase] = [:]
@@ -83,10 +85,12 @@ final class LocalVaultAgentController {
     init(root: URL,
          presencePublisher: @escaping () -> PresencePublisher = { PresencePublisher() },
          serverFactory: (() throws -> any LocalVaultAgentServer)? = nil,
+         ownsProfile: Bool = false,
          cancellationTimeout: TimeInterval = 15) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
         self.makePresencePublisher = presencePublisher
         self.makeServer = serverFactory
+        self.ownsProfile = ownsProfile
         self.cancellationTimeout = max(0.01, cancellationTimeout)
         files = DispatchQueue(label: "app.texttext.vault-agent-files", qos: .userInitiated)
     }
@@ -148,8 +152,9 @@ final class LocalVaultAgentController {
                 fail("The agent runtime executable is missing from the installed app.")
                 throw CodexAppServerError.runtimeMissing
             }
+            ownsProfile = bundled != nil
             var environment = ["TEXTTEXT_WORKSPACE_ROOT": root.path]
-            if bundled != nil { environment["CODEX_HOME"] = try CodexEmbeddedRuntime.profileDirectory().path }
+            if ownsProfile { environment["CODEX_HOME"] = try CodexEmbeddedRuntime.profileDirectory().path }
             runtime = CodexAppServerController(executableURL: executable,
                 environment: environment, directTextTextTools: true)
         }
@@ -163,7 +168,8 @@ final class LocalVaultAgentController {
         runtime.onExit = { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self, self.generation == token else { return }
-                self.fail("The agent connection closed. Reconnect to continue.")
+                if self.disconnecting { self.finishDisconnect() }
+                else { self.fail("The agent connection closed. Reconnect to continue.") }
             }
         }
         server = runtime
@@ -317,11 +323,37 @@ final class LocalVaultAgentController {
         interruptTaskIfPossible(taskID: taskID, instanceID: task.instanceID)
     }
 
+    /// Disconnects TextText's account session. A bundled runtime owns its
+    /// private profile, so sign that profile out before stopping it. An
+    /// external runtime may share credentials with other clients; only stop
+    /// TextText's process in that case.
+    func disconnect() throws {
+        guard !busy else {
+            throw VaultAgentError("Stop the current task before disconnecting Codex.")
+        }
+        guard server != nil else { finishDisconnect(); return }
+        disconnecting = true
+        update("connecting", message: "Disconnecting Codex…")
+        guard ownsProfile, accountEmail != nil else { finishDisconnect(); return }
+        deadline?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.finishDisconnect() }
+        deadline = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        do { try request("account/logout") }
+        catch { finishDisconnect() }
+    }
+
+    private func finishDisconnect() {
+        stop()
+        accountEmail = nil
+        update("disconnected")
+    }
+
     func stop() {
         endPresence()
         activeTask?.fileFence.cancel()
         if let loginID { try? request("account/login/cancel", ["loginId": loginID]) }
-        loginID = nil; attemptedLogin = false
+        loginID = nil; attemptedLogin = false; disconnecting = false
         generation = UUID(); pendingProposals.removeAll(); deadline?.cancel(); deadline = nil
         server?.onEvent = nil; server?.onExit = nil; server?.stop(); server = nil
         activeTask = nil; disabledMCPServers = nil
@@ -419,6 +451,10 @@ final class LocalVaultAgentController {
             if let instanceID = pendingRequest.taskInstanceID,
                activeTask?.instanceID != instanceID { return }
             if let error = message.errorMessage {
+                if pendingRequest.method == "account/logout" {
+                    finishDisconnect()
+                    return
+                }
                 if let taskID = pendingRequest.taskID {
                     guard let instanceID = pendingRequest.taskInstanceID else { return }
                     if activeTask?.cancelRequested == true {
@@ -465,6 +501,8 @@ final class LocalVaultAgentController {
                     }
                     disabledMCPServers = disabled
                     deadline?.cancel(); update("ready")
+                case "account/logout":
+                    finishDisconnect()
                 case "thread/start":
                     guard let taskID = pendingRequest.taskID,
                           var task = activeTask, task.taskID == taskID else { return }
