@@ -17,18 +17,30 @@ final class LocalVaultCollaboration {
         let namespace: String
         let workspaceId: String
         let itemId: String
-        var value: [String: Any] { ["namespace": namespace, "workspaceId": workspaceId, "itemId": itemId] }
+        var value: [String: Any] { ["namespace": namespace, "workspaceId": workspaceId, "itemId": itemId, "localFiles": true] }
     }
     private let credentials: () -> (origin: URL, token: String)?
     private let session: URLSession
+    private let engine: () -> LocalVaultSync?
+    private let didRelease: () -> Void
+    private var localSessions: [String: (itemId: String, engine: LocalVaultSync)] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
-    init(credentials: @escaping () -> (origin: URL, token: String)?, session: URLSession? = nil) {
+    init(credentials: @escaping () -> (origin: URL, token: String)?, session: URLSession? = nil, engine: @escaping () -> LocalVaultSync? = { nil }, didRelease: @escaping () -> Void = {}) {
         self.credentials = credentials
+        self.engine = engine
+        self.didRelease = didRelease
         self.session = session ?? URLSession(configuration: .ephemeral, delegate: CollaborationNoRedirect(), delegateQueue: nil)
     }
     deinit { for task in tasks.values { task.cancel() }; session.invalidateAndCancel() }
     func cancel(_ requestId: String) { tasks[requestId]?.cancel() }
-    func cancelAll() { for task in tasks.values { task.cancel() }; tasks.removeAll() }
+    func cancelAll() {
+        for task in tasks.values { task.cancel() }; tasks.removeAll()
+        let closing = localSessions; localSessions.removeAll()
+        let released = didRelease
+        for (token, active) in closing {
+            Task { try? await active.engine.endSharedEditing(sessionToken: token, itemId: active.itemId); released() }
+        }
+    }
 
     nonisolated private static func context(root: URL, account: (origin: URL, token: String)?) throws -> Context? {
         guard let account, let stored = try LocalVaultSync.binding(root: root),
@@ -99,6 +111,67 @@ final class LocalVaultCollaboration {
         try Task.checkCancellation()
         return (data, response.statusCode)
     }
+    private func localOperation(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        guard let itemId = params["itemId"] as? String, Self.identifier(itemId) else {
+            throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration item.")
+        }
+        if method == "collaborationOpen" {
+            guard Set(params.keys) == ["itemId", "path", "hash"],
+                  let path = params["path"] as? String, let hash = params["hash"] as? String,
+                  let engine = engine() else { throw LocalVaultCollaborationError(code: "409", message: "This folder is not ready for shared editing.") }
+            let opened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: hash)
+            if Task.isCancelled {
+                try? await engine.endSharedEditing(sessionToken: opened.sessionToken, itemId: itemId)
+                throw CancellationError()
+            }
+            localSessions[opened.sessionToken] = (itemId, engine)
+            return ["sessionToken": opened.sessionToken, "path": opened.document.path, "hash": opened.document.hash,
+                    "acknowledgedRevision": opened.acknowledgedRevision,
+                    "journal": opened.checkpoint?.journal as Any? ?? NSNull(),
+                    "retiredReason": opened.checkpoint?.retiredReason as Any? ?? NSNull()]
+        }
+        guard let token = params["sessionToken"] as? String, let active = localSessions[token], active.itemId == itemId else {
+            throw LocalVaultCollaborationError(code: "409", message: "This shared editing session has closed. Your recovery journal is kept.")
+        }
+        if method == "collaborationRecover" {
+            guard Set(params.keys) == ["itemId", "sessionToken", "recoveryPath", "recoveryHash"],
+                  let path = params["recoveryPath"] as? String, let hash = params["recoveryHash"] as? String else {
+                throw LocalVaultCollaborationError(code: "400", message: "Choose the saved recovery copy.")
+            }
+            try await active.engine.finishSharedRecovery(sessionToken: token, itemId: itemId, recoveryPath: path, recoveryHash: hash)
+            localSessions.removeValue(forKey: token)
+            didRelease()
+            return [:]
+        }
+        if method == "collaborationClose" {
+            guard Set(params.keys).isSubset(of: ["itemId", "sessionToken", "retiredReason"]),
+                  params["retiredReason"] == nil || params["retiredReason"] is String else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration close request.")
+            }
+            let reason = (params["retiredReason"] as? String).map { String($0.prefix(1000)) }
+            try await active.engine.endSharedEditing(sessionToken: token, itemId: itemId, retiredReason: reason)
+            localSessions.removeValue(forKey: token)
+            didRelease()
+            return [:]
+        }
+        guard method == "collaborationCheckpoint",
+              Set(params.keys) == ["itemId", "sessionToken", "hash", "epoch", "seq", "revision", "journalGeneration", "journal", "pending", "markdown", "documentJSON"],
+              let hash = params["hash"] as? String, let revision = params["revision"] as? String,
+              let journal = params["journal"] as? String, journal.utf8.count <= 4 * 1024 * 1024,
+              let pendingNumber = params["pending"] as? NSNumber, CFGetTypeID(pendingNumber) == CFBooleanGetTypeID(),
+              let markdown = params["markdown"] as? String, markdown.utf8.count <= 8 * 1024 * 1024,
+              let documentJSON = params["documentJSON"] as? String, documentJSON.utf8.count <= 8 * 1024 * 1024 else {
+            throw LocalVaultCollaborationError(code: "400", message: "Invalid local collaboration checkpoint.")
+        }
+        let epoch = try Self.integer(params["epoch"], minimum: 1, maximum: 9_007_199_254_740_991)
+        let seq = try Self.integer(params["seq"], minimum: 0, maximum: 9_007_199_254_740_991)
+        let generation = try Self.integer(params["journalGeneration"], minimum: 1, maximum: 9_007_199_254_740_991)
+        let saved = try await active.engine.materializeSharedEditing(sessionToken: token, itemId: itemId,
+            expectedHash: hash, epoch: epoch, seq: seq, acknowledgedRevision: revision,
+            journalGeneration: UInt64(generation), journal: journal, pending: pendingNumber.boolValue,
+            markdown: markdown, documentJSON: documentJSON)
+        return ["path": saved.document.path, "hash": saved.document.hash]
+    }
     func start(id: String, method: String, params: [String: Any], root: URL, completion: @escaping (Result<[String: Any]?, Error>) -> Void) {
         guard tasks[id] == nil, tasks.count < 8 else { completion(.failure(LocalVaultCollaborationError(code: "429", message: "Too many collaboration requests."))); return }
         let account = credentials()
@@ -106,6 +179,9 @@ final class LocalVaultCollaboration {
             guard let self else { return }
             defer { self.tasks.removeValue(forKey: id) }
             do {
+                if ["collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover"].contains(method) {
+                    completion(.success(try await self.localOperation(method, params: params))); return
+                }
                 let context = try await Task.detached(priority: .utility) { try Self.context(root: root, account: account) }.value
                 try Task.checkCancellation()
                 guard let context else {
@@ -114,13 +190,18 @@ final class LocalVaultCollaboration {
                 }
                 if method == "collaborationConfig" {
                     guard Set(params.keys) == ["path"], let path = params["path"] as? String else { throw LocalVaultCollaborationError(code: "400", message: "Choose a file to collaborate on.") }
-                    let configuration = await Task.detached(priority: .utility) { () -> Configuration? in
+                    let candidate = await Task.detached(priority: .utility) { () -> (String, Bool)? in
                         guard let file = try? LocalVaultDocumentStore(root: root).readMetadata(path: path),
-                              let itemId = MarkdownIdentityCodec.extract(from: file.contents.markdown)?.itemId, Self.identifier(itemId),
-                              (try? LocalVaultSync.collaborationReady(root: root, path: path, itemId: itemId, localHash: file.hash)) == true else { return nil }
-                        return Configuration(namespace: context.binding.origin.absoluteString,
-                            workspaceId: context.binding.workspaceId, itemId: itemId)
+                              let itemId = MarkdownIdentityCodec.extract(from: file.contents.markdown)?.itemId, Self.identifier(itemId) else { return nil }
+                        return (itemId, (try? LocalVaultSync.collaborationReady(root: root, path: path, itemId: itemId, localHash: file.hash)) == true)
                     }.value
+                    var configuration: Configuration?
+                    if let candidate, let engine = self.engine() {
+                        let retained = try await engine.readSharedCheckpoint(itemId: candidate.0)
+                        if candidate.1 || retained != nil {
+                            configuration = Configuration(namespace: context.binding.origin.absoluteString, workspaceId: context.binding.workspaceId, itemId: candidate.0)
+                        }
+                    }
                     try Task.checkCancellation()
                     completion(.success(configuration?.value)); return
                 }

@@ -10,6 +10,7 @@ final class LocalVaultConnectionController {
     private let root: URL
     private let credentials: CredentialsProvider
     private var engine: LocalVaultSync?
+    var collaborationEngine: LocalVaultSync? { engine }
     private var transport: HTTPLocalVaultSyncTransport?
     private var watching: Task<Void, Never>?
     private var running: Task<Void, Never>?

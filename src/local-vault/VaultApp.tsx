@@ -292,7 +292,7 @@ function OpenVaultEditor(props: VaultEditorProps) {
     return () => { stopped = true; };
   }, [props.root, props.initial.path, props.initial.markdown, retry]);
   if (mode === "local") return <VaultEditor {...props} />;
-  if (mode) return <CollaborativeVaultEditor {...props} config={mode} />;
+  if (mode) return <CollaborativeVaultEditor {...props} config={mode} onLocalFallback={() => setMode("local")} />;
   return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;
 }
 
