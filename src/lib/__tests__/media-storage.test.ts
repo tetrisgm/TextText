@@ -1,58 +1,113 @@
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ send: vi.fn(), destroy: vi.fn(), configuration: vi.fn() }));
-vi.mock("@aws-sdk/client-s3", async importOriginal => ({
-  ...await importOriginal<typeof import("@aws-sdk/client-s3")>(),
-  S3Client: vi.fn(function (configuration) { mocks.configuration(configuration); return { send: mocks.send, destroy: mocks.destroy }; }),
-}));
-import { put, del, list, readMedia, mediaKeyFromUrl, validMediaKey, isMediaStorageConfigured } from "@/lib/media-storage";
-beforeEach(() => {
-  vi.resetAllMocks();
-  for (const [key, value] of Object.entries({ R2_MEDIA_ACCOUNT_ID: "a".repeat(32), R2_MEDIA_BUCKET: "private-media", R2_MEDIA_ACCESS_KEY_ID: "test-id", R2_MEDIA_SECRET_ACCESS_KEY: "test-only", MEDIA_ORIGIN: "https://texttext.example" })) vi.stubEnv(key, value);
+import {
+  del,
+  isMediaStorageConfigured,
+  list,
+  mediaKeyFromUrl,
+  put,
+  readMedia,
+  validMediaKey,
+} from "@/lib/media-storage";
+
+let directory: string;
+
+beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), "texttext-media-"));
+  vi.stubEnv("TEXTTEXT_MEDIA_ROOT", join(directory, "media"));
+  vi.stubEnv("MEDIA_ORIGIN", "https://texttext.example");
 });
-afterEach(() => vi.unstubAllEnvs());
-describe("private R2 media storage", () => {
-  it("writes bounded immutable objects to the private prefix and returns only application URLs", async () => {
-    mocks.send.mockResolvedValue({});
-    const result = await put("documents/demo/item/assets/photo.png", new Uint8Array([1, 2]), { contentType: "image/png" });
-    expect(result.url).toMatch(/^https:\/\/texttext.example\/api\/media\/documents\/demo\/item\/assets\/[a-f0-9-]+-photo.png$/);
-    expect(mocks.send.mock.calls[0][0].input).toMatchObject({ Bucket: "private-media", Key: `media/v1/${result.pathname}`, IfNoneMatch: "*", ContentLength: 2, ContentType: "image/png" });
-    expect(mocks.send.mock.calls[0][0].input).not.toHaveProperty("ACL");
-    expect(mocks.configuration.mock.calls[0][0]).toMatchObject({ region: "auto", endpoint: `https://${"a".repeat(32)}.r2.cloudflarestorage.com` });
-    expect(mocks.destroy).toHaveBeenCalledOnce();
+
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await rm(directory, { recursive: true, force: true });
+});
+
+describe("Oracle-local media storage", () => {
+  it("atomically writes bounded private objects and returns only application URLs", async () => {
+    const result = await put(
+      "documents/demo/item/assets/photo.png",
+      new Uint8Array([1, 2]),
+      { contentType: "image/png" },
+    );
+    expect(result.url).toMatch(
+      /^https:\/\/texttext\.example\/api\/media\/documents\/demo\/item\/assets\/[a-f0-9-]+-photo\.png$/,
+    );
+    const object = join(process.env.TEXTTEXT_MEDIA_ROOT!, "objects", ...result.pathname.split("/"));
+    const metadata = join(process.env.TEXTTEXT_MEDIA_ROOT!, "metadata", ...result.pathname.split("/")) + ".json";
+    expect([...await readFile(object)]).toEqual([1, 2]);
+    expect(JSON.parse(await readFile(metadata, "utf8"))).toEqual({ version: 1, contentType: "image/png", size: 2 });
+    expect((await lstat(object)).mode & 0o777).toBe(0o600);
     await expect(put("documents/demo/../bad", new Uint8Array([1]), { contentType: "image/png" })).rejects.toThrow("path");
     await expect(put("documents/demo/x", new Uint8Array(0), { contentType: "image/png" })).rejects.toThrow("50 MB");
     await expect(put("documents/demo/x", new Uint8Array([1]), { contentType: "text/html" })).rejects.toThrow("content type");
   });
+
   it("never deletes foreign URLs, legacy Blob objects, traversal or signed query variants", async () => {
-    mocks.send.mockResolvedValue({});
-    const own = "https://texttext.example/api/media/documents/demo/item/photo.png";
-    await del([own, own, "https://evil.example/api/media/documents/demo/item/photo.png", `${own}?key=1`, "https://store.public.blob.vercel-storage.com/old.png"]);
-    expect(mocks.send).toHaveBeenCalledOnce();
-    expect(mocks.send.mock.calls[0][0].input.Delete.Objects).toEqual([{ Key: "media/v1/documents/demo/item/photo.png" }]);
+    const saved = await put("documents/demo/item/photo.png", new Uint8Array([1]), { contentType: "image/png" });
+    await del([
+      saved.url,
+      saved.url,
+      saved.url.replace("texttext.example", "evil.example"),
+      `${saved.url}?key=1`,
+      "https://store.public.blob.vercel-storage.com/old.png",
+    ]);
+    expect((await readMedia(saved.pathname, null)).status).toBe(404);
     expect(mediaKeyFromUrl("https://texttext.example/api/media/documents/demo/%2e%2e/secret")).toBeNull();
     expect(validMediaKey("documents/demo/a\\b")).toBe(false);
-    mocks.send.mockResolvedValue({ Errors: [{ Key: "x" }] });
-    await expect(del(own)).rejects.toThrow("could not be deleted");
   });
-  it("bounds lists and rejects broken cursors or unrelated keys", async () => {
-    mocks.send.mockResolvedValue({ Contents: [{ Key: "media/v1/documents/demo/a.png" }, { Key: "media/v1/documents/other/b.png" }], IsTruncated: true, NextContinuationToken: "next" });
-    expect((await list({ prefix: "documents/demo/" })).blobs).toHaveLength(1);
-    expect(mocks.send.mock.calls[0][0].input.MaxKeys).toBe(100);
+
+  it("uses deletion-stable bounded cursors without skipping the next page", async () => {
+    const saved = [];
+    for (let index = 0; index < 102; index += 1) {
+      saved.push(await put(
+        `documents/demo/item/${String(index).padStart(3, "0")}.png`,
+        new Uint8Array([index]),
+        { contentType: "image/png" },
+      ));
+    }
+    const first = await list({ prefix: "documents/demo/" });
+    expect(first.blobs).toHaveLength(100);
+    expect(first.hasMore).toBe(true);
+    expect(first.cursor).toBeTruthy();
+    await del(first.blobs.map(entry => entry.url));
+    const second = await list({ prefix: "documents/demo/", cursor: first.cursor });
+    expect(second.blobs).toHaveLength(2);
+    expect(second.hasMore).toBe(false);
+    expect(new Set([...first.blobs, ...second.blobs].map(entry => entry.pathname)).size).toBe(102);
     await expect(list({ prefix: "documents/demo/", cursor: "next" })).rejects.toThrow("cursor");
   });
-  it("streams authenticated delivery with ranges, no shared cache, and cleanup", async () => {
-    mocks.send.mockResolvedValue({ ContentType: "video/mp4", ContentLength: 2, ContentRange: "bytes 1-2/3", Body: { transformToWebStream: () => new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([2, 3])); controller.close(); } }) } });
-    const response = await readMedia("documents/demo/item/video.mp4", "bytes=1-2");
-    expect(response.status).toBe(206); expect(response.headers.get("cache-control")).toBe("private, no-store");
+
+  it("streams authorized delivery with exact ranges and no shared cache", async () => {
+    const saved = await put("documents/demo/item/video.mp4", new Uint8Array([1, 2, 3]), { contentType: "video/mp4" });
+    const response = await readMedia(saved.pathname, "bytes=1-2");
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe("bytes 1-2/3");
+    expect(response.headers.get("content-length")).toBe("2");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("content-security-policy")).toContain("sandbox");
-    expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([2, 3]); expect(mocks.destroy).toHaveBeenCalledOnce();
-    expect((await readMedia("documents/demo/item/video.mp4", "bytes=1-2,4-5")).status).toBe(416);
-    mocks.send.mockRejectedValue({ $metadata: { httpStatusCode: 404 } });
-    expect((await readMedia("documents/demo/item/missing.png", null)).status).toBe(404);
+    expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([2, 3]);
+
+    const suffix = await readMedia(saved.pathname, "bytes=-2");
+    expect([...new Uint8Array(await suffix.arrayBuffer())]).toEqual([2, 3]);
+    const invalid = await readMedia(saved.pathname, "bytes=4-");
+    expect(invalid.status).toBe(416);
+    expect(invalid.headers.get("content-range")).toBe("bytes */3");
+    expect((await readMedia(saved.pathname, "bytes=1-2,4-5")).status).toBe(416);
   });
-  it("fails closed without deployment configuration", async () => {
-    vi.stubEnv("R2_MEDIA_SECRET_ACCESS_KEY", ""); expect(isMediaStorageConfigured()).toBe(false);
+
+  it("fails closed for missing configuration and symbolic-link storage roots", async () => {
+    vi.stubEnv("TEXTTEXT_MEDIA_ROOT", "");
+    expect(isMediaStorageConfigured()).toBe(false);
     await expect(put("documents/demo/item/a.png", new Uint8Array([1]), { contentType: "image/png" })).rejects.toThrow("not configured");
-    expect(mocks.send).not.toHaveBeenCalled();
+
+    const actual = join(directory, "actual");
+    const linked = join(directory, "linked");
+    await mkdir(actual);
+    await symlink(actual, linked);
+    vi.stubEnv("TEXTTEXT_MEDIA_ROOT", linked);
+    await expect(put("documents/demo/item/a.png", new Uint8Array([1]), { contentType: "image/png" })).rejects.toThrow("symbolic link");
   });
 });
