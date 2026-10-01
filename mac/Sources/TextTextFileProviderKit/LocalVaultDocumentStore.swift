@@ -8,6 +8,16 @@ public struct LocalVaultDocumentStore: Sendable {
     public let root: URL
     public init(root: URL) { self.root = root.standardizedFileURL.resolvingSymlinksInPath() }
 
+    private func canonicalMarkdownEntry(_ archive: Archive) throws -> Entry {
+        if let root = archive["text.md"] { return root }
+        let candidates = archive.filter { entry in
+            let parts = entry.path.split(separator: "/")
+            return parts.count == 2 && parts[0].hasSuffix(".textbundle") && parts[1] == "text.md"
+        }
+        guard candidates.count == 1 else { throw Failure.invalidPath }
+        return candidates[0]
+    }
+
     public struct Document: Sendable {
         public let path: String
         public let hash: String
@@ -76,16 +86,17 @@ public struct LocalVaultDocumentStore: Sendable {
                 let bytes = try Data(contentsOf: coordinated)
                 guard bytes.count <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
                 let archive = try Archive(data: bytes, accessMode: .read)
+                let key = try canonicalMarkdownEntry(archive).path
+                let prefix = String(key.dropLast("text.md".count))
                 var selected: [String: Data] = [:], expanded: UInt64 = 0
-                for entry in archive where ["document.json", "text.md"].contains((entry.path as NSString).lastPathComponent) {
+                for entry in archive where entry.path == key || entry.path == prefix + "document.json" {
                     expanded += entry.uncompressedSize
                     guard expanded <= 4 * 1024 * 1024, selected[entry.path] == nil else { throw Failure.tooLarge }
                     var data = Data()
                     _ = try archive.extract(entry) { data.append($0) }
                     selected[entry.path] = data
                 }
-                let markdowns = selected.keys.filter { ($0 as NSString).lastPathComponent == "text.md" }
-                guard markdowns.count == 1, let key = markdowns.first, let raw = selected[key] else { throw Failure.invalidPath }
+                guard let raw = selected[key] else { throw Failure.invalidPath }
                 let document = selected[String(key.dropLast("text.md".count)) + "document.json"]
                 let contents = TextTextTextBundleContents(markdown: String(decoding: raw, as: UTF8.self), sourceURL: nil,
                     documentJSON: document.map { String(decoding: $0, as: UTF8.self) }, templateJSON: nil,
@@ -210,9 +221,7 @@ public struct LocalVaultDocumentStore: Sendable {
         try bytes.write(to: packed)
         do {
             let archive = try Archive(url: packed, accessMode: .update)
-            guard let entry = archive.first(where: { $0.path == "text.md" || $0.path.hasSuffix("/text.md") }) else {
-                throw Failure.invalidPath
-            }
+            let entry = try canonicalMarkdownEntry(archive)
             let entryPath = entry.path
             var original = Data()
             _ = try archive.extract(entry) { original.append($0) }
@@ -315,9 +324,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 guard TextTextStableDigest.sha256Hex(originalBytes) == expectedHash else { throw Failure.changed }
                 try originalBytes.write(to: packed)
                 let archive = try Archive(url: packed, accessMode: .update)
-                guard let markdownEntry = archive.first(where: { $0.path == "text.md" || $0.path.hasSuffix("/text.md") }) else {
-                    throw Failure.invalidPath
-                }
+                let markdownEntry = try canonicalMarkdownEntry(archive)
                 let prefix = String(markdownEntry.path.dropLast("text.md".count))
                 for name in ["text.md", "document.json", "template.json", "template-source.json"] {
                     if let entry = archive[prefix + name] { try archive.remove(entry) }

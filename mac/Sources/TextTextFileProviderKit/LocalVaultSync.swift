@@ -65,12 +65,16 @@ public actor LocalVaultSync {
         var conflicts: [String: Conflict] = [:]
         var cursor = 0
         var identities: [String: String]? = nil
+        var sharedDownloads: [String: Bool]? = nil
     }
     private let root: URL
     private let directory: URL
     private let transport: any LocalVaultSyncTransport
     private var state: State
     private var running = false
+    private struct SharedSession { var token: String; var path: String; var hash: String; var retired = false }
+    private var sharedSessions: [String: SharedSession] = [:]
+    private var sharedStore: LocalVaultSharedEditingStore { LocalVaultSharedEditingStore(root: root) }
 
     public init(root: URL, binding: LocalVaultSyncBinding, transport: any LocalVaultSyncTransport) throws {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -95,6 +99,121 @@ public actor LocalVaultSync {
             try FileManager.default.createDirectory(at: directory.appendingPathComponent("outbox"), withIntermediateDirectories: true)
             try writeVaultSyncJournal(JSONEncoder().encode(state), to: stateURL)
         }
+    }
+
+    public func readSharedCheckpoint(itemId: String) throws -> LocalVaultSharedCheckpoint? {
+        do { return try sharedStore.checkpoint(itemId: itemId) }
+        catch LocalVaultSyncFailure.changed { return try sharedStore.checkpoint(itemId: itemId) }
+    }
+    public func beginSharedEditing(itemId: String, path: String, expectedHash: String) throws -> LocalVaultSharedSession {
+        guard sharedSessions[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+        let replayBeforeHash = try sharedStore.pendingIntentBeforeHash(itemId: itemId)
+        var checkpoint = try readSharedCheckpoint(itemId: itemId)
+        let document = try LocalVaultDocumentStore(root: root).read(path: path)
+        let replayedOwnWrite = replayBeforeHash == expectedHash && checkpoint?.projectedHash == document.hash && checkpoint?.path == path && checkpoint?.retiredReason == nil
+        guard document.hash == expectedHash || replayedOwnWrite,
+              MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
+        if let saved = checkpoint {
+            if saved.retiredReason == nil && (saved.path != path || saved.projectedHash != document.hash) {
+                if !saved.pending { try sharedStore.archive(itemId: itemId); checkpoint = nil }
+                else { checkpoint = try sharedStore.retire(itemId: itemId, reason: "The file changed outside shared editing. Recover the retained shared journal before continuing.") }
+            }
+        }
+        if checkpoint == nil {
+            guard let baseline = state.baselines[itemId], baseline.path == path, baseline.localHash == document.hash else { throw LocalVaultSyncFailure.changed }
+        }
+        if checkpoint?.retiredReason == nil {
+            guard state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+        }
+        let session = SharedSession(token: UUID().uuidString, path: path, hash: document.hash)
+        sharedSessions[itemId] = session
+        return LocalVaultSharedSession(sessionToken: session.token, acknowledgedRevision: checkpoint?.acknowledgedRevision ?? state.baselines[itemId]!.revision, document: document, checkpoint: checkpoint)
+    }
+    public func materializeSharedEditing(sessionToken: String, itemId: String, expectedHash: String, epoch: Int, seq: Int,
+        acknowledgedRevision: String, journalGeneration: UInt64, journal: String, pending: Bool,
+        markdown: String, documentJSON: String) throws -> LocalVaultSharedMaterialization {
+        guard let session = sharedSessions[itemId], session.token == sessionToken else { throw LocalVaultSharedFailure.staleSession }
+        guard !session.retired else { throw LocalVaultSyncFailure.changed }
+        guard session.hash == expectedHash else { throw LocalVaultSyncFailure.changed }
+        guard state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+        let journalObject = try JSONSerialization.jsonObject(with: Data(journal.utf8)) as? [String: Any]
+        let retirement = journalObject?["retired"] as? String
+        let checkpoint = LocalVaultSharedCheckpoint(itemId: itemId, path: session.path, projectedHash: expectedHash,
+            acknowledgedRevision: acknowledgedRevision, epoch: epoch, seq: seq, journalGeneration: journalGeneration,
+            journal: journal, pending: pending, retiredReason: retirement)
+        do {
+            let result = try sharedStore.materialize(checkpoint: checkpoint, expectedHash: expectedHash, markdown: markdown, documentJSON: documentJSON)
+            sharedSessions[itemId]?.hash = result.document.hash
+            if result.checkpoint.retiredReason != nil { sharedSessions[itemId]?.retired = true }
+            return result
+        } catch LocalVaultSyncFailure.changed {
+            sharedSessions[itemId]?.retired = true
+            _ = try sharedStore.retire(itemId: itemId, reason: "The file changed outside shared editing. Its shared journal is retained for recovery.")
+            throw LocalVaultSyncFailure.changed
+        }
+    }
+    public func endSharedEditing(sessionToken: String, itemId: String, retiredReason: String? = nil) throws {
+        guard sharedSessions[itemId]?.token == sessionToken else { throw LocalVaultSharedFailure.staleSession }
+        if let retiredReason { _ = try sharedStore.retire(itemId: itemId, reason: retiredReason) }
+        sharedSessions.removeValue(forKey: itemId)
+        _ = try sharedProtection(itemId: itemId)
+    }
+    public func finishSharedRecovery(sessionToken: String, itemId: String, recoveryPath: String, recoveryHash: String) throws {
+        guard let session = sharedSessions[itemId], session.token == sessionToken, recoveryPath != session.path else { throw LocalVaultSharedFailure.staleSession }
+        let store = LocalVaultDocumentStore(root: root), recovered = try store.read(path: recoveryPath)
+        guard recovered.hash == recoveryHash, let identity = MarkdownIdentityCodec.extract(from: recovered.contents.markdown)?.itemId,
+              identity != itemId else { throw LocalVaultSyncFailure.changed }
+        let checkpoint = try readSharedCheckpoint(itemId: itemId)
+        let primary = try? store.read(path: session.path)
+        if let checkpoint, let primary, primary.hash == checkpoint.projectedHash, primary.path == checkpoint.path {
+            state.baselines[itemId] = Baseline(path: primary.path, revision: checkpoint.acknowledgedRevision, localHash: primary.hash)
+            if state.sharedDownloads == nil { state.sharedDownloads = [:] }
+            state.sharedDownloads?[itemId] = true
+            try persist()
+        }
+        try sharedStore.archive(itemId: itemId)
+        sharedSessions.removeValue(forKey: itemId)
+        if state.sharedDownloads?[itemId] == true, let checkpoint, let primary,
+           let acknowledged = try? store.readRevision(path: primary.path, hash: checkpoint.acknowledgedRevision) {
+            let bytes = try Data(contentsOf: root.appendingPathComponent(".texttext/history/" + acknowledged.hash + ".textpack"))
+            try install(LocalVaultRemotePack(data: bytes, relativePath: primary.path, revision: acknowledged.hash), itemId: itemId, path: primary.path, expectedLocal: primary.hash)
+            state.baselines[itemId] = Baseline(path: primary.path, revision: acknowledged.hash, localHash: acknowledged.hash)
+            // Keep the marker: a newer remote epoch must still be fetched when connectivity returns.
+            try persist()
+        }
+    }
+    /// Rechecked immediately before local install/staging as actor reentrancy can activate editing during network awaits.
+    private func sharedProtection(itemId: String) throws -> Bool {
+        let checkpoint = try readSharedCheckpoint(itemId: itemId)
+        let live = sharedSessions[itemId]
+        guard checkpoint != nil || live != nil else { return false }
+        let path = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
+        let current = try? LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        guard let current, current.hash == expected, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId else {
+            if live == nil, checkpoint?.pending == false { try sharedStore.archive(itemId: itemId); return false }
+            _ = try sharedStore.retire(itemId: itemId, reason: "The file was changed, moved, or deleted outside shared editing. The retained journal is available for recovery.")
+            sharedSessions[itemId]?.retired = true
+            return false
+        }
+        if checkpoint?.retiredReason != nil || live?.retired == true {
+            // Retired shared bytes still need recovery; external file changes took the branch above.
+            if checkpoint?.pending == true { return true }
+            sharedSessions[itemId]?.retired = true
+            if let checkpoint {
+                state.baselines[itemId] = Baseline(path: checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
+                if state.sharedDownloads == nil { state.sharedDownloads = [:] }
+                state.sharedDownloads?[itemId] = true
+                try persist()
+                try sharedStore.archive(itemId: itemId)
+            }
+            return false
+        }
+        if live != nil || checkpoint?.pending == true { return true }
+        if let checkpoint, state.baselines[itemId]?.path != checkpoint.path || state.baselines[itemId]?.revision != checkpoint.acknowledgedRevision || state.baselines[itemId]?.localHash != checkpoint.projectedHash {
+            state.baselines[itemId] = Baseline(path: checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
+            try persist()
+        }
+        return false
     }
 
     public static func binding(root: URL) throws -> LocalVaultSyncBinding? {
@@ -150,6 +269,7 @@ public actor LocalVaultSync {
     /// expectedLocal nil means create-only. File coordination and a final byte
     /// check prevent a download from replacing an intervening editor save.
     private func install(_ pack: LocalVaultRemotePack, itemId: String, path: String, expectedLocal: String?) throws {
+        guard try !sharedProtection(itemId: itemId) else { throw LocalVaultSharedFailure.protected }
         try validate(pack, itemId: itemId, path: path)
         let target = try LocalVaultDocumentStore(root: root).url(for: path)
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -217,6 +337,7 @@ public actor LocalVaultSync {
 
     private func stage(itemId: String, path: String, hash: String, base: String?,
                        bytes: Data?, action: String? = nil, newPath: String? = nil) throws -> Pending {
+        guard try !sharedProtection(itemId: itemId) else { throw LocalVaultSharedFailure.protected }
         let pending = Pending(itemId: itemId, path: path, hash: hash, baseRevision: base,
                               operationId: UUID().uuidString.lowercased(), action: action, newPath: newPath)
         if let bytes { try writeVaultSyncJournal(bytes, to: payload(pending)) }
@@ -353,6 +474,7 @@ public actor LocalVaultSync {
         for id in ids[start..<(start + count)] {
             var activePath = localByID[id]?.first ?? remoteByID[id]?.relativePath ?? state.baselines[id]?.path ?? id
             do {
+                if try sharedProtection(itemId: id) { continue }
                 guard (localByID[id]?.count ?? 0) <= 1 else { throw LocalVaultSyncFailure.duplicateIdentity(activePath) }
                 if state.outbox[id] != nil { report.hasMore = true; continue }
                 let remote = remoteByID[id]
@@ -438,6 +560,19 @@ public actor LocalVaultSync {
                     continue
                 }
                 if let remote, remote.relativePath != path { throw LocalVaultSyncFailure.duplicateIdentity(path) }
+                if state.sharedDownloads?[id] == true {
+                    if let baseline, baseline.localHash == current.hash, let remote {
+                        let pack = try await transport.download(itemId: id)
+                        try install(pack, itemId: id, path: path, expectedLocal: current.hash)
+                        state.baselines[id] = Baseline(path: path, revision: pack.revision, localHash: pack.revision)
+                        state.sharedDownloads?.removeValue(forKey: id)
+                        try persist(); report.downloaded += 1
+                        continue
+                    }
+                    // An external edit after recovery is real file work, not the abandoned shared projection.
+                    state.sharedDownloads?.removeValue(forKey: id)
+                    try persist()
+                }
                 if remote?.revision == current.hash {
                     state.baselines[id] = Baseline(path: path, revision: current.hash, localHash: current.hash)
                     state.conflicts.removeValue(forKey: id)
@@ -455,7 +590,8 @@ public actor LocalVaultSync {
                 guard TextTextStableDigest.sha256Hex(bytes) == current.hash else { throw LocalVaultSyncFailure.changed }
                 let pending = try stage(itemId: id, path: path, hash: current.hash, base: baseline?.revision, bytes: bytes)
                 try await send(pending, report: &report)
-            } catch { report.errors.append("\(activePath): \(error.localizedDescription)") }
+            } catch LocalVaultSharedFailure.protected { continue }
+            catch { report.errors.append("\(activePath): \(error.localizedDescription)") }
         }
         state.cursor = (start + count) % ids.count
         report.hasMore = report.hasMore || !indexComplete || start + count < ids.count || !state.outbox.isEmpty
