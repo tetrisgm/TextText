@@ -27,6 +27,7 @@ import { packIdentity } from "./pack";
 import { readFolderView } from "./folder-view";
 import { VaultSearch } from "./VaultSearch";
 import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
+import { VaultPublishDialog } from "./VaultPublishDialog";
 import { VaultComments } from "./VaultComments";
 import { vaultCommentCapabilities } from "./vault-comments";
 import { canCreateInVaultFolder, parseVaultAccess, sharedVaultHashTarget, type VaultAccess } from "./shared-vaults";
@@ -318,6 +319,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [searchOpen, setSearchOpen] = useState(false);
   const [recovery, setRecovery] = useState<{ path?: string } | null>(null);
   const [sharing, setSharing] = useState<VaultShareScope | null>(null);
+  const [publishing, setPublishing] = useState<{ workspaceId: string; itemId: string; label: string } | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
@@ -407,7 +409,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     }
   }, [webWorkspaceId, listing, folders, hashRevision]);
   const closeRemoved = useCallback(() => {
-    setSelected(null); setFileAction(null); setCommentsOpen(false); currentFileRef.current = null;
+    setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
     flushRef.current = async () => true;
   }, []);
   const operate = async (action: () => Promise<void>) => {
@@ -516,6 +518,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
           disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
         {canShare && sharingWorkspaceId && <button disabled={busy} onClick={() => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Share</button>}
+        {canShare && sharingWorkspaceId && selectedItemId && <button disabled={busy} onClick={() => setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Publish</button>}
         {canManageFiles && <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
         {canManageFiles && <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>}
         {allowFolderPicker && <button disabled={busy} onClick={() => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path: selected.path } })); }}>Customize</button>}
@@ -556,6 +559,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         closeRemoved(); setSelected(restored); setDestinationFolder(folderForItem(restored.path)); refresh();
       }} />}
       {sharing && canShare && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} onClose={() => setSharing(null)} />}
+      {publishing && canShare && selectedItemId === publishing.itemId && <VaultPublishDialog
+        key={`${publishing.workspaceId}:${publishing.itemId}`} {...publishing}
+        beforeChange={() => flushRef.current()} onClose={() => setPublishing(null)} />}
       {captureOpen && <CaptureDialog onClose={() => setCaptureOpen(false)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });

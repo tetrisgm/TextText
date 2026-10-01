@@ -1,0 +1,8 @@
+.status { margin: 24px 0 8px; color: var(--ink); font-weight: 600; }
+.link { display: grid; gap: 8px; margin-top: 20px; font-size: 13px; }
+.link label { color: var(--muted); }
+.link input { width: 100%; min-width: 0; padding: 9px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.link div { display: flex; align-items: center; gap: 16px; }
+.link a { color: var(--tt-accent); }
+.actions { display: flex; justify-content: flex-end; margin-top: 28px; }
+.actions button { background: var(--tt-accent); color: white; }

@@ -138,6 +138,26 @@ describe("web file vault transport", () => {
     transport.destroy();
   });
 
+  it("publishes only the selected item in the bound workspace with a checked revision", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const itemId = "0bd05f92-c562-4a78-8c0d-b5e41ca3215d";
+    const operationId = "2bd05f92-c562-4a78-8c0d-b5e41ca3215d";
+    const revision = "a".repeat(64);
+    const transport = createWebVaultTransport("selected-workspace", "Workspace", async (url, init) => {
+      calls.push({ url: String(url), init });
+      return Response.json({ itemId, revision, published: init?.method === "POST", publicPath: "/v/selected-workspace/" + itemId });
+    });
+    await transport.request("publicationRead", { itemId, workspaceId: "forged", path: "/private" });
+    expect(calls[0].url).toBe(`/api/vault/selected-workspace/items/${itemId}/publication`);
+    expect(calls[0].init?.method).toBe("GET");
+    await transport.request("publicationSet", { itemId, operationId, baseRevision: revision, published: true,
+      workspaceId: "forged", actorUserId: "forged", publicPath: "/evil" });
+    expect(calls[1].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ operationId, baseRevision: revision, published: true });
+    await expect(transport.request("publicationSet", { itemId, operationId, baseRevision: "stale", published: false })).rejects.toThrow("Invalid publication request");
+    transport.destroy();
+  });
+
   it("reads a retained complete pack without writing and verifies its hash", async () => {
     const seed = fixture();
     const requests: string[] = [];

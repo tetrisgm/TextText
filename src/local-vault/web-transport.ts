@@ -121,6 +121,25 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (!response.ok) throw await failure(response);
       return response.json();
     }
+    if (method === "publicationRead" || method === "publicationSet") {
+      const itemId = params.itemId;
+      if (typeof itemId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Choose a file to publish.");
+      let body: { operationId: string; baseRevision: string; published: boolean } | null = null;
+      if (method === "publicationSet") {
+        if (typeof params.operationId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.operationId) ||
+          typeof params.baseRevision !== "string" || !/^[a-f0-9]{64}$/.test(params.baseRevision) || typeof params.published !== "boolean") {
+          throw new Error("Invalid publication request.");
+        }
+        body = { operationId: params.operationId, baseRevision: params.baseRevision, published: params.published };
+      }
+      const response = await request(`${base}/${encodeURIComponent(itemId)}/publication`, {
+        method: body ? "POST" : "GET", credentials: "same-origin", cache: "no-store", signal,
+        ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) throw await failure(response);
+      if (response.status === 204) throw new DOMException("Request canceled", "AbortError");
+      return response.json();
+    }
     if (["commentsRead", "commentsAdd", "commentsResolve"].includes(method)) {
       const itemId = params.itemId;
       if (typeof itemId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Choose an item to comment on.");
