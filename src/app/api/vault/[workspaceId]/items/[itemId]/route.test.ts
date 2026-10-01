@@ -1,17 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), authMetadata: vi.fn(), read: vi.fn(), preview: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), authMetadata: vi.fn(), read: vi.fn(), identity: vi.fn(), preview: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
 vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.auth, authorizeVaultItemAtPath: mocks.auth,
   authorizeVaultItemUsingMetadata: mocks.authMetadata }));
 vi.mock("@/lib/store", () => ({
   readVaultTextpack: mocks.read,
+  readVaultTextpackIdentity: mocks.identity,
   readVaultPreview: mocks.preview,
   writeVaultTextpack: mocks.write,
   moveVaultTextpack: mocks.move,
   deleteVaultTextpack: mocks.remove,
   VaultBusyError: class extends Error {},
 }));
-import { GET, PUT, PATCH, DELETE } from "./route";
+import { GET, HEAD, PUT, PATCH, DELETE } from "./route";
 
 const context = () => ({ params: Promise.resolve({ workspaceId: "owner-workspace", itemId: "item-1" }) });
 const headers = {
@@ -92,6 +93,27 @@ describe("workspace vault API", () => {
     expect(result.headers.get("Cache-Control")).toBe("no-store");
     expect(mocks.authMetadata).toHaveBeenCalledTimes(2);
     expect(mocks.auth).not.toHaveBeenCalled();
+  });
+
+  it("returns a freshly authorized exact identity without loading TextPack bytes", async () => {
+    mocks.identity.mockResolvedValue({ itemId: "item-1", revision: "b".repeat(64), relativePath: "Notes/A note.textpack" });
+    const result = await HEAD(new Request("https://texttext.test", { method: "HEAD" }), context());
+    expect(result.status).toBe(204);
+    expect(result.headers.get("ETag")).toBe(`"${"b".repeat(64)}"`);
+    expect(result.headers.get("X-TextText-Path")).toBe(headers["X-TextText-Path"]);
+    expect(mocks.identity).toHaveBeenCalledTimes(1);
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.authMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it("never returns an identity after a move or revoked reauthorization", async () => {
+    mocks.identity.mockResolvedValue({ itemId: "item-1", revision: "b".repeat(64), relativePath: "Notes/A note.textpack" });
+    mocks.authMetadata.mockResolvedValueOnce({ relativePath: "Notes/A note.textpack" })
+      .mockResolvedValueOnce({ relativePath: "Moved.textpack" });
+    expect((await HEAD(new Request("https://texttext.test", { method: "HEAD" }), context())).status).toBe(409);
+    mocks.authMetadata.mockResolvedValueOnce({ relativePath: "Notes/A note.textpack" })
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect((await HEAD(new Request("https://texttext.test", { method: "HEAD" }), context())).status).toBe(404);
   });
 
   it("rejects a moved path or revoked grant after reading bytes", async () => {

@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { unzipSync, zipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { readVaultTextpack, readVaultTextpackPath, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
+import { readVaultTextpack, readVaultTextpackPath, readVaultTextpackIdentity, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
 import { listVaultFolderViews, listVaultRecovery, readVaultRecovery } from "./server-store";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -143,6 +143,21 @@ describe("directory TextPack store", () => {
     await fs.writeFile(outside, bytes);
     await fs.symlink(outside, path.join(root, workspaceId, "Moved.textpack"));
     await expect(readVaultTextpackPath(location)).rejects.toThrow("regular file");
+  });
+
+  it("reuses a stat-fenced revision identity and rehashes external file edits", async () => {
+    const bytes = pack("first");
+    await writeVaultTextpack(input(root, "initial", bytes));
+    const location = { root, workspaceId, itemId };
+    // Listing records the derived stat fingerprint used by the cheap identity read.
+    await listVaultTextpacks({ root, workspaceId });
+    expect(await readVaultTextpackIdentity(location)).toEqual({ itemId, relativePath, revision: hash(bytes) });
+    const external = pack("external agent edit");
+    await fs.writeFile(path.join(root, workspaceId, relativePath), external);
+    expect(await readVaultTextpackIdentity(location)).toEqual({ itemId, relativePath, revision: hash(external) });
+    expect((await readVaultTextpack(location))?.bytes).toEqual(Buffer.from(external));
+    await fs.unlink(path.join(root, workspaceId, relativePath));
+    expect(await readVaultTextpackIdentity(location)).toBeNull();
   });
 
   it("fences a raw delete and restore seen by a path-only authorization", async () => {

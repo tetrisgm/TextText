@@ -1,5 +1,5 @@
 import { authorizeVaultItem, authorizeVaultItemAtPath, authorizeVaultItemUsingMetadata } from "@/app/api/vault/scoped-auth";
-import { readVaultTextpack, readVaultTemplate, readVaultPreview, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultBusyError } from "@/lib/store";
+import { readVaultTextpack, readVaultTextpackIdentity, readVaultTemplate, readVaultPreview, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultBusyError } from "@/lib/store";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const runtime = "nodejs";
@@ -74,6 +74,26 @@ export async function GET(request: Request, context: Context) {
       ETag: `"${item.revision}"`,
       "X-TextText-Path": encodeURIComponent(item.relativePath),
       "X-Content-Type-Options": "nosniff",
+    } });
+  } catch (error) { return failure(error); }
+}
+
+/** Fresh authorization plus an exact content identity for warm local caches.
+ * The body stays empty; changed filesystem metadata is validated and rehashed
+ * by the store before an identity is returned. */
+export async function HEAD(request: Request, context: Context) {
+  const authorized = await authorize(request, context, "read", true);
+  if (authorized instanceof Response) return authorized;
+  try {
+    const item = await readVaultTextpackIdentity(authorized);
+    const current = await authorize(request, context, "read", true);
+    if (current instanceof Response) return current;
+    if (!item) return new Response(null, { status: 404, headers: noCache });
+    if (current.relativePath !== item.relativePath) return new Response(null, { status: 409, headers: noCache });
+    return new Response(null, { status: 204, headers: {
+      ...noCache,
+      ETag: `"${item.revision}"`,
+      "X-TextText-Path": encodeURIComponent(item.relativePath),
     } });
   } catch (error) { return failure(error); }
 }

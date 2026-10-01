@@ -59,6 +59,9 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     if (!item) { await listing(); item = manifest!.items.find((entry) => entry.relativePath === path); }
     if (!item) throw new VaultError("This file no longer exists in the workspace.", "not_found");
     const cached = prefetchCollaboration ? [...packs.values()].reverse().find(pack => pack.itemId === item.itemId && pack.file.path === path) : null;
+    const cachedIdentity = cached ? request(`${base}/${encodeURIComponent(item.itemId)}`, {
+      method: "HEAD", credentials: "same-origin", cache: "no-store", signal,
+    }) : null;
     let prefetch: OpenCollaborationPrefetch | null = null;
     let abortPrefetch: (() => void) | null = null;
     if (prefetchCollaboration) {
@@ -81,16 +84,12 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     };
     try {
       if (cached && prefetch) {
-        const state = await prefetch.result;
+        const identity = await cachedIdentity!;
         if (signal?.aborted || destroyed || openCollaboration !== prefetch) throw new DOMException("Request canceled", "AbortError");
-        const baseline = state as { revision?: unknown; relativePath?: unknown; epoch?: unknown; seq?: unknown;
-          update?: unknown; canEditContent?: unknown; canComment?: unknown } | null;
-        if (baseline && typeof baseline === "object" && !Array.isArray(baseline) &&
-            baseline.revision === cached.file.hash && baseline.relativePath === cached.file.path &&
-            typeof baseline.epoch === "number" && Number.isSafeInteger(baseline.epoch) && baseline.epoch >= 1 &&
-            typeof baseline.seq === "number" && Number.isSafeInteger(baseline.seq) && baseline.seq >= 0 &&
-            typeof baseline.update === "string" && typeof baseline.canEditContent === "boolean" &&
-            typeof baseline.canComment === "boolean") {
+        if (!identity.ok) throw await failure(identity);
+        const revision = identity.headers.get("ETag")?.replace(/^"|"$/g, "");
+        const storedPath = identity.headers.get("X-TextText-Path");
+        if (revision === cached.file.hash && storedPath && decodeURIComponent(storedPath) === cached.file.path) {
           const opened = remember(cached);
           armPrefetch(opened);
           return opened;

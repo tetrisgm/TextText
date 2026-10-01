@@ -1062,6 +1062,44 @@ export async function readVaultTextpackPath(input: VaultLocation & { itemId: str
   });
 }
 
+/** Resolve an item's live path and content revision without reopening a known
+ * unchanged TextPack. The stat fingerprint is an index hint only: whenever it
+ * differs, the complete pack is read, validated, hashed, and indexed again. */
+export async function readVaultTextpackIdentity(input: VaultLocation & { itemId: string }): Promise<{
+  itemId: string; relativePath: string; revision: string;
+} | null> {
+  segment(input.itemId);
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    const metadataPath = path.join(layout.items, `${input.itemId}.json`);
+    const raw = await maybeRead(metadataPath);
+    if (!raw) return null;
+    const item = JSON.parse(raw.toString()) as {
+      itemId?: string; relativePath: string; revision?: string; fingerprint?: string; deleted?: boolean;
+    };
+    if (item.deleted) return null;
+    const target = await targetPath(layout, item.relativePath);
+    const signature = await fingerprint(target);
+    if (!signature) {
+      await observeCollaborationRevision(layout, input.itemId, null);
+      return null;
+    }
+    if (item.fingerprint === signature && item.revision && /^[a-f0-9]{64}$/.test(item.revision)) {
+      return { itemId: input.itemId, relativePath: item.relativePath, revision: item.revision };
+    }
+    const bytes = await maybeRead(target);
+    if (!bytes) return null;
+    validatePack(bytes, input.itemId);
+    const revision = hash(bytes);
+    await observeCollaborationRevision(layout, input.itemId, revision);
+    const history = await directory(layout.history, input.itemId);
+    await atomicWrite(path.join(history, `${revision}.textpack`), bytes);
+    await atomicWrite(metadataPath, json({ ...item, itemId: input.itemId, revision, fingerprint: signature }));
+    return { itemId: input.itemId, relativePath: item.relativePath, revision };
+  });
+}
+
 /** Metadata-only discovery; bound work and fail explicitly rather than hide a late definition. */
 export async function listVaultFolderViews(input: VaultLocation & { folder: string }) {
   if (input.folder && (input.folder.startsWith("/") || input.folder.includes("\\") || input.folder.split("/").some((part) => !part || part.startsWith(".")))) throw new Error("Invalid folder path");

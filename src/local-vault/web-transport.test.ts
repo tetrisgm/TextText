@@ -59,8 +59,9 @@ function fixture() {
 function cachedOpenFixture() {
   const { id, path, initial } = fixture();
   const live = { bytes: initial, path, epoch: 1, seq: 0, allowed: true, canEdit: true,
+    identityResponse: null as ((signal: AbortSignal | undefined) => Promise<Response>) | null,
     collaborationResponse: null as ((signal: AbortSignal | undefined) => Promise<Response>) | null };
-  const calls = { items: 0, collaboration: 0 };
+  const calls = { items: 0, identity: 0, collaboration: 0 };
   const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {
     const target = String(url);
     if (target.endsWith("/items")) return Response.json({ items: [{ itemId: id, relativePath: path, revision: digest(initial) }], revision: "manifest" });
@@ -72,6 +73,12 @@ function cachedOpenFixture() {
         update: "AAA=", canEditContent: live.canEdit, canComment: true });
     }
     if (target.endsWith(`/${id}`)) {
+      if (init?.method === "HEAD") {
+        calls.identity++;
+        if (live.identityResponse) return live.identityResponse(init?.signal ?? undefined);
+        if (!live.allowed) return Response.json({ error: "Access changed" }, { status: 403 });
+        return new Response(null, { status: 204, headers: { ETag: `"${digest(live.bytes)}"`, "X-TextText-Path": encodeURIComponent(live.path) } });
+      }
       calls.items++;
       if (!live.allowed) return Response.json({ error: "Access changed" }, { status: 403 });
       return new Response(new Uint8Array(live.bytes), { headers: { ETag: `"${digest(live.bytes)}"`, "X-TextText-Path": encodeURIComponent(live.path) } });
@@ -91,7 +98,7 @@ describe("web file vault transport", () => {
     const baseline = await transport.request("collaborationRead", { itemId: id }) as { canEditContent: boolean };
     expect(second).toBe(first);
     expect(baseline.canEditContent).toBe(false);
-    expect(calls).toEqual({ items: 1, collaboration: 2 });
+    expect(calls).toEqual({ items: 1, identity: 1, collaboration: 2 });
     transport.destroy();
   });
 
@@ -101,7 +108,7 @@ describe("web file vault transport", () => {
     await transport.request("collaborationRead", { itemId: id });
     live.allowed = false;
     await expect(transport.request("read", { path, prefetchCollaboration: true })).rejects.toMatchObject({ code: "403" });
-    expect(calls).toEqual({ items: 2, collaboration: 2 });
+    expect(calls).toEqual({ items: 1, identity: 1, collaboration: 2 });
     transport.destroy();
   });
 
@@ -134,7 +141,7 @@ describe("web file vault transport", () => {
     await transport.request("read", { path, prefetchCollaboration: true });
     await transport.request("collaborationRead", { itemId: id });
     const started = deferred<AbortSignal | undefined>();
-    live.collaborationResponse = signal => { started.resolve(signal); return new Promise<Response>((_resolve, reject) => {
+    live.identityResponse = signal => { started.resolve(signal); return new Promise<Response>((_resolve, reject) => {
       signal?.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true });
     }); };
     const controller = new AbortController();
@@ -144,7 +151,7 @@ describe("web file vault transport", () => {
     await expect(opening).rejects.toMatchObject({ name: "AbortError" });
     expect(pendingSignal?.aborted).toBe(true);
     expect(calls.items).toBe(1);
-    live.collaborationResponse = null;
+    live.identityResponse = null;
     await expect(transport.request("read", { path, prefetchCollaboration: true })).resolves.toMatchObject({ path });
     expect(calls.collaboration).toBe(3);
     transport.destroy();
