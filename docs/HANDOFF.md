@@ -2,22 +2,35 @@
 
 ## Current work
 
-Finish the [content-first product brief](design/texttext-content-first-ux.md) on ordinary folder workspaces and self-contained TextPacks. The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) records current HEAD, dirty files to preserve, task-owned processes, verified journeys, and the exact next action. Reconcile it with `git status` and the current listener before editing or restarting anything.
+Finish the [content-first product brief](design/texttext-content-first-ux.md) on ordinary folder workspaces and self-contained TextPacks. The [canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md) is the operational status. The [file-vault architecture](design/texttext-file-vault-migration.md) governs storage and sync.
 
-The owner authorized local replacement of `/Applications/TextText.app`. Native 0.202 (1143) is installed against the task-owned localhost server with a signed Codex helper. An actual scoped Codex edit in 1142 appeared once in the open editor and local/server TextPacks, with a new `external_agent` audit row; the prior human edit has its own `human` audit row. The two-account browser journey and local vault browser fixture passed. The October 1 full 240-pack rerun met folder, typing, and warm Command-K targets but still missed item-open; see the [checkpoint](TEXTTEXT_UX_CHECKPOINT.md) and [performance receipt](file-vault-performance-2026-09-30.md). A broken Gallery Details asset preview was fixed and its 404 disappeared in an integrated browser diagnosis.
+Current source is `main` at `31281f03`. `08366635` made folder pagination deterministic with natural path order. `31281f03` moved editor actions into the vault header and updated the exact two-account verifier. No public push, deployment, or release was performed.
 
-The owner accepts starting fresh instead of recovering deleted Vercel Blob objects. Keep current working TextPacks and unrelated dirty source intact while making new file workflows reliable. Do not assume old Blob images, downloads, or off-box backups can be recovered.
+The owner authorized local replacement of `/Applications/TextText.app`. The sole installed copy is native 0.202 build 1146, Apple Development signed with three extensions and the bundled Codex helper. It targets the task-owned production build on `http://localhost:3000`. Build and install receipts are `/tmp/texttext-build-1146.log` and `/tmp/texttext-install-1146.log`.
+
+## Verified state
+
+- The exact two-account collaboration journey passes presence, comments stored in the canonical TextPack, concurrent edits, scoped undo and redo, offline and reload convergence across three editors, independent same-origin recovery journals, idle upload behavior, folder and note discovery without reload, permission downgrade, and zero browser runtime errors. Receipt: `/tmp/texttext-file-collaboration-header-fix-4.log`. Light and dark screenshots: `/tmp/texttext-file-collaboration-light.png` and `/tmp/texttext-file-collaboration-dark.png`.
+- The final offline vault browser fixture passes after the natural folder ordering change. Receipts: `/tmp/texttext-final-local-vault-build.log`, `/tmp/texttext-final-browser-order.log`, and `/tmp/texttext-header-portal-browser.log`.
+- The latest full 240-pack production benchmark passes its bounded harness, two-account access, six visible external file mutations, exact cleanup, idle-content-upload check, and memory bounds. Typing meets its initial target. Cached item open remains well above target; folder and cold Command-K narrowly miss. See [performance receipt](file-vault-performance-2026-09-30.md).
+- Canonical `/Applications/TextText.app` is version 0.202 build 1146. The installer validated the app, all extensions, and helper, then launched one canonical copy. Final installed connectivity, agent, and visible outage recovery checks are still in progress and must not be inferred from browser acceptance.
+
+## Live local state
+
+- Task-owned Next server: `127.0.0.1:3000`, PID 22454, Codex session 86821, output `.texttext/vault-perf-20261001k`.
+- Command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001k node --env-file=.env.local node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000`.
+- No persistent build, release, reinstall, or server job was installed. Recheck listener identity before stopping anything.
+- Preserve unrelated modified `src/components/workspace/assistant/attachments.ts`, modified `src/lib/workspace/__tests__/tabs.test.ts`, and untracked `scripts/.probe-editor.ts`. Do not reset, clean, or include them in task commits.
 
 ## Blockers and boundaries
 
-- Private Cloudflare R2 media, backups, and release adapters have focused code tests, but no live buckets, upload/read, scratch restore, Oracle switch, or public release. The owner considers the old Blob files disposable. Off-box backups are unavailable since that store was deleted. Local development can proceed independently.
-- Oracle is shared with Algorave. Its PostgreSQL, application, and Caddy services use ports 5434, 3500, and 8445; preserve both the Algorave `use_backend` rule and backend in `/etc/texttext/haproxy.cfg`. Before any infrastructure repair, follow the fleet/database references in `AGENTS.md`, check backups/mtimes/running work, and obtain the separate owner authorization it requires.
-- The native 1136 conflict flow once preserved both branches but left Retry/reopen on an offline screen. Fix `a09c0fff` is installed in 1137 but still lacks installed conflict/retry proof. Current production deployment and public sign-in have not been verified. No public push, deployment, release, or billing change was performed by this task.
-- Build 1143 includes the signed helper, recovered-watch source fix, and private same-origin media support. Snapshot-level audit cannot enumerate every contributor if edits coalesce before one upload. The installed app reopened a note and gallery after a brief localhost outage without a visible warning; an outage that first displays the banner is still needed to confirm its automatic clearance in the UI.
-- Preserve unrelated dirty `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`. Do not reset, clean, or fold them into a task commit.
+- Private Cloudflare R2 media, backup, and release adapters have code tests only. No live bucket, upload/read, scratch restore, Oracle switch, appcast, or public deployment is verified. The deleted Vercel Blob media, builds, and backups are disposable by the owner's direction; do not spend time recovering them.
+- Current public sign-in and production external-agent authorization are unverified. Keep local work independent of those external systems.
+- Oracle is shared with Algorave. Preserve its PostgreSQL, app, Caddy ports and both Algorave HAProxy entries. Infrastructure changes require the checks and separate authorization in `AGENTS.md`.
+- Performance misses are recorded evidence, not blockers to local feature work. Do not claim the 100 ms cached-item target or a proven absence of memory leaks.
 
 ## References
 
-- [Architecture and implementation](design/texttext-file-vault-migration.md), [implementation receipt](file-vault-implementation-2026-09-30.md), [reference screens and lessons](design/content-first-reference-notes.md), and [DESIGN.md](../DESIGN.md).
-- Focused receipts: [starters](file-vault-starters-2026-09-30.md), [capture/import/search](file-vault-capture-import-search-2026-09-30.md), [articles](file-vault-articles-2026-09-30.md), [reader](file-vault-reader-2026-09-30.md), [images](file-vault-images-2026-09-30.md), [previews](file-vault-previews-2026-09-30.md), [customization](file-vault-customization-2026-09-30.md), [folder views](file-vault-folder-views-2026-09-30.md), [recovery](file-vault-recovery-2026-09-30.md), and [collaboration](file-vault-collaboration-2026-09-30.md). Older installed versions in these receipts are historical evidence.
-- Older narrative is in [September 30 history](HANDOFF-history-2026-09-30.md). No project changelog entry is due for an unshipped local build.
+- [Canonical checkpoint](TEXTTEXT_UX_CHECKPOINT.md), [performance receipt](file-vault-performance-2026-09-30.md), [implementation receipt](file-vault-implementation-2026-09-30.md), [architecture](design/texttext-file-vault-migration.md), and [DESIGN.md](../DESIGN.md).
+- Focused receipts are linked from the checkpoint. Historical narrative is archived in [September 30 history](HANDOFF-history-2026-09-30.md).
+- No project changelog entry is due for this unshipped local build.

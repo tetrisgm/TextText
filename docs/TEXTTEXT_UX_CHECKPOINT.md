@@ -1,50 +1,73 @@
 # TextText content-first checkpoint
 
-## Goal and decisions
+## Goal and settled decisions
 
-Complete the [product brief](design/texttext-content-first-ux.md) on ordinary folder workspaces and self-contained TextPacks. The [file-vault architecture](design/texttext-file-vault-migration.md) governs storage and sync. The owner authorizes replacing the local `/Applications/TextText.app` with the work-in-progress build. Deleted Vercel Blob objects need no recovery or migration; continue new file workflows. Preserve active local TextPacks and unrelated dirty code. No public deployment, release, or Oracle repair is part of the current local verification.
+Complete the [product brief](design/texttext-content-first-ux.md) on ordinary folder workspaces and self-contained TextPacks. The [file-vault architecture](design/texttext-file-vault-migration.md) is authoritative. The owner authorizes replacing the local `/Applications/TextText.app` with work-in-progress builds. Deleted Vercel Blob objects are disposable; continue from current files instead of recovering them. Preserve active TextPacks and unrelated dirty source.
 
-## Current state (2026-10-01, local early morning)
+## Canonical local state (2026-10-01)
 
-- Branch `main` is ahead of origin through `588845e4` at this checkpoint. No public push or deployment. Preserve unrelated modified `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and untracked `scripts/.probe-editor.ts`.
-- Task-owned production Next server listens on `localhost:3000`, PID 97625 last observed, output `.texttext/vault-perf-20261001c`, log `/tmp/texttext-vault-perf-c-server-restart.log`. Command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001c node --env-file=.env.local node_modules/next/dist/bin/next start -p 3000`. Recheck listener and identity before stopping it. No persistent job was installed.
-- Canonical `/Applications/TextText.app` is native 0.202 build 1143, Apple Development signed with `Contents/Helpers/codex`, bound to `http://localhost:3000`. Build and install logs: `/tmp/texttext-build-1143.log`, `/tmp/texttext-install-1143.log`. This is a local WIP, not a public release.
-- Real installed-app Codex edit and human editing attribution passed in 1142. Build 1143 opens the note and four-image gallery after a task-owned localhost server interruption without a visible connection warning, but the brief outage did not elicit a banner, so automatic banner clearance has only the focused Swift test. The latest full bounded 240-pack rerun cleaned its UUID fixture; [performance receipt](file-vault-performance-2026-09-30.md) records its remaining item-open miss.
+- Source: `main` at `31281f03`. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header and brings the verifier in line with the quiet shell.
+- Dirty files owned by other work: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`. Do not alter, reset, clean, or commit them.
+- Installed app: `/Applications/TextText.app`, version 0.202 build 1146, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1146.log` and `/tmp/texttext-install-1146.log`.
+- Local app server: `127.0.0.1:3000`, PID 22454, Codex session 86821, build output `.texttext/vault-perf-20261001k`.
+- Server command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001k node --env-file=.env.local node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000`.
+- No public push, deploy, release, or persistent job was performed.
 
-## Verified work
+## Current acceptance evidence
 
-- Folder store, complete TextPack sync, starters, capture/import, reader annotations, image galleries, templates/folder presentations, agent-backed customization, and recovery have earlier focused receipts linked from [handoff](HANDOFF.md). Those installed proofs belong to older builds and do not establish current-build quality.
-- Local file collaboration, browser/native transport, independent offline journals, scoped grants, active presence, comments, public saved-copy presentation and explicit Publish are committed through `022e9976`. Publishing checks server-acknowledged full-document state before exposing a file; public rendering excludes private comments and unused custom template metadata. Source tests and production builds passed for the individual slices.
-- `scripts/verify-file-collaboration.ts` passed two signed-in accounts: live participant display, comment/reply without reload, exact canonical TextPack comment bytes, concurrent edits, scoped undo/redo, offline/reload/three-editor convergence, idle no-repeat uploads, and permission downgrade. Log: `/tmp/texttext-file-collaboration-integrated.log`. A layout defect found on the first run was fixed in `820f81f8` before this pass.
-- The final-build rerun passed 25/25 checks, including creation of a folder and note by one account and discovery/opening by another without reload. Log: `/tmp/texttext-file-collaboration-final.log`; script extension `d8acd6b2`.
-- `scripts/verify-file-sharing.ts` passed on the current publish-fix build: private access denial; commenter grant, discovery, and open; edit/resolve/publish denial; allowed comment; anonymous 404 before publish; owner UI publish with saved body and no private comments; immediate anonymous 404 after unpublish; revocation removes access and listing. Zero browser runtime errors. Log: `/tmp/texttext-file-sharing-publish-fix.log`. The first run caught a metadata-only revision mismatch; `022e9976` fixed it and the rerun passed.
-- `scripts/verify-file-rss.ts` passed on the RSS build with the official NASA feed: discovery, exactly one subscription TextPack with no saved entry, explicit Keep of one separate article TextPack, provenance, reopen, and Command-K search/focus. Log: `/tmp/texttext-file-rss-acceptance.log`. Native 1137 also discovered the feed, saved a subscription, previewed entries, kept one article, and reopened it in reader mode. The two disposable native test packs were then deleted through the app's recoverable file flow. Native 1137 Share granted and revoked one existing test collaborator on a disposable note; Publish dialog opened on an existing synced file. Neither was made public.
-- In installed 1138 and again in 1139, a new note took keyboard focus immediately. Typing before first sync preserved the exact line in both local and server TextPacks, promoted the open editor, and revealed Publish without reopening. The local and remote ZIP `text.md` contents were checked.
-- In installed native 1137, the embedded Codex runtime connected through the app and completed a real scoped request on `Untitled 2.textpack`. The exact marker appeared once in both the local TextPack and the server mirror. The open editor then showed a recovery warning because an external file write raced its clean local checkpoint. Its `Reopen file` action recovered immediately and showed the authoritative agent text. The agent path has real edit proof but is not yet a good user journey; fix clean external-edit reconciliation and retest before claiming it complete. The test note now contains this marker and remains disposable.
-- In installed 1138, embedded Codex appended a second exact line to a disposable note, but the open editor and server mirror stayed stale and sync recorded a false conflict. `a06f68dc` fixed the clean checkpoint baseline handoff, explicit agent-write signal, and exact-sync editor refresh. Swift tests 11/11, client tests 28/28, browser fixture, TypeScript and lint passed.
-- In installed 1139, embedded Codex appended a scoped line to fresh `Notes/Untitled 2.textpack`. The open editor refreshed automatically; the exact line appeared once in local and server ZIPs, with outbox 0 and no conflict for that note. Navigating away and reopening preserved both lines and Publish. The template picker displayed all 11 saved TextPacks with non-overlapping cards. Both disposable notes were moved to recoverable Trash through the app, and the earlier false conflict cleared from sync state. Its local/remote recovery copies remain available.
-- In installed 1139, a new disposable `Notes/Untitled.textpack` was typed while the embedded Codex was working on that same note. Codex detected the concurrent edit, reread, and appended its own line. The baseline, human, and agent lines each appeared once, in order, in the open editor and both local/server ZIPs. The file remains temporarily for audit inspection. The server `action_audit` labels all six app-token writes `external_agent`, including the initial human edits; origin attribution remains open.
-- In installed 1139, Codex generated and refined a research-reader template on disposable `Reading/How Figma’s multiplayer technology works.textpack`. The first invalid proposal was rejected and repaired. The valid final single-column proposal was compared, kept, synced, and reopened. Local/server `text.md` and structured content match each other and the pre-customization baseline exactly; only presentation changed. The saved system typography looked like a large Georgia preset because the customized template reused built-in `texttext.bookmark` styling. `f9224544` fixes the scoped style; WebKit source verification computes system sans prose and 46rem measure, but the installed rerender still needs checking.
-- `c81c0ce4` adds a remembered folder drawer on narrow screens and recalculates growing title height when its container changes width. The offline vault browser fixture passes light/dark 390px screenshots, full-width editor, no horizontal document overflow, Escape focus return, persisted collapse, and reduced-motion render. ESLint and TypeScript pass. Screenshots: `/tmp/texttext-narrow-note-light.png` and `/tmp/texttext-narrow-note-dark.png`.
-- The integrated Next build and native 1140 build/install passed. Installed 1140 opened the saved research reader with the requested system sans face and one reading column, retaining its original link and commentary. Its inline source action lacked spacing; `c8c066c4` fixes that in source. The installed gallery showed four images; the viewer advanced 1→2 of 4, and Close returned focus to its thumbnail. ArrowRight worked; Escape did not dismiss in installed 1140, so `898f9a4b` adds explicit Escape close for the next build. The native assistant panel rendered with Connect Codex; connection/active agent need final-build proof.
-- In installed 1140, a human H5C2 line typed through the collaborative note editor appeared once in both local and server `Notes/Untitled.textpack`, but `action_audit` `vault.write` external-agent rows rose 6→7 with no human row. The prior app-upload fix `bc70d77f`/`4067997a` does not cover collaboration pushes. A focused fix is in progress. The existing rows cannot be relabeled reliably.
-- `ba41b459` bound native shared-editor attribution to the exact durable collaboration batch and active session, with app-token checks on the server. Focused Swift 12/12 and 11/11, route 10/10, TypeScript, and lint passed. In installed 1141, a new H1141 line typed through the native collaborative editor appeared once in both local and server packs, and `action_audit` gained one `human` `vault.write` row while the seven prior `external_agent` rows stayed unchanged.
-- The final production Next build passed. The two-account browser journey passed again on the prior integrated server with no runtime errors; log `/tmp/texttext-file-collaboration-final-1141.log`. Its final source route change also passed focused route tests before the new server build. The local vault browser fixture passed on build 1141, including offline recovery, image import, narrow drawer, keyboard Escape, and reduced motion; log `/tmp/texttext-vault-final-browser.log`.
-- Installed 1141 shows the research reader's inline source action with visible spacing. The four-image gallery viewer now closes on Escape and returns focus to its thumbnail. The assistant's Connect Codex button currently fails with `CodexAppServerError error 2`: this Store-shaped sandboxed build omitted the signed bundled Codex helper. This is a packaging omission, not a provider auth failure. A guarded embedded-runtime build is the next step; do not count 1141 as agent acceptance.
-- In installed 1142, the signed bundled helper connected through the native Add agent flow. A real scoped Codex request appended the exact A1142 marker once to the open note; the already-open editor refreshed, local and server TextPacks each contained it once, and `action_audit` gained one `external_agent` `vault.write` row. The earlier H1141 human line and `human` audit row remained intact. The native app displayed a stale web-retry banner after a local server restart until manual Retry; `63f654f8` fixes the successful-watch status transition in source and has one focused Swift test passing.
-- Native 1143 includes `63f654f8`, signed same-origin private media compatibility (`5ab53f8a`), and web item-open improvements (`01cc0948`, `7d6cecec`). Its build and installer validated the app, three extensions, and bundled helper; the app displayed the existing note and all four gallery images. A separate integrated production browser diagnosis after `588845e4` saw no Gallery asset 404. Media authentication has focused Swift tests but no live private R2 upload/read yet.
-- The installed gallery item displayed four real images; its viewer advanced from image 1 to 2 of 4 and closed back to the gallery with focus returned. This was dark-mode native inspection; light/narrow and repeated-resource checks remain.
-- NASA's full feed entry included page navigation in its source. `7a5d6add` now extracts the article region when a large full entry can be identified; focused feed tests, TypeScript, and lint passed. The article still contains some publisher-end related/share material, so final reader polish remains to check.
-- Private Cloudflare R2 media, backup, and release adapters are code-only (`3026fcf2`, `31394e7a`, `632c923d` and follow-ups). Focused tests passed. No bucket, live upload/read, scratch restore, Oracle switch, public release, or appcast verification has occurred. Deleted Blob media and off-box backups were not migrated.
+### Folder shell and local editing
 
-## Exact next work
+- The offline vault browser suite passes the folder shell, creation and capture paths, image paste, reader behavior, recovery, narrow layout, keyboard behavior, light/dark rendering, and reduced motion. Current receipts: `/tmp/texttext-final-local-vault-build.log`, `/tmp/texttext-final-browser-order.log`, and `/tmp/texttext-header-portal-browser.log`.
+- Folder-backed collections now use natural path order before pagination, so repeated requests return stable first pages. Focused tests, TypeScript, ESLint, and the full browser fixture passed for `08366635`.
+- The contextual header now lays out editor, people/agent, comment, sharing, and overflow controls in document flow instead of covering each other. TypeScript, ESLint, production build, and light/dark visual inspection passed for `31281f03`.
 
-1. Profile and reduce the remaining large-note item-open cost without weakening collaboration or integrity checks. The latest 240-pack rerun has folder p95 89.2 ms, typing p95 13.4 ms, warm Command-K 24.1/19.1 ms, and item p95 1,460.4 ms. The 100 ms cached-item target remains unmet; use a bounded diagnosis before another full fixture.
-2. Recheck installed native recovery under an outage long enough to show the web-retry banner, and exercise a real authenticated same-origin media read once a private R2 destination exists. No live R2 bucket, backup restore, or public deployment is verified.
-3. Continue visual/editor, template, agent, collaboration, RSS, publishing, and recovery acceptance on the settled file architecture. Keep this checkpoint and [handoff](HANDOFF.md) current; use local WIP builds, not a public release.
+### Collaboration and permissions
 
-## Limits and references
+`/tmp/texttext-file-collaboration-header-fix-4.log` passes all 26 checks with two signed-in accounts:
 
-- The local server uses existing development accounts. Current public sign-in, deployment, and the deleted Blob data are unverified or unavailable.
-- The native 1136 conflict flow once preserved both branches but left Retry/reopen on an offline screen. Fix `a09c0fff` is installed in 1137 but still awaits installed conflict/retry proof. Retained disposable verification packs are identified in [collaboration receipt](file-vault-collaboration-2026-09-30.md); inspect before recoverable cleanup.
-- The full [handoff](HANDOFF.md) links the slice receipts. Historical process IDs and installed versions in older receipts are not live state. Before Oracle work, follow the fleet and database references in `AGENTS.md`, inspect recent backups and concurrent edits, and preserve Algorave ports/HAProxy rules. The infrastructure authorization boundary still applies.
+- live presence plus comment and reply propagation without reload;
+- comments persisted inside the canonical TextPack;
+- concurrent edit convergence, writer-scoped undo and redo, and exact canonical bytes;
+- offline convergence, separate Web Locks and recovery journals for same-origin tabs, reload recovery, and exact three-editor convergence;
+- one presence POST and zero repeat content mutation uploads during the idle check;
+- creation of a folder and note, followed by discovery and open from the second account without reload;
+- permission downgrade enforcement and notice in the open editor;
+- zero browser runtime errors.
+
+Visual receipts: `/tmp/texttext-file-collaboration-light.png` and `/tmp/texttext-file-collaboration-dark.png`.
+
+### Performance and memory
+
+The final 240-pack production benchmark on source `08366635` passed its bounded harness and exact cleanup. It verified two accounts, all six external direct writes in the already-open editor, zero blocked external requests, and no repeat collaboration uploads during ten idle seconds. Raw evidence: `/tmp/texttext-vault-perf-sGvfUt/result.json`.
+
+| Measure | Final observation | Initial target status |
+| --- | ---: | --- |
+| Cold / warm first visible heading | 748.1 ms / 568.4 ms p95 | Reported |
+| Folder navigation p95 | 104.1 ms | Narrow miss against 100 ms |
+| Item / cached item navigation p95 | 605.9 / 590.9 ms | Cached item misses 100 ms |
+| Input to two visible frames p95 | 13.8 ms | Meets 50 ms |
+| Command-K samples | 108.5, 19.6, 23.9 ms | Cold call misses 100 ms; warm calls meet it |
+| Server / browser peak RSS | 220.1 / 682.7 MiB | Within harness bounds |
+| Browser RSS after close | 144.3, 148.1, 130.6 MiB | Ends lower; three rounds do not prove leak absence |
+| Idle CPU, server / browser | 0.06% / 0% | Reported |
+| Ten-second editor idle network | one presence POST; zero collaboration POSTs | No content-upload spam |
+
+See [performance receipt](file-vault-performance-2026-09-30.md) for conditions and limits.
+
+### Native application
+
+- Build 1146 is the canonical local app and opens the folder workspace with the quiet shell and contextual header.
+- The build and install gates passed. The installer cannot read the sandbox-private runtime health report for this local Apple Development build, so helper validation is packaging evidence rather than a live provider operation.
+- Earlier installed builds proved a real scoped Codex edit, same-note human/agent convergence, correct human/external-agent audit attribution, template customization, image gallery navigation, RSS keep flow, and focus on new-note creation. Those remain supporting evidence, not a substitute for final build 1146 checks.
+
+## Remaining acceptance and external boundaries
+
+1. Finish build 1146 installed-app checks: restore online state if the current Offline banner persists, verify New note focus and typing, exercise the installed Add agent path, then show an outage banner and verify it clears automatically after the task-owned server returns.
+2. Profile cached item open only if the product decision still requires the initial 100 ms target. The measured p95 is 590.9 ms; do not claim it as met.
+3. Live private R2 upload/read, backup restore, Oracle switch, public deploy/appcast, public sign-in, and production external-agent authorization remain unverified. The deleted Blob data is intentionally out of scope.
+4. Keep `/Applications/TextText.app` usable while its local server is needed. Recheck the listener before cleanup. Stop the isolated benchmark Postgres only after no verifier depends on it; never stop the normal local database.
+
+## References
+
+- [Handoff](HANDOFF.md), [performance receipt](file-vault-performance-2026-09-30.md), [implementation receipt](file-vault-implementation-2026-09-30.md), [collaboration receipt](file-vault-collaboration-2026-09-30.md), [recovery receipt](file-vault-recovery-2026-09-30.md), and [AI sidebar architecture](ai-sidebar-architecture.md).
+- Other focused receipts remain under `docs/file-vault-*-2026-09-30.md`. Historical process IDs and installed versions are evidence only, not live state.
