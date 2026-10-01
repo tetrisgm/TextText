@@ -94,6 +94,29 @@ async function main() {
     await memberPage.getByRole("button", { name: "Post comment" }).click();
     await memberPage.getByText(`Shared comment ${stamp}`, { exact: true }).waitFor({ timeout: 20000 });
     check(true, "commenter writes a comment into the shared TextPack");
+    const publicPath = `/v/${workspaceId}/${itemId}`;
+    const anonymous = await browser.newContext();
+    const anonymousPage = await anonymous.newPage();
+    check((await anonymousPage.request.get(`${origin}${publicPath}`)).status() === 404,
+      "private TextPack has no public page");
+    const current = await readVaultTextpack({ root, workspaceId, itemId });
+    check(current, "commented TextPack has a current revision");
+    const deniedPublish = await memberPage.request.post(`${origin}/api/vault/${workspaceId}/items/${itemId}/publication`, {
+      headers: { Origin: origin }, data: { operationId: randomUUID(), baseRevision: current.revision, published: true },
+    });
+    check(deniedPublish.status() === 403, "commenter cannot publish the file");
+    await ownerPage.getByRole("button", { name: "Publish", exact: true }).click();
+    await ownerPage.getByRole("button", { name: "Publish file", exact: true }).click();
+    await ownerPage.getByText("This file is public.", { exact: true }).waitFor({ timeout: 20000 });
+    await anonymousPage.goto(`${origin}${publicPath}`, { waitUntil: "domcontentloaded" });
+    await anonymousPage.getByText(document.content.body, { exact: true }).waitFor({ timeout: 20000 });
+    check(!await anonymousPage.getByText(`Shared comment ${stamp}`, { exact: true }).count(),
+      "public page renders saved content without private comments");
+    await ownerPage.getByRole("button", { name: "Unpublish", exact: true }).click();
+    await ownerPage.getByText("This file is private.", { exact: true }).waitFor({ timeout: 20000 });
+    check((await anonymousPage.request.get(`${origin}${publicPath}`)).status() === 404,
+      "unpublishing revokes anonymous access immediately");
+    await ownerPage.getByRole("button", { name: "Close publishing" }).click();
     await ownerPage.getByRole("button", { name: "Share", exact: true }).click();
     await ownerPage.getByRole("button", { name: "Remove", exact: true }).click();
     await ownerPage.getByRole("button", { name: "Remove access" }).click();

@@ -46,7 +46,7 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { onRemoved: () => void; initial: VaultFile; root: string; onChanged: () => void; registerFlush: (flush: () => Promise<boolean>, currentFile: () => VaultFile) => void }) {
+function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { onRemoved: () => void; initial: VaultFile; root: string; onChanged: () => void; registerFlush: VaultEditorProps["registerFlush"] }) {
   const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
@@ -155,7 +155,13 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush }: { o
     const next = transform(current.current);
     change(next); setExternal(next);
   }, [change]);
-  useEffect(() => { registerFlush(flush, () => file.current); }, [flush, registerFlush]);
+  const publishFlush = useCallback(async () => {
+    if (!await flush()) return false;
+    const itemId = packIdentity(file.current.markdown);
+    const saved = await vaultRequest<{ revision: string }>("publicationRead", { itemId });
+    return saved.revision === file.current.hash ? saved.revision : false;
+  }, [flush]);
+  useEffect(() => { registerFlush(flush, () => file.current, publishFlush); }, [flush, publishFlush, registerFlush]);
   useEffect(() => {
     try {
       const saved = localStorage.getItem(recoveryKey);
@@ -329,6 +335,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [importStatus, setImportStatus] = useState("");
   const [webAccess, setWebAccess] = useState<{ workspaceId: string; value: VaultAccess } | null>(null);
   const [nativeConnection, setNativeConnection] = useState<{ root: string; workspaceId: string } | null>(null);
+  const [nativePublishAccess, setNativePublishAccess] = useState<{ workspaceId: string; itemId: string; canPublish: boolean } | null>(null);
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
   const webWorkspaceId = !allowFolderPicker && listing?.root.startsWith("vault:") ? listing.root.slice("vault:".length) : null;
   const access = webWorkspaceId === webAccess?.workspaceId ? webAccess.value : null;
@@ -340,7 +347,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const tree = useMemo(() => folderTree(visibleListing?.items ?? [], visibleListing?.folders), [visibleListing]);
   const folders = useMemo(() => folderPaths(tree), [tree]);
   const flushRef = useRef<() => Promise<boolean>>(async () => true);
-  const registerFlush = useCallback((flush: () => Promise<boolean>, currentFile: () => VaultFile) => { flushRef.current = flush; currentFileRef.current = currentFile; }, []);
+  const publishFlushRef = useRef<() => Promise<string | false>>(async () => false);
+  const registerFlush = useCallback((flush: () => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => {
+    flushRef.current = flush; publishFlushRef.current = publishFlush; currentFileRef.current = currentFile;
+  }, []);
   const canCreate = allowFolderPicker || canCreateInVaultFolder(access, destinationFolder.trim());
   const canManageFiles = allowFolderPicker || Boolean(access?.fullAccess && access.canEditContent);
   const canOpenRecovery = allowFolderPicker || Boolean(access?.isOwner);
@@ -352,6 +362,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     try { return packIdentity(selected.markdown); }
     catch { return null; }
   }, [selected]);
+  const canPublish = Boolean(webWorkspaceId ? access?.canManageShares : nativeWorkspaceId && selectedItemId &&
+    nativePublishAccess?.workspaceId === nativeWorkspaceId && nativePublishAccess.itemId === selectedItemId && nativePublishAccess.canPublish);
   const canOpenComments = Boolean(selected && selectedItemId && sharingWorkspaceId && (allowFolderPicker || access));
   const commentCapabilities = allowFolderPicker
     ? { canComment: Boolean(nativeWorkspaceId), canResolve: Boolean(nativeWorkspaceId) }
@@ -386,6 +398,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     status();
     return () => { active = false; window.removeEventListener("texttext:vault-sync-status", status); };
   }, [allowFolderPicker, listing?.root]);
+  useEffect(() => {
+    if (!allowFolderPicker || !nativeWorkspaceId || !selectedItemId) return;
+    const controller = new AbortController();
+    void vaultRequest<{ canPublish?: boolean }>("publicationRead", { itemId: selectedItemId }, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setNativePublishAccess({ workspaceId: nativeWorkspaceId, itemId: selectedItemId, canPublish: value.canPublish === true }); })
+      .catch(() => { if (!controller.signal.aborted) setNativePublishAccess({ workspaceId: nativeWorkspaceId, itemId: selectedItemId, canPublish: false }); });
+    return () => controller.abort();
+  }, [allowFolderPicker, nativeWorkspaceId, selectedItemId]);
   const [hashRevision, setHashRevision] = useState(0);
   useEffect(() => {
     const changed = () => setHashRevision(value => value + 1);
@@ -410,7 +430,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [webWorkspaceId, listing, folders, hashRevision]);
   const closeRemoved = useCallback(() => {
     setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
-    flushRef.current = async () => true;
+    flushRef.current = async () => true; publishFlushRef.current = async () => false;
   }, []);
   const operate = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -518,7 +538,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
           disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
         {canShare && sharingWorkspaceId && <button disabled={busy} onClick={() => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Share</button>}
-        {canShare && sharingWorkspaceId && selectedItemId && <button disabled={busy} onClick={() => setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Publish</button>}
+        {canPublish && sharingWorkspaceId && selectedItemId && <button disabled={busy} onClick={() => setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Publish</button>}
         {canManageFiles && <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
         {canManageFiles && <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>}
         {allowFolderPicker && <button disabled={busy} onClick={() => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path: selected.path } })); }}>Customize</button>}
@@ -559,9 +579,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         closeRemoved(); setSelected(restored); setDestinationFolder(folderForItem(restored.path)); refresh();
       }} />}
       {sharing && canShare && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} onClose={() => setSharing(null)} />}
-      {publishing && canShare && selectedItemId === publishing.itemId && <VaultPublishDialog
+      {publishing && canPublish && selectedItemId === publishing.itemId && <VaultPublishDialog
         key={`${publishing.workspaceId}:${publishing.itemId}`} {...publishing}
-        beforeChange={() => flushRef.current()} onClose={() => setPublishing(null)} />}
+        beforeChange={() => publishFlushRef.current()} onClose={() => setPublishing(null)} />}
       {captureOpen && <CaptureDialog onClose={() => setCaptureOpen(false)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });

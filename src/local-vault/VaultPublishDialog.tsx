@@ -12,6 +12,7 @@ type Publication = {
   publishedAt: string | null;
   publicPath: string;
   publicURL?: string;
+  canPublish?: boolean;
 };
 
 function publicLink(state: Publication, workspaceId: string): string {
@@ -28,7 +29,7 @@ function publicLink(state: Publication, workspaceId: string): string {
 }
 
 export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, onClose }: {
-  workspaceId: string; itemId: string; label: string; beforeChange: () => Promise<boolean>; onClose: () => void;
+  workspaceId: string; itemId: string; label: string; beforeChange: () => Promise<string | false>; onClose: () => void;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const linkInput = useRef<HTMLInputElement>(null);
@@ -64,8 +65,11 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, o
     if (busy) return;
     setBusy(true); setError(""); setCopied(false);
     try {
-      if (!await beforeChange()) throw new Error("Save or resolve this file before changing its public access.");
+      const observedRevision = await beforeChange();
+      if (!observedRevision) throw new Error("Save or resolve this file before changing its public access.");
       const latest = await reload();
+      if (latest.revision !== observedRevision) throw new Error("This file changed while you were publishing. Review it, then try again.");
+      if (latest.canPublish === false) throw new Error("Only the workspace owner can change public access.");
       if (latest.published === published) return;
       const result = await vaultRequest<Publication>("publicationSet", {
         itemId, operationId: crypto.randomUUID(), baseRevision: latest.revision, published,
@@ -100,9 +104,10 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, o
           <div><button type="button" onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</button>
             <a href={link} target="_blank" rel="noopener noreferrer">Open page</a></div>
         </div>}
-        <div className={styles.actions}><button type="button" disabled={busy} onClick={() => void change(!state.published)}>
-          {busy ? "Saving…" : state.published ? "Unpublish" : "Publish file"}
-        </button></div>
+        {state.canPublish === false ? <p>Only the workspace owner can change public access.</p> :
+          <div className={styles.actions}><button type="button" disabled={busy} onClick={() => void change(!state.published)}>
+            {busy ? "Saving…" : state.published ? "Unpublish" : "Publish file"}
+          </button></div>}
       </> : null}
       {error && <p role="alert" className="vault-sharing-error">{error} {!state && <button onClick={() => void reload().then(() => setError("")).catch(() => {})}>Retry</button>}</p>}
     </section>

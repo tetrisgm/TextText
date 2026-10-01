@@ -201,6 +201,8 @@ export class FileCollaborationClient {
   get recoveryRawJournal(): string | null { return this.rawRecoveryJournal; }
   get hasPendingChanges(): boolean { return Boolean((this.initialRetirement && !this.saved) || this.unreadableJournal || this.unqueuedDirty || this.batch || this.pending.length); }
   get hasBaseline(): boolean { return this.initialized; }
+  get epoch(): number | null { return this.current?.epoch ?? null; }
+  get sequence(): number | null { return this.current?.seq ?? null; }
   get revision(): string | null { return this.current?.revision ?? null; }
   get relativePath(): string | null { return this.current?.relativePath ?? null; }
   private report(status: FileCollaborationStatus, detail?: string) {

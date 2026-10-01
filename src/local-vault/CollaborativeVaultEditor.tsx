@@ -12,6 +12,7 @@ import { FileCollaborationClient, type FileCollaborationStatus } from "./collabo
 import { FilePresenceClient, type FilePresenceMethod } from "./presence-client";
 import type { PresencePeer } from "@/lib/collab/provider";
 import { Awareness } from "y-protocols/awareness";
+import * as Y from "yjs";
 import { VaultError, vaultRequest, type VaultFile } from "./bridge";
 import { asPost, localBlog, readDocument, readTemplate, writePayload } from "./model";
 import { ArticleReader } from "./ArticleReader";
@@ -21,7 +22,7 @@ import { WorkspaceTypeLibrary } from "./LocalTemplateLibrary";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
-export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; registerFlush: (flush: () => Promise<boolean>, currentFile: () => VaultFile) => void };
+export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; registerFlush: (flush: () => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
   if (typeof value === "string") {
     let text = value as string;
@@ -169,7 +170,29 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
     } catch { /* The journal is durable; a temporarily unavailable file replica must not lose edits. */ }
     onChanged(); return true;
   }, [config.localFiles, onChanged]);
-  useEffect(() => { registerFlush(flush, () => file.current); }, [flush, registerFlush]);
+  const publishFlush = useCallback(async () => {
+    const shared = clientRef.current;
+    if (!shared?.hasBaseline || !navigator.onLine || shared.status !== "ready") return false;
+    if (!await shared.flush() || shared.hasPendingChanges) return false;
+    if (config.localFiles && !await shared.flushLocal()) return false;
+    const saved = await vaultRequest<{ revision: string }>("publicationRead", { itemId: config.itemId });
+    if (!/^[a-f0-9]{64}$/.test(saved.revision)) return false;
+    if (saved.revision !== shared.revision) {
+      // Comments and publication markers can change a TextPack's ZIP hash
+      // without changing its Yjs sequence. Compare the current server document
+      // before allowing that newer revision to be published.
+      const remote = await vaultRequest<{ revision: string; epoch: number; seq: number; update: string }>("collaborationRead", { itemId: config.itemId });
+      if (remote.revision !== saved.revision || remote.epoch !== shared.epoch || remote.seq !== shared.sequence ||
+        typeof remote.update !== "string" || remote.update.length > 8 * 1024 * 1024) return false;
+      const check = new Y.Doc();
+      try {
+        Y.applyUpdate(check, Uint8Array.from(atob(remote.update), character => character.charCodeAt(0)));
+        if (JSON.stringify(documentSnapshotFromYDoc(check)) !== JSON.stringify(documentSnapshotFromYDoc(shared.doc))) return false;
+      } finally { check.destroy(); }
+    }
+    return !shared.hasPendingChanges && shared.status === "ready" ? saved.revision : false;
+  }, [config.itemId, config.localFiles]);
+  useEffect(() => { registerFlush(flush, () => file.current, publishFlush); }, [flush, publishFlush, registerFlush]);
   const updateArticle = useCallback((transform: (document: DocumentSnapshot) => DocumentSnapshot) => {
     const shared = clientRef.current;
     if (!shared) throw new Error("The shared document is still opening.");
