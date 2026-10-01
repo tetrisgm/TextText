@@ -142,7 +142,7 @@ The private project changelog still needs an entry for the verified web fix.
 The CLI now sees the linked fresh workspace, but a search for `TextText Changelog`
 returned no results; do not create a duplicate of the former
 `Shoku's Space/My Notes/TextText Changelog.textpack`. Existing unrelated edits in `attachments.ts`,
-`tabs.test.ts`, and `scripts/.probe-editor.ts` remain preserved.
+`tabs.test.ts`, and an untracked local editor probe remain preserved.
 
 ## Historical references
 

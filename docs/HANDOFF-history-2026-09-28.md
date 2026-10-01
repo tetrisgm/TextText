@@ -119,7 +119,7 @@ and the bundle re-signed. Both test bundles point only to local port 3000.
 
 Preserve unrelated edits in
 `src/components/workspace/assistant/attachments.ts`,
-`src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`.
+`src/lib/workspace/__tests__/tabs.test.ts`, plus the untracked local editor probe.
 No project changelog entry until a release is actually shipped.
 
 ## References

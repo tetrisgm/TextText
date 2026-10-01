@@ -21,7 +21,7 @@ The owner authorized local replacement of `/Applications/TextText.app`. The sole
 - Command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001k node --env-file=.env.local node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000`.
 - The isolated benchmark PostgreSQL instance on port 55432 is stopped. The normal local database was not touched.
 - No persistent build, release, reinstall, or server job was installed. Recheck listener identity before stopping anything.
-- Preserve unrelated modified `src/components/workspace/assistant/attachments.ts`, modified `src/lib/workspace/__tests__/tabs.test.ts`, and untracked `scripts/.probe-editor.ts`. Do not reset, clean, or include them in task commits.
+- Preserve unrelated modified `src/components/workspace/assistant/attachments.ts`, modified `src/lib/workspace/__tests__/tabs.test.ts`, and the stashed untracked local editor probe. Do not reset, clean, or include them in task commits.
 
 ## Blockers and boundaries
 

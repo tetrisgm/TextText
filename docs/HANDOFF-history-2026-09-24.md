@@ -51,7 +51,7 @@ The existing Shoku's Space changelog remains inaccessible from this Mac's
 workspace credential; see the [connector blocker](#the-two-tasks-that-need-the-owner-narrowed-2026-09-15).
 The 0.199 entry is drafted at `/tmp/texttext-release-20260920/changelog-0.199-draft.md`.
 Existing September 17 edits in `attachments.ts`, `tabs.test.ts`
-and `scripts/.probe-editor.ts` remain uncommitted and outside this work. The larger historical
+and an untracked local editor probe remain uncommitted and outside this work. The larger historical
 [feature backlog](plans/artifact-home-replication.md) is not a claim of implemented
 Artifact social features, generated summaries or a notification inbox.
 

@@ -7,7 +7,7 @@ Complete the [product brief](design/texttext-content-first-ux.md) on ordinary fo
 ## Canonical local state (2026-10-01)
 
 - Product code on `main` ends at `2b47c500`. `08366635` adds stable natural folder ordering before pagination. `31281f03` keeps editor actions in the contextual vault header. `cdae9f90` reconnects focused vault editors automatically after service returns. `fbaec76a` adds an explicit Codex account disconnect with draft preservation, and `2b47c500` covers managed accounts whose account record has no email.
-- Dirty files owned by other work: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`. Do not alter, reset, clean, or commit them.
+- Dirty files owned by other work: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and the stashed untracked local editor probe. Do not alter, reset, clean, or commit them.
 - Installed app: `/Applications/TextText.app`, version 0.202 build 1149, Apple Development signed. The installer validated the app, three extensions, and `Contents/Helpers/codex`, and confirmed one canonical installed copy. Receipts: `/tmp/texttext-build-1149.log` and `/tmp/texttext-install-1149.log`.
 - Local app server: `127.0.0.1:3000`, PID 50999, Codex session 12498, build output `.texttext/vault-perf-20261001k`.
 - Server command: `TEXTTEXT_VAULT_ROOT=/Users/shokunin/dev/TextText/.texttext/vault-server TEXTTEXT_NEXT_DIST_DIR=.texttext/vault-perf-20261001k node --env-file=.env.local node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000`.

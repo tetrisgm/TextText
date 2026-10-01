@@ -23,7 +23,7 @@ agent controller, and direct server file discovery. Root owns native window,
 connection controller, AppDelegate, and build/install. Do not claim complete:
 installed local/web acceptance, assistant integration, shared access/live Yjs,
 and retirement of remaining legacy feature callers are still outstanding.
-Preserve unrelated dirty attachments.ts, tabs.test.ts, and scripts/.probe-editor.ts.
+Preserve unrelated dirty attachments.ts, tabs.test.ts, and the local editor probe.
 One existing app server PID35829 listens on3000; do not overwrite its build output.
 Use sequential heavy tests/builds with2 native jobs; no public deployment.
 

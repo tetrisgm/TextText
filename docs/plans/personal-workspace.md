@@ -215,7 +215,7 @@ Do not introduce a separate content model or route the app through its MCP API.
 ## Working constraints and scope
 
 Work on main; pull before edits. Preserve unrelated September 17 changes in
-attachments.ts, tabs.test.ts and scripts/.probe-editor.ts. Local development,
+attachments.ts, tabs.test.ts and the untracked local editor probe. Local development,
 tests and builds use local Postgres; read DATABASE-OPERATIONS before DB work.
 Read relevant installed Next.js guides before code and browser-verification
 guidance before UI verification. No infrastructure repair or new background
