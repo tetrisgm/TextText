@@ -6,6 +6,7 @@ import {
   readVaultCollaboration as readDirectoryCollaboration,
   readVaultPresence as readDirectoryPresence,
   mutateVaultItemComments as mutateDirectoryItemComments,
+  mutateVaultPublication as mutateDirectoryPublication,
   joinVaultPresence as joinDirectoryPresence,
   updateVaultPresence as updateDirectoryPresence,
   leaveVaultPresence as leaveDirectoryPresence,
@@ -26,6 +27,7 @@ import {
   type VaultEntryMutation,
 } from "./vault/server-store";
 import { readVaultItemCommentsFromPack, type VaultCommentActor, type VaultCommentMutation } from "./vault/item-comments";
+import { publishedVaultAsset, publishedVaultView, readVaultPublicationFromPack } from "./vault/publication";
 export { VaultBusyError, VaultCollaborationEpochError, VaultPresenceSessionError } from "./vault/server-store";
 export type { VaultPresencePeer } from "./vault/server-store";
 export type { VaultLocation, VaultWrite, VaultWriteResult, VaultEntryMutation, VaultEntryResult } from "./vault/server-store";
@@ -95,6 +97,43 @@ export function mutateVaultItemComments(input: Omit<VaultLocation, "onReceipt"> 
 }) {
   if (!db) throw new Error(NO_DATABASE);
   return mutateDirectoryItemComments({ ...input, onReceipt: recordVaultReceipt });
+}
+export async function readVaultPublication(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  const item = await readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
+  return item ? { itemId: input.itemId, relativePath: item.relativePath, revision: item.revision,
+    publication: readVaultPublicationFromPack(item.bytes) } : null;
+}
+export function mutateVaultPublication(input: Omit<VaultLocation, "onReceipt"> & {
+  itemId: string; operationId: string; baseRevision: string; published: boolean;
+  actorUserId: string; actorType: "human" | "external_agent";
+  beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return mutateDirectoryPublication({ ...input,
+    audit: { actorUserId: input.actorUserId, actorType: input.actorType },
+    onReceipt: recordVaultReceipt });
+}
+/** Public file-vault reads use only the current TextPack and its explicit marker.
+ * The private archive, comments, source metadata and unbound fields never leave
+ * the store. Every request rechecks the live workspace and current pack. */
+export async function readPublicVaultItem(input: { workspaceId: string; itemId: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  const root = process.env.TEXTTEXT_VAULT_ROOT;
+  if (!root || !await getVaultWorkspaceIdentity(input.workspaceId)) return null;
+  const item = await readDirectoryTextpack({ root, ...input, onReceipt: recordVaultReceipt });
+  if (!item) return null;
+  try { return publishedVaultView(item.bytes, input.workspaceId, input.itemId); }
+  catch { return null; }
+}
+export async function readPublicVaultAsset(input: { workspaceId: string; itemId: string; assetPath: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  const root = process.env.TEXTTEXT_VAULT_ROOT;
+  if (!root || !await getVaultWorkspaceIdentity(input.workspaceId)) return null;
+  const item = await readDirectoryTextpack({ root, workspaceId: input.workspaceId, itemId: input.itemId, onReceipt: recordVaultReceipt });
+  if (!item) return null;
+  try { return publishedVaultAsset(item.bytes, input.workspaceId, input.itemId, input.assetPath); }
+  catch { return null; }
 }
 type PresenceIdentity = {
   itemId: string; clientId: string; principal: string; epoch: number;

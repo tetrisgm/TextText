@@ -10,6 +10,7 @@ import { seedVaultCollaboration, applyVaultCollaboration, type VaultCollaboratio
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
 import { mutateVaultItemCommentsInPack, type VaultCommentActor, type VaultCommentMutation } from "./item-comments";
+import { changeVaultPublicationInPack, samePublicationEntries } from "./publication";
 
 /** The caller supplies a trusted, dedicated server directory and authorizes the
  * workspace before calling this store. Pack bytes, including assets, are saved
@@ -57,11 +58,12 @@ interface Intent {
   deletedRevision?: string;
   collaboration?: VaultCollaborationState;
   commentAction?: "vault.comment.create" | "vault.comment.reply" | "vault.comment.resolve" | "vault.comment.reopen";
+  publicationAction?: "vault.publish" | "vault.unpublish";
 }
 export interface VaultMutationReceipt {
   workspaceId: string; operationId: string;
   actorUserId: string; actorType: "human" | "external_agent";
-  actionName?: Intent["commentAction"];
+  actionName?: Intent["commentAction"] | Intent["publicationAction"];
   result: VaultWriteResult | VaultEntryResult;
 }
 interface Receipt<T = VaultWriteResult | VaultEntryResult> { requestHash: string; result: T; mutation?: VaultMutationReceipt }
@@ -292,7 +294,8 @@ async function apply(layout: Layout, intent: Intent, pendingDir: string): Promis
   }
   const receipt: Receipt = { requestHash: intent.requestHash, result, ...(intent.audit ? {
     mutation: { workspaceId: intent.workspaceId, operationId: intent.operationId, ...intent.audit,
-      ...(intent.commentAction && result.status === "written" ? { actionName: intent.commentAction } : {}), result },
+      ...(result.status === "written" && (intent.commentAction || intent.publicationAction)
+        ? { actionName: intent.commentAction ?? intent.publicationAction } : {}), result },
   } : {}) };
   await atomicWrite(receiptPath, json(receipt));
   await deliverReceipt(layout, receipt);
@@ -519,6 +522,11 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
         }
       }
     }
+    // Public visibility is changed only by the explicit publication writer.
+    // Compare the resolved merge, so an offline edit may safely preserve a
+    // marker published since its baseline without being allowed to forge one.
+    const current = await maybeRead(await targetPath(layout, input.relativePath));
+    if (!samePublicationEntries(current, committedBytes)) throw new Error("Use Publish or Unpublish to change public visibility");
     await input.beforeCommit?.(input.relativePath);
     input.signal?.throwIfAborted();
     const pendingDir = await directory(layout.pending, input.operationId);
@@ -825,6 +833,57 @@ export async function mutateVaultItemComments(input: VaultLocation & {
     await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
     await syncDirectory(layout.pending);
     return { ...await apply(layout, intent, pendingDir), commentId: next.commentId };
+  });
+}
+
+/** The only app write that may add or remove a TextPack's publication marker.
+ * Revision matching makes the owner explicitly publish the saved content they
+ * saw. The checkpoint remains at the same Yjs epoch for this metadata edit. */
+export async function mutateVaultPublication(input: VaultLocation & {
+  itemId: string; operationId: string; baseRevision: string; published: boolean;
+  audit: NonNullable<VaultWrite["audit"]>;
+  beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
+}): Promise<VaultWriteResult | { status: "unchanged" | "stale"; itemId: string; relativePath: string; revision: string }> {
+  segment(input.itemId); segment(input.operationId);
+  if (!/^[a-f0-9]{64}$/.test(input.baseRevision) || typeof input.published !== "boolean") throw new Error("Invalid publication request");
+  if (!input.onReceipt) throw new Error("Vault publication requires an audit sink");
+  const requestHash = hash(json(["vault-publication", input.itemId, input.baseRevision, input.published, input.audit]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    input.signal?.throwIfAborted();
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      const current = await collaborationItem(layout, input.itemId);
+      if (!current) throw new Error("Publication item is missing or deleted");
+      await input.beforeCommit?.(current.relativePath);
+      input.signal?.throwIfAborted();
+      await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    const item = await collaborationItem(layout, input.itemId);
+    if (!item) throw new Error("Publication item is missing or deleted");
+    if (item.revision !== input.baseRevision) return { status: "stale", itemId: input.itemId,
+      relativePath: item.relativePath, revision: item.revision };
+    const next = changeVaultPublicationInPack(item.bytes, input.published, input.operationId);
+    await input.beforeCommit?.(item.relativePath);
+    input.signal?.throwIfAborted();
+    if (!next.changed) return { status: "unchanged", itemId: input.itemId, relativePath: item.relativePath, revision: item.revision };
+    validatePack(next.bytes, input.itemId);
+    const baseline = await collaborationCheckpoint(layout, input.itemId, item);
+    const revision = hash(next.bytes);
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), next.bytes);
+    const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
+      relativePath: item.relativePath, baseRevision: item.revision, revision, requestHash,
+      workspaceId: input.workspaceId, audit: input.audit,
+      publicationAction: input.published ? "vault.publish" : "vault.unpublish",
+      collaboration: { ...baseline, revision } };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return apply(layout, intent, pendingDir);
   });
 }
 
