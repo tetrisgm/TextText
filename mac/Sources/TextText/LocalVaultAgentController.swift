@@ -16,9 +16,11 @@ final class LocalVaultAgentController {
     private var server: CodexAppServerController?
     private var pending: [String: String] = [:]
     private var threadID: String?
+    private var threadAccess: LocalVaultAgentAccess?
+    private var disabledMCPServers: [String]?
+    private var pendingTurn: (prompt: String, access: LocalVaultAgentAccess)?
     private var accountEmail: String?
     private var busy = false
-    private var customizationPath: String?
     private var pendingProposals: [String: (requestID: AnyHashable, value: String)] = [:]
     private var loginID: String?
     private var attemptedLogin = false
@@ -55,7 +57,10 @@ final class LocalVaultAgentController {
     }
 
     func connect() throws {
-        if threadID != nil { update(busy ? "working" : "ready"); return }
+        if server != nil {
+            update(busy ? "working" : (disabledMCPServers == nil ? "connecting" : "ready"))
+            return
+        }
         stop()
         #if TEXTTEXT_STORE
         let bundled = CodexEmbeddedRuntime.bundledExecutable(sandboxed: true)
@@ -94,23 +99,62 @@ final class LocalVaultAgentController {
     }
 
     func send(prompt: String, path: String? = nil, customizing: Bool = false) throws {
-        guard let threadID, !busy else { throw VaultAgentError("Connect the agent and wait for its current reply first.") }
+        guard server != nil, let disabledMCPServers, !busy else {
+            throw VaultAgentError("Connect the agent and wait for its current reply first.")
+        }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 32_000 else { throw VaultAgentError("Enter a message of up to 32,000 characters.") }
         if customizing && path == nil { throw VaultAgentError("Choose a document to customize first.") }
-        customizationPath = customizing ? path : nil
+        let access = try resolveAccess(path: path, customizing: customizing)
         var context = customizing ? "Presentation customization mode: propose a template preview for the current document. Do not write or create files. If content.fields.texttextFolderView is v1, this is the containing folder's design: customize template.collection and preview its immediate members. Preserve the marker and all member files. Supported folder layouts are cards, list and index (a reference table); use supported collection bindings.\n" : ""
         if let path {
-            _ = try LocalVaultDocumentStore(root: root).url(for: path)
             context += "Current document path: \(path)\nRead the actual file before making changes.\n\n"
         }
         fileFence = LocalVaultAgentCancellation()
         busy = true; phases.removeAll(); update("working")
         armDeadline(seconds: 120)
         do {
-            try request("turn/start", ["threadId": threadID,
-                "input": [["type": "text", "text": context + trimmed]], "approvalPolicy": "never"])
-        } catch { busy = false; update("ready"); throw error }
+            let prompt = context + trimmed
+            if let threadID, threadAccess == access {
+                try startTurn(prompt: prompt, threadID: threadID)
+            } else {
+                threadID = nil; threadAccess = nil
+                pendingTurn = (prompt, access)
+                try request("thread/start", CodexAppServerRequests.threadStart(
+                    dynamicTools: CodexAppServerRequests.textTextToolNamespace(LocalVaultAgentFiles.tools(for: access)),
+                    disabledMCPServers: disabledMCPServers, workingDirectory: root.path,
+                    developerInstructions: access.developerInstructions))
+            }
+        } catch {
+            pendingTurn = nil; busy = false; deadline?.cancel(); update("ready"); throw error
+        }
+    }
+
+    private func startTurn(prompt: String, threadID: String) throws {
+        try request("turn/start", ["threadId": threadID,
+            "input": [["type": "text", "text": prompt]], "approvalPolicy": "never"])
+    }
+
+    private func resolveAccess(path: String?, customizing: Bool) throws -> LocalVaultAgentAccess {
+        guard let path else { return .folder(path: "") }
+        let store = LocalVaultDocumentStore(root: root)
+        let file = try store.readMetadata(path: path)
+        let folder = (path as NSString).deletingLastPathComponent
+        let isFolderDesign: Bool
+        if let raw = file.contents.documentJSON,
+           let snapshot = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+           let content = snapshot["content"] as? [String: Any],
+           let fields = content["fields"] as? [String: Any] {
+            isFolderDesign = fields["texttextFolderView"] as? String == "v1"
+        } else {
+            isFolderDesign = false
+        }
+        if isFolderDesign {
+            return customizing
+                ? .folderCustomization(folder: folder, designPath: path)
+                : .folder(path: folder)
+        }
+        return customizing ? .itemCustomization(path: path) : .item(path: path)
     }
 
     func cancel() {
@@ -124,7 +168,8 @@ final class LocalVaultAgentController {
         loginID = nil; attemptedLogin = false
         generation = UUID(); pendingProposals.removeAll(); deadline?.cancel(); deadline = nil
         server?.onEvent = nil; server?.onExit = nil; server?.stop(); server = nil
-        threadID = nil; busy = false; customizationPath = nil; pending.removeAll(); phases.removeAll()
+        threadID = nil; threadAccess = nil; disabledMCPServers = nil; pendingTurn = nil
+        busy = false; pending.removeAll(); phases.removeAll()
     }
     private func fail(_ message: String) {
         stop(); update("failed", message: message); onEvent?(["type": "error", "message": message])
@@ -165,22 +210,17 @@ final class LocalVaultAgentController {
                     guard let disabled = CodexAppServerRequests.effectiveMCPServerNames(configReadResult: message.rawResult) else {
                         throw VaultAgentError("The agent runtime did not return its tool configuration.")
                     }
-                    try request("thread/start", CodexAppServerRequests.threadStart(
-                        dynamicTools: CodexAppServerRequests.textTextToolNamespace(LocalVaultAgentFiles.tools),
-                        disabledMCPServers: disabled, workingDirectory: root.path,
-                        developerInstructions: """
-                        You are TextText's assistant for the user's selected local folder of TextPack files.
-                        Use only the supplied texttext file tools for workspace work. They operate directly on these files without any hosted workspace API. Do not use installed skills, other MCP servers, or other integrations.
-                        Read a file before editing it. Pass its exact hash to write_file. On a stale-file error read again, preserve the user's intervening edits, and retry at most once. Never replace a file blindly. Do not edit anything for a read-only request.
-                        TextPack contains Markdown, a schema-v1 document snapshot, an embedded template, and assets. Preserve metadata and assets. For a template change, read its templateJSON first and update validated declarative JSON, never executable HTML/CSS/JavaScript. Keep Markdown and documentJSON content consistent when supplying both.
-                        For presentation customization, use propose_template to stage a preview, never write_file. The user decides whether to keep the preview in the app. Refinements propose another template for the same current document. Read the actual template first and preserve its content. Direct write_file remains available for requested content edits outside customization mode.
-                        Keep responses concise. Distinguish proposed previews from saved changes. Report which files changed. A failed save means the file was not changed.
-                        """))
+                    disabledMCPServers = disabled
+                    deadline?.cancel(); update("ready")
                 case "thread/start":
                     guard let thread = message.rawResult?["thread"] as? [String: Any], let id = thread["id"] as? String else {
                         throw VaultAgentError("The agent did not start a workspace chat.")
                     }
-                    threadID = id; deadline?.cancel(); update("ready")
+                    guard let turn = pendingTurn else {
+                        throw VaultAgentError("The agent started a chat without a pending task.")
+                    }
+                    threadID = id; threadAccess = turn.access; pendingTurn = nil
+                    try startTurn(prompt: turn.prompt, threadID: id)
                 default: break
                 }
             } catch { fail(error.localizedDescription) }
@@ -238,10 +278,15 @@ final class LocalVaultAgentController {
         }
         let tool = (params["tool"] ?? params["name"]) as? String ?? ""
         let arguments = params["arguments"] as? [String: Any] ?? [:]
-        let token = generation, root = root, fence = fileFence, customizationPath = customizationPath
+        guard let access = threadAccess else {
+            try? server?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(
+                text: "This workspace chat has no file access scope.", success: false))
+            return
+        }
+        let token = generation, root = root, fence = fileFence
         onEvent?(["type": "tool-call", "tool": tool, "path": arguments["path"] ?? ""])
         files.async { [weak self] in
-            let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, cancellation: fence, customizationPath: customizationPath) }
+            let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, access: access, cancellation: fence) }
             DispatchQueue.main.async {
                 guard let self, self.generation == token, self.busy else { return }
                 let text: String, success: Bool
@@ -289,8 +334,152 @@ final class LocalVaultAgentCancellation: @unchecked Sendable {
     }
 }
 
+enum LocalVaultAgentAccess: Equatable, Sendable {
+    case item(path: String)
+    case folder(path: String)
+    case itemCustomization(path: String)
+    case folderCustomization(folder: String, designPath: String)
+
+    fileprivate var allowedToolNames: Set<String> {
+        switch self {
+        case .item:
+            return ["read_file", "write_file"]
+        case .folder:
+            return ["list_files", "read_file", "write_file", "create_file", "search_files"]
+        case .itemCustomization:
+            return ["read_file", "propose_template"]
+        case .folderCustomization:
+            return ["list_files", "read_file", "search_files", "propose_template"]
+        }
+    }
+
+    var developerInstructions: String {
+        let boundary: String
+        switch self {
+        case .item(let path):
+            boundary = "You may read and edit only the exact current item at \(path). No other file or folder is in scope."
+        case .folder(let path):
+            boundary = path.isEmpty
+                ? "The selected folder is the workspace root. You may work only inside that folder."
+                : "The selected folder is \(path). You may work only inside that exact folder boundary."
+        case .itemCustomization(let path):
+            boundary = "Customization is read-only. Read only \(path) and use propose_template only for that exact item. Direct file writes and creation are unavailable."
+        case .folderCustomization(let folder, let designPath):
+            let name = folder.isEmpty ? "the workspace root" : folder
+            boundary = "Customization is read-only. You may inspect TextPacks only inside \(name) and use propose_template only for its design TextPack at \(designPath). Direct file writes and creation are unavailable."
+        }
+        return """
+        You are TextText's assistant for a selected local TextPack scope.
+        Use only the supplied texttext file tools for workspace work. They operate directly on local files without any hosted workspace API. Do not use installed skills, other MCP servers, or other integrations.
+        \(boundary)
+        Read a file before editing it. Pass its exact hash to write_file. On a stale-file error, read again, preserve the user's intervening edits, and retry at most once. Never replace a file blindly. Do not edit anything for a read-only request.
+        TextPack contains Markdown, a schema-v1 document snapshot, an embedded template, and assets. Preserve metadata and assets. For a template change, read its templateJSON first and update validated declarative JSON, never executable HTML, CSS, or JavaScript. Keep Markdown and documentJSON content consistent when supplying both.
+        A proposed template is only a preview. The user decides whether to keep it in the app. Keep responses concise, distinguish previews from saved changes, and report which files changed. A failed save means the file was not changed.
+        """
+    }
+
+    fileprivate func validated(root: URL) throws -> Self {
+        switch self {
+        case .item(let path):
+            return .item(path: try Self.canonicalFile(path, root: root))
+        case .folder(let path):
+            return .folder(path: try Self.canonicalFolder(path, root: root))
+        case .itemCustomization(let path):
+            return .itemCustomization(path: try Self.canonicalFile(path, root: root))
+        case .folderCustomization(let folder, let designPath):
+            let folder = try Self.canonicalFolder(folder, root: root)
+            let designPath = try Self.canonicalFile(designPath, root: root)
+            guard Self.contains(designPath, folder: folder) else {
+                throw VaultAgentError("The folder design TextPack is outside the selected folder.")
+            }
+            return .folderCustomization(folder: folder, designPath: designPath)
+        }
+    }
+
+    fileprivate func authorize(tool name: String) throws {
+        guard allowedToolNames.contains(name) else {
+            if case .itemCustomization = self {
+                throw VaultAgentError("Customization stages a preview. Only the user can keep it; file writes are disabled for this task.")
+            }
+            if case .folderCustomization = self {
+                throw VaultAgentError("Customization stages a preview. Only the user can keep it; file writes are disabled for this task.")
+            }
+            throw VaultAgentError("That file operation is outside this task's access scope.")
+        }
+    }
+
+    fileprivate func authorizeFile(_ path: String, operation: String, root: URL) throws -> String {
+        let path = try Self.canonicalFile(path, root: root)
+        let allowed: Bool
+        switch self {
+        case .item(let selected), .itemCustomization(let selected):
+            allowed = path == selected
+        case .folder(let folder), .folderCustomization(let folder, _):
+            allowed = Self.contains(path, folder: folder)
+        }
+        guard allowed else { throw VaultAgentError("Cannot \(operation) a file outside this task's access scope.") }
+        return path
+    }
+
+    fileprivate func authorizeProposal(_ path: String, root: URL) throws -> String {
+        let path = try Self.canonicalFile(path, root: root)
+        switch self {
+        case .itemCustomization(let selected):
+            guard path == selected else { throw VaultAgentError("Propose a template only for the selected document.") }
+        case .folderCustomization(_, let designPath):
+            guard path == designPath else { throw VaultAgentError("Propose a template only for the selected folder's design TextPack.") }
+        default:
+            throw VaultAgentError("Template proposals are available only during customization.")
+        }
+        return path
+    }
+
+    fileprivate func authorizeCreation(in requestedFolder: String, root: URL) throws -> String {
+        let requestedFolder = try Self.canonicalFolder(requestedFolder, root: root)
+        guard case .folder(let folder) = self,
+              requestedFolder == folder || (!folder.isEmpty && requestedFolder.hasPrefix(folder + "/")) || folder.isEmpty else {
+            throw VaultAgentError("Cannot create a file outside this task's folder scope.")
+        }
+        return requestedFolder
+    }
+
+    fileprivate func scopedFolder(root: URL) throws -> (root: URL, prefix: String) {
+        let folder: String
+        switch self {
+        case .folder(let path), .folderCustomization(let path, _): folder = path
+        default: throw VaultAgentError("This task does not have folder-wide access.")
+        }
+        let canonical = try Self.canonicalFolder(folder, root: root)
+        let base = canonical.isEmpty ? root : root.appendingPathComponent(canonical, isDirectory: true)
+        return (base.standardizedFileURL.resolvingSymlinksInPath(), canonical)
+    }
+
+    private static func canonicalFile(_ path: String, root: URL) throws -> String {
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let target = try LocalVaultDocumentStore(root: canonicalRoot).url(for: path)
+        let relative = String(target.path.dropFirst(canonicalRoot.path.count).drop { $0 == "/" })
+        guard !relative.isEmpty else { throw LocalVaultDocumentStore.Failure.invalidPath }
+        return relative
+    }
+
+    private static func canonicalFolder(_ path: String, root: URL) throws -> String {
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let sentinelPath = (path.isEmpty ? "" : path + "/") + "TextText scope.textpack"
+        let sentinel = try LocalVaultDocumentStore(root: canonicalRoot).url(for: sentinelPath)
+        let directory = sentinel.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath()
+        guard directory.path == canonicalRoot.path || directory.path.hasPrefix(canonicalRoot.path + "/") else {
+            throw LocalVaultDocumentStore.Failure.invalidPath
+        }
+        return String(directory.path.dropFirst(canonicalRoot.path.count).drop { $0 == "/" })
+    }
+
+    private static func contains(_ path: String, folder: String) -> Bool {
+        folder.isEmpty || path.hasPrefix(folder + "/")
+    }
+}
+
 enum LocalVaultAgentFiles {
-    static let tools: [[String: Any]] = [
+    private static let allTools: [[String: Any]] = [
         tool("list_files", "List TextPack paths in the selected folder.", [:], []),
         tool("read_file", "Read a TextPack, including Markdown, snapshot, template and the hash needed for a safe edit.", ["path": "string"], ["path"]),
         tool("propose_template", "Stage a template preview for the user to refine or keep. Reads the actual file and requires its current hash. Does not write any file. Supply complete declarative template JSON.",
@@ -300,21 +489,22 @@ enum LocalVaultAgentFiles {
         tool("create_file", "Create a new self-contained TextPack in an existing relative folder.", ["title": "string", "body": "string", "folder": "string", "kind": "string"], ["title", "body"]),
         tool("search_files", "Search titles and content in the local folder without a server.", ["query": "string"], ["query"]),
     ]
+    static func tools(for access: LocalVaultAgentAccess) -> [[String: Any]] {
+        allTools.filter { tool in
+            guard let name = tool["name"] as? String else { return false }
+            return access.allowedToolNames.contains(name)
+        }
+    }
     private static func tool(_ name: String, _ description: String, _ properties: [String: String], _ required: [String]) -> [String: Any] {
         ["type": "function", "name": name, "description": description,
          "inputSchema": ["type": "object", "properties": properties.mapValues { ["type": $0] },
                          "required": required, "additionalProperties": false]]
     }
     static func perform(_ name: String, arguments: [String: Any], root: URL,
-                        cancellation: LocalVaultAgentCancellation? = nil, customizationPath: String? = nil) throws -> String {
-        if let customizationPath {
-            guard ["list_files", "read_file", "search_files", "propose_template"].contains(name) else {
-                throw VaultAgentError("Customization stages a preview. Only the user can keep it; file writes are disabled for this turn.")
-            }
-            if name == "propose_template", arguments["path"] as? String != customizationPath {
-                throw VaultAgentError("Propose a template only for the selected document.")
-            }
-        }
+                        access suppliedAccess: LocalVaultAgentAccess,
+                        cancellation: LocalVaultAgentCancellation? = nil) throws -> String {
+        let access = try suppliedAccess.validated(root: root)
+        try access.authorize(tool: name)
         try cancellation?.check()
         func string(_ key: String) throws -> String {
             guard let value = arguments[key] as? String, value.utf8.count <= 2_000_000 else {
@@ -325,14 +515,21 @@ enum LocalVaultAgentFiles {
         let store = LocalVaultDocumentStore(root: root), documents = DocumentStore(root: root)
         let output: Any
         switch name {
-        case "list_files": output = ["paths": Array(try store.list().prefix(1_000))]
+        case "list_files":
+            let scope = try access.scopedFolder(root: root)
+            let paths = try LocalVaultDocumentStore(root: scope.root).list().prefix(1_000).map {
+                scope.prefix.isEmpty ? $0 : scope.prefix + "/" + $0
+            }
+            output = ["paths": paths]
         case "read_file":
-            let file = try store.read(path: string("path"))
+            let path = try access.authorizeFile(string("path"), operation: "read", root: root)
+            let file = try store.read(path: path)
             output = ["path": file.path, "hash": file.hash, "markdown": file.contents.markdown,
                       "documentJSON": file.contents.documentJSON ?? "", "templateJSON": file.contents.templateJSON ?? "",
                       "templateAuthoringSourceJSON": file.contents.templateAuthoringSourceJSON ?? ""]
         case "propose_template":
-            let path = try string("path"), expected = try string("hash"), template = try string("templateJSON")
+            let path = try access.authorizeProposal(string("path"), root: root)
+            let expected = try string("hash"), template = try string("templateJSON")
             let current = try store.read(path: path)
             guard current.hash == expected else { throw VaultAgentError("This file changed since it was read. Read it again before proposing a template.") }
             guard let rawSnapshot = current.contents.documentJSON,
@@ -356,7 +553,8 @@ enum LocalVaultAgentFiles {
             try cancellation?.check()
             output = proposal
         case "write_file":
-            let path = try string("path"), expected = try string("hash"), markdown = try string("markdown")
+            let path = try access.authorizeFile(string("path"), operation: "write", root: root)
+            let expected = try string("hash"), markdown = try string("markdown")
             let current = try store.read(path: path)
             if arguments["documentJSON"] == nil && arguments["templateJSON"] == nil && arguments["templateAuthoringSourceJSON"] == nil {
                 try cancellation?.check()
@@ -377,11 +575,23 @@ enum LocalVaultAgentFiles {
             output = ["path": path, "hash": saved.hash]
         case "create_file":
             try cancellation?.check()
+            let requestedFolder: String
+            if let value = arguments["folder"] {
+                guard let value = value as? String else { throw VaultAgentError("Missing or oversized folder.") }
+                requestedFolder = value
+            } else {
+                requestedFolder = ""
+            }
+            let folder = try access.authorizeCreation(in: requestedFolder, root: root)
             let file = try documents.create(title: string("title"), body: string("body"),
-                folder: arguments["folder"] as? String, kind: arguments["kind"] as? String ?? "note")
+                folder: folder.isEmpty ? nil : folder, kind: arguments["kind"] as? String ?? "note")
             output = ["path": documents.relativePath(of: file)]
         case "search_files":
-            output = try documents.search(string("query")).map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet, "hash": $0.hash] }
+            let scope = try access.scopedFolder(root: root)
+            output = try DocumentStore(root: scope.root).searchPage(string("query"), textpacksOnly: true).items.map {
+                ["path": scope.prefix.isEmpty ? $0.id : scope.prefix + "/" + $0.id,
+                 "title": $0.title, "snippet": $0.snippet, "hash": $0.hash]
+            }
         default: throw VaultAgentError("Unknown file tool.")
         }
         let data = try JSONSerialization.data(withJSONObject: output, options: [.sortedKeys, .withoutEscapingSlashes])

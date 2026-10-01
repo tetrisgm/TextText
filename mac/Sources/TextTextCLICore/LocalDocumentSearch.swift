@@ -44,7 +44,12 @@ extension DocumentStore {
             let path = String(canonical.dropFirst(canonicalRoot.path.count + 1))
             if path == "Data" { enumerator.skipDescendants(); continue }
             guard ["textpack", "textbundle", "md", "txt"].contains(file.pathExtension.lowercased()) else { continue }
-            enumerator.skipDescendants()
+            // A TextBundle is a directory package. The other supported
+            // formats are regular files; calling skipDescendants for one can
+            // skip a following sibling directory on Foundation's enumerator.
+            if file.pathExtension.lowercased() == "textbundle" {
+                enumerator.skipDescendants()
+            }
             if textpacksOnly && file.pathExtension.lowercased() != "textpack" { continue }
             paths.append(path)
             if paths.count > scanLimit { truncated = true; break }

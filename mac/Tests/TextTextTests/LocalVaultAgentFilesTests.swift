@@ -7,7 +7,7 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Preview", "body": ""], root: root)
+        _ = try run("create_file", arguments: ["title": "Preview", "body": ""], root: root)
         let store = LocalVaultDocumentStore(root: root)
         let initial = try store.read(path: "Preview.textpack")
         var snapshot = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(initial.contents.documentJSON).utf8)) as? [String: Any])
@@ -32,23 +32,115 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Agent note", "body": "Original."], root: root)
+        _ = try run("create_file", arguments: ["title": "Agent note", "body": "Original."], root: root)
         let path = "Agent note.textpack"
         let store = LocalVaultDocumentStore(root: root)
         let initial = try store.read(path: path)
         XCTAssertNotNil(initial.contents.templateJSON)
-        let result = try LocalVaultAgentFiles.perform("read_file", arguments: ["path": path], root: root)
+        let result = try run("read_file", arguments: ["path": path], root: root)
         XCTAssertTrue(result.contains("Original."))
-        _ = try LocalVaultAgentFiles.perform("write_file", arguments: [
+        _ = try run("write_file", arguments: [
             "path": path, "hash": initial.hash, "markdown": "Agent edit."
         ], root: root)
         let changed = try store.read(path: path)
         XCTAssertTrue(changed.contents.markdown.contains("Agent edit."))
-        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("write_file", arguments: [
+        XCTAssertThrowsError(try run("write_file", arguments: [
             "path": path, "hash": initial.hash, "markdown": "Stale replacement."
         ], root: root))
         XCTAssertEqual(try store.read(path: path).hash, changed.hash)
-        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("read_file", arguments: ["path": "../outside.textpack"], root: root))
+        XCTAssertThrowsError(try run("read_file", arguments: ["path": "../outside.textpack"], root: root))
+    }
+
+    func testCurrentItemScopeAllowsOnlyTheExactTextPack() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try run("create_file", arguments: ["title": "Selected", "body": "Selected body"], root: root)
+        _ = try run("create_file", arguments: ["title": "Sibling", "body": "Private sibling"], root: root)
+        let store = LocalVaultDocumentStore(root: root)
+        let selected = try store.read(path: "Selected.textpack")
+        let access = LocalVaultAgentAccess.item(path: selected.path)
+
+        XCTAssertTrue(try run("read_file", arguments: ["path": selected.path], root: root, access: access).contains("Selected body"))
+        _ = try run("write_file", arguments: [
+            "path": selected.path, "hash": selected.hash, "markdown": "Scoped edit"
+        ], root: root, access: access)
+        XCTAssertTrue(try store.read(path: selected.path).contents.markdown.contains("Scoped edit"))
+        XCTAssertThrowsError(try run("read_file", arguments: ["path": "Sibling.textpack"], root: root, access: access))
+        let sibling = try store.read(path: "Sibling.textpack")
+        XCTAssertThrowsError(try run("write_file", arguments: [
+            "path": sibling.path, "hash": sibling.hash, "markdown": "Denied"
+        ], root: root, access: access))
+        XCTAssertEqual(try store.read(path: sibling.path).hash, sibling.hash)
+        for tool in ["list_files", "search_files", "create_file", "propose_template"] {
+            XCTAssertThrowsError(try run(tool, arguments: [
+                "query": "Private", "title": "Denied", "body": "Denied", "path": selected.path,
+                "hash": selected.hash, "templateJSON": selected.contents.templateJSON ?? ""
+            ], root: root, access: access))
+        }
+        XCTAssertEqual(toolNames(for: access), ["read_file", "write_file"])
+    }
+
+    func testFolderScopeListsSearchesReadsWritesAndCreatesOnlyInsideBoundary() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        for folder in ["Projects", "Projects/Nested", "Projects2"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        _ = try run("create_file", arguments: ["title": "Inside", "body": "scoped needle", "folder": "Projects"], root: root)
+        _ = try run("create_file", arguments: ["title": "Deep", "body": "deep needle", "folder": "Projects/Nested"], root: root)
+        _ = try run("create_file", arguments: ["title": "Outside", "body": "outside needle", "folder": "Projects2"], root: root)
+        _ = try run("create_file", arguments: ["title": "Root", "body": "root needle"], root: root)
+        let access = LocalVaultAgentAccess.folder(path: "Projects")
+
+        let list = try json(try run("list_files", arguments: [:], root: root, access: access))
+        XCTAssertEqual(Set(try XCTUnwrap(list["paths"] as? [String])), ["Projects/Inside.textpack", "Projects/Nested/Deep.textpack"])
+        let search = try run("search_files", arguments: ["query": "needle"], root: root, access: access)
+        XCTAssertTrue(search.contains("Projects/Inside.textpack"))
+        XCTAssertTrue(search.contains("Projects/Nested/Deep.textpack"), search)
+        XCTAssertFalse(search.contains("Projects2/Outside.textpack"))
+        XCTAssertFalse(search.contains("Root.textpack"))
+
+        let store = LocalVaultDocumentStore(root: root)
+        let inside = try store.read(path: "Projects/Inside.textpack")
+        _ = try run("write_file", arguments: [
+            "path": inside.path, "hash": inside.hash, "markdown": "Folder edit"
+        ], root: root, access: access)
+        _ = try run("create_file", arguments: [
+            "title": "Created", "body": "Created inside", "folder": "Projects/Nested"
+        ], root: root, access: access)
+        XCTAssertNoThrow(try store.read(path: "Projects/Nested/Created.textpack"))
+        XCTAssertThrowsError(try run("read_file", arguments: ["path": "Projects2/Outside.textpack"], root: root, access: access))
+        let outside = try store.read(path: "Projects2/Outside.textpack")
+        XCTAssertThrowsError(try run("write_file", arguments: [
+            "path": outside.path, "hash": outside.hash, "markdown": "Denied"
+        ], root: root, access: access))
+        XCTAssertEqual(try store.read(path: outside.path).hash, outside.hash)
+        XCTAssertThrowsError(try run("create_file", arguments: [
+            "title": "Escaped", "body": "Denied", "folder": "Projects2"
+        ], root: root, access: access))
+        XCTAssertEqual(toolNames(for: access), ["create_file", "list_files", "read_file", "search_files", "write_file"])
+    }
+
+    func testFolderScopeRejectsTraversalAbsolutePathsAndSiblingPrefixes() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Projects"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Projects2"), withIntermediateDirectories: true)
+        _ = try run("create_file", arguments: ["title": "Inside", "body": "Inside", "folder": "Projects"], root: root)
+        _ = try run("create_file", arguments: ["title": "Sibling", "body": "Sibling", "folder": "Projects2"], root: root)
+        let access = LocalVaultAgentAccess.folder(path: "Projects")
+
+        for path in ["../Projects2/Sibling.textpack", "Projects/../Projects2/Sibling.textpack",
+                     "Projects2/Sibling.textpack", root.appendingPathComponent("Projects/Inside.textpack").path] {
+            XCTAssertThrowsError(try run("read_file", arguments: ["path": path], root: root, access: access), path)
+        }
+        for folder in ["../Projects2", "Projects/../Projects2", "Projects2", "/tmp"] {
+            XCTAssertThrowsError(try run("create_file", arguments: [
+                "title": "Escaped", "body": "Denied", "folder": folder
+            ], root: root, access: access), folder)
+        }
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).list().sorted(),
+                       ["Projects/Inside.textpack", "Projects2/Sibling.textpack"])
     }
     func testCancelledQueuedWorkCannotCreateAFile() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -56,7 +148,7 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let fence = LocalVaultAgentCancellation()
         fence.cancel()
-        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Cancelled", "body": "Never saved"], root: root, cancellation: fence))
+        XCTAssertThrowsError(try run("create_file", arguments: ["title": "Cancelled", "body": "Never saved"], root: root, cancellation: fence))
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
@@ -64,10 +156,10 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Valid", "body": "Keep"], root: root)
+        _ = try run("create_file", arguments: ["title": "Valid", "body": "Keep"], root: root)
         let store = LocalVaultDocumentStore(root: root)
         let original = try store.read(path: "Valid.textpack")
-        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("write_file", arguments: [
+        XCTAssertThrowsError(try run("write_file", arguments: [
             "path": "Valid.textpack", "hash": original.hash, "markdown": "Broken",
             "templateJSON": "{}"
         ], root: root))
@@ -78,7 +170,7 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Preview", "body": "Keep this content."], root: root)
+        _ = try run("create_file", arguments: ["title": "Preview", "body": "Keep this content."], root: root)
         let store = LocalVaultDocumentStore(root: root), path = "Preview.textpack"
         let original = try store.read(path: path)
         let bytes = try Data(contentsOf: store.url(for: path))
@@ -86,10 +178,10 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         template["id"] = "custom.preview"
         template["version"] = 2
         let json = String(decoding: try JSONSerialization.data(withJSONObject: template), as: UTF8.self)
-        let result = try LocalVaultAgentFiles.perform("propose_template", arguments: [
+        let result = try run("propose_template", arguments: [
             "path": path, "hash": original.hash, "templateJSON": json,
             "templateAuthoringSourceJSON": "{\"schemaVersion\":1}"
-        ], root: root, customizationPath: path)
+        ], root: root, access: .itemCustomization(path: path))
         let proposal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.utf8)) as? [String: Any])
         XCTAssertEqual(proposal["path"] as? String, path)
         XCTAssertEqual(proposal["hash"] as? String, original.hash)
@@ -98,32 +190,82 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.url(for: path)), bytes)
         XCTAssertEqual(try store.list(), [path])
         for invalid in ["{}", "[]", "not JSON"] {
-            XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
+            XCTAssertThrowsError(try run("propose_template", arguments: [
                 "path": path, "hash": original.hash, "templateJSON": invalid
-            ], root: root))
+            ], root: root, access: .itemCustomization(path: path)))
         }
-        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
+        XCTAssertThrowsError(try run("propose_template", arguments: [
             "path": path, "hash": "stale", "templateJSON": json
-        ], root: root))
-        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
+        ], root: root, access: .itemCustomization(path: path)))
+        XCTAssertThrowsError(try run("propose_template", arguments: [
             "path": path, "hash": original.hash, "templateJSON": json, "templateAuthoringSourceJSON": "[]"
-        ], root: root))
+        ], root: root, access: .itemCustomization(path: path)))
         XCTAssertEqual(try Data(contentsOf: store.url(for: path)), bytes)
     }
 
-    func testCustomizationCannotWriteCreateOrProposeAnotherFile() throws {
+    func testCustomizationScopesAreReadAndProposeOnly() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Projects"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Other"), withIntermediateDirectories: true)
+        _ = try run("create_file", arguments: ["title": "Folder view", "body": "Design", "folder": "Projects"], root: root)
+        _ = try run("create_file", arguments: ["title": "Member", "body": "Member content", "folder": "Projects"], root: root)
+        _ = try run("create_file", arguments: ["title": "Outside", "body": "Outside content", "folder": "Other"], root: root)
+        let store = LocalVaultDocumentStore(root: root)
+        let design = try store.read(path: "Projects/Folder view.textpack")
+        let member = try store.read(path: "Projects/Member.textpack")
+        let folderAccess = LocalVaultAgentAccess.folderCustomization(
+            folder: "Projects", designPath: design.path)
+
+        XCTAssertTrue(try run("read_file", arguments: ["path": member.path], root: root, access: folderAccess).contains("Member content"))
+        let list = try run("list_files", arguments: [:], root: root, access: folderAccess)
+        XCTAssertTrue(list.contains(member.path)); XCTAssertFalse(list.contains("Other/Outside.textpack"))
+        let search = try run("search_files", arguments: ["query": "content"], root: root, access: folderAccess)
+        XCTAssertTrue(search.contains(member.path)); XCTAssertFalse(search.contains("Other/Outside.textpack"))
+        _ = try run("propose_template", arguments: [
+            "path": design.path, "hash": design.hash, "templateJSON": try XCTUnwrap(design.contents.templateJSON)
+        ], root: root, access: folderAccess)
+        XCTAssertThrowsError(try run("propose_template", arguments: [
+            "path": member.path, "hash": member.hash, "templateJSON": try XCTUnwrap(member.contents.templateJSON)
+        ], root: root, access: folderAccess))
+        XCTAssertThrowsError(try run("read_file", arguments: ["path": "Other/Outside.textpack"], root: root, access: folderAccess))
+        for tool in ["write_file", "create_file"] {
+            XCTAssertThrowsError(try run(tool, arguments: [
+                "path": member.path, "title": "Other", "body": "Do not create", "folder": "Projects",
+                "markdown": "Do not write", "hash": member.hash
+            ], root: root, access: folderAccess))
+        }
+        XCTAssertEqual(toolNames(for: folderAccess), ["list_files", "propose_template", "read_file", "search_files"])
+
+        let itemAccess = LocalVaultAgentAccess.itemCustomization(path: member.path)
+        XCTAssertTrue(try run("read_file", arguments: ["path": member.path], root: root, access: itemAccess).contains("Member content"))
+        XCTAssertThrowsError(try run("read_file", arguments: ["path": design.path], root: root, access: itemAccess))
+        XCTAssertThrowsError(try run("list_files", arguments: [:], root: root, access: itemAccess))
+        XCTAssertThrowsError(try run("write_file", arguments: [
+            "path": member.path, "hash": member.hash, "markdown": "Denied"
+        ], root: root, access: itemAccess))
+        XCTAssertEqual(toolNames(for: itemAccess), ["propose_template", "read_file"])
+    }
+
+    private func temporaryVault() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        for tool in ["write_file", "create_file"] {
-            XCTAssertThrowsError(try LocalVaultAgentFiles.perform(tool, arguments: [
-                "path": "Other.textpack", "title": "Other", "body": "Do not create", "markdown": "Do not write", "hash": "unused"
-            ], root: root, customizationPath: "Selected.textpack"))
-        }
-        XCTAssertThrowsError(try LocalVaultAgentFiles.perform("propose_template", arguments: [
-            "path": "Other.textpack", "hash": "unused", "templateJSON": "{}"
-        ], root: root, customizationPath: "Selected.textpack"))
-        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+        return root
+    }
+
+    private func run(_ name: String, arguments: [String: Any], root: URL,
+                     access: LocalVaultAgentAccess = .folder(path: ""),
+                     cancellation: LocalVaultAgentCancellation? = nil) throws -> String {
+        try LocalVaultAgentFiles.perform(name, arguments: arguments, root: root,
+                                         access: access, cancellation: cancellation)
+    }
+
+    private func json(_ value: String) throws -> [String: Any] {
+        try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any])
+    }
+
+    private func toolNames(for access: LocalVaultAgentAccess) -> [String] {
+        LocalVaultAgentFiles.tools(for: access).compactMap { $0["name"] as? String }.sorted()
     }
 
 }
