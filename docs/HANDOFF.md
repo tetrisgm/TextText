@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1134)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1135)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -118,16 +118,22 @@ revocation and scope tests pass. Editor/client/browser transport and bounded
 native bridge are now implemented; current browser acceptance tests real
 two-account typing, Undo/Redo, offline reconnection, idle mutation silence and
 permission downgrade. See [collaboration checkpoint](file-vault-collaboration-2026-09-30.md).
-Installed build remains 1134. Before installing shared native editing, complete
-local TextPack materialization of offline shared edits; browser-journal-only
-durability is insufficient for direct agent file access. Then verify native
-concurrency and proceed to scoped sharing, presence and comments.
+Installed build is 1135. Native TextPack materialization and replayable
+shared-edit journals are implemented (`2d1834b3`); 20 shared/sync and 47 document
+store checks pass. Client and bridge integration also pass production web build
+and two-account browser acceptance (`23758ecb`). Installed keyboard edits reached
+the actual TextPack online and during server outage, survived quitting/reopening,
+and converged to the server after reconnection with pending cleared. The
+disposable `Untitled.textpack` (title `Shared file verification 1135`, identity
+`2880a21d-7414-438d-a238-0e6cfcba98d9`) remains for direct-file-edit recovery checks
+and recoverable cleanup. Next: that installed recovery check, scoped sharing,
+presence and comments. Same-origin multi-tab journal ownership remains open.
 
 ## Blockers and next work
 
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-collaboration-current-build`, build identity `texttext-vault-collaboration-current-20260930` (exec session 48998). No persistent
+  runtime path), output `.texttext/vault-native-checkpoint-build`, build identity `texttext-vault-native-checkpoint-20260930` (exec session 99103). No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,

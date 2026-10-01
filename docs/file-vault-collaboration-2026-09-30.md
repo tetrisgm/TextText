@@ -93,27 +93,55 @@ honor cancellation. Commits: `a9e4725d`, `827725bc` (native bridge).
   This caught and fixed missing browser Undo/Redo and a deferred caret request
   that relocated the next typed space. It does not prove native gestures.
 
+## Native durable file checkpoints, build 1135
+
+Commits `2d1834b3` and `23758ecb` persist shared edits into complete native
+TextPacks through the existing sync actor. Replayable intents retain the prior
+pack, projected pack and journal. Generation and file-hash checks reject stale
+writers; an external file change retires shared editing while retaining recovery.
+Pending shared projections are excluded from ordinary snapshot upload/download.
+Clean checkpoints retain the native baseline for offline reopening.
+
+The client serializes immutable checkpoints, coalesces bursts for 200 ms and
+requires the local disk checkpoint before relay upload. After acknowledgement it
+reads the authoritative state before marking the native checkpoint clean. Recovery
+archives complete packs and refreshes the primary without uploading abandoned
+pending content. Canonical archive selection now leaves an asset named `text.md`
+untouched.
+
+- 20 shared/sync tests: `/tmp/shared-foundation-final-tests.log`.
+- 47 existing document-store tests: `/tmp/shared-foundation-document-store-tests.log`.
+- 32 client/bridge/web tests: `/tmp/texttext-native-shared-js-tests.log`.
+- Production web build: `/tmp/texttext-vault-native-checkpoint-build.log`.
+- Repeated strict two-account browser acceptance:
+  `/tmp/texttext-file-collaboration-checkpoint-browser.log`.
+- Signed arm64 build and local install: `/tmp/texttext-build-1135.log` and
+  `/tmp/texttext-install-1135.log`. Installed plist confirms 1135. The development
+  install uses the script's documented sandbox-private health exception; native
+  UI was checked from `/Applications/TextText.app` afterward.
+
+Real native keyboard acceptance used a disposable `Untitled.textpack` with title
+`Shared file verification 1135`. Baseline, online shared and offline shared
+sentences appeared in the actual file. Offline checkpoint was pending with its
+projected hash matching the file. After quitting and reopening, all three
+sentences appeared in the editor. Reconnection automatically converged those
+sentences to the server; epoch stayed 1, sequence became 4, and pending cleared.
+The local server was restored using the same built output. This proves restart
+retention and reconnection; fully offline cold-open timing, external-file-edit
+recovery and two native concurrent writers remain separate checks.
+
 ## Remaining integration and limits
 
-Build 1134 remains installed. The current local server uses
-`.texttext/vault-collaboration-current-build`; no public deployment occurred.
-Native shared editing still needs installed acceptance and local TextPack
-materialization of offline shared edits. The browser journal alone does not
-satisfy the requirement that another agent can read current edits from files.
-Do not enable the new native editor in an installed build until that path is
-integrated and verified.
+Build 1135 is installed. The current local server uses
+`.texttext/vault-native-checkpoint-build`; no public deployment occurred.
 
-Next: local materialization/outbox integration, scoped item/folder grants and
-sharing UI, presence/comments, installed concurrent-edit/recovery acceptance.
+Next: scoped item/folder grants and sharing UI, presence/comments, installed
+concurrent-edit/direct-file recovery acceptance and same-origin multi-tab journal
+ownership. Independent tabs must not overwrite each other's unsent journals.
 
-Native materialization must persist a replayable journal/pack intent, track the
-exact projected file hash separately from the acknowledged remote revision,
-exclude only that exact projection from ordinary sync uploads, and protect
-pending shared edits from ordinary downloads. A different file hash is an
-external edit and must fence the session while preserving both versions.
-Acknowledging one relay batch must not clear later local updates. Verify crash
-replay, in-flight sync races, direct agent edits, rename/delete, revocation and
-complete-pack preservation before enabling this path in the installed app.
+Extend installed acceptance across in-flight sync races, direct agent edits,
+rename/delete, revocation and complete-pack preservation. Unit coverage alone
+does not establish the complete native user journeys.
 
 Every accepted batch currently materializes a complete pack. Before enabling
 interactive traffic, measure/reduce write amplification for large assets and
