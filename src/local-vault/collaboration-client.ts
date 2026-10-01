@@ -475,6 +475,21 @@ export class FileCollaborationClient {
     if (!active) { this.authoritative = false; this.cancelWork(); this.report("offline"); }
     else if (!this.frozen) { if (!this.initialized) void this.start(); else { this.schedulePoll(0); this.schedulePush(0); } }
   }
+  /** A deliberate Retry may test the connection even while WebKit reports the window hidden. */
+  async retry(): Promise<void> {
+    if (this.dead || this.frozen) return;
+    this.active = true;
+    this.authoritative = false;
+    this.failures = 0;
+    this.cancelWork();
+    if (!this.initialized) {
+      if (this.starting) await this.starting;
+      if (!this.dead && !this.frozen && !this.initialized) await this.start();
+    } else {
+      this.schedulePoll(0);
+      this.schedulePush(0);
+    }
+  }
   private cancelWork(): void {
     if (this.pushTimer) clearTimeout(this.pushTimer);
     if (this.pollTimer) clearTimeout(this.pollTimer);

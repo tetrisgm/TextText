@@ -143,6 +143,23 @@ describe("durable file collaboration client", () => {
     expect(documentText(editor.doc, "body").toString()).toContain("Unsaved");
   });
 
+  it("Retry connects an unopened inactive editor without waiting for a visibility event", async () => {
+    const server = new Server(), journal = new Journal();
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      active: false, request: server.request });
+    clients.push(editor);
+    await editor.start();
+    expect(editor.status).toBe("offline"); expect(editor.hasBaseline).toBe(false); expect(server.reads).toBe(0);
+    await editor.retry();
+    expect(editor.hasBaseline).toBe(true); expect(editor.status).toBe("ready"); expect(server.reads).toBe(1);
+    editor.setActive(false);
+    const before = server.reads;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(server.reads).toBe(before);
+    await editor.retry(); await vi.advanceTimersByTimeAsync(1);
+    expect(server.reads).toBeGreaterThan(before);
+  });
+
   it("opens a retained canonical baseline offline and fences its pending edits when the epoch changes", async () => {
     const server = new Server(), journal = new Journal(), first = client(server, journal);
     await first.start(); first.destroy();

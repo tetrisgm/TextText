@@ -209,7 +209,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       {detail || (ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
       {config.localFiles && status === "offline" && !ready && client && !client.hasPendingChanges && !client.hasUnreadableJournal &&
         <button onClick={onLocalFallback}>Edit local file</button>}
-      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && <button onClick={() => void clientRef.current?.start()}>Retry</button>}
+      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && <button onClick={() => void clientRef.current?.retry()}>Retry</button>}
     </div>}
     {ready && <>
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} />}
