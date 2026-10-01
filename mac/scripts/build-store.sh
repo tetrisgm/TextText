@@ -17,6 +17,13 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
 
+# The local Store build is used to accept the visible Connect Codex flow.
+# Without a bundled helper its sandbox cannot use the external Codex CLI.
+if [ "${TEXTTEXT_STORE_LOCAL:-0}" = "1" ] && [ -z "${TEXTTEXT_EMBEDDED_CODEX_RUNTIME:-}" ]; then
+  echo "Refusing local Store build: set TEXTTEXT_EMBEDDED_CODEX_RUNTIME to the signed Codex executable or Connect Codex cannot start." >&2
+  exit 1
+fi
+
 # SwiftPM rewrites Package.resolved to match the Store-only manifest, which
 # intentionally excludes Sparkle. Preserve the standalone lockfile so preparing
 # a TestFlight package cannot silently dirty or weaken the Developer ID lane.

@@ -3,6 +3,11 @@ import XCTest
 @testable import TextTextWorkspaceCore
 
 final class CodexAppServerTests: XCTestCase {
+    func testMissingRuntimeShowsActionableConnectionError() {
+        XCTAssertEqual(CodexAppServerError.runtimeMissing.localizedDescription,
+            "This TextText build does not include a usable Codex runtime. Install a build with Codex support.")
+    }
+
     func testEmbeddedInstructionsAllowOnlyOneGroundedAppendConflictRetry() {
         let instructions = CodexAppServerRequests.embeddedDeveloperInstructions
         XCTAssertTrue(instructions.contains("read_item again"))

@@ -42,11 +42,20 @@ public struct CodexAppServerMessage: Equatable {
     }
 }
 
-public enum CodexAppServerError: Error, Equatable {
+public enum CodexAppServerError: LocalizedError, Equatable {
     case invalidMessage
     case runtimeMissing
     case processExited(Int32)
     case notRunning
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidMessage: "The Codex runtime returned an invalid response. Reconnect to retry."
+        case .runtimeMissing: "This TextText build does not include a usable Codex runtime. Install a build with Codex support."
+        case .processExited: "The Codex runtime closed. Reconnect to retry."
+        case .notRunning: "The Codex runtime is not running. Reconnect to retry."
+        }
+    }
 }
 
 /// Assigns one App Server thread to each durable TextText conversation.
