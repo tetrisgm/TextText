@@ -71,8 +71,9 @@ workloads on the shared VM; validate them against available capacity.
 Keep the root-owned runtime environment at `/etc/texttext/runtime.env`, mode
 0600. systemd reads it before dropping privileges. It must set `DATABASE_URL` to
 the dedicated local PostgreSQL instance (currently port 5433) and production auth
-settings. The former Blob media token no longer works because the owner deleted
-that store; media needs a separate R2 cutover. Set `PORT=3400`; the entry point
+settings. Media is stored under `/home/ubuntu/texttext/state/media`; set
+`TEXTTEXT_MEDIA_ROOT` to that path and `MEDIA_ORIGIN=https://texttext.app`.
+Set `PORT=3400`; the entry point
 forces `HOSTNAME=127.0.0.1`, validates a loopback database, and rejects development
 sign-in. Reserve/check port 3400 before installing the unit; do not stop another
 application to claim it.
