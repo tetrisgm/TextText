@@ -174,7 +174,8 @@ async function setup(location: VaultLocation) {
   const history = await directory(control, "history");
   const removed = await directory(control, "removed");
   const collaboration = await directory(control, "collaboration");
-  return { workspace, control, pending, receipts, items, conflicts, locks, history, removed, collaboration, onReceipt: location.onReceipt };
+  const presence = await directory(control, "presence");
+  return { workspace, control, pending, receipts, items, conflicts, locks, history, removed, collaboration, presence, onReceipt: location.onReceipt };
 }
 type Layout = Awaited<ReturnType<typeof setup>>;
 
@@ -573,6 +574,145 @@ export async function readVaultCollaboration(input: VaultLocation & { itemId: st
     const item = await collaborationItem(layout, input.itemId);
     if (!item) return null;
     return { ...await collaborationCheckpoint(layout, input.itemId, item), relativePath: item.relativePath };
+  });
+}
+
+/** Ephemeral human presence for file-backed items. Sessions live in separate
+ * bounded files and share the vault writer lock with collaboration checkpoints,
+ * so a changed or deleted TextPack fences every old heartbeat and reader. */
+export const VAULT_PRESENCE_STALE_MS = 30_000;
+const MAX_VAULT_PRESENCE_PEERS = 32;
+const presenceClientId = /^p-[0-9a-f-]{36}$/;
+export type VaultPresencePeer = {
+  clientId: string; userName: string; color: string;
+  role: "editor" | "viewer"; awareness: string | null;
+};
+type VaultPresenceRow = VaultPresencePeer & {
+  principal: string; epoch: number; awarenessClientId: number;
+  expiresAt: number; sessionExpiresAt: number;
+};
+type VaultPresenceLocation = VaultLocation & { itemId: string };
+type VaultPresenceIdentity = {
+  clientId: string; principal: string; epoch: number; awarenessClientId: number;
+  sessionExpiresAt: number; userName: string; color: string;
+  role: "editor" | "viewer";
+};
+export class VaultPresenceSessionError extends Error {
+  constructor() { super("Join item presence again."); }
+}
+function validPresenceIdentity(value: VaultPresenceIdentity) {
+  if (!presenceClientId.test(value.clientId) || !value.principal.startsWith("account:") ||
+      !Number.isSafeInteger(value.epoch) || value.epoch < 1 ||
+      !Number.isSafeInteger(value.awarenessClientId) || value.awarenessClientId < 0 || value.awarenessClientId > 0xffffffff ||
+      !Number.isSafeInteger(value.sessionExpiresAt) || value.sessionExpiresAt <= Date.now() ||
+      !value.userName.trim() || value.userName.length > 200 ||
+      !/^#[0-9a-f]{6}$/i.test(value.color) || !["editor", "viewer"].includes(value.role)) {
+    throw new Error("Invalid vault presence identity");
+  }
+}
+async function presenceRows(layout: Layout, itemId: string, epoch: number) {
+  const dir = await directory(layout.presence, segment(itemId));
+  const rows: VaultPresenceRow[] = [];
+  let scanned = 0;
+  for await (const entry of await fs.opendir(dir)) {
+    if (++scanned > MAX_VAULT_PRESENCE_PEERS * 4) throw new Error("Vault presence capacity exceeded");
+    if (!presenceClientId.test(entry.name.replace(/\.json$/, "")) || !entry.name.endsWith(".json")) continue;
+    const file = path.join(dir, entry.name);
+    const info = await fs.lstat(file);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 24 * 1024) throw new Error("Invalid vault presence row");
+    const row = JSON.parse(await fs.readFile(file, "utf8")) as VaultPresenceRow;
+    if (row.clientId !== entry.name.slice(0, -5) || !Number.isSafeInteger(row.epoch) ||
+        !Number.isSafeInteger(row.expiresAt) || !Number.isSafeInteger(row.sessionExpiresAt) ||
+        !Number.isSafeInteger(row.awarenessClientId) || !row.principal?.startsWith("account:") ||
+        typeof row.userName !== "string" || typeof row.color !== "string" ||
+        (row.role !== "editor" && row.role !== "viewer") ||
+        (row.awareness !== null && (typeof row.awareness !== "string" || row.awareness.length > 20 * 1024))) {
+      throw new Error("Invalid vault presence row");
+    }
+    if (row.epoch !== epoch || row.expiresAt <= Date.now() || row.sessionExpiresAt <= Date.now()) {
+      await fs.rm(file);
+      continue;
+    }
+    rows.push(row);
+  }
+  if (rows.length > MAX_VAULT_PRESENCE_PEERS) throw new Error("Vault presence capacity exceeded");
+  return { dir, rows };
+}
+function disclosedPresence(rows: VaultPresenceRow[]): VaultPresencePeer[] {
+  return rows.map(({ clientId, userName, color, role, awareness }) => ({ clientId, userName, color, role, awareness }));
+}
+async function currentPresence(layout: Layout, itemId: string) {
+  await recover(layout);
+  const item = await collaborationItem(layout, itemId);
+  if (!item) return null;
+  const state = await collaborationCheckpoint(layout, itemId, item);
+  return { state, relativePath: item.relativePath, ...await presenceRows(layout, itemId, state.epoch) };
+}
+export async function readVaultPresence(input: VaultPresenceLocation) {
+  segment(input.itemId);
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    const current = await currentPresence(layout, input.itemId);
+    return current ? { epoch: current.state.epoch, presence: disclosedPresence(current.rows) } : null;
+  });
+}
+export async function joinVaultPresence(input: VaultPresenceLocation & VaultPresenceIdentity & { beforeCommit?: (relativePath: string) => Promise<void> }) {
+  segment(input.itemId); validPresenceIdentity(input);
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    const current = await currentPresence(layout, input.itemId);
+    if (!current) return null;
+    if (input.epoch !== current.state.epoch) throw new VaultCollaborationEpochError(current.state.epoch);
+    if (current.rows.length >= MAX_VAULT_PRESENCE_PEERS) throw new Error("Vault presence capacity exceeded");
+    if (current.rows.some(row => row.clientId === input.clientId)) throw new VaultPresenceSessionError();
+    await input.beforeCommit?.(current.relativePath);
+    const row: VaultPresenceRow = {
+      clientId: input.clientId, principal: input.principal, epoch: input.epoch,
+      awarenessClientId: input.awarenessClientId, sessionExpiresAt: input.sessionExpiresAt,
+      userName: input.userName, color: input.color, role: input.role, awareness: null,
+      expiresAt: Date.now() + VAULT_PRESENCE_STALE_MS,
+    };
+    await atomicWrite(path.join(current.dir, `${input.clientId}.json`), json(row));
+    return { epoch: current.state.epoch, presence: disclosedPresence([...current.rows, row]) };
+  });
+}
+export async function updateVaultPresence(input: VaultPresenceLocation & VaultPresenceIdentity & {
+  awareness: string | null; beforeCommit?: (relativePath: string) => Promise<void>;
+}) {
+  segment(input.itemId); validPresenceIdentity(input);
+  if (input.awareness !== null && (typeof input.awareness !== "string" || input.awareness.length > 20 * 1024)) throw new Error("Invalid vault presence awareness");
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    const current = await currentPresence(layout, input.itemId);
+    if (!current) return null;
+    if (input.epoch !== current.state.epoch) throw new VaultCollaborationEpochError(current.state.epoch);
+    const existing = current.rows.find(row => row.clientId === input.clientId);
+    if (!existing || existing.principal !== input.principal ||
+        existing.awarenessClientId !== input.awarenessClientId || existing.sessionExpiresAt !== input.sessionExpiresAt) {
+      throw new VaultPresenceSessionError();
+    }
+    await input.beforeCommit?.(current.relativePath);
+    const row: VaultPresenceRow = { ...existing, userName: input.userName, color: input.color,
+      role: input.role, awareness: input.awareness, expiresAt: Date.now() + VAULT_PRESENCE_STALE_MS };
+    await atomicWrite(path.join(current.dir, `${input.clientId}.json`), json(row));
+    return { epoch: current.state.epoch, presence: disclosedPresence(current.rows.map(peer => peer.clientId === input.clientId ? row : peer)) };
+  });
+}
+export async function leaveVaultPresence(input: VaultPresenceLocation & Pick<VaultPresenceIdentity, "clientId" | "principal" | "epoch"> & {
+  beforeCommit?: (relativePath: string) => Promise<void>;
+}) {
+  segment(input.itemId);
+  if (!presenceClientId.test(input.clientId) || !input.principal.startsWith("account:")) throw new VaultPresenceSessionError();
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    const current = await currentPresence(layout, input.itemId);
+    if (!current) return null;
+    if (input.epoch !== current.state.epoch) throw new VaultCollaborationEpochError(current.state.epoch);
+    const existing = current.rows.find(row => row.clientId === input.clientId);
+    if (!existing || existing.principal !== input.principal) throw new VaultPresenceSessionError();
+    await input.beforeCommit?.(current.relativePath);
+    await fs.rm(path.join(current.dir, `${input.clientId}.json`));
+    return { epoch: current.state.epoch, presence: disclosedPresence(current.rows.filter(row => row.clientId !== input.clientId)) };
   });
 }
 export async function pushVaultCollaboration(input: VaultLocation & {

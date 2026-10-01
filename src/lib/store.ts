@@ -4,6 +4,10 @@ import { validatedLookSource } from "./presentation/template-library";
 import {
   readVaultTextpack as readDirectoryTextpack,
   readVaultCollaboration as readDirectoryCollaboration,
+  readVaultPresence as readDirectoryPresence,
+  joinVaultPresence as joinDirectoryPresence,
+  updateVaultPresence as updateDirectoryPresence,
+  leaveVaultPresence as leaveDirectoryPresence,
   pushVaultCollaboration as pushDirectoryCollaboration,
   waitVaultCollaboration as waitDirectoryCollaboration,
   readVaultTemplate as readDirectoryTemplate,
@@ -20,7 +24,8 @@ import {
   type VaultMutationReceipt,
   type VaultEntryMutation,
 } from "./vault/server-store";
-export { VaultBusyError, VaultCollaborationEpochError } from "./vault/server-store";
+export { VaultBusyError, VaultCollaborationEpochError, VaultPresenceSessionError } from "./vault/server-store";
+export type { VaultPresencePeer } from "./vault/server-store";
 export type { VaultLocation, VaultWrite, VaultWriteResult, VaultEntryMutation, VaultEntryResult } from "./vault/server-store";
 import { documentFromStarter } from "./documents/starter";
 import { agentTextChanges } from "@/lib/agent-changes";
@@ -69,6 +74,30 @@ export function writeVaultTextpack(input: Omit<VaultWrite, "onReceipt" | "audit"
 export function readVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
   return readDirectoryCollaboration({ ...input, onReceipt: recordVaultReceipt });
+}
+export function readVaultPresence(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return readDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+}
+type PresenceIdentity = {
+  itemId: string; clientId: string; principal: string; epoch: number;
+  awarenessClientId: number; sessionExpiresAt: number; userName: string;
+  color: string; role: "editor" | "viewer";
+  beforeCommit?: (relativePath: string) => Promise<void>;
+};
+export function joinVaultPresence(input: Omit<VaultLocation, "onReceipt"> & PresenceIdentity) {
+  if (!db) throw new Error(NO_DATABASE);
+  return joinDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+}
+export function updateVaultPresence(input: Omit<VaultLocation, "onReceipt"> & PresenceIdentity & { awareness: string | null }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return updateDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+}
+export function leaveVaultPresence(input: Omit<VaultLocation, "onReceipt"> & {
+  itemId: string; clientId: string; principal: string; epoch: number; beforeCommit?: (relativePath: string) => Promise<void>;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return leaveDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
 }
 export function waitVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; epoch: number; seq: number; waitMs: number; signal?: AbortSignal;
