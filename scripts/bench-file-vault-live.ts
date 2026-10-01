@@ -428,6 +428,9 @@ async function main() {
       navigation.push(await tracedClick("All files", page.getByRole("button", { name: "All files", exact: true }), ".vault-overview h2", "Your workspace"));
       navigation.push(await tracedClick("Notes folder", folder("Notes"), ".vault-overview h2", "Notes"));
       navigation.push(await tracedClick("Long note item", await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      navigation.push(await tracedClick("All files after Long note", page.getByRole("button", { name: "All files", exact: true }), ".vault-overview h2", "Your workspace"));
+      navigation.push(await tracedClick("Notes folder after Long note", folder("Notes"), ".vault-overview h2", "Notes"));
+      navigation.push(await tracedClick("Cached Long note item", await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
       await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20_000 });
       const target = items.find(item => item.title === "Long note")!;
       const before = await store.readVaultCollaboration({ root: ROOT, workspaceId, itemId: target.id });
