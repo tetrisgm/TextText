@@ -237,6 +237,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if agent == nil {
                 agent = LocalVaultAgentController(root: root)
                 agent?.onEvent = { [weak self] event in self?.emit("texttext:vault-agent", value: event) }
+                agent?.onFilesChanged = { [weak self] in
+                    self?.emit("texttext:vault-changed", value: [:])
+                    self?.connection?.schedule()
+                }
             }
             do {
                 switch method {

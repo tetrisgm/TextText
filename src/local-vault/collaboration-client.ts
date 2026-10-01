@@ -252,11 +252,20 @@ export class FileCollaborationClient {
         const clean = !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement &&
           !value.journal.pending.length && !value.journal.batch && !value.journal.unqueuedDirty && !value.journal.retired;
         if ((error as { code?: string } | null)?.code === "local_changed" && clean) {
-          this.frozen = true; this.canEdit = false; this.cancelWork();
-          this.report("stale-file", "Refreshing the file changed outside TextText…");
+          this.notifyExternalFileChange();
         } else this.fatal(new Error(`The local document checkpoint could not be saved. Pending edits are kept for recovery. ${String(error)}`));
       }
     }
+  }
+  /** Called after a native read proves the TextPack changed outside this shared session. */
+  notifyExternalFileChange(): void {
+    if (this.dead || this.frozen) return;
+    if (this.hasPendingChanges || this.saved?.retired || this.initialRetirement) {
+      this.retire("The file changed outside shared editing. Your pending edits are kept for recovery.");
+      return;
+    }
+    this.frozen = true; this.canEdit = false; this.cancelWork();
+    this.report("stale-file", "Refreshing the file changed outside TextText…");
   }
   async flushLocal(): Promise<boolean> {
     if (!this.options.checkpoint) return !this.unreadableJournal;

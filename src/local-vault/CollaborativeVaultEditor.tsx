@@ -166,6 +166,31 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       document.removeEventListener("visibilitychange", visibility); window.removeEventListener("online", visibility); window.removeEventListener("offline", visibility);
     };
   }, [config.namespace, config.workspaceId, config.itemId, config.localFiles, generation]);
+  useEffect(() => {
+    if (!config.localFiles) return;
+    let stopped = false, reading = false, queued = false;
+    const check = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        while (queued && !stopped) {
+          queued = false;
+          const shared = clientRef.current;
+          if (!shared?.hasBaseline || shared.status === "stale-file") return;
+          try {
+            const latest = await vaultRequest<VaultFile>("read", { path: file.current.path });
+            if (!stopped && latest.hash !== file.current.hash) { shared.notifyExternalFileChange(); return; }
+          } catch { /* A missing or unavailable file keeps the existing recovery path. */ }
+        }
+      } finally { reading = false; }
+    };
+    const changed = () => {
+      queued = true;
+      void check();
+    };
+    window.addEventListener("texttext:vault-changed", changed);
+    return () => { stopped = true; window.removeEventListener("texttext:vault-changed", changed); };
+  }, [config.localFiles, generation]);
   const flush = useCallback(async () => {
     const shared = clientRef.current;
     if (!shared) return false;

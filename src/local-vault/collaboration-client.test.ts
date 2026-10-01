@@ -305,6 +305,29 @@ describe("durable file collaboration client", () => {
     expect(server.pushes).toHaveLength(0);
   });
 
+  it("refreshes a clean externally changed file before a checkpoint, while retaining newer human edits", async () => {
+    const server = new Server(), cleanJournal = new Journal(), clean = client(server, cleanJournal);
+    await clean.start();
+    clean.notifyExternalFileChange();
+    expect(clean.status).toBe("stale-file");
+    expect(clean.canEdit).toBe(false);
+    expect(clean.hasPendingChanges).toBe(false);
+    expect(() => clean.discardCleanJournal()).not.toThrow();
+    expect(cleanJournal.load(clean.journalKey)).toBeNull();
+
+    const pendingJournal = new Journal(), pending = client(server, pendingJournal);
+    await pending.start();
+    pending.mutate(doc => documentText(doc, "body").insert(5, " human edit"));
+    pending.notifyExternalFileChange();
+    expect(pending.status).toBe("recovery");
+    expect(pending.canEdit).toBe(false);
+    expect(pending.hasPendingChanges).toBe(true);
+    expect(pending.recoveryJournal?.pending).toHaveLength(1);
+    expect(pendingJournal.load(pending.journalKey)).not.toBeNull();
+    expect(documentText(pending.doc, "body").toString()).toBe("Hello human edit");
+    expect(server.pushes).toHaveLength(0);
+  });
+
   it("preserves pending edits when the native file changes during a checkpoint", async () => {
     const server = new Server(), journal = new Journal();
     const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,

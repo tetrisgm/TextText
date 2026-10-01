@@ -9,6 +9,7 @@ import TextTextWorkspaceCore
 @MainActor
 final class LocalVaultAgentController {
     var onEvent: (([String: Any]) -> Void)?
+    var onFilesChanged: (() -> Void)?
     private(set) var status: [String: Any] = ["state": "disconnected"]
     private let root: URL
     private let files: DispatchQueue
@@ -247,6 +248,7 @@ final class LocalVaultAgentController {
                 switch result {
                 case .success(let value):
                     text = value; success = true
+                    if tool == "write_file" || tool == "create_file" { self.onFilesChanged?() }
                     if tool == "propose_template", let data = value.data(using: .utf8),
                        var proposal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
                         guard self.pendingProposals.count < 4 else {

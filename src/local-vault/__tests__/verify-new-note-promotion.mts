@@ -36,6 +36,20 @@ const until = async (condition: () => boolean, label: string) => {
   }
   throw new Error(`Timed out waiting for ${label}.`);
 };
+const agentEdit = (suffix: string): VaultCollaborationState => {
+  assert.ok(remoteState);
+  const agent = new Y.Doc();
+  try {
+    Y.applyUpdate(agent, Uint8Array.from(Buffer.from(remoteState.update, "base64")));
+    const body = agent.getMap("document").get("body") as import("yjs").Text;
+    body.insert(body.length, suffix);
+    const update = Buffer.from(Y.encodeStateAsUpdate(agent)).toString("base64");
+    const next = applyVaultCollaboration(remoteState, current.bytes, [update]);
+    current = { bytes: next.bytes, file: openPack(next.bytes, notePath, next.state.revision).file };
+    syncedHash = null;
+    return next.state;
+  } finally { agent.destroy(); }
+};
 
 await buildLocalVault();
 const browser = await chromium.launch({ headless: true });
@@ -122,30 +136,31 @@ try {
   assert.equal(localWrites, 1);
   assert.equal(sharedPushes, 0);
   assert.deepEqual(errors, []);
-  const agent = new Y.Doc();
-  try {
-    assert.ok(remoteState);
-    Y.applyUpdate(agent, Uint8Array.from(Buffer.from(remoteState.update, "base64")));
-    const body = agent.getMap("document").get("body") as import("yjs").Text;
-    body.insert(body.length, " Agent external edit.");
-    const update = Buffer.from(Y.encodeStateAsUpdate(agent)).toString("base64");
-    const next = applyVaultCollaboration(remoteState, current.bytes, [update]);
-    remoteState = next.state;
-    current = { bytes: next.bytes, file: openPack(next.bytes, notePath, next.state.revision).file };
-    syncedHash = null;
-  } finally { agent.destroy(); }
-  await until(() => checkpointConflicts === 1, "the stale local checkpoint");
+  const firstAgentState = agentEdit(" Agent external edit.");
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-changed")));
   await page.getByText("Waiting for the updated file to sync…").waitFor();
   assert.equal(sharedOpens, 1, "A stale file must not reopen before sync acknowledges it.");
   assert.equal(await page.getByRole("button", { name: "Download recovery" }).count(), 0);
+  remoteState = firstAgentState;
   syncedHash = current.file.hash;
   await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", {
     detail: { connected: true, available: true, workspaceId },
   })), config.workspaceId);
   await until(() => sharedOpens === 2, "the clean shared session reopening");
   await page.getByText("Typed before the first sync. Agent external edit.").waitFor();
+
+  remoteState = agentEdit(" Second external edit.");
+  await until(() => checkpointConflicts === 1, "the stale local checkpoint");
+  await page.getByText("Waiting for the updated file to sync…").waitFor();
+  assert.equal(sharedOpens, 2);
+  syncedHash = current.file.hash;
+  await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", {
+    detail: { connected: true, available: true, workspaceId },
+  })), config.workspaceId);
+  await until(() => sharedOpens === 3, "the second clean shared session reopening");
+  await page.getByText("Typed before the first sync. Agent external edit. Second external edit.").waitFor();
   assert.equal(localWrites, 1); assert.equal(sharedPushes, 0);
   assert.equal(await page.getByRole("button", { name: "Download recovery" }).count(), 0);
   assert.deepEqual(errors, []);
-  console.log("New note promotion and clean external agent edit reopened after exact sync without duplicate writes or recovery.");
+  console.log("New note promotion and local-first/server-first external edits reopened after exact sync without duplicate writes or recovery.");
 } finally { await browser.close(); }

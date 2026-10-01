@@ -187,10 +187,23 @@ public actor LocalVaultSync {
         let checkpoint = try readSharedCheckpoint(itemId: itemId)
         let live = sharedSessions[itemId]
         guard checkpoint != nil || live != nil else { return false }
+        if checkpoint == nil, live?.retired == true { return false }
         let path = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
         let current = try? LocalVaultDocumentStore(root: root).readMetadata(path: path)
         guard let current, current.hash == expected, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId else {
-            if live == nil, checkpoint?.pending == false { try sharedStore.archive(itemId: itemId); return false }
+            if let checkpoint, !checkpoint.pending {
+                // The shared journal is clean: its acknowledged revision is the
+                // real common ancestor for a subsequent Finder or agent edit.
+                // The older sync baseline predates shared editing and would
+                // otherwise manufacture a conflict with the already advanced server.
+                state.baselines[itemId] = Baseline(path: checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
+                if state.sharedDownloads == nil { state.sharedDownloads = [:] }
+                state.sharedDownloads?[itemId] = true
+                try persist()
+                try sharedStore.archive(itemId: itemId)
+                sharedSessions[itemId]?.retired = true
+                return false
+            }
             _ = try sharedStore.retire(itemId: itemId, reason: "The file was changed, moved, or deleted outside shared editing. The retained journal is available for recovery.")
             sharedSessions[itemId]?.retired = true
             return false

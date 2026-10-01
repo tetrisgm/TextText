@@ -151,6 +151,45 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         XCTAssertNil(newer.checkpoint)
         XCTAssertEqual(newer.acknowledgedRevision, remote.hash)
     }
+    func testCleanSharedCheckpointBecomesBaselineForAgentEditWhileSessionIsOpen() async throws {
+        let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+
+        let originalBytes = try Data(contentsOf: root.appendingPathComponent(path))
+        let first = try changes(original, body: "First shared marker")
+        let remote = try store.write(path: path, expectedHash: original.hash, markdown: first.0, documentJSON: first.1,
+            templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
+        let remoteBytes = try Data(contentsOf: root.appendingPathComponent(path))
+        try originalBytes.write(to: root.appendingPathComponent(path), options: .atomic)
+        await transport.set(itemId: itemId, path: path, data: remoteBytes)
+
+        var target = try checkpoint(original, pending: false)
+        var journal = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any])
+        journal["revision"] = remote.hash; journal["seq"] = 1
+        target.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        let projected = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 1, acknowledgedRevision: remote.hash,
+            journalGeneration: 1, journal: target.journal, pending: false, markdown: first.0, documentJSON: first.1)
+        let agent = try changes(projected.document, body: "First shared marker\nAgent external marker")
+        let edited = try store.write(path: path, expectedHash: projected.document.hash, markdown: agent.0, documentJSON: agent.1,
+            templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
+
+        let report = try await engine.sync()
+        XCTAssertTrue(report.conflicts.isEmpty)
+        XCTAssertEqual(report.uploaded, 1)
+        XCTAssertEqual(try store.read(path: path).hash, edited.hash)
+        let uploaded = await transport.uploadedBodies()
+        XCTAssertTrue(uploaded.contains { $0.0 == itemId && $0.1 == edited.hash })
+        let idle = try await engine.sync()
+        XCTAssertEqual(idle.uploaded, 0)
+        XCTAssertTrue(idle.conflicts.isEmpty)
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let reopened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: edited.hash)
+        XCTAssertNil(reopened.checkpoint)
+    }
     func testExternalChangeKeepsRecoveryTokenBeforeFirstCheckpoint() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
