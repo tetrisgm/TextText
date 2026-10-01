@@ -53,6 +53,39 @@ function fixture() {
 }
 
 describe("web file vault transport", () => {
+  it("routes feed reads to the selected workspace with only approved fields", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const transport = createWebVaultTransport("selected-workspace", "Workspace", async (url, init) => {
+      calls.push({ url: String(url), init });
+      return Response.json({ candidates: [], entries: [] });
+    });
+    const signal = new AbortController().signal;
+    await transport.request("feedDiscover", { address: "https://example.com", workspaceId: "forged", token: "forged" }, signal);
+    await transport.request("feedRead", { feedURL: "https://example.com/feed", root: "/private" });
+    await transport.request("feedEntry", { feedURL: "https://example.com/feed", externalKey: "entry-1", workspaceId: "forged" });
+    expect(calls.map(call => call.url)).toEqual(Array(3).fill("/api/vault/selected-workspace/feeds"));
+    expect(calls[0].init?.signal).toBe(signal);
+    expect(calls.map(call => JSON.parse(String(call.init?.body)))).toEqual([
+      { action: "discover", address: "https://example.com" },
+      { action: "read", feedURL: "https://example.com/feed" },
+      { action: "entry", feedURL: "https://example.com/feed", externalKey: "entry-1" },
+    ]);
+    await expect(transport.request("feedEntry", { feedURL: "https://example.com/feed", externalKey: "" })).rejects.toThrow("Choose a feed entry");
+    transport.destroy();
+  });
+
+  it("searches bounded filenames and folder paths in the web listing", async () => {
+    const transport = createWebVaultTransport("workspace", "Workspace", async () => Response.json({
+      revision: "rev", items: [{ itemId: "one", relativePath: "Research/Feeds/Daily.textpack", revision: "a" },
+        { itemId: "two", relativePath: "Notes/Original.textpack", revision: "b" }],
+    }));
+    expect(await transport.request("search", { query: "feeds" })).toEqual({
+      items: [{ path: "Research/Feeds/Daily.textpack", title: "Daily", snippet: "Research/Feeds/Daily.textpack" }],
+      truncated: false, skippedCount: 0,
+    });
+    transport.destroy();
+  });
+
   it("forwards only collaboration fields with cancellation and stable item identity", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {

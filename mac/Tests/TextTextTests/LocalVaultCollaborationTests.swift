@@ -47,6 +47,30 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "GET")
         XCTAssertEqual(request.timeoutInterval, 35)
     }
+    func testFeedRequestsUseBoundWorkspaceAndWhitelistedBodies() throws {
+        for (method, params, expected) in [
+            ("feedDiscover", ["address": "https://example.com"], ["action": "discover", "address": "https://example.com"]),
+            ("feedRead", ["feedURL": "https://example.com/feed"], ["action": "read", "feedURL": "https://example.com/feed"]),
+            ("feedEntry", ["feedURL": "https://example.com/feed", "externalKey": "entry-1"],
+                ["action": "entry", "feedURL": "https://example.com/feed", "externalKey": "entry-1"]),
+        ] {
+            let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+                method: method, params: params)
+            XCTAssertEqual(request.url?.absoluteString, "https://texttext.app/api/vault/workspace/feeds")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: String], expected)
+        }
+        for (method, params) in [
+            ("feedDiscover", ["address": "https://example.com", "workspaceId": "forged"]),
+            ("feedRead", ["feedURL": "https://example.com/feed", "token": "forged"]),
+            ("feedEntry", ["feedURL": "https://example.com/feed", "externalKey": ""]),
+            ("feedEntry", ["feedURL": "https://example.com/feed", "externalKey": "entry", "root": "/private"]),
+        ] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+                method: method, params: params))
+        }
+    }
     func testRejectsPathInjectionUnknownParametersAndInvalidCursor() throws {
         for params: [String: Any] in [["itemId": "../private"], ["itemId": "item", "url": "https://outside.example"],
             ["itemId": "item", "waitMs": 1], ["itemId": "item", "epoch": true, "seq": 1],

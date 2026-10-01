@@ -63,6 +63,31 @@ final class LocalVaultCollaboration {
     /// Pure request builder is shared by relay and validation tests.
     nonisolated static func request(origin: URL, workspaceId: String, token: String, method: String, params: [String: Any]) throws -> URLRequest {
         _ = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId)
+        if ["feedDiscover", "feedRead", "feedEntry"].contains(method) {
+            let key = method == "feedDiscover" ? "address" : "feedURL"
+            let expected: Set<String> = method == "feedEntry" ? ["feedURL", "externalKey"] : [key]
+            guard identifier(workspaceId), Set(params.keys) == expected,
+                  let address = params[key] as? String, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  address.utf8.count <= 4096 else {
+                throw LocalVaultCollaborationError(code: "400", message: "Choose a feed address up to 4096 characters.")
+            }
+            var body: [String: String] = ["action": method == "feedDiscover" ? "discover" : method == "feedRead" ? "read" : "entry", key: address]
+            if method == "feedEntry" {
+                guard let externalKey = params["externalKey"] as? String, !externalKey.isEmpty,
+                      externalKey.utf8.count <= 2048 else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Choose a feed entry from the current list.")
+                }
+                body["externalKey"] = externalKey
+            }
+            let endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("feeds")
+            var request = URLRequest(url: endpoint, timeoutInterval: 35)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            return request
+        }
         if ["shareList", "shareInvite", "shareRole", "shareRevoke"].contains(method) {
             guard identifier(workspaceId), let scopeType = params["scopeType"] as? String,
                   ["item", "folder"].contains(scopeType), let scopeKey = params["scopeKey"] as? String,
@@ -384,7 +409,8 @@ final class LocalVaultCollaboration {
                 try Task.checkCancellation()
                 guard let context else {
                     if method == "collaborationConfig" { completion(.success(nil)); return }
-                    throw LocalVaultCollaborationError(code: "401", message: "Connect this folder to TextText to collaborate.")
+                    throw LocalVaultCollaborationError(code: "401", message: method.hasPrefix("feed")
+                        ? "Connect this folder to TextText to read feeds." : "Connect this folder to TextText to collaborate.")
                 }
                 if method == "collaborationConfig" {
                     guard Set(params.keys) == ["path"], let path = params["path"] as? String else { throw LocalVaultCollaborationError(code: "400", message: "Choose a file to collaborate on.") }
@@ -405,7 +431,7 @@ final class LocalVaultCollaboration {
                 }
                 let request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)
                 let (data, status) = try await Self.responseData(session: self.session, request: request,
-                    maxBytes: method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") ? 2 * 1024 * 1024 : 16 * 1024 * 1024)
+                    maxBytes: method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024)
                 try Task.checkCancellation()
                 let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 guard status == 200, let value else {

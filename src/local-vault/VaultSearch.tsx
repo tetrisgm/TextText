@@ -3,7 +3,7 @@ import { vaultRequest } from "./bridge";
 import { useEscapeLayer } from "./LocalKeyboard";
 
 type SearchPage = { items: { path: string; title: string; snippet: string }[]; truncated?: boolean; skippedCount?: number };
-export function VaultSearch({ onClose, onOpen }: { onClose: () => void; onOpen: (path: string) => Promise<void> }) {
+export function VaultSearch({ onClose, onOpen, namesOnly = false }: { onClose: () => void; onOpen: (path: string) => Promise<void>; namesOnly?: boolean }) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<SearchPage>({ items: [] });
   const [error, setError] = useState("");
@@ -30,7 +30,8 @@ export function VaultSearch({ onClose, onOpen }: { onClose: () => void; onOpen: 
   }, [query]);
   return <section className="vault-template-dialog vault-search" role="dialog" aria-modal="true" aria-label="Search files">
     <header><h2>Search files</h2><button onClick={onClose}>Close search</button></header>
-    <input autoFocus type="search" aria-label="Search workspace" placeholder="Search names and text" value={query} onChange={(event) => setQuery(event.target.value)} maxLength={500} />
+    <input autoFocus type="search" aria-label="Search workspace" placeholder={namesOnly ? "Search filenames and folders" : "Search names and text"} value={query} onChange={(event) => setQuery(event.target.value)} maxLength={500} />
+    {namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
     {busy && <p role="status">Searching…</p>}{error && <p role="alert">{error}</p>}
     {!busy && query.trim() && !result.items.length && !error && <p>No matching files.</p>}
     {!!result.skippedCount && <p>{result.skippedCount} files could not be searched.</p>}

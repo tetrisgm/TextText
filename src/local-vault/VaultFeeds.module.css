@@ -1,0 +1,32 @@
+.dialog { max-width: 720px; left: max(18px, calc((100vw - 720px) / 2)); right: auto; width: min(720px, calc(100vw - 36px)); }
+.header, .readerHeader, .entryHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.header h2, .readerHeader h2 { margin: 0 0 8px; }
+.header p { margin: 0 0 20px; color: var(--muted); }
+.dialog label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+.folderInput { display: block; width: 100%; margin-bottom: 18px; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; }
+.formRow { display: flex; gap: 8px; }
+.formRow input { flex: 1; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; }
+.formRow button, .candidate button, .entryHeading button { border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.formRow button:hover, .candidate button:hover, .entryHeading button:hover { background: var(--selection); }
+.candidates { margin-top: 28px; }
+.candidates h3 { font-size: 15px; margin: 0 0 10px; }
+.candidate { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+.candidate div { min-width: 0; }
+.candidate strong, .candidate span, .candidate small { display: block; overflow-wrap: anywhere; }
+.candidate strong { font-size: 15px; }
+.candidate span { margin: 5px 0; color: var(--muted); font-size: 12px; }
+.candidate small { color: var(--muted); }
+.notice { margin: 18px 0; padding: 12px 14px; background: var(--selection); border-radius: 5px; line-height: 1.5; overflow-wrap: anywhere; }
+.reader { max-width: 950px; margin: 0 auto; padding: 44px 40px 90px; }
+.readerHeader { padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.readerHeader h2 { font-size: clamp(26px, 4vw, 38px); line-height: 1.15; overflow-wrap: anywhere; }
+.readerHeader a { color: var(--tt-accent); overflow-wrap: anywhere; font-size: 13px; }
+.eyebrow { display: block; margin-bottom: 10px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.summary { margin: 22px 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.entries { list-style: none; padding: 0; margin: 0; }
+.entries li { padding: 26px 0; border-bottom: 1px solid var(--line); }
+.entryHeading h3 { margin: 0; font-size: 19px; line-height: 1.35; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 12px; margin: 8px 0; }
+.excerpt { max-width: 75ch; color: var(--ink); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.entries a { color: var(--tt-accent); font-size: 13px; }
+@media (max-width: 700px) { .reader { padding: 24px 18px 60px; } .readerHeader, .entryHeading { gap: 8px; } .formRow { flex-wrap: wrap; } .formRow button { width: 100%; } }

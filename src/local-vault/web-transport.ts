@@ -82,6 +82,32 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   };
   const transport: VaultTransport = async (method, params, signal) => {
     if (destroyed) throw new Error("This workspace has closed.");
+    if (method === "feedDiscover" || method === "feedRead" || method === "feedEntry") {
+      const field = method === "feedDiscover" ? "address" : "feedURL";
+      const address = params[field];
+      if (typeof address !== "string" || !address.trim() || address.length > 4096) throw new Error("Choose a feed address up to 4096 characters.");
+      const body: Record<string, string> = { action: method === "feedDiscover" ? "discover" : method === "feedRead" ? "read" : "entry", [field]: address };
+      if (method === "feedEntry") {
+        if (typeof params.externalKey !== "string" || !params.externalKey || params.externalKey.length > 2048) throw new Error("Choose a feed entry from the current list.");
+        body.externalKey = params.externalKey;
+      }
+      const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/feeds`, {
+        method: "POST", credentials: "same-origin", cache: "no-store", signal,
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!response.ok) throw await failure(response);
+      if (response.status === 204) throw new DOMException("Request canceled", "AbortError");
+      return response.json();
+    }
+    if (method === "search") {
+      const query = params.query;
+      if (typeof query !== "string" || query.length > 500) throw new Error("Enter a shorter search.");
+      if (!manifest) await listing();
+      const term = query.trim().toLocaleLowerCase();
+      const matches = term ? manifest!.items.filter(item => item.relativePath.toLocaleLowerCase().includes(term)) : [];
+      return { items: matches.slice(0, 100).map(item => ({ path: item.relativePath, title: item.relativePath.split("/").at(-1)?.replace(/\.textpack$/i, "") ?? item.relativePath, snippet: item.relativePath })),
+        truncated: matches.length > 100, skippedCount: 0 };
+    }
     if (method === "collaborationConfig") {
       if (!manifest) await listing();
       const item = manifest!.items.find(entry => entry.relativePath === params.path);
