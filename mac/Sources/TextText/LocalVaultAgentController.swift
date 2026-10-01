@@ -4,6 +4,18 @@ import TextTextCLICore
 import TextTextFileProviderKit
 import TextTextWorkspaceCore
 
+protocol LocalVaultAgentServer: AnyObject {
+    var onEvent: ((CodexAppServerMessage) -> Void)? { get set }
+    var onExit: ((Int32) -> Void)? { get set }
+    func start() throws
+    func stop()
+    func send(id: String, method: String, params: [String: Any]) throws
+    func notify(method: String, params: [String: Any]) throws
+    func respond(id: AnyHashable, result: [String: Any]) throws
+}
+
+extension CodexAppServerController: LocalVaultAgentServer {}
+
 /// Reuses the existing signed-in runtime, but every workspace tool reads or
 /// writes the selected folder. No hosted workspace command is involved.
 @MainActor
@@ -14,21 +26,48 @@ final class LocalVaultAgentController {
     private let root: URL
     private let files: DispatchQueue
     private let makePresencePublisher: () -> PresencePublisher
-    private var server: CodexAppServerController?
-    private var pending: [String: String] = [:]
-    private var threadID: String?
-    private var threadAccess: LocalVaultAgentAccess?
+    private let makeServer: (() throws -> any LocalVaultAgentServer)?
+    private let cancellationTimeout: TimeInterval
+    private var server: (any LocalVaultAgentServer)?
+    private struct PendingRequest {
+        let method: String
+        let taskID: String?
+        let taskInstanceID: UUID?
+    }
+    private var pending: [String: PendingRequest] = [:]
     private var disabledMCPServers: [String]?
-    private var pendingTurn: (prompt: String, access: LocalVaultAgentAccess)?
     private var accountEmail: String?
     private var busy = false
-    private var pendingProposals: [String: (requestID: AnyHashable, value: String)] = [:]
+    private struct PendingProposal {
+        let requestID: AnyHashable
+        let value: String
+        let taskID: String
+    }
+    private struct ToolRequestID: @unchecked Sendable {
+        let rawValue: AnyHashable
+    }
+    private var pendingProposals: [String: PendingProposal] = [:]
     private var loginID: String?
     private var attemptedLogin = false
-    private var fileFence = LocalVaultAgentCancellation()
     private var deadline: DispatchWorkItem?
     private var generation = UUID()
     private var phases: [String: CodexAgentMessage.Phase] = [:]
+    private struct ActiveTask {
+        let instanceID: UUID
+        let taskID: String
+        let prompt: String
+        let access: LocalVaultAgentAccess
+        let fileFence: LocalVaultAgentCancellation
+        var threadID: String?
+        var turnID: String?
+        var cancelRequested = false
+        var interruptSent = false
+    }
+    private var activeTask: ActiveTask?
+    private static let cancellationMessage = "Stopped. Any save that already finished is preserved."
+    var activeTaskIdentifiers: (taskID: String, threadID: String?, turnID: String?)? {
+        activeTask.map { ($0.taskID, $0.threadID, $0.turnID) }
+    }
     private struct ActivePresence {
         let document: String
         let actor: AgentActor
@@ -37,9 +76,14 @@ final class LocalVaultAgentController {
     private var activePresence: ActivePresence?
     private var presenceTask: Task<Void, Never>?
 
-    init(root: URL, presencePublisher: @escaping () -> PresencePublisher = { PresencePublisher() }) {
+    init(root: URL,
+         presencePublisher: @escaping () -> PresencePublisher = { PresencePublisher() },
+         serverFactory: (() throws -> any LocalVaultAgentServer)? = nil,
+         cancellationTimeout: TimeInterval = 15) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
         self.makePresencePublisher = presencePublisher
+        self.makeServer = serverFactory
+        self.cancellationTimeout = max(0.01, cancellationTimeout)
         files = DispatchQueue(label: "app.texttext.vault-agent-files", qos: .userInitiated)
     }
     deinit { deadline?.cancel(); presenceTask?.cancel(); server?.stop() }
@@ -50,11 +94,13 @@ final class LocalVaultAgentController {
         if let accountEmail { status["accountEmail"] = accountEmail }
         var event = status; event["type"] = "status"; onEvent?(event)
     }
-    private func request(_ method: String, _ params: [String: Any] = [:]) throws {
+    private func request(_ method: String, _ params: [String: Any] = [:], task: ActiveTask? = nil) throws {
         guard let server else { throw CodexAppServerError.notRunning }
         let id = UUID().uuidString
-        pending[id] = method
-        try server.send(id: id, method: method, params: params)
+        pending[id] = PendingRequest(method: method, taskID: task?.taskID,
+            taskInstanceID: task?.instanceID)
+        do { try server.send(id: id, method: method, params: params) }
+        catch { pending.removeValue(forKey: id); throw error }
     }
     private func armDeadline(seconds: Double) {
         deadline?.cancel()
@@ -71,21 +117,26 @@ final class LocalVaultAgentController {
             return
         }
         stop()
-        #if TEXTTEXT_STORE
-        let bundled = CodexEmbeddedRuntime.bundledExecutable(sandboxed: true)
-        let executable = bundled
-        #else
-        let bundled = CodexEmbeddedRuntime.bundledExecutable(sandboxed: false)
-        let executable = bundled ?? CodexRuntimeLocator(bundleURL: Bundle.main.bundleURL).executableURL
-        #endif
-        guard let executable else {
-            update("failed", message: "The installed app cannot find its agent runtime.")
-            throw CodexAppServerError.runtimeMissing
+        let runtime: any LocalVaultAgentServer
+        if let makeServer {
+            runtime = try makeServer()
+        } else {
+            #if TEXTTEXT_STORE
+            let bundled = CodexEmbeddedRuntime.bundledExecutable(sandboxed: true)
+            let executable = bundled
+            #else
+            let bundled = CodexEmbeddedRuntime.bundledExecutable(sandboxed: false)
+            let executable = bundled ?? CodexRuntimeLocator(bundleURL: Bundle.main.bundleURL).executableURL
+            #endif
+            guard let executable else {
+                update("failed", message: "The installed app cannot find its agent runtime.")
+                throw CodexAppServerError.runtimeMissing
+            }
+            var environment = ["TEXTTEXT_WORKSPACE_ROOT": root.path]
+            if bundled != nil { environment["CODEX_HOME"] = try CodexEmbeddedRuntime.profileDirectory().path }
+            runtime = CodexAppServerController(executableURL: executable,
+                environment: environment, directTextTextTools: true)
         }
-        var environment = ["TEXTTEXT_WORKSPACE_ROOT": root.path]
-        if bundled != nil { environment["CODEX_HOME"] = try CodexEmbeddedRuntime.profileDirectory().path }
-        let runtime = CodexAppServerController(executableURL: executable,
-            environment: environment, directTextTextTools: true)
         let token = generation
         runtime.onEvent = { [weak self] message in
             DispatchQueue.main.async {
@@ -107,9 +158,12 @@ final class LocalVaultAgentController {
                                    "capabilities": ["experimentalApi": true]])
     }
 
-    func send(prompt: String, path: String? = nil, customizing: Bool = false) throws {
+    func send(taskID: String, prompt: String, path: String? = nil, customizing: Bool = false) throws {
         guard server != nil, let disabledMCPServers, !busy else {
             throw VaultAgentError("Connect the agent and wait for its current reply first.")
+        }
+        guard Self.validTaskID(taskID) else {
+            throw VaultAgentError("This agent task has an invalid id.")
         }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 32_000 else { throw VaultAgentError("Enter a message of up to 32,000 characters.") }
@@ -119,24 +173,29 @@ final class LocalVaultAgentController {
         if let path {
             context += "Current document path: \(path)\nRead the actual file before making changes.\n\n"
         }
-        fileFence = LocalVaultAgentCancellation()
+        let task = ActiveTask(instanceID: UUID(), taskID: taskID,
+            prompt: context + trimmed, access: access,
+            fileFence: LocalVaultAgentCancellation())
+        activeTask = task
         busy = true; phases.removeAll(); update("working")
         beginPresence(for: access)
         armDeadline(seconds: 120)
         do {
-            let prompt = context + trimmed
-            if let threadID, threadAccess == access {
-                try startTurn(prompt: prompt, threadID: threadID)
-            } else {
-                threadID = nil; threadAccess = nil
-                pendingTurn = (prompt, access)
-                try request("thread/start", CodexAppServerRequests.threadStart(
-                    dynamicTools: CodexAppServerRequests.textTextToolNamespace(LocalVaultAgentFiles.tools(for: access)),
-                    disabledMCPServers: disabledMCPServers, workingDirectory: root.path,
-                    developerInstructions: access.developerInstructions))
-            }
+            // Every submitted task gets a private ephemeral model thread. A
+            // previous task's context and late notifications can never cross
+            // this task boundary, even when its file scope is identical.
+            try request("thread/start", CodexAppServerRequests.threadStart(
+                dynamicTools: CodexAppServerRequests.textTextToolNamespace(LocalVaultAgentFiles.tools(for: access)),
+                disabledMCPServers: disabledMCPServers, workingDirectory: root.path,
+                developerInstructions: access.developerInstructions), task: task)
         } catch {
-            endPresence(); pendingTurn = nil; busy = false; deadline?.cancel(); update("ready"); throw error
+            abandonTask(taskID: taskID, instanceID: task.instanceID); throw error
+        }
+    }
+
+    private static func validTaskID(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 128 && !value.unicodeScalars.contains {
+            $0.value < 0x20 || $0.value == 0x7f
         }
     }
 
@@ -181,9 +240,9 @@ final class LocalVaultAgentController {
         }
     }
 
-    private func startTurn(prompt: String, threadID: String) throws {
+    private func startTurn(task: ActiveTask, prompt: String, threadID: String) throws {
         try request("turn/start", ["threadId": threadID,
-            "input": [["type": "text", "text": prompt]], "approvalPolicy": "never"])
+            "input": [["type": "text", "text": prompt]], "approvalPolicy": "never"], task: task)
     }
 
     private func resolveAccess(path: String?, customizing: Bool) throws -> LocalVaultAgentAccess {
@@ -208,34 +267,128 @@ final class LocalVaultAgentController {
         return customizing ? .itemCustomization(path: path) : .item(path: path)
     }
 
-    func cancel() {
-        stop()
-        update("disconnected", message: "Stopped. A save already in progress may finish. Reconnect to send another message.")
-        onEvent?(["type": "turn-completed"])
+    func cancel(taskID: String) throws {
+        guard Self.validTaskID(taskID), var task = activeTask, task.taskID == taskID else {
+            throw VaultAgentError("No matching agent task is running.")
+        }
+        guard !task.cancelRequested else { return }
+        task.cancelRequested = true
+        task.fileFence.cancel()
+        activeTask = task
+        endPresence()
+        pendingProposals.removeAll()
+        phases.removeAll()
+
+        guard task.threadID != nil else {
+            // App Server has no thread/start cancellation. Removing the task
+            // prevents its eventual response from starting a model turn.
+            finishCancelledTask(taskID: taskID, instanceID: task.instanceID)
+            return
+        }
+        armCancellationDeadline(taskID: taskID, instanceID: task.instanceID)
+        interruptTaskIfPossible(taskID: taskID, instanceID: task.instanceID)
     }
+
     func stop() {
         endPresence()
-        fileFence.cancel()
+        activeTask?.fileFence.cancel()
         if let loginID { try? request("account/login/cancel", ["loginId": loginID]) }
         loginID = nil; attemptedLogin = false
         generation = UUID(); pendingProposals.removeAll(); deadline?.cancel(); deadline = nil
         server?.onEvent = nil; server?.onExit = nil; server?.stop(); server = nil
-        threadID = nil; threadAccess = nil; disabledMCPServers = nil; pendingTurn = nil
+        activeTask = nil; disabledMCPServers = nil
         busy = false; pending.removeAll(); phases.removeAll()
     }
+
     private func fail(_ message: String) {
-        stop(); update("failed", message: message); onEvent?(["type": "error", "message": message])
+        let taskID = activeTask?.taskID
+        stop(); update("failed", message: message)
+        if let taskID { emitTaskEvent(["type": "error", "message": message], taskID: taskID) }
+    }
+
+    private func abandonTask(taskID: String, instanceID: UUID) {
+        guard let task = activeTask, task.taskID == taskID,
+              task.instanceID == instanceID else { return }
+        task.fileFence.cancel()
+        endPresence()
+        activeTask = nil
+        busy = false
+        pendingProposals.removeAll()
+        phases.removeAll()
+        deadline?.cancel()
+        deadline = nil
+        update("ready")
+    }
+
+    private func finishTask(taskID: String, instanceID: UUID, event: [String: Any]) {
+        guard activeTask?.taskID == taskID,
+              activeTask?.instanceID == instanceID else { return }
+        abandonTask(taskID: taskID, instanceID: instanceID)
+        emitTaskEvent(event, taskID: taskID)
+    }
+
+    private func finishCancelledTask(taskID: String, instanceID: UUID) {
+        finishTask(taskID: taskID, instanceID: instanceID, event: [
+            "type": "turn-cancelled",
+            "message": Self.cancellationMessage,
+        ])
+    }
+
+    private func emitTaskEvent(_ event: [String: Any], taskID: String) {
+        var correlated = event
+        correlated["taskId"] = taskID
+        onEvent?(correlated)
+    }
+
+    private func armCancellationDeadline(taskID: String, instanceID: UUID) {
+        deadline?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let task = self.activeTask,
+                  task.taskID == taskID, task.instanceID == instanceID,
+                  task.cancelRequested else { return }
+            self.finishCancelledTask(taskID: taskID, instanceID: instanceID)
+        }
+        deadline = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + cancellationTimeout, execute: work)
+    }
+
+    private func interruptTaskIfPossible(taskID: String, instanceID: UUID) {
+        guard var task = activeTask, task.taskID == taskID, task.cancelRequested,
+              task.instanceID == instanceID,
+              !task.interruptSent, let threadID = task.threadID, let turnID = task.turnID else { return }
+        task.interruptSent = true
+        activeTask = task
+        do {
+            try request("turn/interrupt", CodexAppServerRequests.turnInterrupt(
+                threadID: threadID, turnID: turnID), task: task)
+        } catch {
+            finishCancelledTask(taskID: taskID, instanceID: instanceID)
+        }
     }
 
     private func receive(_ message: CodexAppServerMessage) {
-        if let id = message.id, message.method == nil, let method = pending.removeValue(forKey: id) {
+        if let id = message.id, message.method == nil, let pendingRequest = pending.removeValue(forKey: id) {
+            if let instanceID = pendingRequest.taskInstanceID,
+               activeTask?.instanceID != instanceID { return }
             if let error = message.errorMessage {
-                fail(CodexConnectionFailure(error).message); return
+                let detail = CodexConnectionFailure(error).message
+                if let taskID = pendingRequest.taskID {
+                    guard let instanceID = pendingRequest.taskInstanceID else { return }
+                    if activeTask?.cancelRequested == true {
+                        finishCancelledTask(taskID: taskID, instanceID: instanceID)
+                    } else {
+                        finishTask(taskID: taskID, instanceID: instanceID,
+                            event: ["type": "error", "message": detail])
+                    }
+                } else {
+                    fail(detail)
+                }
+                return
             }
             do {
-                switch method {
+                switch pendingRequest.method {
                 case "initialize":
-                    try server?.notify(method: "initialized")
+                    try server?.notify(method: "initialized", params: [:])
                     try request("account/read")
                 case "account/read":
                     guard let account = CodexAccountSummary(result: message.rawResult) else {
@@ -265,17 +418,44 @@ final class LocalVaultAgentController {
                     disabledMCPServers = disabled
                     deadline?.cancel(); update("ready")
                 case "thread/start":
+                    guard let taskID = pendingRequest.taskID,
+                          var task = activeTask, task.taskID == taskID else { return }
                     guard let thread = message.rawResult?["thread"] as? [String: Any], let id = thread["id"] as? String else {
                         throw VaultAgentError("The agent did not start a workspace chat.")
                     }
-                    guard let turn = pendingTurn else {
-                        throw VaultAgentError("The agent started a chat without a pending task.")
+                    task.threadID = id
+                    activeTask = task
+                    try startTurn(task: task, prompt: task.prompt, threadID: id)
+                case "turn/start":
+                    guard let taskID = pendingRequest.taskID,
+                          var task = activeTask, task.taskID == taskID else { return }
+                    guard let turn = message.rawResult?["turn"] as? [String: Any],
+                          let turnID = turn["id"] as? String, !turnID.isEmpty else {
+                        throw VaultAgentError("The agent did not identify the task it started.")
                     }
-                    threadID = id; threadAccess = turn.access; pendingTurn = nil
-                    try startTurn(prompt: turn.prompt, threadID: id)
+                    if let known = task.turnID, known != turnID {
+                        throw VaultAgentError("The agent returned a mismatched task id.")
+                    }
+                    task.turnID = turnID
+                    activeTask = task
+                    interruptTaskIfPossible(taskID: taskID, instanceID: task.instanceID)
+                case "turn/interrupt":
+                    break
                 default: break
                 }
-            } catch { fail(error.localizedDescription) }
+            } catch {
+                if let taskID = pendingRequest.taskID {
+                    guard let instanceID = pendingRequest.taskInstanceID else { return }
+                    if activeTask?.cancelRequested == true {
+                        finishCancelledTask(taskID: taskID, instanceID: instanceID)
+                    } else {
+                        finishTask(taskID: taskID, instanceID: instanceID,
+                            event: ["type": "error", "message": error.localizedDescription])
+                    }
+                } else {
+                    fail(error.localizedDescription)
+                }
+            }
             return
         }
         if message.method == "account/login/completed" {
@@ -288,8 +468,26 @@ final class LocalVaultAgentController {
             do { try request("account/read") } catch { fail(error.localizedDescription) }
             return
         }
-        guard busy else { return }
-        if let incoming = message.rawParams?["threadId"] as? String, incoming != threadID { return }
+
+        guard var task = taskForMessage(message) else {
+            rejectToolCall(message, reason: "This tool call belongs to an inactive agent task.")
+            return
+        }
+        if message.method == "turn/started" {
+            guard let turnID = Self.turnID(in: message), !turnID.isEmpty else { return }
+            if let known = task.turnID, known != turnID { return }
+            task.turnID = turnID
+            activeTask = task
+            interruptTaskIfPossible(taskID: task.taskID, instanceID: task.instanceID)
+            return
+        }
+        if task.cancelRequested {
+            rejectToolCall(message, reason: "This agent task was stopped before the tool could run.")
+            if message.method == "turn/completed" {
+                finishCancelledTask(taskID: task.taskID, instanceID: task.instanceID)
+            }
+            return
+        }
         if ["item/started", "item/agentMessage/delta", "item/completed", "item/tool/call"].contains(message.method ?? "") {
             armDeadline(seconds: 120)
         }
@@ -298,22 +496,55 @@ final class LocalVaultAgentController {
         } else if message.method == "item/agentMessage/delta",
                   let id = message.rawParams?["itemId"] as? String, phases[id] == .finalAnswer,
                   let text = message.rawParams?["delta"] as? String {
-            onEvent?(["type": "text-delta", "text": String(text.prefix(32_000))])
+            emitTaskEvent(["type": "text-delta", "text": String(text.prefix(32_000))], taskID: task.taskID)
         } else if message.method == "item/completed", let item = CodexAgentMessage(params: message.rawParams), item.phase == .finalAnswer {
-            onEvent?(["type": "final-text", "text": String(item.text.prefix(64_000))])
+            emitTaskEvent(["type": "final-text", "text": String(item.text.prefix(64_000))], taskID: task.taskID)
         } else if message.method == "item/tool/call", let requestID = message.jsonRPCID {
-            performTool(message, requestID: requestID)
+            performTool(message, requestID: requestID, task: task)
         } else if message.method == "turn/completed" {
-            endPresence(); busy = false; deadline?.cancel(); pendingProposals.removeAll(); phases.removeAll(); update("ready")
-            if CodexTurnOutcome(params: message.rawParams) != .completed {
-                onEvent?(["type": "error", "message": "The agent stopped before finishing. Saved file changes are preserved."])
+            switch CodexTurnOutcome(params: message.rawParams) {
+            case .completed:
+                finishTask(taskID: task.taskID, instanceID: task.instanceID,
+                    event: ["type": "turn-completed"])
+            case .failed(let detail):
+                finishTask(taskID: task.taskID, instanceID: task.instanceID,
+                    event: ["type": "error", "message":
+                    String((detail ?? "The agent stopped before finishing. Saved file changes are preserved.").prefix(2_000))])
+            case .interrupted:
+                finishCancelledTask(taskID: task.taskID, instanceID: task.instanceID)
+            case nil:
+                finishTask(taskID: task.taskID, instanceID: task.instanceID,
+                    event: ["type": "error",
+                    "message": "The agent stopped before finishing. Saved file changes are preserved."])
             }
-            onEvent?(["type": "turn-completed"])
         }
     }
 
-    func proposalResult(proposalID: String, valid: Bool, message: String? = nil) throws {
-        guard busy, let pending = pendingProposals.removeValue(forKey: proposalID) else {
+    private static func turnID(in message: CodexAppServerMessage) -> String? {
+        if let direct = message.rawParams?["turnId"] as? String { return direct }
+        return (message.rawParams?["turn"] as? [String: Any])?["id"] as? String
+    }
+
+    private func taskForMessage(_ message: CodexAppServerMessage) -> ActiveTask? {
+        guard busy, let task = activeTask, let threadID = task.threadID,
+              message.rawParams?["threadId"] as? String == threadID else { return nil }
+        if let expected = task.turnID, let incoming = Self.turnID(in: message), incoming != expected {
+            return nil
+        }
+        return task
+    }
+
+    private func rejectToolCall(_ message: CodexAppServerMessage, reason: String) {
+        guard message.method == "item/tool/call", let requestID = message.jsonRPCID else { return }
+        try? server?.respond(id: requestID,
+            result: CodexAppServerRequests.dynamicToolResult(text: reason, success: false))
+    }
+
+    func proposalResult(taskID: String, proposalID: String, valid: Bool, message: String? = nil) throws {
+        guard Self.validTaskID(taskID), busy, let task = activeTask,
+              task.taskID == taskID, !task.cancelRequested,
+              let pending = pendingProposals.removeValue(forKey: proposalID),
+              pending.taskID == taskID else {
             throw VaultAgentError("This template preview is no longer pending validation.")
         }
         let feedback = String((message ?? "The template did not pass validation. Correct the declarative template and propose it again.").prefix(4_000))
@@ -322,7 +553,7 @@ final class LocalVaultAgentController {
         armDeadline(seconds: 120)
     }
 
-    private func performTool(_ message: CodexAppServerMessage, requestID: AnyHashable) {
+    private func performTool(_ message: CodexAppServerMessage, requestID: AnyHashable, task: ActiveTask) {
         let params = message.rawParams ?? [:]
         guard params["namespace"] as? String == "texttext" else {
             try? server?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(text: "Unknown workspace tool.", success: false))
@@ -330,17 +561,22 @@ final class LocalVaultAgentController {
         }
         let tool = (params["tool"] ?? params["name"]) as? String ?? ""
         let arguments = params["arguments"] as? [String: Any] ?? [:]
-        guard let access = threadAccess else {
-            try? server?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(
-                text: "This workspace chat has no file access scope.", success: false))
-            return
-        }
-        let token = generation, root = root, fence = fileFence
-        onEvent?(["type": "tool-call", "tool": tool, "path": arguments["path"] ?? ""])
+        let token = generation, root = root, fence = task.fileFence
+        let taskID = task.taskID, taskInstanceID = task.instanceID, access = task.access
+        let toolRequestID = ToolRequestID(rawValue: requestID)
+        emitTaskEvent(["type": "tool-call", "tool": tool, "path": arguments["path"] ?? ""], taskID: taskID)
         files.async { [weak self] in
             let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, access: access, cancellation: fence) }
             DispatchQueue.main.async {
-                guard let self, self.generation == token, self.busy else { return }
+                guard let self, self.generation == token else { return }
+                guard let current = self.activeTask, current.taskID == taskID,
+                      current.instanceID == taskInstanceID,
+                      !current.cancelRequested, self.busy else {
+                    try? self.server?.respond(id: toolRequestID.rawValue,
+                        result: CodexAppServerRequests.dynamicToolResult(
+                            text: "This tool result belongs to an inactive agent task.", success: false))
+                    return
+                }
                 let text: String, success: Bool
                 switch result {
                 case .success(let value):
@@ -349,21 +585,22 @@ final class LocalVaultAgentController {
                     if tool == "propose_template", let data = value.data(using: .utf8),
                        var proposal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
                         guard self.pendingProposals.count < 4 else {
-                            try? self.server?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(
+                            try? self.server?.respond(id: toolRequestID.rawValue, result: CodexAppServerRequests.dynamicToolResult(
                                 text: "Wait for the pending template previews to finish validation before proposing another.", success: false))
                             return
                         }
                         let proposalID = UUID().uuidString
-                        self.pendingProposals[proposalID] = (requestID, value)
+                        self.pendingProposals[proposalID] = PendingProposal(
+                            requestID: toolRequestID.rawValue, value: value, taskID: taskID)
                         proposal["type"] = "template-proposal"
                         proposal["proposalId"] = proposalID
                         self.armDeadline(seconds: 120)
-                        self.onEvent?(proposal)
+                        self.emitTaskEvent(proposal, taskID: taskID)
                         return
                     }
                 case .failure(let error): text = error.localizedDescription; success = false
                 }
-                try? self.server?.respond(id: requestID,
+                try? self.server?.respond(id: toolRequestID.rawValue,
                     result: CodexAppServerRequests.dynamicToolResult(text: text, success: success))
             }
         }

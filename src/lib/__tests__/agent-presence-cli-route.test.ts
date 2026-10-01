@@ -32,7 +32,7 @@ vi.mock("@/lib/collab", () => ({
 }));
 vi.mock("@/lib/collab/agent-presence.server", () => ({
   buildAgentPresence: (...args: unknown[]) => buildAgentPresence(...args),
-  agentOwnerDisplayName: (...args: unknown[]) => agentOwnerDisplayName(...args),
+  agentOwnerDisplayName: (raw: unknown) => agentOwnerDisplayName(raw),
 }));
 
 const { POST } = await import("@/app/api/agent/presence/route");

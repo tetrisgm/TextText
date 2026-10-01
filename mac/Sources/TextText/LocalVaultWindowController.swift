@@ -72,7 +72,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     }
     deinit { watcher?.stop(); if scoped { root?.stopAccessingSecurityScopedResource() } }
 
-    func windowWillClose(_ notification: Notification) { collaboration?.cancelAll(); collaboration = nil; agent?.cancel(); agent = nil }
+    func windowWillClose(_ notification: Notification) { collaboration?.cancelAll(); collaboration = nil; agent?.stop(); agent = nil }
     func present() { NSApp.activate(ignoringOtherApps: true); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
 
     func openFile(_ url: URL) -> Bool {
@@ -256,11 +256,15 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 switch method {
                 case "agentStatus": break
                 case "agentConnect": try agent?.connect()
-                case "agentSend": try agent?.send(prompt: Self.string(params, "prompt"), path: params["path"] as? String, customizing: params["customizing"] as? Bool ?? false)
+                case "agentSend": try agent?.send(taskID: Self.string(params, "taskId"),
+                    prompt: Self.string(params, "prompt"), path: params["path"] as? String,
+                    customizing: params["customizing"] as? Bool ?? false)
                 case "agentProposalResult":
                     guard let valid = params["valid"] as? Bool else { throw VaultBridgeError("Provide the template validation result.") }
-                    try agent?.proposalResult(proposalID: Self.string(params, "proposalId"), valid: valid, message: params["message"] as? String)
-                case "agentCancel": agent?.cancel()
+                    try agent?.proposalResult(taskID: Self.string(params, "taskId"),
+                        proposalID: Self.string(params, "proposalId"), valid: valid,
+                        message: params["message"] as? String)
+                case "agentCancel": try agent?.cancel(taskID: Self.string(params, "taskId"))
                 default: throw VaultBridgeError("Unknown agent operation.")
                 }
                 reply(id, result: .success(agent?.status ?? [:]))
