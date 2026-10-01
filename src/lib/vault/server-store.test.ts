@@ -30,6 +30,18 @@ describe("directory TextPack store", () => {
     root, workspaceId, itemId, relativePath, operationId, bytes, baseRevision,
   });
 
+  it.each(["write", "move", "delete"])("checks final permission before committing a %s", async (kind) => {
+    const bytes = pack("original");
+    await writeVaultTextpack(input(root, "initial", bytes));
+    const fence = { beforeCommit: async () => { throw new Error("Permission revoked"); } };
+    const base = { root, workspaceId, itemId, operationId: "denied", basePath: relativePath, baseRevision: hash(bytes), ...fence };
+    const mutation = kind === "write" ? writeVaultTextpack({ ...input(root, "denied", pack("forbidden"), hash(bytes)), ...fence })
+      : kind === "move" ? moveVaultTextpack({ ...base, relativePath: "Forbidden.textpack" }) : deleteVaultTextpack(base);
+    await expect(mutation).rejects.toThrow("Permission revoked");
+    expect((await readVaultTextpack({ root, workspaceId, itemId }))?.bytes).toEqual(Buffer.from(bytes));
+    expect(await fs.readdir(path.join(root, workspaceId, ".texttext/pending"))).toEqual([]);
+  });
+
   it("exposes external-deletion tombstones as deleted recovery with the last retained actual bytes", async () => {
     await writeVaultTextpack(input(root, "initial", pack("initial")));
     const actual = pack("Edited directly on disk");

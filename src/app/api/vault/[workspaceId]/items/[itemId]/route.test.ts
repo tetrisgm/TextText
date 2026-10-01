@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), read: vi.fn(), preview: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
-vi.mock("@/app/api/vault/auth", () => ({ authorizeVault: mocks.auth }));
+vi.mock("@/app/api/vault/collaboration-auth", () => ({ authorizeVaultCollaboration: mocks.auth }));
 vi.mock("@/lib/store", () => ({
   readVaultTextpack: mocks.read,
   readVaultPreview: mocks.preview,
@@ -19,9 +19,9 @@ const headers = {
   "If-None-Match": "*",
 };
 
-describe("owner vault API", () => {
+describe("workspace vault API", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/tmp/test-vault");
     mocks.auth.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "user-1", actorType: "external_agent" });
   });
@@ -35,6 +35,38 @@ describe("owner vault API", () => {
     })).status).toBe(404);
     expect(mocks.read).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("allows collaborator reads but requires edit access for every mutation", async () => {
+    mocks.auth.mockImplementation(async (_request, _workspace, capability) => capability === "read"
+      ? { root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "viewer", actorType: "human" }
+      : new Response(null, { status: 403 }));
+    mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), revision: "a".repeat(64), relativePath: "Note.textpack" });
+    expect((await GET(new Request("https://texttext.test"), context())).status).toBe(200);
+    for (const [method, handler] of [["PUT", PUT], ["PATCH", PATCH], ["DELETE", DELETE]] as const) {
+      expect((await handler(new Request("https://texttext.test", { method, headers }), context())).status).toBe(403);
+    }
+    expect(mocks.write).not.toHaveBeenCalled(); expect(mocks.move).not.toHaveBeenCalled(); expect(mocks.remove).not.toHaveBeenCalled();
+  });
+
+  it("rechecks edit permission after reading an upload", async () => {
+    mocks.auth.mockResolvedValueOnce({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "editor", actorType: "human" }).mockResolvedValueOnce(new Response(null, { status: 403 }));
+    mocks.write.mockImplementationOnce(async (input) => { await input.beforeCommit(); throw new Error("Unexpected commit"); });
+    expect((await PUT(new Request("https://texttext.test", { method: "PUT", headers, body: "pack" }), context())).status).toBe(403);
+    expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal), beforeCommit: expect.any(Function) }));
+  });
+
+  it("rejects a changed actor inside move/delete commit guards and maps cancellation", async () => {
+    const guarded = { "X-TextText-Operation-Id": "operation-2", "If-Match": `"${"a".repeat(64)}"`, "X-TextText-Base-Path": "Note.textpack" };
+    for (const [method, handler, store] of [["PATCH", PATCH, mocks.move], ["DELETE", DELETE, mocks.remove]] as const) {
+      mocks.auth.mockResolvedValueOnce({ actorUserId: "initial" }).mockResolvedValueOnce({ actorUserId: "changed" });
+      store.mockImplementationOnce(async (input) => { await input.beforeCommit(); throw new Error("Unexpected commit"); });
+      const response = await handler(new Request("https://texttext.test", { method, headers: guarded, ...(method === "PATCH" ? { body: JSON.stringify({ relativePath: "Moved.textpack" }) } : {}) }), context());
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "Session changed" });
+    }
+    mocks.write.mockRejectedValueOnce(new DOMException("Aborted", "AbortError"));
+    expect((await PUT(new Request("https://texttext.test", { method: "PUT", headers, body: "pack" }), context())).status).toBe(204);
   });
 
   it("authorizes preview reads before loading any preview bytes", async () => {

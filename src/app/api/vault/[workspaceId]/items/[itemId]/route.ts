@@ -1,4 +1,4 @@
-import { authorizeVault } from "@/app/api/vault/auth";
+import { authorizeVaultCollaboration } from "@/app/api/vault/collaboration-auth";
 import { readVaultTextpack, readVaultTemplate, readVaultPreview, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultBusyError } from "@/lib/store";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
@@ -8,15 +8,25 @@ type Context = { params: Promise<{ workspaceId: string; itemId: string }> };
 const MAX_BYTES = 64 * 1024 * 1024;
 const noCache = { "Cache-Control": "no-store" };
 
-async function authorize(request: Request, context: Context) {
+async function authorize(request: Request, context: Context, capability: "read" | "edit") {
   const params = await context.params;
-  const identity = await authorizeVault(request, params.workspaceId);
+  const identity = await authorizeVaultCollaboration(request, params.workspaceId, capability);
   if (identity instanceof Response) return identity;
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(params.itemId)) return Response.json({ error: "Invalid item identifier" }, { status: 400, headers: noCache });
   return { ...identity, itemId: params.itemId };
 }
 
+function commitGuard(request: Request, context: Context, actorUserId: string) {
+  return { signal: request.signal, beforeCommit: async () => {
+    const latest = await authorize(request, context, "edit");
+    if (latest instanceof Response) throw latest;
+    if (latest.actorUserId !== actorUserId) throw Response.json({ error: "Session changed" }, { status: 403, headers: noCache });
+  } };
+}
+
 function failure(error: unknown): Response {
+  if (error instanceof Response) return error;
+  if (error instanceof Error && error.name === "AbortError") return new Response(null, { status: 204, headers: noCache });
   if (error instanceof VaultBusyError) return Response.json({ error: "Vault is busy. Retry this operation." }, {
     status: 503, headers: { ...noCache, "Retry-After": "1" },
   });
@@ -30,20 +40,26 @@ function failure(error: unknown): Response {
 }
 
 export async function GET(request: Request, context: Context) {
-  const authorized = await authorize(request, context);
+  const authorized = await authorize(request, context, "read");
   if (authorized instanceof Response) return authorized;
   try {
     if (new URL(request.url).searchParams.get("metadata") === "preview") {
       const preview = await readVaultPreview({ ...authorized, metadataOnly: new URL(request.url).searchParams.get("metadataOnly") === "1" });
+      const current = await authorize(request, context, "read");
+      if (current instanceof Response) return current;
       return preview ? Response.json(preview, { headers: noCache })
         : Response.json({ error: "Item not found" }, { status: 404, headers: noCache });
     }
     if (new URL(request.url).searchParams.get("metadata") === "template") {
       const template = await readVaultTemplate(authorized);
+      const current = await authorize(request, context, "read");
+      if (current instanceof Response) return current;
       return template ? Response.json(template, { headers: noCache })
         : Response.json({ error: "Item not found" }, { status: 404, headers: noCache });
     }
     const item = await readVaultTextpack(authorized);
+    const current = await authorize(request, context, "read");
+    if (current instanceof Response) return current;
     if (!item) return Response.json({ error: "Item not found" }, { status: 404, headers: noCache });
     return new Response(new Uint8Array(item.bytes), { headers: {
       ...noCache,
@@ -56,7 +72,7 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function PUT(request: Request, context: Context) {
-  const authorized = await authorize(request, context);
+  const authorized = await authorize(request, context, "edit");
   if (authorized instanceof Response) return authorized;
   const operationId = request.headers.get("X-TextText-Operation-Id");
   const encodedPath = request.headers.get("X-TextText-Path");
@@ -88,7 +104,9 @@ export async function PUT(request: Request, context: Context) {
       }
       chunks.push(chunk.value);
     }
-    const result = await writeVaultTextpack({ ...authorized, operationId, relativePath,
+    const current = authorized;
+    if (request.signal.aborted) return new Response(null, { status: 204, headers: noCache });
+    const result = await writeVaultTextpack({ ...current, ...commitGuard(request, context, current.actorUserId), operationId, relativePath,
       baseRevision: match ? match.slice(1, -1) : null,
       bytes: Buffer.concat(chunks, size),
     });
@@ -98,7 +116,7 @@ export async function PUT(request: Request, context: Context) {
 }
 
 async function mutateEntry(request: Request, context: Context, kind: "move" | "delete") {
-  const authorized = await authorize(request, context);
+  const authorized = await authorize(request, context, "edit");
   if (authorized instanceof Response) return authorized;
   const operationId = request.headers.get("X-TextText-Operation-Id");
   const encodedBase = request.headers.get("X-TextText-Base-Path");
@@ -110,15 +128,18 @@ async function mutateEntry(request: Request, context: Context, kind: "move" | "d
   try { basePath = decodeURIComponent(encodedBase); }
   catch { return Response.json({ error: "Invalid encoded base path" }, { status: 400, headers: noCache }); }
   try {
-    const input = { ...authorized, operationId, basePath, baseRevision: match.slice(1, -1) };
-    let result;
+    let relativePath: string | undefined;
     if (kind === "move") {
       const parsed = await readBoundedJson<{ relativePath?: unknown }>(request, 4096);
-      if ("error" in parsed || typeof parsed.value.relativePath !== "string") {
+      if ("error" in parsed || !parsed.value || typeof parsed.value.relativePath !== "string") {
         return Response.json({ error: "Send a relativePath for the move" }, { status: 400, headers: noCache });
       }
-      result = await moveVaultTextpack({ ...input, relativePath: parsed.value.relativePath });
-    } else result = await deleteVaultTextpack(input);
+      relativePath = parsed.value.relativePath;
+    }
+    const current = authorized;
+    if (request.signal.aborted) return new Response(null, { status: 204, headers: noCache });
+    const input = { ...current, ...commitGuard(request, context, current.actorUserId), operationId, basePath, baseRevision: match.slice(1, -1) };
+    const result = kind === "move" ? await moveVaultTextpack({ ...input, relativePath: relativePath! }) : await deleteVaultTextpack(input);
     return Response.json(result, { status: result.status === "conflict" ? 409 : 200, headers: noCache });
   } catch (error) { return failure(error); }
 }
