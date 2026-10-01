@@ -6,6 +6,7 @@
  *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts --preflight
  *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts --smoke
  *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts --smoke-agent
+ *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts --diagnose
  *   node --env-file=.env.local --import tsx scripts/bench-file-vault-live.ts
  *
  * Set TEXTTEXT_VAULT_ROOT to the running server's vault root if it is not the
@@ -39,7 +40,7 @@ type Item = { id: string; title: string; relativePath: string; kind: string };
 type ProcessRow = { pid: number; ppid: number; cpu: number; rssKiB: number; command: string };
 type Sample = { atMs: number; phase: string; serverRssKiB: number; browserRssKiB: number; harnessRssKiB: number; serverCpuPercent: number; browserCpuPercent: number };
 type Result = {
-  runId: string; mode: "smoke" | "benchmark"; status: "passed" | "failed"; error?: string; origin: string; vaultRoot: string;
+  runId: string; mode: "smoke" | "diagnosis" | "benchmark"; status: "passed" | "failed"; error?: string; origin: string; vaultRoot: string;
   sourceCommit: string; buildIdentity: string | null; hardware: string; ramGiB: number; os: string;
   serverListenerPid: number; serverTreeRootPid: number; fixture: { workspaceId: string; count: number; kinds: Record<string, number>; packBytes: number; directoryBytes: number; collaborators: number; memberVerified: boolean; agentMutations: number; agentVisibleMutations: number };
   conditions: string[]; coldVisibleMs: number[]; warmVisibleMs: number[];
@@ -50,6 +51,7 @@ type Result = {
   idleNetwork: { durationMs: number; total: number; mutating: number; collaborationPosts: number; methods: Record<string, number>; paths: Record<string, number> };
   samples: Sample[]; blockedExternalRequests: number; cleanup: string[];
   locatorChecks: Array<{ account: string; relativePath: string; title: string | null; ariaLabel: string | null }>;
+  diagnosis?: Record<string, unknown>;
 };
 
 function check(value: unknown, message: string): asserts value {
@@ -234,8 +236,9 @@ const firstVisibleInit = `globalThis.__name = (fn) => fn;
 
 async function main() {
   const started = performance.now();
+  const diagnosis = process.argv.includes("--diagnose");
   const agentSmoke = process.argv.includes("--smoke-agent");
-  const smoke = agentSmoke || process.argv.includes("--smoke");
+  const smoke = diagnosis || agentSmoke || process.argv.includes("--smoke");
   const seedIndices = agentSmoke ? [137] : smoke ? [0, 136] : Array.from({ length: ITEM_COUNT }, (_, index) => index);
   check(isLoopback(ORIGIN), "Only a loopback server may be benchmarked");
   const databaseUrl = process.env.DATABASE_URL;
@@ -280,7 +283,7 @@ async function main() {
   const markerPath = path.join(workspaceDirectory, ".texttext", "benchmark-owner.json");
   const outputDir = await fs.mkdtemp(path.join("/tmp", "texttext-vault-perf-"));
   const result: Result = {
-    runId: browserRunId, mode: smoke ? "smoke" : "benchmark", status: "failed", origin: ORIGIN, vaultRoot: ROOT,
+    runId: browserRunId, mode: diagnosis ? "diagnosis" : smoke ? "smoke" : "benchmark", status: "failed", origin: ORIGIN, vaultRoot: ROOT,
     sourceCommit, buildIdentity, hardware: `${machineName} ${hw[0]} / ${hw[2]}`, ramGiB: Number(hw[1]) / 2 ** 30, os: osVersion,
     serverListenerPid: listenerPid, serverTreeRootPid: serverRootPid,
     fixture: { workspaceId, count: 0, kinds: {}, packBytes: 0, directoryBytes: 0, collaborators: 0, memberVerified: false, agentMutations: 0, agentVisibleMutations: 0 },
@@ -375,6 +378,86 @@ async function main() {
     check(login.ok(), `Existing test-account sign-in returned ${login.status()}`);
     const manifest = await context.request.get(`${ORIGIN}/api/vault/${workspaceId}/items`);
     check(manifest.ok() && ((await manifest.json()) as { items: unknown[] }).items.length === seedIndices.length, "Running server does not see the disposable fixture at the configured vault root");
+    if (diagnosis) {
+      phase = "two-pack diagnosis";
+      const page = await context.newPage();
+      const events: Array<{ path: string; method: string; start: number; response?: number; finished?: number; status?: number }> = [];
+      const byRequest = new WeakMap<object, (typeof events)[number]>();
+      page.on("request", request => {
+        if (!request.url().startsWith(ORIGIN)) return;
+        if (events.length >= 200) { monitorFailure = "Diagnostic request log exceeded 200 entries"; return; }
+        const url = new URL(request.url());
+        const event = { path: url.pathname + url.search, method: request.method(), start: performance.now() };
+        events.push(event); byRequest.set(request, event);
+      });
+      page.on("response", response => {
+        const event = byRequest.get(response.request());
+        if (event) { event.response = performance.now(); event.status = response.status(); }
+      });
+      page.on("requestfinished", request => {
+        const event = byRequest.get(request);
+        if (event) event.finished = performance.now();
+      });
+      await page.goto(`${ORIGIN}/vault/${workspaceId}`, { waitUntil: "domcontentloaded", timeout: 25_000 });
+      await page.locator(".vault-overview h2").waitFor({ timeout: 20_000 });
+      const folder = (name: string) => page.locator(".vault-folder-grid button", { hasText: name }).first();
+      const tracedClick = async (label: string, locator: ReturnType<Page["locator"]>, selector: string, expected: string, contains = false) => {
+        const start = performance.now();
+        const elapsedMs = await measuredClick(page, locator, selector, expected, contains);
+        const end = performance.now();
+        return { label, elapsedMs, requests: events.filter(event => event.start >= start && event.start <= end).map(event => ({
+          path: event.path, method: event.method, status: event.status,
+          startMs: Math.round(event.start - start), responseMs: event.response === undefined ? null : Math.round(event.response - start),
+          finishedMs: event.finished === undefined ? null : Math.round(event.finished - start),
+        })) };
+      };
+      const navigation = [];
+      navigation.push(await tracedClick("Gallery folder", folder("Gallery"), ".vault-overview h2", "Gallery"));
+      const imageStart = performance.now();
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].some(image => image.complete && image.naturalWidth > 0), null, { timeout: 20_000 });
+      const galleryDecodeMs = performance.now() - imageStart;
+      navigation.push(await tracedClick("Gallery item", await checkSidebarItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
+      navigation.push(await tracedClick("All files", page.getByRole("button", { name: "All files", exact: true }), ".vault-overview h2", "Your workspace"));
+      navigation.push(await tracedClick("Notes folder", folder("Notes"), ".vault-overview h2", "Notes"));
+      navigation.push(await tracedClick("Long note item", await checkSidebarItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20_000 });
+      const target = items.find(item => item.title === "Long note")!;
+      const before = await store.readVaultCollaboration({ root: ROOT, workspaceId, itemId: target.id });
+      const current = await store.readVaultTextpack({ root: ROOT, workspaceId, itemId: target.id });
+      check(before && current, "Diagnostic note baseline missing");
+      const marker = `Synthetic external edit ${browserRunId}`;
+      const nextDocument = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
+      nextDocument.content.title = target.title; nextDocument.content.body = marker;
+      const bytes = buildTextpack(target.title, { document: nextDocument,
+        markdown: `---\ntextTextId: ${JSON.stringify(target.id)}\n---\n\n${marker}` });
+      const writeAt = performance.now();
+      const written = await store.writeVaultTextpack({ root: ROOT, workspaceId, itemId: target.id, relativePath: target.relativePath,
+        operationId: randomUUID(), baseRevision: current.revision, bytes, actorUserId: owner.id, actorType: "external_agent" });
+      check(written.status === "written", "Diagnostic direct write failed");
+      await page.waitForTimeout(5000);
+      const after = await store.readVaultCollaboration({ root: ROOT, workspaceId, itemId: target.id });
+      const visible = await page.evaluate(expected => ({
+        updated: document.querySelector(".tt-md-surface")?.textContent?.includes(expected) ?? false,
+        status: [...document.querySelectorAll('[role="status"]')].map(element => element.textContent?.trim().slice(0, 180)),
+        reopenButton: [...document.querySelectorAll("button")].some(button => button.textContent?.trim() === "Reopen file"),
+      }), marker);
+      let reopened = false;
+      if (visible.reopenButton) {
+        await page.getByRole("button", { name: "Reopen file", exact: true }).click();
+        reopened = await page.waitForFunction(expected => document.querySelector(".tt-md-surface")?.textContent?.includes(expected), marker, { timeout: 10_000 }).then(() => true, () => false);
+      }
+      result.diagnosis = { navigation, galleryDecodeMs, beforeEpoch: before.epoch, afterEpoch: after?.epoch ?? null,
+        beforeSeq: before.seq, afterSeq: after?.seq ?? null, writeStatus: written.status, visibleAfter5s: visible, reopened,
+        requestsAfterWrite: events.filter(event => event.start >= writeAt).slice(0, 30).map(event => ({
+          path: event.path, method: event.method, status: event.status,
+          startMs: Math.round(event.start - writeAt), responseMs: event.response === undefined ? null : Math.round(event.response - writeAt),
+          finishedMs: event.finished === undefined ? null : Math.round(event.finished - writeAt),
+        })) };
+      await page.close();
+      guard();
+      result.status = "passed";
+      return;
+    }
     if (smoke) {
       phase = "locator smoke";
       const page = await context.newPage();

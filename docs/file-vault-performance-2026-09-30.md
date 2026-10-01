@@ -58,6 +58,43 @@ provider operation. The separately verified real installed-app Codex edit is
 outside this benchmark. Grace opened the disposable workspace after Ada's
 rounds; both collaborator grants were used.
 
+## Focused two-pack diagnosis
+
+A disposable [two-pack trace](/tmp/texttext-vault-perf-FbFWIE/result.json)
+separated request completion from visible UI work. In the full run, the six
+item-navigation observations were Gallery 609.7/411.9/476.0 ms and Long note
+1,096.9/1,074.6/3,353.4 ms. The 3.35-second tail was a Long note open.
+Folder observations were Gallery 81.6/64.9/147.3 ms, All files return
+473.9/274.2/520.5 ms, and Notes 34.0/33.1/63.8 ms. The 520 ms tail was
+returning to All files from an open Gallery item.
+
+In the two-pack trace, Gallery item click to visible body took 567 ms: its
+TextPack GET finished at 130 ms, initial collaboration GET at 449 ms, and UI
+became visible about 118 ms later. Long note took 923 ms: TextPack GET finished
+at 410 ms, initial collaboration GET at 667 ms, and UI became visible about
+256 ms later. These final spans combine browser digest/decode, Yjs setup,
+React work, and paint; the trace cannot isolate them further. One gallery
+preview image decoded 249 ms after the folder heading. Returning to All files
+took 333 ms, including a GET of the previously open Gallery file from 56 to
+308 ms before the root heading appeared. Source inspection confirms the
+shared editor flush rereads the current file even with no pending edits. That
+read is a concrete navigation cost; removing it safely requires preserving a
+fresh revision for rename/delete actions.
+The Long note tail and All files return cost remain unresolved performance
+work; no navigation optimization is included in this source fix.
+
+The same two-pack trace made one direct audited write to the open Long note.
+The server's collaboration epoch advanced 1→2. After five seconds the web
+editor still showed the old body with a recovery notice and a **Reopen file**
+button; clicking it displayed the new text. The web collaboration client
+retired on every epoch change, including a clean journal. The native editor
+already has a clean-file refresh path. A follow-up source fix routes clean
+epoch changes through `stale-file` and automatically reopens web sessions;
+pending human edits still retire for recovery. The client suite passed 29/29
+with a new clean-epoch case. The fix has not yet been verified in a rebuilt
+production server, so the benchmark figures above remain measurements of the
+earlier build.
+
 ## Earlier stopped attempts
 
 Three full fixtures stopped at a benchmark prerequisite before the corrected
@@ -97,11 +134,12 @@ ten-second request count does not establish longer-term idle behavior.
 
 Each result records deletion of its exact test audit targets, two grants, UUID
 workspace row, and marked UUID vault subtree. An independent read-only check
-found **zero** remaining `blogs` and `collaborators` rows for all twelve
-attempt/smoke UUIDs and all twelve marked directories absent. This includes
-the passing workspace above and the three earlier full-attempt UUIDs in their
-raw results. Audit deletion was reported by the harness but not independently
-queried by item ID after cleanup. The passing JSON is 48 KiB in `/tmp`.
+found **zero** remaining `blogs` and `collaborators` rows for all thirteen
+attempt/smoke/diagnosis UUIDs and all thirteen marked directories absent;
+[the cleanup proof](/tmp/texttext-vault-perf-cleanup-proof.json) includes each
+exact workspace ID. Audit deletion was reported by the harness but not
+independently queried by item ID after cleanup. The passing JSON is 48 KiB in
+`/tmp`.
 
 Harness: [`scripts/bench-file-vault-live.ts`](../scripts/bench-file-vault-live.ts).
 Read-only `--preflight`, TypeScript `tsc --noEmit`, and scoped ESLint passed.

@@ -126,6 +126,21 @@ describe("durable file collaboration client", () => {
     }
   });
 
+  it("offers a clean server epoch replacement for reopening without retiring its journal", async () => {
+    const server = new Server(), journal = new Journal(), editor = client(server, journal);
+    await editor.start(); await vi.advanceTimersByTimeAsync(1);
+    server.state = seedVaultCollaboration(server.bytes, "item-1", 2);
+    server.wake(); await vi.advanceTimersByTimeAsync(250);
+    expect(editor.status).toBe("stale-file"); expect(editor.canEdit).toBe(false);
+    expect(editor.hasPendingChanges).toBe(false); expect(editor.recoveryJournal?.retired).toBeUndefined();
+    expect(() => editor.discardCleanJournal()).not.toThrow();
+    expect(journal.load(editor.journalKey)).toBeNull();
+    editor.destroy();
+    const reopened = client(server, journal); await reopened.start();
+    expect(reopened.status).toBe("ready"); expect(reopened.epoch).toBe(2);
+    expect(server.pushes).toHaveLength(0);
+  });
+
   it("stops requests while inactive, resumes pending work and surfaces storage failure", async () => {
     const server = new Server(), journal = new Journal(), editor = client(server, journal);
     await editor.start(); await vi.advanceTimersByTimeAsync(1);

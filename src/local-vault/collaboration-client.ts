@@ -427,7 +427,7 @@ export class FileCollaborationClient {
       if (!remote || !Number.isSafeInteger(remote.epoch) || !Number.isSafeInteger(remote.seq) || remote.seq! < 0 ||
           (remote.unchanged !== undefined && remote.unchanged !== true)) throw new Error("Invalid collaboration response.");
       if (remote.unchanged && (!requested || remote.epoch !== requested.epoch || remote.seq !== requested.seq)) throw new Error("Invalid unchanged collaboration cursor.");
-      if (remote.epoch !== this.current.epoch) { this.retire("This file changed outside the shared editor. Your document is kept for recovery."); return; }
+      if (remote.epoch !== this.current.epoch) { this.notifyExternalFileChange(); return; }
       if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
       if (remote.seq! < this.current.seq) return;
       if (this.canEdit && !remote.canEditContent) { this.retire("Editing access was removed. Your document is kept for recovery."); return; }

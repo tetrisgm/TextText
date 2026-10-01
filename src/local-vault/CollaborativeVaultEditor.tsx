@@ -269,6 +269,13 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
     void reset(false, true).finally(() => { autoResettingRef.current = false; });
   }, [status, config.localFiles, reset]);
   useEffect(() => {
+    if (status !== "stale-file" || config.localFiles || autoResettingRef.current) return;
+    // The client reaches stale-file only with a clean journal. Web workspaces
+    // already have the changed TextPack on the server, so reopen it directly.
+    autoResettingRef.current = true;
+    void reset().finally(() => { autoResettingRef.current = false; });
+  }, [status, config.localFiles, reset]);
+  useEffect(() => {
     if (!waitingForExternalSync || !config.localFiles) return;
     let stopped = false, running = false;
     const check = () => {
