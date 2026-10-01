@@ -21,7 +21,7 @@ export interface VaultLocation {
   onReceipt?: (receipt: VaultMutationReceipt) => Promise<void>;
 }
 export interface VaultWrite extends VaultLocation {
-  beforeCommit?: (relativePath: string) => Promise<void>;
+  beforeCommit?: () => Promise<void>;
   signal?: AbortSignal;
   itemId: string;
   operationId: string;
@@ -37,7 +37,7 @@ export type VaultEntryResult =
   | { status: "moved" | "deleted"; itemId: string; relativePath: string; revision: string }
   | { status: "conflict"; itemId: string; relativePath: string; revision: string | null; deleted?: true };
 export interface VaultEntryMutation extends VaultLocation {
-  beforeCommit?: (relativePath: string) => Promise<void>;
+  beforeCommit?: () => Promise<void>;
   signal?: AbortSignal;
   itemId: string; operationId: string; basePath: string; baseRevision: string;
   audit?: VaultWrite["audit"];
@@ -412,7 +412,7 @@ async function mutateVaultEntry(input: VaultEntryMutation, kind: "move" | "delet
     if (saved) {
       const receipt = JSON.parse(saved.toString()) as Receipt<VaultEntryResult>;
       if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
-      await input.beforeCommit?.(saved.result.relativePath);
+      await input.beforeCommit?.();
       input.signal?.throwIfAborted();
       await deliverReceipt(layout, receipt);
       return receipt.result;
@@ -427,7 +427,7 @@ async function mutateVaultEntry(input: VaultEntryMutation, kind: "move" | "delet
         }
       }
     }
-    await input.beforeCommit?.(input.basePath);
+    await input.beforeCommit?.();
     input.signal?.throwIfAborted();
     const pendingDir = await directory(layout.pending, input.operationId);
     const intent: EntryIntent = { kind, workspaceId: input.workspaceId, itemId: input.itemId,
@@ -478,7 +478,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     if (receipt) {
       const saved = JSON.parse(receipt.toString()) as Receipt<VaultWriteResult>;
       if (saved.requestHash !== requestHash) throw new Error("Operation id was reused with different content");
-      await input.beforeCommit?.(saved.result.relativePath);
+      await input.beforeCommit?.();
       input.signal?.throwIfAborted();
       await deliverReceipt(layout, saved);
       return saved.result;
@@ -515,7 +515,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
         }
       }
     }
-    await input.beforeCommit?.(input.relativePath);
+    await input.beforeCommit?.();
     input.signal?.throwIfAborted();
     const pendingDir = await directory(layout.pending, input.operationId);
     await atomicWrite(path.join(pendingDir, "payload.textpack"), committedBytes);
@@ -718,7 +718,7 @@ export async function leaveVaultPresence(input: VaultPresenceLocation & Pick<Vau
 export async function pushVaultCollaboration(input: VaultLocation & {
   itemId: string; operationId: string; epoch: number; updates: string[];
   audit: NonNullable<VaultWrite["audit"]>;
-  beforeCommit?: (relativePath: string) => Promise<void>;
+  beforeCommit?: () => Promise<void>;
   signal?: AbortSignal;
 }): Promise<VaultWriteResult> {
   segment(input.itemId); segment(input.operationId);
@@ -736,7 +736,7 @@ export async function pushVaultCollaboration(input: VaultLocation & {
     if (saved) {
       const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
       if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
-      await input.beforeCommit?.(receipt.result.relativePath);
+      await input.beforeCommit?.();
       input.signal?.throwIfAborted();
       await deliverReceipt(layout, receipt);
       return receipt.result;
@@ -747,7 +747,7 @@ export async function pushVaultCollaboration(input: VaultLocation & {
     if (baseline.epoch !== input.epoch) throw new VaultCollaborationEpochError(baseline.epoch);
     const next = applyVaultCollaboration(baseline, item.bytes, input.updates);
     validatePack(next.bytes, input.itemId);
-    await input.beforeCommit?.(item.relativePath);
+    await input.beforeCommit?.();
     input.signal?.throwIfAborted();
     const pendingDir = await directory(layout.pending, input.operationId);
     await atomicWrite(path.join(pendingDir, "payload.textpack"), next.bytes);

@@ -26,7 +26,6 @@ import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEdit
 import { packIdentity } from "./pack";
 import { readFolderView } from "./folder-view";
 import { VaultSearch } from "./VaultSearch";
-import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import "./style.css";
 
@@ -314,7 +313,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [captureOpen, setCaptureOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [recovery, setRecovery] = useState<{ path?: string } | null>(null);
-  const [sharing, setSharing] = useState<VaultShareScope | null>(null);
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
@@ -325,7 +323,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const folders = useMemo(() => folderPaths(tree), [tree]);
   const flushRef = useRef<() => Promise<boolean>>(async () => true);
   const registerFlush = useCallback((flush: () => Promise<boolean>, currentFile: () => VaultFile) => { flushRef.current = flush; currentFileRef.current = currentFile; }, []);
-  const webWorkspaceId = !allowFolderPicker && listing?.root.startsWith("vault:") ? listing.root.slice("vault:".length) : null;
   const refresh = useCallback(() => { void vaultRequest<VaultListing>("list").then(setListing).catch((error: Error) => setError(error.message)); }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);
   const closeRemoved = useCallback(() => {
@@ -434,7 +431,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     <main>
       {importStatus && <p role="status">{importStatus}</p>}
       {selected && <div className="vault-file-actions">
-        {webWorkspaceId && <button disabled={busy} onClick={() => setSharing({ workspaceId: webWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Share</button>}
         <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>
         <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>
         {allowFolderPicker && <button disabled={busy} onClick={() => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path: selected.path } })); }}>Customize</button>}
@@ -470,7 +466,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         const restored = await vaultRequest<VaultFile>("importPack", { title, data: file.data, folder });
         closeRemoved(); setSelected(restored); setDestinationFolder(folderForItem(restored.path)); refresh();
       }} />}
-      {sharing && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} onClose={() => setSharing(null)} />}
       {captureOpen && <CaptureDialog onClose={() => setCaptureOpen(false)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });
@@ -490,7 +485,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
         <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved} /></div>
       </DocumentBoundary> : listing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={listing} folder={destinationFolder} busy={busy}
-        onShare={webWorkspaceId ? (folder) => setSharing({ workspaceId: webWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}
         onCustomize={allowFolderPicker ? (path) => { setAssistantOpen(true); window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })); } : undefined}
         onFolder={(path) => setDestinationFolder(path)}
         onOpen={(path) => void operate(async () => { setSelected(await vaultRequest<VaultFile>("read", { path })); })}

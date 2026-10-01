@@ -108,7 +108,7 @@ export function waitVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> &
 export function pushVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; operationId: string; epoch: number; updates: string[];
   actorUserId: string; actorType: "human" | "external_agent";
-  beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
+  beforeCommit?: () => Promise<void>; signal?: AbortSignal;
 }) {
   if (!db) throw new Error(NO_DATABASE);
   return pushDirectoryCollaboration({ ...input,

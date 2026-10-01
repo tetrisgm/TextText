@@ -253,31 +253,6 @@ export const blogs = pgTable(
   ],
 );
 
-// File-vault grants are deliberately separate from collaborators. Those rows
-// refer to legacy posts/folders; a TextPack's portable id is only unique inside
-// its workspace. A folder grant also pins the server directory identity, so a
-// newly created folder at an old path cannot inherit its predecessor's access.
-export const vaultGrants = pgTable("vault_grants", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workspaceId: uuid("workspace_id").notNull().references(() => blogs.id, { onDelete: "cascade" }),
-  scopeType: text("scope_type").notNull(), // item | folder
-  scopeKey: text("scope_key").notNull(), // TextPack id | relative folder path
-  folderSignature: text("folder_signature"),
-  invitedEmail: text("invited_email").notNull(),
-  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
-  role: text("role").notNull(), // viewer | commenter | editor
-  invitedById: uuid("invited_by_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  revokedAt: timestamp("revoked_at"),
-}, (t) => [
-  check("vault_grants_scope_check", sql`${t.scopeType} in ('item', 'folder')`),
-  check("vault_grants_role_check", sql`${t.role} in ('viewer', 'commenter', 'editor')`),
-  check("vault_grants_folder_signature_check", sql`(${t.scopeType} = 'item' and ${t.folderSignature} is null) or (${t.scopeType} = 'folder' and ${t.folderSignature} is not null)`),
-  uniqueIndex("vault_grants_active_email_idx").on(t.workspaceId, t.scopeType, t.scopeKey, t.invitedEmail)
-    .where(sql`${t.revokedAt} is null`),
-  index("vault_grants_user_active_idx").on(t.userId, t.workspaceId).where(sql`${t.revokedAt} is null and ${t.userId} is not null`),
-]);
-
 // Workspace-scoped cloud AI credentials. The raw key never enters this table:
 // workspace-ai-config.server.ts encrypts it with a server secret before storage
 // and is the only module that decrypts it for a provider request.
