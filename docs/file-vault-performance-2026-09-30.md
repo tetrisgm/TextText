@@ -205,3 +205,41 @@ CPU samples averaged 0.72% for the server tree and 0% for Chromium. Browser RSS
 cannot establish a leak or its absence. The synthetic agent writes verify file
 observation, while the separate installed-app Codex run verifies a real agent
 operation. No public deployment or release was involved.
+
+## October 1 integrated latency rerun
+
+After `01cc0948` preloaded the initial collaboration state alongside the item
+GET and `7d6cecec` paused queued folder previews during an item open, the
+two-pack diagnosis changed from 405.7 to 201.4 ms for Gallery and from
+1,199.3 to 476.5 ms for the 512 KiB note. These are single observations, not
+percentile estimates. The old trace fetched a long-note preview during open;
+the new trace did not. Raw traces:
+[`before`](/tmp/texttext-vault-perf-IMFTNo/result.json) and
+[`after`](/tmp/texttext-vault-perf-IAhiHu/result.json).
+
+The same production build completed the full three-round, 240-pack fixture
+with two accounts and six observed external TextPack writes. The exact fixture
+was cleaned. Raw result: [`/tmp/texttext-vault-perf-UBOSXA/result.json`](/tmp/texttext-vault-perf-UBOSXA/result.json).
+
+| Measure | October 1 rerun |
+| --- | ---: |
+| Cold / warm first visible heading | 464.4 ms (n=1) / 457.5 ms p95 (n=2) |
+| Folder click to visible heading | 89.2 ms p95 (n=9) |
+| Item click to visible body | 1,460.4 ms p95 (n=6) |
+| Input event to two visible frames | 13.4 ms p95 (n=123) |
+| Command-K to visible search | 118.4 ms p95 (n=3); warm calls 24.1 and 19.1 ms |
+| Sampled server / Chromium process-tree peak RSS | 214.4 / 685.3 MiB |
+
+Gallery opens were 281.5–341.2 ms; long-note opens were 830.3–1,460.4 ms.
+The small sample and run-to-run variation prevent a causal claim about the
+full-run improvement. Cached item navigation still misses the 100 ms target.
+The ten-second idle window had one presence POST and zero collaboration POSTs;
+the three after-close Chromium samples were 107.7, 123.3, and 126.8 MiB.
+
+The diagnosis also exposed a Gallery Details cover preview requesting
+`/vault/assets/cover.png` and receiving 404, separate from the rendered gallery
+image. `588845e4` now resolves the preview's embedded asset only for display
+while retaining its relative value in the TextPack. An integrated production
+build and [follow-up diagnosis](/tmp/texttext-vault-perf-u5D49x/result.json)
+passed with no 404 or `assets` network request. The follow-up is a two-pack
+check; the full 240-pack run predates the preview change.
