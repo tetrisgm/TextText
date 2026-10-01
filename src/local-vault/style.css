@@ -46,3 +46,17 @@
 .vault-app .vault-other-workspaces a { display: block; padding: 8px 10px; border-radius: 5px; color: var(--ink); text-decoration: none; }
 .vault-app .vault-other-workspaces a:hover { background: var(--selection); }
 .vault-app .vault-other-workspaces a:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+
+/* Keep the editor and its fixed actions beside comments when both fit. */
+@media (min-width: 1101px) {
+  .vault-app.has-comments > main { padding-right: 420px; }
+  .vault-app.has-comments.has-assistant > main { padding-right: 80px; }
+  .vault-app.has-comments .post-top-action-bar {
+    right: 428px;
+    max-width: calc(100vw - 420px - 240px - 16px);
+  }
+}
+
+/* Dialogs opened from the editor must remain above its comments panel. */
+.vault-app .vault-template-dialog,
+.vault-app .vault-sharing-backdrop { z-index: 230; }

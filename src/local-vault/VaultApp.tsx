@@ -459,7 +459,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     window.addEventListener("texttext:vault-search", search);
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", search); };
   }, [allowFolderPicker]);
-  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}`}
+  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
     onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
     onPaste={(event) => {
