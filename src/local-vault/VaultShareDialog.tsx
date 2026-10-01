@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
+import { vaultRequest } from "./bridge";
 
 export type VaultShareScope = {
   workspaceId: string;
@@ -10,21 +11,13 @@ export type VaultShareScope = {
   label: string;
 };
 
-type Grant = { id: string; email: string; role: "viewer" | "editor"; createdAt: string };
+type Grant = { id: string; email: string; role: "viewer" | "commenter" | "editor"; createdAt: string };
 
 async function requestGrants(scope: VaultShareScope, method: "GET" | "POST" | "PATCH" | "DELETE", body?: Record<string, unknown>): Promise<Grant[]> {
-  const query = new URLSearchParams({ scopeType: scope.scopeType, scopeKey: scope.scopeKey });
-  const response = await fetch(`/api/vault/${encodeURIComponent(scope.workspaceId)}/shares?${query}`, {
-    method,
-    credentials: "same-origin",
-    cache: "no-store",
-    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scopeType: scope.scopeType, scopeKey: scope.scopeKey, ...body }) } : {}),
+  const operation = { GET: "shareList", POST: "shareInvite", PATCH: "shareRole", DELETE: "shareRevoke" }[method];
+  const payload = await vaultRequest<{ grants?: Grant[] }>(operation, {
+    scopeType: scope.scopeType, scopeKey: scope.scopeKey, ...body,
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { error?: string };
-    throw new Error(payload.error || (response.status === 403 ? "Only the workspace owner can manage access here." : "Could not update access."));
-  }
-  const payload = await response.json() as { grants?: Grant[] };
   if (!Array.isArray(payload.grants)) throw new Error("The access list could not be read.");
   return payload.grants;
 }
@@ -69,13 +62,13 @@ export function VaultShareDialog({ scope, onClose }: { scope: VaultShareScope; o
       <p className="vault-sharing-intro">People you invite can open this {scope.scopeType === "folder" ? "folder and its files" : "file"} in TextText. Editors can change its content.</p>
       <form onSubmit={invite} className="vault-sharing-invite">
         <label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" /></label>
-        <label>Access<select value={role} onChange={(event) => setRole(event.target.value as Grant["role"])}><option value="viewer">Can view</option><option value="editor">Can edit</option></select></label>
+        <label>Access<select value={role} onChange={(event) => setRole(event.target.value as Grant["role"])}><option value="viewer">Can view</option><option value="commenter">Can comment</option><option value="editor">Can edit</option></select></label>
         <button type="submit" disabled={busy || !loaded || !email.trim()}>Invite</button>
       </form>
       <h3>People with access</h3>
       {loading ? <p role="status">Loading access…</p> : !loaded ? null : grants.length ? <ul className="vault-sharing-list">{grants.map((grant) => <li key={grant.id}>
         <span>{grant.email}</span>
-        <select aria-label={`Access for ${grant.email}`} disabled={busy} value={grant.role} onChange={(event) => void mutate("PATCH", { grantId: grant.id, role: event.target.value })}><option value="viewer">Can view</option><option value="editor">Can edit</option></select>
+        <select aria-label={`Access for ${grant.email}`} disabled={busy} value={grant.role} onChange={(event) => void mutate("PATCH", { grantId: grant.id, role: event.target.value })}><option value="viewer">Can view</option><option value="commenter">Can comment</option><option value="editor">Can edit</option></select>
         {confirmRemove === grant.id ? <span className="vault-sharing-remove"><button disabled={busy} onClick={() => { setConfirmRemove(null); void mutate("DELETE", { grantId: grant.id }); }}>Remove access</button><button onClick={() => setConfirmRemove(null)}>Cancel</button></span> : <button disabled={busy} onClick={() => setConfirmRemove(grant.id)}>Remove</button>}
       </li>)}</ul> : <p>No one has been invited to this {scope.scopeType}.</p>}
       {error && <p role="alert" className="vault-sharing-error">{error} <button onClick={() => void reload()}>Retry</button></p>}

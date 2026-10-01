@@ -91,6 +91,29 @@ describe("web file vault transport", () => {
     transport.destroy();
   });
 
+  it("routes sharing through the selected workspace with only approved fields", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const transport = createWebVaultTransport("selected-workspace", "Workspace", async (url, init) => {
+      calls.push({ url: String(url), init });
+      return Response.json({ grants: [] });
+    });
+    const scope = { scopeType: "folder", scopeKey: "Research/Shared", workspaceId: "forged", root: "/private" };
+    await transport.request("shareList", scope);
+    expect(calls[0].url).toBe("/api/vault/selected-workspace/shares?scopeType=folder&scopeKey=Research%2FShared");
+    expect(calls[0].init?.method).toBe("GET");
+    await transport.request("shareInvite", { ...scope, email: "reader@example.com", role: "commenter" });
+    expect(calls[1].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ scopeType: "folder", scopeKey: "Research/Shared", email: "reader@example.com", role: "commenter" });
+    await transport.request("shareRole", { ...scope, grantId: "grant", role: "viewer", token: "forged" });
+    expect(calls[2].init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[2].init?.body))).toEqual({ scopeType: "folder", scopeKey: "Research/Shared", grantId: "grant", role: "viewer" });
+    await transport.request("shareRevoke", { ...scope, grantId: "grant" });
+    expect(calls[3].init?.method).toBe("DELETE");
+    expect(JSON.parse(String(calls[3].init?.body))).toEqual({ scopeType: "folder", scopeKey: "Research/Shared", grantId: "grant" });
+    await expect(transport.request("shareList", { scopeType: "folder", scopeKey: "" })).rejects.toThrow("Choose a file or folder");
+    transport.destroy();
+  });
+
   it("reads a retained complete pack without writing and verifies its hash", async () => {
     const seed = fixture();
     const requests: string[] = [];

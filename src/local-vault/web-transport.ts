@@ -101,6 +101,26 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (response.status === 204) throw new DOMException("Request canceled", "AbortError");
       return response.json();
     }
+    if (["shareList", "shareInvite", "shareRole", "shareRevoke"].includes(method)) {
+      const scopeType = params.scopeType;
+      const scopeKey = params.scopeKey;
+      if ((scopeType !== "item" && scopeType !== "folder") || typeof scopeKey !== "string" || !scopeKey || scopeKey.length > 512) {
+        throw new Error("Choose a file or folder to share.");
+      }
+      const verb = { shareList: "GET", shareInvite: "POST", shareRole: "PATCH", shareRevoke: "DELETE" }[method];
+      const query = new URLSearchParams({ scopeType, scopeKey });
+      const body = verb === "GET" ? null : { scopeType, scopeKey,
+        ...(verb === "POST" ? { email: params.email, role: params.role }
+          : verb === "PATCH" ? { grantId: params.grantId, role: params.role }
+            : { grantId: params.grantId }),
+      };
+      const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/shares${verb === "GET" ? `?${query}` : ""}`, {
+        method: verb, credentials: "same-origin", cache: "no-store", signal,
+        ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }
     if (["presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave"].includes(method)) {
       const itemId = String(params.itemId);
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Invalid presence item.");

@@ -63,6 +63,54 @@ final class LocalVaultCollaboration {
     /// Pure request builder is shared by relay and validation tests.
     nonisolated static func request(origin: URL, workspaceId: String, token: String, method: String, params: [String: Any]) throws -> URLRequest {
         _ = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId)
+        if ["shareList", "shareInvite", "shareRole", "shareRevoke"].contains(method) {
+            guard identifier(workspaceId), let scopeType = params["scopeType"] as? String,
+                  ["item", "folder"].contains(scopeType), let scopeKey = params["scopeKey"] as? String,
+                  !scopeKey.isEmpty, scopeKey.utf8.count <= 1000,
+                  (scopeType == "item" ? identifier(scopeKey) : !scopeKey.hasPrefix("/") &&
+                   scopeKey.split(separator: "/", omittingEmptySubsequences: false).allSatisfy({ part in
+                       !part.isEmpty && part != "." && part != ".." && !part.hasPrefix(".") &&
+                       !part.contains("\\") && !part.contains(":") &&
+                       !part.unicodeScalars.contains(where: { $0.value < 32 })
+                   })) else { throw LocalVaultCollaborationError(code: "400", message: "Choose a valid file or folder to share.") }
+            let endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("shares")
+            var request = URLRequest(url: endpoint, timeoutInterval: 15)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            if method == "shareList" {
+                guard Set(params.keys) == ["scopeType", "scopeKey"] else { throw LocalVaultCollaborationError(code: "400", message: "Invalid share request.") }
+                var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
+                components.queryItems = [URLQueryItem(name: "scopeType", value: scopeType), URLQueryItem(name: "scopeKey", value: scopeKey)]
+                request.url = components.url
+            } else {
+                let keys: Set<String> = method == "shareInvite" ? ["scopeType", "scopeKey", "email", "role"]
+                    : method == "shareRole" ? ["scopeType", "scopeKey", "grantId", "role"] : ["scopeType", "scopeKey", "grantId"]
+                guard Set(params.keys) == keys else { throw LocalVaultCollaborationError(code: "400", message: "Invalid share request.") }
+                var body: [String: String] = ["scopeType": scopeType, "scopeKey": scopeKey]
+                if method == "shareInvite" {
+                    guard let email = params["email"] as? String, email.utf8.count <= 254,
+                          email.contains("@"), !email.unicodeScalars.contains(where: { $0.value < 33 || $0.value == 127 }) else {
+                        throw LocalVaultCollaborationError(code: "400", message: "Enter a valid email address.")
+                    }
+                    body["email"] = email
+                } else {
+                    guard let grantId = params["grantId"] as? String, UUID(uuidString: grantId) != nil else {
+                        throw LocalVaultCollaborationError(code: "400", message: "Choose a share to change.")
+                    }
+                    body["grantId"] = grantId
+                }
+                if method != "shareRevoke" {
+                    guard let role = params["role"] as? String, ["viewer", "commenter", "editor"].contains(role) else {
+                        throw LocalVaultCollaborationError(code: "400", message: "Choose an access level.")
+                    }
+                    body["role"] = role
+                }
+                request.httpMethod = method == "shareInvite" ? "POST" : method == "shareRole" ? "PATCH" : "DELETE"
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+            return request
+        }
         guard let itemId = params["itemId"] as? String, identifier(itemId), identifier(workspaceId) else {
             throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration item.")
         }
@@ -134,12 +182,12 @@ final class LocalVaultCollaboration {
         return request
     }
     /// Streaming runs on the generic executor, keeping large replies off AppKit's main actor.
-    nonisolated private static func responseData(session: URLSession, request: URLRequest) async throws -> (Data, Int) {
+    nonisolated private static func responseData(session: URLSession, request: URLRequest, maxBytes: Int = 16 * 1024 * 1024) async throws -> (Data, Int) {
         let (stream, response) = try await session.bytes(for: request)
         guard let response = response as? HTTPURLResponse else { throw LocalVaultCollaborationError(code: "503", message: "Invalid collaboration response.") }
         var data = Data()
         for try await byte in stream {
-            guard data.count < 16 * 1024 * 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Collaboration response exceeds its size limit.") }
+            guard data.count < maxBytes else { throw LocalVaultCollaborationError(code: "413", message: "Workspace response exceeds its size limit.") }
             data.append(byte)
         }
         try Task.checkCancellation()
@@ -245,11 +293,12 @@ final class LocalVaultCollaboration {
                     completion(.success(configuration?.value)); return
                 }
                 let request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)
-                let (data, status) = try await Self.responseData(session: self.session, request: request)
+                let (data, status) = try await Self.responseData(session: self.session, request: request,
+                    maxBytes: method.hasPrefix("share") ? 256 * 1024 : 16 * 1024 * 1024)
                 try Task.checkCancellation()
                 let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 guard status == 200, let value else {
-                    let message = (value?["error"] as? String).map { String($0.prefix(1000)) } ?? "Collaboration request could not complete."
+                    let message = (value?["error"] as? String).map { String($0.prefix(1000)) } ?? "Workspace request could not complete."
                     throw LocalVaultCollaborationError(code: String(status), message: message)
                 }
                 completion(.success(value))

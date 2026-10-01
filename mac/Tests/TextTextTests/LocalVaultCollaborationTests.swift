@@ -91,4 +91,30 @@ final class LocalVaultCollaborationTests: XCTestCase {
                 method: "presenceLeave", params: invalid))
         }
     }
+    func testShareRequestsUseBoundWorkspaceAndOnlyApprovedFields() throws {
+        let scope: [String: Any] = ["scopeType": "folder", "scopeKey": "Research/Shared"]
+        let list = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "shareList", params: scope)
+        XCTAssertEqual(list.url?.absoluteString, "https://texttext.app/api/vault/workspace/shares?scopeType=folder&scopeKey=Research/Shared")
+        XCTAssertEqual(list.value(forHTTPHeaderField: "Authorization"), "Bearer app-token")
+        XCTAssertEqual(list.httpMethod, "GET")
+        let invite = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "shareInvite", params: scope.merging(["email": "reader@example.com", "role": "commenter"]) { _, new in new })
+        XCTAssertEqual(invite.httpMethod, "POST")
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(invite.httpBody)) as? [String: String])
+        XCTAssertEqual(body, ["scopeType": "folder", "scopeKey": "Research/Shared", "email": "reader@example.com", "role": "commenter"])
+        let grant = "0bd05f92-c562-4a78-8c0d-b5e41ca3215d"
+        let role = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "shareRole", params: scope.merging(["grantId": grant, "role": "viewer"]) { _, new in new })
+        XCTAssertEqual(role.httpMethod, "PATCH")
+        let revoke = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "shareRevoke", params: scope.merging(["grantId": grant]) { _, new in new })
+        XCTAssertEqual(revoke.httpMethod, "DELETE")
+        for invalid in [scope.merging(["url": "https://outside.example"]) { _, new in new },
+                        ["scopeType": "folder", "scopeKey": "../outside"],
+                        scope.merging(["email": "reader@example.com", "role": "owner"]) { _, new in new }] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+                method: "shareInvite", params: invalid))
+        }
+    }
 }

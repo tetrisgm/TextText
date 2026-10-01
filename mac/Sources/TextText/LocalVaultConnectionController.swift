@@ -39,7 +39,10 @@ final class LocalVaultConnectionController {
     }
     var status: [String: Any] {
         var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil, "hasConflicts": hasConflicts]
-        if let binding { value["webURL"] = binding.origin.appendingPathComponent("vault/\(binding.workspaceId)").absoluteString }
+        if let binding {
+            value["workspaceId"] = binding.workspaceId
+            value["webURL"] = binding.origin.appendingPathComponent("vault/\(binding.workspaceId)").absoluteString
+        }
         if let message { value["message"] = message }
         return value
     }
