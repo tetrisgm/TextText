@@ -40,6 +40,6 @@ The three after-close browser readings end below the first reading and show no s
 
 The p95 values are nearest-rank statistics from small samples. Folder and item metrics include Playwright dispatch, app work, readiness polling, and two animation frames. Input timing uses browser event timestamps through two frames. CPU is a sampled `ps` process-tree observation rather than continuous energy measurement.
 
-The passing harness deleted the exact test audit rows, grants, UUID workspace row, and marked UUID vault subtree. Its result records that cleanup. No public deployment, release, owner workspace, private R2 bucket, or production account was involved.
+The passing harness deleted the exact test audit rows, grants, UUID workspace row, and marked UUID vault subtree. Its result records that cleanup. The isolated PostgreSQL instance on port 55432 was stopped after the final checks. No public deployment, release, owner workspace, private R2 bucket, or production account was involved.
 
 Harness: [`scripts/bench-file-vault-live.ts`](../scripts/bench-file-vault-live.ts). Read-only preflight, TypeScript, scoped ESLint, production build, and the local browser fixture passed for this acceptance sequence.

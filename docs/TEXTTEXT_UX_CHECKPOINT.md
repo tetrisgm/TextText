@@ -65,7 +65,7 @@ See [performance receipt](file-vault-performance-2026-09-30.md) for conditions a
 
 1. Profile cached item open only if the product decision still requires the initial 100 ms target. The measured p95 is 590.9 ms; do not claim it as met.
 2. Live private R2 upload/read, backup restore, Oracle switch, public deploy/appcast, public sign-in, and production external-agent authorization remain unverified. The deleted Blob data is intentionally out of scope.
-3. Keep `/Applications/TextText.app` usable while its local server is needed. Recheck the listener before cleanup. Stop the isolated benchmark Postgres only after no verifier depends on it; never stop the normal local database.
+3. Keep `/Applications/TextText.app` usable while its local server is needed. Recheck the listener before cleanup. The isolated benchmark PostgreSQL instance on port 55432 is stopped; the normal local database remains running.
 
 ## References
 
