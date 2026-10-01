@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ authorize: vi.fn(), read: vi.fn(), wait: vi.fn(), push: vi.fn() }));
-vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.authorize, authorizeVaultItemAtPath: mocks.authorize }));
+const mocks = vi.hoisted(() => ({ authorize: vi.fn(), authorizeMetadata: vi.fn(), read: vi.fn(), wait: vi.fn(), push: vi.fn() }));
+vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.authorize, authorizeVaultItemAtPath: mocks.authorize,
+  authorizeVaultItemUsingMetadata: mocks.authorizeMetadata }));
 vi.mock("@/lib/store", () => ({ readVaultCollaboration: mocks.read, waitVaultCollaboration: mocks.wait, pushVaultCollaboration: mocks.push,
   VaultBusyError: class extends Error {}, VaultCollaborationEpochError: class extends Error { constructor(readonly epoch: number) { super("File changed"); } } }));
 import { GET, POST } from "./route";
@@ -12,9 +13,10 @@ const state = { epoch: 1, seq: 2, revision: "a".repeat(64), update: "AAA=", rela
 const post = (value: unknown) => new Request(url, { method: "POST", headers: { Origin: "https://texttext.test" }, body: JSON.stringify(value) });
 const mutation = { operationId: "operation-1", epoch: 1, updates: ["AAA="] };
 describe("file collaboration route", () => {
-  beforeEach(() => { vi.resetAllMocks(); mocks.authorize.mockResolvedValue(identity); mocks.read.mockResolvedValue(state); mocks.wait.mockResolvedValue(state); mocks.push.mockImplementation(async input => { await input.beforeCommit?.(state.relativePath); return { status: "written", revision: state.revision }; }); });
+  beforeEach(() => { vi.resetAllMocks(); mocks.authorize.mockResolvedValue(identity); mocks.authorizeMetadata.mockResolvedValue(identity); mocks.read.mockResolvedValue(state); mocks.wait.mockResolvedValue(state); mocks.push.mockImplementation(async input => { await input.beforeCommit?.(state.relativePath); return { status: "written", revision: state.revision }; }); });
   it("authorizes before reading or parsing writes", async () => {
     mocks.authorize.mockResolvedValue(new Response(null, { status: 403 }));
+    mocks.authorizeMetadata.mockResolvedValue(new Response(null, { status: 403 }));
     expect((await GET(new Request(url), context)).status).toBe(403);
     expect((await POST(post(mutation), context)).status).toBe(403);
     expect(mocks.read).not.toHaveBeenCalled(); expect(mocks.push).not.toHaveBeenCalled();
@@ -26,11 +28,18 @@ describe("file collaboration route", () => {
     const waiting = await GET(new Request(`${url}?epoch=1&seq=2&waitMs=25000`), context);
     expect(await waiting.json()).toEqual({ unchanged: true, epoch: 1, seq: 2, canEditContent: true, canComment: true });
     expect(mocks.wait).toHaveBeenCalledWith(expect.objectContaining({ itemId: "item-1", epoch: 1, seq: 2, waitMs: 25000 }));
+    expect(mocks.authorizeMetadata).toHaveBeenCalledTimes(4);
+    expect(mocks.authorize).not.toHaveBeenCalled();
   });
   it("does not expose a waited result after access is revoked", async () => {
-    mocks.authorize.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 404 }));
+    mocks.authorizeMetadata.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 404 }));
     expect((await GET(new Request(`${url}?epoch=1&seq=2&waitMs=1000`), context)).status).toBe(404);
-    expect(mocks.authorize).toHaveBeenCalledTimes(2);
+    expect(mocks.authorizeMetadata).toHaveBeenCalledTimes(2);
+  });
+  it("rejects a path move after reading collaboration state", async () => {
+    mocks.authorizeMetadata.mockResolvedValueOnce(identity)
+      .mockResolvedValueOnce({ ...identity, relativePath: "Elsewhere/Moved.textpack" });
+    expect((await GET(new Request(url), context)).status).toBe(409);
   });
   it("does not commit an upload after edit access is revoked", async () => {
     mocks.authorize.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 403 }));

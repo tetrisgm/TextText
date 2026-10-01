@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { unzipSync, zipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { readVaultTextpack, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
+import { readVaultTextpack, readVaultTextpackPath, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
 import { listVaultFolderViews, listVaultRecovery, readVaultRecovery } from "./server-store";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -123,6 +123,37 @@ describe("directory TextPack store", () => {
     expect(await readVaultTextpack({ root, workspaceId, itemId })).toEqual({
       itemId, relativePath, revision: hash(external), bytes: Buffer.from(external),
     });
+  });
+
+  it("resolves only the live path for read authorization", async () => {
+    const bytes = pack("first");
+    await writeVaultTextpack(input(root, "initial", bytes));
+    const location = { root, workspaceId, itemId };
+    expect(await readVaultTextpackPath(location)).toBe(relativePath);
+    const external = pack("edited outside TextText");
+    await fs.writeFile(path.join(root, workspaceId, relativePath), external);
+    expect(await readVaultTextpackPath(location)).toBe(relativePath);
+    expect((await readVaultTextpack(location))?.revision).toBe(hash(external));
+    await moveVaultTextpack({ ...location, operationId: "moved", basePath: relativePath,
+      relativePath: "Moved.textpack", baseRevision: hash(external) });
+    expect(await readVaultTextpackPath(location)).toBe("Moved.textpack");
+    await fs.unlink(path.join(root, workspaceId, "Moved.textpack"));
+    expect(await readVaultTextpackPath(location)).toBeNull();
+    const outside = path.join(root, "outside.textpack");
+    await fs.writeFile(outside, bytes);
+    await fs.symlink(outside, path.join(root, workspaceId, "Moved.textpack"));
+    await expect(readVaultTextpackPath(location)).rejects.toThrow("regular file");
+  });
+
+  it("fences a raw delete and restore seen by a path-only authorization", async () => {
+    const bytes = pack("first");
+    await writeVaultTextpack(input(root, "initial", bytes));
+    const location = { root, workspaceId, itemId };
+    const initial = await readVaultCollaboration(location);
+    await fs.unlink(path.join(root, workspaceId, relativePath));
+    expect(await readVaultTextpackPath(location)).toBeNull();
+    await fs.writeFile(path.join(root, workspaceId, relativePath), bytes);
+    expect((await readVaultCollaboration(location))?.epoch).toBe(initial!.epoch + 1);
   });
 
   it("preserves both complete packs on a stale revision", async () => {

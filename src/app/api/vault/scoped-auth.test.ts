@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ session: vi.fn(), token: vi.fn(), workspace: vi.fn(), item: vi.fn(), access: vi.fn(), grants: vi.fn() }));
+const mocks = vi.hoisted(() => ({ session: vi.fn(), token: vi.fn(), workspace: vi.fn(), item: vi.fn(), itemPath: vi.fn(), access: vi.fn(), grants: vi.fn() }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.session }));
 vi.mock("@/lib/api-tokens", () => ({ resolveApiToken: mocks.token }));
-vi.mock("@/lib/store", () => ({ getVaultWorkspaceIdentity: mocks.workspace, readVaultTextpack: mocks.item }));
+vi.mock("@/lib/store", () => ({ getVaultWorkspaceIdentity: mocks.workspace, readVaultTextpack: mocks.item, readVaultTextpackPath: mocks.itemPath }));
 vi.mock("@/lib/permissions", async importOriginal => ({ ...await importOriginal(), resolveWorkspaceAccess: mocks.access }));
 vi.mock("@/lib/vault/grants", async importOriginal => ({ ...await importOriginal(), activeVaultGrants: mocks.grants }));
-import { authorizeVaultItem, authorizeVaultItemAtPath } from "./scoped-auth";
+import { authorizeVaultItem, authorizeVaultItemAtPath, authorizeVaultItemUsingMetadata } from "./scoped-auth";
 
 const workspaceId = "56129da8-7467-4876-b238-46d748c2c57b", itemId = "item-one";
 const request = (method = "GET", headers: Record<string, string> = {}) => new Request(`https://texttext.test/api/vault/${workspaceId}/items/${itemId}`, { method, headers });
@@ -25,6 +25,7 @@ describe("file-vault item authorization", () => {
     mocks.access.mockResolvedValue(access);
     mocks.grants.mockResolvedValue([itemGrant]);
     mocks.item.mockResolvedValue({ itemId, relativePath: "Private/One.textpack", bytes: new Uint8Array([1]) });
+    mocks.itemPath.mockResolvedValue("Private/One.textpack");
   });
 
   it("uses workspace-qualified item identity and does not expose siblings", async () => {
@@ -42,6 +43,17 @@ describe("file-vault item authorization", () => {
     expect(status(await authorizeVaultItemAtPath(request(), workspaceId, itemId, "Reading Elsewhere/Child.textpack", "read"))).toBe(404);
     mocks.grants.mockResolvedValue([]);
     expect(status(await authorizeVaultItemAtPath(request(), workspaceId, itemId, "Reading/Child.textpack", "read"))).toBe(404);
+  });
+
+  it("authorizes a metadata-only read against the current path and fresh grants", async () => {
+    mocks.grants.mockResolvedValue([folderGrant]);
+    mocks.itemPath.mockResolvedValueOnce("Reading/Child.textpack").mockResolvedValueOnce("Private/Child.textpack");
+    expect(status(await authorizeVaultItemUsingMetadata(request(), workspaceId, itemId, "read"))).toBe(200);
+    expect(status(await authorizeVaultItemUsingMetadata(request(), workspaceId, itemId, "read"))).toBe(404);
+    expect(mocks.item).not.toHaveBeenCalled();
+    expect(mocks.itemPath).toHaveBeenCalledWith({ root: "/trusted/vault", workspaceId, itemId });
+    mocks.itemPath.mockResolvedValue(null);
+    expect(status(await authorizeVaultItemUsingMetadata(request(), workspaceId, itemId, "read"))).toBe(404);
   });
 
   it("recognizes verified app tokens for human presence without changing audit actor type", async () => {

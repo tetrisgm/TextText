@@ -3,6 +3,7 @@ import { validatedLookSource } from "./presentation/template-library";
 // must authorize the workspace and supply its trusted server root first.
 import {
   readVaultTextpack as readDirectoryTextpack,
+  readVaultTextpackPath as readDirectoryTextpackPath,
   readVaultCollaboration as readDirectoryCollaboration,
   readVaultPresence as readDirectoryPresence,
   mutateVaultItemComments as mutateDirectoryItemComments,
@@ -185,6 +186,11 @@ export function readVaultRecovery(input: Omit<VaultLocation, "onReceipt"> & { id
 export function readVaultTextpack(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
   return readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
+}
+
+export function readVaultTextpackPath(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return readDirectoryTextpackPath({ ...input, onReceipt: recordVaultReceipt });
 }
 
 export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> & { itemId: string; metadataOnly?: boolean }) {

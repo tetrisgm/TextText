@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), read: vi.fn(), preview: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
-vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.auth, authorizeVaultItemAtPath: mocks.auth }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), authMetadata: vi.fn(), read: vi.fn(), preview: vi.fn(), write: vi.fn(), move: vi.fn(), remove: vi.fn() }));
+vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.auth, authorizeVaultItemAtPath: mocks.auth,
+  authorizeVaultItemUsingMetadata: mocks.authMetadata }));
 vi.mock("@/lib/store", () => ({
   readVaultTextpack: mocks.read,
   readVaultPreview: mocks.preview,
@@ -24,10 +25,11 @@ describe("workspace vault API", () => {
     vi.resetAllMocks();
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/tmp/test-vault");
     mocks.auth.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "user-1", actorType: "external_agent", fullAccess: true, relativePath: "Notes/A note.textpack" });
+    mocks.authMetadata.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "user-1", actorType: "external_agent", fullAccess: true, relativePath: "Notes/A note.textpack" });
   });
 
   it("rejects unauthenticated reads and cross-workspace writes before file access", async () => {
-    mocks.auth.mockResolvedValueOnce(new Response(null, { status: 401 }));
+    mocks.authMetadata.mockResolvedValueOnce(new Response(null, { status: 401 }));
     expect((await GET(new Request("https://texttext.test"), context())).status).toBe(401);
     mocks.auth.mockResolvedValueOnce(new Response(null, { status: 404 }));
     expect((await PUT(new Request("https://texttext.test", { method: "PUT", headers, body: "pack" }), {
@@ -38,9 +40,8 @@ describe("workspace vault API", () => {
   });
 
   it("allows collaborator reads but requires edit access for every mutation", async () => {
-    mocks.auth.mockImplementation(async (...args) => args.at(-1) === "read"
-      ? { root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "viewer", actorType: "human", fullAccess: true, relativePath: "Note.textpack" }
-      : new Response(null, { status: 403 }));
+    mocks.authMetadata.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "viewer", actorType: "human", fullAccess: true, relativePath: "Note.textpack" });
+    mocks.auth.mockResolvedValue(new Response(null, { status: 403 }));
     mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), revision: "a".repeat(64), relativePath: "Note.textpack" });
     expect((await GET(new Request("https://texttext.test"), context())).status).toBe(200);
     for (const [method, handler] of [["PUT", PUT], ["PATCH", PATCH], ["DELETE", DELETE]] as const) {
@@ -70,7 +71,7 @@ describe("workspace vault API", () => {
   });
 
   it("authorizes preview reads before loading any preview bytes", async () => {
-    mocks.auth.mockResolvedValueOnce(new Response(null, { status: 401 }));
+    mocks.authMetadata.mockResolvedValueOnce(new Response(null, { status: 401 }));
     const request = new Request("https://texttext.test?metadata=preview");
     expect((await GET(request, context())).status).toBe(401);
     expect(mocks.preview).not.toHaveBeenCalled();
@@ -89,6 +90,18 @@ describe("workspace vault API", () => {
     expect(result.headers.get("ETag")).toBe(`"${"a".repeat(64)}"`);
     expect(result.headers.get("X-TextText-Path")).toBe(headers["X-TextText-Path"]);
     expect(result.headers.get("Cache-Control")).toBe("no-store");
+    expect(mocks.authMetadata).toHaveBeenCalledTimes(2);
+    expect(mocks.auth).not.toHaveBeenCalled();
+  });
+
+  it("rejects a moved path or revoked grant after reading bytes", async () => {
+    mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), revision: "a".repeat(64), relativePath: "Notes/A note.textpack" });
+    mocks.authMetadata.mockResolvedValueOnce({ relativePath: "Notes/A note.textpack" })
+      .mockResolvedValueOnce({ relativePath: "Elsewhere/Moved.textpack" });
+    expect((await GET(new Request("https://texttext.test"), context())).status).toBe(409);
+    mocks.authMetadata.mockResolvedValueOnce({ relativePath: "Notes/A note.textpack" })
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect((await GET(new Request("https://texttext.test"), context())).status).toBe(404);
   });
 
   it("requires a base revision and propagates authenticated actor plus raw bytes", async () => {

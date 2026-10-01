@@ -1,4 +1,4 @@
-import { authorizeVaultItem, authorizeVaultItemAtPath } from "@/app/api/vault/scoped-auth";
+import { authorizeVaultItem, authorizeVaultItemAtPath, authorizeVaultItemUsingMetadata } from "@/app/api/vault/scoped-auth";
 import { readVaultTextpack, readVaultTemplate, readVaultPreview, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultBusyError } from "@/lib/store";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
@@ -8,9 +8,9 @@ type Context = { params: Promise<{ workspaceId: string; itemId: string }> };
 const MAX_BYTES = 64 * 1024 * 1024;
 const noCache = { "Cache-Control": "no-store" };
 
-async function authorize(request: Request, context: Context, capability: "read" | "edit") {
+async function authorize(request: Request, context: Context, capability: "read" | "edit", metadataOnly = false) {
   const params = await context.params;
-  const identity = await authorizeVaultItem(request, params.workspaceId, params.itemId, capability);
+  const identity = await (metadataOnly ? authorizeVaultItemUsingMetadata : authorizeVaultItem)(request, params.workspaceId, params.itemId, capability);
   if (identity instanceof Response) return identity;
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(params.itemId)) return Response.json({ error: "Invalid item identifier" }, { status: 400, headers: noCache });
   return { ...identity, itemId: params.itemId };
@@ -44,12 +44,12 @@ function failure(error: unknown): Response {
 }
 
 export async function GET(request: Request, context: Context) {
-  const authorized = await authorize(request, context, "read");
+  const authorized = await authorize(request, context, "read", true);
   if (authorized instanceof Response) return authorized;
   try {
     if (new URL(request.url).searchParams.get("metadata") === "preview") {
       const preview = await readVaultPreview({ ...authorized, metadataOnly: new URL(request.url).searchParams.get("metadataOnly") === "1" });
-      const current = await authorize(request, context, "read");
+      const current = await authorize(request, context, "read", true);
       if (current instanceof Response) return current;
       if (current.relativePath !== authorized.relativePath) return Response.json({ error: "Item moved. Retry reading it." }, { status: 409, headers: noCache });
       return preview ? Response.json(preview, { headers: noCache })
@@ -57,14 +57,14 @@ export async function GET(request: Request, context: Context) {
     }
     if (new URL(request.url).searchParams.get("metadata") === "template") {
       const template = await readVaultTemplate(authorized);
-      const current = await authorize(request, context, "read");
+      const current = await authorize(request, context, "read", true);
       if (current instanceof Response) return current;
       if (current.relativePath !== authorized.relativePath) return Response.json({ error: "Item moved. Retry reading it." }, { status: 409, headers: noCache });
       return template ? Response.json(template, { headers: noCache })
         : Response.json({ error: "Item not found" }, { status: 404, headers: noCache });
     }
     const item = await readVaultTextpack(authorized);
-    const current = await authorize(request, context, "read");
+    const current = await authorize(request, context, "read", true);
     if (current instanceof Response) return current;
     if (current.relativePath !== item?.relativePath) return Response.json({ error: "Item moved. Retry reading it." }, { status: 409, headers: noCache });
     if (!item) return Response.json({ error: "Item not found" }, { status: 404, headers: noCache });

@@ -2,7 +2,7 @@ import path from "node:path";
 import { getCurrentUser } from "@/lib/session";
 import { resolveApiToken } from "@/lib/api-tokens";
 import { hasItemAgentScope } from "@/lib/item-agent-access";
-import { getVaultWorkspaceIdentity, readVaultTextpack } from "@/lib/store";
+import { getVaultWorkspaceIdentity, readVaultTextpack, readVaultTextpackPath } from "@/lib/store";
 import { isUuid, resolveWorkspaceAccess, type AccessUser, type ItemShareRole } from "@/lib/permissions";
 import { activeVaultGrants, roleForVaultItem, roleForVaultFolder, type ActiveVaultGrant } from "@/lib/vault/grants";
 import { validVaultItemId, validVaultTextpackPath, validVaultFolderPath } from "@/lib/vault/folder-identity";
@@ -89,6 +89,17 @@ export async function authorizeVaultItem(request: Request, workspaceId: string, 
   const item = await readVaultTextpack({ root: access.root, workspaceId, itemId });
   if (!item) return deny(404, "Item not found");
   return authorizePath(access, itemId, item.relativePath, capability);
+}
+
+/** For reads that load the live TextPack or collaboration state themselves and
+ * recheck current path and grants before returning the result. */
+export async function authorizeVaultItemUsingMetadata(request: Request, workspaceId: string, itemId: string, capability: VaultCapability) {
+  if (!validVaultItemId(itemId)) return deny(404, "Item not found");
+  const access = await authorizeVaultWorkspaceOrScoped(request, workspaceId);
+  if (access instanceof Response) return access;
+  const relativePath = await readVaultTextpackPath({ root: access.root, workspaceId, itemId });
+  if (!relativePath) return deny(404, "Item not found");
+  return authorizePath(access, itemId, relativePath, capability);
 }
 
 export function canSeeVaultItem(grants: readonly ActiveVaultGrant[], itemId: string, relativePath: string): boolean {

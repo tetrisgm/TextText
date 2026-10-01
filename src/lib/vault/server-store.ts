@@ -1045,6 +1045,23 @@ export async function readVaultTextpack(input: VaultLocation & { itemId: string 
   });
 }
 
+/** Resolve an existing item's current path without loading its TextPack. Read
+ * routes must still load the live pack and reauthorize this path afterward. */
+export async function readVaultTextpackPath(input: VaultLocation & { itemId: string }): Promise<string | null> {
+  segment(input.itemId);
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    const raw = await maybeRead(path.join(layout.items, `${input.itemId}.json`));
+    if (!raw) return null;
+    const item = JSON.parse(raw.toString()) as { relativePath: string; deleted?: boolean };
+    if (item.deleted) return null;
+    if (await fingerprint(await targetPath(layout, item.relativePath))) return item.relativePath;
+    await observeCollaborationRevision(layout, input.itemId, null);
+    return null;
+  });
+}
+
 /** Metadata-only discovery; bound work and fail explicitly rather than hide a late definition. */
 export async function listVaultFolderViews(input: VaultLocation & { folder: string }) {
   if (input.folder && (input.folder.startsWith("/") || input.folder.includes("\\") || input.folder.split("/").some((part) => !part || part.startsWith(".")))) throw new Error("Invalid folder path");

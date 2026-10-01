@@ -1,4 +1,4 @@
-import { authorizeVaultItem, authorizeVaultItemAtPath } from "@/app/api/vault/scoped-auth";
+import { authorizeVaultItem, authorizeVaultItemAtPath, authorizeVaultItemUsingMetadata } from "@/app/api/vault/scoped-auth";
 import { readVaultCollaboration, waitVaultCollaboration, pushVaultCollaboration, VaultBusyError, VaultCollaborationEpochError } from "@/lib/store";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
@@ -17,16 +17,16 @@ function failure(error: unknown) {
   if (error instanceof Error && /Invalid|incomplete|exceeds|template/i.test(error.message)) return Response.json({ error: "Invalid collaboration update or file state" }, { status: 422, headers });
   return Response.json({ error: "Collaboration is temporarily unavailable. Retry with the same operation identifier." }, { status: 503, headers });
 }
-async function authorize(request: Request, context: Context, capability: "read" | "edit") {
+async function authorize(request: Request, context: Context, capability: "read" | "edit", metadataOnly = false) {
   const params = await context.params;
-  const access = await authorizeVaultItem(request, params.workspaceId, params.itemId, capability);
+  const access = await (metadataOnly ? authorizeVaultItemUsingMetadata : authorizeVaultItem)(request, params.workspaceId, params.itemId, capability);
   if (access instanceof Response) return access;
   if (!identifier.test(params.itemId)) return Response.json({ error: "Invalid item identifier" }, { status: 400, headers });
   return { ...access, itemId: params.itemId };
 }
 export async function GET(request: Request, context: Context) {
   try {
-    const access = await authorize(request, context, "read");
+    const access = await authorize(request, context, "read", true);
     if (access instanceof Response) return access;
     const params = new URL(request.url).searchParams;
     const epoch = params.has("epoch") ? Number(params.get("epoch")) : null;
@@ -38,7 +38,7 @@ export async function GET(request: Request, context: Context) {
     }
     const state = waitMs > 0 ? await waitVaultCollaboration({ ...access, epoch: epoch!, seq: seq!, waitMs, signal: request.signal }) : await readVaultCollaboration(access);
     // Permission may have changed while the filesystem wait was in progress.
-    const current = await authorize(request, context, "read");
+    const current = await authorize(request, context, "read", true);
     if (current instanceof Response) return current;
     if (state && current.relativePath !== state.relativePath) return Response.json({ error: "Item moved. Reopen it." }, { status: 409, headers });
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
