@@ -68,7 +68,7 @@ async function main() {
     const before = await memberPage.request.get(`${origin}/api/vault/${workspaceId}/items/${itemId}`);
     check(before.status() === 404, "uninvited account cannot read the private TextPack");
     await ownerPage.goto(`${origin}/vault/${workspaceId}`, { waitUntil: "domcontentloaded" });
-    await ownerPage.locator('nav[aria-label="Workspace files"] button').filter({ hasText: title }).click();
+    await ownerPage.locator("main .vault-document-grid > button").filter({ hasText: title }).click();
     await ownerPage.getByRole("button", { name: "Share", exact: true }).click();
     await ownerPage.getByRole("textbox", { name: "Email address" }).fill(memberEmail);
     await ownerPage.getByRole("combobox", { name: "Access" }).selectOption("commenter");

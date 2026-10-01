@@ -77,6 +77,13 @@ final class DocumentCreationTests: XCTestCase {
         XCTAssertTrue(
             markdown.contains(
                 "links: [{\"href\":\"https://paper.design/docs/mcp\",\"label\":\"paper.design\"}]"))
+        let contents = try TextTextTextBundlePackage.read(from: url, in: root)
+        let snapshot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: Data(XCTUnwrap(contents.documentJSON).utf8)) as? [String: Any])
+        let content = try XCTUnwrap(snapshot["content"] as? [String: Any])
+        let fields = try XCTUnwrap(content["fields"] as? [String: Any])
+        XCTAssertEqual(fields["sourceUrl"] as? String, "https://paper.design/docs/mcp")
+        XCTAssertEqual(fields["captureStatus"] as? String, "pending")
     }
 
     func testFrontmatterIsSeparatedFromTheBody() throws {

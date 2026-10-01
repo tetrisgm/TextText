@@ -60,6 +60,47 @@ final class LocalVaultImportTests: XCTestCase {
         }
     }
 
+    func testWriteArchivesArticleMediaIdempotentlyAndPreservesOpaqueInfo() throws {
+        try fixture { root, store in
+            let snapshot = try BuiltinTextPackDocument.create(title: "Saved", body: "https://example.com", kind: "bookmark",
+                sourceURL: "https://example.com")
+            let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "https://example.com",
+                documentJSON: snapshot.documentJSON, templateJSON: snapshot.templateJSON,
+                assets: [], sourceURL: "https://example.com", in: root)
+            let infoURL = package.url.appendingPathComponent("info.json")
+            var info = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: infoURL)) as? [String: Any])
+            info["opaque"] = ["keep": true]
+            try JSONSerialization.data(withJSONObject: info).write(to: infoURL)
+            let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)
+            let imported = try store.importFile(from: packed, newPath: "Reading/Saved.textpack")
+            let bytes = Data([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4])
+            let asset = TextTextTextBundleAsset(filename: "article-hero.png", data: bytes,
+                contentType: "image/png", remoteURL: "https://cdn.example.com/hero.png")
+            let written = try store.write(path: imported.path, expectedHash: imported.hash,
+                markdown: imported.contents.markdown, documentJSON: imported.contents.documentJSON,
+                templateJSON: imported.contents.templateJSON,
+                templateAuthoringSourceJSON: imported.contents.templateAuthoringSourceJSON,
+                addedAssets: [asset])
+            XCTAssertEqual(written.contents.assets.first(where: { $0.filename == asset.filename })?.data, bytes)
+            XCTAssertEqual(written.contents.assets.first(where: { $0.filename == asset.filename })?.remoteURL, asset.remoteURL)
+
+            let retried = try store.write(path: written.path, expectedHash: written.hash,
+                markdown: written.contents.markdown, documentJSON: written.contents.documentJSON,
+                templateJSON: written.contents.templateJSON,
+                templateAuthoringSourceJSON: written.contents.templateAuthoringSourceJSON,
+                addedAssets: [asset])
+            XCTAssertEqual(retried.contents.assets.filter { $0.filename == asset.filename }.count, 1)
+            let archive = try Archive(url: store.url(for: retried.path), accessMode: .read)
+            let entry = try XCTUnwrap(archive.first { $0.path.hasSuffix("/info.json") })
+            var infoBytes = Data(); _ = try archive.extract(entry) { infoBytes.append($0) }
+            let savedInfo = try XCTUnwrap(JSONSerialization.jsonObject(with: infoBytes) as? [String: Any])
+            XCTAssertEqual((savedInfo["opaque"] as? [String: Bool])?["keep"], true)
+            let mappings = try XCTUnwrap(savedInfo["net.texttext.assets"] as? [String: [String: Any]])
+            XCTAssertEqual(mappings[asset.filename]?["url"] as? String, asset.remoteURL)
+            XCTAssertEqual(mappings[asset.filename]?["contentType"] as? String, asset.contentType)
+        }
+    }
+
     func testBundleImportPreservesOpaqueFilesAndRejectsSymlink() throws {
         try fixture { root, store in
             let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "A bundle", assets: [], sourceURL: nil, in: root)

@@ -68,6 +68,14 @@ public struct TextTextTextBundleAsset: Equatable, Sendable {
     public let data: Data
     public let contentType: String?
     public let remoteURL: String?
+
+    public init(filename: String, data: Data, contentType: String? = nil,
+                remoteURL: String? = nil) {
+        self.filename = filename
+        self.data = data
+        self.contentType = contentType
+        self.remoteURL = remoteURL
+    }
 }
 
 public struct TextTextTextBundleContents: Equatable, Sendable {

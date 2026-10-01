@@ -5,11 +5,12 @@ import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { vaultRequest } from "./bridge";
 
-export function ArticleCapture({ document, readCurrent, update, beforeCapture }: {
+export function ArticleCapture({ document, readCurrent, update, beforeCapture, onMediaPending }: {
   document: DocumentSnapshot;
   readCurrent: () => DocumentSnapshot;
   update: (transform: (current: DocumentSnapshot) => DocumentSnapshot) => void;
   beforeCapture: () => Promise<boolean>;
+  onMediaPending?: () => void;
 }) {
   const source = articleSource(document);
   const active = useRef(true), running = useRef(false), attempted = useRef(false);
@@ -29,6 +30,7 @@ export function ArticleCapture({ document, readCurrent, update, beforeCapture }:
       if (!active.current) return;
       let applied = false;
       update((current) => { const merged = applyArticleCapture(current, base!, result); applied = merged.appliedToBody; return merged.document; });
+      if (result.media?.length) onMediaPending?.();
       setNotice(applied ? "Article captured. Your original link is retained." : "Source captured separately. Your writing is unchanged.");
     } catch (error) {
       if (!active.current) return;
@@ -40,14 +42,15 @@ export function ArticleCapture({ document, readCurrent, update, beforeCapture }:
       }
       setNotice(error instanceof Error ? error.message : "Could not capture the article. Your link is saved.");
     } finally { running.current = false; if (active.current) setBusy(false); }
-  }, [beforeCapture, readCurrent, update]);
+  }, [beforeCapture, onMediaPending, readCurrent, update]);
   useEffect(() => {
     let cancelled = false;
     // New links are already durable before this component mounts. Extraction
     // runs once when opened and never polls or blocks writing.
     void Promise.resolve().then(() => {
       const current = readCurrent();
-      if (!cancelled && !attempted.current && source && !current.content.fields.captureStatus && isLinkPlaceholder(current.content.body, source)) {
+      const status = current.content.fields.captureStatus;
+      if (!cancelled && !attempted.current && source && (status === undefined || status === "pending") && isLinkPlaceholder(current.content.body, source)) {
         attempted.current = true; void capture();
       }
     });

@@ -14,6 +14,7 @@ let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
 const agentAccountEmail = "writer@example.test";
+const workspaceId = "7a32c401-f041-4bc1-bbfd-f60317797873";
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
 files.set(initial.path, initial);
 const preset = unzipSync(await readFile("presets/builtin/note.textpack"));
@@ -48,7 +49,7 @@ try {
     else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
       if (request.method === "connect") connected = true;
-      result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace" } : {}) };
+      result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace", workspaceId } : {}) };
     } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
     else if (request.method === "search") result = { items: [...files.values()].filter((file) => file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
     else if (request.method === "read" || request.method === "template") {
@@ -150,17 +151,46 @@ try {
     window.webkit = { messageHandlers: { localVault: { postMessage: (request) => { void window.nativeVaultRequest(request); } } } };
   });
   await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
-  await page.getByRole("button", { name: "Start with a template", exact: true }).click();
-  await page.getByRole("region", { name: "Ready-to-use templates" }).getByRole("button", { name: "Agent made look", exact: true }).waitFor();
-  await page.getByRole("region", { name: "Folders" }).getByRole("button", { name: /Empty/ }).click();
+  const moreActionsMenu = page.locator(".vault-context-menu-items");
+  const openMoreActions = async () => {
+    const details = page.locator("details.vault-context-menu");
+    if (!(await details.evaluate((element) => element.open))) await details.getByLabel("More actions", { exact: true }).click();
+    await moreActionsMenu.waitFor();
+  };
+  const chooseMoreAction = async (name) => {
+    await openMoreActions();
+    await moreActionsMenu.getByRole("button", { name, exact: true }).click();
+  };
+  const folderNavigation = page.getByRole("navigation", { name: "Folders", exact: true });
+  const chooseFolder = async (name) => folderNavigation.locator("summary").filter({ hasText: name }).first().click();
+  const sidebar = page.locator(".vault-sidebar");
+  assert.equal(await sidebar.getByRole("button", { name: "New note", exact: true }).count(), 0);
+  assert.equal(await sidebar.getByRole("button", { name: "New from template", exact: true }).count(), 0);
+  assert.equal(await sidebar.getByRole("button", { name: "Trash and recovery", exact: true }).count(), 0);
+  assert.equal(await page.locator("main .vault-folder-grid").count(), 0);
+  assert.equal(await folderNavigation.locator("summary").filter({ hasText: "Empty" }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "New note", exact: true }).count(), 1);
+  await page.locator("details.vault-context-menu").getByLabel("More actions", { exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await moreActionsMenu.getByRole("button", { name: "New from template", exact: true }).waitFor();
+  await moreActionsMenu.getByRole("button", { name: "Capture a link or note", exact: true }).waitFor();
+  await moreActionsMenu.getByRole("button", { name: "Import images…", exact: true }).waitFor();
+  await moreActionsMenu.getByRole("button", { name: "Import file…", exact: true }).waitFor();
+  await moreActionsMenu.getByRole("button", { name: "Trash and recovery", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await moreActionsMenu.waitFor({ state: "hidden" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "More actions");
+  await chooseMoreAction("New from template");
+  const newFromTemplate = page.getByRole("dialog", { name: "New from template", exact: true });
+  await newFromTemplate.getByRole("button", { name: "Agent made look", exact: true }).waitFor();
+  await newFromTemplate.getByRole("button", { name: "Close", exact: true }).click();
+  await chooseFolder("Empty");
   await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();
   await page.waitForFunction(() => JSON.parse(localStorage.getItem("texttext:vault-location:/test/Workspace") || "null")?.folder === "Empty");
   await page.reload();
   await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Start with a template", exact: true }).click();
   await page.getByRole("button", { name: "All files", exact: true }).click();
-  await page.getByRole("heading", { name: "Your workspace", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Hide templates", exact: true }).click();
+  await page.getByRole("heading", { name: "All files", exact: true }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-starter-overview-light.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-starter-overview-dark.png" });
@@ -172,7 +202,12 @@ try {
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace", message: "A conflicting edit was preserved." } })));
   await page.getByText("A conflicting edit was preserved.").waitFor();
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace" } })));
-  await page.getByRole("button", { name: "Notes/Offline", exact: true }).click();
+  await page.keyboard.press("Meta+k");
+  const connectedCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
+  await connectedCommands.getByRole("button", { name: "Subscribe to a feed", exact: true }).waitFor();
+  await connectedCommands.getByRole("button", { name: "Trash and recovery", exact: true }).waitFor();
+  await connectedCommands.getByRole("searchbox", { name: "Search workspace" }).fill("Offline note");
+  await connectedCommands.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
   const body = page.getByRole("textbox", { name: "Document body", exact: true });
   await body.fill("Local first line\nSecond line");
   await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
@@ -196,7 +231,7 @@ try {
   await page.getByRole("button", { name: "Agent made look", exact: true }).click();
   await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
   assert.equal(JSON.parse(files.get(initial.path).templateJSON).id, "custom.agent-look");
-  await page.getByLabel("More actions", { exact: true }).click();
+  await page.locator(".tt-editor-more").getByLabel("More actions", { exact: true }).click();
   await page.getByRole("button", { name: "Save as look", exact: true }).click();
   await page.getByRole("textbox", { name: "Name this look", exact: true }).fill("Saved local look");
   await page.getByRole("button", { name: "Save", exact: true }).first().click();
@@ -208,8 +243,7 @@ try {
   await page.keyboard.press("Escape");
   await itemCommands.waitFor({ state: "hidden" });
   let addAgent = page.getByRole("button", { name: "Add agent", exact: true });
-  await addAgent.focus();
-  await page.keyboard.press("Enter");
+  await addAgent.click();
   let agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
   await agentPanel.waitFor();
   const expectAgentTarget = async (targetPath) => {
@@ -237,8 +271,7 @@ try {
   await page.reload();
   addAgent = page.getByRole("button", { name: "Add agent", exact: true });
   await addAgent.waitFor();
-  await addAgent.focus();
-  await page.keyboard.press("Enter");
+  await addAgent.click();
   agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
   await agentPanel.waitFor();
   assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), "Read the selected file.");
@@ -298,7 +331,7 @@ try {
   // UI state-machine fixture only: genuine provider behavior is verified in the installed app.
   const beforeDesign = JSON.stringify(files.get(initial.path));
   holdAgentTurn = true;
-  await page.getByRole("button", { name: "Customize", exact: true }).click();
+  await chooseMoreAction("Customize");
   await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Propose a design");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const designPreview = page.getByRole("region", { name: "Design preview", exact: true });
@@ -338,7 +371,7 @@ try {
   await designPreview.waitFor({ state: "hidden" });
   assert.equal(JSON.parse(files.get(initial.path).templateJSON).name, "Refined design");
   assert.equal(files.get(initial.path).markdown, JSON.parse(beforeDesign).markdown);
-  await page.getByRole("button", { name: "Customize", exact: true }).click();
+  await chooseMoreAction("Customize");
   await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Propose another design");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await designPreview.getByRole("button", { name: "Cancel design", exact: true }).click();
@@ -367,7 +400,6 @@ try {
   await agentPanel.getByRole("button", { name: "Send", exact: true }).click();
   const fencedTaskId = lastAgentSend.taskId;
   await page.getByRole("button", { name: "Show folders", exact: true }).click();
-  await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Notes");
   nextCreatedPath = "Notes/Untitled 2.textpack";
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await expectAgentTarget(initial.path);
@@ -392,35 +424,36 @@ try {
     confirming: false,
   };
   const renamedWhileOpen = "Notes/Agent panel retarget 1145.textpack";
-  await page.getByRole("button", { name: "Rename or move", exact: true }).click();
+  await chooseMoreAction("Rename or move");
   await page.getByRole("textbox", { name: "New file path", exact: true }).fill(renamedWhileOpen);
   await page.getByRole("button", { name: "Save path", exact: true }).click();
   await removalStarted;
-  await page.locator(".vault-document-path").getByText(renamedWhileOpen, { exact: true }).waitFor();
+  await page.locator(`.vault-context-header h2[title="${renamedWhileOpen}"]`).waitFor();
   await expectAgentTarget(renamedWhileOpen);
   releaseRemoval();
   await removalConfirmed;
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await page.locator(".vault-document-path").getByText(renamedWhileOpen, { exact: true }).count(), 1);
+  assert.equal(await page.locator(`.vault-context-header h2[title="${renamedWhileOpen}"]`).count(), 1);
   assert.equal(await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).getByText(renamedWhileOpen, { exact: true }).count(), 1);
   assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).count(), 1);
   assert.ok(files.has(renamedWhileOpen));
   assert.ok(!files.has(createdWhileOpen));
   delayedRemoval = null;
-  await page.getByRole("button", { name: "New from template", exact: true }).click();
-  await page.getByRole("button", { name: "Agent made look", exact: true }).click();
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("button", { name: "New from template", exact: true }).click();
+  await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Agent made look", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
   const cloned = [...files.values()].at(-1);
   await expectAgentTarget(cloned.path);
   assert.equal(cloned.templateJSON, files.get("Templates/Agent look.textpack").templateJSON);
   assert.notEqual(cloned.markdown, files.get("Templates/Agent look.textpack").markdown);
-  await page.getByRole("button", { name: "Rename or move", exact: true }).click();
+  await chooseMoreAction("Rename or move");
   await page.getByRole("textbox", { name: "New file path", exact: true }).fill("Projects/Renamed.textpack");
   await page.getByRole("button", { name: "Save path", exact: true }).click();
-  await page.getByRole("button", { name: "Projects/Renamed", exact: true }).waitFor();
+  await page.locator('.vault-context-header h2[title="Projects/Renamed.textpack"]').waitFor();
   await expectAgentTarget("Projects/Renamed.textpack");
   assert.ok(files.has("Projects/Renamed.textpack"));
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await chooseMoreAction("Delete");
   await page.getByRole("group", { name: "Confirm file deletion" }).getByText("Projects/Renamed.textpack", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Delete file", exact: true }).click();
   await page.locator(".vault-overview").waitFor();
@@ -429,6 +462,11 @@ try {
   const commandDialog = page.getByRole("dialog", { name: "Search and actions", exact: true });
   await commandDialog.getByRole("button", { name: "New note", exact: true }).waitFor();
   await commandDialog.getByRole("button", { name: "Capture", exact: true }).waitFor();
+  await commandDialog.getByRole("button", { name: "New from template", exact: true }).waitFor();
+  await commandDialog.getByRole("button", { name: "Import images", exact: true }).waitFor();
+  await commandDialog.getByRole("button", { name: "Import file", exact: true }).waitFor();
+  await commandDialog.getByRole("button", { name: "Choose folder design", exact: true }).waitFor();
+  await commandDialog.getByRole("button", { name: "Trash and recovery", exact: true }).waitFor();
   await commandDialog.getByRole("button", { name: "Customize this folder", exact: true }).waitFor();
   await page.getByRole("searchbox", { name: "Search workspace" }).fill("Their conflicting version");
   await commandDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
@@ -439,7 +477,8 @@ try {
   await page.reload();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   assert.match(await body.innerText(), /Their conflicting version/);
-  await page.getByRole("button", { name: "Save a link or note", exact: true }).click();
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("button", { name: "Capture", exact: true }).click();
   await page.getByRole("textbox", { name: "Link or note", exact: true }).fill("https://example.com/capture");
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-vault-capture-light.png" });
@@ -470,7 +509,7 @@ try {
   await page.getByRole("button", { name: "Highlight selection", exact: true }).click();
   await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).fill("Keep this cited excerpt.");
   await page.getByRole("button", { name: "All files", exact: true }).click();
-  await page.getByRole("button", { name: captured.path.replace(/\.textpack$/, ""), exact: true }).click();
+  await page.locator("main .vault-document-grid > button").filter({ hasText: "example.com" }).click();
   await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).waitFor();
   assert.equal(await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).inputValue(), "Keep this cited excerpt.");
   assert.equal(JSON.parse(files.get(captured.path).documentJSON).content.fields.readerHighlights[0].quote, "readable article");
@@ -507,7 +546,10 @@ try {
   assert.deepEqual(network, []);
   assert.deepEqual(failures, []);
   await page.getByRole("button", { name: "All files", exact: true }).click();
-  await page.getByLabel("Folder for new items", { exact: true }).fill("Visuals");
+  await openMoreActions();
+  await page.getByLabel("Current folder", { exact: true }).fill("Visuals");
+  await page.keyboard.press("Escape");
+  await moreActionsMenu.waitFor({ state: "hidden" });
   const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Original.gif", mimeType: "image/gif", buffer: gif });
   await page.getByRole("status").filter({ hasText: "Imported 1 image." }).waitFor();
@@ -521,11 +563,12 @@ try {
   assert.equal(asset.width, 1);
   assert.equal(asset.height, 1);
   assert.deepEqual([...importedPacks[0]["Document.textbundle/assets/preview.png"].slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  await chooseMoreAction("Choose folder design");
   await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-contact");
   await page.locator('.vault-folder-collection img[src^="blob:"]').first().waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll('.vault-folder-collection img')].some((image) => image.naturalWidth > 0));
   await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
-  await page.getByRole("button", { name: visual.path.replace(/\.textpack$/, ""), exact: true }).click();
+  await page.locator("main .vault-document-grid > button").filter({ hasText: "Original" }).click();
   await page.locator('main img[src^="blob:"]').first().waitFor();
   assert.equal(JSON.parse(visual.documentJSON).presentation.template.id, "texttext.gallery");
   assert.deepEqual(failures, []);
@@ -538,14 +581,19 @@ try {
       document.querySelector(".vault-app").dispatchEvent(event);
     }, { gesture, data: gif.toString("base64") });
     await page.getByRole("button", { name: new RegExp(`${gesture}-`) }).first().waitFor();
-    await page.getByRole("button", { name: "Import images…", exact: true }).waitFor({ state: "visible" });
-    await page.waitForFunction(() => ![...document.querySelectorAll("button")].find((b) => b.textContent === "Import images…")?.disabled);
+    await page.keyboard.press("Meta+k");
+    await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("button", { name: "Import images", exact: true }).waitFor();
+    await page.keyboard.press("Escape");
   }
   assert.equal(importedPacks.length, 3);
   assert.deepEqual(failures, []);
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
   await page.getByRole("button", { name: "All files", exact: true }).click();
   for (let index = 0; index < 30; index++) files.set(`Large/Note ${index}.textpack`, { ...initial, path: `Large/Note ${index}.textpack` });
+  const referenceFixture = files.get("Large/Note 0.textpack");
+  const referenceDocument = JSON.parse(referenceFixture.documentJSON);
+  referenceDocument.content.fields.sourceUrl = "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/";
+  files.set(referenceFixture.path, { ...referenceFixture, documentJSON: JSON.stringify(referenceDocument) });
   await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
   await page.getByRole("navigation", { name: "File pages" }).waitFor();
   assert.equal(await page.locator(".vault-document-grid > button").count(), 24);
@@ -553,12 +601,9 @@ try {
   await page.getByText("Page 2 of 2", { exact: true }).waitFor();
   assert.ok(await page.locator(".vault-document-grid > button").count() <= 24);
   assert.deepEqual(failures, []);
-  const referenceFixture = files.get("Large/Note 0.textpack");
-  const referenceDocument = JSON.parse(referenceFixture.documentJSON);
-  referenceDocument.content.fields.sourceUrl = "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/";
-  files.set(referenceFixture.path, { ...referenceFixture, documentJSON: JSON.stringify(referenceDocument) });
-  await page.getByRole("region", { name: "Folders", exact: true }).getByRole("button", { name: /Large/ }).click();
+  await chooseFolder("Large");
   const membersBefore = JSON.stringify([...files].filter(([path]) => path.startsWith("Large/")));
+  await chooseMoreAction("Choose folder design");
   await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-reference");
   await page.getByRole("table").waitFor();
   assert.equal(files.has("Large/Folder view.textpack"), false);
@@ -574,9 +619,10 @@ try {
   await page.screenshot({ path: "/tmp/texttext-folder-reference-dark.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("button", { name: "All files", exact: true }).click();
-  await page.getByRole("region", { name: "Folders", exact: true }).getByRole("button", { name: /Large/ }).click();
+  await chooseFolder("Large");
   await page.getByRole("table").waitFor();
   assert.equal(await page.getByRole("table").getByText("Folder view", { exact: true }).count(), 0);
+  await chooseMoreAction("Choose folder design");
   await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-reading");
   await page.locator('.vault-folder-collection[data-layout="list"]').waitFor();
   await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
@@ -604,7 +650,7 @@ try {
   assert.deepEqual(failures, []);
   // Recovery preview is read-only; restoring preserves the complete retained pack.
   const liveBeforeRecovery = JSON.stringify([...files]);
-  await page.getByRole("button", { name: "Trash and recovery", exact: true }).click();
+  await chooseMoreAction("Trash and recovery");
   const recoveryDialog = page.getByRole("dialog", { name: "Trash and recovery", exact: true });
   await recoveryDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
   await recoveryDialog.getByText("First line\nSecond line", { exact: true }).waitFor();
@@ -615,7 +661,7 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await recoveryDialog.getByRole("button", { name: "Close recovery" }).click();
   assert.equal(JSON.stringify([...files]), liveBeforeRecovery);
-  await page.getByRole("button", { name: "Trash and recovery", exact: true }).click();
+  await chooseMoreAction("Trash and recovery");
   await recoveryDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
   await recoveryDialog.getByRole("button", { name: "Restore as a new file" }).click();
   await recoveryDialog.waitFor({ state: "hidden" });
@@ -623,12 +669,12 @@ try {
   assert.ok(recoveredFile);
   assert.deepEqual(importedPacks.at(-1), retainedEntries);
   assert.equal(JSON.stringify([...files].filter(([path]) => path !== recoveredFile.path)), liveBeforeRecovery);
-  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  await chooseMoreAction("Version history");
   const versions = page.getByRole("dialog", { name: "Version history", exact: true });
   await versions.getByText("Saved revision", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
   await versions.waitFor({ state: "hidden" });
-  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  await chooseMoreAction("Version history");
   await versions.waitFor();
   await versions.getByRole("button", { name: "Close recovery" }).click();
   await versions.waitFor({ state: "hidden" });
@@ -642,7 +688,10 @@ try {
   await page.keyboard.insertText("Typing starts in the new note.");
   await page.getByRole("button", { name: "All files", exact: true }).click();
   assert.match(files.get(newNotePath).markdown, /Typing starts in the new note\./);
-  await page.getByRole("button", { name: "Notes/Offline", exact: true }).click();
+  await page.keyboard.press("Meta+k");
+  const reopenCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
+  await reopenCommands.getByRole("searchbox", { name: "Search workspace" }).fill("Their conflicting version");
+  await reopenCommands.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Document body");
   const closeAssistant = page.getByRole("button", { name: "Close assistant" });
@@ -660,6 +709,23 @@ try {
   assert.ok(narrowTitle.height >= narrowTitle.scrollHeight - 1, "narrow title fits without clipping");
   await page.screenshot({ path: "/tmp/texttext-narrow-note-light.png" });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  const narrowHeader = await page.locator(".vault-context-header").evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { left: box.left, right: box.right, width: box.width, scrollWidth: element.scrollWidth };
+  });
+  assert.deepEqual(narrowHeader, { left: 0, right: 390, width: 390, scrollWidth: 390 });
+  const contextMore = page.locator("details.vault-context-menu").getByLabel("More actions", { exact: true });
+  await contextMore.focus();
+  await page.keyboard.press("Enter");
+  const narrowMenu = await moreActionsMenu.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+  });
+  assert.ok(narrowMenu.left >= 0 && narrowMenu.right <= 390 && narrowMenu.top >= 0 && narrowMenu.bottom <= 780, JSON.stringify(narrowMenu));
+  await page.screenshot({ path: "/tmp/texttext-quiet-shell-narrow-dark.png" });
+  await page.keyboard.press("Escape");
+  await moreActionsMenu.waitFor({ state: "hidden" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "More actions");
   await page.screenshot({ path: "/tmp/texttext-narrow-note-dark.png" });
   await page.getByRole("button", { name: "Show folders" }).click();
   assert.equal(await page.locator(".vault-sidebar").isVisible(), true);
@@ -676,6 +742,7 @@ try {
   console.log("Recovery preview/cancel, full pack restore as copy, and version history passed.");
   console.log("Bounded folder previews and pagination passed.");
   console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");
+  console.log("Quiet shell passed: one folder tree, one primary create action, contextual actions, Command-K, and narrow keyboard menu.");
   console.log("Narrow folder drawer, full-width editor, remembered collapse, keyboard escape and reduced-motion render passed.");
   console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
 } finally { await browser.close(); }

@@ -372,6 +372,8 @@ export function MarkdownSurface({
   onSelection,
   surfaceRef,
   resolveSelection,
+  onPasteImages,
+  disabled = false,
 }: {
   value: string;
   placeholder: string;
@@ -381,6 +383,8 @@ export function MarkdownSurface({
   onSelection: (anchor: number, head: number) => void;
   surfaceRef?: React.RefObject<HTMLDivElement | null>;
   resolveSelection?: () => { anchor: number; head: number } | null;
+  onPasteImages?: (files: File[], selection: { from: number; to: number }) => void;
+  disabled?: boolean;
 }) {
   const localRef = useRef<HTMLDivElement>(null);
   const ref = surfaceRef ?? localRef;
@@ -1494,12 +1498,23 @@ export function MarkdownSurface({
       aria-label={label}
       data-placeholder={placeholder}
       data-empty={value.length === 0 ? "true" : undefined}
-      contentEditable="plaintext-only"
+      contentEditable={disabled ? false : "plaintext-only"}
+      aria-busy={disabled || undefined}
       suppressContentEditableWarning
       spellCheck={value.length < SPELLCHECK_LIMIT}
       onInput={publish}
       onCopy={(event) => {
         copySelection(event);
+      }}
+      onPaste={(event) => {
+        if (!onPasteImages || disabled) return;
+        const files = Array.from(event.clipboardData.files).filter(file =>
+          ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type.toLowerCase()));
+        if (!files.length) return;
+        const at = selectionOffsets();
+        if (!at) return;
+        event.preventDefault();
+        onPasteImages(files, { from: Math.min(at.anchor, at.head), to: Math.max(at.anchor, at.head) });
       }}
       onCut={(event) => {
         if (!copySelection(event)) return;

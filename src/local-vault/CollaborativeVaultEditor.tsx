@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
-import { ParticipantsRow as LocalParticipantsRow } from "./LocalParticipants";
+import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -21,6 +20,8 @@ import { ArticleCapture } from "./ArticleCapture";
 import { articleSource } from "@/lib/vault/article-capture";
 import { WorkspaceTypeLibrary } from "./LocalTemplateLibrary";
 import { flushForNavigation } from "./navigation-flush";
+import { prepareEditorImagePaste } from "./editor-image-paste";
+import { queueArticleEnrichment } from "./article-enrichment";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
@@ -42,7 +43,7 @@ function avatarTextColor(color: string): string {
 }
 
 /** The relay owns shared writes; this component never snapshot-autosaves them. */
-export function CollaborativeVaultEditor({ initial, config, registerFlush, onChanged, onLocalFallback, focusNewNote, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
+export function CollaborativeVaultEditor({ initial, root, config, registerFlush, onChanged, onLocalFallback, focusNewNote, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
   const file = useRef(initial);
   const [opened, setOpened] = useState(initial);
   const [snapshot, setSnapshot] = useState(() => readDocument(initial));
@@ -266,6 +267,52 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       setDetail(error instanceof Error ? error.message : "Could not reopen the file.");
     }
   }, [config.itemId, onChanged]);
+  const pasteImages = useCallback(async (request: EditorImagePasteRequest): Promise<EditorImagePasteResult> => {
+    let closedNativeSession = false;
+    try {
+      const shared = clientRef.current;
+      if (!shared?.hasBaseline || !shared.canEdit) throw new Error("The shared document is not ready for image paste.");
+      if (!await flush() || shared.hasPendingChanges) throw new Error("Finish saving shared text before pasting an image.");
+      const source = await vaultRequest<VaultFile>("read", { path: shared.relativePath ?? file.current.path });
+      const sourceDocument = readDocument(source);
+      if (JSON.stringify(sourceDocument) !== JSON.stringify(request.document) ||
+          JSON.stringify(documentSnapshotFromYDoc(shared.doc)) !== JSON.stringify(request.document)) {
+        throw new Error("The shared document changed. Paste the image again.");
+      }
+      const edit = await prepareEditorImagePaste({
+        document: sourceDocument,
+        selection: request.selection,
+        files: request.files,
+        occupiedFilenames: source.assets?.map(asset => asset.filename),
+      });
+      if (JSON.stringify(documentSnapshotFromYDoc(shared.doc)) !== JSON.stringify(request.document)) {
+        throw new Error("The shared document changed. Paste the image again.");
+      }
+      const native = nativeSessionRef.current;
+      if (native) {
+        shared.setActive(false);
+        if (!await shared.flushLocal()) throw new Error("Finish saving the local file before pasting an image.");
+        await vaultRequest("collaborationClose", { itemId: config.itemId, sessionToken: native.sessionToken });
+        nativeSessionRef.current = null;
+        closedNativeSession = true;
+      }
+      const written = await vaultRequest<VaultFile>("write", {
+        ...writePayload(source, edit.document),
+        addedAssets: edit.addedAssets,
+      });
+      file.current = written;
+      latestSnapshot.current = edit.document;
+      setOpened(written);
+      setSnapshot(edit.document);
+      onChanged();
+      await reset();
+      return { caret: edit.caret };
+    } catch (error) {
+      if (closedNativeSession) await reset().catch(() => {});
+      setDetail(error instanceof Error ? error.message : "The image could not be pasted. Your text is still here.");
+      return undefined;
+    }
+  }, [config.itemId, flush, onChanged, reset]);
   useEffect(() => {
     if (status !== "stale-file" || !config.localFiles || autoResettingRef.current) return;
     autoResettingRef.current = true;
@@ -346,9 +393,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
   const readOnly = ready && !canEdit && !detail && status !== "offline" && !blocked;
   const display = resolveAssets(snapshot);
   return <section className="vault-document">
-    <header className="vault-document-path" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <span style={{ minWidth: 0 }}>{client?.relativePath ?? opened.path}</span>
-      {presencePeers.length > 0 && <span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here: ${presencePeers.slice(0, 3).map(peer => peer.userName).join(", ")}${presencePeers.length > 3 ? ` and ${presencePeers.length - 3} more` : ""}`}
+    {presencePeers.length > 0 && <div className="vault-document-presence"><span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here: ${presencePeers.slice(0, 3).map(peer => peer.userName).join(", ")}${presencePeers.length > 3 ? ` and ${presencePeers.length - 3} more` : ""}`}
         style={{ display: "inline-flex", alignItems: "center", flexShrink: 0, gap: 3 }}>
         {presencePeers.slice(0, 3).map(peer => <span key={peer.clientId} title={`${peer.userName} is here`}
           style={{ display: "inline-grid", placeItems: "center", width: 22, height: 22, borderRadius: "50%",
@@ -358,8 +403,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
         <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {presencePeers.length > 3 ? `+${presencePeers.length - 3}` : presencePeers.length === 1 ? presencePeers[0].userName : `${presencePeers.length} here`}
         </span>
-      </span>}
-    </header>
+      </span></div>}
     {(!ready || blocked || status === "offline" || detail || readOnly) && <div className="vault-notice" role="status">
       {detail || (readOnly ? "Read only. You don’t have editing access." : ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
       {config.localFiles && status === "offline" && !ready && client && !client.hasPendingChanges && !client.hasUnreadableJournal &&
@@ -368,12 +412,12 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && !waitingForExternalSync && <button onClick={() => void clientRef.current?.retry()}>Retry</button>}
     </div>}
     {ready && <>
-      {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} />}
+      {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />}
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
       {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : <DocumentRenderer document={display} template={template} />) :
-        <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" leadingControls={<LocalParticipantsRow postId={opened.path} />} localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
+        <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
           focusNewNote={focusNewNote} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
-          onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
+          onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { await flush(); }}
           renderTemplateLibrary={props => <WorkspaceTypeLibrary currentTemplate={template} onClose={props.onClose} onApply={(nextTemplate, sourceJSON) => {
             props.onClose(); setBusy(true);

@@ -124,7 +124,10 @@ async function main() {
     await alice.screenshot({ path: "/tmp/texttext-file-collaboration-light.png", fullPage: true });
     await alice.emulateMedia({ colorScheme: "dark" });
     await alice.screenshot({ path: "/tmp/texttext-file-collaboration-dark.png", fullPage: true });
-    await alice.getByRole("combobox", { name: "Folder for new items" }).fill(newFolder);
+    await alice.getByRole("button", { name: "All files", exact: true }).click();
+    await alice.locator("details.vault-context-menu").getByLabel("More actions", { exact: true }).click();
+    await alice.getByRole("textbox", { name: "Current folder", exact: true }).fill(newFolder);
+    await alice.keyboard.press("Escape");
     await alice.getByRole("button", { name: "New note", exact: true }).click();
     await alice.getByText(`${newFolder}/Untitled.textpack`, { exact: true }).waitFor();
     await alice.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
@@ -136,7 +139,8 @@ async function main() {
     }, "first account saves a TextPack in the new folder");
     await until(async () => await bob.getByText(newFolder, { exact: true }).count() === 1,
       "second account sees the new folder without reloading", 35000);
-    await bob.locator(`button[title="${newFolder}/Untitled.textpack"]`).click();
+    await bob.getByRole("navigation", { name: "Folders", exact: true }).locator("summary").filter({ hasText: newFolder }).click();
+    await bob.locator("main .vault-document-grid > button").filter({ hasText: "Untitled" }).click();
     await until(async () => (await text(bob)) === "Created together in a new folder.",
       "second account opens the new folder's note with its live content", 35000);
     await bob.getByRole("button", { name: new RegExp(title) }).first().click();

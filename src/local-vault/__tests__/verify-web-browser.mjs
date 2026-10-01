@@ -69,7 +69,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Agent edited the file");
   await page.getByRole("button", { name: "New note", exact: true }).click();
-  await page.locator(".vault-document-path").filter({ hasText: "Untitled.textpack" }).waitFor();
+  await page.locator('.vault-context-header h2[title*="Untitled.textpack"]').waitFor();
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("New web item");
   await page.getByRole("textbox", { name: "Document body", exact: true }).fill("New file bytes");
   await page.waitForFunction(() => Object.keys(localStorage).filter((key) => key.startsWith("texttext:vault-draft:")).length === 0);

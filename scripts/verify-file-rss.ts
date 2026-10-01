@@ -54,7 +54,8 @@ async function main() {
     check(login.ok(), "existing test account signed in");
     await page.goto(origin + "/vault/" + workspaceId, { waitUntil: "domcontentloaded" });
 
-    const subscribeButton = page.getByRole("button", { name: "Subscribe to a feed" });
+    await page.locator("details.vault-context-menu").getByLabel("More actions", { exact: true }).click();
+    const subscribeButton = page.locator(".vault-context-menu-items").getByRole("button", { name: "Subscribe to a feed" });
     await subscribeButton.click();
     const dialog = page.getByRole("dialog", { name: "Subscribe to a feed" });
     await dialog.getByLabel("Folder").fill(folder);
@@ -63,8 +64,8 @@ async function main() {
     await dialog.getByRole("button", { name: "Subscribe", exact: true }).first().waitFor({ timeout: 45000 });
     await dialog.getByRole("button", { name: "Subscribe", exact: true }).first().click();
     await dialog.waitFor({ state: "hidden" });
-    check(await page.evaluate(() => document.activeElement?.textContent?.includes("Subscribe to a feed")),
-      "Subscribe returns keyboard focus to its opener");
+    check(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "More actions"),
+      "Subscribe returns keyboard focus to the contextual menu");
 
     const reader = page.locator('section[aria-label$=" feed"]');
     await reader.locator("ol li").first().waitFor({ timeout: 45000 });
@@ -92,22 +93,28 @@ async function main() {
       "kept article contains source text and portable entry record");
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.locator('nav[aria-label="Workspace files"] button[title="' + subscriptionOnly[0].relativePath + '"]').click();
+    const openPath = async (relativePath: string) => {
+      await page.keyboard.press("Meta+k");
+      const commands = page.getByRole("dialog", { name: "Search and actions", exact: true });
+      await commands.getByRole("searchbox", { name: "Search workspace" }).fill(relativePath);
+      await commands.getByText(relativePath, { exact: true }).first().click();
+    };
+    await openPath(subscriptionOnly[0].relativePath);
     await page.locator('section[aria-label$=" feed"] ol li').first().waitFor({ timeout: 45000 });
-    await page.locator('nav[aria-label="Workspace files"] button[title="' + keptItem.relativePath + '"]').click();
-    await page.locator(".vault-document-path").filter({ hasText: keptItem.relativePath }).waitFor({ timeout: 20000 });
-    check(true, "subscription and kept article reopen from the ordinary folder tree");
+    await openPath(keptItem.relativePath);
+    await page.locator(`.vault-context-header h2[title="${keptItem.relativePath}"]`).waitFor({ timeout: 20000 });
+    check(true, "subscription and kept article reopen through the ordinary command surface");
 
-    const searchButton = page.getByRole("button", { name: /Search files/ });
+    const searchButton = page.getByRole("button", { name: /Search and actions/ });
     await searchButton.focus();
     await page.keyboard.press("Meta+k");
-    const search = page.getByRole("dialog", { name: "Search files" });
+    const search = page.getByRole("dialog", { name: "Search and actions" });
     await search.getByRole("searchbox", { name: "Search workspace" }).fill(folder);
     await search.getByText("Searches filenames and folder paths in this workspace.").waitFor();
     await search.getByText(subscriptionOnly[0].relativePath, { exact: true }).first().waitFor({ timeout: 20000 });
     await page.keyboard.press("Escape");
     await search.waitFor({ state: "hidden" });
-    check(await page.evaluate(() => document.activeElement?.textContent?.includes("Search files")),
+    check(await page.evaluate(() => document.activeElement?.textContent?.includes("Search and actions")),
       "Command-K search returns focus to its opener");
     check(errors.length === 0, "no browser runtime errors");
   } finally {

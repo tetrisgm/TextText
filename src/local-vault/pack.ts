@@ -2,6 +2,7 @@ import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
 import type { VaultFile } from "./bridge";
 
 export type OpenPack = { entries: Record<string, Uint8Array>; prefix: string; file: VaultFile; itemId: string };
+export type PackAssetAddition = { filename: string; data: Uint8Array; contentType?: string; remoteURL?: string };
 const MAX_BYTES = 64 * 1024 * 1024;
 const fixedDate = new Date(1980, 0, 1);
 function base64(bytes: Uint8Array): string {
@@ -51,7 +52,7 @@ export function openPack(bytes: Uint8Array, path: string, hash: string, expected
   });
   return { entries, prefix, itemId, file: { path, hash, markdown, documentJSON: text("document.json"), templateJSON: text("template.json"), templateAuthoringSourceJSON: text("template-source.json"), assets } };
 }
-export function encodePack(pack: Pick<OpenPack, "entries" | "prefix">, changes: Pick<VaultFile, "markdown" | "documentJSON" | "templateJSON" | "templateAuthoringSourceJSON">): Uint8Array {
+export function encodePack(pack: Pick<OpenPack, "entries" | "prefix">, changes: Pick<VaultFile, "markdown" | "documentJSON" | "templateJSON" | "templateAuthoringSourceJSON">, addedAssets: readonly PackAssetAddition[] = []): Uint8Array {
   const entries = { ...pack.entries };
   entries[pack.prefix + "text.md"] = strToU8(changes.markdown);
   for (const [name, value] of [["document.json", changes.documentJSON], ["template.json", changes.templateJSON], ["template-source.json", changes.templateAuthoringSourceJSON]] as const) {
@@ -59,6 +60,48 @@ export function encodePack(pack: Pick<OpenPack, "entries" | "prefix">, changes: 
     else if (name !== "document.json") delete entries[pack.prefix + name];
   }
   if (!entries[pack.prefix + "document.json"]) throw new Error("A TextPack requires document.json.");
+  const occupied = new Map(Object.keys(entries).map((name) => [name.normalize("NFC").toLocaleLowerCase(), name]));
+  const infoPath = pack.prefix + "info.json";
+  const info = entries[infoPath] ? JSON.parse(strFromU8(entries[infoPath])) as Record<string, unknown>
+    : { version: 2, type: "net.daringfireball.markdown", transient: false, creatorIdentifier: "app.texttext" };
+  const priorMappings = info["net.texttext.assets"];
+  const mappings = priorMappings && typeof priorMappings === "object" && !Array.isArray(priorMappings)
+    ? { ...priorMappings as Record<string, unknown> } : {};
+  let mappingsChanged = false;
+  for (const asset of addedAssets) {
+    if (!asset.filename || asset.filename.startsWith(".") || asset.filename.length > 255 || /[\\/\x00-\x1f]/.test(asset.filename)) {
+      throw new Error("Invalid TextPack asset filename.");
+    }
+    if (asset.contentType !== undefined && !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(asset.contentType)) throw new Error("Invalid TextPack asset content type.");
+    if (asset.remoteURL !== undefined) {
+      const remote = new URL(asset.remoteURL);
+      if (!["http:", "https:"].includes(remote.protocol) || remote.username || remote.password || remote.href.length > 4096) throw new Error("Invalid TextPack asset source URL.");
+    }
+    const key = `${pack.prefix}assets/${asset.filename}`;
+    const normalized = key.normalize("NFC").toLocaleLowerCase();
+    const existingKey = occupied.get(normalized);
+    if (existingKey) {
+      const existing = entries[existingKey];
+      if (existing.byteLength !== asset.data.byteLength || existing.some((value, index) => value !== asset.data[index])) {
+        throw new Error("A TextPack asset already uses that filename.");
+      }
+    } else {
+      occupied.set(normalized, key);
+      entries[key] = new Uint8Array(asset.data);
+    }
+    const filename = (existingKey ?? key).slice((pack.prefix + "assets/").length);
+    const prior = mappings[filename];
+    const mapping = prior && typeof prior === "object" && !Array.isArray(prior)
+      ? { ...prior as Record<string, unknown> } : {};
+    mapping.url = asset.remoteURL ?? (typeof mapping.url === "string" ? mapping.url : `assets/${filename}`);
+    if (asset.contentType) mapping.contentType = asset.contentType;
+    mappings[filename] = mapping;
+    mappingsChanged = true;
+  }
+  if (mappingsChanged) entries[infoPath] = strToU8(JSON.stringify({ ...info, "net.texttext.assets": mappings }));
+  if (Object.keys(entries).length > 10_000 || Object.values(entries).reduce((sum, data) => sum + data.byteLength, 0) > MAX_BYTES) {
+    throw new Error("Expanded TextPack exceeds the browser's 64 MiB limit.");
+  }
   return zipSync(Object.fromEntries(Object.keys(entries).sort().map((key) => [key, [entries[key], { level: 0, mtime: fixedDate }]])), { level: 0, mtime: fixedDate });
 }
 export function emptyPack(): Pick<OpenPack, "entries" | "prefix"> {

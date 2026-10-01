@@ -439,7 +439,7 @@ describe("web file vault transport", () => {
   it("captures links and notes as complete self-contained TextPacks", async () => {
     const test = fixture();
     const link = await test.transport.request("create", { title: "Example", body: "https://example.com/read", kind: "bookmark", sourceURL: "https://example.com/read", folder: "Reading" }) as VaultFile;
-    expect(readDocument(link).content.fields.sourceUrl).toBe("https://example.com/read");
+    expect(readDocument(link).content.fields).toMatchObject({ sourceUrl: "https://example.com/read", captureStatus: "pending" });
     expect(readDocument(link).content.body).toBe("https://example.com/read");
     expect(JSON.parse(link.templateJSON!).id).toBe("texttext.bookmark");
     const note = await test.transport.request("create", { title: "Thought", body: "Keep this entire note." }) as VaultFile;

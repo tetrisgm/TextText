@@ -109,6 +109,14 @@ type RelativeSelectionState = {
   head: string;
 };
 
+export type EditorImagePasteRequest = {
+  files: readonly File[];
+  document: DocumentSnapshot;
+  selection: { from: number; to: number };
+};
+
+export type EditorImagePasteResult = { caret: number } | undefined;
+
 type UnifiedDocumentEditorProps = {
   /** Local vaults persist through their native file bridge. */
   transport?: "cloud" | "local";
@@ -142,6 +150,8 @@ type UnifiedDocumentEditorProps = {
   collab: UnifiedEditorCollab;
   onDocumentChange?: (document: DocumentSnapshot) => void;
   onMaterialized?: (document: DocumentSnapshot, revision?: number) => void;
+  /** Persist image bytes and their document edit in the open TextPack. */
+  onPasteImages?: (request: EditorImagePasteRequest) => Promise<EditorImagePasteResult>;
   onDone: () => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
   onChooseTemplate?: () => void;
@@ -517,6 +527,7 @@ export function UnifiedDocumentEditor({
   collab,
   onDocumentChange,
   onMaterialized,
+  onPasteImages,
   onDone,
   onDelete,
   onChooseTemplate,
@@ -571,6 +582,28 @@ export function UnifiedDocumentEditor({
   // the provider catches up. Seeding a second root here makes the server's
   // blank root compete with (and sometimes replace) the person's first edit.
   const [doc] = useState(() => localDocument ?? new Y.Doc());
+  const [imagePastePending, setImagePastePending] = useState(false);
+  const imagePastePendingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const pasteImages = useCallback((files: File[], selection: { from: number; to: number }) => {
+    if (!onPasteImages || imagePastePendingRef.current) return;
+    imagePastePendingRef.current = true;
+    setImagePastePending(true);
+    const request = { files, selection, document: currentLocalDocument() };
+    void onPasteImages(request).then(result => {
+      if (!result || !mountedRef.current) return;
+      window.requestAnimationFrame(() => requestDocumentCaret(result.caret, result.caret));
+    }).catch(() => {
+      // The owning vault editor reports the guarded write failure beside the document.
+    }).finally(() => {
+      imagePastePendingRef.current = false;
+      if (mountedRef.current) setImagePastePending(false);
+    });
+  }, [currentLocalDocument, onPasteImages]);
   /** Body-text mirror for replaceYText; see YTextMirror. */
   const bodyMirrorRef = useRef<YTextMirror>({ applying: false });
   // Undo, from the CRDT rather than the browser. The editable surface is
@@ -1544,12 +1577,14 @@ export function UnifiedDocumentEditor({
               }
               surfaceRef={bodySurfaceRef}
               resolveSelection={resolveBodySelection}
+              onPasteImages={onPasteImages ? pasteImages : undefined}
+              disabled={imagePastePending}
             />
           </div>
         ),
       },
     }),
-    [activeTemplate.fields, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.

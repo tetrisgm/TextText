@@ -1,7 +1,7 @@
 "use client";
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
+import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
@@ -23,6 +23,8 @@ import { articleSource } from "@/lib/vault/article-capture";
 import { readFeedSubscription } from "@/lib/vault/rss";
 import { activeBodySelection } from "@/lib/document-history-events";
 import { ArticleCapture } from "./ArticleCapture";
+import { ArticleEnrichmentWorker } from "./ArticleEnrichmentWorker";
+import { queueArticleEnrichment } from "./article-enrichment";
 import { CaptureDialog } from "./CaptureDialog";
 import { FeedSubscribeDialog, FeedSubscriptionReader } from "./VaultFeeds";
 import { RecoveryDialog } from "./RecoveryDialog";
@@ -37,6 +39,7 @@ import { VaultComments } from "./VaultComments";
 import { vaultCommentCapabilities } from "./vault-comments";
 import { canCreateInVaultFolder, parseVaultAccess, sharedVaultHashTarget, type VaultAccess } from "./shared-vaults";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
+import { prepareEditorImagePaste } from "./editor-image-paste";
 import { readVaultLocation, resolveVaultLocation, writeVaultLocation } from "./vault-location";
 import { REQUEST_ADD_ITEM_AGENT_EVENT } from "./agent-task";
 import "./style.css";
@@ -159,13 +162,44 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focus
     running.current = save().finally(() => { running.current = null; });
     return running.current;
   }, [acceptRemote, onChanged, remember]);
-  const change = useCallback((display: DocumentSnapshot) => {
-    const next = mapStrings(display, assets.backward);
+  const change = useCallback((next: DocumentSnapshot) => {
     if (equal(next, current.current)) return;
     current.current = next; remember();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
-  }, [assets, flush, remember]);
+  }, [flush, remember]);
+  const pasteImages = useCallback(async (request: EditorImagePasteRequest): Promise<EditorImagePasteResult> => {
+    try {
+      if (conflict.current) throw new Error("Resolve the file conflict before pasting an image.");
+      if (!await flush()) throw new Error("Save the current text before pasting an image.");
+      const sourceDocument = request.document;
+      if (!equal(sourceDocument, current.current)) throw new Error("The document changed. Paste the image again.");
+      const edit = await prepareEditorImagePaste({
+        document: sourceDocument,
+        selection: request.selection,
+        files: request.files,
+        occupiedFilenames: file.current.assets?.map(asset => asset.filename),
+      });
+      if (!equal(sourceDocument, current.current)) throw new Error("The document changed. Paste the image again.");
+      const written = await vaultRequest<VaultFile>("write", {
+        ...writePayload(file.current, edit.document),
+        addedAssets: edit.addedAssets,
+      });
+      const saved = readDocument(written);
+      file.current = written;
+      baseline.current = saved;
+      current.current = saved;
+      setOpenedFile(written);
+      setExternal(saved);
+      remember();
+      onChanged();
+      setNotice("");
+      return { caret: edit.caret };
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The image could not be pasted. Your text is still here.");
+      return undefined;
+    }
+  }, [flush, onChanged, remember]);
   const readCurrent = useCallback(() => current.current, []);
   const updateArticle = useCallback((transform: (document: DocumentSnapshot) => DocumentSnapshot) => {
     if (conflict.current) throw new Error("Resolve the file conflict before capturing the article.");
@@ -275,7 +309,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focus
   };
   const display = useMemo(() => mapStrings(external, assets.forward), [external, assets]);
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
-  return <section className="vault-document"><header className="vault-document-path">{initial.path}</header>{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : <UnifiedDocumentEditor transport="local" leadingControls={<LocalParticipantsRow postId={initial.path} />} externalDocument={display} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : <UnifiedDocumentEditor transport="local" externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();
@@ -463,6 +497,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [templatePicker, setTemplatePicker] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
+  const [folderDesignOpen, setFolderDesignOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [recovery, setRecovery] = useState<{ path?: string } | null>(null);
   const [sharing, setSharing] = useState<VaultShareScope | null>(null);
@@ -473,6 +508,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const imageInput = useRef<HTMLInputElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
   const feedSubscribeButton = useRef<HTMLButtonElement>(null);
+  const moreActions = useRef<HTMLDetailsElement>(null);
+  const moreActionsSummary = useRef<HTMLElement>(null);
   const searchReturnFocus = useRef<HTMLElement | null>(null);
   const feedSubscribeReturnFocus = useRef<HTMLElement | null>(null);
   const commentsButton = useRef<HTMLButtonElement>(null);
@@ -674,6 +711,31 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       });
     } finally { importing.current = false; }
   };
+  const closeMoreActions = () => { moreActions.current?.removeAttribute("open"); };
+  const openWorkspaceFolder = () => {
+    closeMoreActions();
+    void operate(async () => {
+      const opened = await vaultRequest<VaultListing>("open");
+      restoredLocationRoot.current = ""; setLocationReadyRoot("");
+      setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true;
+    });
+  };
+  const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => setTemplatePicker(true)); };
+  const openCapture = () => { closeMoreActions(); void operate(async () => setCaptureOpen(true)); };
+  const openFeedSubscribe = (returnFocus: HTMLElement | null) => {
+    feedSubscribeReturnFocus.current = returnFocus;
+    closeMoreActions();
+    void operate(async () => setFeedSubscribeOpen(true));
+  };
+  const importFile = () => {
+    closeMoreActions();
+    void operate(async () => {
+      const result = await vaultRequest<{ file?: VaultFile }>("import", { folder: destinationFolder.trim() });
+      if (result.file) { setSelected(result.file); refresh(); }
+    });
+  };
+  const openRecovery = (path?: string) => { closeMoreActions(); void operate(async () => setRecovery(path ? { path } : {})); };
+  const openFolderDesign = () => { closeMoreActions(); setFolderDesignOpen(true); };
   const openSearch = useCallback(() => {
     if (searchOpen || document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
     searchReturnFocus.current = focusedControl();
@@ -748,7 +810,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   if (canCreate) commandActions.push(
     { id: "new-note", label: "New note", description: `Create a note in ${commandLocation}.` },
     { id: "capture", label: "Capture", description: `Save a link or note in ${commandLocation}.`, keywords: ["save", "link", "note", "bookmark"] },
+    { id: "new-from-template", label: "New from template", description: `Create from a saved template in ${commandLocation}.`, keywords: ["starter", "look"] },
+    { id: "import-images", label: "Import images", description: `Add images to ${commandLocation}.`, keywords: ["visual", "gallery", "photo", "gif"] },
   );
+  if (canSubscribeFeed) commandActions.push({ id: "subscribe-feed", label: "Subscribe to a feed", description: `Follow a site or feed in ${commandLocation}.`, keywords: ["rss", "atom", "news"] });
+  if (allowFolderPicker && listing?.root) commandActions.push({ id: "import-file", label: "Import file", description: `Add a file to ${commandLocation}.`, keywords: ["textpack", "document"] });
+  if (!selected && canCreate) commandActions.push({ id: "folder-design", label: "Choose folder design", description: `Change how ${commandLocation} is presented.`, keywords: ["view", "layout", "gallery", "table"] });
   if (allowFolderPicker && listing?.root) commandActions.push({
     id: "customize",
     label: selected ? "Customize this item" : "Customize this folder",
@@ -761,6 +828,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     description: "Give Codex a task for the open item.",
     keywords: ["assistant", "collaborate", "edit"],
   });
+  if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", keywords: ["restore", "history", "deleted"] });
+  if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", keywords: ["workspace", "switch"] });
+  const contextTitle = selected
+    ? selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled"
+    : destinationFolder.trim() || (access && !access.fullAccess ? "Shared files" : "All files");
+  const contextParent = selected
+    ? folderForItem(selected.path) || "All files"
+    : listing?.name || listing?.root.split("/").filter(Boolean).at(-1) || "TextText";
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
     onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
@@ -774,67 +849,81 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     <aside id="vault-sidebar" className="vault-sidebar" aria-hidden={!sidebarOpen}
       onClickCapture={(event) => {
         if (window.matchMedia("(max-width: 700px)").matches &&
-            (event.target as HTMLElement).closest("button,a")) setSidebarVisible(false);
+            (event.target as HTMLElement).closest("button,a,summary")) setSidebarVisible(false);
       }}>
       <div className="vault-sidebar-header"><h1>TextText</h1>
         <button type="button" aria-label="Hide folders" aria-controls="vault-sidebar" aria-expanded={sidebarOpen}
           onClick={() => setSidebarVisible(false, true)}>Hide</button></div>
       {!allowFolderPicker && <nav className="vault-other-workspaces" aria-label="Shared workspaces"><a href="/shared">Shared with me</a></nav>}
-      {allowFolderPicker && <button disabled={busy} onClick={() => void operate(async () => {
-        const opened = await vaultRequest<VaultListing>("open");
-        restoredLocationRoot.current = ""; setLocationReadyRoot("");
-        setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true;
-      })}>Open folder</button>}
+      {allowFolderPicker && !listing?.root && <button disabled={busy} onClick={openWorkspaceFolder}>Open folder</button>}
       {listing?.root && <>
-        <button disabled={busy} onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); }, true)}>{access && !access.fullAccess ? "Shared files" : "All files"}</button>
         <p className="vault-root" title={listing.root}>{listing.name || listing.root.split("/").filter(Boolean).at(-1)}</p>
-        {canCreate && <label className="vault-folder-destination">Folder for new items
-          <input list="vault-folders" aria-label="Folder for new items" value={destinationFolder} placeholder="Workspace root"
-            onChange={(event) => setDestinationFolder(event.target.value)} />
-          <datalist id="vault-folders">{folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
-        </label>}
-        {canCreate && <><button disabled={busy} onClick={() => createNote(focusedControl())}>New note</button>
-        <button disabled={busy} onClick={() => void operate(async () => setTemplatePicker(true))}>New from template</button>
-        <button disabled={busy} onClick={() => void operate(async () => setCaptureOpen(true))}>Save a link or note</button>
-        {canSubscribeFeed && <button ref={feedSubscribeButton} disabled={busy} onClick={() => {
-          feedSubscribeReturnFocus.current = focusedControl();
-          void operate(async () => setFeedSubscribeOpen(true));
-        }}>Subscribe to a feed</button>}
-        <input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images" onChange={(event) => {
-          const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
-        }} />
-        <button disabled={busy} onClick={() => imageInput.current?.click()}>Import images…</button></>}
-        {allowFolderPicker && <>
-          <button disabled={busy} onClick={() => void operate(async () => {
-            const result = await vaultRequest<{ file?: VaultFile }>("import", { folder: destinationFolder.trim() });
-            if (result.file) { setSelected(result.file); refresh(); }
-          })}>Import file…</button>
-        </>}
         <button ref={searchButton} disabled={busy} onClick={openSearch}>Search and actions ⌘K</button>
-        {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({}))}>Trash and recovery</button>}
-        <nav aria-label="Workspace files"><FolderNavigation tree={tree} selectedPath={selected?.path} busy={busy}
-          onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); }, true)} onOpen={(item) => void operate(async () => {
-            setSelected(await readForOpen(item.path, !allowFolderPicker)); setDestinationFolder(folderForItem(item.path));
-          }, true)} /></nav>
+        <button className={!selected && !destinationFolder.trim() ? "selected" : ""} disabled={busy}
+          onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); setFolderDesignOpen(false); }, true)}>
+          {access && !access.fullAccess ? "Shared files" : "All files"}
+        </button>
+        <nav aria-label="Folders"><FolderNavigation tree={tree} selectedFolder={selected ? folderForItem(selected.path) : destinationFolder.trim()}
+          onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); setFolderDesignOpen(false); }, true)} /></nav>
         {allowFolderPicker && <NativeConnection key={listing.root} root={listing.root} />}
       </>}
     </aside>
     {sidebarOpen && <button type="button" className="vault-sidebar-backdrop" aria-label="Close folders"
       onClick={() => setSidebarVisible(false, true)} />}
     <main>
-      {!sidebarOpen && <button ref={sidebarReopenButton} type="button" className="vault-sidebar-open"
+      {listing?.root && <header className="vault-context-header">
+        <div className="vault-context-location">
+          {!sidebarOpen && <button ref={sidebarReopenButton} type="button" className="vault-sidebar-open"
+            aria-controls="vault-sidebar" aria-expanded={false} onClick={() => setSidebarVisible(true)}>Show folders</button>}
+          <div><p>{contextParent}</p><h2 title={selected?.path || destinationFolder.trim() || contextTitle}>{contextTitle}</h2></div>
+        </div>
+        <div className="vault-context-actions">
+          {canCreate && <button className="vault-primary-action" disabled={busy} onClick={() => createNote(focusedControl())}>New note</button>}
+          {selected && allowFolderPicker && <LocalParticipantsRow postId={selected.path} />}
+          {selected && canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
+            disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
+          {canShare && sharingWorkspaceId && (selected || destinationFolder.trim()) && <button disabled={busy} onClick={() => selected
+            ? setSharing({ workspaceId: sharingWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })
+            : setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: destinationFolder.trim(), label: destinationFolder.trim().split("/").at(-1) || destinationFolder.trim() })}>Share</button>}
+          <details ref={moreActions} className="vault-context-menu" onKeyDown={(event) => {
+            if (event.key !== "Escape" || !event.currentTarget.open) return;
+            event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; moreActionsSummary.current?.focus();
+          }}>
+            <summary ref={moreActionsSummary} aria-label="More actions">More</summary>
+            <div className="vault-context-menu-items">
+              {selected ? <>
+                {canPublish && sharingWorkspaceId && selectedItemId && <button disabled={busy} onClick={() => { closeMoreActions(); setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" }); }}>Publish</button>}
+                {canManageFiles && <button disabled={busy} onClick={() => { closeMoreActions(); setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
+                {canManageFiles && <button disabled={busy} onClick={() => { closeMoreActions(); setFileAction("delete"); }}>Delete</button>}
+                {allowFolderPicker && <button disabled={busy} onClick={() => { closeMoreActions(); beginCustomize(selected.path); }}>Customize</button>}
+                {canOpenRecovery && <button disabled={busy} onClick={() => openRecovery(selected.path)}>Version history</button>}
+              </> : <>
+                {canCreate && <button disabled={busy} onClick={openCapture}>Capture a link or note</button>}
+                {canCreate && <button disabled={busy} onClick={openTemplateLibrary}>New from template</button>}
+                {canSubscribeFeed && <button ref={feedSubscribeButton} disabled={busy} onClick={() => openFeedSubscribe(moreActionsSummary.current)}>Subscribe to a feed</button>}
+                {canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); imageInput.current?.click(); }}>Import images…</button>}
+                {allowFolderPicker && <button disabled={busy} onClick={importFile}>Import file…</button>}
+                {canCreate && <label className="vault-folder-destination">Current folder
+                  <input list="vault-folders" aria-label="Current folder" value={destinationFolder} placeholder="Workspace root"
+                    onChange={(event) => { setDestinationFolder(event.target.value); setFolderDesignOpen(false); }} />
+                </label>}
+                {canCreate && <button disabled={busy} onClick={openFolderDesign}>Choose folder design</button>}
+                {allowFolderPicker && <button disabled={busy} onClick={() => { closeMoreActions(); void operate(customizeCurrent); }}>Customize folder</button>}
+                {canOpenRecovery && <button disabled={busy} onClick={() => openRecovery()}>Trash and recovery</button>}
+                {allowFolderPicker && <button disabled={busy} onClick={openWorkspaceFolder}>Open another folder…</button>}
+              </>}
+            </div>
+          </details>
+        </div>
+      </header>}
+      {!listing?.root && !sidebarOpen && <button ref={sidebarReopenButton} type="button" className="vault-sidebar-open"
         aria-controls="vault-sidebar" aria-expanded={false} onClick={() => setSidebarVisible(true)}>Show folders</button>}
+      <datalist id="vault-folders">{folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
+      <input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images" onChange={(event) => {
+        const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
+      }} />
       {importStatus && <p role="status">{importStatus}</p>}
-      {selected && <div className="vault-file-actions">
-        {canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
-          disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
-        {canShare && sharingWorkspaceId && <button disabled={busy} onClick={() => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Share</button>}
-        {canPublish && sharingWorkspaceId && selectedItemId && <button disabled={busy} onClick={() => setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })}>Publish</button>}
-        {canManageFiles && <button disabled={busy} onClick={() => { setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
-        {canManageFiles && <button disabled={busy} onClick={() => setFileAction("delete")}>Delete</button>}
-        {allowFolderPicker && <button disabled={busy} onClick={() => beginCustomize(selected.path)}>Customize</button>}
-        {canOpenRecovery && <button disabled={busy} onClick={() => void operate(async () => setRecovery({ path: selected.path }))}>Version history</button>}
-        {canManageFiles && fileAction === "rename" && <form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
+      {selected && canManageFiles && fileAction === "rename" && <div className="vault-file-operation"><form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
           const observed = currentFileRef.current?.();
           if (!observed || observed.path !== selected.path) throw new Error("Wait for this file to finish opening.");
           const renamed = await vaultRequest<VaultFile>("rename", { path: observed.path, hash: observed.hash, newPath: newPath.trim() });
@@ -843,8 +932,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           <label>File path<input aria-label="New file path" value={newPath} onChange={(event) => setNewPath(event.target.value)} /></label>
           <button disabled={busy || !newPath.trim()} type="submit">Save path</button>
           <button type="button" onClick={() => setFileAction(null)}>Cancel</button>
-        </form>}
-        {canManageFiles && fileAction === "delete" && <div role="group" aria-label="Confirm file deletion">
+        </form></div>}
+      {selected && canManageFiles && fileAction === "delete" && <div className="vault-file-operation" role="group" aria-label="Confirm file deletion">
           <p>Delete <strong>{selected.path}</strong>?</p>
           <button disabled={busy} onClick={() => void operate(async () => {
             const observed = currentFileRef.current?.();
@@ -854,7 +943,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           })}>Delete file</button>
           <button onClick={() => setFileAction(null)}>Cancel</button>
         </div>}
-      </div>}
       {commentsOpen && canOpenComments && selected && selectedItemId && <div id="vault-comments-panel"><VaultComments
         key={`${sharingWorkspaceId}:${selectedItemId}`} itemId={selectedItemId} path={selected.path}
         canComment={commentCapabilities.canComment} canResolve={commentCapabilities.canResolve}
@@ -876,6 +964,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {captureOpen && <CaptureDialog onClose={() => setCaptureOpen(false)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: destinationFolder.trim() });
+        if (input.sourceURL && listing?.root) queueArticleEnrichment(listing.root, created.path);
         setSelected(created); refresh();
       }} />}
       {feedSubscribeOpen && <FeedSubscribeDialog folder={destinationFolder.trim()} folders={folders} onClose={closeFeedSubscribe} onSaved={file => {
@@ -883,9 +972,16 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       }} />}
       {searchOpen && <VaultSearch actions={commandActions} namesOnly={!allowFolderPicker} onClose={closeSearch} onAction={(action) => {
         if (action.id === "new-note") return createNote(null);
-        if (action.id === "capture") { setCaptureOpen(true); return; }
+        if (action.id === "capture") { openCapture(); return; }
+        if (action.id === "new-from-template") { openTemplateLibrary(); return; }
+        if (action.id === "subscribe-feed") { openFeedSubscribe(searchButton.current); return; }
+        if (action.id === "import-images") { imageInput.current?.click(); return; }
+        if (action.id === "import-file") { importFile(); return; }
+        if (action.id === "folder-design") { openFolderDesign(); return; }
         if (action.id === "customize") return customizeCurrent();
         if (action.id === "add-agent") { beginAddAgent(); return; }
+        if (action.id === "trash-recovery") { openRecovery(); return; }
+        if (action.id === "open-folder") { openWorkspaceFolder(); return; }
       }} onOpen={async (path) => {
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
@@ -897,6 +993,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         setSelected(created); setTemplatePicker(false); refresh();
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}
+      {listing && <ArticleEnrichmentWorker listing={listing} enabled={canCreate} skipPath={selected?.path} onChanged={refresh} />}
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
         {selectedFeed.error ? <div className="vault-notice" role="alert">{selectedFeed.error}</div> : selectedFeed.subscription
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
@@ -918,15 +1015,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : visibleListing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={visibleListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
-        onShare={canShare && sharingWorkspaceId ? (folder) => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}
+        designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
-        onFolder={(path) => setDestinationFolder(path)}
-        onOpen={(path) => void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)}
-        onCreate={(path, folder) => void operate(async () => {
-          const source = await vaultRequest<VaultFile>("read", { path });
-          const title = readDocument(source).content.title || "Untitled";
-          setSelected(await vaultRequest<VaultFile>("create", { title, folder, sourcePath: path, sourceHash: source.hash })); refresh();
-        })} /></div> : <div className="vault-empty">
+        onCloseDesign={() => setFolderDesignOpen(false)}
+        onOpen={(path) => void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)} /></div> : <div className="vault-empty">
         <h2>{listing?.root ? "Your workspace" : "Open a workspace folder"}</h2>
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}

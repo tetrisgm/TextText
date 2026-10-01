@@ -294,7 +294,8 @@ public struct LocalVaultDocumentStore: Sendable {
 
     public func write(path: String, expectedHash: String, markdown: String,
                       documentJSON: String?, templateJSON: String?,
-                      templateAuthoringSourceJSON: String?) throws -> Document {
+                      templateAuthoringSourceJSON: String?,
+                      addedAssets: [TextTextTextBundleAsset] = []) throws -> Document {
         let target = try url(for: path)
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
@@ -303,9 +304,32 @@ public struct LocalVaultDocumentStore: Sendable {
                 let current = try readUncoordinated(path: path, url: coordinated)
                 guard current.hash == expectedHash else { throw Failure.changed }
                 let before = current.contents
+                let occupied = Dictionary(uniqueKeysWithValues: before.assets.map {
+                    ($0.filename.precomposedStringWithCanonicalMapping.lowercased(), $0)
+                })
+                var additions = Set<String>()
+                var addedSize = 0
+                var newAssets: [TextTextTextBundleAsset] = []
+                for asset in addedAssets {
+                    let normalized = asset.filename.precomposedStringWithCanonicalMapping.lowercased()
+                    guard TextTextTextBundlePackage.isSafeAssetFilename(asset.filename),
+                          additions.insert(normalized).inserted else {
+                        throw TextTextTextBundleError.invalidPackage("Unsafe or duplicate pasted asset name")
+                    }
+                    if let existing = occupied[normalized] {
+                        guard existing.filename == asset.filename, existing.data == asset.data else {
+                            throw TextTextTextBundleError.invalidPackage("Pasted asset already exists with different bytes")
+                        }
+                    } else {
+                        newAssets.append(asset)
+                        addedSize += asset.data.count
+                    }
+                }
+                guard before.logicalSize <= 64 * 1024 * 1024 - addedSize else { throw Failure.tooLarge }
                 if before.markdown == markdown, before.documentJSON == documentJSON,
                    before.templateJSON == templateJSON,
-                   before.templateAuthoringSourceJSON == templateAuthoringSourceJSON { return current }
+                   before.templateAuthoringSourceJSON == templateAuthoringSourceJSON,
+                   addedAssets.isEmpty { return current }
                 let parent = coordinated.deletingLastPathComponent()
                 let temporary = parent.appendingPathComponent(".texttext-save-\(UUID().uuidString)")
                 try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
@@ -313,7 +337,12 @@ public struct LocalVaultDocumentStore: Sendable {
                 let package = try TextTextTextBundlePackage.materialize(
                     canonicalMarkdown: markdown, documentJSON: documentJSON,
                     templateJSON: templateJSON, templateAuthoringSourceJSON: templateAuthoringSourceJSON,
-                    assets: before.assets.map {
+                    assets: before.assets.map { existing in
+                        let addition = addedAssets.first { $0.filename == existing.filename }
+                        return .init(filename: existing.filename, data: existing.data,
+                              remoteURL: addition?.remoteURL ?? existing.remoteURL ?? "assets/\(existing.filename)",
+                              contentType: addition?.contentType ?? existing.contentType)
+                    } + newAssets.map {
                         .init(filename: $0.filename, data: $0.data,
                               remoteURL: $0.remoteURL ?? "assets/\($0.filename)", contentType: $0.contentType)
                     }, sourceURL: before.sourceURL, in: temporary)
@@ -332,6 +361,34 @@ public struct LocalVaultDocumentStore: Sendable {
                     if FileManager.default.fileExists(atPath: replacement.path) {
                         try archive.addEntry(with: prefix + name, fileURL: replacement, compressionMethod: .deflate)
                     }
+                }
+                for asset in newAssets {
+                    let entryPath = prefix + "assets/" + asset.filename
+                    guard archive[entryPath] == nil else { throw TextTextTextBundleError.invalidPackage("Pasted asset already exists") }
+                    try archive.addEntry(with: entryPath,
+                        fileURL: package.url.appendingPathComponent("assets/" + asset.filename),
+                        compressionMethod: .deflate)
+                }
+                if !addedAssets.isEmpty {
+                    var originalInfo: [String: Any] = [:]
+                    let infoPath = prefix + "info.json"
+                    if let entry = archive[infoPath] {
+                        var bytes = Data(); _ = try archive.extract(entry) { bytes.append($0) }
+                        originalInfo = (try JSONSerialization.jsonObject(with: bytes)) as? [String: Any] ?? [:]
+                    }
+                    let generatedData = try Data(contentsOf: package.url.appendingPathComponent("info.json"))
+                    let generatedInfo = try JSONSerialization.jsonObject(with: generatedData) as? [String: Any]
+                    let generatedMappings = generatedInfo?["net.texttext.assets"] as? [String: Any] ?? [:]
+                    var mappings = originalInfo["net.texttext.assets"] as? [String: Any] ?? [:]
+                    for asset in addedAssets where generatedMappings[asset.filename] != nil {
+                        mappings[asset.filename] = generatedMappings[asset.filename]
+                    }
+                    originalInfo["net.texttext.assets"] = mappings
+                    let mergedInfo = temporary.appendingPathComponent("merged-info.json")
+                    try JSONSerialization.data(withJSONObject: originalInfo, options: [.sortedKeys])
+                        .write(to: mergedInfo, options: .atomic)
+                    if let entry = archive[infoPath] { try archive.remove(entry) }
+                    try archive.addEntry(with: infoPath, fileURL: mergedInfo, compressionMethod: .deflate)
                 }
                 let handle = try FileHandle(forWritingTo: packed)
                 try handle.synchronize(); try handle.close()

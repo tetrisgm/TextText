@@ -386,7 +386,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                             expectedHash: expectedHash, markdown: Self.string(params, "markdown"),
                             documentJSON: params["documentJSON"] as? String,
                             templateJSON: params["templateJSON"] as? String,
-                            templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String)
+                            templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String,
+                            addedAssets: try Self.pastedAssets(params))
                     })
                 case "create":
                     let files = DocumentStore(root: root)
@@ -441,6 +442,60 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private static func string(_ params: [String: Any], _ key: String) throws -> String {
         guard let value = params[key] as? String, value.utf8.count <= 16_000_000 else { throw VaultBridgeError("Missing or oversized \(key).") }
         return value
+    }
+    private static func pastedAssets(_ params: [String: Any]) throws -> [TextTextTextBundleAsset] {
+        guard let raw = params["addedAssets"] else { return [] }
+        guard let values = raw as? [[String: Any]], values.count <= 16 else {
+            throw VaultBridgeError("Invalid pasted image data.")
+        }
+        let limit = 20 * 1024 * 1024
+        var total = 0
+        return try values.map { value in
+            guard let filename = value["filename"] as? String,
+                  TextTextTextBundlePackage.isSafeAssetFilename(filename),
+                  let encoded = value["data"] as? String, !encoded.isEmpty,
+                  encoded.utf8.count <= ((limit + 2) / 3) * 4,
+                  let data = Data(base64Encoded: encoded), !data.isEmpty,
+                  data.count <= limit,
+                  let declared = value["contentType"] as? String,
+                  let detected = pastedImageType(data), declared == detected.contentType,
+                  detected.extensions.contains((filename as NSString).pathExtension.lowercased()) else {
+                throw VaultBridgeError("Invalid pasted image data.")
+            }
+            total += data.count
+            guard total <= 40 * 1024 * 1024 else {
+                throw VaultBridgeError("Pasted images exceed 40 MiB.")
+            }
+            var remoteURL: String?
+            if let raw = value["remoteURL"] as? String {
+                guard raw.utf8.count <= 4096, let url = URL(string: raw),
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                      url.host != nil, url.user == nil, url.password == nil else {
+                    throw VaultBridgeError("Invalid pasted image data.")
+                }
+                remoteURL = url.absoluteString
+            } else if value["remoteURL"] != nil {
+                throw VaultBridgeError("Invalid pasted image data.")
+            }
+            return TextTextTextBundleAsset(filename: filename, data: data,
+                contentType: detected.contentType, remoteURL: remoteURL)
+        }
+    }
+    private static func pastedImageType(_ data: Data) -> (contentType: String, extensions: Set<String>)? {
+        let bytes = [UInt8](data.prefix(12))
+        if bytes.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]) {
+            return ("image/png", ["png"])
+        }
+        if bytes.starts(with: [255, 216, 255]) { return ("image/jpeg", ["jpg", "jpeg"]) }
+        if bytes.count >= 6, String(bytes: bytes.prefix(6), encoding: .ascii).map({ ["GIF87a", "GIF89a"].contains($0) }) == true {
+            return ("image/gif", ["gif"])
+        }
+        if bytes.count >= 12,
+           String(bytes: bytes[0..<4], encoding: .ascii) == "RIFF",
+           String(bytes: bytes[8..<12], encoding: .ascii) == "WEBP" {
+            return ("image/webp", ["webp"])
+        }
+        return nil
     }
     private static func list(root: URL) throws -> [String: Any] {
         ["root": root.path, "folders": try LocalVaultStarter.listFolders(root: root), "items": try LocalVaultDocumentStore(root: root).list().map { ["path": $0] }]

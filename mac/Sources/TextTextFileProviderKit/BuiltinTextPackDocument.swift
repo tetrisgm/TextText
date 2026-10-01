@@ -16,7 +16,10 @@ public struct BuiltinTextPackDocument: Sendable {
                              userInfo: [NSLocalizedDescriptionKey: "Unknown document template: \(kind)"])
         }
         var fields: [String: Any] = [:]
-        if let sourceURL { fields["sourceUrl"] = sourceURL }
+        if let sourceURL {
+            fields["sourceUrl"] = sourceURL
+            fields["captureStatus"] = "pending"
+        }
         let document: [String: Any] = [
             "schemaVersion": 1,
             "content": ["title": title, "body": body, "fields": fields,

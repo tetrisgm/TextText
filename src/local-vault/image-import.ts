@@ -7,7 +7,7 @@ export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
 
 // Check the stored bytes, rather than trusting an extension or clipboard MIME.
-function imageType(bytes: Uint8Array): { extension: string; contentType: string } {
+export function imageType(bytes: Uint8Array): { extension: string; contentType: string } {
   const starts = (signature: number[]) => signature.every((value, index) => bytes[index] === value);
   const ascii = (offset: number, length: number) => String.fromCharCode(...bytes.subarray(offset, offset + length));
   if (starts([137, 80, 78, 71, 13, 10, 26, 10])) return { extension: "png", contentType: "image/png" };

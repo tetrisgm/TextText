@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { applyArticleCapture, articleSource } from "./article-capture";
+import { applyArticleCapture, articleNeedsEnrichment, articleSource } from "./article-capture";
 const sourceURL = "https://example.com/article";
 function note(body = sourceURL) {
   const document = emptyDocumentSnapshot({ id: "texttext.bookmark", version: 1 });
@@ -21,6 +21,32 @@ describe("file-backed article capture", () => {
     expect(document.content.assets).toEqual(base.content.assets);
     expect(document.presentation).toEqual(base.presentation);
     expect(base.content.body).toBe(sourceURL);
+  });
+  it("uses pending capture state as a durable unopened-link queue", () => {
+    const pending = note(); pending.content.fields.captureStatus = "pending";
+    expect(articleNeedsEnrichment(pending)).toBe(true);
+    const complete = applyArticleCapture(pending, pending, capture).document;
+    expect(articleNeedsEnrichment(complete)).toBe(false);
+    complete.content.fields.captureMediaStatus = "pending";
+    expect(articleNeedsEnrichment(complete)).toBe(true);
+    complete.content.fields.captureMediaStatus = "failed";
+    expect(articleNeedsEnrichment(complete)).toBe(false);
+  });
+  it("localizes archived media while preserving exact existing assets", () => {
+    const base = note();
+    base.content.fields.captureStatus = "pending";
+    base.content.assets = [{ id: "existing", kind: "file", src: "assets/keep.bin" }];
+    const mediaCapture = { ...capture, markdown: `${capture.markdown}\n\n![Hero](https://cdn.example.com/hero.png)`, media: [{
+      filename: "article-hero.png", contentType: "image/png" as const, data: "iVBORw0KGgo=", remoteURL: "https://cdn.example.com/hero.png",
+    }] };
+    const result = applyArticleCapture(base, base, mediaCapture, { archiveMedia: true });
+    expect(result.document.content.body).toContain("![Hero](assets/article-hero.png)");
+    expect(result.document.content.fields).toMatchObject({ captureStatus: "complete", captureMediaStatus: "complete" });
+    expect(result.document.content.assets).toEqual([
+      base.content.assets[0],
+      { id: "article-hero.png", kind: "image", src: "assets/article-hero.png", contentType: "image/png" },
+    ]);
+    expect(applyArticleCapture(result.document, result.document, mediaCapture, { archiveMedia: true }).document.content.assets).toHaveLength(2);
   });
   it("records the source alongside prose instead of overwriting it", () => {
     const base = note("My original commentary");

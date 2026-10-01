@@ -1,8 +1,9 @@
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { VaultError, type VaultFile, type VaultListing, type VaultTransport } from "./bridge";
-import { emptyPack, encodePack, openPack, packIdentity, replacePackIdentity, type OpenPack } from "./pack";
+import { emptyPack, encodePack, openPack, packIdentity, replacePackIdentity, type OpenPack, type PackAssetAddition } from "./pack";
 import { writePayload } from "./model";
+import { imageType } from "./image-import";
 
 type Manifest = { items: { itemId: string; relativePath: string; revision: string }[]; revision: string };
 type OpenCollaborationPrefetch = {
@@ -11,6 +12,37 @@ type OpenCollaborationPrefetch = {
 };
 const digest = async (bytes: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)))].map((value) => value.toString(16).padStart(2, "0")).join("");
 const safeName = (value: string) => value.trim().replace(/[\\/:\x00-\x1f]/g, "-").replace(/^\.+/, "").slice(0, 120) || "Untitled";
+
+function addedAssets(value: unknown): PackAssetAddition[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 16) throw new Error("Invalid pasted image data.");
+  let total = 0;
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid pasted image data.");
+    const { filename, data, contentType, remoteURL } = entry as Record<string, unknown>;
+    if (typeof filename !== "string" || typeof contentType !== "string" || typeof data !== "string" || !data.length || data.length > Math.ceil(20 * 1024 * 1024 / 3) * 4 || data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) {
+      throw new Error("Invalid pasted image data.");
+    }
+    const decoded = atob(data);
+    if (btoa(decoded) !== data) throw new Error("Invalid pasted image data.");
+    const bytes = Uint8Array.from(decoded, character => character.charCodeAt(0));
+    const detected = imageType(bytes);
+    const extension = filename.split(".").at(-1)?.toLocaleLowerCase();
+    if (detected.contentType !== contentType || (detected.extension === "jpg" ? !["jpg", "jpeg"].includes(extension ?? "") : extension !== detected.extension)) {
+      throw new Error("Invalid pasted image data.");
+    }
+    let source: string | undefined;
+    if (remoteURL !== undefined) {
+      if (typeof remoteURL !== "string") throw new Error("Invalid pasted image data.");
+      const url = new URL(remoteURL);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.href.length > 4096) throw new Error("Invalid pasted image data.");
+      source = url.href;
+    }
+    total += bytes.length;
+    if (total > 40 * 1024 * 1024) throw new Error("Pasted images exceed 40 MiB.");
+    return { filename, data: bytes, contentType, ...(source ? { remoteURL: source } : {}) };
+  });
+}
 
 export function createWebVaultTransport(workspaceId: string, name = "Workspace", request: typeof fetch = fetch): { request: VaultTransport; refresh: () => Promise<boolean>; wait: (signal: AbortSignal) => Promise<boolean>; destroy: () => void } {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workspaceId)) throw new Error("Invalid workspace identifier.");
@@ -373,7 +405,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (original.file.path !== path) throw new Error("The file revision belongs to a different path.");
       const changes = { ...original.file, ...params } as VaultFile;
       if (packIdentity(changes.markdown) !== original.itemId) throw new Error("A write cannot change this file's identity.");
-      return commit(original.itemId, path, encodePack(original, changes), hash);
+      return commit(original.itemId, path, encodePack(original, changes, addedAssets(params.addedAssets)), hash);
     }
     if (method === "create" || method === "importPack") {
       const id = crypto.randomUUID(), title = String(params.title ?? "Untitled");
@@ -410,6 +442,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
           const source = new URL(params.sourceURL);
           if (!["http:", "https:"].includes(source.protocol) || source.username || source.password) throw new Error("Choose an HTTP or HTTPS link without credentials.");
           document.content.fields.sourceUrl = source.href;
+          document.content.fields.captureStatus = "pending";
         }
         file = { path, hash: "", markdown: `---\ntextTextId: ${JSON.stringify(id)}\n---\n\n`, documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template) };
         file = { ...file, ...writePayload(file, document) };
