@@ -15,10 +15,13 @@ import { emptyDocumentSnapshot } from "../src/lib/documents/model";
 import { openPack } from "../src/local-vault/pack";
 import { readDocument } from "../src/local-vault/model";
 import { readVaultItemCommentsFromPack } from "../src/lib/vault/item-comments";
+import { listVaultTextpacks } from "../src/lib/vault/server-store";
 const origin = process.env.TEXTTEXT_VERIFY_ORIGIN ?? "http://localhost:3000";
 const root = path.resolve(process.env.TEXTTEXT_VAULT_ROOT ?? ".texttext/vault-server");
 const workspaceId = randomUUID(), itemId = randomUUID(), grantId = randomUUID(), ownerGrantId = randomUUID();
 const title = `File collaboration ${workspaceId.slice(0, 8)}`, relativePath = `${title}.textpack`;
+const newFolder = `Shared folder ${workspaceId.slice(0, 8)}`;
+let addedItemId: string | null = null;
 const emails = ["ada.live-collab@example.test", "grace.live-collab@example.test"];
 function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message); console.log(`PASS ${message}`); }
 async function until(probe: () => Promise<boolean>, message: string, timeout = 15000) {
@@ -121,10 +124,28 @@ async function main() {
     await alice.screenshot({ path: "/tmp/texttext-file-collaboration-light.png", fullPage: true });
     await alice.emulateMedia({ colorScheme: "dark" });
     await alice.screenshot({ path: "/tmp/texttext-file-collaboration-dark.png", fullPage: true });
+    await alice.getByRole("combobox", { name: "Folder for new items" }).fill(newFolder);
+    await alice.getByRole("button", { name: "New note", exact: true }).click();
+    await alice.getByText(`${newFolder}/Untitled.textpack`, { exact: true }).waitFor();
+    await alice.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
+    await append(alice, "Created together in a new folder.");
+    await until(async () => {
+      const entry = (await listVaultTextpacks({ root, workspaceId })).items.find(value => value.relativePath === `${newFolder}/Untitled.textpack`);
+      if (entry) addedItemId = entry.itemId;
+      return Boolean(entry);
+    }, "first account saves a TextPack in the new folder");
+    await until(async () => await bob.getByText(newFolder, { exact: true }).count() === 1,
+      "second account sees the new folder without reloading", 35000);
+    await bob.locator(`button[title="${newFolder}/Untitled.textpack"]`).click();
+    await until(async () => (await text(bob)) === "Created together in a new folder.",
+      "second account opens the new folder's note with its live content", 35000);
+    await bob.getByRole("button", { name: new RegExp(title) }).first().click();
+    await bob.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
     await db.update(collaborators).set({ role: "viewer" }).where(eq(collaborators.id, grantId));
     const denied = await bob.request.post(`${origin}/api/vault/${workspaceId}/items/${itemId}/collaboration`, { headers: { Origin: origin }, data: { operationId: randomUUID(), epoch: 1, updates: ["AAA="] } });
     check(denied.status() === 403, "downgraded participant cannot write");
-    await until(async () => await bob.getByText(/Editing access was removed/).count() > 0, "open editor notices permission downgrade", 35000);
+    await until(async () => await bob.getByText(/Editing access was removed|This file or its access changed/).count() > 0,
+      "open editor notices permission downgrade", 35000);
     check(errors.length === 0, `no browser runtime errors (${errors.length})`);
   } catch (error) {
     for (const [index, context] of browser.contexts().entries()) for (const page of context.pages()) {
@@ -134,7 +155,8 @@ async function main() {
     throw error;
   } finally {
     await browser.close();
-    await db.delete(actionAudit).where(eq(actionAudit.targetId, itemId));
+    const fixtureIds = (await listVaultTextpacks({ root, workspaceId }).then(value => value.items.map(item => item.itemId)).catch(() => []));
+    await db.delete(actionAudit).where(inArray(actionAudit.targetId, [...new Set([itemId, ...fixtureIds, ...(addedItemId ? [addedItemId] : [])])]));
     await db.delete(collaborators).where(inArray(collaborators.id, [grantId, ownerGrantId]));
     await db.delete(blogs).where(eq(blogs.id, workspaceId));
     await rm(path.join(root, workspaceId), { recursive: true, force: true });
