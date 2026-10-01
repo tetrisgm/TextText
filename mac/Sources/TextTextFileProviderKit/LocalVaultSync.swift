@@ -109,6 +109,22 @@ public actor LocalVaultSync {
         do { return try sharedStore.checkpoint(itemId: itemId) }
         catch LocalVaultSyncFailure.changed { return try sharedStore.checkpoint(itemId: itemId) }
     }
+    /// The native relay may attribute only the exact durable local Yjs batch
+    /// produced by an active shared editor. A direct file edit has no batch.
+    public func isNativeSharedPush(itemId: String, operationId: String, epoch: Int, updates: [String]) throws -> Bool {
+        guard let session = sharedSessions[itemId], !session.retired,
+              let checkpoint = try readSharedCheckpoint(itemId: itemId), checkpoint.pending,
+              checkpoint.retiredReason == nil, checkpoint.path == session.path,
+              checkpoint.projectedHash == session.hash, checkpoint.epoch == epoch,
+              let journal = try JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8)) as? [String: Any],
+              let batch = journal["batch"] as? [String: Any],
+              batch["operationId"] as? String == operationId,
+              batch["updates"] as? [String] == updates,
+              let current = try? LocalVaultDocumentStore(root: root).readMetadata(path: session.path),
+              current.hash == checkpoint.projectedHash,
+              MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId else { return false }
+        return true
+    }
     public func beginSharedEditing(itemId: String, path: String, expectedHash: String) throws -> LocalVaultSharedSession {
         guard sharedSessions[itemId] == nil else { throw LocalVaultSyncFailure.busy }
         let replayBeforeHash = try sharedStore.pendingIntentBeforeHash(itemId: itemId)

@@ -92,10 +92,13 @@ final class LocalVaultCollaborationTests: XCTestCase {
         let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
         XCTAssertEqual(Set(body.keys), ["operationId", "epoch", "updates"])
         XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertNil(request.value(forHTTPHeaderField: "X-TextText-Edit-Origin"))
         XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
             method: "collaborationPush", params: ["itemId": "item", "operationId": "op", "epoch": 1, "updates": []]))
         XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
             method: "collaborationPush", params: ["itemId": "item", "operationId": "op", "epoch": 1, "updates": [String(repeating: "a", count: 512 * 1024 + 1)]]))
+        XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "collaborationPush", params: ["itemId": "item", "operationId": "op", "epoch": 1, "updates": ["AQ=="], "editOrigin": "native-editor"]))
     }
     func testPresenceUsesBoundItemEndpointAndWhitelistedSessions() throws {
         let read = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",

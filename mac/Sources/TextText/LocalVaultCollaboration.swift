@@ -432,7 +432,15 @@ final class LocalVaultCollaboration {
                     try Task.checkCancellation()
                     completion(.success(configuration?.value)); return
                 }
-                let request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)
+                var request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)
+                if method == "collaborationPush", let itemId = params["itemId"] as? String,
+                   let operationId = params["operationId"] as? String, let updates = params["updates"] as? [String],
+                   let active = self.localSessions.values.first(where: { $0.itemId == itemId }) {
+                    let epoch = try Self.integer(params["epoch"], minimum: 1, maximum: 9_007_199_254_740_991)
+                    if try await active.engine.isNativeSharedPush(itemId: itemId, operationId: operationId, epoch: epoch, updates: updates) {
+                        request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin")
+                    }
+                }
                 let (data, status) = try await Self.responseData(session: self.session, request: request,
                     maxBytes: method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024)
                 try Task.checkCancellation()

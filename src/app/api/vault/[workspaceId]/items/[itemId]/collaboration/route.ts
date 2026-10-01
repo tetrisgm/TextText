@@ -52,6 +52,9 @@ export async function POST(request: Request, context: Context) {
   try {
     const access = await authorize(request, context, "edit");
     if (access instanceof Response) return access;
+    const editOrigin = request.headers.get("X-TextText-Edit-Origin");
+    if (editOrigin !== null && editOrigin !== "native-editor") return Response.json({ error: "Invalid edit origin" }, { status: 400, headers });
+    if (editOrigin && !access.canAttributeNativeEditor) return Response.json({ error: "An app token is required for native editor attribution" }, { status: 403, headers });
     const parsed = await readBoundedJson<unknown>(request, 6 * 1024 * 1024);
     if ("error" in parsed) return Response.json({ error: "Invalid or oversized collaboration request" }, { status: parsed.error === "too_large" ? 413 : 400, headers });
     const value = parsed.value as { operationId?: unknown; epoch?: unknown; updates?: unknown } | null;
@@ -63,12 +66,14 @@ export async function POST(request: Request, context: Context) {
     // Final authorization happens inside the store lock, after upload and merge.
     const current = access;
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
-    const result = await pushVaultCollaboration({ ...current, operationId: value.operationId, epoch: value.epoch, updates: value.updates as string[],
+    const result = await pushVaultCollaboration({ ...current, actorType: editOrigin ? "human" : current.actorType,
+      operationId: value.operationId, epoch: value.epoch, updates: value.updates as string[],
       signal: request.signal, beforeCommit: async (relativePath: string) => {
         const { workspaceId, itemId } = await context.params;
         const latest = await authorizeVaultItemAtPath(request, workspaceId, itemId, relativePath, "edit");
         if (latest instanceof Response) throw latest;
         if (latest.actorUserId !== current.actorUserId) throw Response.json({ error: "Session changed" }, { status: 403, headers });
+        if (editOrigin && !latest.canAttributeNativeEditor) throw Response.json({ error: "An app token is required for native editor attribution" }, { status: 403, headers });
       },
     });
     return Response.json(result, { status: result.status === "conflict" ? 409 : 200, headers });

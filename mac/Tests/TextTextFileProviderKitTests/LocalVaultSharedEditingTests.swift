@@ -100,6 +100,43 @@ final class LocalVaultSharedEditingTests: XCTestCase {
             XCTFail("A stale session token must fail")
         } catch LocalVaultSharedFailure.staleSession { }
     }
+    func testOnlyPersistedActiveSharedBatchCanClaimNativeEditorOrigin() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let change = try changes(original, body: "Human shared edit")
+        var target = try checkpoint(original)
+        var journal = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any])
+        journal["pending"] = []
+        journal["batch"] = ["operationId": "human-push", "updates": ["AQ=="]]
+        target.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        let materialized = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: target.journal, pending: true, markdown: change.0, documentJSON: change.1)
+        let matched = try await engine.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 1, updates: ["AQ=="])
+        let wrongOperation = try await engine.isNativeSharedPush(itemId: itemId, operationId: "different", epoch: 1, updates: ["AQ=="])
+        let wrongUpdates = try await engine.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 1, updates: ["Ag=="])
+        let wrongEpoch = try await engine.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 2, updates: ["AQ=="])
+        XCTAssertTrue(matched)
+        XCTAssertFalse(wrongOperation); XCTAssertFalse(wrongUpdates); XCTAssertFalse(wrongEpoch)
+
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let closed = try await engine.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 1, updates: ["AQ=="])
+        XCTAssertFalse(closed)
+        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await restarted.beginSharedEditing(itemId: itemId, path: path, expectedHash: materialized.document.hash)
+        let resumed = try await restarted.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 1, updates: ["AQ=="])
+        XCTAssertTrue(resumed)
+
+        let agent = try changes(materialized.document, body: "Agent direct file edit")
+        _ = try LocalVaultDocumentStore(root: root).write(path: path, expectedHash: materialized.document.hash,
+            markdown: agent.0, documentJSON: agent.1, templateJSON: original.contents.templateJSON,
+            templateAuthoringSourceJSON: original.contents.templateAuthoringSourceJSON)
+        let changedOutside = try await restarted.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 1, updates: ["AQ=="])
+        XCTAssertFalse(changedOutside)
+    }
     func testRecoveredPendingPrimaryIsNeverUploadedWhenRemoteRevisionIsUnchanged() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")

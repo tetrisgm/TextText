@@ -44,6 +44,27 @@ describe("file collaboration route", () => {
     const conflict = await POST(post(mutation), context);
     expect(conflict.status).toBe(409); expect(await conflict.json()).toMatchObject({ epoch: 2, code: "epoch_changed" });
   });
+  it("attributes a native shared edit to the app user without granting that claim to manual tokens", async () => {
+    const native = { ...identity, actorType: "external_agent" as const, canAttributeNativeEditor: true };
+    const request = new Request(url, { method: "POST", headers: { "X-TextText-Edit-Origin": "native-editor" }, body: JSON.stringify(mutation) });
+    mocks.authorize.mockResolvedValue(native);
+    expect((await POST(request, context)).status).toBe(200);
+    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: "user-1", actorType: "human" }));
+    mocks.push.mockClear();
+    expect((await POST(post(mutation), context)).status).toBe(200);
+    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ actorType: "external_agent" }));
+    mocks.push.mockClear();
+    mocks.authorize.mockResolvedValue({ ...native, canAttributeNativeEditor: false });
+    expect((await POST(request, context)).status).toBe(403);
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect((await POST(new Request(url, { method: "POST", headers: { "X-TextText-Edit-Origin": "human" }, body: JSON.stringify(mutation) }), context)).status).toBe(400);
+  });
+  it("rechecks app-token attribution at the commit boundary", async () => {
+    const native = { ...identity, actorType: "external_agent" as const, canAttributeNativeEditor: true };
+    mocks.authorize.mockResolvedValueOnce(native).mockResolvedValueOnce({ ...native, canAttributeNativeEditor: false });
+    const request = new Request(url, { method: "POST", headers: { "X-TextText-Edit-Origin": "native-editor" }, body: JSON.stringify(mutation) });
+    expect((await POST(request, context)).status).toBe(403);
+  });
   it("passes a fresh authorization check into the store commit boundary", async () => {
     mocks.authorize.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 403 }));
     mocks.push.mockImplementation(async (input) => { await input.beforeCommit(state.relativePath); return { status: "written" }; });
