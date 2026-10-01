@@ -51,6 +51,8 @@ if [ "${1:-}" = "-d" ]; then
   <key>com.apple.developer.team-identifier</key><string>ABCDEFGHIJ</string>
   <key>com.apple.security.application-groups</key>
   <array><string>ABCDEFGHIJ.group.app.texttext</string></array>
+  <key>com.apple.developer.applesignin</key>
+  <array><string>Default</string></array>
 </dict></plist>
 PLIST
 fi
@@ -100,6 +102,25 @@ TEXTTEXT_VERIFY_APP="$TOOLS/verify-app" \
 grep -F -- "--component $APP /Applications" "$LOG" >/dev/null
 grep -F -- "--sign 3rd Party Mac Developer Installer: TextText Test (ABCDEFGHIJ)" "$LOG" >/dev/null
 grep -F -- "pkgutil --check-signature $PACKAGE" "$LOG" >/dev/null
+
+# A Store-shaped app without the required native Apple sign-in value must never
+# become an upload artifact.
+sed -i '' 's/<array><string>Default<\/string><\/array>/<array><string>Invalid<\/string><\/array>/' "$TOOLS/codesign"
+rm -f "$PACKAGE"
+if TEXTTEXT_TEST_LOG="$LOG" \
+  TEXTTEXT_TESTFLIGHT_SKIP_BUILD=1 \
+  TEXTTEXT_TESTFLIGHT_APP="$APP" \
+  TEXTTEXT_TESTFLIGHT_OUTPUT_PKG="$PACKAGE" \
+  TEXTTEXT_CODESIGN="$TOOLS/codesign" \
+  TEXTTEXT_SECURITY="$TOOLS/security" \
+  TEXTTEXT_PRODUCTBUILD="$TOOLS/productbuild" \
+  TEXTTEXT_PKGUTIL="$TOOLS/pkgutil" \
+  TEXTTEXT_VERIFY_APP="$TOOLS/verify-app" \
+    "$ROOT/release/prepare-testflight-build.sh" >/dev/null 2>&1; then
+  echo "prepare-testflight-build accepted an invalid native Apple sign-in entitlement" >&2
+  exit 1
+fi
+sed -i '' 's/<array><string>Invalid<\/string><\/array>/<array><string>Default<\/string><\/array>/' "$TOOLS/codesign"
 
 # A Store-shaped app without the sandbox must never become an upload artifact.
 sed -i '' '/com.apple.security.app-sandbox/{N;d;}' "$TOOLS/codesign"
