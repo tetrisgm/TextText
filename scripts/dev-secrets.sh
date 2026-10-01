@@ -4,9 +4,9 @@
 #   service: texttext-dev-anthropic   account: api-key   (Anthropic / Claude)
 #   service: texttext-dev-openai      account: api-key   (OpenAI)
 #
-# This mirrors release/secrets.sh: values are read through `security`, never
-# passed as a command argument (so they cannot appear in `ps`), never echoed,
-# and never written to a log. A missing key is reported by name only.
+# Values are read through `security`, never passed as a command argument (so
+# they cannot appear in `ps`), never echoed, and never written to a log. A
+# missing key is reported by name only.
 #
 # Store or rotate one without it touching your shell history or an agent's
 # context (copy the key from the provider console first):

@@ -1,24 +1,70 @@
-import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { createReadStream } from "node:fs";
-import { createHash } from "node:crypto";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join, normalize } from "node:path";
 import { stat } from "node:fs/promises";
 
+const VERSION = "[0-9]+(?:\\.[0-9]+)+";
+const RELEASE_KEY = new RegExp(`^downloads/(TextText-${VERSION}\\.zip|appcast-${VERSION}\\.xml)$`);
+const INSTALLER_SOURCE = readFileSync(new URL("./install-release-artifact.mjs", import.meta.url), "utf8");
+
 export function releasePublicBase(env = process.env) {
-  if (!env.TEXTTEXT_RELEASE_PUBLIC_BASE) throw new Error("Choose and configure TEXTTEXT_RELEASE_PUBLIC_BASE before releasing.");
-  const base = new URL(env.TEXTTEXT_RELEASE_PUBLIC_BASE);
-  if (base.protocol !== "https:" || base.username || base.password || base.pathname !== "/" || base.search || base.hash || /(?:\.blob\.vercel-storage\.com|\.r2\.cloudflarestorage\.com)$/i.test(base.hostname)) throw new Error("TEXTTEXT_RELEASE_PUBLIC_BASE must be the public HTTPS download origin.");
+  if (!env.TEXTTEXT_PRODUCT_ORIGIN) throw new Error("TEXTTEXT_PRODUCT_ORIGIN must be configured before releasing.");
+  const base = new URL(env.TEXTTEXT_PRODUCT_ORIGIN);
+  if (
+    base.protocol !== "https:" ||
+    base.username ||
+    base.password ||
+    base.pathname !== "/" ||
+    base.search ||
+    base.hash ||
+    /(?:\.blob\.vercel-storage\.com|\.r2\.cloudflarestorage\.com)$/i.test(base.hostname)
+  ) throw new Error("TEXTTEXT_PRODUCT_ORIGIN must be the product HTTPS origin.");
   return base.origin;
 }
-export function releaseStorageConfig(env = process.env) {
-  const account = env.TEXTTEXT_R2_ACCOUNT_ID;
-  if (!/^[a-f0-9]{32}$/.test(account ?? "")) throw new Error("TEXTTEXT_R2_ACCOUNT_ID must be configured.");
-  if (!env.TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID || !env.TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY) throw new Error("Separate release-bucket R2 credentials must be configured.");
-  const base = releasePublicBase(env);
-  const bucket = env.TEXTTEXT_RELEASE_R2_BUCKET || "texttext-releases";
-  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket) || bucket === "texttext-media") throw new Error("Invalid dedicated release bucket.");
-  return { base, bucket, clientOptions: { region: "auto", endpoint: `https://${account}.r2.cloudflarestorage.com`, credentials: { accessKeyId: env.TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID, secretAccessKey: env.TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY }, maxAttempts: 3 } };
+
+function configuredOracleHost(env, home) {
+  const explicit = env.TEXTTEXT_ORACLE_HOST?.trim();
+  if (explicit) return explicit;
+  const file = join(home, ".config/texttext/oracle-host");
+  return existsSync(file) ? readFileSync(file, "utf8").trim() : "";
 }
-export function createReleaseClient(config) { return new S3Client(config.clientOptions); }
+
+export function releaseStorageConfig(env = process.env, { home = homedir() } = {}) {
+  const base = releasePublicBase(env);
+  const host = configuredOracleHost(env, home);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._@-]*$/.test(host)) {
+    throw new Error("Set TEXTTEXT_ORACLE_HOST to the existing Oracle SSH destination.");
+  }
+  const remoteRoot = env.TEXTTEXT_ORACLE_ROOT || "/home/ubuntu/texttext";
+  if (
+    !/^\/home\/ubuntu\/[a-zA-Z0-9/_-]+$/.test(remoteRoot) ||
+    normalize(remoteRoot) !== remoteRoot ||
+    remoteRoot.split("/").some((segment) => ["releases", "incoming", "current", "backups", "release-artifacts"].includes(segment))
+  ) {
+    throw new Error("Oracle root must be an isolated path under /home/ubuntu.");
+  }
+  const artifactRoot = `${remoteRoot}/release-artifacts`;
+  const minFreeBytes = Number(env.TEXTTEXT_STORAGE_MIN_FREE_BYTES || String(2 * 1024 * 1024 * 1024));
+  if (!Number.isSafeInteger(minFreeBytes) || minFreeBytes < 0) {
+    throw new Error("TEXTTEXT_STORAGE_MIN_FREE_BYTES must be a nonnegative integer.");
+  }
+  return {
+    base,
+    host,
+    remoteRoot,
+    artifactRoot,
+    minFreeBytes,
+    sshOptions: [
+      "-i", join(home, ".ssh/id_ed25519"),
+      "-o", "IdentitiesOnly=yes",
+      "-o", "BatchMode=yes",
+      "-o", "ConnectTimeout=10",
+    ],
+  };
+}
+
 export async function inspectReleaseFile(file) {
   const info = await stat(file);
   if (!info.isFile() || info.size <= 0) throw new Error("Release artifact is missing or empty.");
@@ -26,18 +72,71 @@ export async function inspectReleaseFile(file) {
   for await (const chunk of createReadStream(file)) hash.update(chunk);
   return { length: info.size, sha256: hash.digest("hex") };
 }
-/** Conditional creation supports retry only when the immutable object is byte-identical. */
-export async function uploadReleaseFile(client, config, key, file, contentType, identity) {
-  if (!/^downloads\/(?:TextText-[0-9.]+\.zip|appcast-[0-9.]+\.xml)$/.test(key)) throw new Error("Invalid immutable release key.");
-  const body = createReadStream(file);
-  try {
-    await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: key, Body: body, ContentLength: identity.length, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable", IfNoneMatch: "*", Metadata: { sha256: identity.sha256 } }), { abortSignal: AbortSignal.timeout(600_000) });
-  } catch (error) {
-    if (error?.$metadata?.httpStatusCode !== 412) throw error;
-    const existing = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: key }), { abortSignal: AbortSignal.timeout(30_000) });
-    if (existing.ContentLength !== identity.length || existing.Metadata?.sha256 !== identity.sha256) throw new Error("An immutable release object already exists with different bytes. Choose a new version.");
-  } finally { body.destroy(); }
+
+function releaseFilename(key, contentType) {
+  const match = key.match(RELEASE_KEY);
+  if (!match) throw new Error("Invalid immutable release key.");
+  const expected = match[1].endsWith(".zip") ? "application/zip" : "application/xml; charset=utf-8";
+  if (contentType !== expected) throw new Error("Invalid release artifact content type.");
+  return match[1];
 }
+
+function runCommand(command, args, options = {}) {
+  try {
+    return execFileSync(command, args, {
+      encoding: "utf8",
+      maxBuffer: 4 * 1024 * 1024,
+      ...options,
+    });
+  } catch (error) {
+    const detail = typeof error?.stderr === "string" ? error.stderr.trim() : "";
+    throw new Error(detail || `Oracle release artifact ${command} command failed.`);
+  }
+}
+
+function remoteInstaller(config, command, args, run) {
+  return run(
+    "ssh",
+    [...config.sshOptions, config.host, "/usr/bin/node", "--input-type=module", "-", command, config.artifactRoot, ...args],
+    { input: INSTALLER_SOURCE },
+  );
+}
+
+/** Upload to a private temporary path, then verify and atomically link it on Oracle. */
+export async function uploadReleaseFile(
+  config,
+  key,
+  file,
+  contentType,
+  identity,
+  { run = runCommand, token = randomBytes(8).toString("hex") } = {},
+) {
+  const filename = releaseFilename(key, contentType);
+  if (!Number.isSafeInteger(identity?.length) || identity.length <= 0 || !/^[a-f0-9]{64}$/.test(identity?.sha256 ?? "")) {
+    throw new Error("Invalid release artifact identity.");
+  }
+  if (!/^[a-f0-9]{16}$/.test(token)) throw new Error("Invalid transfer token.");
+  const temporary = `${config.artifactRoot}/.incoming-${filename}-${token}.tmp`;
+  let prepared = false;
+  try {
+    remoteInstaller(config, "prepare", [temporary, String(identity.length), String(config.minFreeBytes)], run);
+    prepared = true;
+    run("scp", [...config.sshOptions, file, `${config.host}:${temporary}`]);
+    remoteInstaller(
+      config,
+      "install",
+      [temporary, filename, String(identity.length), identity.sha256, String(config.minFreeBytes)],
+      run,
+    );
+    prepared = false;
+  } catch (error) {
+    if (prepared) {
+      try { remoteInstaller(config, "discard", [temporary], run); } catch { /* preserve the original failure */ }
+    }
+    throw error;
+  }
+}
+
 export function inspectAppcast(xml, version, zipUrl, zipLength) {
   const buildNumber = Number(xml.match(/<sparkle:version>(\d+)<\/sparkle:version>/)?.[1]);
   if (!Number.isSafeInteger(buildNumber) || buildNumber <= 0) throw new Error("Appcast has no usable build number.");
@@ -49,18 +148,22 @@ export function inspectAppcast(xml, version, zipUrl, zipLength) {
   if (enclosure.match(/\burl="([^"]+)"/)?.[1] !== zipUrl || Number(enclosure.match(/\blength="(\d+)"/)?.[1]) !== zipLength || !/sparkle:edSignature="[A-Za-z0-9+/]{86}=="/.test(enclosure)) throw new Error("Appcast enclosure URL, size or signature is invalid.");
   return buildNumber;
 }
+
 export async function verifyPublicArtifact(url, identity, fetcher = fetch) {
   const response = await fetcher(url, { redirect: "error", cache: "no-store", signal: AbortSignal.timeout(600_000) });
-  if (!response.ok || !response.body) throw new Error("Release object is not available at the configured public download origin.");
+  if (!response.ok || !response.body) throw new Error("Release artifact is not available through the product origin.");
   const reader = response.body.getReader(), hash = createHash("sha256");
   let length = 0;
   try {
     while (true) {
-      const next = await reader.read(); if (next.done) break;
+      const next = await reader.read();
+      if (next.done) break;
       length += next.value.byteLength;
-      if (length > identity.length) throw new Error("Public release object exceeds its expected size.");
+      if (length > identity.length) throw new Error("Public release artifact exceeds its expected size.");
       hash.update(next.value);
     }
-    if (length !== identity.length || hash.digest("hex") !== identity.sha256) throw new Error("Public release object does not match the signed local artifact.");
-  } finally { await reader.cancel().catch(() => {}); }
+    if (length !== identity.length || hash.digest("hex") !== identity.sha256) throw new Error("Public release artifact does not match the signed local artifact.");
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
 }

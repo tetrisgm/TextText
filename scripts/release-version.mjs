@@ -66,7 +66,7 @@ async function artifactStatus(url, fetcher) {
 
 export async function assertVersionFree(version, publicBase, fetcher = fetch) {
   if (!versionPattern.test(version)) throw new Error("Invalid release version.");
-  const base = releasePublicBase({ TEXTTEXT_RELEASE_PUBLIC_BASE: publicBase });
+  const base = releasePublicBase({ TEXTTEXT_PRODUCT_ORIGIN: publicBase });
   const urls = [
     `${base}/downloads/TextText-${version}.zip`,
     `${base}/downloads/appcast-${version}.xml`,
@@ -90,7 +90,7 @@ export async function assertVersionFree(version, publicBase, fetcher = fetch) {
   }
 }
 
-export async function nextVersion({ publicBase = process.env.TEXTTEXT_RELEASE_PUBLIC_BASE, fetcher = fetch, versions } = {}) {
+export async function nextVersion({ publicBase = process.env.TEXTTEXT_PRODUCT_ORIGIN, fetcher = fetch, versions } = {}) {
   const candidates = versions ?? [
     generatedReleaseVersion(),
     plistVersion(new URL("mac/Info.plist", root)),
@@ -130,7 +130,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (!version || !versionPattern.test(version)) {
         throw new Error("usage: release-version.mjs assert-free <version>");
       }
-      await assertVersionFree(version, process.env.TEXTTEXT_RELEASE_PUBLIC_BASE);
+      await assertVersionFree(version, process.env.TEXTTEXT_PRODUCT_ORIGIN);
       process.stdout.write(`${version} is free\n`);
     } else {
       throw new Error("usage: release-version.mjs [next | assert-free <version>]");

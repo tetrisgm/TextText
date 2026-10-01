@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assertVersionFree, nextVersion } from "./release-version.mjs";
 
-const publicBase = "https://downloads.example";
+const publicBase = "https://texttext.example";
 
-test("release preflight checks immutable files at the configured public origin", async () => {
+test("release preflight checks immutable files through the product origin", async () => {
   const checked = [];
   await assertVersionFree("0.203", publicBase, async (url, options) => {
     checked.push(url);
@@ -18,16 +18,16 @@ test("release preflight checks immutable files at the configured public origin",
   ]);
 });
 
-test("release preflight refuses missing or obsolete origins before any request", async () => {
+test("release preflight refuses missing or non-product origins before any request", async () => {
   let requests = 0;
   const fetcher = async () => { requests++; return { status: 404 }; };
-  await assert.rejects(assertVersionFree("0.203", undefined, fetcher), /TEXTTEXT_RELEASE_PUBLIC_BASE/);
-  await assert.rejects(assertVersionFree("0.203", "https://old.public.blob.vercel-storage.com", fetcher), /public HTTPS download origin/);
-  await assert.rejects(assertVersionFree("0.203", "https://downloads.example/path", fetcher), /public HTTPS download origin/);
+  await assert.rejects(assertVersionFree("0.203", undefined, fetcher), /TEXTTEXT_PRODUCT_ORIGIN/);
+  await assert.rejects(assertVersionFree("0.203", "https://old.public.blob.vercel-storage.com", fetcher), /product HTTPS origin/);
+  await assert.rejects(assertVersionFree("0.203", "https://texttext.example/path", fetcher), /product HTTPS origin/);
   assert.equal(requests, 0);
 });
 
-test("next version skips occupied versions on the configured public origin", async () => {
+test("next version skips occupied versions on the product origin", async () => {
   const checked = [];
   const version = await nextVersion({ publicBase, versions: ["0.202", "0.201"], fetcher: async (url) => {
     checked.push(url);

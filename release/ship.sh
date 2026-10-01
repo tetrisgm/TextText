@@ -58,8 +58,6 @@ trap release_ship_lock EXIT INT TERM
 # Keep it here so the owner-facing command is genuinely one command.
 export TEXTTEXT_NOTARY_PROFILE="${TEXTTEXT_NOTARY_PROFILE:-texttext-notary}"
 
-# Release credentials come from the login Keychain, never a plaintext file.
-. "$ROOT/release/secrets.sh"
 export TEXTTEXT_BUNDLE_ID="${TEXTTEXT_BUNDLE_ID:-app.texttext.mac}"
 export TEXTTEXT_APP_GROUP="${TEXTTEXT_APP_GROUP:-group.app.texttext}"
 # Lowercase, matching what the server actually answers with. The app compares
@@ -209,10 +207,8 @@ if [ "$NO_PUBLISH" = "1" ]; then
 fi
 
 if [ "$LOCAL_INSTALL" != "1" ]; then
-# Fail before infrastructure changes if the future public release destination is unset.
-for release_credential in TEXTTEXT_RELEASE_R2_ACCESS_KEY_ID TEXTTEXT_RELEASE_R2_SECRET_ACCESS_KEY; do
-  if [ -z "${!release_credential:-}" ]; then require_release_secret "$release_credential"; fi
-done
+# Fail before infrastructure changes if the Oracle SSH destination or product
+# origin cannot serve immutable release artifacts.
 node "$ROOT/scripts/publish-mac-release.mjs" --print-base >/dev/null
 
 echo ">> back up and migrate the Oracle database"

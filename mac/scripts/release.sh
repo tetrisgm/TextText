@@ -89,7 +89,7 @@ if [ ! -x "$SPK/generate_appcast" ]; then
   echo "Sparkle tools missing; run: swift build --package-path mac" >&2
   exit 1
 fi
-# The signed enclosure points to an immutable object on the configured public R2 origin.
+# The signed enclosure points to an immutable same-origin Oracle download route.
 # Key source: SPARKLE_ED_KEY_FILE if set, else the login keychain (prompts
 # once; click "Always Allow"). generate_appcast aborts if dist holds two
 # archives of one version, which is why dist was recreated above.
@@ -150,8 +150,8 @@ echo "   appcast:   $APPCAST_VERSION ($APPCAST_BUILD, $APPCAST_HARDWARE_REQUIREM
 echo "   feed:      $APP_FEED"
 echo "   zip:       $APPCAST_ZIP_URL"
 
-echo ">> [5/5] upload artifacts"
-# Uploads immutable TextText-$VERSION.zip and appcast-$VERSION.xml, then writes
+echo ">> [5/5] transfer artifacts"
+# Transfers immutable TextText-$VERSION.zip and appcast-$VERSION.xml, then writes
 # src/generated/app-release.ts. The outer ship command deploys that generated
 # marker so /appcast.xml, /download/*, and /api/app/version flip together.
 ( cd "$MAC/.." && node scripts/publish-mac-release.mjs "$VERSION" )
