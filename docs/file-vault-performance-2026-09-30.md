@@ -30,6 +30,8 @@ The five idle CPU samples averaged 0.06% for the server process tree and 0% for 
 
 The final local artifact is `/Applications/TextText.app` 0.202 build 1147 on `cdae9f90`. It launched without a false Offline banner. A controlled outage preserved pending edits locally; after the task-owned server returned, collaboration and background sync notices cleared automatically without Retry. After fixture cleanup, current sync state is 31 baselines, outbox 0, and conflicts 0. A real agent edit also converged with a concurrent human line and matched the canonical TextPack. These are installed-app acceptance results, not additional benchmark samples. Build and install receipts are `/tmp/texttext-build-1147.log` and `/tmp/texttext-install-1147.log`.
 
+Spot samples during the live native agent checks observed TextText at 35.0 MiB RSS and its bundled Codex helper at 62.9 MiB while working. The helper was 43.9 MiB after completion; after the panel closed and settled, TextText/helper samples were 12.3/6.7 MiB. These bounded `ps` observations confirm the active agent was included in memory inspection, but they are not continuous peak measurements or a long-run leak proof.
+
 ## Interpretation
 
 Typing and idle behavior meet the initial targets. Folder navigation is close to its target but measured 4.1 ms over it. Warm Command-K is comfortably within target, while its first cold call is 8.5 ms over. Cached item open remains the material performance miss at 590.9 ms p95. The six item samples range from fast gallery opens to the 512 KiB note tail, so further work should begin with a bounded item-open trace rather than another full fixture.
