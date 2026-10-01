@@ -3,7 +3,7 @@ import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, seedVaultCollaboration } from "@/lib/vault/collaboration";
-import { FileCollaborationClient, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, selectFileCollaborationJournal } from "./collaboration-client";
+import { FileCollaborationClient, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, selectFileCollaborationJournal, createFileCollaborationOwnership } from "./collaboration-client";
 
 class Journal implements FileCollaborationJournalStore {
   values = new Map<string, string>(); fail = false;
@@ -325,7 +325,7 @@ describe("durable file collaboration client", () => {
     const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, retainedJournal: retained,
       initialRetirement: "Disk file changed externally", request: server.request, checkpoint });
     clients.push(reopened); await reopened.start();
-    expect(reopened.status).toBe("recovery"); expect(reopened.canEdit).toBe(false); expect(reopened.hasPendingChanges).toBe(true);
+    expect(reopened.status).toBe("recovery"); expect(reopened.canEdit).toBe(false); expect(reopened.hasPendingChanges).toBe(false);
     expect(journal.load(reopened.journalKey)).toBe(retained); expect(checkpoint).not.toHaveBeenCalled(); expect(server.reads).toBe(reads);
   });
 
@@ -392,6 +392,59 @@ describe("durable file collaboration client", () => {
       if (expected === "recovery") { expect(editor.hasPendingChanges).toBe(true); expect(documentText(editor.doc, "body").toString()).toBe("Hello pending"); }
       editor.destroy();
     }
+  });
+
+  it("isolates concurrent tab journals, resumes reloads and discovers closed-tab pending journals", async () => {
+    const server = new Server(), journal = new Journal(), locks = new Set<string>();
+    const sessionA = new Map<string, string>(), sessionB = new Map<string, string>();
+    const owned = (session: Map<string, string>) => createFileCollaborationOwnership({
+      storage: { get length() { return journal.values.size; }, key: index => [...journal.values.keys()][index] ?? null, getItem: key => journal.load(key) },
+      session: { getItem: key => session.get(key) ?? null, setItem: (key, value) => { session.set(key, value); } },
+      tryLock: async key => { if (locks.has(key)) return null; locks.add(key); return () => { locks.delete(key); }; },
+    });
+    const make = (session: Map<string, string>) => {
+      const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, ownership: owned(session), request: server.request });
+      clients.push(editor); return editor;
+    };
+    const alice = make(sessionA); await alice.start();
+    for (const [key, value] of sessionA) sessionB.set(key, value); // Duplicate-tab sessionStorage clone.
+    const bob = make(sessionB); await bob.start();
+    expect(bob.journalKey).not.toBe(alice.journalKey);
+    alice.setActive(false); bob.setActive(false);
+    alice.mutate(doc => documentText(doc, "body").insert(5, " Alice"));
+    const aliceRaw = journal.load(alice.journalKey);
+    bob.mutate(doc => documentText(doc, "body").insert(0, "Bob "));
+    expect(journal.load(alice.journalKey)).toBe(aliceRaw);
+    const bobRaw = journal.load(bob.journalKey), aliceKey = alice.journalKey;
+    expect(() => alice.discardCleanJournal()).toThrow();
+    alice.destroy();
+    const reloaded = make(sessionA); await reloaded.start();
+    expect(reloaded.journalKey).toBe(aliceKey); expect(await reloaded.flush()).toBe(true);
+    expect(journal.load(bob.journalKey)).toBe(bobRaw);
+    reloaded.destroy(); bob.destroy(); sessionB.clear();
+    const orphan = make(new Map()); await orphan.start();
+    expect(orphan.journalKey).toBe(bob.journalKey); expect(await orphan.flush()).toBe(true);
+    expect(documentText(orphan.doc, "body").toString()).toBe("Bob Hello Alice");
+    orphan.discardCleanJournal(); expect(journal.load(orphan.journalKey)).toBeNull();
+    orphan.destroy(); expect(locks.size).toBe(0);
+    expect(() => orphan.discardCleanJournal()).toThrow();
+  });
+
+  it("preserves a malformed orphan journal under exclusive ownership for recovery", async () => {
+    const server = new Server(), journal = new Journal(), seed = client(server, journal);
+    const legacyKey = seed.journalKey; seed.destroy(); journal.values.set(legacyKey, "damaged bytes");
+    let held = false;
+    const ownership = createFileCollaborationOwnership({
+      storage: { get length() { return journal.values.size; }, key: index => [...journal.values.keys()][index] ?? null, getItem: key => journal.load(key) },
+      session: { getItem: () => null, setItem: () => {} },
+      tryLock: async () => { held = true; return () => { held = false; }; },
+    });
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, ownership, request: server.request });
+    clients.push(editor); await editor.start();
+    expect(editor.status).toBe("error"); expect(editor.recoveryRawJournal).toBe("damaged bytes");
+    expect(editor.journalKey).toBe(legacyKey); expect(held).toBe(true);
+    expect(() => editor.discardCleanJournal()).toThrow(); expect(journal.load(legacyKey)).toBe("damaged bytes");
+    editor.destroy(); expect(held).toBe(false); expect(server.reads).toBe(0);
   });
 
 });

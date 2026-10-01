@@ -67,6 +67,33 @@ async function main() {
     await until(async () => [await text(alice), await text(bob)].every(value => value === "BOB-CONCURRENT Original shared text. ALICE-CONCURRENT"), "redo restores the current writer's edit on both clients");
     await a.setOffline(true); await append(alice, " ALICE-OFFLINE"); await append(bob, "BOB-ONLINE ", "start"); await a.setOffline(false);
     await until(async () => [await text(alice), await text(bob)].every(value => value === "BOB-ONLINE BOB-CONCURRENT Original shared text. ALICE-CONCURRENT ALICE-OFFLINE"), "offline pending edits converge without losing or relocating text");
+    // Same context means the same localStorage, unlike the two-account case above.
+    const sibling = await a.newPage();
+    sibling.on("pageerror", error => errors.push(error.message));
+    sibling.on("request", request => { if (request.method() === "POST" && request.url().endsWith("/collaboration")) pushes++; });
+    const sessionCopy = await alice.evaluate(() => Object.entries(sessionStorage));
+    await sibling.addInitScript(entries => { for (const [key, value] of entries) sessionStorage.setItem(key, value); }, sessionCopy);
+    await sibling.goto(`${origin}/vault/${workspaceId}`, { waitUntil: "domcontentloaded" });
+    await sibling.getByRole("button", { name: new RegExp(title) }).first().click();
+    await sibling.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20000 });
+    const ownedKeys = await alice.evaluate(async id => (await navigator.locks.query()).held?.filter(lock => lock.name?.includes(id)).map(lock => lock.name), itemId);
+    check(ownedKeys?.length === 2 && new Set(ownedKeys).size === 2, "same-origin tabs with cloned sessionStorage own separate Web Locks and journals");
+    const beforeTabs = await text(alice);
+    await a.setOffline(true);
+    await Promise.all([append(alice, " SAME-TAB-A"), append(sibling, "SAME-TAB-B ", "start")]);
+    const retainedKeys = await alice.evaluate(id => Object.keys(localStorage).filter(key => key.startsWith("texttext:file-collaboration:v1:") && key.includes(id)), itemId);
+    check(retainedKeys.length === 2, "both offline tabs retain independent recovery records");
+    // Allow app assets/navigation while the collaboration transport stays disconnected.
+    const collaborationRoute = `${origin}/api/vault/**/collaboration*`;
+    await a.route(collaborationRoute, route => route.abort("internetdisconnected"));
+    await a.setOffline(false);
+    await alice.reload({ waitUntil: "domcontentloaded" });
+    await alice.getByRole("button", { name: new RegExp(title) }).first().click();
+    await until(async () => await text(alice) === `${beforeTabs} SAME-TAB-A`, "reloaded tab restores its own unsent edits while collaboration is offline");
+    check(await text(sibling) === `SAME-TAB-B ${beforeTabs}`, "reloading one tab preserves the other tab's unsent edits");
+    await a.unroute(collaborationRoute);
+    const expectedTabs = `SAME-TAB-B ${beforeTabs} SAME-TAB-A`;
+    await until(async () => [await text(alice), await text(sibling), await text(bob)].every(value => value === expectedTabs), "same-origin offline edits survive reload and converge exactly on all three editors", 20000);
     await new Promise(resolve => setTimeout(resolve, 1500));
     const settled = pushes; await new Promise(resolve => setTimeout(resolve, 3000));
     check(pushes === settled, "idle editors make no repeat mutation uploads");

@@ -16,6 +16,7 @@ type StateResponse = Cursor & { update: string; canEditContent: boolean; canComm
 export type FileCollaborationOptions = {
   server: string; workspaceId: string; itemId: string; request: FileCollaborationRequest;
   journal?: FileCollaborationJournalStore; active?: boolean;
+  ownership?: FileCollaborationOwnership;
   retainedJournal?: string | null;
   initialRetirement?: string;
   localRevision?: string;
@@ -96,10 +97,68 @@ const localJournal: FileCollaborationJournalStore = {
   load: key => localStorage.getItem(key), save: (key, value) => localStorage.setItem(key, value), remove: key => localStorage.removeItem(key),
 };
 
+export type FileCollaborationLease = { key: string; release: () => void };
+export type FileCollaborationOwnership = { acquire: (namespace: string) => Promise<FileCollaborationLease> };
+
+/** Each live browser document owns a separate durable record. Orphans are resumed under the same lock. */
+export function createFileCollaborationOwnership(options: {
+  storage: Pick<Storage, "length" | "key" | "getItem">;
+  session: Pick<Storage, "getItem" | "setItem">;
+  tryLock: (name: string) => Promise<(() => void) | null>;
+}): FileCollaborationOwnership {
+  return { async acquire(namespace) {
+    const prefix = `${namespace}:owner:`, sessionKey = `${namespace}:owner`;
+    const preferred = options.session.getItem(sessionKey);
+    const candidates: string[] = [];
+    if (preferred && (preferred === namespace || preferred.startsWith(prefix))) candidates.push(preferred);
+    if (options.storage.length > 10_000) throw new Error("Collaboration storage contains too many entries to inspect safely.");
+    for (let index = 0; index < options.storage.length; index++) {
+      const key = options.storage.key(index);
+      if (key && (key === namespace || key.startsWith(prefix)) && !candidates.includes(key)) candidates.push(key);
+      if (candidates.length > 256) throw new Error("Too many collaboration recovery journals. Existing records are preserved.");
+    }
+    // Resume unsent or unreadable orphan records before reusing a clean record.
+    const needsRecovery = (key: string): boolean => {
+      const raw = options.storage.getItem(key);
+      if (!raw) return false;
+      try {
+        if (raw.length > LIMIT) return true;
+        const value = JSON.parse(raw) as Partial<FileCollaborationJournal>;
+        return value.version !== 1 || !Array.isArray(value.pending) || Boolean(value.pending.length || value.batch || value.unqueuedDirty || value.retired);
+      }
+      catch { return true; }
+    };
+    const priorities = new Map(candidates.map(key => [key, needsRecovery(key)]));
+    candidates.sort((a, b) => Number(priorities.get(b)) - Number(priorities.get(a)));
+    candidates.push(`${prefix}${crypto.randomUUID()}`);
+    for (const key of candidates) {
+      const release = await options.tryLock(key);
+      if (!release) continue;
+      try { options.session.setItem(sessionKey, key); }
+      catch (error) { release(); throw error; }
+      return { key, release };
+    }
+    throw new Error("Unable to own a collaboration recovery journal.");
+  } };
+}
+function browserOwnership(): FileCollaborationOwnership {
+  if (!navigator.locks) throw new Error("This browser cannot safely retain concurrent shared editing sessions.");
+  return createFileCollaborationOwnership({ storage: localStorage, session: sessionStorage,
+    tryLock: name => new Promise((resolve, reject) => {
+      void navigator.locks.request(name, { mode: "exclusive", ifAvailable: true }, lock => {
+        if (!lock) { resolve(null); return; }
+        return new Promise<void>(release => { resolve(release); });
+      }).catch(reject);
+    }),
+  });
+}
+
 /** One canonical server baseline, one durable upload queue, and one visible long poll. */
 export class FileCollaborationClient {
   readonly doc = new Y.Doc();
-  readonly journalKey: string;
+  private ownedJournalKey: string;
+  get journalKey(): string { return this.ownedJournalKey; }
+  private lease: FileCollaborationLease | null = null;
   canEdit = false;
   canComment = false;
   status: FileCollaborationStatus = "offline";
@@ -134,13 +193,13 @@ export class FileCollaborationClient {
 
   constructor(options: FileCollaborationOptions) {
     this.options = options; this.storage = options.journal ?? localJournal; this.active = options.active ?? true;
-    this.journalKey = `texttext:file-collaboration:v1:${JSON.stringify([options.server.replace(/\/$/, ""), options.workspaceId, options.itemId])}`;
+    this.ownedJournalKey = `texttext:file-collaboration:v1:${JSON.stringify([options.server.replace(/\/$/, ""), options.workspaceId, options.itemId])}`;
     this.doc.on("update", this.changed);
   }
   get recoveryJournal(): FileCollaborationJournal | null { return this.saved; }
   get hasUnreadableJournal(): boolean { return this.unreadableJournal; }
   get recoveryRawJournal(): string | null { return this.rawRecoveryJournal; }
-  get hasPendingChanges(): boolean { return Boolean(this.initialRetirement || this.unreadableJournal || this.unqueuedDirty || this.batch || this.pending.length); }
+  get hasPendingChanges(): boolean { return Boolean((this.initialRetirement && !this.saved) || this.unreadableJournal || this.unqueuedDirty || this.batch || this.pending.length); }
   get hasBaseline(): boolean { return this.initialized; }
   get revision(): string | null { return this.current?.revision ?? null; }
   get relativePath(): string | null { return this.current?.relativePath ?? null; }
@@ -264,6 +323,11 @@ export class FileCollaborationClient {
   }
   private async begin(): Promise<void> {
     try {
+      if (!this.lease && (this.options.ownership || (!this.options.journal && !this.options.checkpoint))) {
+        const lease = await (this.options.ownership ?? browserOwnership()).acquire(this.journalKey);
+        if (this.dead) { lease.release(); return; }
+        this.lease = lease; this.ownedJournalKey = lease.key;
+      }
       let retained = this.load();
       const staleLocal = retained && this.options.localRevision !== undefined && retained.revision !== this.options.localRevision;
       if (staleLocal && !this.options.initialRetirement && !retained!.pending.length && !retained!.batch && !retained!.unqueuedDirty && !retained!.retired) {
@@ -417,8 +481,14 @@ export class FileCollaborationClient {
     this.pushTimer = null; this.pollTimer = null;
     for (const controller of this.controllers) controller.abort();
   }
+  /** Remove only while this client still owns the record, before destroy releases its lock. */
+  discardCleanJournal(): void {
+    if (this.dead || this.hasPendingChanges || ((this.options.ownership || (!this.options.journal && !this.options.checkpoint)) && !this.lease)) throw new Error("Pending or unowned collaboration history cannot be removed.");
+    this.storage.remove(this.journalKey);
+  }
   /** Call only after the caller has durably saved the recovered document copy. */
   clearRetiredAfterRecovery(): void {
+    if (this.dead) throw new Error("The journal is no longer owned by this editor.");
     if (this.unreadableJournal) throw new Error("The unreadable recovery journal must be preserved until its contents are recovered.");
     if (!this.frozen || (!this.saved?.retired && !this.initialRetirement)) throw new Error("There is no retired journal to clear.");
     try { this.storage.remove(this.journalKey); this.saved = null; this.pending = []; this.batch = null; this.unqueuedDirty = false; this.initialRetirement = null; }
@@ -427,5 +497,6 @@ export class FileCollaborationClient {
   destroy(): void {
     if (this.dead) return;
     this.dead = true; this.canEdit = false; this.cancelWork(); this.startCheckpointDrain(); this.doc.off("update", this.changed); this.doc.destroy();
+    this.lease?.release(); this.lease = null;
   }
 }

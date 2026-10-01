@@ -142,16 +142,22 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
     if (!shared) throw new Error("The shared document is still opening.");
     shared.mutate(doc => applyDocumentSnapshot(doc, transform(documentSnapshotFromYDoc(doc)), "file-article-edit"));
   }, []);
-  const reset = async () => {
+  const reset = async (recovered = false) => {
     const shared = clientRef.current;
     try {
       const native = nativeSessionRef.current;
       if (native) {
-        if (shared && !await shared.flushLocal()) throw new Error("Save or recover the pending local file before reopening.");
+        if (shared && !await shared.flushLocal() && (shared.hasPendingChanges || shared.hasUnreadableJournal)) throw new Error("Save or recover the pending local file before reopening.");
         await vaultRequest("collaborationClose", { itemId: config.itemId, sessionToken: native.sessionToken });
         nativeSessionRef.current = null;
       }
-      if (shared) { shared.destroy(); localStorage.removeItem(shared.journalKey); }
+      const fresh = await vaultRequest<VaultFile>("read", { path: shared?.relativePath ?? file.current.path });
+      if (shared) {
+        if (recovered) shared.clearRetiredAfterRecovery();
+        else shared.discardCleanJournal();
+        shared.destroy();
+      }
+      file.current = fresh; setOpened(fresh); setSnapshot(readDocument(fresh));
       setClient(null); setStatus("offline"); setDetail(""); setGeneration(value => value + 1);
     } catch (error) { setDetail(error instanceof Error ? error.message : "Could not reopen the file."); }
   };
@@ -174,7 +180,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
         await vaultRequest("collaborationRecover", { itemId: config.itemId, sessionToken: native.sessionToken, recoveryPath: recovered.path, recoveryHash: recovered.hash });
         nativeSessionRef.current = null;
       }
-      onChanged(); await reset();
+      onChanged(); await reset(true);
     } catch (error) { setDetail(error instanceof Error ? error.message : "Could not save the recovery copy."); }
     finally { setBusy(false); }
   };
@@ -203,7 +209,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       {detail || (ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
       {config.localFiles && status === "offline" && !ready && client && !client.hasPendingChanges && !client.hasUnreadableJournal &&
         <button onClick={onLocalFallback}>Edit local file</button>}
-      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={reset}>Reopen file</button>}</> : status === "offline" && <button onClick={() => void clientRef.current?.start()}>Retry</button>}
+      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && <button onClick={() => void clientRef.current?.start()}>Retry</button>}
     </div>}
     {ready && <>
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} />}
