@@ -9,7 +9,7 @@ prerequisite. See [architecture](design/texttext-file-vault-migration.md) and
 
 Implemented on `main` in `76f373e1`, `f28500cd`, and `3b4549d6`: native folder
 store/CLI, complete-pack filesystem server and durable sync, bundled shared
-editor, file templates, and native assistant file tools. Local WIP **0.202 (1135)**
+editor, file templates, and native assistant file tools. Local WIP **0.202 (1136)**
 is installed at `/Applications/TextText.app`. Its selected workspace is
 `/Users/shokunin/Documents/TextText`. Installed-app creation/save and a real
 Codex append were verified against pack bytes and the refreshed editor. The
@@ -118,7 +118,7 @@ revocation and scope tests pass. Editor/client/browser transport and bounded
 native bridge are now implemented; current browser acceptance tests real
 two-account typing, Undo/Redo, offline reconnection, idle mutation silence and
 permission downgrade. See [collaboration checkpoint](file-vault-collaboration-2026-09-30.md).
-Installed build is 1135. Native TextPack materialization and replayable
+Installed build is 1136. Native TextPack materialization and replayable
 shared-edit journals are implemented (`2d1834b3`); 20 shared/sync and 47 document
 store checks pass. Client and bridge integration also pass production web build
 and two-account browser acceptance (`23758ecb`). Installed keyboard edits reached
@@ -128,18 +128,39 @@ disposable `Untitled.textpack` (title `Shared file verification 1135`, identity
 `2880a21d-7414-438d-a238-0e6cfcba98d9`) remains for recovery checks and recoverable
 cleanup. A direct agent edit reached local/server copies but exposed a clean
 reopen trap. Fixes `3a2b29b5` and `74c6e69b` pass five native bridge tests and the
-production web build; native 1136 build is running (session 42614,
-`/tmp/texttext-build-1136.log`). Restore its known Package.resolved side effect
-after completion, install and verify Reopen before claiming the native fix.
+production web build; native 1136 is installed and clean Reopen returned the
+agent-edited file to an editable shared document. Its build/install logs are
+`/tmp/texttext-{build,install}-1136.log`; Package.resolved was restored.
+Pending conflict recovery also preserved both actual packs: original holds
+`Agent concurrent branch 1136.`, recovered copy holds the human pending branch.
+After Save a copy and reopen, the editor remained at its initial offline screen
+with Retry/Edit local file despite restored server. Investigate active/visibility
+and explicit retry; do not claim that final reopen journey complete. Both test
+packs remain for verification and recoverable cleanup.
 Same-origin independent journals now pass actual two-tab offline/reload/three-
 editor convergence acceptance. Next: native recovery, scoped sharing, presence
 and comments.
 
 ## Blockers and next work
 
+- Owner's 2026-09-30 hosting direction: use Oracle for TextText; migrate media
+  and off-box database backups from Vercel Blob to private Cloudflare R2 after
+  the current work reaches the push/deployment stage. Preserve `a5bc87cb` and
+  run checks with it. No Oracle changes or push have been made for this request.
+  Before Oracle work, read `~/dev/algorave/deploy/oracle/README.md`: preserve
+  Algorave's ports 5434/3500/8445, units, and both its `use_backend` rule and
+  backend in `/etc/texttext/haproxy.cfg`; validate then gracefully reload with
+  USR2 if that shared config changes. Preserve the existing pre-Algorave backup.
+  R2 plan: `texttext-media` and `texttext-backups`, private access equivalent to
+  today, bucket-scoped S3 credential, existing backup retention, complete copy
+  with count/checksum verification, URL migration if needed, upload/read/real
+  restore acceptance. Credential source is `~/.config/stack/cloudflare.env`;
+  never log values. Keep Vercel `write-media` untouched for a week after cutover;
+  the owner, not this agent, decides/deletes Vercel resources afterward.
+
 - Owner approved the local server switch. The replacement build now runs on
   localhost:3000 with `TEXTTEXT_VAULT_ROOT=.texttext/vault-server` (absolute
-  runtime path), output `.texttext/vault-tab-journal-build`, build identity `texttext-vault-tab-journal-20260930` (exec session 90161). No persistent
+  runtime path), output `.texttext/vault-tab-journal-build`, build identity `texttext-vault-tab-journal-20260930` (exec session 78566). No persistent
   service job was installed. Inspect the listener before future restarts.
 - Installed app connected with its existing account. Native create/upload,
   browser edit/download, server outage with local save and automatic recovery,
