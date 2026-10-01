@@ -130,6 +130,22 @@ final class LocalVaultCollaboration {
                     "journal": opened.checkpoint?.journal as Any? ?? NSNull(),
                     "retiredReason": opened.checkpoint?.retiredReason as Any? ?? NSNull()]
         }
+        if method == "collaborationClose" {
+            guard Set(params.keys).isSubset(of: ["itemId", "sessionToken", "retiredReason"]),
+                  let token = params["sessionToken"] as? String, !token.isEmpty,
+                  params["retiredReason"] == nil || params["retiredReason"] is String else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration close request.")
+            }
+            // Navigation or an account change may have already closed it.
+            // Repeating close must not strand a clean editor in recovery.
+            guard let active = localSessions[token] else { return [:] }
+            guard active.itemId == itemId else { throw LocalVaultCollaborationError(code: "409", message: "This session belongs to another item.") }
+            let reason = (params["retiredReason"] as? String).map { String($0.prefix(1000)) }
+            try await active.engine.endSharedEditing(sessionToken: token, itemId: itemId, retiredReason: reason)
+            localSessions.removeValue(forKey: token)
+            didRelease()
+            return [:]
+        }
         guard let token = params["sessionToken"] as? String, let active = localSessions[token], active.itemId == itemId else {
             throw LocalVaultCollaborationError(code: "409", message: "This shared editing session has closed. Your recovery journal is kept.")
         }
@@ -139,17 +155,6 @@ final class LocalVaultCollaboration {
                 throw LocalVaultCollaborationError(code: "400", message: "Choose the saved recovery copy.")
             }
             try await active.engine.finishSharedRecovery(sessionToken: token, itemId: itemId, recoveryPath: path, recoveryHash: hash)
-            localSessions.removeValue(forKey: token)
-            didRelease()
-            return [:]
-        }
-        if method == "collaborationClose" {
-            guard Set(params.keys).isSubset(of: ["itemId", "sessionToken", "retiredReason"]),
-                  params["retiredReason"] == nil || params["retiredReason"] is String else {
-                throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration close request.")
-            }
-            let reason = (params["retiredReason"] as? String).map { String($0.prefix(1000)) }
-            try await active.engine.endSharedEditing(sessionToken: token, itemId: itemId, retiredReason: reason)
             localSessions.removeValue(forKey: token)
             didRelease()
             return [:]

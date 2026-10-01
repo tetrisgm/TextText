@@ -4,6 +4,24 @@ import TextTextFileProviderKit
 
 final class LocalVaultCollaborationTests: XCTestCase {
     private let origin = URL(string: "https://texttext.app")!
+    @MainActor
+    func testClosingExpiredSessionIsIdempotentButCannotCheckpoint() async {
+        let relay = LocalVaultCollaboration(credentials: { nil })
+        for attempt in 0..<2 {
+            let closed = expectation(description: "closed \(attempt)")
+            relay.start(id: "close-\(attempt)", method: "collaborationClose", params: ["itemId": "item", "sessionToken": "expired"], root: FileManager.default.temporaryDirectory) { result in
+                if case .failure(let error) = result { XCTFail(error.localizedDescription) }
+                closed.fulfill()
+            }
+            await fulfillment(of: [closed], timeout: 2)
+        }
+        let rejected = expectation(description: "expired checkpoint rejected")
+        relay.start(id: "write", method: "collaborationCheckpoint", params: ["itemId": "item", "sessionToken": "expired"], root: FileManager.default.temporaryDirectory) { result in
+            if case .success = result { XCTFail("An expired session must not write") }
+            rejected.fulfill()
+        }
+        await fulfillment(of: [rejected], timeout: 2)
+    }
     func testConfigurationReadinessRequiresAcknowledgedUnchangedFileAndNoPendingWork() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let sync = root.appendingPathComponent(".texttext/sync")
