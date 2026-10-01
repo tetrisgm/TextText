@@ -268,7 +268,7 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document[data-template="texttext.bookmark"] .tt-text-caption{text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;font-weight:700;color:var(--muted)}
 .tt-document[data-template="texttext.bookmark"] .tt-text-caption a{color:inherit;text-decoration:none;border-bottom:2px solid color-mix(in srgb,var(--tt-accent) 60%, var(--ink))}
 .tt-document[data-template="texttext.bookmark"] .tt-text-caption a:hover{color:var(--ink)}
-.tt-document[data-template="texttext.bookmark"] .tt-source-link-action{margin-inline-start:.85rem;color:var(--tt-accent);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.72rem;font-weight:650;letter-spacing:0;text-transform:none;white-space:nowrap}
+.tt-document .tt-source-link-action{margin-inline-start:.85rem;color:var(--tt-accent);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:.72rem;font-weight:650;letter-spacing:0;text-transform:none;white-space:nowrap}
 .tt-document[data-template="texttext.bookmark"] .tt-text-caption a:focus-visible{outline:2px solid var(--tt-accent);outline-offset:3px}
 .tt-document.has-bookmark-status[data-template="texttext.bookmark"]{min-height:0;padding-bottom:0}
 .tt-document.has-bookmark-status[data-template="texttext.bookmark"]>.tt-stack{padding-bottom:1rem}
