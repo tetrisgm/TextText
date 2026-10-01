@@ -20,12 +20,14 @@ import { folderTree, folderPaths, folderForItem } from "./folders";
 import { ArticleReader } from "./ArticleReader";
 import { articleSource } from "@/lib/vault/article-capture";
 import { readFeedSubscription } from "@/lib/vault/rss";
+import { activeBodySelection } from "@/lib/document-history-events";
 import { ArticleCapture } from "./ArticleCapture";
 import { CaptureDialog } from "./CaptureDialog";
 import { FeedSubscribeDialog, FeedSubscriptionReader } from "./VaultFeeds";
 import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
 import { packIdentity } from "./pack";
+import { prepareSharedNote } from "./new-note-promotion";
 import { readFolderView } from "./folder-view";
 import { VaultSearch } from "./VaultSearch";
 import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
@@ -55,7 +57,7 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focusNewNote, focusNewNoteOrigin, onNewNoteFocusHandled }: VaultEditorProps) {
+function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focusNewNote, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
   const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
@@ -273,24 +275,50 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focus
     props.onApply(template); remember();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
-  }} />} focusNewNote={focusNewNote} focusNewNoteOrigin={focusNewNoteOrigin} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { await flush(); }} />}</section>;
+  }} />} focusNewNote={focusNewNote} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { await flush(); }} />}</section>;
 }
 
-function OpenVaultEditor(props: VaultEditorProps) {
+function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; onSharedMode?: () => void }) {
+  const { root, initial, awaitSharedMode, onSharedMode, registerFlush } = props;
+  const path = initial.path;
+  const markdown = initial.markdown;
   const [mode, setMode] = useState<VaultCollaborationConfig | "local" | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [promoting, setPromoting] = useState(false);
+  const [sharedInitial, setSharedInitial] = useState<VaultFile | null>(null);
+  const [resumeBody, setResumeBody] = useState<{ selection: { anchor: number; head: number } | null } | null>(null);
+  const localRoot = useRef<HTMLDivElement>(null);
+  const localFlush = useRef<(() => Promise<boolean>) | null>(null);
+  const onSharedModeRef = useRef(onSharedMode);
+  useEffect(() => { onSharedModeRef.current = onSharedMode; }, [onSharedMode]);
+  const registerLocalFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush) => {
+    localFlush.current = flush;
+    registerFlush(flush, currentFile, publishFlush);
+  }, [registerFlush]);
   useEffect(() => {
     let stopped = false;
-    const cacheKey = `texttext:collaboration-config:${props.root}:${packIdentity(props.initial.markdown)}`;
+    const cacheKey = `texttext:collaboration-config:${root}:${packIdentity(markdown)}`;
+    const draftKey = `texttext:vault-draft:${root}:${path}`;
     // Finish a recoverable file draft before switching its persistence mechanism.
-    if (localStorage.getItem(`texttext:vault-draft:${props.root}:${props.initial.path}`)) {
+    if (localStorage.getItem(draftKey)) {
       queueMicrotask(() => { if (!stopped) setMode("local"); });
       return () => { stopped = true; };
     }
-    void vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path: props.initial.path }).then(config => {
+    void vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path }).then(async config => {
       if (stopped) return;
-      if (config) { localStorage.setItem(cacheKey, JSON.stringify(config)); setMode(config); return; }
+      if (config) {
+        if (awaitSharedMode) {
+          const ready = await prepareSharedNote({ path, candidate: config,
+            flush: async () => true, hasDraft: () => Boolean(localStorage.getItem(draftKey)),
+            read: () => vaultRequest<VaultFile>("read", { path }),
+            config: () => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path }) });
+          if (stopped) return;
+          if (!ready) { setMode("local"); return; }
+          setSharedInitial(ready.file); onSharedModeRef.current?.();
+        }
+        localStorage.setItem(cacheKey, JSON.stringify(config)); setMode(config); return;
+      }
       const stored = localStorage.getItem(cacheKey);
       if (stored) {
         const previous = JSON.parse(stored) as VaultCollaborationConfig;
@@ -308,11 +336,62 @@ function OpenVaultEditor(props: VaultEditorProps) {
         }
       }
       setMode("local");
-    }).catch(reason => { if (!stopped) setError(reason instanceof Error ? reason.message : "Could not open this document."); });
+    }).catch(reason => {
+      if (stopped) return;
+      if (awaitSharedMode) setMode("local");
+      else setError(reason instanceof Error ? reason.message : "Could not open this document.");
+    });
     return () => { stopped = true; };
-  }, [props.root, props.initial.path, props.initial.markdown, retry]);
-  if (mode === "local") return <VaultEditor {...props} />;
-  if (mode) return <CollaborativeVaultEditor {...props} config={mode} onLocalFallback={() => setMode("local")} />;
+  }, [root, path, markdown, retry, awaitSharedMode]);
+  useEffect(() => {
+    if (mode !== "local" || !awaitSharedMode) return;
+    let stopped = false, running = false, rerun = false;
+    const draftKey = `texttext:vault-draft:${root}:${path}`;
+    const config = () => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path });
+    const read = () => vaultRequest<VaultFile>("read", { path });
+    const check = () => {
+      if (stopped) return;
+      if (running) { rerun = true; return; }
+      running = true;
+      void (async () => {
+        do {
+          rerun = false;
+          const candidate = await config();
+          if (!candidate || stopped || !localFlush.current) continue;
+          const focused = document.activeElement;
+          const editingBody = focused instanceof HTMLElement && focused.getAttribute("aria-label") === "Document body" && localRoot.current?.contains(focused);
+          const selection = editingBody ? activeBodySelection() : null;
+          setPromoting(true);
+          await new Promise<void>(resolve => {
+            const frame = requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+            const timer = setTimeout(() => { cancelAnimationFrame(frame); resolve(); }, 100);
+          });
+          if (stopped) return;
+          const ready = await prepareSharedNote({ path, candidate, flush: localFlush.current,
+            hasDraft: () => Boolean(localStorage.getItem(draftKey)), read, config });
+          if (!ready || stopped) { setPromoting(false); continue; }
+          setSharedInitial(ready.file);
+          if (editingBody) setResumeBody({ selection });
+          localStorage.setItem(`texttext:collaboration-config:${root}:${packIdentity(ready.file.markdown)}`, JSON.stringify(ready.config));
+          onSharedModeRef.current?.();
+          setMode(ready.config);
+          return;
+        } while (rerun && !stopped);
+      })().catch(() => { /* Local editing remains available until sync can acknowledge these bytes. */ })
+        .finally(() => { running = false; if (!stopped) setPromoting(false); });
+    };
+    const sync = (event: Event) => { if ((event as CustomEvent<{ connected?: boolean }>).detail?.connected) check(); };
+    window.addEventListener("texttext:vault-sync-status", sync);
+    window.addEventListener("texttext:vault-changed", check);
+    check();
+    return () => { stopped = true; window.removeEventListener("texttext:vault-sync-status", sync); window.removeEventListener("texttext:vault-changed", check); };
+  }, [mode, awaitSharedMode, path, root]);
+  if (mode === "local") return <><div ref={localRoot} inert={promoting}><VaultEditor {...props} registerFlush={registerLocalFlush} /></div>
+    {promoting && <p className="vault-notice" role="status">Connecting this note…</p>}</>;
+  if (mode) return <CollaborativeVaultEditor {...props} initial={sharedInitial ?? props.initial} config={mode}
+    focusNewNote={Boolean(resumeBody) || props.focusNewNote} focusNewNoteOrigin={resumeBody ? null : props.focusNewNoteOrigin}
+    focusNewNoteSelection={resumeBody?.selection} onNewNoteFocusHandled={() => { setResumeBody(null); props.onNewNoteFocusHandled?.(); }}
+    onLocalFallback={() => setMode("local")} />;
   return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;
 }
 
@@ -325,7 +404,7 @@ class DocumentBoundary extends Component<{ children: ReactNode }, { error: strin
 export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boolean }) {
   const [listing, setListing] = useState<VaultListing | null>(null);
   const [selected, setSelected] = useState<VaultFile | null>(null);
-  const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; origin: HTMLElement | null } | null>(null);
+  const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; root: string; itemId: string; origin: HTMLElement | null; focusPending: boolean; awaitSharedMode: boolean } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [destinationFolder, setDestinationFolder] = useState("");
@@ -351,6 +430,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [webAccess, setWebAccess] = useState<{ workspaceId: string; value: VaultAccess } | null>(null);
   const [nativeConnection, setNativeConnection] = useState<{ root: string; workspaceId: string } | null>(null);
   const [nativePublishAccess, setNativePublishAccess] = useState<{ workspaceId: string; itemId: string; canPublish: boolean } | null>(null);
+  const [nativePublishRefresh, setNativePublishRefresh] = useState(0);
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
   const webWorkspaceId = !allowFolderPicker && listing?.root.startsWith("vault:") ? listing.root.slice("vault:".length) : null;
   const access = webWorkspaceId === webAccess?.workspaceId ? webAccess.value : null;
@@ -439,7 +519,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       .then(value => { if (!controller.signal.aborted) setNativePublishAccess({ workspaceId: nativeWorkspaceId, itemId: selectedItemId, canPublish: value.canPublish === true }); })
       .catch(() => { if (!controller.signal.aborted) setNativePublishAccess({ workspaceId: nativeWorkspaceId, itemId: selectedItemId, canPublish: false }); });
     return () => controller.abort();
-  }, [allowFolderPicker, nativeWorkspaceId, selectedItemId]);
+  }, [allowFolderPicker, nativeWorkspaceId, selectedItemId, nativePublishRefresh]);
   const [hashRevision, setHashRevision] = useState(0);
   useEffect(() => {
     const changed = () => setHashRevision(value => value + 1);
@@ -475,7 +555,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   };
   const createNote = (origin: HTMLElement | null) => void operate(async () => {
     const created = await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() });
-    setNewNoteFocus({ file: created, origin });
+    setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin,
+      focusPending: true, awaitSharedMode: allowFolderPicker });
     setSelected(created);
     refresh();
   });
@@ -662,8 +743,20 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />
           : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={closeRemoved}
-              focusNewNote={!busy && newNoteFocus?.file === selected} focusNewNoteOrigin={newNoteFocus?.file === selected ? newNoteFocus.origin : undefined}
-              onNewNoteFocusHandled={() => setNewNoteFocus(current => current?.file === selected ? null : current)} /></div>}
+              focusNewNote={!busy && newNoteFocus?.file === selected && newNoteFocus.focusPending}
+              focusNewNoteOrigin={newNoteFocus?.file === selected ? newNoteFocus.origin : undefined}
+              onNewNoteFocusHandled={() => setNewNoteFocus(current => {
+                if (current?.file !== selected) return current;
+                return current.awaitSharedMode ? { ...current, focusPending: false } : null;
+              })}
+              awaitSharedMode={Boolean(allowFolderPicker && newNoteFocus?.awaitSharedMode && newNoteFocus.root === listing.root && newNoteFocus.itemId === selectedItemId)}
+              onSharedMode={() => {
+                setNewNoteFocus(current => {
+                  if (!current || current.root !== listing.root || current.itemId !== selectedItemId) return current;
+                  return current.focusPending ? { ...current, awaitSharedMode: false } : null;
+                });
+                setNativePublishRefresh(value => value + 1);
+              }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : visibleListing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={visibleListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
         onShare={canShare && sharingWorkspaceId ? (folder) => setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: folder, label: folder.split("/").at(-1) || folder }) : undefined}

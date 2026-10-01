@@ -127,6 +127,8 @@ type UnifiedDocumentEditorProps = {
   focusNewNote?: boolean;
   /** The control that started local note creation, used to avoid stealing a later focus choice. */
   focusNewNoteOrigin?: HTMLElement | null;
+  /** Keep the body's caret when a just-created local note joins shared editing. */
+  focusNewNoteSelection?: { anchor: number; head: number } | null;
   onNewNoteFocusHandled?: () => void;
   canReviewAgentChanges?: boolean;
   activeAgent?: AssistantAgentIdentity | null;
@@ -490,6 +492,7 @@ export function UnifiedDocumentEditor({
   renderTemplateLibrary,
   focusNewNote = false,
   focusNewNoteOrigin,
+  focusNewNoteSelection,
   onNewNoteFocusHandled,
   blog,
   post,
@@ -789,12 +792,16 @@ export function UnifiedDocumentEditor({
       }
       surface.focus({ preventScroll: true });
       const end = documentRef.current.content.body.length;
-      if (end > 0) requestDocumentCaret(end, end);
+      if (focusNewNoteSelection) {
+        const anchor = Math.max(0, Math.min(end, focusNewNoteSelection.anchor));
+        const head = Math.max(0, Math.min(end, focusNewNoteSelection.head));
+        requestDocumentCaret(anchor, head);
+      } else if (end > 0) requestDocumentCaret(end, end);
       newNoteFocusClaimedRef.current = true;
       onNewNoteFocusHandled?.();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, focusNewNote, focusNewNoteOrigin, onNewNoteFocusHandled]);
+  }, [active, focusNewNote, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled]);
   const publishDocument = useCallback(
     (next: DocumentSnapshot) => {
       documentRef.current = next;
