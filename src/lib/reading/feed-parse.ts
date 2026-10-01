@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { decodeHtmlEntities, htmlToMarkdown, htmlToText } from "./html-to-markdown";
+import { extractArticleHtml } from "./article-extraction";
 import { feedEntryKey } from "./feed-identity";
 
 /**
@@ -216,7 +217,10 @@ function bodyFrom(fullHtml: string | null, summaryHtml: string | null): BodyResu
   const full = fullHtml ? clip(fullHtml, MAX_BODY) : null;
   const summary = summaryHtml ? clip(summaryHtml, MAX_BODY) : null;
   if (full) {
-    const converted = htmlToMarkdown(full);
+    // Some publishers put an entire rendered page in content:encoded,
+    // including site navigation and related-link modules. Keep the article
+    // region when it can be identified, while retaining short feed posts as-is.
+    const converted = htmlToMarkdown((full.length > 2_000 && extractArticleHtml(full)) || full);
     if (converted.text) {
       const summaryText = summary ? htmlToText(summary) : null;
       return {

@@ -146,6 +146,21 @@ describe("parseFeed (ING-01 supported formats)", () => {
     expect(parseFeed(JSONFEED, "text/html").format).toBe("jsonfeed");
     expect(parseFeed(RSS, "text/plain").format).toBe("rss");
   });
+
+  it("keeps article text when a full feed entry includes a publisher's page chrome", () => {
+    const navigation = "Browse all missions and updates. ".repeat(90);
+    const article = "The rover found a new texture in the rock and the science team changed its observation plan. ".repeat(5);
+    const feed = parseFeed(`<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>
+      <title>Space news</title><item><title>New observations</title><link>https://example.org/rover</link>
+      <content:encoded><![CDATA[<nav><p>${navigation}</p></nav><article><h1>New observations</h1><p>${article}</p></article>
+      <footer><p>Related stories and sharing links.</p></footer>]]></content:encoded>
+      </item></channel></rss>`);
+    const body = feed.entries[0].bodyMarkdown;
+    expect(body).toContain("The rover found a new texture");
+    expect(body).not.toContain("Browse all missions");
+    expect(body).not.toContain("Related stories");
+    expect(feed.entries[0].availability).toBe("full");
+  });
 });
 
 describe("parseFeed refusals (SEC-02 fetch boundary)", () => {
