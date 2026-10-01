@@ -2580,6 +2580,34 @@ export function getBuiltinTemplate(
   return templatesByKey.get(templateKey(id, version)) ?? null;
 }
 
+function sameTemplateValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left)) {
+    return Array.isArray(right) && left.length === right.length &&
+      left.every((value, index) => sameTemplateValue(value, right[index]));
+  }
+  if (!left || !right || typeof left !== "object" || typeof right !== "object" || Array.isArray(right)) return false;
+  const leftValues = left as Record<string, unknown>;
+  const rightValues = right as Record<string, unknown>;
+  const keys = Object.keys(leftValues);
+  return keys.length === Object.keys(rightValues).length &&
+    keys.every((key) => Object.hasOwn(rightValues, key) && sameTemplateValue(leftValues[key], rightValues[key]));
+}
+
+const styleTemplateIds = new WeakMap<TemplateDefinition, string>();
+
+/** Built-in CSS belongs to the built-in definition, not every imported look that reuses its id. */
+export function styleTemplateIdFor(template: TemplateDefinition): string {
+  const cached = styleTemplateIds.get(template);
+  if (cached) return cached;
+  const builtin = getBuiltinTemplate(template.id, template.version);
+  const styleId = builtin && !sameTemplateValue(template, builtin)
+    ? `custom:${template.id}`
+    : template.id;
+  styleTemplateIds.set(template, styleId);
+  return styleId;
+}
+
 export function requireBuiltinTemplate(
   id: string,
   version = 1,

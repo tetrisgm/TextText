@@ -10,6 +10,7 @@ import {
   BUILTIN_TEMPLATES,
   getBuiltinTemplate,
   styleFamilyFor,
+  styleTemplateIdFor,
 } from "@/lib/presentation/templates";
 
 /**
@@ -53,6 +54,48 @@ function renderDocument(id: string, extra: Record<string, unknown> = {}): string
 }
 
 describe("style families", () => {
+  it("keeps built-in styling only for the built-in definition", () => {
+    const bookmark = getBuiltinTemplate("texttext.bookmark")!;
+    expect(styleTemplateIdFor(structuredClone(bookmark))).toBe("texttext.bookmark");
+
+    const customized = {
+      ...structuredClone(bookmark),
+      name: "Single-column research reader",
+      theme: { ...bookmark.theme, typography: "system" as const },
+    };
+    const html = markupOnly(renderToStaticMarkup(React.createElement(DocumentRenderer, {
+      template: customized,
+      document: {
+        schemaVersion: 1,
+        content: { title: "Reader", body: "Words.", fields: {}, tags: [], assets: [] },
+        presentation: { template: { id: bookmark.id, version: bookmark.version }, theme: {} },
+      },
+      preview: true,
+    } as never)));
+
+    expect(html).toContain('data-template-id="texttext.bookmark"');
+    expect(html).toContain('data-template="custom:texttext.bookmark"');
+    expect(html).toContain('data-typography="system"');
+    expect(html).not.toContain('data-template="texttext.bookmark"');
+    expect(DOCUMENT_ENGINE_CSS).toContain('[data-template="texttext.bookmark"] .tt-prose{font-family:Georgia');
+  });
+
+  it("does not give a customized Article the shared Article preset", () => {
+    const article = getBuiltinTemplate("texttext.article")!;
+    const customized = { ...structuredClone(article), name: "Personal article" };
+    const html = markupOnly(renderToStaticMarkup(React.createElement(DocumentRenderer, {
+      template: customized,
+      document: {
+        schemaVersion: 1,
+        content: { title: "Article", body: "Words.", fields: {}, tags: [], assets: [] },
+        presentation: { template: { id: article.id, version: article.version }, theme: {} },
+      },
+      preview: true,
+    } as never)));
+    expect(html).toContain('data-template="custom:texttext.article"');
+    expect(html).not.toContain("data-style-family");
+  });
+
   it("gives Timeline the same family as Article", () => {
     expect(styleFamilyFor("texttext.timeline")).toBe("article");
     expect(styleFamilyFor("texttext.article")).toBe("article");

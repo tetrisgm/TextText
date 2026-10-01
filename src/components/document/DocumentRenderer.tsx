@@ -21,7 +21,7 @@ import type {
   TemplateDefinition,
 } from "@/lib/presentation/schema";
 import { ScrollAnchoring } from "@/components/document/ScrollAnchoring";
-import { styleFamilyFor } from "@/lib/presentation/templates";
+import { styleFamilyFor, styleTemplateIdFor } from "@/lib/presentation/templates";
 import { remarkHighlight } from "@/components/document/HighlightMarkdown";
 import { remarkWikiLinks } from "@/components/WikiLinkMarkdown";
 import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
@@ -1298,6 +1298,7 @@ function DocumentRendererContent({
   const theme = { ...template.theme, ...document.presentation.theme };
   const accent = theme.accent;
   const style = accent ? ({ "--tt-accent": accent } as CSSProperties) : undefined;
+  const styleTemplateId = styleTemplateIdFor(template);
   // A miniature in the look gallery is the same document drawn at card size.
   // It must not behave like a page: only a real page paints its paper across
   // the window.
@@ -1307,8 +1308,9 @@ function DocumentRendererContent({
       aria-label={landmark ? "Read item" : undefined}
       id={scopeId}
       className={["tt-document", className].filter(Boolean).join(" ")}
-      data-template={template.id}
-      data-style-family={styleFamilyFor(template.id)}
+      data-template={styleTemplateId}
+      data-template-id={template.id}
+      data-style-family={styleTemplateId === template.id ? styleFamilyFor(template.id) : undefined}
       data-preview={preview ? "true" : undefined}
       data-typography={theme.typography ?? "system"}
       data-density={theme.density ?? "comfortable"}
@@ -1342,6 +1344,7 @@ function DocumentCollectionRendererContent({
   const style = theme.accent
     ? ({ "--tt-accent": theme.accent } as CSSProperties)
     : undefined;
+  const styleTemplateId = styleTemplateIdFor(template);
 
   return (
     <article
@@ -1349,8 +1352,9 @@ function DocumentCollectionRendererContent({
       className={["tt-document", "tt-collection-item", className]
         .filter(Boolean)
         .join(" ")}
-      data-template={template.id}
-      data-style-family={styleFamilyFor(template.id)}
+      data-template={styleTemplateId}
+      data-template-id={template.id}
+      data-style-family={styleTemplateId === template.id ? styleFamilyFor(template.id) : undefined}
       data-typography={theme.typography ?? "system"}
       data-density={theme.density ?? "comfortable"}
       data-measure="full"
