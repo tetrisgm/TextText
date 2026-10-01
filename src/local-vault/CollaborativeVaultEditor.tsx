@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
+import { ParticipantsRow as LocalParticipantsRow } from "./LocalParticipants";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -342,6 +343,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
   const blocked = status === "recovery" || status === "error";
   const ready = !!client?.hasBaseline;
   const editable = ready && canEdit && !blocked && !busy;
+  const readOnly = ready && !canEdit && !detail && status !== "offline" && !blocked;
   const display = resolveAssets(snapshot);
   return <section className="vault-document">
     <header className="vault-document-path" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -358,8 +360,8 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
         </span>
       </span>}
     </header>
-    {(!ready || blocked || status === "offline" || detail) && <div className="vault-notice" role="status">
-      {detail || (ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
+    {(!ready || blocked || status === "offline" || detail || readOnly) && <div className="vault-notice" role="status">
+      {detail || (readOnly ? "Read only. You don’t have editing access." : ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
       {config.localFiles && status === "offline" && !ready && client && !client.hasPendingChanges && !client.hasUnreadableJournal &&
         <button onClick={onLocalFallback}>Edit local file</button>}
       {waitingForExternalSync && !client && onLocalFallback && <button onClick={onLocalFallback}>Edit local file</button>}
@@ -369,7 +371,7 @@ export function CollaborativeVaultEditor({ initial, config, registerFlush, onCha
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} />}
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
       {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : <DocumentRenderer document={display} template={template} />) :
-        <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
+        <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" leadingControls={<LocalParticipantsRow postId={opened.path} />} localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
           focusNewNote={focusNewNote} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
           onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { await flush(); }}

@@ -14,7 +14,8 @@ import { asPost, localBlog, readDocument, readTemplate, writePayload, VaultRepre
 import { WorkspaceTypeLibrary as LocalTemplateLibrary } from "./LocalTemplateLibrary";
 import { WorkspaceOverview } from "./WorkspaceOverview";
 import { NativeConnection } from "./NativeConnection";
-import { NativeAssistant } from "./NativeAssistant";
+import { NativeAssistant, type NativeAssistantRequest } from "./NativeAssistant";
+import { ParticipantsRow as LocalParticipantsRow } from "./LocalParticipants";
 import { FolderNavigation } from "./FolderNavigation";
 import { folderTree, folderPaths, folderForItem } from "./folders";
 import { ArticleReader } from "./ArticleReader";
@@ -37,6 +38,7 @@ import { vaultCommentCapabilities } from "./vault-comments";
 import { canCreateInVaultFolder, parseVaultAccess, sharedVaultHashTarget, type VaultAccess } from "./shared-vaults";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import { readVaultLocation, resolveVaultLocation, writeVaultLocation } from "./vault-location";
+import { REQUEST_ADD_ITEM_AGENT_EVENT } from "./agent-task";
 import "./style.css";
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -273,7 +275,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focus
   };
   const display = useMemo(() => mapStrings(external, assets.forward), [external, assets]);
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
-  return <section className="vault-document"><header className="vault-document-path">{initial.path}</header>{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : <UnifiedDocumentEditor transport="local" externalDocument={display} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  return <section className="vault-document"><header className="vault-document-path">{initial.path}</header>{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : <UnifiedDocumentEditor transport="local" leadingControls={<LocalParticipantsRow postId={initial.path} />} externalDocument={display} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();
@@ -443,6 +445,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [busy, setBusy] = useState(false);
   const [destinationFolder, setDestinationFolder] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantRequest, setAssistantRequest] = useState<NativeAssistantRequest | null>(null);
+  const assistantRequestId = useRef(0);
   const [templatePicker, setTemplatePicker] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
@@ -459,6 +463,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const searchReturnFocus = useRef<HTMLElement | null>(null);
   const feedSubscribeReturnFocus = useRef<HTMLElement | null>(null);
   const commentsButton = useRef<HTMLButtonElement>(null);
+  const assistantReturnFocus = useRef<HTMLElement | null>(null);
   const importing = useRef(false);
   const [importStatus, setImportStatus] = useState("");
   const [webAccess, setWebAccess] = useState<{ workspaceId: string; value: VaultAccess } | null>(null);
@@ -671,9 +676,27 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     feedSubscribeReturnFocus.current = null;
   }, []);
   const beginCustomize = useCallback((path: string) => {
+    assistantReturnFocus.current = focusedControl();
+    setAssistantRequest({ type: "customize", requestId: ++assistantRequestId.current, taskId: crypto.randomUUID(), path });
     setAssistantOpen(true);
-    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("texttext:vault-customize", { detail: { path } })));
   }, []);
+  const closeAssistant = useCallback(() => {
+    setAssistantOpen(false);
+    restoreDialogFocus(assistantReturnFocus.current, searchButton.current);
+    assistantReturnFocus.current = null;
+  }, []);
+  const activeWorkspaceRoot = listing?.root ?? "";
+  const activeItemPath = selected?.path ?? "";
+  const beginAddAgent = useCallback(() => {
+    if (!activeWorkspaceRoot || !activeItemPath) return;
+    assistantReturnFocus.current = focusedControl();
+    setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: activeItemPath });
+    setAssistantOpen(true);
+  }, [activeItemPath, activeWorkspaceRoot]);
+  useEffect(() => {
+    window.addEventListener(REQUEST_ADD_ITEM_AGENT_EVENT, beginAddAgent);
+    return () => window.removeEventListener(REQUEST_ADD_ITEM_AGENT_EVENT, beginAddAgent);
+  }, [beginAddAgent]);
   const customizeCurrent = useCallback(async () => {
     let path = selected?.path;
     if (!path) {
@@ -715,6 +738,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     label: selected ? "Customize this item" : "Customize this folder",
     description: selected ? "Change how the open item looks." : `Change how ${commandLocation} looks.`,
     keywords: ["design", "look", "template"],
+  });
+  if (allowFolderPicker && selected?.path) commandActions.push({
+    id: "add-agent",
+    label: "Add agent to this item",
+    description: "Give Codex a task for the open item.",
+    keywords: ["assistant", "collaborate", "edit"],
   });
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
@@ -771,7 +800,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); }, true)} onOpen={(item) => void operate(async () => {
             setSelected(await readForOpen(item.path, !allowFolderPicker)); setDestinationFolder(folderForItem(item.path));
           }, true)} /></nav>
-        {allowFolderPicker && <button onClick={() => setAssistantOpen((value) => !value)}>Assistant</button>}
         {allowFolderPicker && <NativeConnection key={listing.root} root={listing.root} />}
       </>}
     </aside>
@@ -841,6 +869,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (action.id === "new-note") return createNote(null);
         if (action.id === "capture") { setCaptureOpen(true); return; }
         if (action.id === "customize") return customizeCurrent();
+        if (action.id === "add-agent") { beginAddAgent(); return; }
       }} onOpen={async (path) => {
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
@@ -886,6 +915,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}
     </main>
-    {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={selected?.path} onClose={() => setAssistantOpen(false)} beforeSend={() => flushRef.current()} />}
+    {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
   </div>;
 }

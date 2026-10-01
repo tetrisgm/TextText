@@ -4,7 +4,7 @@ import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { readDocument } from "./model";
 import type { VaultFile } from "./bridge";
 
-export type TemplateProposal = { path: string; hash: string; templateJSON: string; templateAuthoringSourceJSON?: string | null; request?: string };
+export type TemplateProposal = { path: string; hash: string; templateJSON: string; templateAuthoringSourceJSON?: string | null; taskId?: string; request?: string };
 
 /** Presentation-only edits retain the exact Markdown and unrecognized snapshot fields. */
 export function prepareTemplateProposal(file: VaultFile, proposal: TemplateProposal) {

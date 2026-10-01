@@ -144,7 +144,7 @@ async function main() {
     await db.update(collaborators).set({ role: "viewer" }).where(eq(collaborators.id, grantId));
     const denied = await bob.request.post(`${origin}/api/vault/${workspaceId}/items/${itemId}/collaboration`, { headers: { Origin: origin }, data: { operationId: randomUUID(), epoch: 1, updates: ["AAA="] } });
     check(denied.status() === 403, "downgraded participant cannot write");
-    await until(async () => await bob.getByText(/Editing access was removed|This file or its access changed/).count() > 0,
+    await until(async () => await bob.getByText(/Editing access was removed|This file or its access changed|Read only\. You don’t have editing access\./).count() > 0,
       "open editor notices permission downgrade", 35000);
     check(errors.length === 0, `no browser runtime errors (${errors.length})`);
   } catch (error) {

@@ -11,7 +11,7 @@ const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
 let revision = 1;
-let connected = false, openedWeb = false;
+let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, lastAgentSend = null;
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
 files.set(initial.path, initial);
 const preset = unzipSync(await readFile("presets/builtin/note.textpack"));
@@ -69,21 +69,23 @@ try {
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
-    else if (request.method === "agentStatus" || request.method === "agentConnect") result = { state: "ready" };
+    else if (request.method === "agentStatus") result = { state: agentState };
+    else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState }; }
     else if (request.method === "agentProposalResult") { proposalFeedback.push(request.params); result = {}; }
     else if (request.method === "agentSend") {
+      agentSendCount++; lastAgentSend = request.params;
       result = {};
       if (request.params.customizing) {
         const current = files.get(request.params.path);
         const proposed = JSON.parse(current.templateJSON);
         proposed.name = request.params.prompt.startsWith("Refine") ? "Refined design" : "Proposed design";
         await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail })),
-          { type: "template-proposal", path: current.path, hash: current.hash, templateJSON: JSON.stringify(proposed) });
+          { type: "template-proposal", taskId: request.params.taskId, path: current.path, hash: current.hash, templateJSON: JSON.stringify(proposed) });
       }
-      await page.evaluate(() => {
-        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "final-text", text: "I can work with these local files." } }));
-        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed" } }));
-      });
+      await page.evaluate((taskId) => {
+        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "final-text", taskId, text: "I can work with these local files." } }));
+        window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed", taskId } }));
+      }, request.params.taskId);
     }
     else if (request.method === "write") {
       const current = files.get(request.params.path);
@@ -173,10 +175,63 @@ try {
   await page.getByRole("button", { name: "Save", exact: true }).first().click();
   await page.getByText(/Saved in Templates\//).waitFor();
   assert.ok([...files.values()].some((file) => file.path.startsWith("Templates/") && JSON.parse(file.templateJSON).name === "Saved local look"));
-  await page.getByRole("button", { name: "Assistant", exact: true }).click();
-  await page.getByRole("textbox", { name: "Message assistant", exact: true }).fill("Read the selected file.");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.keyboard.press("Meta+k");
+  const itemCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
+  await itemCommands.getByRole("button", { name: "Add agent to this item", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await itemCommands.waitFor({ state: "hidden" });
+  let addAgent = page.getByRole("button", { name: "Add agent", exact: true });
+  await addAgent.focus();
+  await page.keyboard.press("Enter");
+  let agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
+  await agentPanel.waitFor();
+  await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).getByText("This item · Read and edit", { exact: true }).waitFor();
+  const taskComposer = agentPanel.getByRole("textbox", { name: "Message assistant", exact: true });
+  await taskComposer.fill("Read the selected file.");
+  await agentPanel.getByRole("button", { name: "Connect Codex", exact: true }).click();
+  await agentPanel.getByRole("button", { name: "Start task", exact: true }).waitFor();
+  assert.equal(await taskComposer.inputValue(), "Read the selected file.");
+  await page.waitForFunction(() => Object.entries(localStorage).some(([key, value]) => key.startsWith("texttext:agent-task:") && JSON.parse(value).prompt === "Read the selected file."));
+  assert.equal(agentSendCount, 0);
+  await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((candidate) => candidate.startsWith("texttext:agent-task:"));
+    if (!key) throw new Error("Missing saved agent task");
+    const task = JSON.parse(localStorage.getItem(key));
+    localStorage.setItem(key, JSON.stringify({ ...task, phase: "submitted" }));
+  });
+  await page.reload();
+  addAgent = page.getByRole("button", { name: "Add agent", exact: true });
+  await addAgent.waitFor();
+  await addAgent.focus();
+  await page.keyboard.press("Enter");
+  agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
+  await agentPanel.waitFor();
+  assert.equal(await agentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), "Read the selected file.");
+  await agentPanel.getByText(/was not sent again/).waitFor();
+  await agentPanel.getByRole("button", { name: "Send again", exact: true }).waitFor();
+  assert.equal(agentSendCount, 0);
+  await page.setViewportSize({ width: 390, height: 780 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  assert.ok((await agentPanel.boundingBox()).width <= 390);
+  await page.screenshot({ path: "/tmp/texttext-add-agent-narrow-dark.png" });
+  await page.keyboard.press("Escape");
+  await agentPanel.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Add agent");
+  await page.keyboard.press("Enter");
+  agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
+  await agentPanel.waitFor();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
+  await agentPanel.getByRole("button", { name: "Send again", exact: true }).click();
   await page.getByText("I can work with these local files.").waitFor();
+  assert.equal(agentSendCount, 1);
+  assert.equal(lastAgentSend.path, initial.path);
+  assert.equal(lastAgentSend.scope, "item");
+  assert.equal(typeof lastAgentSend.taskId, "string");
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-agent", {
+    detail: { type: "final-text", taskId: "different-task", text: "Late message from another task" },
+  })));
+  assert.equal(await page.getByText("Late message from another task", { exact: true }).count(), 0);
   // UI state-machine fixture only: genuine provider behavior is verified in the installed app.
   const beforeDesign = JSON.stringify(files.get(initial.path));
   await page.getByRole("button", { name: "Customize", exact: true }).click();
@@ -184,9 +239,12 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const designPreview = page.getByRole("region", { name: "Design preview", exact: true });
   await designPreview.getByRole("button", { name: "Keep this design", exact: true }).waitFor();
+  assert.equal(lastAgentSend.scope, "item");
+  assert.equal(lastAgentSend.customizing, true);
+  assert.equal(lastAgentSend.path, initial.path);
   assert.equal(JSON.stringify(files.get(initial.path)), beforeDesign);
   await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail })), {
-    type: "template-proposal", proposalId: "invalid-fixture", path: initial.path, hash: files.get(initial.path).hash,
+    type: "template-proposal", taskId: lastAgentSend.taskId, proposalId: "invalid-fixture", path: initial.path, hash: files.get(initial.path).hash,
     templateJSON: JSON.stringify({ ...template, item: { type: "script", code: "bad" } }),
   });
   await page.getByText(/The proposed design needs a correction/).waitFor();
@@ -218,12 +276,16 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await designPreview.getByRole("button", { name: "Cancel design", exact: true }).click();
   assert.equal(JSON.parse(files.get(initial.path).templateJSON).name, "Refined design");
+  await page.getByRole("button", { name: "Close assistant", exact: true }).click();
+  addAgent = page.getByRole("button", { name: "Add agent", exact: true });
+  await addAgent.click();
+  agentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
+  await agentPanel.waitFor();
   await page.evaluate(() => {
     window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "status", state: "disconnected" } }));
-    window.dispatchEvent(new CustomEvent("texttext:vault-agent", { detail: { type: "turn-completed" } }));
   });
-  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isEnabled(), false);
-  await page.getByRole("button", { name: "Close assistant", exact: true }).click();
+  assert.equal(await agentPanel.getByRole("button", { name: "Send", exact: true }).isEnabled(), false);
+  await agentPanel.getByRole("button", { name: "Close assistant", exact: true }).click();
   await page.getByRole("combobox", { name: "Folder for new items", exact: true }).fill("Projects/Draft");
   await page.getByRole("button", { name: "New note", exact: true }).click();
   assert.ok([...files.keys()].some((name) => name.startsWith("Projects/Draft/")));
