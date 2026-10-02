@@ -772,6 +772,11 @@ try {
     return { path, hash: `sample-${path}`, markdown: `---\ntextTextId: "${crypto.randomUUID()}"\ntitle: ${JSON.stringify(title)}\n---\n\n${body}`, documentJSON: JSON.stringify(document) };
   };
   files.set("Bookmarks/Reading.textpack", sample("Bookmarks/Reading.textpack", "bookmark", "A saved article", "The complete saved reading text.", { sourceUrl: "https://example.com/article" }));
+  files.set("Bookmarks/Another.textpack", sample("Bookmarks/Another.textpack", "bookmark", "Another saved link", "A second reading item.", { sourceUrl: "https://example.org/another" }));
+  for (let index = 0; index < 25; index++) {
+    const name = `Z filler ${String(index).padStart(2, "0")}`;
+    files.set(`Bookmarks/${name}.textpack`, sample(`Bookmarks/${name}.textpack`, "bookmark", name, "A saved reference.", { sourceUrl: `https://example.net/${index}` }));
+  }
   files.set("Blog/Story.textpack", sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph."));
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
@@ -796,6 +801,20 @@ try {
   const savedBookmark = JSON.parse(files.get("Bookmarks/Reading.textpack").documentJSON);
   assert.equal(savedBookmark.content.fields.texttextBookmarkFavorite, true);
   assert.equal(typeof savedBookmark.content.fields.texttextBookmarkReadAt, "string");
+  await page.getByRole("group", { name: "Bookmark filters" }).getByRole("button", { name: "Favorites" }).click();
+  await page.getByRole("option", { name: /A saved article/ }).waitFor();
+  assert.equal(await page.getByRole("option", { name: /Another saved link/ }).count(), 0);
+  await page.getByRole("group", { name: "Bookmark filters" }).getByRole("button", { name: "Unread" }).click();
+  await page.getByRole("option", { name: /Another saved link/ }).waitFor();
+  assert.equal(await page.getByRole("option", { name: /A saved article/ }).count(), 0);
+  await page.getByRole("group", { name: "Bookmark filters" }).getByRole("button", { name: "All" }).click();
+  await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("example.org");
+  await page.getByRole("option", { name: /Another saved link/ }).waitFor();
+  assert.equal(await page.getByRole("option", { name: /A saved article/ }).count(), 0);
+  await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("Z filler 24");
+  await page.getByRole("option", { name: /Z filler 24/ }).waitFor();
+  await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("");
+  await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
   await page.getByRole("button", { name: "Save bookmark", exact: true }).click();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("textbox", { name: "Web address" }).waitFor();
