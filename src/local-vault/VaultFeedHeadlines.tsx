@@ -38,6 +38,7 @@ function storyDate(value: string | null): string | undefined {
  * a timer never polls, and stories become TextPacks only when a person keeps one. */
 export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sources: FolderPreview[]; ready: boolean; sourceList: ReactNode; canAdd: boolean }) {
   const [tab, setTab] = useState("For You");
+  const [search, setSearch] = useState("");
   const [stories, setStories] = useState<FeedStory[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -128,9 +129,13 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     {followError && <p role="alert">{followError}</p>}
     <ul>{RECOMMENDED.map(source => <li key={source.feedURL}><span><strong>{source.title}</strong><small>{source.topic}</small></span><button disabled={!canAdd || Boolean(following)} onClick={() => void follow(source)}>{following === source.title ? "Adding…" : "Follow"}</button></li>)}</ul>
   </div>;
-  const visibleStories = tab === "Latest" ? stories : stories.filter(story => story.topic === tab);
+  const query = search.trim().toLocaleLowerCase();
+  const matchesStory = (story: FeedStory) => !query || [story.title, story.source, story.excerpt, story.topic].some(value => value?.toLocaleLowerCase().includes(query));
+  const visibleStories = (tab === "Latest" ? stories : stories.filter(story => story.topic === tab)).filter(matchesStory);
   const coverage = useMemo(() => clusterFeedStories(stories), [stories]);
   const rankedCoverage = rankFeedClusters(coverage, Date.now());
+  const visibleCoverage = coverage.filter(group => !query || group.headline.toLocaleLowerCase().includes(query) || group.members.some(matchesStory));
+  const visibleRankedCoverage = rankedCoverage.filter(group => !query || group.headline.toLocaleLowerCase().includes(query) || group.members.some(matchesStory));
   const activeGroup: FeedCluster | undefined = coverage.find(group => group.id === activeGroupId);
   const activeFull = full?.key === activeKey ? full.value : null;
   const readerDocument = activeFull && storyTemplate ? (() => {
@@ -160,13 +165,13 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     </li>)}</ol>
   </section>;
   return <section className="vault-feed-home" aria-label="Latest stories">
+    {tab !== "Sources" && <label className="vault-feed-search"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4.5 4.5" /></svg><input type="search" aria-label="Search loaded stories" placeholder="Search loaded stories" value={search} onChange={event => setSearch(event.target.value)} /></label>}
     <nav aria-label="Feed sections"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button><button aria-pressed={tab === "Latest"} onClick={() => setTab("Latest")}>Latest</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
     {sourceRows.length > 8 && tab !== "Sources" && <div className="vault-feed-source-window"><span>Reading {Math.min(sourceLimit, sourceRows.length)} of {sourceRows.length} sources</span>{sourceLimit < sourceRows.length && <button type="button" disabled={loading} onClick={() => setSourceLimit(limit => limit + 8)}>Load more sources</button>}</div>}
-    {tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !coverage.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{coverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
+    {tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !visibleCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{visibleCoverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
       {loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}
-      {!loading && !rankedCoverage.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
-      {!!rankedCoverage.length && <p className="vault-feed-rank-note">Fresh stories from your sources, with wider coverage brought forward.</p>}
-      <ol>{rankedCoverage.map((group, index) => {
+      {!loading && !visibleRankedCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
+      <ol>{visibleRankedCoverage.map((group, index) => {
         const story = group.members[0];
         const featured = Boolean(group.imageUrl && index % 5 === 4);
         return <li className={featured ? "vault-feed-featured" : ""} key={group.id}>
@@ -181,7 +186,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     </> : <>
       {loading && <p role="status">Reading your sources…</p>}
       {error && <p role="status">{error}</p>}
-      {!loading && !visibleStories.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
+      {!loading && !visibleStories.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
       <ol>{visibleStories.map((story, index) => <li className={story.imageUrl && index % 5 === 4 ? "vault-feed-featured" : ""} key={`${story.feedURL}:${story.externalKey}`}>
         {story.imageUrl && index % 5 === 4 && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         <div className="vault-feed-story">

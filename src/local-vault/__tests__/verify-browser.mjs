@@ -1119,6 +1119,13 @@ try {
   await page.getByRole("button", { name: "For You", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 1);
   await page.screenshot({ path: "/tmp/texttext-feeds-ranked-reference.png" });
+  const feedSearch = page.getByRole("searchbox", { name: "Search loaded stories" });
+  await feedSearch.fill("A considered");
+  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "Design headline 5" }).count(), 0);
+  await feedSearch.fill("no matching headline");
+  await page.getByText("No loaded stories match this search.").waitFor();
+  await feedSearch.fill("");
   await page.getByRole("button", { name: "Latest", exact: true }).click();
   await page.getByRole("button", { name: "A considered design headline" }).first().click();
   await page.getByRole("region", { name: "Feed story" }).getByText("A full in-app reading view for this story.").waitFor();

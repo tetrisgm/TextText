@@ -130,10 +130,15 @@
 .vault-app .vault-feed-sources>button>span:nth-child(2) { display:flex; flex:1; min-width:0; flex-direction:column; gap:5px; }
 .vault-app .vault-feed-sources strong { font-size:16px; }
 .vault-app .vault-feed-sources small { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.vault-app .vault-feed-home { max-width:660px; margin-inline:auto; }
+.vault-app .vault-feed-home { display:flex; flex-direction:column; width:100%; max-width:660px; margin-inline:auto; }
+.vault-app .vault-feed-search { display:flex; align-items:center; gap:8px; height:40px; margin:0 0 14px; padding:0 14px; border-radius:20px; background:var(--sidebar); color:var(--muted); }
+.vault-app .vault-feed-search svg { flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
+.vault-app .vault-feed-search input { flex:1; min-width:0; padding:0; border:0; outline:0; background:transparent; color:var(--ink); font-size:14px; }
+.vault-app .vault-feed-search:focus-within { outline:2px solid var(--tt-accent); outline-offset:2px; }
 .vault-app .vault-feed-home>nav { display:flex; gap:23px; margin-bottom:10px; border-bottom:1px solid var(--line); overflow-x:auto; white-space:nowrap; }
 .vault-app .vault-feed-home>nav button { padding:7px 0 12px; border-radius:0; color:var(--muted); font-weight:600; }
 .vault-app .vault-feed-home>nav button[aria-pressed=true] { color:var(--ink); font-weight:750; }
+.vault-app .vault-feed-home>nav button:hover { background:transparent; }
 .vault-app .vault-feed-rank-note { margin:16px 0 4px; color:var(--muted); font-size:12px; line-height:1.45; }
 .vault-app .vault-feed-headlines-title { margin:22px 0 8px; color:var(--ink); font-size:26px; }
 .vault-app .vault-feed-coverage-list { margin:0; padding:0; list-style:none; }
@@ -178,7 +183,7 @@
 .vault-app .vault-feed-reader>footer button { background:var(--tt-accent); color:#fff; padding:9px 14px; }
 .vault-app .vault-feed-reader>footer a { color:var(--tt-accent); font-size:13px; }
 .vault-app .vault-feed-home .vault-feed-story p { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.vault-app .vault-feed-source-window { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
+.vault-app .vault-feed-source-window { display:flex; order:3; align-items:center; justify-content:space-between; gap:12px; margin-top:22px; padding:11px 0; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
 .vault-app .vault-feed-source-window button { color:var(--tt-accent); font-size:12px; font-weight:600; }
 .vault-app .vault-feed-recommendations { padding:26px 0; }
 .vault-app .vault-feed-recommendations h2 { margin:0 0 5px; color:var(--ink); font-size:22px; }

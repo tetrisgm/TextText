@@ -16,6 +16,8 @@ The Gallery inspector also edits source and tags on the same TextPack. The viewe
 
 Feed source creation now starts with a website or feed address, shows discovered sources, and keeps folder/topic choices optional until after discovery. The dialog sizes to its contents. Selecting a source still saves a subscription TextPack in Feeds.
 
+Feeds now has an Artifact-style search pill above its topic tabs. It filters stories already loaded from followed source TextPacks, including Headlines groups, without fetching or creating new files. Source-loading controls sit below the story list so the first screen leads with news. The original Artifact screenshots named in the old plan are absent from this checkout and the former Downloads paths; the plan's written visual measurements are the current reference.
+
 The Blog reader now uses a bold sans-serif title, a long-form serif body, and reading time computed from TextPack content. New Blog drafts have an empty content title and a Title placeholder while retaining a safe TextPack filename. The reader remains a view of the article template, not a separate content type.
 
 The Blog selection toolbar now offers link, heading, subheading, and quote actions alongside bold and italic, following Medium’s documented writing controls. They update the article TextPack Markdown body. The link entry validates web addresses, and its popover closes on outside click, scroll, or Escape.
@@ -41,6 +43,7 @@ New bookmarks record their save time in the initial TextPack snapshot. The Bookm
 - The integrated Gallery viewer passes TypeScript, the local UI build, and the full browser contract. The browser verifies a visible folder sidebar, image navigation and zoom, and closing on folder navigation; `/tmp/texttext-gallery-light-reference.png` shows the updated light-theme view.
 - Single-image Gallery import now opens its TextPack editor. The browser contract verifies the imported title, caption save, and persisted image dimensions; drop and paste creation reach the editor too. Multi-image imports still leave the collection grid visible.
 - Gallery source and tags pass TypeScript, the article-capture unit test, and the local browser contract. The browser confirms they persist and appear in the image viewer, and that a Gallery source does not activate article capture controls. `/tmp/texttext-gallery-editor-light-reference.png` shows the updated inspector.
+- Feed search passes TypeScript, the local UI bundle, and the full browser contract for matching stories and an empty result. `/tmp/texttext-feeds-ranked-reference.png` shows the search pill, topic tabs, and first stories in dark mode.
 
 ## Boundaries
 
