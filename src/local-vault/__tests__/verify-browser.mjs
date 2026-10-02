@@ -995,6 +995,7 @@ try {
   await lightbox.getByRole("button", { name: "Next image" }).click();
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
   await lightbox.getByText("240 × 120").waitFor();
+  await lightbox.getByText("Size", { exact: true }).waitFor();
   await lightbox.getByLabel("Image colors").locator("span").first().waitFor();
   const pairColor = await lightbox.getByLabel("Image colors").locator("span").first().getAttribute("aria-label");
   const galleryOrder = await page.locator(".vault-photo-grid button").evaluateAll(buttons => buttons.map(button => button.getAttribute("aria-label")));
@@ -1013,6 +1014,15 @@ try {
   await page.getByRole("dialog", { name: "Two photographs" }).getByRole("img", { name: "Second photograph" }).waitFor();
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
   await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
+  await lightbox.getByRole("button", { name: "Zoom in" }).click();
+  await lightbox.getByText("125%", { exact: true }).waitFor();
+  assert.match(await lightbox.getByRole("img", { name: "Second photograph" }).getAttribute("style"), /scale\(1\.25\)/);
+  assert.ok(await lightbox.locator(".vault-gallery-stage").evaluate(stage => stage.scrollWidth > stage.clientWidth));
+  await lightbox.getByRole("button", { name: "Fit image" }).click();
+  await lightbox.getByText("100%", { exact: true }).waitFor();
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-gallery-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await lightbox.getByRole("button", { name: "Edit item" }).click();
   await page.getByRole("textbox", { name: "Image title" }).fill("Collected photographs");
   await page.getByRole("textbox", { name: "Image caption" }).fill("Two color studies kept together.");

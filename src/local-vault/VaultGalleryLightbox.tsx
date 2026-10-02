@@ -39,6 +39,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const [file, setFile] = useState<VaultFile | null>(null);
   const [error, setError] = useState("");
   const [selection, setSelection] = useState(initialSelection);
+  const [zoom, setZoom] = useState(1);
   const [details, setDetails] = useState<{ colors: string[]; width: number; height: number }>({ colors: [], width: 0, height: 0 });
   const chosen = entries[Math.min(selection, entries.length - 1)];
   const path = chosen?.path || "";
@@ -69,16 +70,22 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   useEffect(() => () => { for (const url of new Set(local.values())) URL.revokeObjectURL(url); }, [local]);
   let title = path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Image";
   let caption = "";
+  let source = "";
   let images: Image[] = [];
+  let size = 0;
   try {
     if (file?.path === path) {
       const document = readDocument(file);
       title = document.content.title || title;
       caption = document.content.body;
+      source = typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : "";
       images = document.content.assets.filter(asset => asset.kind === "image" && local.has(asset.src)).map(asset => ({ id: asset.id, url: local.get(asset.src)!, alt: asset.alt || title, width: asset.width, height: asset.height }));
     }
   } catch { /* Show a readable error below while preserving the original file. */ }
   const image = images[Math.min(index, Math.max(0, images.length - 1))];
+  useEffect(() => setZoom(1), [image?.url]);
+  const asset = image && file?.assets?.find(entry => local.get(`assets/${entry.filename}`) === image.url || (entry.remoteURL && local.get(entry.remoteURL) === image.url));
+  if (asset) size = Math.floor(asset.data.length * 3 / 4) - (asset.data.endsWith("==") ? 2 : asset.data.endsWith("=") ? 1 : 0);
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(() => setDetails({ colors: [], width: 0, height: 0 }));
@@ -98,15 +105,16 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   }, [selection, entries.length]);
   return <div className="vault-gallery-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div ref={dialog} className="vault-gallery-lightbox" role="dialog" aria-modal="true" aria-label={title}>
-      <header><button onClick={onClose} aria-label="Close image">✕</button><span>{title}</span><button onClick={() => onEdit(path)} disabled={!file}>Edit item</button></header>
+      <header><button onClick={onClose} aria-label="Close image">‹ <span>Gallery</span></button><span>{title}</span><button aria-label="Edit item" onClick={() => onEdit(path)} disabled={!file}>Edit</button></header>
       {error && <p role="alert">{error}</p>}
       {file?.path !== path && !error && <p role="status">Opening image…</p>}
       {file?.path === path && !images.length && <p role="status">This item has no embedded image to display. Open the item to inspect its contents.</p>}
       {image && <div className="vault-gallery-detail"><div className="vault-gallery-stage">
         {entries.length > 1 && <button aria-label="Previous image" disabled={selection === 0} onClick={previous}>‹</button>}
-        {/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.alt} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.alt} style={{ transform: `scale(${zoom})` }} />
         {entries.length > 1 && <button aria-label="Next image" disabled={selection >= entries.length - 1} onClick={next}>›</button>}
-      </div><aside><h2>{title}</h2>{caption && <p>{caption}</p>}{details.colors.length > 0 && <div className="vault-gallery-colors" aria-label="Image colors"><h3>Colors</h3><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}<dl>{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}</dl></aside></div>}
+        <div className="vault-gallery-zoom" role="group" aria-label="Image zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, Math.round((value - .25) * 100) / 100))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, Math.round((value + .25) * 100) / 100))}>+</button><button aria-label="Fit image" disabled={zoom === 1} onClick={() => setZoom(1)}>Fit</button></div>
+      </div><aside><dl>{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}{size > 0 && <><dt>Size</dt><dd>{size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`}</dd></>}{source && <><dt>Source</dt><dd className="vault-gallery-source">{source}</dd></>}{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}</dl>{caption && <div className="vault-gallery-inspector-section"><h2>Caption</h2><p>{caption}</p></div>}{details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
     </div>
   </div>;
 }
