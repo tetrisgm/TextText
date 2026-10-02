@@ -1,4 +1,5 @@
 .status { margin: 24px 0 8px; color: var(--ink); font-weight: 600; }
+.draftNotice { margin: 20px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: var(--surface); font-size: 13px; }
 .link { display: grid; gap: 8px; margin-top: 20px; font-size: 13px; }
 .link label { color: var(--muted); }
 .link input { width: 100%; min-width: 0; padding: 9px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }

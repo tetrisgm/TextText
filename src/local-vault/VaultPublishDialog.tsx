@@ -17,7 +17,7 @@ type Publication = {
   publicURL?: string;
   canPublish?: boolean;
 };
-type StoryPreview = { revision: string; title: string; subtitle: string; excerpt: string; topics: string[]; cover?: { data: string; contentType: string } };
+type StoryPreview = { revision: string; title: string; subtitle: string; excerpt: string; topics: string[]; ready: boolean; cover?: { data: string; contentType: string } };
 
 export function storyPreviewFromFile(file: VaultFile): StoryPreview {
   const document = readDocument(file);
@@ -30,6 +30,7 @@ export function storyPreviewFromFile(file: VaultFile): StoryPreview {
     subtitle: document.content.subtitle?.trim() || "",
     excerpt: stripMarkdown(document.content.body).trim().slice(0, 240),
     topics: document.content.tags.slice(0, 5),
+    ready: Boolean(document.content.title.trim() && stripMarkdown(document.content.body).trim()),
     ...(cover && ["image/jpeg", "image/png", "image/webp"].includes(cover.contentType) && cover.data.length <= 8 * 1024 * 1024
       ? { cover: { data: cover.data, contentType: cover.contentType } } : {}),
   };
@@ -139,6 +140,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
           {coverURL && /* eslint-disable-next-line @next/next/no-img-element */ <img src={coverURL} alt="" />}
           <div><small>Story preview</small><h3>{story.title}</h3>{story.subtitle && <p>{story.subtitle}</p>}{story.excerpt && <p>{story.excerpt}</p>}</div>
         </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review the saved story. Its title, text, and image come from this TextPack.</p><h4>Topics</h4>{story.topics.length ? <div className={styles.topics}>{story.topics.map(topic => <span key={topic}>{topic}</span>)}</div> : <p>No topics yet.</p>}{onEditTopics && <button type="button" className={styles.editTopics} onClick={onEditTopics}>Edit topics in story</button>}</div></div>}
+        {story && !story.ready && !state.published && <p role="status" className={styles.draftNotice}>Add a title and some story text before publishing. Your draft is saved in Blog.</p>}
         <p className={styles.status}>{state.published ? "This file is public." : "This file is private."}</p>
         <p className="vault-sharing-intro">Anyone with the link can read the current saved file. Changes you save later appear on the same page. Comments and workspace access stay private.</p>
         {state.published && link && <div className={styles.link}>
@@ -148,7 +150,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
             <a href={link} target="_blank" rel="noopener noreferrer">Open page</a></div>
         </div>}
         {state.canPublish === false ? <p>Only the workspace owner can change public access.</p> :
-          <div className={styles.actions}><button type="button" disabled={busy || (Boolean(readStoryFile) && !story)} onClick={() => void change(!state.published)}>
+          <div className={styles.actions}><button type="button" disabled={busy || (Boolean(readStoryFile) && (!story || (!state.published && !story.ready)))} onClick={() => void change(!state.published)}>
             {busy ? "Saving…" : state.published ? "Unpublish" : story ? "Publish story" : "Publish file"}
           </button></div>}
       </> : null}
