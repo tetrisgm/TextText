@@ -972,6 +972,13 @@ try {
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.body === "https://example.com/fresh-reading"), true);
   assert.equal(await page.getByRole("article", { name: "Bookmark reader" }).count(), 1);
   assert.equal(await page.getByRole("main", { name: "Edit item" }).count(), 0);
+  await page.locator(".vault-bookmark-library").evaluate(element => {
+    const transfer = new DataTransfer();
+    transfer.setData("text/uri-list", "https://example.org/dropped-reading");
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.org"));
+  assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/dropped-reading"), true);
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.locator(".vault-story-list").getByText("An essay title").waitFor();
@@ -1305,7 +1312,7 @@ try {
   await page.reload();
   await chooseFolder("Feeds");
   await page.getByRole("heading", { name: "Personalize your feed" }).waitFor();
-  assert.equal(await page.getByRole("searchbox", { name: "Search loaded stories" }).count(), 0);
+  await page.getByRole("searchbox", { name: "Search loaded stories" }).waitFor({ state: "hidden" });
   await page.screenshot({ path: "/tmp/texttext-feeds-starter-reference.png" });
   const interests = page.getByRole("group", { name: "News interests" });
   await interests.getByRole("button", { name: /Technology/ }).click();

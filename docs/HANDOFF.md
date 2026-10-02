@@ -2,6 +2,8 @@
 
 ## Current work
 
+Dropping a web link into the Bookmarks folder now saves it directly as a Bookmark TextPack and selects it in the reader. It uses the same URL validation and enrichment path as Save bookmark. The local browser contract covers the drop and passed; no app release was run.
+
 Existing Note TextPacks now open as finished cards, with Edit card or Enter switching to editing. Newly created notes still open ready for typing. The local browser contract covers both paths and passed; no app release was run.
 
 Feeds now has a Read Later view sourced from saved Bookmarks TextPacks, including items older than the currently loaded feed pages. It opens the selected item in the Bookmarks reader. The native metadata scan returns bounded title, source, date, path, and stable hash; it does not fetch feeds or assets. The view keeps source pagination inside Sources and does not show source loading controls on Read Later. Restricted shared views do not request personal saved-story metadata. The focused Swift test and full local browser flow passed; `/tmp/texttext-feeds-read-later-reference.png` is the dark screenshot. Artifact reference parity, including persistent reading progress and feedback, remains open.

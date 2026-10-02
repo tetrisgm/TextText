@@ -27,7 +27,7 @@ import { activeBodySelection } from "@/lib/document-history-events";
 import { ArticleCapture } from "./ArticleCapture";
 import { ArticleEnrichmentWorker } from "./ArticleEnrichmentWorker";
 import { queueArticleEnrichment } from "./article-enrichment";
-import { CaptureDialog } from "./CaptureDialog";
+import { CaptureDialog, captureInput } from "./CaptureDialog";
 import { FeedSubscribeDialog, FeedSubscriptionReader } from "./VaultFeeds";
 import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
@@ -787,6 +787,16 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     createNote(focusedControl());
   };
   const openCapture = (mode?: "bookmark" | "mixed") => { closeMoreActions(); void operate(async () => setCaptureMode(mode || (destinationFolder.trim() === "Bookmarks" ? "bookmark" : "mixed"))); };
+  const saveDroppedBookmark = (address: string) => void operate(async () => {
+    const input = captureInput(address, "");
+    if (!input.sourceURL) throw new Error("Drop a web link to save it in Bookmarks.");
+    const created = await vaultRequest<VaultFile>("create", { ...input, folder: "Bookmarks" });
+    if (listing?.root) queueArticleEnrichment(listing.root, created.path);
+    setPreferredBookmarkPath(created.path);
+    setDestinationFolder("Bookmarks");
+    setSelected(null);
+    refresh();
+  });
   const openFeedSubscribe = (returnFocus: HTMLElement | null) => {
     feedSubscribeReturnFocus.current = returnFocus;
     closeMoreActions();
@@ -959,8 +969,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label });
   };
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
-    onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
-    onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
+    onDragOver={(event) => { if (!selected && (event.dataTransfer.types.includes("Files") || currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list"))) event.preventDefault(); }}
+    onDrop={(event) => { if (selected) return; if (event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } else if (currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list")) { event.preventDefault(); if (canCreate) saveDroppedBookmark(event.dataTransfer.getData("text/uri-list").split("\n").find(line => line.trim() && !line.startsWith("#")) || ""); } }}
     onPaste={(event) => {
       const target = event.target as HTMLElement;
       if (selected || target.closest("input,textarea,[contenteditable=true]")) return;
