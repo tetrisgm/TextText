@@ -2,6 +2,8 @@
 
 ## Current work
 
+The Bookmarks list now accepts a pasted web address inline and saves it directly as a TextPack in Bookmarks, then refreshes and opens that library position for enrichment. Invalid prose stays in the field with an error and creates no file; the existing modal and drag-and-drop paths remain. The local browser flow covers invalid and valid quick saves, the web browser flow and TypeScript passed. Full Shiori creation and library parity remains open; no app release was run.
+
 Bookmarks library search now matches the saved URL, captured excerpt, and tags as well as the title. The local browser flow checks excerpt and URL matches across paginated bookmarks; local/web browser flows and TypeScript passed. Full Shiori parity, including its capture integrations and full-text indexing, remains open; no app release was run.
 
 Command K file matches now sit under a Files heading in compact rows with the path at the right. This keeps actions and files distinct while preserving accessible result text and arrow-key order. Local and web vault browser flows and TypeScript passed. The first local browser run hit a timing-sensitive bookmark highlight autosave assertion; a direct rerun passed. Full Superhuman parity remains open; no app release was run.

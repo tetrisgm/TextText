@@ -650,7 +650,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const listingRequest = useRef(0);
   const refresh = useCallback(() => {
     const request = ++listingRequest.current;
-    void vaultRequest<VaultListing>("list")
+    return vaultRequest<VaultListing>("list")
       .then(value => { if (request === listingRequest.current) setListing(value); })
       .catch((error: Error) => { if (request === listingRequest.current) setError(error.message); });
   }, []);
@@ -805,6 +805,17 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     createNote(focusedControl());
   };
   const openCapture = (mode?: "bookmark" | "mixed") => { closeMoreActions(); void operate(async () => setCaptureMode(mode || (destinationFolder.trim() === "Bookmarks" ? "bookmark" : "mixed"))); };
+  const quickSaveBookmark = async (address: string) => {
+    if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
+    const input = captureInput(address, "");
+    if (!input.sourceURL) throw new Error("Enter a web address to save it in Bookmarks.");
+    const created = await vaultRequest<VaultFile>("create", { ...input, folder: "Bookmarks" });
+    if (listing?.root) queueArticleEnrichment(listing.root, created.path);
+    setPreferredBookmarkPath(created.path);
+    setDestinationFolder("Bookmarks");
+    setSelected(null);
+    await refresh();
+  };
   const saveDroppedBookmark = (address: string) => void operate(async () => {
     const input = captureInput(address, "");
     if (!input.sourceURL) throw new Error("Drop a web link to save it in Bookmarks.");
@@ -1218,6 +1229,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath}
         onCreateNote={() => void createNote(focusedControl())}
+        onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}

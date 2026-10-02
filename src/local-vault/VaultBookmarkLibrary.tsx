@@ -32,8 +32,8 @@ function savedDay(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", ...(date.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }) }).format(date);
 }
 
-export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpen, preferredPath }: {
-  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void; preferredPath?: string;
+export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpen, onQuickSave, preferredPath }: {
+  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void; onQuickSave?: (address: string) => Promise<void>; preferredPath?: string;
 }) {
   const [selected, setSelected] = useState(preferredPath || "");
   const pendingPreferred = useRef(preferredPath || "");
@@ -42,6 +42,9 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [tagDraft, setTagDraft] = useState("");
+  const [quickLink, setQuickLink] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState("");
   const [page, setPage] = useState(0);
   const [flags, setFlags] = useState<Record<string, BookmarkFlags>>({});
   const [metadata, setMetadata] = useState<Record<string, FolderPreview>>({});
@@ -237,6 +240,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   };
   return <div className="vault-bookmark-library">
     <div className="vault-bookmark-list">
+      {onQuickSave && !previewOnly && <form className="vault-bookmark-quick-save" onSubmit={event => { event.preventDefault(); if (quickSaving || busy || !quickLink.trim()) return; setQuickSaving(true); setQuickError(""); void onQuickSave(quickLink).then(() => setQuickLink("")).catch(reason => setQuickError(reason instanceof Error ? reason.message : "Could not save this link.")).finally(() => setQuickSaving(false)); }}><label><span className="ac-sr-only">Web address to save</span><input type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address to save" placeholder="Paste a link to save" value={quickLink} disabled={quickSaving || busy} onChange={event => setQuickLink(event.target.value)} maxLength={4096} /></label><button type="submit" disabled={quickSaving || busy || !quickLink.trim()}>{quickSaving ? "Saving…" : "Save"}</button>{quickError && <p role="alert">{quickError}</p>}</form>}
       <div className="vault-bookmark-toolbar"><label><span className="ac-sr-only">Search saved links</span><input type="search" value={search} disabled={!canFilter} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Search saved links" /></label><div role="group" aria-label="Bookmark filters">{(["inbox", "unread", "favorites", "archive"] as const).map(option => <button key={option} aria-pressed={filter === option} disabled={!canFilter} onClick={() => { setFilter(option); setPage(0); }}>{option === "inbox" ? "Inbox" : option === "unread" ? "Unread" : option === "archive" ? "Archive" : "Favorites"}</button>)}</div>{(tags.length > 0 || tagFilter) && <div className="vault-bookmark-tag-filters" role="group" aria-label="Filter bookmark tags"><button aria-pressed={!tagFilter} onClick={() => { setTagFilter(""); setPage(0); }}>All tags</button>{tags.map(tag => <button key={tag} aria-pressed={tagFilter === tag} onClick={() => { setTagFilter(tag); setPage(0); }}>#{tag}</button>)}</div>}</div>
       {metadataState === "reading" && <p role="status" className="vault-bookmark-index-status">Reading saved links for filters…</p>}
       {metadataState === "unavailable" && <p role="status" className="vault-bookmark-index-status">Filters are unavailable for this folder. Saved links remain accessible.</p>}
