@@ -121,6 +121,50 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     else try { items = queryFolderMembers(members, query.previews, template.collection); }
     catch (error) { queryMessage = error instanceof Error ? error.message : "Folder details are unavailable."; }
   }
+  const fallbackTitle = (item: VaultListing["items"][number]) => item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
+  const notesFolder = folder === "Notes";
+  const [noteSearch, setNoteSearch] = useState("");
+  const [noteTag, setNoteTag] = useState("");
+  const [noteSort, setNoteSort] = useState<"folder" | "title">("folder");
+  const noteIndexKey = notesFolder ? JSON.stringify([listing.root, items.map(item => item.path)]) : "";
+  const [noteIndex, setNoteIndex] = useState<{ key: string; listing?: VaultListing; previews: Record<string, FolderPreview>; error: string }>({ key: "", previews: {}, error: "" });
+  useEffect(() => {
+    if (!noteIndexKey || busy || noteIndex.key === noteIndexKey && noteIndex.listing === listing) return;
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (items.length > 2048) { if (active) setNoteIndex({ key: noteIndexKey, listing, previews: {}, error: "Search supports up to 2,048 cards in one folder." }); return; }
+      const found: Record<string, FolderPreview> = {};
+      let totalBytes = 0;
+      for (const item of items) {
+        if (!active) return;
+        try {
+          const preview = await requestPreview(item.path, () => active, true);
+          if (!preview?.document || preview.incompleteFields?.some(field => ["*", "title", "tags"].includes(field))) {
+            if (active) setNoteIndex({ key: noteIndexKey, listing, previews: {}, error: "Card search is unavailable because some card details could not be read." });
+            return;
+          }
+          const compact: FolderPreview = { title: preview.title, excerpt: preview.excerpt, document: { ...preview.document,
+            content: { ...preview.document.content, body: preview.excerpt, fields: {}, assets: [] } } };
+          totalBytes += new TextEncoder().encode(JSON.stringify(compact)).byteLength;
+          if (totalBytes > 8 * 1024 * 1024) { if (active) setNoteIndex({ key: noteIndexKey, listing, previews: {}, error: "Card details exceed the 8 MiB search limit." }); return; }
+          found[item.path] = compact;
+        } catch { if (active) setNoteIndex({ key: noteIndexKey, listing, previews: {}, error: "Card search is unavailable while a card cannot be read." }); return; }
+      }
+      if (active) setNoteIndex({ key: noteIndexKey, listing, previews: found, error: "" });
+    });
+    return () => { active = false; };
+    // The key captures the folder listing and order without restarting an in-flight scan on render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, noteIndexKey, listing]);
+  const noteIndexReady = notesFolder && noteIndex.key === noteIndexKey && noteIndex.listing === listing && !noteIndex.error;
+  const noteTags = noteIndexReady ? [...new Set(items.flatMap(item => noteIndex.previews[item.path]?.document?.content.tags ?? []))].sort((left, right) => left.localeCompare(right)) : [];
+  const noteQuery = noteSearch.trim().toLocaleLowerCase();
+  const indexedNoteTitle = (item: VaultListing["items"][number]) => noteIndex.previews[item.path]?.title?.trim() || fallbackTitle(item);
+  const displayedItems = noteIndexReady && notesFolder ? items.filter(item => {
+    const preview = noteIndex.previews[item.path];
+    const tags = preview?.document?.content.tags ?? [];
+    return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery));
+  }).sort((left, right) => noteSort === "title" ? indexedNoteTitle(left).localeCompare(indexedNoteTitle(right)) : 0) : items;
   const feedIndexKey = folder === "Feeds" ? JSON.stringify([listing.root, items.map(item => item.path)]) : "";
   const [feedIndex, setFeedIndex] = useState<{ key: string; previews: Record<string, FolderPreview>; done: boolean; error: string }>({ key: "", previews: {}, done: false, error: "" });
   useEffect(() => {
@@ -146,9 +190,9 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     });
     return () => { active = false; };
   }, [busy, feedIndexKey, items]);
-  const lastPage = Math.max(0, Math.ceil(items.length / PAGE_SIZE) - 1);
+  const lastPage = Math.max(0, Math.ceil(displayedItems.length / PAGE_SIZE) - 1);
   const currentPage = Math.min(page, lastPage);
-  const visible = useMemo(() => items.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE), [items, currentPage]);
+  const visible = useMemo(() => displayedItems.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE), [displayedItems, currentPage]);
   const visibleKey = JSON.stringify([listing, visible.map((item) => item.path)]);
   useEffect(() => {
     if (busy || folder === "Feeds") return;
@@ -173,11 +217,9 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
   const layout = supported ? requestedLayout : "list";
   const photoFolder = folder === "Gallery";
   const bookmarkFolder = folder === "Bookmarks";
-  const notesFolder = folder === "Notes";
   const blogFolder = folder === "Blog";
   const feedsFolder = folder === "Feeds";
   const referenceFolder = photoFolder || bookmarkFolder || notesFolder || blogFolder || feedsFolder;
-  const fallbackTitle = (item: VaultListing["items"][number]) => item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
   const galleryEntries = photoFolder ? visible.flatMap(item => {
     const count = previews[item.path]?.images?.length || 1;
     return Array.from({ length: count }, (_, index) => ({ path: item.path, index }));
@@ -195,7 +237,14 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     {!supported && <p role="status">The {requestedLayout} layout is not available here yet. Showing a readable list.</p>}
     {queryMessage && <p role="status">{queryMessage}</p>}
     {folder === "Feeds" && feedIndex.key === feedIndexKey && feedIndex.error && <p role="alert">{feedIndex.error}</p>}
-    {photoFolder ? <div className="vault-photo-grid" ref={galleryRef}>{galleryRows.map((row, rowIndex) => <div className="vault-photo-row" key={galleryTiles[galleryTile]?.key || rowIndex}>{row.map(size => { const tile = galleryTiles[galleryTile]; const selection = galleryTile++; return <PreviewImage key={tile.key} preview={tile.preview ? { ...tile.preview, image: tile.image } : undefined}>{source => <GalleryTile source={source} title={tile.title} disabled={busy || previewOnly} onOpen={() => setGalleryState({ entries: galleryEntries, selection })} width={size.width} height={size.height} onAspect={aspect => setGalleryAspects(previous => previous[tile.key] === aspect ? previous : { ...previous, [tile.key]: aspect })} />}</PreviewImage>; })}</div>)}</div> : bookmarkFolder ? <VaultBookmarkLibrary items={items} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} preferredPath={preferredBookmarkPath} /> : notesFolder ? <>{onCreateNote && !previewOnly && <button className="vault-note-start" aria-label="Start typing Make a new card" disabled={busy} onClick={onCreateNote}>Start typing or paste to make a card</button>}<div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); return <div className="vault-note-card" key={item.path}>{noteTemplate ? <DocumentCollectionRenderer document={collectionDocument(preview, title)} template={noteTemplate} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <small>{preview.document.content.tags.slice(0, 3).map(tag => `#${tag}`).join("  ")}</small> : null}<button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} /></div>; })}</div></> : blogFolder ? <div className="vault-story-list">{visible.map(item => {
+    {photoFolder ? <div className="vault-photo-grid" ref={galleryRef}>{galleryRows.map((row, rowIndex) => <div className="vault-photo-row" key={galleryTiles[galleryTile]?.key || rowIndex}>{row.map(size => { const tile = galleryTiles[galleryTile]; const selection = galleryTile++; return <PreviewImage key={tile.key} preview={tile.preview ? { ...tile.preview, image: tile.image } : undefined}>{source => <GalleryTile source={source} title={tile.title} disabled={busy || previewOnly} onOpen={() => setGalleryState({ entries: galleryEntries, selection })} width={size.width} height={size.height} onAspect={aspect => setGalleryAspects(previous => previous[tile.key] === aspect ? previous : { ...previous, [tile.key]: aspect })} />}</PreviewImage>; })}</div>)}</div> : bookmarkFolder ? <VaultBookmarkLibrary items={items} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} preferredPath={preferredBookmarkPath} /> : notesFolder ? <>
+      {onCreateNote && !previewOnly && <button className="vault-note-start" aria-label="Start typing Make a new card" disabled={busy} onClick={onCreateNote}>Start typing or paste to make a card</button>}
+      <div className="vault-note-tools"><label><span className="ac-sr-only">Find cards</span><input type="search" aria-label="Find cards" value={noteSearch} onChange={event => { setNoteSearch(event.target.value); setPage(0); }} disabled={!noteIndexReady} placeholder={noteIndexReady ? "Find cards" : "Reading cards…"} /></label><label><span className="ac-sr-only">Sort cards</span><select aria-label="Sort cards" value={noteSort} onChange={event => { setNoteSort(event.target.value as "folder" | "title"); setPage(0); }} disabled={!noteIndexReady}><option value="folder">Folder order</option><option value="title">Title A–Z</option></select></label></div>
+      {noteIndex.key === noteIndexKey && noteIndex.listing === listing && noteIndex.error && <p role="status" className="vault-note-index-status">{noteIndex.error}</p>}
+      {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
+      {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
+      <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); return <div className="vault-note-card" key={item.path}>{noteTemplate ? <DocumentCollectionRenderer document={collectionDocument(preview, title)} template={noteTemplate} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <small>{preview.document.content.tags.slice(0, 3).map(tag => `#${tag}`).join("  ")}</small> : null}<button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} /></div>; })}</div>
+    </> : blogFolder ? <div className="vault-story-list">{visible.map(item => {
       const preview = previews[item.path];
       const title = preview?.document && !preview.document.content.title.trim() ? "New story" : preview?.title || fallbackTitle(item);
       const authorValue = preview?.document?.content.fields.author;

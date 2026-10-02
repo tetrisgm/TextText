@@ -917,7 +917,13 @@ try {
   publishedStory.documentJSON = JSON.stringify({ ...JSON.parse(publishedStory.documentJSON), content: { ...JSON.parse(publishedStory.documentJSON).content, subtitle: "A considered subtitle", fields: { author: "Mira Chen" } } });
   storyItemId = publishedStory.markdown.match(/textTextId: "([^"]+)"/)?.[1];
   files.set("Blog/Story.textpack", publishedStory);
-  files.set("Notes/Formatted.textpack", sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point"));
+  const formattedCard = sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point");
+  formattedCard.documentJSON = JSON.stringify({ ...JSON.parse(formattedCard.documentJSON), content: { ...JSON.parse(formattedCard.documentJSON).content, tags: ["ideas"] } });
+  files.set("Notes/Formatted.textpack", formattedCard);
+  for (let index = 0; index < 25; index++) {
+    const title = `Z card ${String(index).padStart(2, "0")}`;
+    files.set(`Notes/${title}.textpack`, sample(`Notes/${title}.textpack`, "note", title, "A short reference card."));
+  }
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
   const portrait = (await sharp({ create: { width: 120, height: 240, channels: 4, background: "#bd806c" } }).png().toBuffer()).toString("base64");
   const landscape = (await sharp({ create: { width: 240, height: 120, channels: 4, background: "#6c93bd" } }).png().toBuffer()).toString("base64");
@@ -1381,6 +1387,18 @@ try {
   await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
+  await page.getByRole("searchbox", { name: "Find cards" }).waitFor();
+  await page.getByRole("searchbox", { name: "Find cards" }).fill("Z card 24");
+  await page.getByRole("button", { name: "Open Z card 24" }).waitFor();
+  assert.equal(await page.locator(".vault-note-card").count(), 1);
+  await page.getByRole("searchbox", { name: "Find cards" }).fill("");
+  await page.getByRole("group", { name: "Filter card tags" }).getByRole("button", { name: "#ideas" }).click();
+  assert.equal(await page.locator(".vault-note-card").count(), 1);
+  await page.getByRole("group", { name: "Filter card tags" }).getByRole("button", { name: "All" }).click();
+  await page.getByRole("combobox", { name: "Sort cards" }).selectOption("title");
+  await page.locator(".vault-note-card").first().getByRole("button", { name: "Open A concise card" }).waitFor();
+  await page.getByRole("combobox", { name: "Sort cards" }).selectOption("folder");
+  await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   await page.screenshot({ path: "/tmp/texttext-note-grid-reference.png" });
   await page.getByRole("button", { name: "Open A concise card" }).click();
   await page.getByRole("region", { name: "Note card" }).getByText("A concise card").waitFor();

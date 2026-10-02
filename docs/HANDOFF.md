@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes now has a card-library search, tag chips, and title sorting. It indexes local metadata for up to 2,048 TextPacks and 8 MiB, searching titles, tags, and the first 400 characters of each card preview without loading media or contacting the cloud. The local browser flow finds a card beyond page one, filters by tag, checks title order, and renders the dark grid; screenshot: `/tmp/texttext-note-grid-reference.png`. The web browser flow and TypeScript passed. Full Supernotes parity, including full-body search and saved-look card previews, remains open; no app release was run.
+
 Custom Bookmark looks now expose additional validated fields in the reader's Details panel, with inline edits saved through the revision-aware TextPack write path. The template-to-capture handoff also no longer leaves the workspace inert after its modal closes. The local browser flow creates a custom Bookmark, clicks Details, edits Topic, and checks the stored field; the dark screenshot is `/tmp/texttext-custom-bookmark-details-reference.png`. Focus tests, the web browser flow, and TypeScript passed. Shiori parity remains open; no app release was run.
 
 The Bookmarks reader now renders each TextPack's validated saved look instead of always using the built-in Bookmark template. Its shared reader can save highlights and notes from the reading view; writes are serialized while typing and use the current file revision. The local browser flow checks custom look identity and rapidly typed highlight notes persisted in the Bookmark TextPack. The web browser flow and TypeScript passed. Shiori parity remains open; no app release was run.
