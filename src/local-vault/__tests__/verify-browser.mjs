@@ -930,6 +930,7 @@ try {
     const title = `Z card ${String(index).padStart(2, "0")}`;
     files.set(`Notes/${title}.textpack`, sample(`Notes/${title}.textpack`, "note", title, "A short reference card."));
   }
+  files.set("Notes/Deep.textpack", sample("Notes/Deep.textpack", "note", "Long card", `${"First paragraph of this card. ".repeat(22)}A distant sentence about copper telescopes.`));
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
   const portrait = (await sharp({ create: { width: 120, height: 240, channels: 4, background: "#bd806c" } }).png().toBuffer()).toString("base64");
   const landscape = (await sharp({ create: { width: 240, height: 120, channels: 4, background: "#6c93bd" } }).png().toBuffer()).toString("base64");
@@ -1476,6 +1477,9 @@ try {
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
   await page.getByRole("searchbox", { name: "Find cards" }).waitFor();
+  await page.getByRole("searchbox", { name: "Find cards" }).fill("copper telescopes");
+  await page.getByRole("button", { name: "Open Long card" }).waitFor();
+  assert.equal(await page.locator(".vault-note-card").count(), 1);
   await page.getByRole("searchbox", { name: "Find cards" }).fill("Z card 24");
   await page.getByRole("button", { name: "Open Z card 24" }).waitFor();
   assert.equal(await page.locator(".vault-note-card").count(), 1);

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes Find cards now searches full TextPack body text on demand, beyond the 400-character card preview. It debounces requests, keeps tag filters, and reports incomplete scans. The offline browser contract finds a deep-body phrase; TypeScript and local/web vault browser flows passed. Supernotes parity remains open; no app release was run.
+
 Blog story management now filters All stories, Drafts, and Published using validated `publication.json` state in each TextPack. Mac and web previews expose the same state without a cloud status request per story. Focused Swift and vault preview tests, TypeScript, local UI build, and offline browser flow passed. Medium parity remains open; no app release was run.
 
 Gallery search now rests as a compact icon above the image grid, closer to Resurf's visual-library toolbar. Opening it focuses the existing indexed TextPack search; Done or Escape clears and closes it. The grid leads the view again. TypeScript, local UI build, and the offline browser flow passed, including filtered search and image viewer checks. Checked dark grid: `/tmp/texttext-gallery-grid-reference.png`. Broader Resurf capture and organization parity remains open; no app release was run.

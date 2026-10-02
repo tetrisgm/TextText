@@ -148,6 +148,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const storyQuery = storySearch.trim().toLocaleLowerCase();
   const notesFolder = folder === "Notes";
   const [noteSearch, setNoteSearch] = useState("");
+  const [noteContentSearch, setNoteContentSearch] = useState<{ query: string; listing?: VaultListing; paths: Set<string>; truncated: boolean; error: string }>({ query: "", paths: new Set(), truncated: false, error: "" });
   const [noteTag, setNoteTag] = useState("");
   const [noteSort, setNoteSort] = useState<"folder" | "title">("folder");
   const noteIndexKey = notesFolder ? JSON.stringify([listing.root, items.map(item => item.path)]) : "";
@@ -183,11 +184,21 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const noteIndexReady = notesFolder && noteIndex.key === noteIndexKey && noteIndex.listing === listing && !noteIndex.error;
   const noteTags = noteIndexReady ? [...new Set(items.flatMap(item => noteIndex.previews[item.path]?.document?.content.tags ?? []))].sort((left, right) => left.localeCompare(right)) : [];
   const noteQuery = noteSearch.trim().toLocaleLowerCase();
+  useEffect(() => {
+    if (!notesFolder || !noteQuery || !noteIndexReady) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void vaultRequest<{ items: { path: string }[]; truncated?: boolean; skippedCount?: number }>("search", { query: noteQuery, folder: "Notes" }, controller.signal)
+        .then(result => { if (!controller.signal.aborted) setNoteContentSearch({ query: noteQuery, listing, paths: new Set(result.items.map(item => item.path)), truncated: Boolean(result.truncated || result.skippedCount), error: "" }); })
+        .catch(reason => { if (!controller.signal.aborted) setNoteContentSearch({ query: noteQuery, listing, paths: new Set(), truncated: false, error: reason instanceof Error ? reason.message : "Card search could not finish." }); });
+    }, 400);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [notesFolder, noteQuery, noteIndexReady, listing]);
   const indexedNoteTitle = (item: VaultListing["items"][number]) => noteIndex.previews[item.path]?.title?.trim() || fallbackTitle(item);
   const searchMatchedItems = noteIndexReady && notesFolder ? items.filter(item => {
     const preview = noteIndex.previews[item.path];
     const tags = preview?.document?.content.tags ?? [];
-    return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery));
+    return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery) || noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && noteContentSearch.paths.has(item.path));
   }).sort((left, right) => noteSort === "title" ? indexedNoteTitle(left).localeCompare(indexedNoteTitle(right)) : 0) : collectionSearchReady && (galleryFolder ? galleryQuery : storyQuery) ? items.filter(item => {
     const preview = collectionSearchIndex.previews[item.path];
     return `${preview?.title || fallbackTitle(item)} ${preview?.document?.content.subtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
@@ -286,6 +297,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       {onCreateNote && !previewOnly && <button className="vault-note-start" aria-label="Start typing Make a new card" disabled={busy} onClick={() => onCreateNote()}>Start typing or paste to make a card</button>}
       <div className="vault-note-tools"><label><span className="ac-sr-only">Find cards</span><input type="search" aria-label="Find cards" value={noteSearch} onChange={event => { setNoteSearch(event.target.value); setPage(0); }} disabled={!noteIndexReady} placeholder={noteIndexReady ? "Find cards" : "Reading cards…"} /></label><label><span className="ac-sr-only">Sort cards</span><select aria-label="Sort cards" value={noteSort} onChange={event => { setNoteSort(event.target.value as "folder" | "title"); setPage(0); }} disabled={!noteIndexReady}><option value="folder">Folder order</option><option value="title">Title A–Z</option></select></label></div>
       {noteIndex.key === noteIndexKey && noteIndex.listing === listing && noteIndex.error && <p role="status" className="vault-note-index-status">{noteIndex.error}</p>}
+      {noteQuery && noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && (noteContentSearch.error || noteContentSearch.truncated) && <p role="status" className="vault-note-index-status">{noteContentSearch.error || "Some long cards were not searched. Results may be incomplete."}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
       <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path}>{look ? <DocumentCollectionRenderer document={noteCardDocument(preview, title)} template={look} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <small>{preview.document.content.tags.slice(0, 3).map(tag => `#${tag}`).join("  ")}</small> : null}<button className="vault-note-open" disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} />{onEditNote && !previewOnly && <button className="vault-note-card-edit" disabled={busy} onClick={() => onEditNote(item.path)} aria-label={`Edit ${title}`} title="Edit card"><svg aria-hidden="true" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m4 13 8.9-8.9a2 2 0 0 1 2.8 2.8L6.8 15.8 3 17z"/><path d="m11.4 5.6 3 3"/></svg></button>}</div>; })}</div>
