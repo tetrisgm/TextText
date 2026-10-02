@@ -231,6 +231,10 @@
 .vault-app .vault-gallery-detail aside { padding:24px 18px; overflow:auto; border-left:1px solid var(--line); }
 .vault-app .vault-gallery-detail h2 { margin:0 0 14px; font-size:20px; }
 .vault-app .vault-gallery-detail p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; color:var(--muted); }
+.vault-app .vault-gallery-colors { margin:24px 0; }
+.vault-app .vault-gallery-colors h3 { margin:0 0 9px; color:var(--muted); font-size:12px; font-weight:600; }
+.vault-app .vault-gallery-colors>div { display:flex; gap:6px; }
+.vault-app .vault-gallery-colors span { display:block; width:32px; height:32px; border:1px solid var(--line); border-radius:5px; }
 .vault-app .vault-gallery-detail dl { display:grid; grid-template-columns:auto 1fr; gap:8px; font-size:12px; }
 .vault-app .vault-gallery-detail dt { color:var(--muted); }
 .vault-app .vault-gallery-detail dd { margin:0; }

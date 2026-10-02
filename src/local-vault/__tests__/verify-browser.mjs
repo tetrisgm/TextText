@@ -975,6 +975,8 @@ try {
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
   await lightbox.getByRole("button", { name: "Next image" }).click();
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
+  await lightbox.getByLabel("Image colors").locator("span").first().waitFor();
+  const pairColor = await lightbox.getByLabel("Image colors").locator("span").first().getAttribute("aria-label");
   const galleryOrder = await page.locator(".vault-photo-grid button").evaluateAll(buttons => buttons.map(button => button.getAttribute("aria-label")));
   const pairSecond = galleryOrder.indexOf("Open Two photographs image 2");
   const single = galleryOrder.indexOf("Open One photograph");
@@ -983,6 +985,10 @@ try {
   const towardsPair = single < pairSecond ? "ArrowRight" : "ArrowLeft";
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsSingle);
   await page.getByRole("dialog", { name: "One photograph" }).getByRole("img", { name: "Third photograph" }).waitFor();
+  await page.waitForFunction(previous => {
+    const color = document.querySelector('.vault-gallery-colors span')?.getAttribute('aria-label');
+    return color && color !== previous;
+  }, pairColor);
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsPair);
   await page.getByRole("dialog", { name: "Two photographs" }).getByRole("img", { name: "Second photograph" }).waitFor();
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
