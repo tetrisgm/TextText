@@ -214,6 +214,12 @@ try {
   await newFromTemplate.getByRole("button", { name: "Blog post", exact: true }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-template-picker-reference.png" });
   assert.equal(await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').count(), 4);
+  const galleryPhotoLoaded = await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').first().evaluate((element) => new Promise((resolve) => {
+    const url = getComputedStyle(element).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1];
+    if (!url) { resolve(false); return; }
+    const image = new Image(); image.onload = () => resolve(image.naturalWidth > 0); image.onerror = () => resolve(false); image.src = url;
+  }));
+  assert.equal(galleryPhotoLoaded, true);
   await newFromTemplate.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await page.screenshot({ path: "/tmp/texttext-template-picker-gallery-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
@@ -1018,16 +1024,12 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Link](<https://example.com/article>)"));
   await storyBody.fill("Heading");
   await storyBody.press("End");
-  await page.keyboard.down("Shift");
-  for (let index = 0; index < 7; index++) await page.keyboard.press("ArrowLeft");
-  await page.keyboard.up("Shift");
+  await storyBody.press("Shift+Home");
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Heading", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.startsWith("# Heading"));
   await storyBody.fill("Quote");
   await storyBody.press("End");
-  await page.keyboard.down("Shift");
-  for (let index = 0; index < 5; index++) await page.keyboard.press("ArrowLeft");
-  await page.keyboard.up("Shift");
+  await storyBody.press("Shift+Home");
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Quote" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.startsWith("> Quote"));
   await storyBody.click();

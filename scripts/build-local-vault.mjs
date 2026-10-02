@@ -18,7 +18,7 @@ await build({
   minify: true,
   logLimit: 8,
   define: { "process.env.NODE_ENV": '"production"' },
-  loader: { ".woff2": "file", ".woff": "file", ".ttf": "file" },
+  loader: { ".woff2": "file", ".woff": "file", ".ttf": "file", ".jpg": "file" },
   plugins: [{
     name: "local-vault-components",
     setup(builder) {
