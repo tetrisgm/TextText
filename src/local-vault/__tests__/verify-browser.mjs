@@ -1200,6 +1200,12 @@ try {
   await lightbox.getByRole("button", { name: "Save caption" }).click();
   await lightbox.getByText("Edited beside the image.").waitFor();
   assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.body, "Edited beside the image.");
+  assert.ok(await lightbox.evaluate(view => {
+    const title = view.querySelector(".vault-gallery-title-button");
+    const header = view.querySelector(":scope > header");
+    const inspectorTitles = [...view.querySelectorAll("aside h2")].map(heading => heading.textContent);
+    return title && header?.contains(title) && !inspectorTitles.includes("Title");
+  }));
   await lightbox.getByRole("button", { name: "Edit image title" }).click();
   await lightbox.getByRole("textbox", { name: "Image title" }).fill("Two color studies");
   await lightbox.getByRole("button", { name: "Save title" }).click();

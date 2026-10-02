@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery image detail now edits its title in the top bar and starts the inspector with image metadata, avoiding a duplicate Title section beside the photo. The local browser contract checks the title control's placement and persists a title edit; TypeScript passed. `/tmp/texttext-gallery-import-detail-light-reference.png` shows the checked light view. Resurf parity remains open; no app release was run.
+
 Feeds now leads with a For You and followed-topic strip; Headlines, Latest, Read Later, and Sources sit in a separate utility row. The local browser flow checks switching to a followed Design topic and back; TypeScript passed. `/tmp/texttext-feeds-ranked-reference.png` shows the checked dark view. `docs/plans/artifact-home-replication.md` describes Artifact originals under Downloads, but those directories are absent on this Mac; the plan and rendered fixture remain available. Full Artifact parity remains open; no app release was run.
 
 Bookmarks now opens the saved page with the article title and source directly below the reader toolbar. Tags and the personal note remain editable in a contextual Details panel, matching Shiori's content-first reader hierarchy more closely. The local browser flow verifies title placement and tag/note persistence; TypeScript passed. `/tmp/texttext-bookmark-reference.png` shows the closed-panel reader and `/tmp/texttext-bookmark-light-reference.png` shows Details open. Full Shiori parity remains open; no app release was run.
