@@ -2,8 +2,9 @@ import { unzipSync, strFromU8 } from "fflate";
 import sharp from "sharp";
 import { emptyDocumentSnapshot, validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
+import { readVaultPublicationFromPack } from "./publication";
 
-export type VaultPreview = { metadataTruncated?: boolean; incompleteFields: string[]; document: DocumentSnapshot; title: string; excerpt: string; cardBody?: string; sourceURL?: string; image?: { data: string; contentType: string } };
+export type VaultPreview = { metadataTruncated?: boolean; incompleteFields: string[]; document: DocumentSnapshot; title: string; excerpt: string; publishedAt?: string; cardBody?: string; sourceURL?: string; image?: { data: string; contentType: string } };
 
 /** No remote fetches or full asset transfer. Decode one local image, one frame. */
 export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): Promise<VaultPreview> {
@@ -33,6 +34,8 @@ export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): 
     title: (parsed?.fields.title ?? document.content.title).slice(0, 240),
     excerpt: (parsed?.body ?? document.content.body).slice(0, 2000).replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 400),
   };
+  const publication = readVaultPublicationFromPack(bytes);
+  if (publication) result.publishedAt = publication.publishedAt;
   const incomplete: string[] = [];
   if ((parsed?.fields.title ?? document.content.title) !== result.title) incomplete.push("title");
   if (document.content.subtitle !== projection.content.subtitle) incomplete.push("subtitle");

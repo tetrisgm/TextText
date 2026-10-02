@@ -4,7 +4,7 @@ import type { CollectionRenderSpec } from "@/lib/presentation/schema";
 import type { VaultItem } from "./bridge";
 import { folderForItem } from "./folders";
 
-export type FolderPreview = { title: string; excerpt: string; cardBody?: string; sourceURL?: string; document?: DocumentSnapshot; templateJSON?: string; metadataTruncated?: boolean; incompleteFields?: string[]; image?: { data: string; contentType: string }; images?: { data: string; contentType: string }[] };
+export type FolderPreview = { title: string; excerpt: string; publishedAt?: string; cardBody?: string; sourceURL?: string; document?: DocumentSnapshot; templateJSON?: string; metadataTruncated?: boolean; incompleteFields?: string[]; image?: { data: string; contentType: string }; images?: { data: string; contentType: string }[] };
 
 export function collectionMembers(items: VaultItem[], folder: string, templated: boolean, excludedPath?: string): VaultItem[] {
   return items

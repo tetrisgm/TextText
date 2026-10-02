@@ -113,7 +113,7 @@ try {
         const document = JSON.parse(file.documentJSON);
         const poster = file.assets?.find((asset) => asset.filename === "preview.png");
         const images = (file.assets ?? []).filter((asset) => asset.contentType.startsWith("image/")).slice(0, 8).map((asset) => ({ data: asset.data, contentType: asset.contentType }));
-        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(!request.params.metadataOnly ? { ...(poster ? { image: { data: poster.data, contentType: "image/png" } } : {}), ...(images.length ? { images } : {}) } : {}) };
+        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(file.publishedAt ? { publishedAt: file.publishedAt } : {}), ...(!request.params.metadataOnly ? { ...(poster ? { image: { data: poster.data, contentType: "image/png" } } : {}), ...(images.length ? { images } : {}) } : {}) };
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
@@ -922,6 +922,7 @@ try {
   publishedStory.documentJSON = JSON.stringify({ ...JSON.parse(publishedStory.documentJSON), content: { ...JSON.parse(publishedStory.documentJSON).content, subtitle: "A considered subtitle", fields: { author: "Mira Chen" } } });
   storyItemId = publishedStory.markdown.match(/textTextId: "([^"]+)"/)?.[1];
   files.set("Blog/Story.textpack", publishedStory);
+  files.set("Blog/Published.textpack", { ...sample("Blog/Published.textpack", "article", "A published story", "A finished article."), publishedAt: "2026-10-01T10:00:00.000Z" });
   const formattedCard = sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point");
   formattedCard.documentJSON = JSON.stringify({ ...JSON.parse(formattedCard.documentJSON), content: { ...JSON.parse(formattedCard.documentJSON).content, tags: ["ideas"] } });
   files.set("Notes/Formatted.textpack", formattedCard);
@@ -1103,6 +1104,14 @@ try {
   await page.locator(".vault-story-list").getByText("An opening paragraph.").waitFor();
   const storySearch = page.getByRole("searchbox", { name: "Find stories" });
   await page.waitForFunction(() => !document.querySelector('input[aria-label="Find stories"]')?.disabled);
+  const storyStatus = page.getByRole("group", { name: "Story status" });
+  await storyStatus.getByRole("button", { name: "Published" }).click();
+  await page.getByRole("button", { name: "Open A published story" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Open An essay title" }).count(), 0);
+  await storyStatus.getByRole("button", { name: "Drafts" }).click();
+  await page.getByRole("button", { name: "Open An essay title" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Open A published story" }).count(), 0);
+  await storyStatus.getByRole("button", { name: "All stories" }).click();
   await storySearch.fill("considered subtitle");
   await page.getByRole("button", { name: "Open An essay title" }).waitFor();
   await storySearch.fill("story that is not here");

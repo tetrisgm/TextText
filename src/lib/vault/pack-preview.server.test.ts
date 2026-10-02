@@ -5,6 +5,13 @@ import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { previewTextpack } from "./pack-preview.server";
 
 describe("TextPack folder previews", () => {
+  it("reports only a valid publication marker for story filters", async () => {
+    const document = emptyDocumentSnapshot({ id: "texttext.article", version: 1 });
+    const publishedAt = "2026-10-01T10:00:00.000Z";
+    const entries = { "document.json": strToU8(JSON.stringify(document)), "publication.json": strToU8(JSON.stringify({ schemaVersion: 1, status: "public", publishedAt, operationId: "release-1" })) };
+    expect((await previewTextpack(zipSync(entries), true)).publishedAt).toBe(publishedAt);
+    expect((await previewTextpack(zipSync({ ...entries, "publication.json": strToU8('{"status":"public"}') }), true)).publishedAt).toBeUndefined();
+  });
   it("uses current markdown and a bounded still from embedded image bytes", async () => {
     const document = emptyDocumentSnapshot();
     document.content.title = "Old title"; document.content.body = "Old body";

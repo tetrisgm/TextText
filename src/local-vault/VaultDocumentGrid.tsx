@@ -128,7 +128,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
             if (active) setCollectionSearchIndex({ key: collectionSearchKey, listing, previews: {}, error: "Search is unavailable because some item details could not be read." });
             return;
           }
-          const compact: FolderPreview = { title: preview.title, excerpt: preview.excerpt, sourceURL: preview.sourceURL, document: { ...preview.document,
+          const compact: FolderPreview = { title: preview.title, excerpt: preview.excerpt, sourceURL: preview.sourceURL, publishedAt: preview.publishedAt, document: { ...preview.document,
             content: { ...preview.document.content, body: "", fields: {}, assets: [] } } };
           totalBytes += new TextEncoder().encode(JSON.stringify(compact)).byteLength;
           if (totalBytes > 8 * 1024 * 1024) { if (active) setCollectionSearchIndex({ key: collectionSearchKey, listing, previews: {}, error: "Item details exceed the 8 MiB search limit." }); return; }
@@ -144,6 +144,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const collectionSearchReady = (galleryFolder || folder === "Blog") && collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.listing === listing && !collectionSearchIndex.error;
   const galleryQuery = gallerySearch.trim().toLocaleLowerCase();
   const [storySearch, setStorySearch] = useState("");
+  const [storyStatus, setStoryStatus] = useState<"all" | "drafts" | "published">("all");
   const storyQuery = storySearch.trim().toLocaleLowerCase();
   const notesFolder = folder === "Notes";
   const [noteSearch, setNoteSearch] = useState("");
@@ -183,7 +184,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const noteTags = noteIndexReady ? [...new Set(items.flatMap(item => noteIndex.previews[item.path]?.document?.content.tags ?? []))].sort((left, right) => left.localeCompare(right)) : [];
   const noteQuery = noteSearch.trim().toLocaleLowerCase();
   const indexedNoteTitle = (item: VaultListing["items"][number]) => noteIndex.previews[item.path]?.title?.trim() || fallbackTitle(item);
-  const displayedItems = noteIndexReady && notesFolder ? items.filter(item => {
+  const searchMatchedItems = noteIndexReady && notesFolder ? items.filter(item => {
     const preview = noteIndex.previews[item.path];
     const tags = preview?.document?.content.tags ?? [];
     return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery));
@@ -191,6 +192,9 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     const preview = collectionSearchIndex.previews[item.path];
     return `${preview?.title || fallbackTitle(item)} ${preview?.document?.content.subtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
   }) : items;
+  const displayedItems = folder === "Blog" && collectionSearchReady && storyStatus !== "all"
+    ? searchMatchedItems.filter(item => storyStatus === "published" ? Boolean(collectionSearchIndex.previews[item.path]?.publishedAt) : !collectionSearchIndex.previews[item.path]?.publishedAt)
+    : searchMatchedItems;
   const feedIndexKey = folder === "Feeds" ? JSON.stringify([listing.root, items.map(item => item.path)]) : "";
   const [feedIndex, setFeedIndex] = useState<{ key: string; previews: Record<string, FolderPreview>; done: boolean; error: string }>({ key: "", previews: {}, done: false, error: "" });
   useEffect(() => {
@@ -285,8 +289,8 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
       <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path}>{look ? <DocumentCollectionRenderer document={noteCardDocument(preview, title)} template={look} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <small>{preview.document.content.tags.slice(0, 3).map(tag => `#${tag}`).join("  ")}</small> : null}<button className="vault-note-open" disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} />{onEditNote && !previewOnly && <button className="vault-note-card-edit" disabled={busy} onClick={() => onEditNote(item.path)} aria-label={`Edit ${title}`} title="Edit card"><svg aria-hidden="true" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m4 13 8.9-8.9a2 2 0 0 1 2.8 2.8L6.8 15.8 3 17z"/><path d="m11.4 5.6 3 3"/></svg></button>}</div>; })}</div>
-    </> : blogFolder ? <><label className="vault-story-search"><span className="ac-sr-only">Find stories</span><input type="search" aria-label="Find stories" value={storySearch} onChange={event => { setStorySearch(event.target.value); setPage(0); }} disabled={!collectionSearchReady} placeholder={collectionSearchReady ? "Find stories" : "Reading story details…"} /></label>{collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.error && <p role="status">{collectionSearchIndex.error}</p>}{collectionSearchReady && storyQuery && !displayedItems.length && <p role="status">No stories match.</p>}<div className="vault-story-list">{visible.map(item => {
-      const preview = previews[item.path];
+    </> : blogFolder ? <><div className="vault-story-tools"><div className="vault-story-status" role="group" aria-label="Story status">{(["all", "drafts", "published"] as const).map(status => <button key={status} type="button" aria-pressed={storyStatus === status} disabled={!collectionSearchReady} onClick={() => { setStoryStatus(status); setPage(0); }}>{status === "all" ? "All stories" : status === "drafts" ? "Drafts" : "Published"}</button>)}</div><label className="vault-story-search"><span className="ac-sr-only">Find stories</span><input type="search" aria-label="Find stories" value={storySearch} onChange={event => { setStorySearch(event.target.value); setPage(0); }} disabled={!collectionSearchReady} placeholder={collectionSearchReady ? "Find stories" : "Reading story details…"} /></label></div>{collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.error && <p role="status">{collectionSearchIndex.error}</p>}{collectionSearchReady && (storyQuery || storyStatus !== "all") && !displayedItems.length && <p role="status">No {storyStatus === "all" ? "stories" : storyStatus === "drafts" ? "drafts" : "published stories"} match.</p>}<div className="vault-story-list">{visible.map(item => {
+      const preview = previews[item.path] || collectionSearchIndex.previews[item.path];
       const title = preview?.document && !preview.document.content.title.trim() ? "New story" : preview?.title || fallbackTitle(item);
       const authorValue = preview?.document?.content.fields.author;
       const author = typeof authorValue === "string" ? authorValue.trim() : "";
@@ -294,7 +298,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       const excerpt = preview?.excerpt && preview.excerpt !== subtitle ? preview.excerpt : "";
       return <PreviewImage key={item.path} preview={preview}>{source => <button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={"Open " + title}>
         <span className="vault-story-copy">
-          <small className="vault-story-list-byline">{author && <span className="vault-story-list-avatar" aria-hidden="true">{author.slice(0, 1).toUpperCase()}</span>}{author || "Story"}</small>
+          <small className="vault-story-list-byline">{author && <span className="vault-story-list-avatar" aria-hidden="true">{author.slice(0, 1).toUpperCase()}</span>}{author || "Story"}{preview && <span className="vault-story-list-status">· {preview.publishedAt ? "Published" : "Draft"}</span>}</small>
           <strong>{title}</strong>
           {subtitle && <span className="vault-story-list-subtitle">{subtitle}</span>}
           {excerpt && <span className="vault-story-list-excerpt">{excerpt}</span>}

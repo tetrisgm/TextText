@@ -1,8 +1,29 @@
 import XCTest
 import TextTextFileProviderKit
+import ZIPFoundation
 @testable import TextTextApp
 
 final class LocalVaultAgentFilesTests: XCTestCase {
+    func testStoryPreviewReadsPublicationFromTheTextPack() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try run("create_file", arguments: ["title": "Story", "body": "Published words"], root: root)
+        let pack = root.appendingPathComponent("Story.textpack")
+        let marker = root.appendingPathComponent("publication.json")
+        let publishedAt = "2026-10-01T10:00:00.000Z"
+        try Data("{\"schemaVersion\":1,\"status\":\"public\",\"publishedAt\":\"\(publishedAt)\",\"operationId\":\"release-1\"}".utf8).write(to: marker)
+        do {
+            let archive = try Archive(url: pack, accessMode: .update)
+            let document = try XCTUnwrap(archive.first { $0.path == "document.json" || $0.path.hasSuffix("/document.json") })
+            let prefix = String(document.path.dropLast("document.json".count))
+            try archive.addEntry(with: prefix + "publication.json", fileURL: marker, compressionMethod: .deflate)
+        }
+        let store = LocalVaultDocumentStore(root: root)
+        XCTAssertEqual(try LocalVaultWindowController.preview(store.readMetadata(path: "Story.textpack"))["publishedAt"] as? String, publishedAt)
+        XCTAssertEqual(try LocalVaultWindowController.preview(store.read(path: "Story.textpack"))["publishedAt"] as? String, publishedAt)
+    }
+
     func testOversizedGalleryPreviewKeepsPrimaryImageAndFittingTiles() throws {
         let thumbnail = ["contentType": "image/jpeg", "data": String(repeating: "A", count: 160_000)]
         var preview: [String: Any] = ["title": "Visual collection", "image": thumbnail,

@@ -555,6 +555,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             ?? URL(fileURLWithPath: document.path).deletingPathExtension().lastPathComponent
         var result: [String: Any] = ["title": rawBounded(title, to: 240),
                                    "excerpt": bounded(markdown.body, to: 400)]
+        if let publishedAt = document.publishedAt { result["publishedAt"] = publishedAt }
         if !metadataOnly { result["cardBody"] = rawBounded(markdown.body, to: 1200) }
         var fields: [String: Any] = [:]
         for (key, value) in (content?["fields"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }).prefix(64) where key.utf8.count <= 120 {

@@ -179,6 +179,7 @@ let package = Package(
                 "TextTextFileProviderExtensionCore",
                 "TextTextFileProviderBridge",
                 "TextTextFileProviderKit",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
             path: "Tests/TextTextTests",
             swiftSettings: editionSwiftSettings

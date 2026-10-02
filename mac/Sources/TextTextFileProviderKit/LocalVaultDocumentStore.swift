@@ -18,10 +18,31 @@ public struct LocalVaultDocumentStore: Sendable {
         return candidates[0]
     }
 
+    private func publishedAt(_ archive: Archive, prefix: String) -> String? {
+        let names = archive.filter { $0.path == "publication.json" || $0.path.hasSuffix("/publication.json") }
+        guard names.count == 1, let marker = names.first,
+              marker.path == prefix + "publication.json", marker.uncompressedSize <= 4_096 else { return nil }
+        var bytes = Data()
+        guard (try? archive.extract(marker) { chunk in bytes.append(chunk) }) != nil,
+              bytes.count <= 4_096,
+              let value = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+              Set(value.keys) == Set(["schemaVersion", "status", "publishedAt", "operationId"]),
+              value["schemaVersion"] as? Int == 1, value["status"] as? String == "public",
+              let date = value["publishedAt"] as? String,
+              let operation = value["operationId"] as? String,
+              operation.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil,
+              date.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$", options: .regularExpression) != nil else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let parsed = formatter.date(from: date), formatter.string(from: parsed) == date else { return nil }
+        return date
+    }
+
     public struct Document: Sendable {
         public let path: String
         public let hash: String
         public let contents: TextTextTextBundleContents
+        public let publishedAt: String?
     }
 
     public enum Failure: Error, LocalizedError {
@@ -109,7 +130,8 @@ public struct LocalVaultDocumentStore: Sendable {
                     templateJSON: template.map { String(decoding: $0, as: UTF8.self) },
                     templateAuthoringSourceJSON: templateSource.map { String(decoding: $0, as: UTF8.self) },
                     assets: [], logicalSize: Int(expanded))
-                return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents)
+                return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents,
+                    publishedAt: publishedAt(archive, prefix: prefix))
             }
         }
         if let coordinationError { throw coordinationError }
@@ -349,7 +371,8 @@ public struct LocalVaultDocumentStore: Sendable {
         // Keep the exact version observed by the editor so an external
         // asset replacement can still produce a complete conflict copy.
         if preserveHistory { try preserve(bytes, hash: hash) }
-        return Document(path: path, hash: hash, contents: contents)
+        let prefix = String(try canonicalMarkdownEntry(archive).path.dropLast("text.md".count))
+        return Document(path: path, hash: hash, contents: contents, publishedAt: publishedAt(archive, prefix: prefix))
     }
 
     public func write(path: String, expectedHash: String, markdown: String,
