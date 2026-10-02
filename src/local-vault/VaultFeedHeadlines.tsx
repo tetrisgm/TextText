@@ -82,6 +82,8 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [full, setFull] = useState<{ key: string; value: FullEntry } | null>(null);
   const [storyError, setStoryError] = useState("");
+  const [readerTextSize, setReaderTextSize] = useState(100);
+  const [readerNotice, setReaderNotice] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<Set<string>>(() => new Set());
   const [keptHashes, setKeptHashes] = useState<Set<string> | null>(null);
@@ -190,6 +192,16 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       {saving === key ? "Saving…" : kept ? "Saved" : "Read later"}
     </button>;
   };
+  const shareStory = async (story: FeedStory) => {
+    if (!story.permalink) return;
+    try {
+      if (navigator.share) await navigator.share({ title: story.title, url: story.permalink });
+      else { await navigator.clipboard.writeText(story.permalink); setReaderNotice("Story link copied."); }
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      setReaderNotice("Could not share this story.");
+    }
+  };
   const followInterests = async () => {
     if (!canAdd || following || interests.size < MIN_INTERESTS) return;
     const chosen = RECOMMENDED.filter(source => interests.has(source.topic) && !sourceRows.some(row => row.feedURL === source.feedURL));
@@ -238,12 +250,12 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   if (!ready) return <section className="vault-feed-home" aria-label="Latest stories"><p role="status">Reading feed subscriptions…</p></section>;
   if (!hasFeeds && !keptEntries.length) return <section className="vault-feed-home vault-feed-onboarding" aria-label="News interests">{recommendations}</section>;
   if (active) return <section className="vault-feed-reader" aria-label="Feed story">
-    <header><button type="button" onClick={() => setActive(null)}>‹ Back to {activeGroup ? "coverage" : "Feeds"}</button><span>{active.source}</span></header>
+    <header><button type="button" onClick={() => { setActive(null); setReaderNotice(""); }}>‹ Back to {activeGroup ? "coverage" : "Feeds"}</button><span>{active.source}</span><details className="vault-feed-reader-text-menu"><summary aria-label="Reading appearance">Aa</summary><div><button type="button" disabled={readerTextSize <= 80} onClick={() => setReaderTextSize(size => Math.max(80, size - 10))}>Smaller text</button><button type="button" disabled={readerTextSize >= 150} onClick={() => setReaderTextSize(size => Math.min(150, size + 10))}>Larger text</button></div></details></header>
     {storyError && <p role="alert">{storyError}</p>}
     {!activeFull && !storyError && <p role="status">Opening story…</p>}
-    {activeFull && readerDocument && storyTemplate && <><div className="vault-feed-reader-content"><DocumentRenderer document={readerDocument} template={storyTemplate} metadata={{ author: active.source, date: storyDate(activeFull.entry.publishedAt) }} />
+    {activeFull && readerDocument && storyTemplate && <><div className="vault-feed-reader-content" style={{ zoom: readerTextSize / 100 }}><DocumentRenderer document={readerDocument} template={storyTemplate} metadata={{ author: active.source, date: storyDate(activeFull.entry.publishedAt) }} />
       {activeFull.entry.availability !== "full" && <p className="vault-feed-reader-availability">{activeFull.entry.availability === "excerpt" ? "This source provided an excerpt." : "This source provided only story details."}</p>}</div>
-      <footer><button type="button" disabled={!canAdd || Boolean(saving) || saved.has(activeKey)} onClick={() => void saveStory(active)}>{saving === activeKey ? "Saving…" : saved.has(activeKey) ? "Saved to Bookmarks" : "Save to Bookmarks"}</button>{activeFull.entry.permalink && <a href={activeFull.entry.permalink} target="_blank" rel="noopener noreferrer">Open original</a>}</footer></>}
+      <footer className="vault-feed-reader-actions"><button type="button" onClick={() => { setActive(null); setReaderNotice(""); }} aria-label="Back to feed">‹ <span>Back</span></button><button type="button" disabled={!activeFull.entry.permalink} onClick={() => void shareStory(active)} aria-label="Share story">↗ <span>Share</span></button>{readLaterAction(active)}<details><summary aria-label="More story actions">•••</summary><div>{activeFull.entry.permalink && <a href={activeFull.entry.permalink} target="_blank" rel="noopener noreferrer">Open original</a>}<button type="button" disabled={!activeFull.entry.permalink} onClick={() => void navigator.clipboard.writeText(activeFull.entry.permalink!).then(() => setReaderNotice("Story link copied.")).catch(() => setReaderNotice("Could not copy the story link."))}>Copy link</button></div></details></footer>{readerNotice && <p className="vault-feed-reader-notice" role="status">{readerNotice}</p>}</>}
   </section>;
   if (activeGroup) return <section className="vault-feed-coverage" aria-label="Headline coverage">
     <header><button type="button" onClick={() => setActiveGroupId(null)}>‹ {tab === "Headlines" ? "Headlines" : topics.includes(tab) ? tab : "For You"}</button></header>
