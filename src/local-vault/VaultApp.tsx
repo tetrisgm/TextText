@@ -20,6 +20,7 @@ import { FolderNavigation } from "./FolderNavigation";
 import { folderTree, folderPaths, folderForItem } from "./folders";
 import { ArticleReader } from "./ArticleReader";
 import { VaultNoteDisplay } from "./VaultNoteDisplay";
+import { VaultStoryDisplay } from "./VaultStoryDisplay";
 import { articleSource } from "@/lib/vault/article-capture";
 import { readFeedSubscription } from "@/lib/vault/rss";
 import { activeBodySelection } from "@/lib/document-history-events";
@@ -82,7 +83,17 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   const missing = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [external, setExternal] = useState(initialDocument);
-  const [reading, setReading] = useState(!!articleSource(initialDocument));
+  const [reading, setReading] = useState(() => Boolean(articleSource(initialDocument) ||
+    initialDocument.presentation.template.id === "texttext.article" && !focusNewNoteTitle &&
+    (initialDocument.content.title.trim() || initialDocument.content.body.trim())));
+  useEffect(() => {
+    const editTopics = () => {
+      setReading(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.tt-article-topics input[aria-label="Add story topic"]')?.focus()));
+    };
+    window.addEventListener("texttext:vault-edit-story-topics", editTopics);
+    return () => window.removeEventListener("texttext:vault-edit-story-topics", editTopics);
+  }, []);
   const [notice, setNotice] = useState("");
   const [hasConflict, setHasConflict] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -311,13 +322,13 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   };
   const display = useMemo(() => mapStrings(external, assets.forward), [external, assets]);
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
-  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : <VaultNoteDisplay document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} onEdit={() => setReading(false)} /> : <UnifiedDocumentEditor transport="local" externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : external.presentation.template.id === "texttext.article" ? <VaultStoryDisplay document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} onEdit={() => setReading(false)} /> : <UnifiedDocumentEditor transport="local" externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
-  }} />} focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { if (await flush() && current.current.presentation.template.id === "texttext.note") { setExternal(current.current); setReading(true); } }} />}</section>;
+  }} />} focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { if (await flush() && ["texttext.note", "texttext.article"].includes(current.current.presentation.template.id)) { setExternal(current.current); setReading(true); } }} />}</section>;
 }
 
 function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; onSharedMode?: () => void }) {
@@ -1048,11 +1059,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         } : undefined}
         onEditTopics={selectedStory ? () => {
           setPublishing(null);
-          requestAnimationFrame(() => {
-            const input = document.querySelector<HTMLInputElement>('.tt-article-topics input[aria-label="Add story topic"]');
-            input?.scrollIntoView({ block: "center" });
-            input?.focus();
-          });
+          window.dispatchEvent(new Event("texttext:vault-edit-story-topics"));
         } : undefined}
         onClose={() => setPublishing(null)} />}
       {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => setCaptureMode(null)} onSave={async (input) => {

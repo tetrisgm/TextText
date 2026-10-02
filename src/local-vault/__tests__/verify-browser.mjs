@@ -899,6 +899,9 @@ try {
   await page.locator(".vault-story-list").getByText("A considered subtitle").waitFor();
   await page.screenshot({ path: "/tmp/texttext-blog-reference.png" });
   await page.getByRole("button", { name: "Open An essay title" }).click();
+  const storyReader = page.getByRole("region", { name: "Story reader" });
+  await storyReader.getByText("An opening paragraph.").waitFor();
+  await page.screenshot({ path: "/tmp/texttext-blog-reader-reference.png" });
   await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
   await page.locator(".vault-context-actions > .vault-primary-action").click();
   const publishing = page.getByRole("dialog", { name: "Publish An essay title" });
@@ -914,7 +917,10 @@ try {
   await page.locator(".tt-article-topics").getByRole("button", { name: "Add", exact: true }).click();
   await page.locator(".tt-article-topic-list").getByText("Design").waitFor();
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await storyReader.getByRole("button", { name: "Edit story" }).waitFor();
   assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["Design"]);
+  await storyReader.getByRole("button", { name: "Edit story" }).click();
+  await page.getByRole("textbox", { name: "Subtitle" }).waitFor();
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
