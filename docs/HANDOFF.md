@@ -2,7 +2,7 @@
 
 ## Current work
 
-The October 2 work is the folder-based template redesign, committed through `420f5f7c`. The current follow-up adds a saved-story preview before Blog publishing and lets the article editor save up to five topics in the TextPack. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
+The October 2 work is the folder-based template redesign, committed through `acd5744a`. The Blog publish preview now links directly to the story topic editor; the browser contract verifies that a topic survives the TextPack save. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
 
 Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](HANDOFF-history-2026-09-30.md).
 

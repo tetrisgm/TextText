@@ -48,8 +48,8 @@ function publicLink(state: Publication, workspaceId: string): string {
   return ["https:", "http:"].includes(window.location.protocol) ? new URL(expected, window.location.origin).href : "";
 }
 
-export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, readStoryFile, onClose }: {
-  workspaceId: string; itemId: string; label: string; beforeChange: () => Promise<string | false>; readStoryFile?: () => Promise<VaultFile>; onClose: () => void;
+export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, readStoryFile, onEditTopics, onClose }: {
+  workspaceId: string; itemId: string; label: string; beforeChange: () => Promise<string | false>; readStoryFile?: () => Promise<VaultFile>; onEditTopics?: () => void; onClose: () => void;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const linkInput = useRef<HTMLInputElement>(null);
@@ -138,7 +138,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
         {story && <div className={styles.storyReview}><div className={styles.storyCard}>
           {coverURL && /* eslint-disable-next-line @next/next/no-img-element */ <img src={coverURL} alt="" />}
           <div><small>Story preview</small><h3>{story.title}</h3>{story.subtitle && <p>{story.subtitle}</p>}{story.excerpt && <p>{story.excerpt}</p>}</div>
-        </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review the saved story. Its title, text, and image come from this TextPack.</p><h4>Topics</h4>{story.topics.length ? <div className={styles.topics}>{story.topics.map(topic => <span key={topic}>{topic}</span>)}</div> : <p>No topics yet. Add them in the story before publishing.</p>}</div></div>}
+        </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review the saved story. Its title, text, and image come from this TextPack.</p><h4>Topics</h4>{story.topics.length ? <div className={styles.topics}>{story.topics.map(topic => <span key={topic}>{topic}</span>)}</div> : <p>No topics yet.</p>}{onEditTopics && <button type="button" className={styles.editTopics} onClick={onEditTopics}>Edit topics in story</button>}</div></div>}
         <p className={styles.status}>{state.published ? "This file is public." : "This file is private."}</p>
         <p className="vault-sharing-intro">Anyone with the link can read the current saved file. Changes you save later appear on the same page. Comments and workspace access stay private.</p>
         {state.published && link && <div className={styles.link}>

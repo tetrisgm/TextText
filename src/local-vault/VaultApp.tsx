@@ -1034,6 +1034,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           if (!revision || !file || file.hash !== revision || packIdentity(file.markdown) !== publishing.itemId) throw new Error("Save or resolve this story before reviewing it for publication.");
           return file;
         } : undefined}
+        onEditTopics={selectedStory ? () => {
+          setPublishing(null);
+          requestAnimationFrame(() => {
+            const input = document.querySelector<HTMLInputElement>('.tt-article-topics input[aria-label="Add story topic"]');
+            input?.scrollIntoView({ block: "center" });
+            input?.focus();
+          });
+        } : undefined}
         onClose={() => setPublishing(null)} />}
       {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => setCaptureMode(null)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");

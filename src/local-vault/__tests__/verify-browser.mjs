@@ -860,7 +860,15 @@ try {
   await publishing.getByText("An opening paragraph.").waitFor();
   await publishing.getByRole("button", { name: "Publish story" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-blog-publish-reference.png" });
-  await publishing.getByRole("button", { name: "Close publishing" }).click();
+  await publishing.getByRole("button", { name: "Edit topics in story" }).click();
+  const topicInput = page.getByRole("textbox", { name: "Add story topic" });
+  await topicInput.waitFor();
+  assert.equal(await topicInput.evaluate(element => document.activeElement === element), true);
+  await topicInput.fill("Design");
+  await page.locator(".tt-article-topics").getByRole("button", { name: "Add", exact: true }).click();
+  await page.locator(".tt-article-topic-list").getByText("Design").waitFor();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["Design"]);
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
