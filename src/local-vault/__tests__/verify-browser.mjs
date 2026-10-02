@@ -848,6 +848,9 @@ try {
   await page.getByRole("option", { name: /A saved article/ }).click();
   const bookmarkReader = page.getByRole("article", { name: "Bookmark reader" });
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
+  await bookmarkReader.getByRole("button", { name: "Next bookmark" }).click();
+  await bookmarkReader.getByRole("button", { name: "Previous bookmark" }).click();
+  await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   await bookmarkReader.getByRole("button", { name: /Favorite/ }).click();
   await bookmarkReader.getByRole("button", { name: "Mark read" }).click();
   await bookmarkReader.getByRole("textbox", { name: "Add bookmark tag" }).fill("research");
@@ -883,6 +886,18 @@ try {
   await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForFunction(() => {
+    const title = document.querySelector('.vault-bookmark-reader .tt-text-title');
+    return title && getComputedStyle(title).color === 'rgb(32, 32, 32)';
+  });
+  const bookmarkColors = await bookmarkReader.evaluate((reader) => ({
+    title: getComputedStyle(reader.querySelector('.tt-text-title')).color,
+    body: getComputedStyle(reader.querySelector('.tt-prose')).color,
+  }));
+  assert.deepEqual(bookmarkColors, { title: 'rgb(32, 32, 32)', body: 'rgb(32, 32, 32)' });
+  await page.screenshot({ path: "/tmp/texttext-bookmark-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Save bookmark", exact: true }).click();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("textbox", { name: "Web address" }).waitFor();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();

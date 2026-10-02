@@ -210,8 +210,13 @@
 .vault-app .vault-bookmark-list .vault-bookmark-copy small { font-size:11px; }
 .vault-app .vault-bookmark-favorite { margin-left:auto; color:#c69a3d; font-size:14px; }
 .vault-app .vault-bookmark-reader { min-width:0; }
-.vault-app .vault-bookmark-reader>header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin:0; padding:10px 18px; border-bottom:1px solid var(--line); font-size:12px; }
+.vault-app .vault-bookmark-reader>header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 14px; margin:0; padding:9px 18px; border-bottom:1px solid var(--line); font-size:12px; }
 .vault-app .vault-bookmark-reader>header>div { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.vault-app .vault-bookmark-reader-navigation { margin-right:auto; }
+.vault-app .vault-bookmark-reader-navigation button { padding:2px 8px; font-size:20px; line-height:1; }
+.vault-app .vault-bookmark-reader-tabs { padding:3px; border:1px solid var(--line); border-radius:7px; background:var(--sidebar); }
+.vault-app .vault-bookmark-reader-tabs :is(span,a) { display:block; padding:5px 8px; border-radius:5px; color:var(--muted); text-decoration:none; }
+.vault-app .vault-bookmark-reader-tabs span { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px #00000012; font-weight:650; }
 .vault-app .vault-bookmark-reader>header button[aria-pressed=true] { color:#c69a3d; }
 .vault-app .vault-bookmark-reader>header a { padding:7px 9px; color:var(--ink); text-decoration:none; }
 .vault-app .vault-bookmark-tags { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:9px 18px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
@@ -220,7 +225,15 @@
 .vault-app .vault-bookmark-tags input { width:90px; min-width:0; padding:4px 7px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); font:inherit; }
 .vault-app .vault-bookmark-error { margin:12px 20px; color:var(--tt-destructive,#d70015); font-size:12px; }
 .vault-app .vault-bookmark-reader .vault-reading { max-width:800px; margin:auto; }
-.vault-app .vault-bookmark-reader .tt-document { margin:auto; padding-top:30px; }
+.vault-app .vault-bookmark-reader .tt-document { --paper:#fff; --ink:#202020; --muted:#686868; --tt-measure:44rem; margin:auto; padding-top:30px; background:var(--surface); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.vault-app .vault-bookmark-reader .tt-document:not(.tt-collection-item)>.tt-stack { gap:17px; padding:22px 32px 72px; }
+.vault-app .vault-bookmark-reader .tt-document .tt-text-title { font-family:inherit; font-size:clamp(28px,3.1vw,42px); line-height:1.13; letter-spacing:-.025em; }
+.vault-app .vault-bookmark-reader .tt-document :is(.tt-text-title,.tt-prose) { color:var(--ink) !important; }
+.vault-app .vault-bookmark-reader .tt-document .tt-text-caption { order:2 !important; margin-top:7px; font-family:inherit; font-size:14px; font-weight:400; letter-spacing:0; text-transform:none; }
+.vault-app .vault-bookmark-reader .tt-document .tt-text-caption a { border:0; }
+.vault-app .vault-bookmark-reader .tt-document .tt-source-link-action { display:none; }
+.vault-app .vault-bookmark-reader .tt-document .tt-prose { width:min(var(--tt-measure),100%); margin-inline:auto; font-family:inherit; font-size:16px; line-height:1.7; }
+@media(prefers-color-scheme:dark){.vault-app .vault-bookmark-reader .tt-document{--paper:#232323;--ink:#eee;--muted:#aaa}}
 @media(max-width:760px){.vault-app .vault-bookmark-library{grid-template-columns:1fr;margin:0}.vault-app .vault-bookmark-list{border-right:0;border-bottom:1px solid var(--line);max-height:220px;overflow:auto}}
 .vault-app .vault-gallery-backdrop { position:fixed; inset:0; z-index:230; display:grid; place-items:center; padding:20px; background:#111c; }
 .vault-app .vault-gallery-lightbox { width:min(1200px,100%); height:min(820px,94vh); overflow:hidden; display:flex; flex-direction:column; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:10px; box-shadow:0 24px 90px #0008; }
