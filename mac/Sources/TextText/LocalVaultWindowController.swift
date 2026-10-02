@@ -380,7 +380,20 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     return [:]
                 case "template":
                     let document = try store.read(path: Self.string(params, "path"))
+                    var preview: [String: String] = [:]
+                    if let raw = document.contents.documentJSON, raw.utf8.count <= 256 * 1024,
+                       let snapshot = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any],
+                       let content = snapshot["content"] as? [String: Any] {
+                        for key in ["title", "subtitle", "body"] {
+                            if let value = content[key] as? String { preview[key] = String(value.prefix(180)) }
+                        }
+                        if let fields = content["fields"] as? [String: Any], let url = fields["sourceUrl"] as? String {
+                            preview["sourceUrl"] = String(url.prefix(512))
+                        }
+                        if let tag = (content["tags"] as? [String])?.first { preview["tag"] = String(tag.prefix(80)) }
+                    }
                     return ["path": document.path, "hash": document.hash,
+                        "preview": preview,
                         "templateJSON": document.contents.templateJSON as Any? ?? NSNull(),
                         "templateAuthoringSourceJSON": document.contents.templateAuthoringSourceJSON as Any? ?? NSNull()]
                 case "write":

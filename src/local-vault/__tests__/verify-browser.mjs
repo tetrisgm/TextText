@@ -63,6 +63,13 @@ try {
         removal.confirming = true;
       }
       result = files.get(request.params.path);
+      if (result && request.method === "template") {
+        const content = JSON.parse(result.documentJSON).content;
+        result = { path: result.path, hash: result.hash, templateJSON: result.templateJSON,
+          templateAuthoringSourceJSON: result.templateAuthoringSourceJSON,
+          preview: { title: content.title?.slice(0, 180), subtitle: content.subtitle?.slice(0, 180), body: content.body?.slice(0, 180),
+            sourceUrl: content.fields?.sourceUrl?.slice(0, 512), tag: content.tags?.[0]?.slice(0, 80) } };
+      }
       if (!result) error = { message: "File not found", code: "not_found" };
     }
     else if (request.method === "recoveryList") result = { entries: [{ id: "retained-copy", path: initial.path, kind: request.params.path ? "revision" : "deleted", savedAt: "2026-09-30T12:00:00Z", hash: "saved-version" }], truncated: false };
@@ -203,6 +210,7 @@ try {
   await chooseMoreAction("New from template");
   const newFromTemplate = page.getByRole("dialog", { name: "New from template", exact: true });
   await newFromTemplate.getByRole("button", { name: "Agent made look", exact: true }).waitFor();
+  assert.equal(await newFromTemplate.getByRole("button", { name: "Agent made look", exact: true }).locator(".preview-generic strong").textContent(), "Offline note");
   await newFromTemplate.getByRole("button", { name: "Blog post", exact: true }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-template-picker-reference.png" });
   assert.equal(await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').count(), 4);

@@ -5,8 +5,9 @@ import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { vaultRequest, type VaultListing } from "./bridge";
 
-export type VaultLook = { template: TemplateDefinition; sourceJSON?: string | null; path?: string };
-type TemplateMetadata = { path: string; hash: string; templateJSON?: string | null; templateAuthoringSourceJSON?: string | null };
+type TemplatePreviewContent = { title?: string; subtitle?: string; body?: string; sourceUrl?: string; tag?: string };
+export type VaultLook = { template: TemplateDefinition; sourceJSON?: string | null; path?: string; preview?: TemplatePreviewContent };
+type TemplateMetadata = { path: string; hash: string; templateJSON?: string | null; templateAuthoringSourceJSON?: string | null; preview?: TemplatePreviewContent };
 const MAX_TEMPLATE_FILES = 100;
 
 /** Read only template metadata, one file at a time. Never load previews or attachments. */
@@ -34,7 +35,7 @@ export function useVaultTemplates(refreshKey?: string) {
         try {
           const metadata = await vaultRequest<TemplateMetadata>("template", { path: item.path });
           if (!metadata.templateJSON) { skipped++; continue; }
-          found.push({ template: validateTemplateDefinition(JSON.parse(metadata.templateJSON)), sourceJSON: metadata.templateAuthoringSourceJSON, path: item.path });
+          found.push({ template: validateTemplateDefinition(JSON.parse(metadata.templateJSON)), sourceJSON: metadata.templateAuthoringSourceJSON, path: item.path, preview: metadata.preview });
         } catch { skipped++; }
       }
       if (!active) return;
@@ -52,15 +53,18 @@ export function useVaultTemplates(refreshKey?: string) {
 }
 
 /** Small, content-shaped previews distinguish each creation path without loading assets. */
-function TemplatePreview({ template }: { template: TemplateDefinition }) {
+function TemplatePreview({ template, preview }: { template: TemplateDefinition; preview?: TemplatePreviewContent }) {
   const kind = template.id.replace(/^texttext\./, "");
+  const body = preview?.body?.split("\n").map(line => line.trim()).find(Boolean)?.replace(/^\s*(?:#{1,6}\s+|[-*+]\s+)/, "") || "";
+  let host = "example.com";
+  if (preview?.sourceUrl) { try { host = new URL(preview.sourceUrl).hostname; } catch { /* Keep a neutral fallback. */ } }
   return <span className="vault-template-preview" data-template={kind} aria-hidden="true">
-    {kind === "article" ? <span className="preview-story"><span className="preview-eyebrow">Draft story</span><strong>A story worth telling</strong><em>A thought to carry into the article</em><span className="preview-line" /><span className="preview-line short" /></span>
-      : kind === "note" ? <span className="preview-note"><strong>A useful thought</strong><span>Capture it while it is fresh.</span><small>Ideas</small></span>
-      : kind === "bookmark" ? <span className="preview-bookmark"><span className="preview-site">◉ example.com</span><strong>An article to keep</strong><span>Open in a clean reader whenever you return.</span></span>
+    {kind === "article" ? <span className="preview-story"><span className="preview-eyebrow">Draft story</span><strong>{preview?.title || "A story worth telling"}</strong><em>{preview?.subtitle || "A thought to carry into the article"}</em>{body ? <span className="preview-excerpt">{body}</span> : <><span className="preview-line" /><span className="preview-line short" /></>}</span>
+      : kind === "note" ? <span className="preview-note"><strong>{preview?.title || "A useful thought"}</strong><span>{body || "Capture it while it is fresh."}</span><small>{preview?.tag || "Ideas"}</small></span>
+      : kind === "bookmark" ? <span className="preview-bookmark"><span className="preview-site">◉ {host}</span><strong>{preview?.title || "An article to keep"}</strong><span>{body || "Open in a clean reader whenever you return."}</span></span>
       : kind === "gallery" ? <span className="preview-gallery"><span /><span /><span /><span /></span>
-      : kind === "talk" ? <span className="preview-talk"><strong>Make your point.</strong><span>One idea per slide</span></span>
-      : <span className="preview-generic"><strong>{template.name}</strong><span className="preview-line" /><span className="preview-line short" /></span>}
+      : kind === "talk" ? <span className="preview-talk"><strong>{preview?.title || "Make your point."}</strong><span>{preview?.subtitle || "One idea per slide"}</span></span>
+      : <span className="preview-generic"><strong>{preview?.title || template.name}</strong>{body ? <span className="preview-excerpt">{body}</span> : <><span className="preview-line" /><span className="preview-line short" /></>}</span>}
   </span>;
 }
 
@@ -73,9 +77,9 @@ export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use templat
   const id = useId();
   return <div className="vault-template-grid">{looks.map((look, index) =>
     <button className="vault-template-card" key={look.path ?? look.template.id} disabled={disabled}
-      aria-label={look.template.name} aria-describedby={`${id}-${index}`} title={look.path}
+      aria-label={look.template.name} aria-describedby={`${id}-${index}`}
       onClick={() => onChoose(look)}>
-      <TemplatePreview template={look.template} />
+      <TemplatePreview template={look.template} preview={look.preview} />
       <span className="vault-template-name">{look.template.name}</span>
       <span className="vault-template-description" id={`${id}-${index}`}>{look.template.description || "Your own reusable document template."}</span>
       <span className="vault-template-action">{actionLabel} <span aria-hidden="true">↗</span></span>
@@ -115,12 +119,12 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
       <button onClick={onClose}>Close</button></header>
     <input className="vault-template-search" type="search" aria-label="Search templates" placeholder="Search templates" value={query} onChange={(event) => setQuery(event.target.value)} />
     {loading && <p role="status">Reading template files…</p>}
-    {!loading && !looks.length && !notice && !onCreateFromFile && <p>Your reusable documents live in the Templates folder. Save a look from any document to add your own.</p>}
-    {visible.length > 0 && <><h3>In your Templates folder</h3><VaultTemplateCards looks={visible} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} /></>}
+    {!loading && !looks.length && !notice && !onCreateFromFile && <p>Save a look from any document to add your own.</p>}
+    {visible.length > 0 && <><h3>Your templates</h3><VaultTemplateCards looks={visible} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} /></>}
     {current.length > 0 && <><h3>This item</h3><VaultTemplateCards looks={current} onChoose={choose} actionLabel="Apply look" /></>}
     {included.length > 0 && <><h3>{onCreateFromFile ? "Ready to create" : "Included looks"}</h3><VaultTemplateCards looks={included} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} /></>}
     {!loading && query.trim() && visible.length + included.length + current.length === 0 && <p>No templates match “{query.trim()}”. Try another name.</p>}
     {notice && <div className="vault-template-notice"><p role="status">{notice}</p><button onClick={reload}>Read templates again</button></div>}
-    <p className="vault-template-help">Each saved template is a TextPack file. Edit it yourself or ask the assistant to customize it.</p>
+    <p className="vault-template-help">Edit a saved template yourself or ask the assistant to customize it.</p>
   </div>;
 }

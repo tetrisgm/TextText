@@ -12,7 +12,9 @@ Command K now searches the live folder tree for `Go to…` actions. These destin
 
 New from template now includes bundled Blog, Note, Bookmark, Gallery, and Presentation choices when a workspace lacks matching Templates files. Built-in choices keep the same TextPack creation paths as the folder actions.
 
-The creation picker now gives those five choices distinct story, note card, saved-link, image-grid, and slide previews instead of identical skeletons. Light and dark picker screenshots are `/tmp/texttext-template-picker-reference.png`, `/tmp/texttext-template-picker-gallery-reference.png`, and `/tmp/texttext-template-picker-dark-reference.png`. These are representative compositions; a real-content template preview and reference-level visual parity remain open.
+The creation picker now gives those five choices distinct story, note card, saved-link, image-grid, and slide previews instead of identical skeletons. Light and dark picker screenshots are `/tmp/texttext-template-picker-reference.png`, `/tmp/texttext-template-picker-gallery-reference.png`, and `/tmp/texttext-template-picker-dark-reference.png`. Reference-level visual parity remains open.
+
+Saved template cards now preview bounded title, excerpt, source, and tag data from their TextPack snapshots through the Mac template metadata endpoint. The picker calls them “Your templates” and does not expose the internal Templates path on hover. Bundled choices still use representative content; asset thumbnails are not loaded into the picker.
 
 The Bookmarks reader now uses compact previous/next navigation, Reader and Original controls, a sans-serif title/body, and a source line below the title to track Shiori’s public dashboard example. Its items remain bookmark TextPacks, and URL-first capture remains the creation path.
 
