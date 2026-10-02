@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clusterFeedStories, type FeedStory } from "./feed-clusters";
+import { clusterFeedStories, rankFeedClusters, type FeedStory } from "./feed-clusters";
 
 const story = (overrides: Partial<FeedStory> = {}): FeedStory => ({
   externalKey: "a", title: "City approves a new waterfront transit plan", permalink: "https://one.example/story",
@@ -26,5 +26,19 @@ describe("feed coverage groups", () => {
       story({ externalKey: "d", title: "Different subject entirely", permalink: "https://other.example/unrelated", source: "Three", feedURL: "https://three.example/feed" }),
     ]);
     expect(groups.map(group => group.members.length)).toEqual([2, 1, 1]);
+  });
+
+  it("ranks fresh independent coverage and diversifies the first screen", () => {
+    const now = Date.parse("2026-10-02T15:00:00Z");
+    const fresh = story({ externalKey: "fresh", title: "Fresh independent coverage of local transit", source: "One", permalink: "https://one.example/fresh" });
+    const corroboration = story({ externalKey: "same", title: fresh.title, source: "Two", feedURL: "https://two.example/feed", permalink: "https://two.example/fresh" });
+    const old = story({ externalKey: "old", title: "An unrelated old story about transit", publishedAt: "2026-09-20T12:00:00Z", permalink: "https://one.example/old" });
+    const ranked = rankFeedClusters(clusterFeedStories([old, fresh, corroboration]), now);
+    expect(ranked[0].members).toHaveLength(2);
+    expect(ranked[1].members).toHaveLength(1);
+    const many = Array.from({ length: 5 }, (_, index) => story({ externalKey: `one-${index}`, title: `Unique local headline number ${index}`, permalink: `https://one.example/${index}` }));
+    const other = story({ externalKey: "other", title: "A different story from another publisher", source: "Two", feedURL: "https://two.example/feed", permalink: "https://two.example/other" });
+    const diverse = rankFeedClusters(clusterFeedStories([...many, other]), now);
+    expect(diverse.findIndex(group => group.members[0].source === "Two")).toBeLessThan(4);
   });
 });

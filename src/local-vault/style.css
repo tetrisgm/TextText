@@ -129,6 +129,7 @@
 .vault-app .vault-feed-home>nav { display:flex; gap:23px; margin-bottom:10px; border-bottom:1px solid var(--line); overflow-x:auto; white-space:nowrap; }
 .vault-app .vault-feed-home>nav button { padding:7px 0 12px; border-radius:0; color:var(--muted); font-weight:600; }
 .vault-app .vault-feed-home>nav button[aria-pressed=true] { color:var(--ink); font-weight:750; }
+.vault-app .vault-feed-rank-note { margin:16px 0 4px; color:var(--muted); font-size:12px; line-height:1.45; }
 .vault-app .vault-feed-headlines-title { margin:22px 0 8px; color:var(--ink); font-size:26px; }
 .vault-app .vault-feed-coverage-list { margin:0; padding:0; list-style:none; }
 .vault-app .vault-feed-coverage-list li { border-bottom:1px solid var(--line); }

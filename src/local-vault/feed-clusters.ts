@@ -70,3 +70,25 @@ export function clusterFeedStories(stories: readonly FeedStory[]): FeedCluster[]
     };
   });
 }
+
+/** For You ranks only followed-source stories. Freshness and independent
+ * coverage lift a story; the first screen is capped at three units from one
+ * publisher so one busy feed cannot crowd out everything else. */
+export function rankFeedClusters(clusters: readonly FeedCluster[], now: number): FeedCluster[] {
+  const DAY = 24 * 60 * 60 * 1000;
+  const scored = clusters.map(cluster => {
+    const latest = Math.max(...cluster.members.map(member => date(member)).filter(Number.isFinite), 0);
+    const ageDays = latest ? Math.max(0, (now - latest) / DAY) : 7;
+    const freshness = Math.max(0, 1 - Math.log1p(ageDays) / Math.log1p(7));
+    return { cluster, latest, score: 3 * freshness + Math.min(3, cluster.sources.length) / 3 * 0.5 };
+  }).sort((left, right) => right.score - left.score || right.latest - left.latest || left.cluster.id.localeCompare(right.cluster.id));
+  const first: FeedCluster[] = [], rest: FeedCluster[] = [];
+  const counts = new Map<string, number>();
+  for (const { cluster } of scored) {
+    const source = cluster.members[0]?.source ?? "";
+    const count = counts.get(source) ?? 0;
+    if (first.length < 12 && count < 3) { first.push(cluster); counts.set(source, count + 1); }
+    else rest.push(cluster);
+  }
+  return [...first, ...rest];
+}

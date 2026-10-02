@@ -928,6 +928,9 @@ try {
   await page.screenshot({ path: "/tmp/texttext-feed-coverage-reference.png" });
   await page.locator(".vault-feed-coverage > header button").click();
   await page.getByRole("button", { name: "For You", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 1);
+  await page.screenshot({ path: "/tmp/texttext-feeds-ranked-reference.png" });
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
   await page.getByRole("button", { name: "A considered design headline" }).first().click();
   await page.getByRole("region", { name: "Feed story" }).getByText("A full in-app reading view for this story.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feed-reader-reference.png" });

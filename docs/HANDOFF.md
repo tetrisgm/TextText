@@ -2,7 +2,7 @@
 
 ## Current work
 
-The October 2 work is the folder-based template redesign, committed through `f97822f3`. The current follow-up adds a Headlines section that groups matching cross-publisher feed entries and opens a coverage page before the in-app reader. Feeds saves chosen stories as bookmark TextPacks in Bookmarks. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
+The October 2 work is the folder-based template redesign, committed through `b0af1615`. The current follow-up gives Feeds a For You order based on freshness and independent coverage, with source diversity in the first screen; Latest retains the chronological list. Headlines groups matching cross-publisher entries and opens a coverage page before the in-app reader. Feeds saves chosen stories as bookmark TextPacks in Bookmarks. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
 
 Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](HANDOFF-history-2026-09-30.md).
 
@@ -12,7 +12,7 @@ Oracle remains the sole host and storage location. The last shipped release and 
 
 ## Boundaries
 
-- The installed app remains 0.203 build 1151. The rebuilt UI bundle under `mac/build/LocalVault` is test-only and has not been installed or published. Visual parity with the named products has not been established by a side-by-side review on real content. Feeds has conservative local grouping but still lacks a personalized For You ranking; its reader and coverage page have been checked only with local fixtures. Blog needs a closer Medium comparison on real content. Artifact's original 28 screenshots described in [the historical plan](plans/artifact-home-replication.md) are not present in this checkout or their former Downloads paths.
+- The installed app remains 0.203 build 1151. The rebuilt UI bundle under `mac/build/LocalVault` is test-only and has not been installed or published. Visual parity with the named products has not been established by a side-by-side review on real content. Feeds has deterministic ranking over followed sources, but no durable personal interest/read feedback yet; its reader and coverage page have been checked only with local fixtures. Blog needs a closer Medium comparison on real content. Artifact's original 28 screenshots described in [the historical plan](plans/artifact-home-replication.md) are not present in this checkout or their former Downloads paths.
 
 ## References
 
