@@ -127,11 +127,14 @@
 .vault-app .vault-note-card>button { position:absolute; inset:0; width:100%; padding:0; border-radius:9px; }
 .vault-app .vault-note-card>button:hover { background:color-mix(in srgb,var(--selection) 32%,transparent); }
 .vault-app .vault-note-card:focus-within { outline:2px solid var(--tt-accent); outline-offset:2px; }
-.vault-app .vault-story-list>button { display:flex; align-items:center; width:100%; gap:22px; padding:24px 0; border-bottom:1px solid var(--line); border-radius:0; }
-.vault-app .vault-story-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:7px; }
-.vault-app .vault-story-copy small { font-size:12px; color:var(--muted); }
+.vault-app .vault-story-list>button { display:flex; align-items:center; width:100%; gap:22px; padding:24px 0; border-bottom:1px solid var(--line); border-radius:0; text-align:left; }
+.vault-app .vault-story-copy { display:flex; flex:1; min-width:0; flex-direction:column; align-items:flex-start; gap:7px; }
+.vault-app .vault-story-list-byline { display:flex; align-items:center; gap:7px; margin-bottom:3px; color:var(--ink); font-size:13px; font-weight:550; }
+.vault-app .vault-story-list-avatar { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--selection); color:var(--ink); font-size:11px; font-weight:700; }
 .vault-app .vault-story-copy strong { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:23px; line-height:1.2; font-weight:750; letter-spacing:-.018em; }
-.vault-app .vault-story-copy>span { color:var(--muted); font-size:14px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.vault-app .vault-story-copy>span:not(.vault-story-list-avatar) { color:var(--muted); font-size:14px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.vault-app .vault-story-copy .vault-story-list-subtitle { color:var(--ink); font-size:15px; }
+.vault-app .vault-story-copy .vault-story-list-excerpt { max-width:600px; }
 .vault-app .vault-story-list img { width:140px; height:100px; object-fit:cover; border-radius:3px; }
 .vault-app .vault-feed-sources>button { display:flex; align-items:center; gap:14px; width:100%; padding:16px 0; border-bottom:1px solid var(--line); border-radius:0; }
 .vault-app .vault-feed-source-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:6px; background:var(--sidebar); color:var(--tt-accent); }
