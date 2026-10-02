@@ -975,6 +975,7 @@ try {
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
   await lightbox.getByRole("button", { name: "Next image" }).click();
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
+  await lightbox.getByText("240 × 120").waitFor();
   await lightbox.getByLabel("Image colors").locator("span").first().waitFor();
   const pairColor = await lightbox.getByLabel("Image colors").locator("span").first().getAttribute("aria-label");
   const galleryOrder = await page.locator(".vault-photo-grid button").evaluateAll(buttons => buttons.map(button => button.getAttribute("aria-label")));
@@ -1004,6 +1005,11 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-editor-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  await chooseFolder("Gallery");
+  await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Measured.png", mimeType: "image/png", buffer: Buffer.from(portrait, "base64") });
+  await page.getByRole("button", { name: "Open Measured" }).waitFor();
+  const measured = [...files.values()].find(file => file.path.startsWith("Gallery/Measured-"));
+  assert.deepEqual(JSON.parse(measured.documentJSON).content.assets.map(asset => [asset.width, asset.height]), [[120, 240]]);
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();

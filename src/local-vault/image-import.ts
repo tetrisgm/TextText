@@ -17,7 +17,7 @@ export function imageType(bytes: Uint8Array): { extension: string; contentType: 
   throw new Error("Choose a PNG, JPEG, GIF or WebP image.");
 }
 
-export function encodeImagePack(bytes: Uint8Array, name: string, preview?: { bytes: Uint8Array; width: number; height: number }): { bytes: Uint8Array; title: string } {
+export function encodeImagePack(bytes: Uint8Array, name: string, preview?: { bytes: Uint8Array; width: number; height: number }, dimensions?: { width: number; height: number }): { bytes: Uint8Array; title: string } {
   if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error("Choose an image no larger than 20 MiB.");
   const { extension, contentType } = imageType(bytes);
   const title = name.replace(/\.[^.]+$/, "").trim().slice(0, 120) || "Image";
@@ -25,6 +25,7 @@ export function encodeImagePack(bytes: Uint8Array, name: string, preview?: { byt
   const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
   document.content.title = title;
   document.content.assets = [{ id: crypto.randomUUID(), kind: "image", src: `assets/original.${extension}`, alt: title, contentType }];
+  if (dimensions) Object.assign(document.content.assets[0], dimensions);
   if (preview) Object.assign(document.content.assets[0], { poster: "assets/preview.png", width: preview.width, height: preview.height });
   validateDocumentSnapshot(document);
   const pack = emptyPack();
@@ -38,7 +39,26 @@ export function encodeImagePack(bytes: Uint8Array, name: string, preview?: { byt
  * the bitmap/canvas before the original bytes are sent across the native bridge. */
 export async function prepareImagePack(bytes: Uint8Array, name: string) {
   if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error("Choose an image no larger than 20 MiB.");
-  if (imageType(bytes).contentType !== "image/gif") return encodeImagePack(bytes, name);
+  const contentType = imageType(bytes).contentType;
+  if (contentType !== "image/gif") {
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: contentType }));
+    const image = new Image();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("This image could not be opened. Try another file.")), 10_000);
+        image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+        image.onerror = () => reject(new Error("This image could not be decoded."));
+        image.src = url;
+      });
+      if (!dimensions.width || !dimensions.height || dimensions.width * dimensions.height > 100_000_000) throw new Error("Choose an image with a canvas of at most 100 million pixels.");
+      return encodeImagePack(bytes, name, undefined, dimensions);
+    } finally {
+      clearTimeout(timer);
+      image.onload = null; image.onerror = null; image.src = "";
+      URL.revokeObjectURL(url);
+    }
+  }
   // GIF89a logical screen descriptor: little-endian width and height follow
   // the six-byte signature. https://www.w3.org/Graphics/GIF/spec-gif89a.txt
   const width = bytes[6] | bytes[7] << 8, height = bytes[8] | bytes[9] << 8;
