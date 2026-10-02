@@ -243,6 +243,15 @@ try {
   assert.equal(await page.getByRole("option", { name: "Write a story", exact: true }).locator("kbd").textContent(), "C");
   assert.equal(await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("kbd").textContent(), "B");
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
+  await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowUp");
+  assert.equal(await page.getByRole("dialog", { name: "Search and actions", exact: true }).evaluate(dialog => {
+    const list = dialog.querySelector('[role="listbox"]');
+    const selected = document.getElementById(dialog.querySelector('[role="combobox"]')?.getAttribute("aria-activedescendant") || "");
+    if (!list || !selected) return false;
+    const bounds = list.getBoundingClientRect();
+    const row = selected.getBoundingClientRect();
+    return row.top >= bounds.top && row.bottom <= bounds.bottom;
+  }), true, "keyboard selection should remain visible after wrapping to the last command");
   await page.keyboard.press("Meta+k");
   await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
   await page.waitForFunction(() => document.activeElement?.classList.contains("vault-search-trigger"));
