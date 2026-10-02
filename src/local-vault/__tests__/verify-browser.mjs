@@ -945,6 +945,23 @@ try {
   const bookmarkDetails = bookmarkReader.locator("details.vault-bookmark-inspector");
   const toggleBookmarkDetails = bookmarkDetails.locator("summary");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
+  await page.evaluate(() => {
+    const root = document.querySelector('.vault-bookmark-reader .tt-document');
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const start = node.textContent.indexOf('complete saved reading');
+      if (start < 0) continue;
+      const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + 'complete saved reading'.length);
+      const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange')); break;
+    }
+  });
+  await bookmarkReader.getByRole('button', { name: 'Highlight selection' }).click();
+  await bookmarkReader.getByRole('textbox', { name: 'Note about this highlight' }).pressSequentially('Keep this.');
+  await page.waitForFunction(() => document.querySelector('.vault-bookmark-reader .vault-highlights textarea')?.value === 'Keep this.');
+  for (let attempt = 0; attempt < 50 && JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights?.[0]?.note !== 'Keep this.'; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights[0].quote, 'complete saved reading');
+  assert.equal(JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights[0].note, 'Keep this.');
   await bookmarkReader.getByRole("button", { name: "Next bookmark" }).click();
   await bookmarkReader.getByRole("button", { name: "Previous bookmark" }).click();
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
@@ -1483,6 +1500,7 @@ try {
   const customBookmark = [...files.values()].find(file => JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/custom-look");
   assert.ok(customBookmark?.path.startsWith("Bookmarks/"));
   assert.equal(JSON.parse(customBookmark.documentJSON).presentation.template.id, "local.custom-bookmark-look");
+  await page.locator('.vault-bookmark-reader .tt-document[data-template-id="local.custom-bookmark-look"]').waitFor();
   await page.screenshot({ path: "/tmp/texttext-custom-bookmark-look-reference.png" });
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseMoreAction("New from template");

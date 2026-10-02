@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { vaultRequest, type VaultFile, type VaultItem } from "./bridge";
 import type { FolderPreview } from "./folder-collection";
 import { ArticleReader } from "./ArticleReader";
-import { readDocument, writePayload } from "./model";
+import { readDocument, readTemplate, writePayload } from "./model";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 
 function host(url?: string): string {
@@ -106,6 +105,9 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const currentIndex = current ? shown.findIndex(item => item.path === current.path) : -1;
   const preview = current && (previews[current.path] || metadata[current.path]);
   const [opened, setOpened] = useState<{ path: string; file: VaultFile; document: DocumentSnapshot; urls: string[] } | null>(null);
+  const readerFiles = useRef(new Map<string, VaultFile>());
+  const readerWrites = useRef<Promise<void>>(Promise.resolve());
+  const readerPending = useRef(0);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
   const [editingNotePath, setEditingNotePath] = useState("");
@@ -133,13 +135,35 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     return () => { active = false; controller.abort(); };
   }, [current?.path]);
   useEffect(() => () => { opened?.urls.forEach(url => URL.revokeObjectURL(url)); }, [opened?.urls]);
-  const template = BUILTIN_TEMPLATES.find(item => item.id === "texttext.bookmark");
   const document = opened && current && opened.path === current.path ? opened.document : null;
+  let template = null;
+  if (document && opened) {
+    try { template = readTemplate(opened.file, readDocument(opened.file)); }
+    catch { /* A missing or invalid look leaves the saved file available through Edit. */ }
+  }
   const favorite = Boolean(document?.content.fields.texttextBookmarkFavorite);
   const readAt = typeof document?.content.fields.texttextBookmarkReadAt === "string" ? document.content.fields.texttextBookmarkReadAt : null;
   const archivedAt = typeof document?.content.fields.texttextBookmarkArchivedAt === "string" ? document.content.fields.texttextBookmarkArchivedAt : null;
   const personalNote = typeof document?.content.fields.texttextBookmarkNote === "string" ? document.content.fields.texttextBookmarkNote : "";
   const noteIsEditing = Boolean(current && editingNotePath === current.path);
+  const updateReader = (transform: (snapshot: DocumentSnapshot) => DocumentSnapshot) => {
+    if (!opened || opened.path !== current?.path || busy || previewOnly) return;
+    const path = opened.path;
+    setOpened(previous => previous?.path === path ? { ...previous, document: transform(previous.document) } : previous);
+    readerPending.current += 1;
+    setUpdating(true); setError("");
+    readerWrites.current = readerWrites.current.catch(() => {}).then(async () => {
+      try {
+        const file = readerFiles.current.get(path) ?? opened.file;
+        const canonical = readDocument(file);
+        const updated = await vaultRequest<VaultFile>("write", writePayload(file, transform(canonical)));
+        readerFiles.current.set(path, updated);
+        setOpened(previous => previous?.path === path ? { ...previous, file: updated } : previous);
+        window.dispatchEvent(new Event("texttext:vault-changed"));
+      } catch (reason) { setError(reason instanceof Error ? reason.message : "The highlight could not be saved."); }
+      finally { readerPending.current -= 1; if (!readerPending.current) { readerFiles.current.clear(); setUpdating(false); } }
+    });
+  };
   const saveNote = async () => {
     if (!opened || opened.path !== current?.path || updating || busy || previewOnly) return;
     setUpdating(true); setError("");
@@ -200,7 +224,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       {document && <section className="vault-bookmark-note" aria-label="Personal note"><div><strong>My note</strong>{!noteIsEditing && !previewOnly && <button type="button" disabled={busy || updating} onClick={() => { setNoteDraft(personalNote); setEditingNotePath(current?.path ?? ""); }}>{personalNote ? "Edit note" : "Add note"}</button>}</div>{noteIsEditing ? <form onSubmit={event => { event.preventDefault(); void saveNote(); }}><textarea autoFocus aria-label="Personal note text" value={noteDraft} onChange={event => setNoteDraft(event.target.value)} maxLength={10000} disabled={busy || updating} placeholder="What do you want to remember?" /><div><button type="button" disabled={updating} onClick={() => setEditingNotePath("")}>Cancel</button><button type="submit" disabled={busy || updating || noteDraft.trim() === personalNote}>{updating ? "Saving…" : "Save note"}</button></div></form> : personalNote && <p>{personalNote}</p>}</section>}
       </div></details></header>}
       {error && <p role="alert" className="vault-bookmark-error">{error}</p>}
-      {document && template ? <ArticleReader document={document} template={template} /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
+      {document && template ? <ArticleReader document={document} template={template} update={previewOnly || busy ? undefined : updateReader} /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
     </article>
   </div>;
 }
