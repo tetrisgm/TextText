@@ -298,6 +298,7 @@
 .vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-field-body :is(textarea,.tt-collaborative-mirror) { min-height:64px; }
 .vault-app .tt-document.tt-document-editor[data-template-id="texttext.note"] > .tt-stack { gap:8px; padding:0; }
 .vault-app .vault-note-display { position:relative; max-width:520px; margin:25px auto; padding:25px 27px 21px; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:0 8px 22px #00000013,0 2px 4px #0000000d; }
+.vault-app .vault-note-display:focus-visible { outline:2px solid var(--tt-accent); outline-offset:3px; }
 .vault-app .vault-note-display-actions { position:absolute; top:16px; right:17px; z-index:1; }
 .vault-app .vault-note-display-actions button { display:grid; place-items:center; width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:50%; background:var(--surface); color:var(--muted); cursor:pointer; }
 .vault-app .vault-note-display-actions button:hover { color:var(--ink); background:var(--selection); }

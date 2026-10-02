@@ -1228,6 +1228,11 @@ try {
   assert.deepEqual(lightCardColors, { title: "rgb(32, 32, 32)", body: "rgb(32, 32, 32)" });
   await page.screenshot({ path: "/tmp/texttext-note-card-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").click();
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("vault-note-display")), true);
+  await page.keyboard.press("Enter");
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
   await page.getByRole("button", { name: "Edit card" }).click();
   await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
   const newCard = [...files.values()].at(-1);
