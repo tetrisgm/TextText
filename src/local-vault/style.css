@@ -104,10 +104,16 @@
 .vault-app .vault-bookmark-copy>span { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vault-app .vault-bookmark-open { color:var(--muted); }
 .vault-app .vault-note-cards { display:block; columns:3 210px; column-gap:14px; }
-.vault-app .vault-note-cards>button { min-height:145px; display:flex; flex-direction:column; break-inside:avoid; width:100%; margin:0 0 14px; padding:17px; border:1px solid var(--line); border-radius:11px; background:var(--surface); box-shadow:0 2px 10px #0000000d; }
-.vault-app .vault-note-cards strong { font-size:16px; line-height:1.4; }
-.vault-app .vault-note-cards p { margin:12px 0; color:var(--ink); font-size:13px; line-height:1.5; overflow:hidden; display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; }
-.vault-app .vault-note-cards small { margin-top:auto; color:var(--tt-accent); }
+.vault-app .vault-note-card { position:relative; break-inside:avoid; width:100%; min-height:112px; margin:0 0 14px; padding:16px 17px; border:1px solid var(--line); border-radius:9px; background:var(--surface); box-shadow:0 2px 10px #0000000d; overflow:hidden; }
+.vault-app .vault-note-card .tt-document { margin:0; padding:0; border:0; background-color:transparent !important; color:var(--ink); box-shadow:none; font-size:13px; line-height:1.48; }
+.vault-app .vault-note-card .tt-document :is(h1,h2,h3) { margin:0 0 8px; font-size:16px; line-height:1.35; font-weight:650; }
+.vault-app .vault-note-card .tt-document p { margin:0 0 7px; }
+.vault-app .vault-note-card .tt-document :is(ul,ol) { margin:4px 0; padding-left:20px; }
+.vault-app .vault-note-card .tt-document .tt-prose { max-height:165px; overflow:hidden; }
+.vault-app .vault-note-card>small { display:block; margin-top:10px; color:var(--tt-accent); font-size:11px; }
+.vault-app .vault-note-card>button { position:absolute; inset:0; width:100%; padding:0; border-radius:9px; }
+.vault-app .vault-note-card>button:hover { background:color-mix(in srgb,var(--selection) 32%,transparent); }
+.vault-app .vault-note-card:focus-within { outline:2px solid var(--tt-accent); outline-offset:2px; }
 .vault-app .vault-story-list>button { display:flex; align-items:center; width:100%; gap:22px; padding:24px 0; border-bottom:1px solid var(--line); border-radius:0; }
 .vault-app .vault-story-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:7px; }
 .vault-app .vault-story-copy small { font-size:12px; color:var(--muted); }
@@ -191,11 +197,11 @@
 .vault-app .tt-document-editor[data-template-id="texttext.article"] { max-width:740px; padding-top:46px; font-family:Georgia,Charter,serif; }
 .vault-app .tt-document-editor[data-template-id="texttext.article"] :is(.tt-md-surface,.tt-field-body textarea) { font-family:Georgia,Charter,serif; font-size:19px; line-height:1.72; }
 .vault-app .tt-document-editor[data-template-id="texttext.article"] .tt-text-title textarea { font-family:Georgia,Charter,serif; font-size:42px; line-height:1.16; font-weight:700; letter-spacing:-.025em; }
-.vault-app .tt-document-editor[data-template-id="texttext.note"] { max-width:700px; min-height:0; margin-top:35px; padding:26px 30px 45px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:0 5px 24px #0000000b; }
-.vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-text-title textarea { font-size:24px; line-height:1.3; font-weight:650; }
+.vault-app .tt-document-editor[data-template-id="texttext.note"] { max-width:520px; min-height:0; margin-top:25px; padding:22px 24px 30px; border:1px solid var(--line); border-radius:10px; background:var(--surface); box-shadow:0 5px 24px #0000000b; }
+.vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-text-title textarea { font-size:21px; line-height:1.3; font-weight:650; }
 .vault-app .tt-document-editor[data-template-id="texttext.note"] :is(.tt-md-surface,.tt-field-body textarea) { font-size:15px; line-height:1.65; }
-.vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-md-surface { min-height:120px; }
-.vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-field-body :is(textarea,.tt-collaborative-mirror) { min-height:120px; }
+.vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-md-surface { min-height:100px; }
+.vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-field-body :is(textarea,.tt-collaborative-mirror) { min-height:100px; }
 .vault-app .tt-document-editor[data-template-id="texttext.bookmark"] { max-width:800px; padding-top:30px; }
 .vault-app .tt-document-editor[data-template-id="texttext.bookmark"] .tt-text-title textarea { font-size:32px; line-height:1.2; font-weight:700; }
 .vault-app .tt-document-editor[data-template-id="texttext.gallery"] { max-width:1100px; }

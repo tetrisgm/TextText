@@ -778,6 +778,7 @@ try {
     files.set(`Bookmarks/${name}.textpack`, sample(`Bookmarks/${name}.textpack`, "bookmark", name, "A saved reference.", { sourceUrl: `https://example.net/${index}` }));
   }
   files.set("Blog/Story.textpack", sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph."));
+  files.set("Notes/Formatted.textpack", sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point"));
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
     { id: "one", kind: "image", src: "assets/one.png", alt: "First photograph" }, { id: "two", kind: "image", src: "assets/two.png", alt: "Second photograph" },
@@ -876,6 +877,9 @@ try {
   await page.locator(".vault-feed-lead").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
   await chooseFolder("Notes");
+  await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
+  assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
+  await page.screenshot({ path: "/tmp/texttext-note-grid-reference.png" });
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
   await page.keyboard.press("Tab");
