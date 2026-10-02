@@ -16,7 +16,8 @@ extension DocumentStore {
     }
 
     public func searchPage(_ query: String, limit: Int = 100, scanLimit: Int = 5_000,
-                           byteLimit: Int = 256 * 1024 * 1024, textpacksOnly: Bool = false) throws -> LocalDocumentSearchPage {
+                           byteLimit: Int = 256 * 1024 * 1024, textpacksOnly: Bool = false,
+                           folderPrefix: String? = nil) throws -> LocalDocumentSearchPage {
         let terms = query.prefix(1024).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !terms.isEmpty else { return .init(items: [], truncated: false, skippedCount: 0, scannedCount: 0) }
         let limit = min(100, max(1, limit))
@@ -43,6 +44,7 @@ extension DocumentStore {
             guard canonical.hasPrefix(canonicalRoot.path + "/") else { continue }
             let path = String(canonical.dropFirst(canonicalRoot.path.count + 1))
             if path == "Data" { enumerator.skipDescendants(); continue }
+            if let folderPrefix, !path.hasPrefix(folderPrefix) { continue }
             guard ["textpack", "textbundle", "md", "txt"].contains(file.pathExtension.lowercased()) else { continue }
             // A TextBundle is a directory package. The other supported
             // formats are regular files; calling skipDescendants for one can

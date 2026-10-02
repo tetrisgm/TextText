@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks Find saved links now searches full TextPack article text through the existing bounded Mac scan or one debounced Oracle server request. Short metadata matches for titles, URLs, excerpts, and tags remain available. The web search endpoint scans only visible items, rechecks grants before returning, and caps files, bytes, and results. The local browser contract finds a sentence beyond the 400-character preview; focused route, web transport, pack search, and Swift tests, TypeScript, and local/web browser flows passed. Search is still on demand rather than indexed, and Shiori parity remains open. No app release was run.
+
 Command K now lists folder navigation commands before any query, so users can discover them while browsing all actions and learn the same commands they can search for. The local browser contract checks a folder command in the default list and keyboard wrapping; TypeScript and local/web browser flows passed. Broader Superhuman command coverage and exact visual parity remain open; no app release was run.
 
 Notes creation now handles plain-text paste on the card area: the first line becomes the title and subsequent lines become the body of a Note TextPack. Pasting into search or another input remains ordinary input. The local browser contract verifies the saved title, body, and template; TypeScript and web browser flows passed. Supernotes parity remains open; no app release was run.

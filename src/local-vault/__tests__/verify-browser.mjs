@@ -76,7 +76,7 @@ try {
       if (request.method === "connect") connected = true;
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace", workspaceId } : {}) };
     } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
-    else if (request.method === "search") result = { items: [...files.values()].filter((file) => file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
+    else if (request.method === "search") result = { items: [...files.values()].filter((file) => (!request.params.folder || file.path.startsWith(`${request.params.folder}/`)) && file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
     else if (request.method === "read" || request.method === "template") {
       const removal = delayedRemoval;
       if (request.method === "read" && removal?.path === request.params.path && !files.has(request.params.path)) {
@@ -910,6 +910,7 @@ try {
   };
   files.set("Bookmarks/Reading.textpack", sample("Bookmarks/Reading.textpack", "bookmark", "A saved article", "The complete saved reading text.", { sourceUrl: "https://example.com/article", texttextBookmarkSavedAt: new Date().toISOString() }));
   files.set("Bookmarks/Another.textpack", sample("Bookmarks/Another.textpack", "bookmark", "Another saved link", "A second reading item.", { sourceUrl: "https://example.org/another" }));
+  files.set("Bookmarks/Deep.textpack", sample("Bookmarks/Deep.textpack", "bookmark", "Deep article", `${"Opening text. ".repeat(40)}\nThe distinctive late paragraph matters.`, { sourceUrl: "https://example.net/deep" }));
   for (let index = 0; index < 25; index++) {
     const name = `Z filler ${String(index).padStart(2, "0")}`;
     files.set(`Bookmarks/${name}.textpack`, sample(`Bookmarks/${name}.textpack`, "bookmark", name, "A saved reference.", { sourceUrl: `https://example.net/${index}` }));
@@ -952,8 +953,13 @@ try {
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("group", { name: "Today" }).getByRole("option", { name: /A saved article/ }).waitFor();
   const bookmarkSearch = page.getByRole("searchbox", { name: "Search saved links" });
   await bookmarkSearch.fill("complete saved reading");
+  await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /A saved article/ }).waitFor();
+  assert.equal(await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").count(), 1);
+  await bookmarkSearch.fill("distinctive late paragraph");
+  await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /Deep article/ }).waitFor();
   assert.equal(await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").count(), 1);
   await bookmarkSearch.fill("example.org/another");
+  await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /Another saved link/ }).waitFor();
   assert.equal(await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").count(), 1);
   await bookmarkSearch.fill("");
   await page.getByRole("option", { name: /A saved article/ }).click();

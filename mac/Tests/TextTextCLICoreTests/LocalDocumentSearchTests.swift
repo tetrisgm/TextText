@@ -40,5 +40,6 @@ final class LocalDocumentSearchTests: XCTestCase {
         XCTAssertThrowsError(try LocalVaultDocumentStore(root: root).searchText(path: "Flowers.textpack", maximumTextBytes: 4))
         try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Alias.textpack"), withDestinationURL: pack)
         XCTAssertEqual(try store.searchPage("Orchids").items.count, 1)
+        XCTAssertTrue(try store.searchPage("Orchids", folderPrefix: "Bookmarks/").items.isEmpty)
     }
 }

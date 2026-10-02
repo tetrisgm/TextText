@@ -283,15 +283,16 @@ describe("web file vault transport", () => {
     transport.destroy();
   });
 
-  it("searches bounded filenames and folder paths in the web listing", async () => {
-    const transport = createWebVaultTransport("workspace", "Workspace", async () => Response.json({
-      revision: "rev", items: [{ itemId: "one", relativePath: "Research/Feeds/Daily.textpack", revision: "a" },
-        { itemId: "two", relativePath: "Notes/Original.textpack", revision: "b" }],
-    }));
-    expect(await transport.request("search", { query: "feeds" })).toEqual({
-      items: [{ path: "Research/Feeds/Daily.textpack", title: "Daily", snippet: "Research/Feeds/Daily.textpack" }],
-      truncated: false, skippedCount: 0,
+  it("searches saved text through one scoped server request", async () => {
+    const calls: string[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async url => {
+      calls.push(String(url));
+      return Response.json({ items: [{ path: "Bookmarks/Daily.textpack", title: "Daily", snippet: "Matched deep in article" }], truncated: false, skippedCount: 0 });
     });
+    expect(await transport.request("search", { query: "deep article", folder: "Bookmarks" })).toMatchObject({
+      items: [{ path: "Bookmarks/Daily.textpack", snippet: "Matched deep in article" }],
+    });
+    expect(calls).toEqual(["/api/vault/workspace/search?q=deep%20article&folder=Bookmarks"]);
     transport.destroy();
   });
 

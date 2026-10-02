@@ -40,6 +40,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   useEffect(() => { if (preferredPath) { pendingPreferred.current = preferredPath; setSelected(preferredPath); setFilter("inbox"); setSearch(""); setTagFilter(""); } }, [preferredPath]);
   const [filter, setFilter] = useState<BookmarkFilter>("inbox");
   const [search, setSearch] = useState("");
+  const [contentSearch, setContentSearch] = useState<{ query: string; paths: Set<string>; searching: boolean; truncated: boolean; error: string }>({ query: "", paths: new Set(), searching: false, truncated: false, error: "" });
   const [tagFilter, setTagFilter] = useState("");
   const [tagDraft, setTagDraft] = useState("");
   const [quickLink, setQuickLink] = useState("");
@@ -76,6 +77,18 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemKey]);
   const canFilter = metadataState === "ready" && indexedKey === itemKey;
+  const searchQuery = search.trim();
+  useEffect(() => {
+    if (!searchQuery) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void vaultRequest<{ items: { path: string }[]; truncated?: boolean; skippedCount?: number }>("search", { query: searchQuery, folder: "Bookmarks" }, controller.signal)
+        .then(page => setContentSearch({ query: searchQuery, paths: new Set(page.items.map(item => item.path)), searching: false, truncated: Boolean(page.truncated || page.skippedCount), error: "" }))
+        .catch(reason => { if (!controller.signal.aborted) setContentSearch({ query: searchQuery, paths: new Set(), searching: false, truncated: false, error: reason instanceof Error ? reason.message : "Search could not finish." }); });
+    }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [searchQuery]);
+  const searchReady = !searchQuery || contentSearch.query === searchQuery && !contentSearch.searching && !contentSearch.error;
   const tags = canFilter ? [...new Set(items.flatMap(item => flags[item.path]?.tags ?? metadata[item.path]?.document?.content.tags ?? []))].sort((left, right) => left.localeCompare(right)) : [];
   const filtered = canFilter ? items.filter(item => {
     const entry = metadata[item.path];
@@ -85,8 +98,8 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     const archivedAt = flags[item.path] ? flags[item.path].archivedAt : fields?.texttextBookmarkArchivedAt;
     const matchesStatus = filter === "favorites" ? favorite : filter === "archive" ? Boolean(archivedAt) : filter === "unread" ? !archivedAt && !readAt : !archivedAt;
     const matchesTag = !tagFilter || (flags[item.path]?.tags ?? entry?.document?.content.tags ?? []).includes(tagFilter);
-    const text = `${entry?.title || item.title || ""} ${entry?.sourceURL || ""} ${entry?.excerpt || ""} ${(flags[item.path]?.tags ?? entry?.document?.content.tags ?? []).join(" ")}`.toLocaleLowerCase();
-    return matchesStatus && matchesTag && text.includes(search.trim().toLocaleLowerCase());
+    const localText = `${entry?.title || item.title || ""} ${entry?.sourceURL || ""} ${entry?.excerpt || ""} ${(flags[item.path]?.tags ?? entry?.document?.content.tags ?? []).join(" ")}`.toLocaleLowerCase();
+    return matchesStatus && matchesTag && (!searchQuery || localText.includes(searchQuery.toLocaleLowerCase()) || searchReady && contentSearch.paths.has(item.path));
   }).sort((left, right) => savedTime(metadata[right.path]) - savedTime(metadata[left.path])) : items;
   const preferredIndex = preferredPath ? filtered.findIndex(item => item.path === preferredPath) : -1;
   useEffect(() => {
@@ -241,7 +254,10 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   return <div className="vault-bookmark-library">
     <div className="vault-bookmark-list">
       {onQuickSave && !previewOnly && <form className="vault-bookmark-quick-save" onSubmit={event => { event.preventDefault(); if (quickSaving || busy || !quickLink.trim()) return; setQuickSaving(true); setQuickError(""); void onQuickSave(quickLink).then(() => setQuickLink("")).catch(reason => setQuickError(reason instanceof Error ? reason.message : "Could not save this link.")).finally(() => setQuickSaving(false)); }}><label><span className="ac-sr-only">Web address to save</span><input type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address to save" placeholder="Paste a link to save" value={quickLink} disabled={quickSaving || busy} onChange={event => setQuickLink(event.target.value)} maxLength={4096} /></label><button type="submit" disabled={quickSaving || busy || !quickLink.trim()}>{quickSaving ? "Saving…" : "Save"}</button>{quickError && <p role="alert">{quickError}</p>}</form>}
-      <div className="vault-bookmark-toolbar"><label><span className="ac-sr-only">Search saved links</span><input type="search" value={search} disabled={!canFilter} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Search saved links" /></label><div role="group" aria-label="Bookmark filters">{(["inbox", "unread", "favorites", "archive"] as const).map(option => <button key={option} aria-pressed={filter === option} disabled={!canFilter} onClick={() => { setFilter(option); setPage(0); }}>{option === "inbox" ? "Inbox" : option === "unread" ? "Unread" : option === "archive" ? "Archive" : "Favorites"}</button>)}</div>{(tags.length > 0 || tagFilter) && <div className="vault-bookmark-tag-filters" role="group" aria-label="Filter bookmark tags"><button aria-pressed={!tagFilter} onClick={() => { setTagFilter(""); setPage(0); }}>All tags</button>{tags.map(tag => <button key={tag} aria-pressed={tagFilter === tag} onClick={() => { setTagFilter(tag); setPage(0); }}>#{tag}</button>)}</div>}</div>
+      <div className="vault-bookmark-toolbar"><label><span className="ac-sr-only">Search saved links</span><input type="search" value={search} disabled={!canFilter} onChange={event => { setSearch(event.target.value); setContentSearch(previous => ({ ...previous, searching: true })); setPage(0); }} placeholder="Search saved links" /></label><div role="group" aria-label="Bookmark filters">{(["inbox", "unread", "favorites", "archive"] as const).map(option => <button key={option} aria-pressed={filter === option} disabled={!canFilter} onClick={() => { setFilter(option); setPage(0); }}>{option === "inbox" ? "Inbox" : option === "unread" ? "Unread" : option === "archive" ? "Archive" : "Favorites"}</button>)}</div>{(tags.length > 0 || tagFilter) && <div className="vault-bookmark-tag-filters" role="group" aria-label="Filter bookmark tags"><button aria-pressed={!tagFilter} onClick={() => { setTagFilter(""); setPage(0); }}>All tags</button>{tags.map(tag => <button key={tag} aria-pressed={tagFilter === tag} onClick={() => { setTagFilter(tag); setPage(0); }}>#{tag}</button>)}</div>}</div>
+      {searchQuery && !searchReady && !contentSearch.error && <p role="status" className="vault-bookmark-index-status">Searching saved articles…</p>}
+      {searchQuery && contentSearch.query === searchQuery && contentSearch.error && <p role="alert" className="vault-bookmark-index-status">{contentSearch.error}</p>}
+      {searchQuery && contentSearch.query === searchQuery && contentSearch.truncated && <p role="status" className="vault-bookmark-index-status">Search reached its limit. Try more specific words.</p>}
       {metadataState === "reading" && <p role="status" className="vault-bookmark-index-status">Reading saved links for filters…</p>}
       {metadataState === "unavailable" && <p role="status" className="vault-bookmark-index-status">Filters are unavailable for this folder. Saved links remain accessible.</p>}
       <div role="listbox" aria-label="Saved bookmarks">{groups.map(group => <div role="group" aria-label={group.label} key={group.label}><div className="vault-bookmark-day">{group.label}</div>{group.items.map(item => { const entry = previews[item.path] || metadata[item.path]; const title = entry?.title || item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
@@ -251,7 +267,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
           <span className="vault-bookmark-mark" aria-hidden="true">{host(entry?.sourceURL).slice(0, 1).toUpperCase()}</span>
           <span className="vault-bookmark-copy"><strong>{title}</strong><small>{host(entry?.sourceURL)}{itemRead ? " · Read" : ""}</small></span>{itemFavorite && <span className="vault-bookmark-favorite" aria-label="Favorite">★</span>}
         </button>; })}</div>)}</div>
-      {canFilter && !shown.length && <p className="vault-bookmark-index-status">No saved links match.</p>}
+      {canFilter && searchReady && !shown.length && <p className="vault-bookmark-index-status">No saved links match.</p>}
       {lastPage > 0 && <nav className="vault-bookmark-pages" aria-label="Bookmark pages"><button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>{currentPage + 1} / {lastPage + 1}</span><button disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next</button></nav>}
     </div>
     <article className="vault-bookmark-reader" aria-label="Bookmark reader">

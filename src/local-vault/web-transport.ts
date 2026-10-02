@@ -195,11 +195,13 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     if (method === "search") {
       const query = params.query;
       if (typeof query !== "string" || query.length > 500) throw new Error("Enter a shorter search.");
-      if (!manifest) await listing();
-      const term = query.trim().toLocaleLowerCase();
-      const matches = term ? manifest!.items.filter(item => item.relativePath.toLocaleLowerCase().includes(term)) : [];
-      return { items: matches.slice(0, 100).map(item => ({ path: item.relativePath, title: item.relativePath.split("/").at(-1)?.replace(/\.textpack$/i, "") ?? item.relativePath, snippet: item.relativePath })),
-        truncated: matches.length > 100, skippedCount: 0 };
+      if (!query.trim()) return { items: [], truncated: false, skippedCount: 0 };
+      const folder = params.folder === "Bookmarks" ? "&folder=Bookmarks" : "";
+      const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/search?q=${encodeURIComponent(query)}${folder}`, {
+        credentials: "same-origin", cache: "no-store", signal,
+      });
+      if (!response.ok) throw await failure(response);
+      return response.json();
     }
     if (method === "collaborationConfig") {
       if (!manifest) await listing();

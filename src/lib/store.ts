@@ -1,4 +1,5 @@
 import { validatedLookSource } from "./presentation/template-library";
+import { searchVaultPack } from "./vault/pack-search.server";
 // Fresh file vault access shares the application's content boundary. Callers
 // must authorize the workspace and supply its trusted server root first.
 import {
@@ -219,6 +220,31 @@ export function readVaultTemplate(input: Omit<VaultLocation, "onReceipt"> & { it
 export function listVaultTextpacks(input: Omit<VaultLocation, "onReceipt">) {
   if (!db) throw new Error(NO_DATABASE);
   return listDirectoryTextpacks({ ...input, onReceipt: recordVaultReceipt });
+}
+
+/** One bounded on-demand scan for both workspace search and saved-link search. */
+export async function searchVaultTextpacks(input: Omit<VaultLocation, "onReceipt">, items: readonly { itemId: string; relativePath: string }[], query: string, signal?: AbortSignal) {
+  if (!db) throw new Error(NO_DATABASE);
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return { items: [], truncated: false, skippedCount: 0 };
+  const results: { path: string; title: string; snippet: string }[] = [];
+  let remainingBytes = 256 * 1024 * 1024;
+  let skippedCount = 0;
+  let truncated = items.length > 5_000;
+  for (const item of items.slice(0, 5_000)) {
+    if (signal?.aborted) throw new DOMException("Search canceled", "AbortError");
+    const pack = await readDirectoryTextpack({ ...input, itemId: item.itemId, onReceipt: recordVaultReceipt });
+    if (!pack || pack.relativePath !== item.relativePath) { skippedCount++; continue; }
+    if (pack.bytes.length > 64 * 1024 * 1024) { skippedCount++; continue; }
+    if (pack.bytes.length > remainingBytes) { truncated = true; break; }
+    remainingBytes -= pack.bytes.length;
+    try {
+      const match = searchVaultPack(pack.bytes, pack.relativePath, terms);
+      if (match) results.push({ path: pack.relativePath, ...match });
+    } catch { skippedCount++; }
+    if (results.length > 100) { truncated = true; break; }
+  }
+  return { items: results.slice(0, 100), truncated, skippedCount };
 }
 
 export function waitVaultTextpacks(input: Omit<VaultLocation, "onReceipt"> & {
