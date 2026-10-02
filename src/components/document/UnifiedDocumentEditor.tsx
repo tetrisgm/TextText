@@ -1724,6 +1724,14 @@ export function UnifiedDocumentEditor({
       </section>
     );
   }
+  const documentSurface = <DocumentRenderer
+    document={displayDocument}
+    documentId={networkEnabled ? (post.id ?? post.slug) : undefined}
+    template={activeTemplate}
+    metadata={{ date: editorDate }}
+    slots={slots}
+    className="tt-document-editor"
+  />;
   return (
     <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
@@ -1962,14 +1970,11 @@ export function UnifiedDocumentEditor({
           the note-taking apps this engine answers to all show it while you
           type. Withholding it meant a look could ask for a date line and get
           nothing in the one place its author was looking. */}
-      <DocumentRenderer
-        document={displayDocument}
-        documentId={networkEnabled ? (post.id ?? post.slug) : undefined}
-        template={activeTemplate}
-        metadata={{ date: editorDate }}
-        slots={slots}
-        className="tt-document-editor"
-      />
+      {activeTemplate.id === "texttext.gallery" ? <div className="tt-gallery-edit-layout">{documentSurface}<aside className="tt-gallery-edit-details" aria-label="Image details">
+        <h2>Details</h2>
+        <label>Title<input aria-label="Image title" value={document.content.title} onChange={(event) => updateText("title", event.target.value)} maxLength={240} /></label>
+        <label>Caption<textarea aria-label="Image caption" value={document.content.body} onChange={(event) => updateText("body", event.target.value)} rows={5} placeholder="Add a caption" /></label>
+      </aside></div> : documentSurface}
       {(["texttext.article", "texttext.note"].includes(activeTemplate.id)) && <section className={activeTemplate.id === "texttext.note" ? "tt-article-topics tt-note-tags" : "tt-article-topics"} aria-label={activeTemplate.id === "texttext.note" ? "Note tags" : "Story topics"}>
         <h3>{activeTemplate.id === "texttext.note" ? "Tags" : "Topics"}</h3>
         <div className="tt-article-topic-list">{document.content.tags.slice(0, activeTemplate.id === "texttext.note" ? 500 : 5).map((topic) => <span key={topic}>{activeTemplate.id === "texttext.note" ? `#${topic}` : topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
@@ -2047,6 +2052,14 @@ export function UnifiedDocumentEditor({
         .tt-note-tags{max-width:520px;margin:-1px auto 40px;padding:12px 24px 20px;border:1px solid var(--line,#ddd);border-top:0;border-radius:0 0 10px 10px;background:var(--paper,#fff)}
         .tt-note-tags h3{font-size:11px;color:var(--muted,#666)}
         .tt-note-tags .tt-article-topic-list{margin-bottom:8px}
+        .tt-gallery-edit-layout{display:grid;grid-template-columns:minmax(0,1fr) 240px;align-items:start;gap:24px;max-width:1300px;margin:24px auto;padding:0 24px}
+        .tt-gallery-edit-layout .tt-document-editor{min-width:0;max-width:none;margin:0;padding:0}
+        .tt-gallery-edit-details{position:sticky;top:24px;padding:4px 0;color:var(--ink,#1d1d1f)}
+        .tt-gallery-edit-details h2{margin:0 0 22px;font-size:13px;font-weight:650}
+        .tt-gallery-edit-details label{display:block;margin-bottom:18px;color:var(--muted,#666);font-size:12px}
+        .tt-gallery-edit-details input,.tt-gallery-edit-details textarea{display:block;width:100%;margin-top:7px;padding:9px 10px;border:1px solid var(--line,#ddd);border-radius:5px;background:var(--paper,#fff);color:var(--ink,#1d1d1f);font:inherit;font-size:14px;line-height:1.5;resize:vertical}
+        .tt-gallery-edit-details :is(input,textarea):focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:2px}
+        @media(max-width:800px){.tt-gallery-edit-layout{grid-template-columns:1fr;padding:0 16px}.tt-gallery-edit-details{position:static}}
         @media(max-width:700px){.tt-document-editor{padding-top:3.5rem}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:0.3125rem;padding-inline:0.5rem}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}

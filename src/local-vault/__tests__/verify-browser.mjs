@@ -919,7 +919,17 @@ try {
   await page.getByRole("dialog", { name: "Two photographs" }).getByRole("img", { name: "Second photograph" }).waitFor();
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
   await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
-  await lightbox.getByRole("button", { name: "Close image" }).click();
+  await lightbox.getByRole("button", { name: "Edit item" }).click();
+  await page.getByRole("textbox", { name: "Image title" }).fill("Collected photographs");
+  await page.getByRole("textbox", { name: "Image caption" }).fill("Two color studies kept together.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const editedGallery = JSON.parse(files.get("Gallery/Pair.textpack").documentJSON);
+  assert.equal(editedGallery.content.title, "Collected photographs");
+  assert.equal(editedGallery.content.body, "Two color studies kept together.");
+  await page.screenshot({ path: "/tmp/texttext-gallery-editor-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-gallery-editor-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
