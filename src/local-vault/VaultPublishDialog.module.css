@@ -5,4 +5,18 @@
 .link div { display: flex; align-items: center; gap: 16px; }
 .link a { color: var(--tt-accent); }
 .actions { display: flex; justify-content: flex-end; margin-top: 28px; }
-.actions button { background: var(--tt-accent); color: white; }
+.storyDialog:global(.vault-sharing-dialog) { width:min(850px,100%); }
+.actions button:global([type="button"]) { background: var(--tt-accent); color: white; padding:10px 16px; text-align:center; border-radius:5px; }
+.storyReview { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(180px,.9fr); gap:24px; margin-top:20px; padding-top:20px; border-top:1px solid var(--line); }
+.storyCard { min-width:0; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+.storyCard img { display:block; width:100%; max-height:210px; aspect-ratio:16/9; object-fit:cover; }
+.storyCard>div { padding:16px; }
+.storyCard small { color:var(--muted); font-size:11px; }
+.storyCard h3 { margin:8px 0; color:var(--ink); font:700 23px/1.2 Georgia,Charter,serif; overflow-wrap:anywhere; }
+.storyCard p { margin:8px 0 0; color:var(--muted); font:14px/1.45 Georgia,Charter,serif; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
+.storyDetails h3 { margin:0 0 10px; font-size:16px; }
+.storyDetails h4 { margin:22px 0 8px; font-size:12px; }
+.storyDetails p { margin:0; color:var(--muted); font-size:13px; line-height:1.5; }
+.topics { display:flex; flex-wrap:wrap; gap:6px; }
+.topics span { padding:5px 10px; border:1px solid var(--line); border-radius:99px; font-size:12px; }
+@media(max-width:620px){.storyReview{grid-template-columns:1fr}}

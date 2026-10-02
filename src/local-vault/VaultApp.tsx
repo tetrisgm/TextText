@@ -1027,7 +1027,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {sharing && canShare && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} onClose={() => setSharing(null)} />}
       {publishing && canPublish && selectedItemId === publishing.itemId && <VaultPublishDialog
         key={`${publishing.workspaceId}:${publishing.itemId}`} {...publishing}
-        beforeChange={() => publishFlushRef.current()} onClose={() => setPublishing(null)} />}
+        beforeChange={() => publishFlushRef.current()}
+        readStoryFile={selectedStory ? async () => {
+          const revision = await publishFlushRef.current();
+          const file = currentFileRef.current?.();
+          if (!revision || !file || file.hash !== revision || packIdentity(file.markdown) !== publishing.itemId) throw new Error("Save or resolve this story before reviewing it for publication.");
+          return file;
+        } : undefined}
+        onClose={() => setPublishing(null)} />}
       {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => setCaptureMode(null)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: input.sourceURL ? "Bookmarks" : destinationFolder.trim() || "Notes" });

@@ -13,6 +13,7 @@ const importedPacks = [];
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
+let storyItemId = null;
 const agentAccountEmail = "writer@example.test";
 const workspaceId = "7a32c401-f041-4bc1-bbfd-f60317797873";
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
@@ -87,6 +88,13 @@ try {
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "feedRead") result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
       entries: Array.from({ length: 5 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
+    else if (request.method === "publicationRead") {
+      const story = files.get("Blog/Story.textpack");
+      if (request.params.itemId === storyItemId && story) result = { itemId: storyItemId, revision: story.hash, published: false, publishedAt: null,
+        publicPath: `/v/${workspaceId}/${storyItemId}`, canPublish: true };
+      else result = { itemId: request.params.itemId, revision: "0".repeat(64), published: false, publishedAt: null,
+        publicPath: `/v/${workspaceId}/${request.params.itemId}`, canPublish: false };
+    }
     else if (request.method === "agentStatus") result = { state: agentState, ...(agentState === "ready" ? { accountEmail: agentAccountEmail } : {}) };
     else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState, accountEmail: agentAccountEmail }; }
     else if (request.method === "agentDisconnect") { agentDisconnectCount++; agentState = "disconnected"; result = { state: agentState }; }
@@ -792,7 +800,9 @@ try {
     const name = `Z filler ${String(index).padStart(2, "0")}`;
     files.set(`Bookmarks/${name}.textpack`, sample(`Bookmarks/${name}.textpack`, "bookmark", name, "A saved reference.", { sourceUrl: `https://example.net/${index}` }));
   }
-  files.set("Blog/Story.textpack", sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph."));
+  const publishedStory = { ...sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph."), hash: "a".repeat(64) };
+  storyItemId = publishedStory.markdown.match(/textTextId: "([^"]+)"/)?.[1];
+  files.set("Blog/Story.textpack", publishedStory);
   files.set("Notes/Formatted.textpack", sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point"));
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
@@ -842,6 +852,16 @@ try {
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.locator(".vault-story-list").getByText("An essay title").waitFor();
   await page.screenshot({ path: "/tmp/texttext-blog-reference.png" });
+  await page.getByRole("button", { name: "Open An essay title" }).click();
+  await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
+  await page.locator(".vault-context-actions > .vault-primary-action").click();
+  const publishing = page.getByRole("dialog", { name: "Publish An essay title" });
+  await publishing.getByText("Story preview").waitFor();
+  await publishing.getByText("An opening paragraph.").waitFor();
+  await publishing.getByRole("button", { name: "Publish story" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-blog-publish-reference.png" });
+  await publishing.getByRole("button", { name: "Close publishing" }).click();
+  await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
   const newStory = [...files.values()].at(-1);
