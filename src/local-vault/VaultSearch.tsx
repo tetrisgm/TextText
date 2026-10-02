@@ -37,6 +37,7 @@ const actionIcons: Record<string, string> = {
   "new-from-template": "▧", "import-images": "▣", "subscribe-feed": "◌",
   "import-file": "⇧", "folder-design": "▦", customize: "◈", "add-agent": "✧",
   "trash-recovery": "↺", "open-folder": "▱",
+  "go-home": "⌂", "edit-current": "✎",
   "share-current": "↗", "show-comments": "☷", "publish-current": "◎", "version-history": "◷",
 };
 

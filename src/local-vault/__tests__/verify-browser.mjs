@@ -311,7 +311,9 @@ try {
   await page.getByRole("option", { name: "Go to Empty", exact: true }).waitFor();
   await page.getByRole("combobox", { name: "Search workspace" }).press("Enter");
   await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();
-  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await searchTrigger.click();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("home");
+  await page.getByRole("option", { name: "Go home", exact: true }).click();
   await page.getByRole("heading", { name: "All files", exact: true }).waitFor();
   await page.keyboard.press("b");
   await page.getByRole("dialog", { name: "Save bookmark" }).waitFor();
@@ -369,7 +371,8 @@ try {
   assert.ok([...files.values()].some((file) => file.path.startsWith("Templates/") && JSON.parse(file.templateJSON).name === "Saved local look"));
   await page.keyboard.press("Meta+k");
   const itemCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
-  assert.match(await itemCommands.getByRole("option").first().getAttribute("id") || "", /^action:(share-current|show-comments|publish-current|version-history)$/);
+  assert.match(await itemCommands.getByRole("option").first().getAttribute("id") || "", /^action:(edit-current|share-current|show-comments|publish-current|version-history)$/);
+  await itemCommands.getByRole("option", { name: "Edit this item", exact: true }).waitFor();
   await itemCommands.getByRole("option", { name: "Add agent to this item", exact: true }).waitFor();
   await itemCommands.getByRole("option", { name: "Version history", exact: true }).waitFor();
   if (await page.getByRole("button", { name: "Share", exact: true }).count()) await itemCommands.getByRole("option", { name: "Share this item", exact: true }).waitFor();

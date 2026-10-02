@@ -97,6 +97,11 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     window.addEventListener("texttext:vault-edit-story-topics", editTopics);
     return () => window.removeEventListener("texttext:vault-edit-story-topics", editTopics);
   }, []);
+  useEffect(() => {
+    const editItem = () => setReading(false);
+    window.addEventListener("texttext:vault-edit-item", editItem);
+    return () => window.removeEventListener("texttext:vault-edit-item", editItem);
+  }, []);
   const [notice, setNotice] = useState("");
   const [hasConflict, setHasConflict] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -936,11 +941,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     keywords: ["assistant", "collaborate", "edit"],
   });
   const contextualActions: VaultSearchAction[] = [];
+  if (selected && !selectedFeed.subscription && canCreate) contextualActions.push({ id: "edit-current", label: "Edit this item", description: "Open the editor for this item.", shortcut: "E", keywords: ["write", "change"] });
   if (canShare && sharingWorkspaceId && (selected || commandFolder)) contextualActions.push({ id: "share-current", label: selected ? "Share this item" : "Share this folder", description: "Manage access to the current location.", keywords: ["collaborate", "invite", "permissions"] });
   if (canOpenComments) contextualActions.push({ id: "show-comments", label: "Show comments", description: "Discuss the open item.", keywords: ["discussion", "replies"] });
   if (selected && canPublish) contextualActions.push({ id: "publish-current", label: "Publish this item", description: "Review public access before publishing.", keywords: ["public", "website"] });
   if (selected && canOpenRecovery) contextualActions.push({ id: "version-history", label: "Version history", description: "Inspect saved versions of this item.", aliases: ["Restore version"], keywords: ["restore", "revisions"] });
   commandActions.unshift(...contextualActions);
+  if (selected || commandFolder) commandActions.push({ id: "go-home", label: "Go home", description: "Show all files in this workspace.", shortcut: "H", aliases: ["All files"], keywords: ["workspace", "home"] });
   if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
   for (const folder of folders) commandActions.push({
@@ -948,6 +955,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     description: "Open this workspace folder.", keywords: ["navigate", "folder", folder],
   });
   const runCommandAction = (id: string) => {
+    if (id === "go-home") return operate(async () => { closeRemoved(); setDestinationFolder(""); setFolderDesignOpen(false); }, true);
+    if (id === "edit-current") { window.dispatchEvent(new Event("texttext:vault-edit-item")); return; }
     if (id.startsWith("go-to-folder:")) return operate(async () => {
       closeRemoved(); setDestinationFolder(id.slice("go-to-folder:".length)); setFolderDesignOpen(false);
     }, true);

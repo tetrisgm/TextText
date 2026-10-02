@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now offers Go home from folders and open items, plus Edit this item when an editable TextPack is open. The browser contract checks home navigation and the contextual edit command; TypeScript, local UI build, and offline browser flow passed. Full Superhuman command coverage and visual parity remain open; no app release was run.
+
 Notes cards now have a visible pencil action that opens the same TextPack directly in the compact editor with body focus; clicking the card still opens reading mode. The card grid also forces readable foreground colors in light and dark mode, including bold body text. TypeScript, local UI build, local and web browser flows passed. Light grid `/tmp/texttext-note-grid-light-reference.png`; direct editor `/tmp/texttext-note-direct-edit-reference.png`. Full Supernotes interaction parity remains open; no app release was run.
 
 Topic feeds now open with an Artifact-style horizontal Headlines strip built from cross-source coverage groups already in memory, then continue into the ordinary topic story list. Cards show the source count instead of invented read totals and open the existing coverage reader; Back returns to the topic. TypeScript, local UI build, and local browser flow passed (an unrelated file-pagination click timed out once; rerun passed). Dark/light screenshots: `/tmp/texttext-feed-topic-headlines-reference.png` and `/tmp/texttext-feed-topic-headlines-light-reference.png`. Durable reading feedback and full Artifact parity remain open; no app release was run.
