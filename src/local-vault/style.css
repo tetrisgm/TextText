@@ -142,6 +142,18 @@
 .vault-app .vault-feed-publisher time { margin-left:2px; }
 .vault-app .vault-feed-home .vault-feed-story :is(a,strong) { display:block; max-width:55ch; margin-top:8px; color:var(--ink); font-size:17px; line-height:1.35; font-weight:650; text-decoration:none; }
 .vault-app .vault-feed-home .vault-feed-story a:hover { text-decoration:underline; }
+.vault-app .vault-feed-home .vault-feed-headline { display:block; max-width:55ch; width:100%; margin:8px 0 0; padding:0; border:0; border-radius:0; background:transparent; color:var(--ink); font-size:17px; line-height:1.35; font-weight:650; text-align:left; }
+.vault-app .vault-feed-home .vault-feed-featured .vault-feed-headline { font-size:19px; }
+.vault-app .vault-feed-home .vault-feed-headline:hover { background:transparent; text-decoration:underline; }
+.vault-app .vault-feed-reader { max-width:720px; margin:0 auto; padding:24px 0 80px; }
+.vault-app .vault-feed-reader>header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding-bottom:18px; border-bottom:1px solid var(--line); color:var(--muted); font-size:13px; }
+.vault-app .vault-feed-reader>header button { padding:0; color:var(--tt-accent); }
+.vault-app .vault-feed-reader-content { padding-top:30px; }
+.vault-app .vault-feed-reader-content .tt-document { max-width:100%; margin:0 auto; }
+.vault-app .vault-feed-reader-availability { margin:20px 0; color:var(--muted); font-size:13px; }
+.vault-app .vault-feed-reader>footer { display:flex; align-items:center; gap:22px; padding-top:20px; border-top:1px solid var(--line); }
+.vault-app .vault-feed-reader>footer button { background:var(--tt-accent); color:#fff; padding:9px 14px; }
+.vault-app .vault-feed-reader>footer a { color:var(--tt-accent); font-size:13px; }
 .vault-app .vault-feed-home .vault-feed-story p { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .vault-app .vault-feed-recommendations { padding:26px 0; }
 .vault-app .vault-feed-recommendations h2 { margin:0 0 5px; color:var(--ink); font-size:22px; }

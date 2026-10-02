@@ -88,6 +88,7 @@ try {
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "feedRead") result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
       entries: Array.from({ length: 5 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
+    else if (request.method === "feedEntry") result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: "A considered design headline", permalink: "https://example.com/story/1", externalUrl: null, authors: ["Editor"], publishedAt: "2026-10-01T00:00:00Z", updatedAt: null, availability: "full", bodyMarkdown: "A full in-app reading view for this story.", bodyText: "A full in-app reading view for this story.", excerpt: "A brief account of the story.", language: "en", attachments: [] } };
     else if (request.method === "publicationRead") {
       const story = files.get("Blog/Story.textpack");
       if (request.params.itemId === storyItemId && story) result = { itemId: storyItemId, revision: story.hash, published: false, publishedAt: null,
@@ -863,7 +864,7 @@ try {
   await publishing.getByRole("button", { name: "Edit topics in story" }).click();
   const topicInput = page.getByRole("textbox", { name: "Add story topic" });
   await topicInput.waitFor();
-  assert.equal(await topicInput.evaluate(element => document.activeElement === element), true);
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Add story topic");
   await topicInput.fill("Design");
   await page.locator(".tt-article-topics").getByRole("button", { name: "Add", exact: true }).click();
   await page.locator(".tt-article-topic-list").getByText("Design").waitFor();
@@ -915,10 +916,18 @@ try {
   await lightbox.getByRole("button", { name: "Close image" }).click();
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
-  await page.getByRole("link", { name: "A considered design headline" }).waitFor();
+  await page.getByRole("button", { name: "A considered design headline" }).waitFor();
   await page.locator(".vault-feed-thumb").first().waitFor();
   await page.locator(".vault-feed-lead").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
+  await page.getByRole("button", { name: "A considered design headline" }).click();
+  await page.getByRole("region", { name: "Feed story" }).getByText("A full in-app reading view for this story.").waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feed-reader-reference.png" });
+  await page.getByRole("button", { name: "Save to Bookmarks" }).click();
+  await page.getByRole("button", { name: "Saved to Bookmarks" }).waitFor();
+  const keptFeedBookmark = [...files.values()].find(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash);
+  assert.equal(JSON.parse(keptFeedBookmark.documentJSON).presentation.template.id, "texttext.bookmark");
+  await page.getByRole("button", { name: "Back to Feeds" }).click();
   await chooseFolder("Notes");
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
@@ -943,9 +952,9 @@ try {
   await page.getByRole("heading", { name: "Choose your sources" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-starter-reference.png" });
   await page.locator(".vault-feed-recommendations").getByRole("button", { name: "Follow" }).first().click();
-  await page.getByRole("link", { name: "A considered design headline" }).waitFor();
+  await page.getByRole("button", { name: "A considered design headline" }).waitFor();
   await page.getByRole("button", { name: "Technology", exact: true }).click();
-  await page.getByRole("link", { name: "A considered design headline" }).waitFor();
+  await page.getByRole("button", { name: "A considered design headline" }).waitFor();
   const followed = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://www.theverge.com/rss/index.xml");
   assert.ok(followed?.path.startsWith("Feeds/"));
   assert.deepEqual(JSON.parse(followed.documentJSON).content.tags, ["Technology"]);

@@ -110,7 +110,7 @@ function cleanAuthor(value: string): string { return value.trim().slice(0, 200);
  * feed refresh cannot alter this snapshot. */
 export async function createKeptFeedEntryPack(input: {
   feedURL: string; feedTitle: string; entry: NormalizedEntry; keptAt?: string;
-}): Promise<{ title: string; bytes: Uint8Array }> {
+}, destination: "article" | "bookmark" = "article"): Promise<{ title: string; bytes: Uint8Array }> {
   const feedURL = publicFeedURL(input.feedURL);
   const entry = input.entry;
   if (!entry || typeof entry.externalKey !== "string" || !entry.externalKey || entry.externalKey.length > 8 * 1024 * 1024 ||
@@ -120,7 +120,7 @@ export async function createKeptFeedEntryPack(input: {
   const sourceURL = optionalPublicURL(entry.permalink) ?? optionalPublicURL(entry.externalUrl);
   const title = String(entry.title || "").trim().slice(0, 1000) || sourceURL || "Untitled article";
   const feedTitle = input.feedTitle.trim().slice(0, 1000) || new URL(feedURL).hostname;
-  const selected = template("texttext.article");
+  const selected = template(destination === "bookmark" ? "texttext.bookmark" : "texttext.article");
   const document = emptyDocumentSnapshot({ id: selected.id, version: selected.version });
   document.content.title = title;
   document.content.body = entry.bodyMarkdown || String(entry.excerpt ?? "").slice(0, 2000) || sourceURL || "";

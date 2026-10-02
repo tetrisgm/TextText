@@ -49,6 +49,16 @@ describe("file-vault feeds", () => {
     expect(reopened.entries[reopened.prefix + "feed-entry.json"]).toEqual(pack.entries[pack.prefix + "feed-entry.json"]);
   });
 
+  it("saves a feed story as a bookmark TextPack for the reading library", async () => {
+    const kept = await createKeptFeedEntryPack({ feedURL: "https://publisher.example/feed.xml", feedTitle: "Publisher", entry }, "bookmark");
+    const pack = openPack(kept.bytes, "Bookmarks/A careful article.textpack", "new");
+    const document = readDocument(pack.file);
+    expect(document.presentation.template.id).toBe("texttext.bookmark");
+    expect(document.content.body).toBe(entry.bodyMarkdown);
+    expect(document.content.fields).toMatchObject({ sourceUrl: entry.permalink, texttextFeedEntry: "v1" });
+    expect(pack.entries[pack.prefix + "feed-entry.json"]).toBeTruthy();
+  });
+
   it("refuses credentialed endpoints and strips credentialed feed links from kept articles", async () => {
     for (const url of ["file:///etc/passwd", "https://user:pass@publisher.example/feed", "https://publisher.example/feed?api_key=secret"]) {
       expect(() => publicFeedURL(url)).toThrow();
