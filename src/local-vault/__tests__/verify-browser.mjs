@@ -1130,7 +1130,15 @@ try {
   await page.getByRole("textbox", { name: "Add note tag" }).fill("#Ideas");
   await page.getByRole("region", { name: "Note tags" }).getByRole("button", { name: "Add", exact: true }).click();
   await page.getByRole("region", { name: "Note tags" }).getByText("#Ideas").waitFor();
+  assert.ok(await page.evaluate(() => {
+    const card = document.querySelector('.tt-document-editor[data-template-id="texttext.note"]');
+    const tags = document.querySelector('.tt-note-tags');
+    return Boolean(card && tags && tags.getBoundingClientRect().bottom - card.getBoundingClientRect().top < 300);
+  }), "a short note should remain a compact card while editing");
   await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-note-editor-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Finish", exact: true }).click();
   await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").waitFor();
   await page.getByRole("region", { name: "Note card" }).getByText("#Ideas").waitFor();
