@@ -69,7 +69,7 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, registerFlush, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
+function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, registerFlush, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
   const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
@@ -84,7 +84,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   const missing = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [external, setExternal] = useState(initialDocument);
-  const [reading, setReading] = useState(() => Boolean(articleSource(initialDocument) ||
+  const [reading, setReading] = useState(() => !startEditing && Boolean(articleSource(initialDocument) ||
     templateExperience(initialTemplate) === "note" && !focusNewNote && !focusNewNoteTitle &&
     (initialDocument.content.title.trim() || initialDocument.content.body.trim()) ||
     templateExperience(initialTemplate) === "article" && !focusNewNoteTitle &&
@@ -503,6 +503,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const restoredLocationRoot = useRef("");
   const [locationReadyRoot, setLocationReadyRoot] = useState("");
   const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; root: string; itemId: string; origin: HTMLElement | null; focusPending: boolean; focusTitle?: boolean; awaitSharedMode: boolean } | null>(null);
+  const [noteEditPath, setNoteEditPath] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [destinationFolder, setDestinationFolder] = useState("");
@@ -1221,7 +1222,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />
           : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onTitleChange={updateSelectedTitle} onRemoved={() => closeRemoved(selected.path)}
-              focusNewNote={!busy && newNoteFocus?.file === selected && newNoteFocus.focusPending}
+              startEditing={noteEditPath === selected.path}
+              focusNewNote={!busy && (newNoteFocus?.file === selected && newNoteFocus.focusPending || noteEditPath === selected.path)}
               focusNewNoteTitle={Boolean(newNoteFocus?.file === selected && newNoteFocus.focusTitle)}
               focusNewNoteOrigin={newNoteFocus?.file === selected ? newNoteFocus.origin : undefined}
               onNewNoteFocusHandled={() => setNewNoteFocus(current => {
@@ -1238,13 +1240,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath}
+        onEditNote={canCreate ? (path) => void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true) : undefined}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}
         onRevealBookmark={(path) => void operate(async () => { setSelected(null); setPreferredBookmarkPath(path); setDestinationFolder("Bookmarks"); }, true)}
-        onOpen={(path) => void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)} /></div> : <div className="vault-empty">
+        onOpen={(path) => void operate(async () => { setNoteEditPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)} /></div> : <div className="vault-empty">
         <h2>{listing?.root ? "Your workspace" : "Open a workspace folder"}</h2>
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}

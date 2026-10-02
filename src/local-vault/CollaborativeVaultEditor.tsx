@@ -28,7 +28,7 @@ import { currentVaultWindowActive } from "./window-activity";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
-export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
+export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
   if (typeof value === "string") {
     let text = value as string;
@@ -46,7 +46,7 @@ function avatarTextColor(color: string): string {
 }
 
 /** The relay owns shared writes; this component never snapshot-autosaves them. */
-export function CollaborativeVaultEditor({ initial, root, config, registerFlush, onChanged, onTitleChange, onLocalFallback, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
+export function CollaborativeVaultEditor({ initial, root, config, registerFlush, onChanged, onTitleChange, onLocalFallback, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
   const file = useRef(initial);
   const [opened, setOpened] = useState(initial);
   const [snapshot, setSnapshot] = useState(() => readDocument(initial));
@@ -60,7 +60,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const [detail, setDetail] = useState("");
   const [canEdit, setCanEdit] = useState(false);
   const [generation, setGeneration] = useState(0);
-  const [reading, setReading] = useState(() => Boolean(articleSource(snapshot) ||
+  const [reading, setReading] = useState(() => !startEditing && Boolean(articleSource(snapshot) ||
     (["article", "note"].includes(templateExperience(readTemplate(initial, snapshot)) ?? "") && !focusNewNote && !focusNewNoteTitle &&
       (snapshot.content.title.trim() || snapshot.content.body.trim()))));
   useEffect(() => {

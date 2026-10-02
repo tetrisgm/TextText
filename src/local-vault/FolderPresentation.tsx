@@ -7,8 +7,8 @@ import { prepareTemplateProposal } from "./template-proposal";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { VaultDocumentGrid } from "./VaultDocumentGrid";
 
-export function FolderPresentation({ listing, folder, busy, editable = true, designOpen = false, onOpen, onRevealBookmark, onCreateNote, onQuickSaveBookmark, onCustomize, onCloseDesign, preferredBookmarkPath }: {
-  listing: VaultListing; folder: string; busy: boolean; editable?: boolean; onOpen: (path: string) => void; onRevealBookmark?: (path: string) => void; onCreateNote?: (pastedText?: string) => void; onQuickSaveBookmark?: (address: string) => Promise<void>; onCustomize?: (path: string) => void;
+export function FolderPresentation({ listing, folder, busy, editable = true, designOpen = false, onOpen, onEditNote, onRevealBookmark, onCreateNote, onQuickSaveBookmark, onCustomize, onCloseDesign, preferredBookmarkPath }: {
+  listing: VaultListing; folder: string; busy: boolean; editable?: boolean; onOpen: (path: string) => void; onEditNote?: (path: string) => void; onRevealBookmark?: (path: string) => void; onCreateNote?: (pastedText?: string) => void; onQuickSaveBookmark?: (address: string) => Promise<void>; onCustomize?: (path: string) => void;
   designOpen?: boolean; onCloseDesign?: () => void; preferredBookmarkPath?: string;
 }) {
   const [view, setView] = useState<FolderView | null>(null);
@@ -60,7 +60,7 @@ export function FolderPresentation({ listing, folder, busy, editable = true, des
     </div>}
     {designOpen && editable && draft && <p role="status">Previewing {draft.name}. Keeping this design changes only the folder’s design file.</p>}
     {error && <p role="alert">{error} Your files remain available below.</p>}
-    <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy || saving} onOpen={onOpen} onRevealBookmark={onRevealBookmark} onCreateNote={editable ? onCreateNote : undefined} onQuickSaveBookmark={editable ? onQuickSaveBookmark : undefined} preferredBookmarkPath={preferredBookmarkPath} folderTemplate={editable ? draft ?? view?.template : view?.template} excludedPath={view?.path}
+    <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy || saving} onOpen={onOpen} onEditNote={editable ? onEditNote : undefined} onRevealBookmark={onRevealBookmark} onCreateNote={editable ? onCreateNote : undefined} onQuickSaveBookmark={editable ? onQuickSaveBookmark : undefined} preferredBookmarkPath={preferredBookmarkPath} folderTemplate={editable ? draft ?? view?.template : view?.template} excludedPath={view?.path}
       emptyMessage={editable ? ({ Bookmarks: "Save a web address to start your reading library.", Gallery: "Add images to start your visual library.", Feeds: "Add a source to see its latest stories here.", Blog: "Write a story to start your publication.", Notes: "Create a note to start your card library." } as Record<string, string>)[folder] || "No files here yet. Choose a template to get started." : "No files in this folder."} />
   </section>;
 }

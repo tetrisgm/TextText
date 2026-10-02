@@ -1463,6 +1463,25 @@ try {
   await page.getByRole("combobox", { name: "Sort cards" }).selectOption("folder");
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   await page.screenshot({ path: "/tmp/texttext-note-grid-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForFunction(() => {
+    const title = [...document.querySelectorAll(".vault-note-card")].find(card => card.textContent?.includes("A concise card"))?.querySelector(".tt-text-heading");
+    return title && getComputedStyle(title).color === "rgb(32, 32, 32)";
+  });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.screenshot({ path: "/tmp/texttext-note-grid-light-reference.png" });
+  assert.ok(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).evaluate(card => {
+    const title = card.querySelector(".tt-text-heading");
+    const body = card.querySelector(".tt-prose");
+    const emphasis = card.querySelector(".tt-prose strong");
+    return title && body && emphasis && [title, body, emphasis].every(node => getComputedStyle(node).color === "rgb(32, 32, 32)");
+  }), "note card text should remain readable in light mode");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("button", { name: "Edit A concise card" }).click();
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
+  await page.screenshot({ path: "/tmp/texttext-note-direct-edit-reference.png" });
+  await page.getByRole("button", { name: "Back to Notes" }).click();
   await page.getByRole("button", { name: "Open A concise card" }).click();
   await page.getByRole("region", { name: "Note card" }).getByText("A concise card").waitFor();
   assert.equal(await page.getByRole("textbox", { name: "Document body" }).count(), 0);
