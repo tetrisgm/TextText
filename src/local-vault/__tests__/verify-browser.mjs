@@ -970,6 +970,14 @@ try {
   const bookmarkDetails = bookmarkReader.locator("details.vault-bookmark-inspector");
   const toggleBookmarkDetails = bookmarkDetails.locator("summary");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
+  assert.equal(await bookmarkReader.getByRole("button", { name: "Highlight selection" }).count(), 0);
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.vault-bookmark-reader .tt-text-title')).color === 'rgb(32, 32, 32)');
+  await page.screenshot({ path: "/tmp/texttext-bookmark-clean-reader-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.vault-bookmark-reader .tt-text-title')).color !== 'rgb(32, 32, 32)');
+  await page.screenshot({ path: "/tmp/texttext-bookmark-clean-reader-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
   await page.evaluate(() => {
     const root = document.querySelector('.vault-bookmark-reader .tt-document');
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -982,6 +990,7 @@ try {
     }
   });
   await bookmarkReader.getByRole('button', { name: 'Highlight selection' }).click();
+  await page.waitForFunction(() => document.querySelector('.vault-bookmark-reader details.vault-highlights')?.open === true);
   await bookmarkReader.getByRole('textbox', { name: 'Note about this highlight' }).pressSequentially('Keep this.');
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-reader .vault-highlights textarea')?.value === 'Keep this.');
   for (let attempt = 0; attempt < 50 && JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights?.[0]?.note !== 'Keep this.'; attempt++) await new Promise(resolve => setTimeout(resolve, 20));

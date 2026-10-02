@@ -283,7 +283,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       })}</section>}
       </div></details></header>}
       {error && <p role="alert" className="vault-bookmark-error">{error}</p>}
-      {document && template ? <ArticleReader document={document} template={template} update={previewOnly || busy ? undefined : updateReader} /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
+      {document && template ? <ArticleReader document={document} template={template} update={previewOnly || busy ? undefined : updateReader} compact /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
     </article>
   </div>;
 }
