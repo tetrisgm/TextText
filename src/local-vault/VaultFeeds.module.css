@@ -1,4 +1,4 @@
-.dialog { max-width: 720px; left: max(18px, calc((100vw - 720px) / 2)); right: auto; width: min(720px, calc(100vw - 36px)); }
+:global(.vault-app) .dialog.dialog { top: 12vh; bottom: auto; right: auto; left: max(18px, calc((100vw - 720px) / 2)); width: min(720px, calc(100vw - 36px)); max-width: 720px; max-height: min(76vh, 700px); height: auto; border: 1px solid var(--line); border-radius: 10px; }
 .header, .readerHeader, .entryHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .header h2, .readerHeader h2 { margin: 0 0 8px; }
 .header p { margin: 0 0 20px; color: var(--muted); }
@@ -10,6 +10,9 @@
 .formRow button:hover, .candidate button:hover, .entryHeading button:hover { background: var(--selection); }
 .candidates { margin-top: 28px; }
 .candidates h3 { font-size: 15px; margin: 0 0 10px; }
+.options { margin: 14px 0 18px; color: var(--muted); font-size: 13px; }
+.options summary { cursor: pointer; }
+.options > div { margin-top: 15px; }
 .candidate { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
 .candidate div { min-width: 0; }
 .candidate strong, .candidate span, .candidate small { display: block; overflow-wrap: anywhere; }

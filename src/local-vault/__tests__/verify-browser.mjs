@@ -88,6 +88,7 @@ try {
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
+    else if (request.method === "feedDiscover") result = { pageTitle: "Design Journal", detail: null, candidates: [{ url: "https://journal.example/feed.xml", title: "Design Journal", format: "rss", entryCount: 12, siteUrl: "https://journal.example", sampleTitles: [] }] };
     else if (request.method === "feedRead") { feedReadURLs.push(request.params.feedURL); result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
       entries: Array.from({ length: 5 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
     }
@@ -1136,6 +1137,21 @@ try {
   const followed = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://www.theverge.com/rss/index.xml");
   assert.ok(followed?.path.startsWith("Feeds/"));
   assert.deepEqual(JSON.parse(followed.documentJSON).content.tags, ["Technology"]);
+  await page.getByRole("button", { name: "Add source", exact: true }).click();
+  const addSource = page.getByRole("dialog", { name: "Subscribe to a feed" });
+  await addSource.getByRole("heading", { name: "Add a source" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-add-feed-source-reference.png" });
+  assert.equal(await addSource.locator("#feed-folder").count(), 0);
+  await addSource.getByRole("textbox", { name: "Website or feed address" }).fill("https://journal.example");
+  await addSource.getByRole("button", { name: "Find feeds" }).click();
+  await addSource.getByRole("heading", { name: "Choose a source" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feed-source-chooser-reference.png" });
+  await addSource.getByText("Where to keep this source").click();
+  await addSource.locator("#feed-topic").selectOption("Design");
+  await addSource.getByRole("button", { name: "Subscribe" }).click();
+  const discovered = [...files.values()].find(file => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://journal.example/feed.xml");
+  assert.ok(discovered?.path.startsWith("Feeds/"));
+  assert.deepEqual(JSON.parse(discovered.documentJSON).content.tags, ["Design"]);
   assert.deepEqual(failures, []);
   console.log("Bookmark reader, URL-first capture, story list, gallery viewer, and feed headlines passed.");
   console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");

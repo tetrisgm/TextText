@@ -54,13 +54,8 @@ export function FeedSubscribeDialog({ folder, folders, onClose, onSaved }: {
     finally { setBusy(false); }
   };
   return <section className={`vault-template-dialog ${styles.dialog}`} role="dialog" aria-modal="true" aria-label="Subscribe to a feed">
-    <header className={styles.header}><div><h2>Subscribe to a feed</h2><p>Save the subscription as a TextPack in a folder.</p></div><button disabled={busy} onClick={onClose}>Close</button></header>
+    <header className={styles.header}><div><h2>Add a source</h2><p>Follow a publisher or site to see its latest stories.</p></div><button disabled={busy} onClick={onClose}>Close</button></header>
     <form onSubmit={event => { event.preventDefault(); void discover(); }}>
-      <label htmlFor="feed-folder">Folder</label>
-      <input className={styles.folderInput} id="feed-folder" list="feed-folders" value={targetFolder} onChange={event => setTargetFolder(event.target.value)} placeholder="Workspace root" maxLength={500} disabled={busy} />
-      <datalist id="feed-folders">{folders.map(path => <option key={path} value={path} />)}</datalist>
-      <label htmlFor="feed-topic">Topic</label>
-      <select className={styles.folderInput} id="feed-topic" value={topic} onChange={event => setTopic(event.target.value)} disabled={busy}><option value="">No topic</option>{["Technology", "Science", "Design", "World", "Gaming", "Arts", "Business", "Health"].map(value => <option key={value} value={value}>{value}</option>)}</select>
       <label htmlFor="feed-address">Website or feed address</label>
       <div className={styles.formRow}><input id="feed-address" autoFocus type="text" inputMode="url" value={address} onChange={event => { setAddress(event.target.value); setDiscovery(null); }} placeholder="https://example.com" maxLength={4096} disabled={busy} required />
         <button type="submit" disabled={busy || !address.trim()}>{busy && !discovery ? "Finding…" : "Find feeds"}</button></div>
@@ -69,6 +64,7 @@ export function FeedSubscribeDialog({ folder, folders, onClose, onSaved }: {
     {discovery && <div className={styles.candidates}>
       <h3>{discovery.candidates.length ? "Choose a source" : "No feeds found"}</h3>
       {discovery.detail && <p>{discovery.detail}</p>}
+      {!!discovery.candidates.length && <details className={styles.options}><summary>Where to keep this source</summary><div><label htmlFor="feed-folder">Folder</label><input className={styles.folderInput} id="feed-folder" list="feed-folders" value={targetFolder} onChange={event => setTargetFolder(event.target.value)} placeholder="Feeds" maxLength={500} disabled={busy} /><datalist id="feed-folders">{folders.map(path => <option key={path} value={path} />)}</datalist><label htmlFor="feed-topic">Topic</label><select className={styles.folderInput} id="feed-topic" value={topic} onChange={event => setTopic(event.target.value)} disabled={busy}><option value="">No topic</option>{["Technology", "Science", "Design", "World", "Gaming", "Arts", "Business", "Health"].map(value => <option key={value} value={value}>{value}</option>)}</select></div></details>}
       {discovery.candidates.map(candidate => <div className={styles.candidate} key={candidate.url}>
         <div><strong>{candidate.title || new URL(candidate.url).hostname}</strong><span>{candidate.url}</span>
           <small>{candidate.format?.toUpperCase()} · {candidate.entryCount} {candidate.entryCount === 1 ? "entry" : "entries"}</small></div>
