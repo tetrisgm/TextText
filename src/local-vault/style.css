@@ -254,6 +254,12 @@
 .vault-app .vault-bookmark-tags>button { padding:4px 7px; border:1px solid var(--line); border-radius:5px; color:var(--ink); }
 .vault-app .vault-bookmark-tags form { display:flex; gap:5px; margin-left:3px; }
 .vault-app .vault-bookmark-tags input { width:90px; min-width:0; padding:4px 7px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); font:inherit; }
+.vault-app .vault-bookmark-note { max-width:720px; margin:20px auto 0; padding:0 32px 18px; border-bottom:1px solid var(--line); color:var(--ink); }
+.vault-app .vault-bookmark-note>div:first-child,.vault-app .vault-bookmark-note form>div { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.vault-app .vault-bookmark-note strong { font-size:12px; }
+.vault-app .vault-bookmark-note button { color:var(--tt-accent); font-size:12px; }
+.vault-app .vault-bookmark-note p { margin:10px 0 0; font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+.vault-app .vault-bookmark-note textarea { display:block; width:100%; min-height:90px; margin:10px 0; padding:10px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--ink); font:inherit; resize:vertical; }
 .vault-app .vault-bookmark-error { margin:12px 20px; color:var(--tt-destructive,#d70015); font-size:12px; }
 .vault-app .vault-bookmark-reader .vault-reading { max-width:800px; margin:auto; }
 .vault-app .vault-bookmark-reader .tt-document { --paper:#fff; --ink:#202020; --muted:#686868; --tt-measure:44rem; margin:auto; padding-top:30px; background:var(--surface); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }

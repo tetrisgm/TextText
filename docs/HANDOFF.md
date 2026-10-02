@@ -2,6 +2,8 @@
 
 ## Current work
 
+The Bookmarks reader now has an inline personal note above the saved article. Add, edit, and save write `texttextBookmarkNote` into the Bookmark TextPack with the existing revision-aware vault write; article body and tags stay separate. TypeScript and the browser contract passed, including saved field assertion; `/tmp/texttext-bookmark-note-reference.png` is the dark screenshot. No app release was run.
+
 Feeds now leads For You and Latest with the first available story image, then uses a five-row rhythm for later large images. Cross-publisher source names stay compact with the full list in the hover title. TypeScript and the local browser contract passed; visual checks are `/tmp/texttext-feeds-ranked-reference.png` and `/tmp/texttext-feeds-latest-reference.png`. Artifact parity is still open, and no app release was run.
 
 Blog's writing toolbar now labels its autosaved edit transition Done and moves Change look into the editor's More menu. The story title, subtitle, body, and Publish action remain visible. The local browser contract verifies the menu and title-to-subtitle keyboard path, and its light screenshot is `/tmp/texttext-new-story-editor-light-reference.png`. TypeScript and the full local browser flow passed; no app release was run.

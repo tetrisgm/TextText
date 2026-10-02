@@ -954,6 +954,13 @@ try {
   await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
+  await bookmarkReader.getByRole("button", { name: "Add note" }).click();
+  await bookmarkReader.getByRole("textbox", { name: "Personal note text" }).fill("Remember this argument for the reading list.");
+  await bookmarkReader.getByRole("button", { name: "Save note" }).click();
+  await bookmarkReader.getByRole("button", { name: "Edit note" }).waitFor();
+  await bookmarkReader.getByText("Remember this argument for the reading list.").waitFor();
+  assert.equal(JSON.parse(files.get("Bookmarks/Reading.textpack").documentJSON).content.fields.texttextBookmarkNote, "Remember this argument for the reading list.");
+  await page.screenshot({ path: "/tmp/texttext-bookmark-note-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.waitForFunction(() => {
     const title = document.querySelector('.vault-bookmark-reader .tt-text-title');

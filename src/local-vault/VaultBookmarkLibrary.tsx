@@ -108,6 +108,8 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [opened, setOpened] = useState<{ path: string; file: VaultFile; document: DocumentSnapshot; urls: string[] } | null>(null);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
+  const [editingNotePath, setEditingNotePath] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
   useEffect(() => {
     if (!current) return;
     let active = true;
@@ -136,6 +138,21 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const favorite = Boolean(document?.content.fields.texttextBookmarkFavorite);
   const readAt = typeof document?.content.fields.texttextBookmarkReadAt === "string" ? document.content.fields.texttextBookmarkReadAt : null;
   const archivedAt = typeof document?.content.fields.texttextBookmarkArchivedAt === "string" ? document.content.fields.texttextBookmarkArchivedAt : null;
+  const personalNote = typeof document?.content.fields.texttextBookmarkNote === "string" ? document.content.fields.texttextBookmarkNote : "";
+  const noteIsEditing = Boolean(current && editingNotePath === current.path);
+  const saveNote = async () => {
+    if (!opened || opened.path !== current?.path || updating || busy || previewOnly) return;
+    setUpdating(true); setError("");
+    try {
+      const canonical = readDocument(opened.file);
+      const nextFields = { ...canonical.content.fields, texttextBookmarkNote: noteDraft.trim() };
+      const updated = await vaultRequest<VaultFile>("write", writePayload(opened.file, { ...canonical, content: { ...canonical.content, fields: nextFields } }));
+      setOpened(previous => previous?.path === updated.path ? { ...previous, file: updated, document: { ...previous.document, content: { ...previous.document.content, fields: nextFields } } } : previous);
+      setEditingNotePath("");
+      window.dispatchEvent(new Event("texttext:vault-changed"));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Your note could not be saved."); }
+    finally { setUpdating(false); }
+  };
   const changeFlag = async (field: "texttextBookmarkFavorite" | "texttextBookmarkReadAt" | "texttextBookmarkArchivedAt") => {
     if (!opened || opened.path !== current?.path || updating || busy || previewOnly) return;
     setUpdating(true); setError("");
@@ -181,6 +198,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       {current && <header><div className="vault-bookmark-reader-navigation"><button aria-label="Previous bookmark" title="Previous bookmark" disabled={busy || currentIndex <= 0} onClick={() => setSelected(shown[currentIndex - 1].path)}>‹</button><button aria-label="Next bookmark" title="Next bookmark" disabled={busy || currentIndex >= shown.length - 1} onClick={() => setSelected(shown[currentIndex + 1].path)}>›</button></div><div className="vault-bookmark-reader-tabs"><span aria-current="page">Reader</span>{preview?.sourceURL && <a href={preview.sourceURL} target="_blank" rel="noopener noreferrer">Original ↗</a>}</div><div className="vault-bookmark-reader-actions"><button disabled={busy || previewOnly || updating || !document} aria-pressed={favorite} onClick={() => void changeFlag("texttextBookmarkFavorite")}>{favorite ? "★ Favorite" : "☆ Favorite"}</button><button disabled={busy || previewOnly || updating || !document} onClick={() => void changeFlag("texttextBookmarkReadAt")}>{readAt ? "Mark unread" : "Mark read"}</button><button disabled={busy || previewOnly || updating || !document} onClick={() => void changeFlag("texttextBookmarkArchivedAt")}>{archivedAt ? "Move to inbox" : "Archive"}</button><button disabled={busy || previewOnly} onClick={() => onOpen(current.path)}>Edit</button></div></header>}
       {error && <p role="alert" className="vault-bookmark-error">{error}</p>}
       {document && <div className="vault-bookmark-tags" aria-label="Bookmark tags"><span>Tags</span>{document.content.tags.map(tag => <button key={tag} type="button" disabled={busy || previewOnly || updating} aria-label={`Remove ${tag} tag`} onClick={() => void changeTags(document.content.tags.filter(value => value !== tag))}>#{tag} ×</button>)}<form onSubmit={event => { event.preventDefault(); const tag = tagDraft.trim().replace(/^#/, "").slice(0, 40); if (!tag || document.content.tags.some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return; void changeTags([...document.content.tags, tag]); setTagDraft(""); }}><input aria-label="Add bookmark tag" value={tagDraft} onChange={event => setTagDraft(event.target.value)} placeholder="Add tag" maxLength={41} disabled={busy || previewOnly || updating} /><button type="submit" disabled={busy || previewOnly || updating || !tagDraft.trim()}>Add</button></form></div>}
+      {document && <section className="vault-bookmark-note" aria-label="Personal note"><div><strong>My note</strong>{!noteIsEditing && !previewOnly && <button type="button" disabled={busy || updating} onClick={() => { setNoteDraft(personalNote); setEditingNotePath(current?.path ?? ""); }}>{personalNote ? "Edit note" : "Add note"}</button>}</div>{noteIsEditing ? <form onSubmit={event => { event.preventDefault(); void saveNote(); }}><textarea autoFocus aria-label="Personal note text" value={noteDraft} onChange={event => setNoteDraft(event.target.value)} maxLength={10000} disabled={busy || updating} placeholder="What do you want to remember?" /><div><button type="button" disabled={updating} onClick={() => setEditingNotePath("")}>Cancel</button><button type="submit" disabled={busy || updating || noteDraft.trim() === personalNote}>{updating ? "Saving…" : "Save note"}</button></div></form> : personalNote && <p>{personalNote}</p>}</section>}
       {document && template ? <ArticleReader document={document} template={template} /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
     </article>
   </div>;
