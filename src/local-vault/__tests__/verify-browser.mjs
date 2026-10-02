@@ -1539,14 +1539,21 @@ try {
   await chooseFolder("Feeds");
   await page.getByRole("heading", { name: "Personalize your feed" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-starter-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-feeds-starter-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   const interests = page.getByRole("group", { name: "News interests" });
-  assert.equal(await interests.getByRole("button").count(), 10);
-  await interests.getByRole("button", { name: "Tech", exact: true }).click();
-  await interests.getByRole("button", { name: /Design/ }).click();
-  await page.getByRole("status").filter({ hasText: "2 topics selected" }).waitFor();
-  await page.getByRole("button", { name: "Continue with 2 topics" }).click();
+  assert.equal(await interests.getByRole("button").count(), 21);
+  await interests.getByRole("heading", { name: "Most popular" }).waitFor();
+  const chosenTopics = ["Tech", "Design", "AI", "Startups", "Programming", "Science", "Space", "Architecture", "World", "Gaming"];
+  for (const [index, topic] of chosenTopics.entries()) {
+    await interests.getByRole("button", { name: topic, exact: true }).click();
+    if (index === 1) assert.ok(await page.getByRole("button", { name: "Continue with 2 topics" }).isDisabled());
+  }
+  await page.getByRole("status").filter({ hasText: "10 of 10 topics selected" }).waitFor();
+  await page.getByRole("button", { name: "Continue with 10 topics" }).click();
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
-  assert.equal([...files.values()].filter(file => file.path.startsWith("Feeds/")).length, 3);
+  assert.equal([...files.values()].filter(file => file.path.startsWith("Feeds/")).length, 16);
   await page.getByRole("button", { name: "Tech", exact: true }).click();
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
   const followed = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://www.theverge.com/rss/index.xml");

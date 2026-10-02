@@ -236,6 +236,8 @@
 .vault-app .vault-feed-recommendations { padding:26px 0; }
 .vault-app .vault-feed-recommendations h2 { margin:0 0 5px; color:var(--ink); font-size:26px; }
 .vault-app .vault-feed-recommendations>p { margin:0 0 19px; color:var(--muted); font-size:13px; line-height:1.5; }
+.vault-app .vault-feed-interest-group { margin:20px 0 0; }
+.vault-app .vault-feed-interest-group h3 { margin:0 0 10px; color:var(--muted); font-size:12px; font-weight:650; }
 .vault-app .vault-feed-interests { display:flex; flex-wrap:wrap; gap:9px; }
 .vault-app .vault-feed-interests button { display:inline-flex; align-items:center; min-height:42px; padding:9px 15px; border:1px solid var(--line); border-radius:22px; background:var(--surface); }
 .vault-app .vault-feed-interests button[aria-pressed=true] { border-color:var(--tt-accent); background:var(--selection); }

@@ -33,8 +33,25 @@ const RECOMMENDED = [
   { title: "NPR: News", topic: "World", feedURL: "https://feeds.npr.org/1001/rss.xml", siteUrl: "https://www.npr.org" },
   { title: "Polygon", topic: "Gaming", feedURL: "https://www.polygon.com/rss/index.xml", siteUrl: "https://www.polygon.com" },
   { title: "Rock Paper Shotgun", topic: "Gaming", feedURL: "https://www.rockpapershotgun.com/feed", siteUrl: "https://www.rockpapershotgun.com" },
+  { title: "BBC News: U.S. & Canada", topic: "U.S.", feedURL: "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml", siteUrl: "https://www.bbc.com/news/world/us_and_canada" },
+  { title: "BBC News: Business", topic: "Business", feedURL: "https://feeds.bbci.co.uk/news/business/rss.xml", siteUrl: "https://www.bbc.com/news/business" },
+  { title: "BBC News: Health", topic: "Health", feedURL: "https://feeds.bbci.co.uk/news/health/rss.xml", siteUrl: "https://www.bbc.com/news/health" },
+  { title: "BBC News: Entertainment", topic: "Entertainment", feedURL: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", siteUrl: "https://www.bbc.com/news/entertainment_and_arts" },
+  { title: "The Guardian: Politics", topic: "Politics", feedURL: "https://www.theguardian.com/politics/rss", siteUrl: "https://www.theguardian.com/politics" },
+  { title: "BBC Sport", topic: "Sports", feedURL: "https://feeds.bbci.co.uk/sport/rss.xml", siteUrl: "https://www.bbc.com/sport" },
+  { title: "The Guardian: Environment", topic: "Environment", feedURL: "https://www.theguardian.com/environment/rss", siteUrl: "https://www.theguardian.com/environment" },
+  { title: "The Guardian: Culture", topic: "Culture", feedURL: "https://www.theguardian.com/culture/rss", siteUrl: "https://www.theguardian.com/culture" },
+  { title: "Eater", topic: "Food", feedURL: "https://www.eater.com/rss/index.xml", siteUrl: "https://www.eater.com" },
+  { title: "The Guardian: Travel", topic: "Travel", feedURL: "https://www.theguardian.com/travel/rss", siteUrl: "https://www.theguardian.com/travel" },
+  { title: "Pitchfork", topic: "Music", feedURL: "https://pitchfork.com/rss/news/", siteUrl: "https://pitchfork.com" },
 ] as const;
-const INTERESTS = [...new Set(RECOMMENDED.map(source => source.topic))];
+const INTEREST_GROUPS = [
+  { title: "Most popular", topics: ["Tech", "World", "Business", "Science", "Sports"] },
+  { title: "Technology", topics: ["AI", "Startups", "Programming", "Gaming", "Space"] },
+  { title: "Lifestyle", topics: ["Health", "Food", "Travel", "Design", "Architecture"] },
+  { title: "Culture and society", topics: ["Entertainment", "Culture", "Music", "U.S.", "Politics", "Environment"] },
+] as const;
+const MIN_INTERESTS = 10;
 
 function age(value: string): string {
   const elapsed = Math.max(0, Date.now() - Date.parse(value));
@@ -174,7 +191,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     </button>;
   };
   const followInterests = async () => {
-    if (!canAdd || following || !interests.size) return;
+    if (!canAdd || following || interests.size < MIN_INTERESTS) return;
     const chosen = RECOMMENDED.filter(source => interests.has(source.topic) && !sourceRows.some(row => row.feedURL === source.feedURL));
     setFollowing("selected interests"); setFollowError("");
     let added = 0;
@@ -187,14 +204,14 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     } catch (reason) { setFollowError(`${added} of ${chosen.length} sources added. ${reason instanceof Error ? reason.message : "A source could not be added."}`); }
     finally { if (added) window.dispatchEvent(new Event("texttext:vault-changed")); setFollowing(""); }
   };
-  const recommendations = <div className="vault-feed-recommendations"><h2>Personalize your feed</h2><p>Choose the topics you want to follow. You can add individual sources later.</p>
-    <div className="vault-feed-interests" role="group" aria-label="News interests">{INTERESTS.map(topic => <button key={topic} type="button" aria-pressed={interests.has(topic)} disabled={!canAdd || Boolean(following)} onClick={() => setInterests(current => {
+  const recommendations = <div className="vault-feed-recommendations"><h2>Personalize your feed</h2><p>Choose at least ten topics. You can add individual sources later.</p>
+    <div role="group" aria-label="News interests">{INTEREST_GROUPS.map(group => <section className="vault-feed-interest-group" key={group.title}><h3>{group.title}</h3><div className="vault-feed-interests">{group.topics.map(topic => <button key={topic} type="button" aria-pressed={interests.has(topic)} disabled={!canAdd || Boolean(following)} onClick={() => setInterests(current => {
       const next = new Set(current);
       if (next.has(topic)) next.delete(topic); else next.add(topic);
       return next;
-    })}><strong>{topic}</strong></button>)}</div>
-    <p className="vault-feed-interest-count" role="status">{interests.size} {interests.size === 1 ? "topic" : "topics"} selected</p>
-    <button type="button" className="vault-feed-continue" disabled={!canAdd || !interests.size || Boolean(following)} onClick={() => void followInterests()}>{following ? "Adding sources…" : `Continue with ${interests.size} ${interests.size === 1 ? "topic" : "topics"}`}</button>
+    })}><strong>{topic}</strong></button>)}</div></section>)}</div>
+    <p className="vault-feed-interest-count" role="status">{interests.size} of {MIN_INTERESTS} topics selected</p>
+    <button type="button" className="vault-feed-continue" disabled={!canAdd || interests.size < MIN_INTERESTS || Boolean(following)} onClick={() => void followInterests()}>{following ? "Adding sources…" : `Continue with ${interests.size} ${interests.size === 1 ? "topic" : "topics"}`}</button>
     {followError && <p role="alert">{followError}</p>}
   </div>;
   const query = search.trim().toLocaleLowerCase();
