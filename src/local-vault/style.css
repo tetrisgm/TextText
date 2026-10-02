@@ -368,6 +368,8 @@
 .vault-app .vault-editor-actions > .workspace-action-bar-slot.is-right { display: contents; }
 .vault-app .vault-context-actions .post-top-action-bar { position: static !important; inset: auto !important; z-index: auto; max-width: none; }
 .vault-app .vault-context-actions .post-action-toolbar { width: auto; min-height: 0; margin: 0; padding: 0; gap: 3px; flex-wrap: nowrap; border: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+.vault-app .vault-context-actions .tt-save-state:not(.is-error):not(.is-offline):not(.is-unconfirmed) { display:none; }
+.vault-app .vault-context-actions .tt-save-state:is(.is-error,.is-offline,.is-unconfirmed) { position:static; max-width:150px; min-height:0; padding:0 0 0 7px; border:0; border-left:1px solid var(--line); border-radius:0; background:transparent; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vault-app .vault-primary-action { background: var(--tt-accent); color: var(--surface); font-weight: 650; }
 .vault-app .vault-primary-action:hover { filter: brightness(.94); background: var(--tt-accent); }
 .vault-app .vault-context-menu { position: relative; }

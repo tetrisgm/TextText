@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog's draft header now keeps Publish and Done prominent while putting Share and Comments in More (they remain in Command K). Routine save labels no longer crowd the local toolbar; error/offline/unconfirmed states remain visible. TypeScript and the local browser flow passed; the checked light screenshot is `/tmp/texttext-new-story-editor-light-reference.png`. No app release was run.
+
 Notes quick creation now starts in the card body whether invoked by the top New note button, the grid's Start typing card, or a first printable key while browsing Notes. The keyboard path seeds that first character in the Note TextPack before opening the editor, so it is not lost. The title remains editable. TypeScript and the local browser contract passed; no app release was run.
 
 The Bookmarks reader now has an inline personal note above the saved article. Add, edit, and save write `texttextBookmarkNote` into the Bookmark TextPack with the existing revision-aware vault write; article body and tags stay separate. TypeScript and the browser contract passed, including saved field assertion; `/tmp/texttext-bookmark-note-reference.png` is the dark screenshot. No app release was run.

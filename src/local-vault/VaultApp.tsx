@@ -1029,9 +1029,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             <div className="workspace-action-bar-slot is-right" />
           </div>}
           {selected && allowFolderPicker && <LocalParticipantsRow postId={selected.path} />}
-          {selected && canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
+          {selected && !selectedStory && canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
             disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
-          {canShare && sharingWorkspaceId && (selected || destinationFolder.trim()) && <button disabled={busy} onClick={shareCurrent}>Share</button>}
+          {canShare && sharingWorkspaceId && (selected || destinationFolder.trim()) && !selectedStory && <button disabled={busy} onClick={shareCurrent}>Share</button>}
           <details ref={moreActions} className="vault-context-menu" onKeyDown={(event) => {
             if (event.key !== "Escape" || !event.currentTarget.open) return;
             event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; moreActionsSummary.current?.focus();
@@ -1039,6 +1039,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             <summary ref={moreActionsSummary} aria-label="More actions">More</summary>
             <div className="vault-context-menu-items">
               {selected ? <>
+                {selectedStory && canOpenComments && <button disabled={busy} onClick={() => { closeMoreActions(); setCommentsOpen(value => !value); }}>{commentsOpen ? "Hide comments" : "Comments"}</button>}
+                {selectedStory && canShare && sharingWorkspaceId && <button disabled={busy} onClick={() => { closeMoreActions(); shareCurrent(); }}>Share</button>}
                 {canPublish && sharingWorkspaceId && selectedItemId && !selectedStory && <button disabled={busy} onClick={() => { closeMoreActions(); openPublish(); }}>Publish</button>}
                 {selectedStory && canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); void createForFolder("Blog", "Blog post"); }}>Write another story</button>}
                 {canManageFiles && <button disabled={busy} onClick={() => { closeMoreActions(); setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}

@@ -1053,10 +1053,17 @@ try {
   await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Subtitle");
   await page.getByRole("textbox", { name: "Subtitle" }).fill("A short line beneath the title");
+  assert.equal(await page.locator(".vault-context-actions > button").filter({ hasText: /^(Comments|Share)$/ }).count(), 0);
+  await page.locator(".vault-context-menu > summary").click();
+  await page.locator(".vault-context-menu-items").getByRole("button", { name: "Comments", exact: true }).waitFor();
+  await page.locator(".vault-context-menu-items").getByRole("button", { name: "Share", exact: true }).waitFor();
+  await page.locator(".vault-context-menu > summary").click();
+  await page.mouse.move(400, 500);
   await page.screenshot({ path: "/tmp/texttext-new-story-editor-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-new-story-editor-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("textbox", { name: "Subtitle" }).focus();
   await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   const storyBody = page.getByRole("textbox", { name: "Document body" });
