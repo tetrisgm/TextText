@@ -913,8 +913,12 @@ try {
   files.set("Gallery/Single.textpack", { ...sample("Gallery/Single.textpack", "gallery", "One photograph", "A separate image.", {}, [
     { id: "third", kind: "image", src: "assets/third.png", alt: "Third photograph" },
   ]), assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
-  files.set("Feeds/Design.textpack", sample("Feeds/Design.textpack", "bookmark", "Design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.com/feed.xml" }));
-  files.set("Feeds/Design second.textpack", sample("Feeds/Design second.textpack", "bookmark", "Second design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.org/feed.xml" }));
+  for (const [path, title, feedUrl] of [["Feeds/Design.textpack", "Design feed", "https://example.com/feed.xml"], ["Feeds/Design second.textpack", "Second design feed", "https://example.org/feed.xml"]]) {
+    const source = sample(path, "bookmark", title, "", { texttextFeedSubscription: "v1", feedUrl });
+    const document = JSON.parse(source.documentJSON);
+    source.documentJSON = JSON.stringify({ ...document, content: { ...document.content, tags: ["Design"] } });
+    files.set(path, source);
+  }
   for (let index = 1; index <= 23; index++) files.set(`Feeds/Extra ${index}.textpack`, sample(`Feeds/Extra ${index}.textpack`, "bookmark", `Extra feed ${index}`, "", { texttextFeedSubscription: "v1", feedUrl: `https://example.net/feed-${index}.xml` }));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
@@ -1265,6 +1269,11 @@ try {
   assert.equal(JSON.parse(measured.documentJSON).content.body, "A measured portrait.");
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
+  const newsTopics = page.getByRole("navigation", { name: "News topics" });
+  await newsTopics.getByRole("button", { name: "Design", exact: true }).click();
+  await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
+  assert.equal(await newsTopics.getByRole("button", { name: "Design", exact: true }).getAttribute("aria-pressed"), "true");
+  await newsTopics.getByRole("button", { name: "For You", exact: true }).click();
   assert.equal(await page.getByRole("status").filter({ hasText: "Imported 1 image." }).count(), 0);
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
   await page.locator(".vault-feed-thumb").first().waitFor();
