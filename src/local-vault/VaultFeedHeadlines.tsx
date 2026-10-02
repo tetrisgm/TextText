@@ -46,6 +46,9 @@ function storyDate(value: string | null): string | undefined {
   if (!value || !Number.isFinite(Date.parse(value))) return undefined;
   return new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 }
+function sourceSummary(sources: string[]): string {
+  return sources.length > 2 ? `${sources.slice(0, 2).join(", ")} +${sources.length - 2}` : sources.join(", ");
+}
 
 /** The index is read only and transient. Opening Feeds reads each source once;
  * a timer never polls, and stories become TextPacks only when a person keeps one. */
@@ -201,6 +204,8 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const rankedCoverage = rankFeedClusters(coverage, Date.now());
   const visibleCoverage = coverage.filter(group => !query || group.headline.toLocaleLowerCase().includes(query) || group.members.some(matchesStory));
   const visibleRankedCoverage = rankedCoverage.filter(group => !query || group.headline.toLocaleLowerCase().includes(query) || group.members.some(matchesStory));
+  const rankedLeadIndex = visibleRankedCoverage.findIndex(group => Boolean(group.imageUrl));
+  const latestLeadIndex = visibleStories.findIndex(story => Boolean(story.imageUrl));
   const activeGroup: FeedCluster | undefined = coverage.find(group => group.id === activeGroupId);
   const activeFull = full?.key === activeKey ? full.value : null;
   const readerDocument = activeFull && storyTemplate ? (() => {
@@ -240,10 +245,10 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       {!loading && !visibleRankedCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
       <ol>{visibleRankedCoverage.map((group, index) => {
         const story = group.members[0];
-        const featured = Boolean(group.imageUrl && index % 5 === 4);
+        const featured = Boolean(group.imageUrl && rankedLeadIndex >= 0 && (index === rankedLeadIndex || (index > rankedLeadIndex && (index - rankedLeadIndex) % 5 === 0)));
         return <li className={featured ? "vault-feed-featured" : ""} key={group.id}>
           {featured && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={group.imageUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = "none"; }} />}
-          <div className="vault-feed-story"><div><span className="vault-feed-publisher"><span aria-hidden="true">{story.source.slice(0, 1).toUpperCase()}</span>{group.sources.join(", ")}{story.publishedAt && <time dateTime={story.publishedAt}>{age(story.publishedAt)}</time>}</span>
+          <div className="vault-feed-story"><div><span className="vault-feed-publisher" title={group.sources.join(", ")}><span aria-hidden="true">{story.source.slice(0, 1).toUpperCase()}</span><span className="vault-feed-source-name">{sourceSummary(group.sources)}</span>{story.publishedAt && <time dateTime={story.publishedAt}>{age(story.publishedAt)}</time>}</span>
             <button type="button" className="vault-feed-headline" onClick={() => group.members.length > 1 ? setActiveGroupId(group.id) : setActive(story)}>{group.headline}</button>
             {group.members.length > 1 ? <p>{group.members.length} articles covering this story</p> : story.excerpt && <p>{story.excerpt}</p>}</div>
             {group.imageUrl && !featured && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={group.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = "none"; }} />}
@@ -255,15 +260,15 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       {loading && <p role="status">Reading your sources…</p>}
       {error && <p role="status">{error}</p>}
       {!loading && !visibleStories.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
-      <ol>{visibleStories.map((story, index) => <li className={story.imageUrl && index % 5 === 4 ? "vault-feed-featured" : ""} key={`${story.feedURL}:${story.externalKey}`}>
-        {story.imageUrl && index % 5 === 4 && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+      <ol>{visibleStories.map((story, index) => <li className={story.imageUrl && latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0)) ? "vault-feed-featured" : ""} key={`${story.feedURL}:${story.externalKey}`}>
+        {story.imageUrl && latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0)) && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         <div className="vault-feed-story">
         <div>
         <span className="vault-feed-publisher"><span aria-hidden="true">{story.source.slice(0, 1).toUpperCase()}</span>{story.source}{story.publishedAt && <time dateTime={story.publishedAt}>{age(story.publishedAt)}</time>}</span>
         <button type="button" className="vault-feed-headline" onClick={() => setActive(story)}>{story.title}</button>
         {story.excerpt && <p>{story.excerpt}</p>}
         </div>
-        {story.imageUrl && index % 5 !== 4 && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+        {story.imageUrl && !(latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0))) && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         </div>
         {readLaterAction(story)}
       </li>)}</ol>

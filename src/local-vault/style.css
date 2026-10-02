@@ -181,8 +181,9 @@
 .vault-app .vault-feed-featured .vault-feed-story { display:block; }
 .vault-app .vault-feed-home .vault-feed-featured .vault-feed-story :is(a,strong) { font-size:19px; }
 .vault-app .vault-feed-publisher { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; }
-.vault-app .vault-feed-publisher>span { display:grid; place-items:center; width:18px; height:18px; border-radius:4px; background:var(--sidebar); color:var(--ink); font-weight:700; }
-.vault-app .vault-feed-publisher time { margin-left:2px; }
+.vault-app .vault-feed-publisher>span:first-child:not(.vault-feed-source-name) { display:grid; flex:none; place-items:center; width:18px; height:18px; border-radius:4px; background:var(--sidebar); color:var(--ink); font-weight:700; }
+.vault-app .vault-feed-source-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vault-app .vault-feed-publisher time { flex:none; margin-left:auto; }
 .vault-app .vault-feed-home .vault-feed-story :is(a,strong) { display:block; max-width:55ch; margin-top:8px; color:var(--ink); font-size:17px; line-height:1.35; font-weight:650; text-decoration:none; }
 .vault-app .vault-feed-home .vault-feed-story a:hover { text-decoration:underline; }
 .vault-app .vault-feed-home .vault-feed-headline { display:block; max-width:55ch; width:100%; margin:8px 0 0; padding:0; border:0; border-radius:0; background:transparent; color:var(--ink); font-size:17px; line-height:1.35; font-weight:650; text-align:left; }
