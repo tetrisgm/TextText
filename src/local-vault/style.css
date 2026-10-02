@@ -195,6 +195,8 @@
 .vault-app .vault-bookmark-toolbar [role=group] { display:flex; gap:4px; }
 .vault-app .vault-bookmark-toolbar [role=group] button { padding:5px 9px; border-radius:6px; color:var(--muted); font-size:12px; }
 .vault-app .vault-bookmark-toolbar [role=group] button[aria-pressed=true] { background:var(--selection); color:var(--ink); font-weight:650; }
+.vault-app .vault-bookmark-toolbar .vault-bookmark-tag-filters { overflow:auto; white-space:nowrap; border-top:1px solid var(--line); padding-top:7px; }
+.vault-app .vault-bookmark-toolbar .vault-bookmark-tag-filters button { white-space:nowrap; }
 .vault-app .vault-bookmark-index-status { margin:8px 10px; color:var(--muted); font-size:12px; line-height:1.4; }
 .vault-app .vault-bookmark-pages { display:flex; align-items:center; justify-content:space-between; padding:10px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
 .vault-app .vault-bookmark-day { padding:8px 10px 12px; color:var(--muted); font-size:12px; }
@@ -210,6 +212,10 @@
 .vault-app .vault-bookmark-reader>header>div { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
 .vault-app .vault-bookmark-reader>header button[aria-pressed=true] { color:#c69a3d; }
 .vault-app .vault-bookmark-reader>header a { padding:7px 9px; color:var(--ink); text-decoration:none; }
+.vault-app .vault-bookmark-tags { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:9px 18px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
+.vault-app .vault-bookmark-tags>button { padding:4px 7px; border:1px solid var(--line); border-radius:5px; color:var(--ink); }
+.vault-app .vault-bookmark-tags form { display:flex; gap:5px; margin-left:3px; }
+.vault-app .vault-bookmark-tags input { width:90px; min-width:0; padding:4px 7px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); font:inherit; }
 .vault-app .vault-bookmark-error { margin:12px 20px; color:var(--tt-destructive,#d70015); font-size:12px; }
 .vault-app .vault-bookmark-reader .vault-reading { max-width:800px; margin:auto; }
 .vault-app .vault-bookmark-reader .tt-document { margin:auto; padding-top:30px; }
