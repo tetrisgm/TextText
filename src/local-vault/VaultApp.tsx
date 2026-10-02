@@ -1152,6 +1152,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath}
+        onCreateNote={() => void createForFolder("Notes", "Note")}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}

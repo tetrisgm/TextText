@@ -1189,10 +1189,11 @@ try {
   await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Open Extra feed 23" }).waitFor();
   await chooseFolder("Notes");
+  await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
   await page.screenshot({ path: "/tmp/texttext-note-grid-reference.png" });
-  await page.getByRole("button", { name: "New note", exact: true }).click();
+  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
   await page.getByRole("textbox", { name: "Title" }).fill("Thought for later");
   await page.locator(".vault-context-header h2").getByText("Thought for later", { exact: true }).waitFor();
