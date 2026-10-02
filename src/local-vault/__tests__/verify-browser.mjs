@@ -521,6 +521,11 @@ try {
   await commandDialog.getByRole("option", { name: "Choose folder design", exact: true }).waitFor();
   await commandDialog.getByRole("option", { name: "Trash and recovery", exact: true }).waitFor();
   await commandDialog.getByRole("option", { name: "Customize this folder", exact: true }).waitFor();
+  assert.ok(await commandDialog.locator(".vault-command-icon").count() >= 5);
+  const commandBox = await commandDialog.boundingBox();
+  const viewport = page.viewportSize();
+  assert.ok(commandBox && viewport && Math.abs(commandBox.y + commandBox.height / 2 - viewport.height / 2) < 35);
+  await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
   await page.getByRole("combobox", { name: "Search workspace" }).fill("Their conflicting version");
   await commandDialog.getByRole("option", { name: /Notes\/Offline.textpack/ }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();

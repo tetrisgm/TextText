@@ -6,6 +6,13 @@ import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 type SearchPage = { items: { path: string; title: string; snippet: string }[]; truncated?: boolean; skippedCount?: number };
 export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[] };
 
+const actionIcons: Record<string, string> = {
+  "new-note": "✎", "write-story": "▤", "save-bookmark": "◇", capture: "↗",
+  "new-from-template": "▧", "import-images": "▣", "subscribe-feed": "◌",
+  "import-file": "⇧", "folder-design": "▦", customize: "◈", "add-agent": "✧",
+  "trash-recovery": "↺", "open-folder": "▱",
+};
+
 export function filterVaultSearchActions(actions: readonly VaultSearchAction[], query: string): VaultSearchAction[] {
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [...actions];
@@ -73,12 +80,12 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     {namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
     <div id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3>Actions</h3><div>{visibleActions.map((action, index) => <button
       id={`action:${action.id}`} key={action.id} role="option" aria-selected={selectedIndex === index} aria-label={action.label} disabled={acting} onMouseEnter={() => setActiveIndex(index)} onClick={() => runAction(action)}>
-      <strong>{action.label}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
+      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || "·"}</i><strong>{action.label}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
     </button>)}</div></section>}
     {busy && <p role="status">Searching…</p>}{error && <p role="alert">{error}</p>}
     {!busy && query.trim() && !result.items.length && !visibleActions.length && !error && <p>No matching files or actions.</p>}
     {!!result.skippedCount && <p>{result.skippedCount} files could not be searched.</p>}
     {result.truncated && <p>Search reached its size limit. Try more specific words.</p>}
-    <div>{result.items.map((item, index) => <button id={`file:${item.path}`} key={item.path} role="option" aria-selected={selectedIndex === visibleActions.length + index} onMouseEnter={() => setActiveIndex(visibleActions.length + index)} onClick={() => { void onOpen(item.path).then(onClose).catch((error: Error) => setError(error.message)); }}><strong>{item.title}</strong><small>{item.path}</small><span>{item.snippet}</span></button>)}</div></div>
+    <div>{result.items.map((item, index) => <button id={`file:${item.path}`} key={item.path} role="option" aria-selected={selectedIndex === visibleActions.length + index} onMouseEnter={() => setActiveIndex(visibleActions.length + index)} onClick={() => { void onOpen(item.path).then(onClose).catch((error: Error) => setError(error.message)); }}><i className="vault-command-icon" aria-hidden="true">▤</i><strong>{item.title}</strong><small>{item.path}</small><span>{item.snippet}</span></button>)}</div></div>
   </section></div>;
 }
