@@ -129,6 +129,23 @@
 .vault-app .vault-feed-home>nav { display:flex; gap:23px; margin-bottom:10px; border-bottom:1px solid var(--line); overflow-x:auto; white-space:nowrap; }
 .vault-app .vault-feed-home>nav button { padding:7px 0 12px; border-radius:0; color:var(--muted); font-weight:600; }
 .vault-app .vault-feed-home>nav button[aria-pressed=true] { color:var(--ink); font-weight:750; }
+.vault-app .vault-feed-headlines-title { margin:22px 0 8px; color:var(--ink); font-size:26px; }
+.vault-app .vault-feed-coverage-list { margin:0; padding:0; list-style:none; }
+.vault-app .vault-feed-coverage-list li { border-bottom:1px solid var(--line); }
+.vault-app .vault-feed-coverage-list li>button { display:flex; align-items:center; gap:16px; width:100%; padding:15px 0; border-radius:0; }
+.vault-app .vault-feed-coverage-list li>button>span { display:flex; flex:1; min-width:0; flex-direction:column; gap:8px; }
+.vault-app .vault-feed-coverage-list strong { font-size:17px; line-height:1.35; }
+.vault-app .vault-feed-coverage-list small { color:var(--muted); font-size:12px; }
+.vault-app .vault-feed-coverage-list img { flex:none; width:72px; height:72px; border-radius:8px; object-fit:cover; }
+.vault-app .vault-feed-coverage { max-width:720px; margin:0 auto; padding:24px 0 80px; }
+.vault-app .vault-feed-coverage>header button { padding:0; color:var(--tt-accent); }
+.vault-app .vault-feed-coverage>h1 { max-width:24ch; margin:36px auto 12px; color:var(--ink); font-size:34px; line-height:1.2; text-align:center; }
+.vault-app .vault-feed-coverage>p { color:var(--muted); font-size:13px; text-align:center; }
+.vault-app .vault-feed-coverage-image { display:block; width:100%; aspect-ratio:16/9; margin:28px 0; border-radius:8px; object-fit:cover; }
+.vault-app .vault-feed-coverage>ol { margin:28px 0 0; padding:0; list-style:none; }
+.vault-app .vault-feed-coverage>ol li { padding:18px 0; border-top:1px solid var(--line); }
+.vault-app .vault-feed-coverage>ol li>button { display:block; max-width:55ch; padding:8px 0 0; color:var(--ink); font-size:17px; font-weight:650; line-height:1.35; }
+.vault-app .vault-feed-coverage>ol li>p { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.45; }
 .vault-app .vault-feed-home>ol { margin:0; padding:0; list-style:none; }
 .vault-app .vault-feed-home li { padding:16px 0; border-bottom:1px solid var(--line); }
 .vault-app .vault-feed-story { display:flex; align-items:center; justify-content:space-between; gap:16px; }

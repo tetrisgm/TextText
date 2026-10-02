@@ -813,6 +813,7 @@ try {
     { id: "third", kind: "image", src: "assets/third.png", alt: "Third photograph" },
   ]), assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
   files.set("Feeds/Design.textpack", sample("Feeds/Design.textpack", "bookmark", "Design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.com/feed.xml" }));
+  files.set("Feeds/Design second.textpack", sample("Feeds/Design second.textpack", "bookmark", "Second design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.org/feed.xml" }));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
   await page.getByRole("button", { name: "Show folders" }).click();
@@ -916,11 +917,18 @@ try {
   await lightbox.getByRole("button", { name: "Close image" }).click();
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
-  await page.getByRole("button", { name: "A considered design headline" }).waitFor();
+  await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
   await page.locator(".vault-feed-thumb").first().waitFor();
-  await page.locator(".vault-feed-lead").waitFor();
+  await page.locator(".vault-feed-lead").first().waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
-  await page.getByRole("button", { name: "A considered design headline" }).click();
+  await page.getByRole("button", { name: "Headlines", exact: true }).click();
+  await page.getByRole("heading", { name: "Headlines", exact: true }).waitFor();
+  await page.locator(".vault-feed-coverage-list").getByRole("button", { name: /A considered design headline/ }).click();
+  await page.getByRole("region", { name: "Headline coverage" }).getByText("2 articles", { exact: false }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feed-coverage-reference.png" });
+  await page.locator(".vault-feed-coverage > header button").click();
+  await page.getByRole("button", { name: "For You", exact: true }).click();
+  await page.getByRole("button", { name: "A considered design headline" }).first().click();
   await page.getByRole("region", { name: "Feed story" }).getByText("A full in-app reading view for this story.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feed-reader-reference.png" });
   await page.getByRole("button", { name: "Save to Bookmarks" }).click();
@@ -947,6 +955,7 @@ try {
   assert.ok(shortcutNote.path.startsWith("Notes/"));
   assert.equal(JSON.parse(shortcutNote.documentJSON).presentation.template.id, "texttext.note");
   files.delete("Feeds/Design.textpack");
+  files.delete("Feeds/Design second.textpack");
   await page.reload();
   await chooseFolder("Feeds");
   await page.getByRole("heading", { name: "Choose your sources" }).waitFor();

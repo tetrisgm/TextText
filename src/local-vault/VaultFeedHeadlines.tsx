@@ -7,10 +7,10 @@ import { vaultRequest } from "./bridge";
 import { createFeedSubscriptionPack, createKeptFeedEntryPack } from "@/lib/vault/rss";
 import { encodeBase64 } from "./image-import";
 import type { FolderPreview } from "./folder-collection";
+import { clusterFeedStories, type FeedStory, type FeedCluster } from "./feed-clusters";
 
 type Headline = { externalKey: string; title: string; permalink: string | null; publishedAt: string | null; excerpt: string | null; imageUrl: string | null };
 type FeedPage = { entries: Headline[] };
-type Story = Headline & { source: string; feedURL: string; topic: string | null };
 type SourceRow = { source: string; feedURL: string; topic: string | null };
 type FullEntry = { feedURL: string; feedTitle: string; entry: NormalizedEntry };
 const storyTemplate = BUILTIN_TEMPLATES.find(template => template.id === "texttext.article");
@@ -38,12 +38,13 @@ function storyDate(value: string | null): string | undefined {
  * a timer never polls, and stories become TextPacks only when a person keeps one. */
 export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sources: FolderPreview[]; ready: boolean; sourceList: ReactNode; canAdd: boolean }) {
   const [tab, setTab] = useState("For You");
-  const [stories, setStories] = useState<Story[]>([]);
+  const [stories, setStories] = useState<FeedStory[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState("");
   const [followError, setFollowError] = useState("");
-  const [active, setActive] = useState<Story | null>(null);
+  const [active, setActive] = useState<FeedStory | null>(null);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [full, setFull] = useState<{ key: string; value: FullEntry } | null>(null);
   const [storyError, setStoryError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -62,7 +63,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     let active = true;
     void Promise.resolve().then(async () => {
       setLoading(true); setError("");
-      const next: Story[] = [];
+      const next: FeedStory[] = [];
       const failures: string[] = [];
       for (const { feedURL, source, topic } of sourceRows) {
         if (!active) return;
@@ -119,6 +120,8 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     <ul>{RECOMMENDED.map(source => <li key={source.feedURL}><span><strong>{source.title}</strong><small>{source.topic}</small></span><button disabled={!canAdd || Boolean(following)} onClick={() => void follow(source)}>{following === source.title ? "Adding…" : "Follow"}</button></li>)}</ul>
   </div>;
   const visibleStories = tab === "For You" ? stories : stories.filter(story => story.topic === tab);
+  const coverage = useMemo(() => clusterFeedStories(stories), [stories]);
+  const activeGroup: FeedCluster | undefined = coverage.find(group => group.id === activeGroupId);
   const activeFull = full?.key === activeKey ? full.value : null;
   const readerDocument = activeFull && storyTemplate ? (() => {
     const document = emptyDocumentSnapshot({ id: storyTemplate.id, version: storyTemplate.version });
@@ -128,16 +131,26 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     return document;
   })() : null;
   if (active) return <section className="vault-feed-reader" aria-label="Feed story">
-    <header><button type="button" onClick={() => setActive(null)}>‹ Back to Feeds</button><span>{active.source}</span></header>
+    <header><button type="button" onClick={() => setActive(null)}>‹ Back to {activeGroup ? "coverage" : "Feeds"}</button><span>{active.source}</span></header>
     {storyError && <p role="alert">{storyError}</p>}
     {!activeFull && !storyError && <p role="status">Opening story…</p>}
     {activeFull && readerDocument && storyTemplate && <><div className="vault-feed-reader-content"><DocumentRenderer document={readerDocument} template={storyTemplate} metadata={{ author: active.source, date: storyDate(activeFull.entry.publishedAt) }} />
       {activeFull.entry.availability !== "full" && <p className="vault-feed-reader-availability">{activeFull.entry.availability === "excerpt" ? "This source provided an excerpt." : "This source provided only story details."}</p>}</div>
       <footer><button type="button" disabled={!canAdd || saving || saved.has(activeKey)} onClick={() => void saveStory()}>{saving ? "Saving…" : saved.has(activeKey) ? "Saved to Bookmarks" : "Save to Bookmarks"}</button>{activeFull.entry.permalink && <a href={activeFull.entry.permalink} target="_blank" rel="noopener noreferrer">Open original</a>}</footer></>}
   </section>;
+  if (activeGroup) return <section className="vault-feed-coverage" aria-label="Headline coverage">
+    <header><button type="button" onClick={() => setActiveGroupId(null)}>‹ Headlines</button></header>
+    <h1>{activeGroup.headline}</h1>
+    <p>{activeGroup.members.length} {activeGroup.members.length === 1 ? "article" : "articles"} · {activeGroup.sources.join(", ")}</p>
+    {activeGroup.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-coverage-image" src={activeGroup.imageUrl} alt="" referrerPolicy="no-referrer" />}
+    <ol>{activeGroup.members.map(member => <li key={`${member.feedURL}:${member.externalKey}`}><span className="vault-feed-publisher">{member.source}{member.publishedAt && <time dateTime={member.publishedAt}>{age(member.publishedAt)}</time>}</span>
+      <button type="button" onClick={() => setActive(member)}>{member.title}</button>
+      {member.excerpt && <p>{member.excerpt}</p>}
+    </li>)}</ol>
+  </section>;
   return <section className="vault-feed-home" aria-label="Latest stories">
-    <nav aria-label="Feed sections"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
-    {tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : <>
+    <nav aria-label="Feed sections"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
+    {tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !coverage.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{coverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : <>
       {loading && <p role="status">Reading your sources…</p>}
       {error && <p role="status">{error}</p>}
       {!loading && !visibleStories.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
