@@ -4,6 +4,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { chromium } from "playwright";
+import sharp from "sharp";
 
 const makeDocument = (body) => ({ schemaVersion: 1, content: { title: "Offline note", body, fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } });
 const files = new Map();
@@ -823,9 +824,11 @@ try {
   files.set("Blog/Story.textpack", publishedStory);
   files.set("Notes/Formatted.textpack", sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point"));
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
+  const portrait = (await sharp({ create: { width: 120, height: 240, channels: 4, background: "#bd806c" } }).png().toBuffer()).toString("base64");
+  const landscape = (await sharp({ create: { width: 240, height: 120, channels: 4, background: "#6c93bd" } }).png().toBuffer()).toString("base64");
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
     { id: "one", kind: "image", src: "assets/one.png", alt: "First photograph" }, { id: "two", kind: "image", src: "assets/two.png", alt: "Second photograph" },
-  ]), assets: [{ filename: "one.png", contentType: "image/png", data: pixel }, { filename: "two.png", contentType: "image/png", data: pixel }] });
+  ]), assets: [{ filename: "one.png", contentType: "image/png", data: portrait }, { filename: "two.png", contentType: "image/png", data: landscape }] });
   files.set("Gallery/Single.textpack", { ...sample("Gallery/Single.textpack", "gallery", "One photograph", "A separate image.", {}, [
     { id: "third", kind: "image", src: "assets/third.png", alt: "Third photograph" },
   ]), assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
@@ -943,6 +946,10 @@ try {
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.subtitle, "A short line beneath the title");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
   await page.locator(".vault-photo-grid img").first().waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid img")].every(image => image.complete && image.naturalHeight > 0));
+  const portraitTile = await page.getByRole("button", { name: "Open Two photographs image 1" }).boundingBox();
+  const landscapeTile = await page.getByRole("button", { name: "Open Two photographs image 2" }).boundingBox();
+  assert.ok(portraitTile && landscapeTile && portraitTile.height > landscapeTile.height * 1.7);
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });
   await page.getByRole("button", { name: "Open Two photographs image 1" }).click();
   const lightbox = page.getByRole("dialog", { name: "Two photographs" });

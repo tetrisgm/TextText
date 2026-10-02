@@ -35,12 +35,8 @@ function PreviewImage({ preview, children }: { preview?: FolderPreview; children
   return children(source?.image === image ? source?.url : undefined);
 }
 function GalleryTile({ source, title, disabled, onOpen }: { source?: string; title: string; disabled: boolean; onOpen: () => void }) {
-  const [ratio, setRatio] = useState(1);
-  return <button disabled={disabled} onClick={onOpen} aria-label={`Open ${title}`} style={{ flexBasis: `${Math.round(ratio * 180)}px`, flexGrow: ratio }}>
-    {source ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={source} alt="" loading="lazy" decoding="async" onLoad={(event) => {
-      const image = event.currentTarget;
-      if (image.naturalHeight) setRatio(Math.max(0.6, Math.min(2.5, image.naturalWidth / image.naturalHeight)));
-    }} /> : <span>{title}</span>}
+  return <button disabled={disabled} onClick={onOpen} aria-label={`Open ${title}`}>
+    {source ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={source} alt="" loading="lazy" decoding="async" /> : <span>{title}</span>}
   </button>;
 }
 export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplate, excludedPath, previewOnly = false, emptyMessage, preferredBookmarkPath }: {
