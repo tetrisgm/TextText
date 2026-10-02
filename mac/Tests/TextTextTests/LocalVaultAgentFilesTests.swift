@@ -38,6 +38,23 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertEqual(projectedContent["subtitle"] as? String, "A considered subtitle")
         let fields = try XCTUnwrap(projectedContent["fields"] as? [String: Any])
         XCTAssertEqual(fields["category"] as? String, "  Research  notes  ")
+        var presentation = try XCTUnwrap(snapshot["presentation"] as? [String: Any])
+        presentation["template"] = ["id": "local.custom-note-look", "version": 1]
+        snapshot["presentation"] = presentation
+        var savedLook = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(initial.contents.templateJSON).utf8)) as? [String: Any])
+        savedLook["id"] = "local.custom-note-look"
+        savedLook["experience"] = "note"
+        let custom = try store.write(path: changed.path, expectedHash: changed.hash, markdown: changed.contents.markdown,
+            documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self),
+            templateJSON: String(decoding: try JSONSerialization.data(withJSONObject: savedLook), as: UTF8.self),
+            templateAuthoringSourceJSON: changed.contents.templateAuthoringSourceJSON)
+        XCTAssertNil(try store.readMetadata(path: custom.path).contents.templateJSON)
+        XCTAssertEqual(try store.readMetadata(path: custom.path, includeTemplate: true).contents.templateJSON, custom.contents.templateJSON)
+        let customPreview = try LocalVaultWindowController.preview(custom)
+        let customDocument = try XCTUnwrap(customPreview["document"] as? [String: Any])
+        let customPresentation = try XCTUnwrap(customDocument["presentation"] as? [String: Any])
+        let customReference = try XCTUnwrap(customPresentation["template"] as? [String: Any])
+        XCTAssertEqual(customReference["id"] as? String, "local.custom-note-look")
     }
 
     func testAgentCreatesReadsAndSafelyEditsTheActualPack() throws {

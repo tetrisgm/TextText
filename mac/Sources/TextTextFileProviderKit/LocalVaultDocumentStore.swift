@@ -76,7 +76,8 @@ public struct LocalVaultDocumentStore: Sendable {
     }
 
     /// Collection sorting reads text metadata without expanding image entries.
-    public func readMetadata(path: String) throws -> Document {
+    /// Template callers can opt into the small JSON look entries without loading assets.
+    public func readMetadata(path: String, includeTemplate: Bool = false) throws -> Document {
         let target = try url(for: path)
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
@@ -88,19 +89,26 @@ public struct LocalVaultDocumentStore: Sendable {
                 let archive = try Archive(data: bytes, accessMode: .read)
                 let key = try canonicalMarkdownEntry(archive).path
                 let prefix = String(key.dropLast("text.md".count))
+                let entries: Set<String> = includeTemplate
+                    ? [key, prefix + "document.json", prefix + "template.json", prefix + "template-source.json"]
+                    : [key, prefix + "document.json"]
                 var selected: [String: Data] = [:], expanded: UInt64 = 0
-                for entry in archive where entry.path == key || entry.path == prefix + "document.json" {
+                for entry in archive where entries.contains(entry.path) {
                     expanded += entry.uncompressedSize
-                    guard expanded <= 4 * 1024 * 1024, selected[entry.path] == nil else { throw Failure.tooLarge }
+                    guard expanded <= (includeTemplate ? 8 : 4) * 1024 * 1024, selected[entry.path] == nil else { throw Failure.tooLarge }
                     var data = Data()
                     _ = try archive.extract(entry) { data.append($0) }
                     selected[entry.path] = data
                 }
                 guard let raw = selected[key] else { throw Failure.invalidPath }
-                let document = selected[String(key.dropLast("text.md".count)) + "document.json"]
+                let document = selected[prefix + "document.json"]
+                let template = selected[prefix + "template.json"]
+                let templateSource = selected[prefix + "template-source.json"]
                 let contents = TextTextTextBundleContents(markdown: String(decoding: raw, as: UTF8.self), sourceURL: nil,
-                    documentJSON: document.map { String(decoding: $0, as: UTF8.self) }, templateJSON: nil,
-                    templateAuthoringSourceJSON: nil, assets: [], logicalSize: Int(expanded))
+                    documentJSON: document.map { String(decoding: $0, as: UTF8.self) },
+                    templateJSON: template.map { String(decoding: $0, as: UTF8.self) },
+                    templateAuthoringSourceJSON: templateSource.map { String(decoding: $0, as: UTF8.self) },
+                    assets: [], logicalSize: Int(expanded))
                 return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents)
             }
         }

@@ -382,7 +382,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     try store.delete(path: Self.string(params, "path"), expectedHash: Self.string(params, "hash"))
                     return [:]
                 case "template":
-                    let document = try store.read(path: Self.string(params, "path"))
+                    let document = try store.readMetadata(path: Self.string(params, "path"), includeTemplate: true)
                     var preview: [String: String] = [:]
                     if let raw = document.contents.documentJSON, raw.utf8.count <= 256 * 1024,
                        let snapshot = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any],
@@ -578,9 +578,16 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         if !incomplete.isEmpty { result["metadataTruncated"] = true }
         var projectedContent: [String: Any] = ["title": result["title"]!, "body": result["excerpt"]!, "fields": fields, "tags": tags, "assets": []]
         if let subtitle { projectedContent["subtitle"] = subtitle }
+        var projectedTemplate: [String: Any] = ["id": "texttext.note", "version": 1]
+        if let presentation = snapshot?["presentation"] as? [String: Any],
+           let reference = presentation["template"] as? [String: Any],
+           let id = reference["id"] as? String, id.range(of: "^[a-z][a-z0-9.-]{2,159}$", options: .regularExpression) != nil,
+           let version = reference["version"] as? Int, version > 0 {
+            projectedTemplate = ["id": id, "version": version]
+        }
         result["document"] = ["schemaVersion": 1,
             "content": projectedContent,
-            "presentation": ["template": ["id": "texttext.note", "version": 1], "theme": [:]] as [String: Any]] as [String: Any]
+            "presentation": ["template": projectedTemplate, "theme": [:]] as [String: Any]] as [String: Any]
         if let fields = content?["fields"] as? [String: Any],
            let raw = fields["sourceUrl"] as? String, raw.utf8.count <= 4096,
            let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),

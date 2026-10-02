@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { DocumentCollectionRenderer } from "@/components/document/DocumentRenderer";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { selectCollectionView } from "@/lib/presentation/collection-views";
-import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
+import { BUILTIN_TEMPLATES, getBuiltinTemplate } from "@/lib/presentation/templates";
+import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { vaultRequest, type VaultListing } from "./bridge";
 import { folderForItem } from "./folders";
 import { collectionDocument, collectionMembers, queryFolderMembers, type FolderPreview } from "./folder-collection";
@@ -12,6 +13,17 @@ import { VaultGalleryLightbox } from "./VaultGalleryLightbox";
 
 const PAGE_SIZE = 24;
 const noteTemplate = BUILTIN_TEMPLATES.find(template => template.id === "texttext.note");
+function noteCardTemplate(preview?: FolderPreview): TemplateDefinition | undefined {
+  const reference = preview?.document?.presentation.template;
+  if (!reference) return noteTemplate;
+  if (preview?.templateJSON) {
+    try {
+      const template = validateTemplateDefinition(JSON.parse(preview.templateJSON));
+      if (template.id === reference.id && template.version === reference.version) return template;
+    } catch { /* A damaged saved look falls back to the standard card. */ }
+  }
+  return getBuiltinTemplate(reference.id, reference.version) ?? noteTemplate;
+}
 let queue: Promise<unknown> = Promise.resolve();
 function requestPreview(path: string, active: () => boolean, metadataOnly = false): Promise<FolderPreview | null> {
   const request = queue.then(() => active() ? vaultRequest<FolderPreview>("preview", { path, metadataOnly }) : null);
@@ -203,7 +215,17 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
       for (const item of visible) {
         if (!active) return;
         try {
-          const preview = await requestPreview(item.path, () => active);
+          let preview = await requestPreview(item.path, () => active);
+          const reference = preview?.document?.presentation.template;
+          if (active && preview && folder === "Notes" && reference && !getBuiltinTemplate(reference.id, reference.version)) {
+            try {
+              const source = await vaultRequest<{ templateJSON?: string }>("template", { path: item.path });
+              if (source.templateJSON?.length && source.templateJSON.length <= 256 * 1024) {
+                const candidate = validateTemplateDefinition(JSON.parse(source.templateJSON));
+                if (candidate.id === reference.id && candidate.version === reference.version) preview = { ...preview, templateJSON: source.templateJSON };
+              }
+            } catch { /* Keep the card readable with the standard look. */ }
+          }
           if (active && preview) setPreviews((previous) => ({ ...previous, [item.path]: preview }));
         } catch { /* The original stays accessible when its preview cannot be read. */ }
       }
@@ -243,7 +265,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
       {noteIndex.key === noteIndexKey && noteIndex.listing === listing && noteIndex.error && <p role="status" className="vault-note-index-status">{noteIndex.error}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
-      <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); return <div className="vault-note-card" key={item.path}>{noteTemplate ? <DocumentCollectionRenderer document={collectionDocument(preview, title)} template={noteTemplate} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <small>{preview.document.content.tags.slice(0, 3).map(tag => `#${tag}`).join("  ")}</small> : null}<button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} /></div>; })}</div>
+      <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path}>{look ? <DocumentCollectionRenderer document={collectionDocument(preview, title)} template={look} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <small>{preview.document.content.tags.slice(0, 3).map(tag => `#${tag}`).join("  ")}</small> : null}<button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} /></div>; })}</div>
     </> : blogFolder ? <div className="vault-story-list">{visible.map(item => {
       const preview = previews[item.path];
       const title = preview?.document && !preview.document.content.title.trim() ? "New story" : preview?.title || fallbackTitle(item);
