@@ -881,7 +881,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   });
   if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
+  for (const folder of folders) commandActions.push({
+    id: `go-to-folder:${folder}`, label: `Go to ${folder}`,
+    description: "Open this workspace folder.", keywords: ["navigate", "folder", folder], searchOnly: true,
+  });
   const runCommandAction = (id: string) => {
+    if (id.startsWith("go-to-folder:")) return operate(async () => {
+      closeRemoved(); setDestinationFolder(id.slice("go-to-folder:".length)); setFolderDesignOpen(false);
+    }, true);
     if (id === "new-note") return createForFolder("Notes", "Note");
     if (id === "write-story") return createForFolder("Blog", "Blog post");
     if (id === "save-bookmark") { openCapture("bookmark"); return; }

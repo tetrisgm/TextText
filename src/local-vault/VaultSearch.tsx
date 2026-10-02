@@ -4,7 +4,7 @@ import { useEscapeLayer } from "./LocalKeyboard";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 
 type SearchPage = { items: { path: string; title: string; snippet: string }[]; truncated?: boolean; skippedCount?: number };
-export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[] };
+export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[]; searchOnly?: boolean };
 
 function oneEditAway(query: string, candidate: string): boolean {
   if (query.length < 4 || Math.abs(query.length - candidate.length) > 1) return false;
@@ -41,7 +41,7 @@ const actionIcons: Record<string, string> = {
 
 export function filterVaultSearchActions(actions: readonly VaultSearchAction[], query: string): VaultSearchAction[] {
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return [...actions];
+  if (!words.length) return actions.filter(action => !action.searchOnly);
   return actions.map((action, index) => {
     const score = words.reduce((total, word) => {
       const best = Math.max(wordScore(word, action.label) * 3, ...((action.keywords ?? []).map(keyword => wordScore(word, keyword) * 2)), wordScore(word, action.description));
@@ -109,7 +109,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     {namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
     <div id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3>Actions</h3><div>{visibleActions.map((action, index) => <button
       id={`action:${action.id}`} key={action.id} role="option" aria-selected={selectedIndex === index} aria-label={action.label} disabled={acting} onMouseEnter={() => setActiveIndex(index)} onClick={() => runAction(action)}>
-      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || "·"}</i><strong>{action.label}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
+      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
     </button>)}</div></section>}
     {busy && <p role="status">Searching…</p>}{error && <p role="alert">{error}</p>}
     {!busy && query.trim() && !result.items.length && !visibleActions.length && !error && <p>No matching files or actions.</p>}

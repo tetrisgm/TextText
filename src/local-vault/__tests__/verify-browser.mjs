@@ -244,6 +244,13 @@ try {
   assert.equal(await page.locator('#vault-command-results [id^="file:"]').count(), 0);
   await page.locator(".vault-search-backdrop").click({ position: { x: 4, y: 4 } });
   await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
+  await searchTrigger.click();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("go to Empty");
+  await page.getByRole("option", { name: "Go to Empty", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).press("Enter");
+  await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await page.getByRole("heading", { name: "All files", exact: true }).waitFor();
   await page.keyboard.press("b");
   await page.getByRole("dialog", { name: "Save bookmark" }).waitFor();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
