@@ -535,6 +535,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const assistantReturnFocus = useRef<HTMLElement | null>(null);
   const importing = useRef(false);
   const [importStatus, setImportStatus] = useState("");
+  useEffect(() => { setImportStatus(""); }, [listing?.root, selected?.path, destinationFolder]);
   const [webAccess, setWebAccess] = useState<{ workspaceId: string; value: VaultAccess } | null>(null);
   const [nativeConnection, setNativeConnection] = useState<{ root: string; workspaceId: string } | null>(null);
   const [nativePublishAccess, setNativePublishAccess] = useState<{ workspaceId: string; itemId: string; canPublish: boolean } | null>(null);

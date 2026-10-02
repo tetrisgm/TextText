@@ -11,6 +11,7 @@ const files = new Map();
 const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
+const feedReadURLs = [];
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
@@ -87,8 +88,9 @@ try {
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
-    else if (request.method === "feedRead") result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
+    else if (request.method === "feedRead") { feedReadURLs.push(request.params.feedURL); result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
       entries: Array.from({ length: 5 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
+    }
     else if (request.method === "feedEntry") result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: "A considered design headline", permalink: "https://example.com/story/1", externalUrl: null, authors: ["Editor"], publishedAt: "2026-10-01T00:00:00Z", updatedAt: null, availability: "full", bodyMarkdown: "A full in-app reading view for this story.", bodyText: "A full in-app reading view for this story.", excerpt: "A brief account of the story.", language: "en", attachments: [] } };
     else if (request.method === "publicationRead") {
       const story = files.get("Blog/Story.textpack");
@@ -835,6 +837,7 @@ try {
   ]), assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
   files.set("Feeds/Design.textpack", sample("Feeds/Design.textpack", "bookmark", "Design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.com/feed.xml" }));
   files.set("Feeds/Design second.textpack", sample("Feeds/Design second.textpack", "bookmark", "Second design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.org/feed.xml" }));
+  for (let index = 1; index <= 7; index++) files.set(`Feeds/Extra ${index}.textpack`, sample(`Feeds/Extra ${index}.textpack`, "bookmark", `Extra feed ${index}`, "", { texttextFeedSubscription: "v1", feedUrl: `https://example.net/feed-${index}.xml` }));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
   await page.getByRole("button", { name: "Show folders" }).click();
@@ -1012,14 +1015,17 @@ try {
   assert.deepEqual(JSON.parse(measured.documentJSON).content.assets.map(asset => [asset.width, asset.height]), [[120, 240]]);
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
+  assert.equal(await page.getByRole("status").filter({ hasText: "Imported 1 image." }).count(), 0);
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
   await page.locator(".vault-feed-thumb").first().waitFor();
   await page.locator(".vault-feed-lead").first().waitFor();
+  await page.getByText("Reading 8 of 9 sources on this page").waitFor();
+  assert.equal(feedReadURLs.length, 8);
   await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
   await page.getByRole("button", { name: "Headlines", exact: true }).click();
   await page.getByRole("heading", { name: "Headlines", exact: true }).waitFor();
   await page.locator(".vault-feed-coverage-list").getByRole("button", { name: /A considered design headline/ }).click();
-  await page.getByRole("region", { name: "Headline coverage" }).getByText("2 articles", { exact: false }).waitFor();
+  await page.getByRole("region", { name: "Headline coverage" }).getByText("8 articles", { exact: false }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-feed-coverage-reference.png" });
   await page.locator(".vault-feed-coverage > header button").click();
   await page.getByRole("button", { name: "For You", exact: true }).click();
@@ -1034,6 +1040,10 @@ try {
   const keptFeedBookmark = [...files.values()].find(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash);
   assert.equal(JSON.parse(keptFeedBookmark.documentJSON).presentation.template.id, "texttext.bookmark");
   await page.getByRole("button", { name: "Back to Feeds" }).click();
+  await page.getByRole("button", { name: "Load more sources" }).click();
+  await page.getByText("Reading 9 of 9 sources on this page").waitFor();
+  await page.waitForFunction(() => document.querySelector('.vault-feed-source-window button') === null);
+  assert.equal(feedReadURLs.length, 9);
   await chooseFolder("Notes");
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
@@ -1065,8 +1075,7 @@ try {
   const shortcutNote = [...files.values()].at(-1);
   assert.ok(shortcutNote.path.startsWith("Notes/"));
   assert.equal(JSON.parse(shortcutNote.documentJSON).presentation.template.id, "texttext.note");
-  files.delete("Feeds/Design.textpack");
-  files.delete("Feeds/Design second.textpack");
+  for (const path of files.keys()) if (path.startsWith("Feeds/")) files.delete(path);
   await page.reload();
   await chooseFolder("Feeds");
   await page.getByRole("heading", { name: "Choose your sources" }).waitFor();

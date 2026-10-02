@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import type { NormalizedEntry } from "@/lib/reading/feed-parse";
@@ -49,11 +49,13 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   const [storyError, setStoryError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<Set<string>>(() => new Set());
+  const [sourceLimit, setSourceLimit] = useState(8);
+  const cachedSources = useRef(new Map<string, FeedStory[]>());
   const feedKey = useMemo(() => JSON.stringify(sources.map(source => {
     const fields = source.document?.content.fields;
     return fields?.texttextFeedSubscription === "v1" && typeof fields.feedUrl === "string"
       ? { feedURL: fields.feedUrl, source: source.title, topic: source.document?.content.tags[0] || null } : null;
-  }).filter((row): row is SourceRow => row !== null).slice(0, 8)), [sources]);
+  }).filter((row): row is SourceRow => row !== null)), [sources]);
   const sourceRows = useMemo(() => JSON.parse(feedKey) as SourceRow[], [feedKey]);
   const topics = [...new Set(sourceRows.map(row => row.topic).filter((topic): topic is string => Boolean(topic)))];
   const hasFeeds = sourceRows.length > 0;
@@ -65,21 +67,25 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
       setLoading(true); setError("");
       const next: FeedStory[] = [];
       const failures: string[] = [];
-      for (const { feedURL, source, topic } of sourceRows) {
+      for (const { feedURL, source, topic } of sourceRows.slice(0, sourceLimit)) {
         if (!active) return;
+        const cacheKey = JSON.stringify([feedURL, source, topic]);
+        if (cachedSources.current.has(cacheKey)) continue;
         try {
           const page = await vaultRequest<FeedPage>("feedRead", { feedURL }, controller.signal);
-          next.push(...page.entries.slice(0, 12).map(entry => ({ ...entry, source, feedURL, topic })));
+          cachedSources.current.set(cacheKey, page.entries.slice(0, 12).map(entry => ({ ...entry, source, feedURL, topic })));
+          while (cachedSources.current.size > 32) cachedSources.current.delete(cachedSources.current.keys().next().value!);
         } catch (reason) {
           if (!controller.signal.aborted) failures.push(reason instanceof Error ? reason.message : "A source could not be read.");
         }
       }
       if (!active) return;
+      for (const { feedURL, source, topic } of sourceRows.slice(0, sourceLimit)) next.push(...cachedSources.current.get(JSON.stringify([feedURL, source, topic])) || []);
       next.sort((a, b) => Date.parse(b.publishedAt || "") - Date.parse(a.publishedAt || ""));
       setStories(next.slice(0, 60)); setError(failures[0] || ""); setLoading(false);
     });
     return () => { active = false; controller.abort(); };
-  }, [feedKey, ready, hasFeeds, sourceRows]);
+  }, [feedKey, ready, hasFeeds, sourceRows, sourceLimit]);
   const activeKey = active ? `${active.feedURL}\n${active.externalKey}` : "";
   useEffect(() => {
     if (!active) return;
@@ -151,6 +157,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   </section>;
   return <section className="vault-feed-home" aria-label="Latest stories">
     <nav aria-label="Feed sections"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button><button aria-pressed={tab === "Latest"} onClick={() => setTab("Latest")}>Latest</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
+    {sourceRows.length > 8 && tab !== "Sources" && <div className="vault-feed-source-window"><span>Reading {Math.min(sourceLimit, sourceRows.length)} of {sourceRows.length} sources on this page</span>{sourceLimit < sourceRows.length && <button type="button" disabled={loading} onClick={() => setSourceLimit(limit => limit + 8)}>Load more sources</button>}</div>}
     {tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !coverage.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{coverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
       {loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}
       {!loading && !rankedCoverage.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
