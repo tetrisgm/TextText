@@ -269,6 +269,13 @@ try {
   assert.equal(await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("kbd").textContent(), "B");
   await page.getByRole("option", { name: "Go to Notes", exact: true }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
+  await page.getByRole("option", { name: "Keyboard shortcuts", exact: true }).click();
+  await page.getByLabel("Available keyboard shortcuts").getByText("Write a story").waitFor();
+  assert.equal(await page.getByLabel("Available keyboard shortcuts").locator("div").filter({ hasText: "Write a story" }).locator("kbd").textContent(), "C");
+  assert.equal(await page.getByLabel("Available keyboard shortcuts").evaluate(element => element.scrollTop), 0);
+  await page.screenshot({ path: "/tmp/texttext-command-shortcuts-reference.png" });
+  await page.getByRole("button", { name: "Back to commands" }).click();
+  await page.getByRole("combobox", { name: "Search workspace" }).waitFor();
   await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowUp");
   assert.equal(await page.getByRole("dialog", { name: "Search and actions", exact: true }).evaluate(dialog => {
     const list = dialog.querySelector('[role="listbox"]');

@@ -89,6 +89,11 @@
 .vault-app .vault-search .vault-command-mark { display:grid; place-items:center; width:25px; height:25px; margin:0 5px 0 0; border:1px solid #c8cad0; border-radius:50%; color:#edf0f5; font-size:15px; line-height:1; }
 .vault-app .vault-search header h2 { margin:0; font-size:13px; font-weight:550; letter-spacing:.02em; color:#e8e9ec; }
 .vault-app .vault-search header button { width:auto; margin-left:auto; padding:4px 8px; border:1px solid #9b9da4; border-radius:4px; color:#e8e9ec; font-size:11px; }
+.vault-app .vault-search header .vault-command-back { margin-left:auto; border:0; font-size:12px; }
+.vault-app .vault-search header .vault-command-back+button { margin-left:0; }
+.vault-app .vault-shortcuts-list { max-height:min(390px,calc(100vh - 120px)); overflow:auto; padding:10px 18px 16px; }
+.vault-app .vault-shortcuts-list>div { display:flex; align-items:center; justify-content:space-between; gap:18px; min-height:36px; padding:7px 8px; border-bottom:1px solid #737680; color:#f5f5f6; font-size:13px; }
+.vault-app .vault-shortcuts-list kbd { min-width:24px; padding:3px 6px; border:1px solid #a6a8b0; border-radius:4px; color:#f0f1f4; font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-align:center; }
 .vault-app .vault-search :is(header h2, input, [role=option] strong, [role=option] kbd) { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 .vault-app .vault-search>input { margin:0; padding:18px 20px; border:0; border-radius:0; outline:0; background:#555861; color:#fff; font-size:19px; }
 .vault-app .vault-search>input:focus-visible { outline:0; }

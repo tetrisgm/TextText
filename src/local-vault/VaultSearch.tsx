@@ -71,10 +71,12 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const latest = useRef("");
   const dialog = useRef<HTMLElement>(null);
   const results = useRef<HTMLDivElement>(null);
+  const shortcutList = useRef<HTMLDivElement>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
   useEscapeLayer(true, "search", onClose);
   useDialogFocus(dialog, true);
@@ -95,7 +97,9 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     })(); }, 250);
     return () => { active = false; clearTimeout(timer); };
   }, [query]);
-  const visibleActions = filterVaultSearchActions(actions, query);
+  const shortcutAction: VaultSearchAction = { id: "show-shortcuts", label: "Keyboard shortcuts", description: "Learn the keys for available actions.", keywords: ["shortcuts", "keys", "help"] };
+  const visibleActions = showShortcuts ? [] : filterVaultSearchActions([...actions, shortcutAction], query);
+  useEffect(() => { if (showShortcuts && shortcutList.current) shortcutList.current.scrollTop = 0; }, [showShortcuts]);
   const choices = [
     ...visibleActions.map(action => ({ id: `action:${action.id}`, run: () => runAction(action) })),
     ...result.items.map(item => ({ id: `file:${item.path}`, run: () => { void onOpen(item.path).then(onClose).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not open that file.")); } })),
@@ -112,21 +116,22 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     else if (optionBounds.bottom > listBounds.bottom) list.scrollTop += optionBounds.bottom - listBounds.bottom;
   }, [selectedChoiceId]);
   const runAction = (action: VaultSearchAction) => {
+    if (action.id === "show-shortcuts") { setQuery(""); setResult({ items: [] }); setActiveIndex(0); setShowShortcuts(true); return; }
     if (acting) return;
     setActing(true); setError("");
     void Promise.resolve(onAction(action)).then(onClose).catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : "That action could not finish.");
     }).finally(() => setActing(false));
   };
-  return <div className="vault-search-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} className="vault-template-dialog vault-search" role="dialog" aria-modal="true" aria-label="Search and actions">
-    <header><span className="vault-command-mark" aria-hidden="true">⌘</span><h2>TextText Command</h2><button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
-    <input autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder={namesOnly ? "Search filenames, folders, and actions" : "Search files and actions"} value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setActiveIndex(0); }} onKeyDown={(event) => {
+  return <div className="vault-search-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} className="vault-template-dialog vault-search" role="dialog" aria-modal="true" aria-label="Search and actions">
+    <header><span className="vault-command-mark" aria-hidden="true">⌘</span><h2>{showShortcuts ? "Keyboard shortcuts" : "TextText Command"}</h2>{showShortcuts && <button className="vault-command-back" onClick={() => setShowShortcuts(false)} aria-label="Back to commands">Back</button>}<button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
+    {!showShortcuts && <input autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder={namesOnly ? "Search filenames, folders, and actions" : "Search files and actions"} value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setActiveIndex(0); }} onKeyDown={(event) => {
       if (event.key === "ArrowDown" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + 1) % choices.length); }
       if (event.key === "ArrowUp" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + choices.length - 1) % choices.length); }
       if (event.key === "Enter" && choices.length) { event.preventDefault(); choices[selectedIndex].run(); }
-    }} maxLength={500} />
-    {namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
-    <div ref={results} id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3>Actions</h3><div>{visibleActions.map((action, index) => <button
+    }} maxLength={500} />}
+    {!showShortcuts && namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
+    {showShortcuts ? <div ref={shortcutList} className="vault-shortcuts-list" aria-label="Available keyboard shortcuts">{actions.filter(action => action.shortcut).map(action => <div key={action.id}><span>{action.label}</span><kbd>{action.shortcut}</kbd></div>)}</div> : <div ref={results} id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3>Actions</h3><div>{visibleActions.map((action, index) => <button
       id={`action:${action.id}`} key={action.id} role="option" aria-selected={selectedIndex === index} aria-label={action.label} disabled={acting} onMouseEnter={() => setActiveIndex(index)} onClick={() => runAction(action)}>
       <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}{matchingAlias(action, query) && <em> ({matchingAlias(action, query)})</em>}</strong><span className="ac-sr-only">{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
     </button>)}</div></section>}
@@ -134,6 +139,6 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     {!busy && query.trim() && !result.items.length && !visibleActions.length && !error && <p>No matching files or actions.</p>}
     {!!result.skippedCount && <p>{result.skippedCount} files could not be searched.</p>}
     {result.truncated && <p>Search reached its size limit. Try more specific words.</p>}
-    {!!result.items.length && <section aria-label="Files"><h3>Files</h3><div>{result.items.map((item, index) => <button className="vault-command-file" id={`file:${item.path}`} key={item.path} role="option" aria-selected={selectedIndex === visibleActions.length + index} aria-label={`${item.title}, ${item.path}`} onMouseEnter={() => setActiveIndex(visibleActions.length + index)} onClick={() => { void onOpen(item.path).then(onClose).catch((error: Error) => setError(error.message)); }}><i className="vault-command-icon" aria-hidden="true">▤</i><strong>{item.title}</strong><small title={item.path}>{item.path}</small><span className="ac-sr-only">{item.snippet}</span></button>)}</div></section>}</div>
+    {!!result.items.length && <section aria-label="Files"><h3>Files</h3><div>{result.items.map((item, index) => <button className="vault-command-file" id={`file:${item.path}`} key={item.path} role="option" aria-selected={selectedIndex === visibleActions.length + index} aria-label={`${item.title}, ${item.path}`} onMouseEnter={() => setActiveIndex(visibleActions.length + index)} onClick={() => { void onOpen(item.path).then(onClose).catch((error: Error) => setError(error.message)); }}><i className="vault-command-icon" aria-hidden="true">▤</i><strong>{item.title}</strong><small title={item.path}>{item.path}</small><span className="ac-sr-only">{item.snippet}</span></button>)}</div></section>}</div>}
   </section></div>;
 }

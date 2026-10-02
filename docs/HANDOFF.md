@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now includes a Keyboard shortcuts view listing the available actions and their direct keys, with Back to commands. The backdrop uses pointer events so outside clicks close it across mouse and touch input. The offline browser flow exercises navigation and outside dismissal; TypeScript, local/web browser flows, and focused action-filter tests passed. Checked dark view: `/tmp/texttext-command-shortcuts-reference.png`. Full Superhuman visual and command coverage remains open; no app release was run.
+
 Notes Find cards now searches full TextPack body text on demand, beyond the 400-character card preview. It debounces requests, keeps tag filters, and reports incomplete scans. The offline browser contract finds a deep-body phrase; TypeScript and local/web vault browser flows passed. Supernotes parity remains open; no app release was run.
 
 Blog story management now filters All stories, Drafts, and Published using validated `publication.json` state in each TextPack. Mac and web previews expose the same state without a cloud status request per story. Focused Swift and vault preview tests, TypeScript, local UI build, and offline browser flow passed. Medium parity remains open; no app release was run.
