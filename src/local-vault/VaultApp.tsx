@@ -13,6 +13,7 @@ import { VaultError, vaultRequest, type VaultFile, type VaultListing } from "./b
 import { asPost, localBlog, readDocument, readTemplate, writePayload, VaultRepresentationConflict, type VaultTemplateSelection } from "./model";
 import { WorkspaceTypeLibrary as LocalTemplateLibrary } from "./LocalTemplateLibrary";
 import { WorkspaceOverview } from "./WorkspaceOverview";
+import { VaultGalleryLightbox } from "./VaultGalleryLightbox";
 import { NativeConnection } from "./NativeConnection";
 import { NativeAssistant, type NativeAssistantRequest } from "./NativeAssistant";
 import { ParticipantsRow as LocalParticipantsRow } from "./LocalParticipants";
@@ -517,6 +518,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [templatePicker, setTemplatePicker] = useState(false);
   const [captureMode, setCaptureMode] = useState<"bookmark" | "mixed" | null>(null);
   const [preferredBookmarkPath, setPreferredBookmarkPath] = useState("");
+  const [importedGalleryPath, setImportedGalleryPath] = useState<string | null>(null);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
   const [folderDesignOpen, setFolderDesignOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -702,6 +704,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [webWorkspaceId, listing, folders, hashRevision, setSelected]);
   const closeRemoved = useCallback((removedPath?: string) => {
     if (removedPath && selectedRef.current?.path !== removedPath) return;
+    setImportedGalleryPath(null);
     setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
     flushRef.current = async () => true; publishFlushRef.current = async () => false;
   }, [setSelected]);
@@ -746,7 +749,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           }
           closeRemoved();
           if (completed === 1 && folder === "Gallery" && imported) {
-            setSelected(imported);
+            setImportedGalleryPath(imported.path);
             setDestinationFolder(folder);
             setImportStatus("");
           } else setImportStatus(`Imported ${completed} ${completed === 1 ? "image" : "images"}.`);
@@ -1201,6 +1204,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}
     </main>
+    {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0}
+      onClose={() => { setImportedGalleryPath(null); refresh(); }}
+      onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
     {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
   </div>;
 }

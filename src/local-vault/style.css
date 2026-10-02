@@ -82,7 +82,7 @@
 .vault-app .vault-search-trigger { display: flex !important; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); text-align: left; }
 .vault-app .vault-search-trigger kbd { opacity: 0; font: inherit; font-size: 11px; white-space: nowrap; }
 .vault-app .vault-search-trigger:hover kbd,.vault-app .vault-search-trigger:focus-visible kbd { opacity: 1; }
-.vault-app .vault-search-backdrop { position: fixed; inset: 0; z-index: 229; display:flex; align-items:center; justify-content:center; padding:20px; background: #0009; }
+.vault-app .vault-search-backdrop { position: fixed; inset: 0; z-index: 240; display:flex; align-items:center; justify-content:center; padding:20px; background: #0009; }
 .vault-app .vault-search-backdrop .vault-search { position:relative; inset:auto; transform:none; width:min(640px,100%); max-height:min(470px,calc(100vh - 40px)); padding:0; overflow:hidden; background:#1f2229; color:#f5f5f6; border:1px solid #414650; border-radius:12px; box-shadow:0 28px 90px #0008; }
 .vault-app .vault-search header { padding:13px 18px; margin:0; border-bottom:1px solid #343942; }
 .vault-app .vault-search header h2 { margin:0; font-size:12px; font-weight:650; letter-spacing:.025em; color:#bfc3ca; }
