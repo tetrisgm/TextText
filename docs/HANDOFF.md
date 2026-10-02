@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now renders compact one-line command rows with circular action icons and right-aligned shortcut keys on a neutral gray panel, following the official Superhuman Command reference. Descriptions remain available for search and assistive technology. `/tmp/texttext-command-reference.png` shows the checked dark view; the local browser flow and TypeScript passed. Full reference parity remains open; no app release was run.
+
 The Notes library now places its Start typing prompt across the full card area and uses the available desktop width for up to five card columns. The local browser flow and TypeScript passed; `/tmp/texttext-note-grid-reference.png` shows the checked dark view. The card editor and TextPack content model are unchanged; reference parity remains open. No app release was run.
 
 Notes creation now begins in the card title from New note, Start typing, and type-to-create. Tab moves into the body; the first typed shortcut character is preserved in the title with a single create operation. The local and web browser flows and TypeScript passed. Full reference parity across all requested surfaces remains open; no app release was run.

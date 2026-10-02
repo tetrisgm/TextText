@@ -118,7 +118,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     }).finally(() => setActing(false));
   };
   return <div className="vault-search-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} className="vault-template-dialog vault-search" role="dialog" aria-modal="true" aria-label="Search and actions">
-    <header><h2>TextText Command</h2><button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
+    <header><span className="vault-command-mark" aria-hidden="true">⌘</span><h2>TextText Command</h2><button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
     <input autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder={namesOnly ? "Search filenames, folders, and actions" : "Search files and actions"} value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setActiveIndex(0); }} onKeyDown={(event) => {
       if (event.key === "ArrowDown" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + 1) % choices.length); }
       if (event.key === "ArrowUp" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + choices.length - 1) % choices.length); }
@@ -127,7 +127,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     {namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
     <div ref={results} id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3>Actions</h3><div>{visibleActions.map((action, index) => <button
       id={`action:${action.id}`} key={action.id} role="option" aria-selected={selectedIndex === index} aria-label={action.label} disabled={acting} onMouseEnter={() => setActiveIndex(index)} onClick={() => runAction(action)}>
-      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}{matchingAlias(action, query) && <em> ({matchingAlias(action, query)})</em>}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
+      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}{matchingAlias(action, query) && <em> ({matchingAlias(action, query)})</em>}</strong><span className="ac-sr-only">{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
     </button>)}</div></section>}
     {busy && <p role="status">Searching…</p>}{error && <p role="alert">{error}</p>}
     {!busy && query.trim() && !result.items.length && !visibleActions.length && !error && <p>No matching files or actions.</p>}
