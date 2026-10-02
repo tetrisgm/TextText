@@ -755,13 +755,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     });
   };
   const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => setTemplatePicker(true)); };
-  const createForFolder = (folder: string, templateName: string) => operate(async () => {
+  const createForFolder = (folder: string, templateName: string, initialTitle = "") => operate(async () => {
     const sourcePath = `Templates/${templateName}.textpack`;
     const source = listing?.items.some(item => item.path === sourcePath) ? await vaultRequest<VaultFile>("read", { path: sourcePath }) : null;
     const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, ...(source ? { sourcePath, sourceHash: source.hash } : {}) });
     const example = readDocument(cloned);
     const fallback = source?.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : BUILTIN_TEMPLATES.find(template => template.id === (folder === "Blog" ? "texttext.article" : "texttext.note"));
-    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: "", subtitle: "", body: "", fields: {}, tags: [], assets: [] },
+    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle, subtitle: "", body: "", fields: {}, tags: [], assets: [] },
       presentation: fallback ? { ...example.presentation, template: { id: fallback.id, version: fallback.version } } : example.presentation };
     const created = await vaultRequest<VaultFile>("write", writePayload(cloned, blank, fallback ? { template: fallback } : undefined));
     setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: folder === "Blog" || folder === "Notes", awaitSharedMode: allowFolderPicker });
@@ -905,9 +905,15 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (!dialogOpen) { event.preventDefault(); openSearch(); }
         return;
       }
-      if (dialogOpen || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || busy) return;
+      if (dialogOpen || event.metaKey || event.ctrlKey || event.altKey || busy) return;
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return;
+      if (!selected && destinationFolder.trim() === "Notes" && canCreate && event.key.length === 1 && /\S/u.test(event.key) && event.key !== "/") {
+        event.preventDefault();
+        void createForFolder("Notes", "Note", event.key);
+        return;
+      }
+      if (event.shiftKey) return;
       if (event.key === "/") { event.preventDefault(); openSearch(); return; }
       const action = commandActions.find(item => item.shortcut?.toLowerCase() === event.key.toLowerCase());
       if (action) { event.preventDefault(); void runCommandAction(action.id); }

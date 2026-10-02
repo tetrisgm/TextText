@@ -28,6 +28,8 @@ Empty Blog drafts now show New story in the active header and Blog list while th
 
 The Notes edit card now keeps tags in a compact bottom row and reduces empty body height; its short-card shape remains under 300 pixels tall in the local browser fixture. The same note TextPack fields drive edit and saved-card views.
 
+In the Notes folder, typing a printable character starts a card and retains that first character in the TextPack title. The established N shortcut now follows the same path there; Command K and focused text fields keep their own keyboard behavior.
+
 New bookmarks record their save time in the initial TextPack snapshot. The Bookmarks inbox orders dated saves newest first and groups them by day; undated legacy files remain under Saved links. This follows Shiori’s dated inbox list.
 
 ## Verification
@@ -47,6 +49,7 @@ New bookmarks record their save time in the initial TextPack snapshot. The Bookm
 - Gallery source and tags pass TypeScript, the article-capture unit test, and the local browser contract. The browser confirms they persist and appear in the image viewer, and that a Gallery source does not activate article capture controls. `/tmp/texttext-gallery-editor-light-reference.png` shows the updated inspector.
 - Feed search passes TypeScript, the local UI bundle, and the full browser contract for matching stories and an empty result. `/tmp/texttext-feeds-ranked-reference.png` shows the search pill, topic tabs, and first stories in dark mode.
 - Feed onboarding passes TypeScript, the local UI bundle, and the full browser contract for selecting two topics, creating eight subscription TextPacks, and landing on the feed. `/tmp/texttext-feeds-starter-reference.png` shows the interest picker before selection.
+- Notes type-to-create passes TypeScript, the local UI bundle, and the full browser contract for retaining the first character, continuing title input, and persisting the resulting note TextPack after Finish.
 
 ## Boundaries
 

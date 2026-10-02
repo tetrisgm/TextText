@@ -1198,9 +1198,13 @@ try {
   await page.getByRole("button", { name: "New note", exact: true }).waitFor();
   await page.keyboard.press("n");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  assert.equal(await page.getByRole("textbox", { name: "Title" }).inputValue(), "n");
+  await page.keyboard.type("ote from keyboard");
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
   const shortcutNote = [...files.values()].at(-1);
   assert.ok(shortcutNote.path.startsWith("Notes/"));
   assert.equal(JSON.parse(shortcutNote.documentJSON).presentation.template.id, "texttext.note");
+  assert.equal(JSON.parse(shortcutNote.documentJSON).content.title, "note from keyboard");
   for (const path of files.keys()) if (path.startsWith("Feeds/")) files.delete(path);
   await page.reload();
   await chooseFolder("Feeds");
