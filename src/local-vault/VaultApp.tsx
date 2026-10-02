@@ -98,7 +98,12 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     return () => window.removeEventListener("texttext:vault-edit-story-topics", editTopics);
   }, []);
   useEffect(() => {
-    const editItem = () => setReading(false);
+    const editItem = () => {
+      setReading(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('[aria-label="Document body"], .tt-text-title[contenteditable="true"]')?.focus();
+      }));
+    };
     window.addEventListener("texttext:vault-edit-item", editItem);
     return () => window.removeEventListener("texttext:vault-edit-item", editItem);
   }, []);

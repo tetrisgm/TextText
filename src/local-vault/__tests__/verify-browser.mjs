@@ -1488,6 +1488,10 @@ try {
   await page.getByRole("button", { name: "Open A concise card" }).click();
   await page.getByRole("region", { name: "Note card" }).getByText("A concise card").waitFor();
   assert.equal(await page.getByRole("textbox", { name: "Document body" }).count(), 0);
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("option", { name: "Edit this item", exact: true }).click();
+  await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
