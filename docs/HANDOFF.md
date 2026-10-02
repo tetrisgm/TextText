@@ -20,6 +20,8 @@ The bundled Gallery choice now shows the four actual photos from its starter Tex
 
 The creation picker now offers Feeds when the workspace can read and create feed subscriptions. Its news preview leads into the existing URL-first Add source dialog, which writes the subscription as a TextPack in Feeds. The card is absent before connection or without permission; `/tmp/texttext-template-picker-feeds-reference.png` shows it in a connected local fixture.
 
+Bookmark capture now accepts a bare web address such as `example.com/article`, stores the canonical `https://` URL in the Bookmarks TextPack, and still treats prose containing a domain as a note. The URL-first form no longer blocks a bare address through browser type validation.
+
 The Bookmarks reader now uses compact previous/next navigation, Reader and Original controls, a sans-serif title/body, and a source line below the title to track Shiori’s public dashboard example. Its items remain bookmark TextPacks, and URL-first capture remains the creation path.
 
 The Gallery detail viewer now occupies the workspace beside the still-visible folder sidebar, with a large image, right inspector, zoom, and Fit. Folder navigation closes the viewer. A single Gallery import opens its image-first item editor for title and caption; batch imports return to the grid. This follows Resurf’s public image detail view while the assets remain inside the Gallery TextPack.

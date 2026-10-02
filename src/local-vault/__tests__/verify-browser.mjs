@@ -942,11 +942,12 @@ try {
   const saveBookmark = page.getByRole("dialog", { name: "Save bookmark" });
   assert.equal(await saveBookmark.getByRole("textbox", { name: "Capture title" }).isVisible(), false);
   await page.screenshot({ path: "/tmp/texttext-save-bookmark-reference.png" });
-  await saveBookmark.getByRole("textbox", { name: "Web address" }).fill("https://example.com/fresh-reading");
+  await saveBookmark.getByRole("textbox", { name: "Web address" }).fill("example.com/fresh-reading");
   await saveBookmark.getByRole("button", { name: "Save bookmark" }).click();
   await page.getByRole("option", { name: /example.com/ }).filter({ hasText: "example.com" }).first().waitFor();
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.com"));
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/fresh-reading"), true);
+  assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.body === "https://example.com/fresh-reading"), true);
   assert.equal(await page.getByRole("article", { name: "Bookmark reader" }).count(), 1);
   assert.equal(await page.getByRole("main", { name: "Edit item" }).count(), 0);
   await chooseFolder("Blog");

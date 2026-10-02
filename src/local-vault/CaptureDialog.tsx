@@ -5,12 +5,13 @@ export function captureInput(text: string, title: string) {
   const body = text.trim();
   if (!body) throw new Error("Paste a link or write a note first.");
   let sourceURL: string | undefined;
-  if (/^https?:\/\/\S+$/i.test(body)) {
-    const url = new URL(body);
+  const bareAddress = /^(?:localhost(?::\d+)?|(?:[\p{L}\p{N}-]+\.)+[\p{L}\p{N}-]+(?::\d+)?)(?:[/?#]\S*)?$/iu.test(body);
+  if (/^https?:\/\/\S+$/i.test(body) || bareAddress) {
+    const url = new URL(bareAddress ? `https://${body}` : body);
     if (url.username || url.password) throw new Error("Remove the username or password from this link before saving it.");
     sourceURL = url.href;
   }
-  return { title: title.trim() || (sourceURL ? new URL(sourceURL).hostname : body.split("\n")[0].slice(0, 100)), body,
+  return { title: title.trim() || (sourceURL ? new URL(sourceURL).hostname : body.split("\n")[0].slice(0, 100)), body: sourceURL ?? body,
     kind: sourceURL ? "bookmark" : "note", ...(sourceURL ? { sourceURL } : {}) };
 }
 
@@ -27,7 +28,7 @@ export function CaptureDialog({ onClose, onSave, bookmarkOnly = false }: { onClo
       catch (error) { setError(error instanceof Error ? error.message : "Could not save. Your text is still here."); }
       finally { setBusy(false); }
     })(); }}>
-      {bookmarkOnly ? <label>Web address<input autoFocus type="url" inputMode="url" aria-label="Web address" placeholder="https://example.com/article" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={4096} /></label> : <label>Link or note<textarea autoFocus aria-label="Link or note" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={1_000_000} /></label>}
+      {bookmarkOnly ? <label>Web address<input autoFocus type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address" placeholder="Paste a link or enter example.com" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={4096} /></label> : <label>Link or note<textarea autoFocus aria-label="Link or note" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={1_000_000} /></label>}
       {bookmarkOnly ? <details><summary>Set a title</summary><label>Title (optional)<input aria-label="Capture title" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} /></label></details>
         : <label>Title (optional)<input aria-label="Capture title" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} /></label>}
       {error && <p role="alert">{error}</p>}
