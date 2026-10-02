@@ -251,6 +251,13 @@
 .vault-app .vault-bookmark-reader-tabs span { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px #00000012; font-weight:650; }
 .vault-app .vault-bookmark-reader>header button[aria-pressed=true] { color:#c69a3d; }
 .vault-app .vault-bookmark-reader>header a { padding:7px 9px; color:var(--ink); text-decoration:none; }
+.vault-app .vault-bookmark-inspector { position:relative; }
+.vault-app .vault-bookmark-inspector summary { display:grid; place-items:center; min-width:30px; min-height:30px; padding:0 5px; border-radius:5px; color:var(--muted); font-size:18px; line-height:1; list-style:none; cursor:pointer; }
+.vault-app .vault-bookmark-inspector summary::-webkit-details-marker { display:none; }
+.vault-app .vault-bookmark-inspector summary:hover,.vault-app .vault-bookmark-inspector[open] summary { background:var(--selection); color:var(--ink); }
+.vault-app .vault-bookmark-inspector-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:5; width:min(360px,calc(100vw - 36px)); padding:5px 0; border:1px solid var(--line); border-radius:9px; background:var(--surface); box-shadow:0 16px 44px #0003; }
+.vault-app .vault-bookmark-inspector-panel .vault-bookmark-tags { padding:10px 14px; }
+.vault-app .vault-bookmark-inspector-panel .vault-bookmark-note { max-width:none; margin:0; padding:12px 14px; border:0; }
 .vault-app .vault-bookmark-tags { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:9px 18px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
 .vault-app .vault-bookmark-tags>button { padding:4px 7px; border:1px solid var(--line); border-radius:5px; color:var(--ink); }
 .vault-app .vault-bookmark-tags form { display:flex; gap:5px; margin-left:3px; }

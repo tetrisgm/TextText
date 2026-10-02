@@ -925,12 +925,20 @@ try {
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("group", { name: "Today" }).getByRole("option", { name: /A saved article/ }).waitFor();
   await page.getByRole("option", { name: /A saved article/ }).click();
   const bookmarkReader = page.getByRole("article", { name: "Bookmark reader" });
+  const bookmarkDetails = bookmarkReader.locator("details.vault-bookmark-inspector");
+  const toggleBookmarkDetails = bookmarkDetails.locator("summary");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   await bookmarkReader.getByRole("button", { name: "Next bookmark" }).click();
   await bookmarkReader.getByRole("button", { name: "Previous bookmark" }).click();
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   await bookmarkReader.getByRole("button", { name: /Favorite/ }).click();
   await bookmarkReader.getByRole("button", { name: "Mark read" }).click();
+  assert.ok(await bookmarkReader.evaluate((reader) => {
+    const title = reader.querySelector('.tt-text-title');
+    const toolbar = reader.querySelector(':scope > header');
+    return Boolean(title && toolbar && title.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom < 110);
+  }), "the bookmarked page title should lead the reader");
+  if (!(await bookmarkDetails.evaluate(element => element.open))) await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("textbox", { name: "Add bookmark tag" }).fill("research");
   await bookmarkReader.getByRole("button", { name: "Add", exact: true }).click();
   await bookmarkReader.getByRole("button", { name: "Remove research tag" }).waitFor();
@@ -963,7 +971,9 @@ try {
   await page.getByRole("option", { name: /Z filler 24/ }).waitFor();
   await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
+  if (await bookmarkDetails.evaluate(element => element.open)) await toggleBookmarkDetails.click();
   await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
+  await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("button", { name: "Add note" }).click();
   await bookmarkReader.getByRole("textbox", { name: "Personal note text" }).fill("Remember this argument for the reading list.");
   await bookmarkReader.getByRole("button", { name: "Save note" }).click();

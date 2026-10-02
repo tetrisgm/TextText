@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now opens the saved page with the article title and source directly below the reader toolbar. Tags and the personal note remain editable in a contextual Details panel, matching Shiori's content-first reader hierarchy more closely. The local browser flow verifies title placement and tag/note persistence; TypeScript passed. `/tmp/texttext-bookmark-reference.png` shows the closed-panel reader and `/tmp/texttext-bookmark-light-reference.png` shows Details open. Full Shiori parity remains open; no app release was run.
+
 Command K now renders compact one-line command rows with circular action icons and right-aligned shortcut keys on a neutral gray panel, following the official Superhuman Command reference. Descriptions remain available for search and assistive technology. `/tmp/texttext-command-reference.png` shows the checked dark view; the local browser flow and TypeScript passed. Full reference parity remains open; no app release was run.
 
 The Notes library now places its Start typing prompt across the full card area and uses the available desktop width for up to five card columns. The local browser flow and TypeScript passed; `/tmp/texttext-note-grid-reference.png` shows the checked dark view. The card editor and TextPack content model are unchanged; reference parity remains open. No app release was run.
