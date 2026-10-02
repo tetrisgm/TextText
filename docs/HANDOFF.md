@@ -9,7 +9,7 @@ Oracle remains the sole host and storage location. The last shipped release and 
 ## Verification
 
 - October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. The latest browser run verifies Blog title-to-subtitle-to-body focus and saved subtitle, URL capture into the Bookmarks reader, Gallery title/caption persistence, centered Command K, note tags, cross-publisher coverage, and the full-entry feed reader. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
-- The current Note change passes TypeScript and the local UI bundle build. The full browser contract stops before Notes at its captured-bookmark Article reader assertion (line 557), so the Note card cycle has not yet passed browser verification. Do not push until the browser check is repaired and passes.
+- The Note Finish, saved card, Edit card cycle passes TypeScript, the local UI bundle build, and the full local browser contract. The contract also caught and verified a fix for captured links using the Note template: their Article reader takes precedence over the Note card. The saved card screenshot is `/tmp/texttext-note-card-reference.png`.
 
 ## Boundaries
 
