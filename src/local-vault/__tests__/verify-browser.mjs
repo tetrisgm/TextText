@@ -1082,6 +1082,14 @@ try {
   await page.locator(".vault-story-list").getByText("A considered subtitle").waitFor();
   await page.locator(".vault-story-list").getByText("Mira Chen").waitFor();
   await page.locator(".vault-story-list").getByText("An opening paragraph.").waitFor();
+  const storySearch = page.getByRole("searchbox", { name: "Find stories" });
+  await page.waitForFunction(() => !document.querySelector('input[aria-label="Find stories"]')?.disabled);
+  await storySearch.fill("considered subtitle");
+  await page.getByRole("button", { name: "Open An essay title" }).waitFor();
+  await storySearch.fill("story that is not here");
+  await page.getByRole("status").filter({ hasText: "No stories match." }).waitFor();
+  await storySearch.fill("");
+  await page.getByRole("button", { name: "Open An essay title" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-blog-reference.png" });
   await page.getByRole("button", { name: "Open An essay title" }).click();
   const storyReader = page.getByRole("region", { name: "Story reader" });

@@ -142,6 +142,8 @@
 .vault-app .vault-note-card>button:hover { background:color-mix(in srgb,var(--selection) 32%,transparent); }
 .vault-app .vault-note-card:focus-within { outline:2px solid var(--tt-accent); outline-offset:2px; }
 .vault-app .vault-story-list>button { display:flex; align-items:center; width:100%; gap:22px; padding:24px 0; border-bottom:1px solid var(--line); border-radius:0; text-align:left; }
+.vault-app .vault-story-search { display:block; max-width:360px; margin:0 0 14px; }
+.vault-app .vault-story-search input { width:100%; height:38px; padding:0 12px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--ink); font-size:14px; }
 .vault-app .vault-story-copy { display:flex; flex:1; min-width:0; flex-direction:column; align-items:flex-start; gap:7px; }
 .vault-app .vault-story-list-byline { display:flex; align-items:center; gap:7px; margin-bottom:3px; color:var(--ink); font-size:13px; font-weight:550; }
 .vault-app .vault-story-list-avatar { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--selection); color:var(--ink); font-size:11px; font-weight:700; }
