@@ -167,10 +167,10 @@ try {
       nextCreatedPath = null;
       result = { ...(request.params.sourcePath ? (files.get(request.params.sourcePath) ?? history.get(request.params.sourceHash)) : initial), path: name, hash: String(createRevision) };
       result.markdown = result.markdown.replace(/textTextId: [^\n]+/, `textTextId: "copy-${revision}"`);
-      if (!request.params.sourcePath && (typeof request.params.body === "string" || request.params.title === "Untitled")) {
+      if (!request.params.sourcePath) {
         const body = typeof request.params.body === "string" ? request.params.body : "";
         const document = makeDocument(body);
-        document.content.title = request.params.title || "Untitled";
+        document.content.title = request.params.title ?? "Untitled";
         if (request.params.sourceURL) {
           document.content.fields.sourceUrl = request.params.sourceURL;
           document.content.fields.texttextBookmarkSavedAt = new Date().toISOString();
@@ -830,10 +830,13 @@ try {
   assert.equal(await page.locator("dialog.vault-recovery").count(), 0);
   await page.getByRole("region", { name: "Note card" }).waitFor();
   await page.getByRole("button", { name: "New note", exact: true }).click();
-  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
   const newNotePath = [...files.keys()].at(-1);
   assert.ok(newNotePath);
   assert.equal(JSON.parse(files.get(newNotePath).documentJSON).content.body, "");
+  await page.keyboard.insertText("A note from the toolbar");
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   await page.keyboard.insertText("Typing starts in the new note.");
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   assert.match(files.get(newNotePath).markdown, /Typing starts in the new note\./);
@@ -1326,9 +1329,11 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Document body" }).count(), 0);
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  await page.keyboard.insertText("Thought for later");
+  await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   await page.keyboard.insertText("A short card about an idea.");
-  await page.getByRole("textbox", { name: "Title" }).fill("Thought for later");
   await page.locator(".vault-context-header h2").getByText("Thought for later", { exact: true }).waitFor();
   await page.getByRole("textbox", { name: "Add note tag" }).fill("#Ideas");
   await page.getByRole("region", { name: "Note tags" }).getByRole("button", { name: "Add", exact: true }).click();
@@ -1377,14 +1382,15 @@ try {
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "New note", exact: true }).waitFor();
   await page.keyboard.press("n");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
-  assert.equal(await page.getByRole("textbox", { name: "Document body" }).textContent(), "n");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  assert.equal(await page.getByRole("textbox", { name: "Title", exact: true }).inputValue(), "n");
   await page.keyboard.type("ote from keyboard");
   await page.getByRole("button", { name: "Finish", exact: true }).click();
   const shortcutNote = [...files.values()].at(-1);
   assert.ok(shortcutNote.path.startsWith("Notes/"));
   assert.equal(JSON.parse(shortcutNote.documentJSON).presentation.template.id, "texttext.note");
-  assert.equal(JSON.parse(shortcutNote.documentJSON).content.body, "note from keyboard");
+  assert.equal(JSON.parse(shortcutNote.documentJSON).content.title, "note from keyboard");
+  assert.equal(JSON.parse(shortcutNote.documentJSON).content.body, "");
   for (const path of files.keys()) if (path.startsWith("Feeds/")) files.delete(path);
   await page.reload();
   await chooseFolder("Feeds");
@@ -1435,7 +1441,7 @@ try {
   await page.getByRole("dialog", { name: "Subscribe to a feed" }).getByRole("button", { name: "Close", exact: true }).click();
   assert.deepEqual(failures, []);
   console.log("Bookmark reader, URL-first capture, story list, gallery viewer, and feed headlines passed.");
-  console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");
+  console.log("New note focused its title for immediate typing; reopening another note kept the user's focus.");
   console.log("Recovery preview/cancel, full pack restore as copy, and version history passed.");
   console.log("Bounded folder previews and pagination passed.");
   console.log("Image picker, folder drop/paste and embedded GIF still preview passed.");

@@ -716,17 +716,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     finally { setBusy(false); }
   };
   const createNote = (origin: HTMLElement | null, firstText = "") => operate(async () => {
-    let created = await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() || "Notes" });
-    if (firstText) {
-      const document = readDocument(created);
-      created = await vaultRequest<VaultFile>("write", writePayload(created, { ...document, content: { ...document.content, body: firstText } }));
-    }
+    let created = await vaultRequest<VaultFile>("create", { title: firstText, folder: destinationFolder.trim() || "Notes" });
     if (destinationFolder.trim() === "Blog") {
       const document = readDocument(created);
       if (document.presentation.template.id === "texttext.article") created = await vaultRequest<VaultFile>("write", writePayload(created, { ...document, content: { ...document.content, title: "" } }));
     }
     setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin,
-      focusPending: true, awaitSharedMode: allowFolderPicker });
+      focusPending: true, focusTitle: true, awaitSharedMode: allowFolderPicker });
     setSelected(created);
     refresh();
   });
