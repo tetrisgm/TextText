@@ -201,9 +201,9 @@
 .vault-app .vault-bookmark-toolbar .vault-bookmark-tag-filters button { white-space:nowrap; }
 .vault-app .vault-bookmark-index-status { margin:8px 10px; color:var(--muted); font-size:12px; line-height:1.4; }
 .vault-app .vault-bookmark-pages { display:flex; align-items:center; justify-content:space-between; padding:10px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
-.vault-app .vault-bookmark-day { padding:8px 10px 12px; color:var(--muted); font-size:12px; }
-.vault-app .vault-bookmark-list [role=listbox]>button { display:flex; align-items:center; width:100%; gap:10px; padding:11px 10px; border:0; border-radius:7px; text-align:left; }
-.vault-app .vault-bookmark-list [role=listbox]>button[aria-selected=true] { background:var(--selection); }
+.vault-app .vault-bookmark-day { padding:14px 10px 8px; color:var(--muted); font-size:12px; font-weight:650; }
+.vault-app .vault-bookmark-list [role=listbox] [role=option] { display:flex; align-items:center; width:100%; gap:10px; padding:11px 10px; border:0; border-radius:7px; text-align:left; }
+.vault-app .vault-bookmark-list [role=listbox] [role=option][aria-selected=true] { background:var(--selection); }
 .vault-app .vault-bookmark-list .vault-bookmark-mark { width:25px; height:25px; font-size:12px; border-radius:5px; }
 .vault-app .vault-bookmark-list .vault-bookmark-copy { gap:2px; }
 .vault-app .vault-bookmark-list .vault-bookmark-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:590; }

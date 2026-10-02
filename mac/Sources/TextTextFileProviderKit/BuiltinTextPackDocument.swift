@@ -19,6 +19,7 @@ public struct BuiltinTextPackDocument: Sendable {
         if let sourceURL {
             fields["sourceUrl"] = sourceURL
             fields["captureStatus"] = "pending"
+            fields["texttextBookmarkSavedAt"] = ISO8601DateFormatter().string(from: Date())
         }
         let document: [String: Any] = [
             "schemaVersion": 1,

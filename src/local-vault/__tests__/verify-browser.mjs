@@ -153,7 +153,10 @@ try {
         const body = typeof request.params.body === "string" ? request.params.body : "";
         const document = makeDocument(body);
         document.content.title = request.params.title || "Untitled";
-        if (request.params.sourceURL) document.content.fields.sourceUrl = request.params.sourceURL;
+        if (request.params.sourceURL) {
+          document.content.fields.sourceUrl = request.params.sourceURL;
+          document.content.fields.texttextBookmarkSavedAt = new Date().toISOString();
+        }
         result.documentJSON = JSON.stringify(document);
         result.markdown = `---\ntextTextId: "copy-${revision}"\ntitle: ${JSON.stringify(document.content.title)}\n---\n\n${body}`;
       }
@@ -817,7 +820,7 @@ try {
     const document = { schemaVersion: 1, content: { title, body, fields, tags: [], assets }, presentation: { template: { id: `texttext.${kind}`, version: 1 }, theme: {} } };
     return { path, hash: `sample-${path}`, markdown: `---\ntextTextId: "${crypto.randomUUID()}"\ntitle: ${JSON.stringify(title)}\n---\n\n${body}`, documentJSON: JSON.stringify(document) };
   };
-  files.set("Bookmarks/Reading.textpack", sample("Bookmarks/Reading.textpack", "bookmark", "A saved article", "The complete saved reading text.", { sourceUrl: "https://example.com/article" }));
+  files.set("Bookmarks/Reading.textpack", sample("Bookmarks/Reading.textpack", "bookmark", "A saved article", "The complete saved reading text.", { sourceUrl: "https://example.com/article", texttextBookmarkSavedAt: new Date().toISOString() }));
   files.set("Bookmarks/Another.textpack", sample("Bookmarks/Another.textpack", "bookmark", "Another saved link", "A second reading item.", { sourceUrl: "https://example.org/another" }));
   for (let index = 0; index < 25; index++) {
     const name = `Z filler ${String(index).padStart(2, "0")}`;
@@ -846,6 +849,7 @@ try {
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseFolder("Bookmarks");
   await page.getByRole("button", { name: "Save bookmark", exact: true }).waitFor();
+  await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("group", { name: "Today" }).getByRole("option", { name: /A saved article/ }).waitFor();
   await page.getByRole("option", { name: /A saved article/ }).click();
   const bookmarkReader = page.getByRole("article", { name: "Bookmark reader" });
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();

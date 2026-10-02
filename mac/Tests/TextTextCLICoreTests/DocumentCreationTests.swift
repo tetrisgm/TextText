@@ -84,6 +84,7 @@ final class DocumentCreationTests: XCTestCase {
         let fields = try XCTUnwrap(content["fields"] as? [String: Any])
         XCTAssertEqual(fields["sourceUrl"] as? String, "https://paper.design/docs/mcp")
         XCTAssertEqual(fields["captureStatus"] as? String, "pending")
+        XCTAssertNotNil((fields["texttextBookmarkSavedAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) })
     }
 
     func testFrontmatterIsSeparatedFromTheBody() throws {
