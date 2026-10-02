@@ -1205,13 +1205,18 @@ try {
   assert.ok(await page.evaluate(() => {
     const card = document.querySelector('.tt-document-editor[data-template-id="texttext.note"]');
     const tags = document.querySelector('.tt-note-tags');
-    return Boolean(card && tags && tags.getBoundingClientRect().bottom - card.getBoundingClientRect().top < 300);
-  }), "a short note should remain a compact card while editing");
+    const finish = tags?.querySelector('.tt-note-finish');
+    return Boolean(card && tags && finish && tags.contains(finish) &&
+      finish.getBoundingClientRect().right <= tags.getBoundingClientRect().right &&
+      tags.getBoundingClientRect().bottom - card.getBoundingClientRect().top < 300);
+  }), "a short note should keep Finish inside its compact card footer");
+  assert.equal(await page.getByRole("button", { name: "Finish", exact: true }).count(), 1);
   await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-note-editor-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
-  await page.getByRole("button", { name: "Finish", exact: true }).click();
+  await page.getByRole("textbox", { name: "Document body" }).focus();
+  await page.keyboard.press("Meta+Enter");
   await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").waitFor();
   await page.getByRole("region", { name: "Note card" }).getByText("#Ideas").waitFor();
   await page.screenshot({ path: "/tmp/texttext-note-card-reference.png" });

@@ -1928,10 +1928,10 @@ export function UnifiedDocumentEditor({
             </div>
           </details>
           )}
-          <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
-            <span className="tt-stop-edit-label-full">{activeTemplate.id === "texttext.note" ? "Finish" : transport === "local" ? "Save" : "Stop editing"}</span>
-            <span className="tt-stop-edit-label-compact">{activeTemplate.id === "texttext.note" ? "Finish" : transport === "local" ? "Save" : "Done"}</span>
-          </button>
+          {activeTemplate.id !== "texttext.note" && <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
+            <span className="tt-stop-edit-label-full">{transport === "local" ? "Save" : "Stop editing"}</span>
+            <span className="tt-stop-edit-label-compact">{transport === "local" ? "Save" : "Done"}</span>
+          </button>}
             <div className={`tt-save-state is-${saveState}`}>
               {saveStateLabel}
             </div>
@@ -2049,6 +2049,7 @@ export function UnifiedDocumentEditor({
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, activeTemplate.id === "texttext.note" ? 500 : 5) } });
           setTagDraft("");
         }}><input aria-label={activeTemplate.id === "texttext.note" ? "Add note tag" : "Add story topic"} placeholder={activeTemplate.id === "texttext.note" ? "Add a tag" : "Add a topic"} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
+        {activeTemplate.id === "texttext.note" && <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>}
       </section>}
       {onPasteImages && articleCaret && activeTemplate.id === "texttext.article" && <div className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
         <button type="button" aria-label="Add image to story" title="Add image" onMouseDown={(event) => event.preventDefault()} onClick={() => articleImageInput.current?.click()}>+</button>
@@ -2121,9 +2122,12 @@ export function UnifiedDocumentEditor({
         .tt-article-topic-list button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:16px;line-height:1}
         .tt-article-topics form{display:flex;gap:8px}.tt-article-topics input{min-width:0;padding:7px 8px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 20%,transparent);border-radius:4px;background:var(--paper,#fff);color:var(--ink,#1d1d1f)}
         .tt-article-topics form button{border:0;background:transparent;color:var(--tt-accent,#0071e3);cursor:pointer}.tt-article-topics form button:disabled{opacity:.5}
-        .tt-note-tags{max-width:520px;margin:-1px auto 40px;padding:12px 24px 20px;border:1px solid var(--line,#ddd);border-top:0;border-radius:0 0 10px 10px;background:var(--paper,#fff)}
+        .tt-note-tags{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:520px;margin:-1px auto 40px;padding:12px 24px 20px;border:1px solid var(--line,#ddd);border-top:0;border-radius:0 0 10px 10px;background:var(--paper,#fff)}
         .tt-note-tags h3{font-size:11px;color:var(--muted,#666)}
         .tt-note-tags .tt-article-topic-list{margin-bottom:8px}
+        .tt-note-tags .tt-note-finish{flex:none;margin-left:auto;padding:6px 12px;border:0;border-radius:5px;background:var(--tt-accent,#2762ac);color:#fff;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-note-tags .tt-note-finish:hover{filter:brightness(1.08)}
+        .tt-note-tags .tt-note-finish:focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:3px}
         .tt-gallery-edit-layout{display:grid;grid-template-columns:minmax(0,1fr) 240px;align-items:start;gap:24px;max-width:1300px;margin:24px auto;padding:0 24px}
         .tt-gallery-edit-layout .tt-document-editor{min-width:0;max-width:none;margin:0;padding:0}
         .tt-gallery-edit-details{position:sticky;top:24px;padding:4px 0;color:var(--ink,#1d1d1f)}

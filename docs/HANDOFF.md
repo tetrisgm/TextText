@@ -24,6 +24,8 @@ Bookmark capture now accepts a bare web address such as `example.com/article`, s
 
 A saved Note card now takes focus when its noninteractive content is clicked, and Enter opens its editor; the pencil remains available. The browser contract verifies the focus, Enter edit, Finish, and pencil edit cycle on the same TextPack.
 
+The Notes editor now places its single Finish action in the card’s bottom-right footer instead of the page toolbar. Command-Enter still finishes. The local browser contract checks the button’s location and the shortcut; `/tmp/texttext-note-editor-reference.png` shows the current dark editor.
+
 The Bookmarks reader now uses compact previous/next navigation, Reader and Original controls, a sans-serif title/body, and a source line below the title to track Shiori’s public dashboard example. Its items remain bookmark TextPacks, and URL-first capture remains the creation path.
 
 The Gallery detail viewer now occupies the workspace beside the still-visible folder sidebar, with a large image, right inspector, zoom, and Fit. Folder navigation closes the viewer. A single Gallery import opens its image-first item editor for title and caption; batch imports return to the grid. This follows Resurf’s public image detail view while the assets remain inside the Gallery TextPack.
