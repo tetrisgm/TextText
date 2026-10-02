@@ -1245,6 +1245,8 @@ try {
   await imageCapture.waitFor({ state: "hidden" });
   await page.locator(".vault-photo-grid img").first().waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid img")].every(image => image.complete && image.naturalHeight > 0));
+  assert.equal(await page.getByRole("searchbox", { name: "Find images" }).count(), 0);
+  await page.getByRole("button", { name: "Search images" }).click();
   const gallerySearch = page.getByRole("searchbox", { name: "Find images" });
   await gallerySearch.waitFor({ state: "visible" });
   await page.waitForFunction(() => !document.querySelector('input[aria-label="Find images"]')?.disabled);
@@ -1253,6 +1255,8 @@ try {
   await gallerySearch.fill("fieldwork");
   await page.waitForFunction(() => document.querySelectorAll(".vault-photo-grid button").length === 1 && document.querySelector('.vault-photo-grid button')?.getAttribute('aria-label') === "Open One photograph");
   await gallerySearch.fill("");
+  await page.getByRole("button", { name: "Close image search" }).click();
+  assert.equal(await gallerySearch.count(), 0);
   await page.getByRole("button", { name: "Open One photograph" }).waitFor();
   const portraitTile = await page.getByRole("button", { name: "Open Two photographs image 1" }).boundingBox();
   const landscapeTile = await page.getByRole("button", { name: "Open Two photographs image 2" }).boundingBox();

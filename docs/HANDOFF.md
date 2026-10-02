@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery search now rests as a compact icon above the image grid, closer to Resurf's visual-library toolbar. Opening it focuses the existing indexed TextPack search; Done or Escape clears and closes it. The grid leads the view again. TypeScript, local UI build, and the offline browser flow passed, including filtered search and image viewer checks. Checked dark grid: `/tmp/texttext-gallery-grid-reference.png`. Broader Resurf capture and organization parity remains open; no app release was run.
+
 Bookmarks now opens into a cleaner Shiori-style article reader: highlight guidance is hidden until text is selected, and existing highlights start collapsed. Creating a highlight opens its notes for immediate annotation. The same ArticleReader remains available for other TextPacks. TypeScript, local UI build, and offline browser flow passed; one run hit the existing intermittent story-format selection timeout, and the rerun passed. Checked captures: `/tmp/texttext-bookmark-clean-reader-light-reference.png` and `/tmp/texttext-bookmark-clean-reader-dark-reference.png`. Broader Shiori capture/integration parity remains open; no app release was run.
 
 Command K now offers Go home from folders and open items, plus Edit this item when an editable TextPack is open. The browser contract checks home navigation and the contextual edit command; TypeScript, local UI build, and offline browser flow passed. Full Superhuman command coverage and visual parity remain open; no app release was run.
