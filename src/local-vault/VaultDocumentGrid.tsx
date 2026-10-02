@@ -57,9 +57,10 @@ export function justifiedRows(aspects: number[], availableWidth: number, targetH
   }
   return rows;
 }
-export function VaultDocumentGrid({ listing, folder, busy, onOpen, onCreateNote, folderTemplate, excludedPath, previewOnly = false, emptyMessage, preferredBookmarkPath }: {
+export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookmark, onCreateNote, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath }: {
   listing: VaultListing; folder: string; busy: boolean; onOpen: (path: string) => void;
-  onCreateNote?: () => void;
+  onRevealBookmark?: (path: string) => void;
+  onCreateNote?: () => void; canUsePersonalBookmarks?: boolean;
   folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string;
 }) {
   const [page, setPage] = useState(0);
@@ -188,6 +189,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onCreateNote,
   }) : [];
   const galleryRows = justifiedRows(galleryTiles.map(tile => galleryAspects[tile.key] || 1), galleryWidth);
   let galleryTile = 0;
+  const filePages = lastPage > 0 && !bookmarkFolder ? <nav className="vault-file-pages" aria-label="File pages"><button disabled={busy || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage + 1} of {lastPage + 1}</span><button disabled={busy || currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next</button></nav> : null;
   return <section aria-label="Documents" className={referenceFolder ? `vault-${folder.toLowerCase()}-folder` : undefined}>{!referenceFolder && <h3>{folder ? "Files" : "Explore your documents"}</h3>}
     {template && !referenceFolder && template.collection.views.length > 0 && <label>Folder view <select aria-label="Folder view" value={view || template.collection.defaultView || ""} onChange={(event) => { setView(event.target.value); setPage(0); }}><option value="">Default</option>{template.collection.views.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>}
     {!supported && <p role="status">The {requestedLayout} layout is not available here yet. Showing a readable list.</p>}
@@ -209,7 +211,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onCreateNote,
         </span>
         {source && /* eslint-disable-next-line @next/next/no-img-element */ <img src={source} alt="" loading="lazy" />}
       </button>}</PreviewImage>;
-    })}</div> : feedsFolder ? <VaultFeedHeadlines sources={items.map(item => feedIndex.previews[item.path]).filter((entry): entry is FolderPreview => Boolean(entry))} ready={feedIndex.key === feedIndexKey && feedIndex.done && !feedIndex.error} canAdd={!busy && !previewOnly} sourceList={<div className="vault-feed-sources">{visible.map(item => { const preview = feedIndex.previews[item.path]; return <button key={item.path} disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallbackTitle(item)}`}><span className="vault-feed-source-icon" aria-hidden="true">◉</span><span><strong>{preview?.title || fallbackTitle(item)}</strong><small>{typeof preview?.document?.content.fields.feedUrl === "string" ? preview.document.content.fields.feedUrl : "Open latest stories"}</small></span><span aria-hidden="true">›</span></button>; })}</div>} /> : template && layout === "index" ? <div className="vault-folder-table-wrapper"><table className="vault-folder-table"><thead><tr><th>Title</th><th>Source</th><th>Tags</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{visible.map((item) => {
+    })}</div> : feedsFolder ? <VaultFeedHeadlines sources={items.map(item => feedIndex.previews[item.path]).filter((entry): entry is FolderPreview => Boolean(entry))} ready={feedIndex.key === feedIndexKey && feedIndex.done && !feedIndex.error} canAdd={!busy && !previewOnly && canUsePersonalBookmarks} canReadLater={canUsePersonalBookmarks && !previewOnly} canOpenBookmark={!busy && !previewOnly && canUsePersonalBookmarks} onOpenBookmark={onRevealBookmark ?? onOpen} sourceList={<><div className="vault-feed-sources">{visible.map(item => { const preview = feedIndex.previews[item.path]; return <button key={item.path} disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallbackTitle(item)}`}><span className="vault-feed-source-icon" aria-hidden="true">◉</span><span><strong>{preview?.title || fallbackTitle(item)}</strong><small>{typeof preview?.document?.content.fields.feedUrl === "string" ? preview.document.content.fields.feedUrl : "Open latest stories"}</small></span><span aria-hidden="true">›</span></button>; })}</div>{filePages}</>} /> : template && layout === "index" ? <div className="vault-folder-table-wrapper"><table className="vault-folder-table"><thead><tr><th>Title</th><th>Source</th><th>Tags</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{visible.map((item) => {
       const preview = previews[item.path];
       return <tr key={item.path}><td>{preview?.title || fallbackTitle(item)}</td><td>{preview?.sourceURL || ""}</td><td>{preview?.document?.content.tags.join(", ") || ""}</td><td><button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallbackTitle(item)}`}>Open</button></td></tr>;
     })}</tbody></table></div> : <div className={template ? "vault-folder-collection" : "vault-document-grid"} data-layout={layout} style={template ? { "--vault-folder-columns": template.collection.columns, "--vault-folder-gap": template.collection.gap === "none" ? "0" : ({ xs: "0.25rem", sm: "0.5rem", md: "1rem", lg: "1.5rem", xl: "2rem" } as Record<string, string>)[template.collection.gap] || "1rem" } as CSSProperties : undefined}>{visible.map((item) => {
@@ -228,6 +230,6 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onCreateNote,
     })}</div>}
     {!items.length && !feedsFolder && <p>{members.length ? "No files match this view." : emptyMessage ?? "No files here yet. Choose a template to get started."}</p>}
     {galleryState && <VaultGalleryLightbox entries={galleryState.entries} initialSelection={galleryState.selection} onClose={() => setGalleryState(null)} onEdit={path => { setGalleryState(null); onOpen(path); }} />}
-    {lastPage > 0 && !bookmarkFolder && <nav className="vault-file-pages" aria-label="File pages"><button disabled={busy || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage + 1} of {lastPage + 1}</span><button disabled={busy || currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next</button></nav>}
+    {!feedsFolder && filePages}
   </section>;
 }

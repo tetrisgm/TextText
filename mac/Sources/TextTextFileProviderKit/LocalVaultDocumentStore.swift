@@ -109,13 +109,13 @@ public struct LocalVaultDocumentStore: Sendable {
         return try outcome.get()
     }
 
-    /// Read only document.json from bookmark TextPacks. Feed rows use these
-    /// stable identities to show saved state after the app is reopened.
-    public func keptFeedEntryHashes() throws -> [String] {
-        var hashes = Set<String>()
+    /// Read only document.json from bookmark TextPacks. The feed's Read Later
+    /// list and saved state share this bounded local metadata scan.
+    public func keptFeedEntries() throws -> [[String: String]] {
+        var entries: [String: [String: String]] = [:]
         for path in try list() where path.hasPrefix("Bookmarks/") {
             let target = try url(for: path)
-            var outcome: Result<String?, Error>?
+            var outcome: Result<[String: String]?, Error>?
             var coordinationError: NSError?
             NSFileCoordinator().coordinate(readingItemAt: target, options: [], error: &coordinationError) { coordinated in
                 outcome = Result {
@@ -134,16 +134,31 @@ public struct LocalVaultDocumentStore: Sendable {
                           let content = document["content"] as? [String: Any],
                           let fields = content["fields"] as? [String: Any],
                           fields["texttextFeedEntry"] as? String == "v1" else { return nil }
-                    return fields["feedEntryHash"] as? String
+                    guard let hash = fields["feedEntryHash"] as? String,
+                          hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else { return nil }
+                    let title = String((content["title"] as? String ?? "Saved story").prefix(300))
+                    let source = String((fields["feedTitle"] as? String ?? "").prefix(160))
+                    let keptAt = String((fields["keptAt"] as? String ?? "").prefix(32))
+                    return ["hash": hash, "path": path, "title": title, "source": source, "keptAt": keptAt]
                 }
             }
             if let coordinationError { throw coordinationError }
             guard let outcome else { throw CocoaError(.fileReadUnknown) }
-            if let hash = try outcome.get(), hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil {
-                hashes.insert(hash)
+            if let entry = try outcome.get(), let hash = entry["hash"] {
+                let previous = entries[hash]
+                if previous == nil || (entry["keptAt"] ?? "") > (previous?["keptAt"] ?? "") {
+                    entries[hash] = entry
+                }
             }
         }
-        return hashes.sorted()
+        return entries.values.sorted {
+            if $0["keptAt"] != $1["keptAt"] { return ($0["keptAt"] ?? "") > ($1["keptAt"] ?? "") }
+            return ($0["path"] ?? "") < ($1["path"] ?? "")
+        }
+    }
+
+    public func keptFeedEntryHashes() throws -> [String] {
+        try keptFeedEntries().compactMap { $0["hash"] }.sorted()
     }
 
     /// Extract only definition metadata; image entries are never inflated.

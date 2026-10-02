@@ -49,7 +49,14 @@ try {
       }
     }
     else if (request.method === "folderViews") result = { files: [...files.values()].filter((file) => file.path.split("/").slice(0, -1).join("/") === request.params.folder && JSON.parse(file.documentJSON).content.fields.texttextFolderView) };
-    else if (request.method === "keptFeedEntries") result = { hashes: [...files.values()].filter(file => file.path.startsWith("Bookmarks/")).map(file => JSON.parse(file.documentJSON).content.fields.feedEntryHash).filter(Boolean) };
+    else if (request.method === "keptFeedEntries") {
+      const entries = [...files.values()].filter(file => file.path.startsWith("Bookmarks/")).flatMap(file => {
+        const content = JSON.parse(file.documentJSON).content;
+        const fields = content.fields || {};
+        return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", keptAt: fields.keptAt || "" }] : [];
+      });
+      result = { hashes: entries.map(entry => entry.hash), entries };
+    }
     else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
       if (request.method === "connect") connected = true;
@@ -100,7 +107,10 @@ try {
     else if (request.method === "feedRead") { feedReadURLs.push(request.params.feedURL); result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
       entries: Array.from({ length: 5 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
     }
-    else if (request.method === "feedEntry") result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: "A considered design headline", permalink: "https://example.com/story/1", externalUrl: null, authors: ["Editor"], publishedAt: "2026-10-01T00:00:00Z", updatedAt: null, availability: "full", bodyMarkdown: "A full in-app reading view for this story.", bodyText: "A full in-app reading view for this story.", excerpt: "A brief account of the story.", language: "en", attachments: [] } };
+    else if (request.method === "feedEntry") {
+      const number = Number(request.params.externalKey?.replace(/^story-/, "")) || 1;
+      result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: number === 1 ? "A considered design headline" : `Design headline ${number}`, permalink: `https://example.com/story/${number}`, externalUrl: null, authors: ["Editor"], publishedAt: `2026-10-0${number}T00:00:00Z`, updatedAt: null, availability: "full", bodyMarkdown: "A full in-app reading view for this story.", bodyText: "A full in-app reading view for this story.", excerpt: "A brief account of the story.", language: "en", attachments: [] } };
+    }
     else if (request.method === "publicationRead") {
       const story = files.get("Blog/Story.textpack");
       if (request.params.itemId === storyItemId && story) result = { itemId: storyItemId, revision: story.hash, published: false, publishedAt: null,
@@ -601,6 +611,7 @@ try {
   await page.screenshot({ path: "/tmp/texttext-vault-capture-dark.png" });
   await page.getByRole("button", { name: "Save to folder", exact: true }).click();
   await page.getByRole("dialog", { name: "Save a link or note" }).waitFor({ state: "hidden" });
+  await page.getByRole("group", { name: "Bookmark filters" }).waitFor();
   await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Edit" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-after-capture-reference.png" });
   await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Edit" }).click();
@@ -1208,6 +1219,13 @@ try {
   const reopenedKept = page.getByRole("button", { name: "Saved: Design headline 2" }).first();
   await reopenedKept.waitFor();
   assert.equal(await reopenedKept.isDisabled(), true);
+  await page.getByRole("button", { name: "Read Later", exact: true }).click();
+  await page.locator(".vault-feed-saved-list").getByRole("button", { name: /Design headline 2/ }).waitFor();
+  assert.equal(await page.locator(".vault-feed-source-window,.vault-file-pages").count(), 0);
+  await page.screenshot({ path: "/tmp/texttext-feeds-read-later-reference.png" });
+  await page.locator(".vault-feed-saved-list").getByRole("button", { name: /Design headline 2/ }).click();
+  await page.getByRole("article", { name: "Bookmark reader" }).waitFor();
+  await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Open Extra feed 23" }).waitFor();

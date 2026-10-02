@@ -632,7 +632,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const commentCapabilities = allowFolderPicker
     ? { canComment: Boolean(nativeWorkspaceId), canResolve: Boolean(nativeWorkspaceId) }
     : vaultCommentCapabilities(access, selectedItemId ?? "", selected?.path ?? "");
-  const refresh = useCallback(() => { void vaultRequest<VaultListing>("list").then(setListing).catch((error: Error) => setError(error.message)); }, []);
+  const listingRequest = useRef(0);
+  const refresh = useCallback(() => {
+    const request = ++listingRequest.current;
+    void vaultRequest<VaultListing>("list")
+      .then(value => { if (request === listingRequest.current) setListing(value); })
+      .catch((error: Error) => { if (request === listingRequest.current) setError(error.message); });
+  }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);
   useEffect(() => {
     if (!webWorkspaceId) return;
@@ -751,6 +757,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     void operate(async () => {
       const opened = await vaultRequest<VaultListing>("open");
       restoredLocationRoot.current = ""; setLocationReadyRoot("");
+      listingRequest.current++;
       setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true;
     });
   };
@@ -1156,6 +1163,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}
+        onRevealBookmark={(path) => void operate(async () => { setSelected(null); setPreferredBookmarkPath(path); setDestinationFolder("Bookmarks"); }, true)}
         onOpen={(path) => void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)} /></div> : <div className="vault-empty">
         <h2>{listing?.root ? "Your workspace" : "Open a workspace folder"}</h2>
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
