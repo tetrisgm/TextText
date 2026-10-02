@@ -895,6 +895,13 @@ try {
   await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
   assert.equal(await page.locator(".vault-context-actions > .vault-primary-action").isDisabled(), true);
   await page.keyboard.press("Tab");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Subtitle");
+  await page.getByRole("textbox", { name: "Subtitle" }).fill("A short line beneath the title");
+  await page.screenshot({ path: "/tmp/texttext-new-story-editor-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-new-story-editor-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   const storyBody = page.getByRole("textbox", { name: "Document body" });
   await storyBody.click();
@@ -909,6 +916,7 @@ try {
   await page.getByLabel("Choose story images").setInputFiles({ name: "story.png", mimeType: "image/png", buffer: Buffer.from(pixel, "base64") });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/story.png"));
   await chooseFolder("Gallery");
+  assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.subtitle, "A short line beneath the title");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
   await page.locator(".vault-photo-grid img").first().waitFor();
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });

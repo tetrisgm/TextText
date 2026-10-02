@@ -783,8 +783,6 @@ export function UnifiedDocumentEditor({
   const lookNameRef = useRef<HTMLInputElement>(null);
   const [lookNotice, setLookNotice] = useState<string | null>(null);
   const [showSubtitle, setShowSubtitle] = useState(false);
-  const canAddSubtitle =
-    !showSubtitle && !document.content.subtitle?.trim();
   const providerRef = useRef<CollabProvider | null>(null);
   // Presence follows the shown editor, not the mounted one: the warm editor
   // behind the reader must not announce an editing session.
@@ -968,6 +966,7 @@ export function UnifiedDocumentEditor({
       ) ?? template
     );
   }, [availableTemplates, document.presentation.template, template]);
+  const canAddSubtitle = activeTemplate.id !== "texttext.article" && !showSubtitle && !document.content.subtitle?.trim();
 
   // The canonical revision changes on every successful save, and nothing here
   // reads it. It must never be a dependency of the provider effect, and it
@@ -1574,24 +1573,25 @@ export function UnifiedDocumentEditor({
             onSelection={updateSelection}
             inputRef={titleRef}
             onAdvance={activeTemplate.id === "texttext.article" || activeTemplate.id === "texttext.note" ? () => {
-              bodySurfaceRef.current?.focus();
-              requestDocumentCaret(0, 0);
+              if (activeTemplate.id === "texttext.article") subtitleRef.current?.focus();
+              else { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); }
             } : undefined}
             grow
           />
         ),
-        ...(showSubtitle || document.content.subtitle?.trim()
+        ...(activeTemplate.id === "texttext.article" || showSubtitle || document.content.subtitle?.trim()
           ? {
               "content.subtitle": (
                 <CollaborativeTextarea
                   field="subtitle"
-                  label="Description"
-                  placeholder="Add a description"
+                  label={activeTemplate.id === "texttext.article" ? "Subtitle" : "Description"}
+                  placeholder={activeTemplate.id === "texttext.article" ? "Add a subtitle" : "Add a description"}
                   value={document.content.subtitle ?? ""}
                   selections={remoteSelections.subtitle}
                   onChange={(value) => updateText("subtitle", value)}
                   onSelection={updateSelection}
                   inputRef={subtitleRef}
+                  onAdvance={activeTemplate.id === "texttext.article" ? () => { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); } : undefined}
                   grow
                 />
               ),

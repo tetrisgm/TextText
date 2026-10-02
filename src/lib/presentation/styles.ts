@@ -192,20 +192,16 @@ export const DOCUMENT_ENGINE_CSS = String.raw`
 .tt-document.tt-collection-item{min-height:0;padding-bottom:0}
 .tt-collection-item .tt-gallery[data-preview-media="true"] figure img,.tt-collection-item .tt-gallery[data-preview-media="true"] figure video{height:clamp(8rem,15vw,13rem);aspect-ratio:4/3;object-fit:cover}
 
-/* Article - the reading view an article gets when it is published, and the
-   look whose editor should feel like a blank page and nothing else. The
-   masthead is centred and the body is not; the display face is a serif and
-   the body is the system sans, which is the combination the reference uses
-   and the reason it reads as an article rather than a blog post. */
+/* Article keeps the title, subtitle, and prose on one writing measure. */
 .tt-document[data-style-family="article"]{--tt-accent:#1a8917;--tt-measure:44rem}
 .tt-document:not(.tt-collection-item)[data-style-family="article"]>.tt-stack{gap:2.25rem;padding:clamp(2.5rem,7vw,5rem) 0 5rem}
 .tt-document:not(.tt-collection-item)[data-style-family="article"] .tt-masthead{gap:.85rem}
+.tt-document[data-template="texttext.article"] .tt-masthead{text-align:left;align-items:flex-start}
+.tt-document[data-template="texttext.article"] .tt-masthead>.tt-text{width:100%}
 .tt-document[data-style-family="article"] .tt-text-title{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,serif;font-size:clamp(2.1rem,3.6vw,3rem);font-weight:700;line-height:1.08;letter-spacing:-.022em;text-wrap:balance}
 .tt-document[data-style-family="article"] .tt-text-subtitle{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.02rem;line-height:1.45;color:var(--muted,#6e6e73)}
-/* A hairline closes the masthead, the way a rule separates the title block
-   from the story in the reference. It is drawn on the masthead so it only
-   exists where there is a masthead to close. */
 .tt-document:not(.tt-collection-item)[data-style-family="article"] .tt-masthead::after{content:"";width:min(26rem,58%);height:1px;margin:1.1rem auto 0;background:color-mix(in srgb,var(--ink,#1d1d1f) 17%,transparent)}
+.tt-document:not(.tt-collection-item)[data-template="texttext.article"] .tt-masthead::after{display:none}
 .tt-document[data-style-family="article"] .tt-prose{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:1.15rem;line-height:1.62}
 /* The byline is metadata, not the first line of the story. Left in the
    editorial serif at body size it read as an opening sentence. */
