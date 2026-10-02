@@ -84,6 +84,7 @@
 .vault-app .vault-search header { padding:13px 18px; margin:0; border-bottom:1px solid #343942; }
 .vault-app .vault-search header h2 { margin:0; font-size:12px; font-weight:650; letter-spacing:.025em; color:#bfc3ca; }
 .vault-app .vault-search header button { width:auto; padding:4px 8px; border:1px solid #555b65; border-radius:5px; color:#bfc3ca; font-size:11px; }
+.vault-app .vault-search :is(header h2, input, [role=option] strong, [role=option] kbd) { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 .vault-app .vault-search>input { margin:0; padding:17px 20px; border:0; border-radius:0; outline:0; background:#1f2229; color:#fff; font-size:19px; }
 .vault-app .vault-search>input:focus-visible { outline:0; }
 .vault-app .vault-search>p,.vault-app .vault-search [role=listbox]>p { margin:10px 18px; color:#bfc3ca; }

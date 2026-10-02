@@ -879,6 +879,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       if (event.defaultPrevented || event.isComposing || event.repeat) return;
       const dialogOpen = Boolean(document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]'));
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        if (searchOpen) { event.preventDefault(); closeSearch(); return; }
         if (!dialogOpen) { event.preventDefault(); openSearch(); }
         return;
       }

@@ -213,6 +213,16 @@ try {
   assert.equal(await page.getByRole("option", { name: "Write a story", exact: true }).locator("kbd").textContent(), "C");
   assert.equal(await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("kbd").textContent(), "B");
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.classList.contains("vault-search-trigger"));
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("combobox", { name: "Search workspace" }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("bokmark");
+  await page.getByRole("option", { name: "Save bookmark", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("oepn");
+  await page.getByRole("option", { name: "Open another folder", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("");
   await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowDown");
   assert.equal(await page.getByRole("combobox", { name: "Search workspace" }).getAttribute("aria-activedescendant"), "action:write-story");
   await page.getByRole("combobox", { name: "Search workspace" }).fill("save bookmark");

@@ -6,6 +6,32 @@ import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 type SearchPage = { items: { path: string; title: string; snippet: string }[]; truncated?: boolean; skippedCount?: number };
 export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[] };
 
+function oneEditAway(query: string, candidate: string): boolean {
+  if (query.length < 4 || Math.abs(query.length - candidate.length) > 1) return false;
+  if (query.length === candidate.length) {
+    const first = [...query].findIndex((character, index) => character !== candidate[index]);
+    if (first >= 0 && first + 1 < query.length && query[first] === candidate[first + 1] && query[first + 1] === candidate[first] && query.slice(first + 2) === candidate.slice(first + 2)) return true;
+  }
+  let left = 0, right = 0, edits = 0;
+  while (left < query.length && right < candidate.length) {
+    if (query[left] === candidate[right]) { left++; right++; continue; }
+    if (++edits > 1) return false;
+    if (query.length >= candidate.length) left++;
+    if (candidate.length >= query.length) right++;
+  }
+  return edits + Number(left < query.length || right < candidate.length) <= 1;
+}
+
+function wordScore(word: string, text: string): number {
+  const lower = text.toLocaleLowerCase();
+  if (lower === word) return 8;
+  if (lower.startsWith(word)) return 6;
+  const tokens = lower.match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (tokens.some(token => token.startsWith(word))) return 4;
+  if (tokens.some(token => oneEditAway(word, token))) return 2;
+  return 0;
+}
+
 const actionIcons: Record<string, string> = {
   "new-note": "✎", "write-story": "▤", "save-bookmark": "◇", capture: "↗",
   "new-from-template": "▧", "import-images": "▣", "subscribe-feed": "◌",
@@ -16,10 +42,13 @@ const actionIcons: Record<string, string> = {
 export function filterVaultSearchActions(actions: readonly VaultSearchAction[], query: string): VaultSearchAction[] {
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [...actions];
-  return actions.filter((action) => {
-    const text = [action.label, action.description, ...(action.keywords ?? [])].join(" ").toLocaleLowerCase();
-    return words.every((word) => text.includes(word));
-  });
+  return actions.map((action, index) => {
+    const score = words.reduce((total, word) => {
+      const best = Math.max(wordScore(word, action.label) * 3, ...((action.keywords ?? []).map(keyword => wordScore(word, keyword) * 2)), wordScore(word, action.description));
+      return total < 0 || best === 0 ? -1 : total + best;
+    }, 0);
+    return { action, index, score };
+  }).filter(entry => entry.score >= 0).sort((left, right) => right.score - left.score || left.index - right.index).map(entry => entry.action);
 }
 
 export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly = false }: {
