@@ -29,7 +29,7 @@ export function storyPreviewFromFile(file: VaultFile): StoryPreview {
     title: document.content.title.trim() || "Untitled story",
     subtitle: document.content.subtitle?.trim() || "",
     excerpt: stripMarkdown(document.content.body).trim().slice(0, 240),
-    topics: document.content.tags.slice(0, 5),
+    topics: document.content.tags,
     ready: Boolean(document.content.title.trim() && stripMarkdown(document.content.body).trim()),
     ...(cover && ["image/jpeg", "image/png", "image/webp"].includes(cover.contentType) && cover.data.length <= 8 * 1024 * 1024
       ? { cover: { data: cover.data, contentType: cover.contentType } } : {}),
@@ -49,8 +49,8 @@ function publicLink(state: Publication, workspaceId: string): string {
   return ["https:", "http:"].includes(window.location.protocol) ? new URL(expected, window.location.origin).href : "";
 }
 
-export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, readStoryFile, onEditTopics, onClose }: {
-  workspaceId: string; itemId: string; label: string; beforeChange: () => Promise<string | false>; readStoryFile?: () => Promise<VaultFile>; onEditTopics?: () => void; onClose: () => void;
+export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, readStoryFile, onSaveTopics, onClose }: {
+  workspaceId: string; itemId: string; label: string; beforeChange: () => Promise<string | false>; readStoryFile?: () => Promise<VaultFile>; onSaveTopics?: (topics: string[]) => Promise<string | false>; onClose: () => void;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const linkInput = useRef<HTMLInputElement>(null);
@@ -60,6 +60,8 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [story, setStory] = useState<StoryPreview | null>(null);
+  const [topics, setTopics] = useState<string[]>([]);
+  const [topicInput, setTopicInput] = useState("");
   const [coverURL, setCoverURL] = useState("");
   const initialStoryReader = useRef(readStoryFile);
   useDialogFocus(dialog, true);
@@ -79,7 +81,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
         const preview = initialStoryReader.current ? storyPreviewFromFile(await initialStoryReader.current()) : null;
         const publication = await reload();
         if (preview && preview.revision !== publication.revision) throw new Error("This story changed before its preview loaded. Close and reopen Publish to review it.");
-        if (live) setStory(preview);
+        if (live) { setStory(preview); setTopics(preview?.topics ?? []); }
       })().catch(cause => { if (live) setError(cause instanceof Error ? cause.message : "Could not load publication status."); })
         .finally(() => { if (live) setLoading(false); });
     });
@@ -126,6 +128,28 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
       } else setError(cause instanceof Error ? cause.message : "Publication could not be changed.");
     } finally { setBusy(false); }
   };
+  const topicsChanged = Boolean(story && JSON.stringify(topics) !== JSON.stringify(story.topics));
+  const addTopic = () => {
+    const topic = topicInput.trim().replace(/^#/, "").slice(0, 40);
+    if (!topic || topics.length >= 5 || topics.some(value => value.toLocaleLowerCase() === topic.toLocaleLowerCase())) return;
+    setTopics(previous => [...previous, topic]); setTopicInput("");
+  };
+  const saveTopics = async () => {
+    if (!story || !readStoryFile || !onSaveTopics || !topicsChanged || busy) return;
+    setBusy(true); setError("");
+    try {
+      const observed = await beforeChange();
+      if (!observed || observed !== story.revision) throw new Error("This story changed since its preview. Close and reopen Publish to review it.");
+      const revision = await onSaveTopics(topics);
+      if (!revision) throw new Error("Topics could not be saved. Your changes are still shown here.");
+      const file = await readStoryFile();
+      const next = await reload();
+      if (file.hash !== revision || next.revision !== revision) throw new Error("The story changed while saving topics. Close and reopen Publish to review it.");
+      const preview = storyPreviewFromFile(file);
+      setStory(preview); setTopics(preview.topics);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Topics could not be saved."); }
+    finally { setBusy(false); }
+  };
   const link = state?.published ? publicLink(state, workspaceId) : "";
   const copy = async () => {
     if (!link) return;
@@ -139,7 +163,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
         {story && <div className={styles.storyReview}><div className={styles.storyCard}>
           {coverURL && /* eslint-disable-next-line @next/next/no-img-element */ <img src={coverURL} alt="" />}
           <div><small>Story preview</small><h3>{story.title}</h3>{story.subtitle && <p>{story.subtitle}</p>}{story.excerpt && <p>{story.excerpt}</p>}</div>
-        </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review the saved story. Its title, text, and image come from this TextPack.</p><h4>Topics</h4>{story.topics.length ? <div className={styles.topics}>{story.topics.map(topic => <span key={topic}>{topic}</span>)}</div> : <p>No topics yet.</p>}{onEditTopics && <button type="button" className={styles.editTopics} onClick={onEditTopics}>Edit topics in story</button>}</div></div>}
+        </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review the saved story. Its title, text, and image come from this TextPack.</p><h4>Topics</h4>{topics.length ? <div className={styles.topics}>{topics.map(topic => <span key={topic}>{topic}{onSaveTopics && <button type="button" aria-label={`Remove ${topic} topic`} disabled={busy} onClick={() => setTopics(values => values.filter(value => value !== topic))}>×</button>}</span>)}</div> : <p>No topics yet.</p>}{onSaveTopics && <><form className={styles.topicForm} onSubmit={event => { event.preventDefault(); addTopic(); }}><input aria-label="Add story topic" placeholder={topics.length >= 5 ? "Five topics maximum" : "Add a topic"} value={topicInput} maxLength={41} disabled={busy || topics.length >= 5} onChange={event => setTopicInput(event.target.value)} /><button type="submit" disabled={busy || topics.length >= 5 || !topicInput.trim()}>Add</button></form>{topicsChanged && <button type="button" className={styles.saveTopics} disabled={busy} onClick={() => void saveTopics()}>{busy ? "Saving…" : "Save topics"}</button>}</>}</div></div>}
         {story && !story.ready && !state.published && <p role="status" className={styles.draftNotice}>Add a title and some story text before publishing. Your draft is saved in Blog.</p>}
         <p className={styles.status}>{state.published ? "This file is public." : "This file is private."}</p>
         <p className="vault-sharing-intro">Anyone with the link can read the current saved file. Changes you save later appear on the same page. Comments and workspace access stay private.</p>
@@ -150,7 +174,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
             <a href={link} target="_blank" rel="noopener noreferrer">Open page</a></div>
         </div>}
         {state.canPublish === false ? <p>Only the workspace owner can change public access.</p> :
-          <div className={styles.actions}><button type="button" disabled={busy || (Boolean(readStoryFile) && (!story || (!state.published && !story.ready)))} onClick={() => void change(!state.published)}>
+          <div className={styles.actions}><button type="button" disabled={busy || topicsChanged || (Boolean(readStoryFile) && (!story || (!state.published && !story.ready)))} onClick={() => void change(!state.published)}>
             {busy ? "Saving…" : state.published ? "Unpublish" : story ? "Publish story" : "Publish file"}
           </button></div>}
       </> : null}

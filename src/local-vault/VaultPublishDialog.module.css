@@ -20,5 +20,9 @@
 .storyDetails p { margin:0; color:var(--muted); font-size:13px; line-height:1.5; }
 .topics { display:flex; flex-wrap:wrap; gap:6px; }
 .topics span { padding:5px 10px; border:1px solid var(--line); border-radius:99px; font-size:12px; }
-.editTopics { margin:12px 0 0; padding:0 !important; color:var(--tt-accent) !important; font-size:13px !important; }
+.topics span button { margin-left:6px; color:var(--muted); font-size:15px; line-height:1; }
+.topicForm { display:flex; gap:6px; margin-top:12px; }
+.topicForm input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); }
+.topicForm button,.saveTopics { padding:8px 11px; border:1px solid var(--line); border-radius:5px; color:var(--ink); }
+.saveTopics { margin-top:10px; color:var(--tt-accent); font-weight:650; }
 @media(max-width:620px){.storyReview{grid-template-columns:1fr}}

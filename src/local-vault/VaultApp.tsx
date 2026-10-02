@@ -90,14 +90,6 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     templateExperience(initialTemplate) === "article" && !focusNewNoteTitle &&
     (initialDocument.content.title.trim() || initialDocument.content.body.trim())));
   useEffect(() => {
-    const editTopics = () => {
-      setReading(false);
-      requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.tt-article-topics input[aria-label="Add story topic"]')?.focus()));
-    };
-    window.addEventListener("texttext:vault-edit-story-topics", editTopics);
-    return () => window.removeEventListener("texttext:vault-edit-story-topics", editTopics);
-  }, []);
-  useEffect(() => {
     const editItem = () => {
       setReading(false);
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -238,7 +230,12 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     const saved = await vaultRequest<{ revision: string }>("publicationRead", { itemId });
     return saved.revision === file.current.hash ? saved.revision : false;
   }, [flush]);
-  useEffect(() => { registerFlush(flush, () => file.current, publishFlush); }, [flush, publishFlush, registerFlush]);
+  const saveTopics = useCallback(async (topics: string[]) => {
+    if (!await publishFlush()) return false;
+    updateArticle(document => ({ ...document, content: { ...document.content, tags: topics } }));
+    return publishFlush();
+  }, [publishFlush, updateArticle]);
+  useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveTopics); }, [flush, publishFlush, registerFlush, saveTopics]);
   useEffect(() => {
     try {
       const saved = localStorage.getItem(recoveryKey);
@@ -360,9 +357,9 @@ function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; 
   const localFlush = useRef<(() => Promise<boolean>) | null>(null);
   const onSharedModeRef = useRef(onSharedMode);
   useEffect(() => { onSharedModeRef.current = onSharedMode; }, [onSharedMode]);
-  const registerLocalFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush) => {
+  const registerLocalFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveTopics) => {
     localFlush.current = flush;
-    registerFlush(flush, currentFile, publishFlush);
+    registerFlush(flush, currentFile, publishFlush, saveTopics);
   }, [registerFlush]);
   useEffect(() => {
     let stopped = false;
@@ -612,8 +609,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [destinationFolder, listing?.root, locationReadyRoot, selected]);
   const flushRef = useRef<(navigation?: boolean) => Promise<boolean>>(async () => true);
   const publishFlushRef = useRef<() => Promise<string | false>>(async () => false);
-  const registerFlush = useCallback((flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => {
-    flushRef.current = flush; publishFlushRef.current = publishFlush; currentFileRef.current = currentFile;
+  const saveTopicsRef = useRef<(topics: string[]) => Promise<string | false>>(async () => false);
+  const registerFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveTopics) => {
+    flushRef.current = flush; publishFlushRef.current = publishFlush; saveTopicsRef.current = saveTopics; currentFileRef.current = currentFile;
   }, []);
   const canCreate = allowFolderPicker || canCreateInVaultFolder(access, destinationFolder.trim());
   const canManageFiles = allowFolderPicker || Boolean(access?.fullAccess && access.canEditContent);
@@ -721,7 +719,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     if (removedPath && selectedRef.current?.path !== removedPath) return;
     setImportedGalleryPath(null);
     setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
-    flushRef.current = async () => true; publishFlushRef.current = async () => false;
+    flushRef.current = async () => true; publishFlushRef.current = async () => false; saveTopicsRef.current = async () => false;
   }, [setSelected]);
   const operate = async (action: () => Promise<void>, navigation = false) => {
     if (busy) return;
@@ -1174,10 +1172,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           if (!revision || !file || file.hash !== revision || packIdentity(file.markdown) !== publishing.itemId) throw new Error("Save or resolve this story before reviewing it for publication.");
           return file;
         } : undefined}
-        onEditTopics={selectedStory ? () => {
-          setPublishing(null);
-          window.dispatchEvent(new Event("texttext:vault-edit-story-topics"));
-        } : undefined}
+        onSaveTopics={selectedStory ? topics => saveTopicsRef.current(topics) : undefined}
         onClose={() => setPublishing(null)} />}
       {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => { setCaptureMode(null); setPendingCreationLook(null); }} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");

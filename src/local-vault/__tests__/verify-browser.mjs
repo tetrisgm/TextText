@@ -162,7 +162,7 @@ try {
       const current = files.get(request.params.path);
       if (!current) error = { code: "not_found", message: "File not found" };
       else if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
-      else { result = { ...current, ...request.params, hash: String(++revision) }; files.set(result.path, result); }
+      else { result = { ...current, ...request.params, hash: current.path === "Blog/Story.textpack" ? (++revision).toString(16).padStart(64, "0") : String(++revision) }; files.set(result.path, result); }
     } else if (request.method === "rename" || request.method === "delete") {
       const current = files.get(request.params.path);
       if (!current) error = { code: "not_found", message: "File not found" };
@@ -1162,14 +1162,18 @@ try {
   await publishing.getByText("An opening paragraph.").waitFor();
   await publishing.getByRole("button", { name: "Publish story" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-blog-publish-reference.png" });
-  await publishing.getByRole("button", { name: "Edit topics in story" }).click();
-  const topicInput = page.getByRole("textbox", { name: "Add story topic" });
-  await topicInput.waitFor();
-  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Add story topic");
+  const topicInput = publishing.getByRole("textbox", { name: "Add story topic" });
   await topicInput.fill("Design");
-  await page.locator(".tt-article-topics").getByRole("button", { name: "Add", exact: true }).click();
-  await page.locator(".tt-article-topic-list").getByText("Design").waitFor();
-  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await publishing.getByRole("button", { name: "Add", exact: true }).click();
+  assert.equal(await publishing.getByRole("button", { name: "Publish story" }).isDisabled(), true);
+  await publishing.getByRole("button", { name: "Save topics" }).click();
+  await publishing.getByRole("button", { name: "Publish story" }).waitFor({ state: "visible" });
+  assert.equal(await publishing.getByRole("button", { name: "Publish story" }).isDisabled(), false);
+  await page.screenshot({ path: "/tmp/texttext-blog-publish-topics-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-blog-publish-topics-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await publishing.getByRole("button", { name: "Close publishing" }).click();
   await storyReader.getByRole("button", { name: "Edit story" }).waitFor();
   assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["Design"]);
   await storyReader.getByRole("button", { name: "Edit story" }).click();

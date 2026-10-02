@@ -28,7 +28,7 @@ import { currentVaultWindowActive } from "./window-activity";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
-export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
+export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>, saveTopics: (topics: string[]) => Promise<string | false>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
   if (typeof value === "string") {
     let text = value as string;
@@ -63,18 +63,6 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const [reading, setReading] = useState(() => !startEditing && Boolean(articleSource(snapshot) ||
     (["article", "note"].includes(templateExperience(readTemplate(initial, snapshot)) ?? "") && !focusNewNote && !focusNewNoteTitle &&
       (snapshot.content.title.trim() || snapshot.content.body.trim()))));
-  useEffect(() => {
-    const editTopics = () => {
-      setReading(false);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        const input = document.querySelector<HTMLInputElement>('.tt-article-topics input[aria-label="Add story topic"]');
-        input?.scrollIntoView({ block: "center" });
-        input?.focus();
-      }));
-    };
-    window.addEventListener("texttext:vault-edit-story-topics", editTopics);
-    return () => window.removeEventListener("texttext:vault-edit-story-topics", editTopics);
-  }, []);
   const [busy, setBusy] = useState(false);
   const [waitingForExternalSync, setWaitingForExternalSync] = useState(false);
   const externalReloadRef = useRef(false);
@@ -251,12 +239,17 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
     }
     return !shared.hasPendingChanges && shared.status === "ready" ? saved.revision : false;
   }, [config.itemId, config.localFiles]);
-  useEffect(() => { registerFlush(flush, () => file.current, publishFlush); }, [flush, publishFlush, registerFlush]);
   const updateArticle = useCallback((transform: (document: DocumentSnapshot) => DocumentSnapshot) => {
     const shared = clientRef.current;
     if (!shared) throw new Error("The shared document is still opening.");
     shared.mutate(doc => applyDocumentSnapshot(doc, transform(documentSnapshotFromYDoc(doc)), "file-article-edit"));
   }, []);
+  const saveTopics = useCallback(async (topics: string[]) => {
+    if (!await publishFlush()) return false;
+    updateArticle(document => ({ ...document, content: { ...document.content, tags: topics } }));
+    return publishFlush();
+  }, [publishFlush, updateArticle]);
+  useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveTopics); }, [flush, publishFlush, registerFlush, saveTopics]);
   const reset = useCallback(async (recovered = false, waitForSync = false) => {
     const shared = clientRef.current;
     try {
