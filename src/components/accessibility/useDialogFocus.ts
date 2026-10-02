@@ -7,7 +7,7 @@ const dialogs: HTMLElement[] = [];
 const inertBaselines = new Map<HTMLElement, boolean>();
 function updateModalInert() {
   for (const [element, original] of inertBaselines) {
-    element.toggleAttribute("inert", original || element.getAttribute?.("aria-hidden") === "true");
+    element.toggleAttribute("inert", original);
   }
   const root = dialogs.at(-1);
   if (!root) { inertBaselines.clear(); return; }

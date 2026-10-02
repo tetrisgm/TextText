@@ -35,6 +35,7 @@ for (const [kind, name] of [["bookmark", "Custom bookmark look"], ["gallery", "C
   const look = JSON.parse(strFromU8(preset[Object.keys(preset).find((entry) => entry.endsWith("/template.json"))]));
   look.id = `local.custom-${kind}-look`; look.name = name; look.experience = kind;
   if (kind === "gallery") look.fields.push({ id: "material", label: "Material", type: "text", required: false, visibility: "public" });
+  if (kind === "bookmark") look.fields.push({ id: "topic", label: "Topic", type: "text", required: false, visibility: "public" });
   files.set(`Templates/${name}.textpack`, { ...initial, path: `Templates/${name}.textpack`, hash: `template-${kind}-1`, templateJSON: JSON.stringify(look) });
 }
 const retainedEntries = {
@@ -1501,6 +1502,14 @@ try {
   assert.ok(customBookmark?.path.startsWith("Bookmarks/"));
   assert.equal(JSON.parse(customBookmark.documentJSON).presentation.template.id, "local.custom-bookmark-look");
   await page.locator('.vault-bookmark-reader .tt-document[data-template-id="local.custom-bookmark-look"]').waitFor();
+  const customBookmarkDetails = page.getByRole('article', { name: 'Bookmark reader' }).locator('details.vault-bookmark-inspector');
+  await customBookmarkDetails.locator('summary').click();
+  await customBookmarkDetails.getByRole('button', { name: 'Edit Topic' }).click();
+  await customBookmarkDetails.getByRole('textbox', { name: 'Topic' }).fill('Design research');
+  await customBookmarkDetails.getByRole('button', { name: 'Save', exact: true }).click();
+  await customBookmarkDetails.getByText('Design research', { exact: true }).waitFor();
+  assert.equal(JSON.parse(files.get(customBookmark.path).documentJSON).content.fields.topic, 'Design research');
+  await page.screenshot({ path: '/tmp/texttext-custom-bookmark-details-reference.png' });
   await page.screenshot({ path: "/tmp/texttext-custom-bookmark-look-reference.png" });
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseMoreAction("New from template");

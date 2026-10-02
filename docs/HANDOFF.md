@@ -2,6 +2,8 @@
 
 ## Current work
 
+Custom Bookmark looks now expose additional validated fields in the reader's Details panel, with inline edits saved through the revision-aware TextPack write path. The template-to-capture handoff also no longer leaves the workspace inert after its modal closes. The local browser flow creates a custom Bookmark, clicks Details, edits Topic, and checks the stored field; the dark screenshot is `/tmp/texttext-custom-bookmark-details-reference.png`. Focus tests, the web browser flow, and TypeScript passed. Shiori parity remains open; no app release was run.
+
 The Bookmarks reader now renders each TextPack's validated saved look instead of always using the built-in Bookmark template. Its shared reader can save highlights and notes from the reading view; writes are serialized while typing and use the current file revision. The local browser flow checks custom look identity and rapidly typed highlight notes persisted in the Bookmark TextPack. The web browser flow and TypeScript passed. Shiori parity remains open; no app release was run.
 
 Custom Gallery looks now show their additional visible fields beside the image, and simple fields can be edited there through the same revision-aware TextPack write path. The local browser flow saved a custom Material field and checked its persisted value; the web browser flow and TypeScript passed. `/tmp/texttext-custom-gallery-look-reference.png` is the checked dark view. Resurf parity remains open; no app release was run.

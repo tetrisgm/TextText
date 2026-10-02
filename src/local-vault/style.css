@@ -260,7 +260,7 @@
 .vault-app .vault-bookmark-inspector summary { display:grid; place-items:center; min-width:30px; min-height:30px; padding:0 5px; border-radius:5px; color:var(--muted); font-size:18px; line-height:1; list-style:none; cursor:pointer; }
 .vault-app .vault-bookmark-inspector summary::-webkit-details-marker { display:none; }
 .vault-app .vault-bookmark-inspector summary:hover,.vault-app .vault-bookmark-inspector[open] summary { background:var(--selection); color:var(--ink); }
-.vault-app .vault-bookmark-inspector-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:5; width:min(360px,calc(100vw - 36px)); padding:5px 0; border:1px solid var(--line); border-radius:9px; background:var(--surface); box-shadow:0 16px 44px #0003; }
+.vault-app .vault-bookmark-inspector-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:5; width:min(360px,calc(100vw - 36px)); max-height:min(70vh,600px); overflow-y:auto; padding:5px 0; border:1px solid var(--line); border-radius:9px; background:var(--surface); box-shadow:0 16px 44px #0003; }
 .vault-app .vault-bookmark-inspector-panel .vault-bookmark-tags { padding:10px 14px; }
 .vault-app .vault-bookmark-inspector-panel .vault-bookmark-note { max-width:none; margin:0; padding:12px 14px; border:0; }
 .vault-app .vault-bookmark-tags { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:9px 18px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
@@ -273,6 +273,15 @@
 .vault-app .vault-bookmark-note button { color:var(--tt-accent); font-size:12px; }
 .vault-app .vault-bookmark-note p { margin:10px 0 0; font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
 .vault-app .vault-bookmark-note textarea { display:block; width:100%; min-height:90px; margin:10px 0; padding:10px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--ink); font:inherit; resize:vertical; }
+.vault-app .vault-bookmark-custom-fields { padding:12px 14px; border-top:1px solid var(--line); }
+.vault-app .vault-bookmark-custom-fields h2 { margin:0 0 9px; color:var(--muted); font-size:12px; font-weight:600; }
+.vault-app .vault-bookmark-custom-field { padding:8px 0; }
+.vault-app .vault-bookmark-custom-field>div:first-child,.vault-app .vault-bookmark-custom-field form>div { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.vault-app .vault-bookmark-custom-field strong { color:var(--muted); font-size:12px; font-weight:500; }
+.vault-app .vault-bookmark-custom-field p { margin:5px 0 0; color:var(--ink); font-size:13px; overflow-wrap:anywhere; }
+.vault-app .vault-bookmark-custom-field button { color:var(--tt-accent); font-size:12px; }
+.vault-app .vault-bookmark-custom-field form { display:grid; gap:8px; margin-top:8px; }
+.vault-app .vault-bookmark-custom-field :is(input,textarea,select) { box-sizing:border-box; width:100%; padding:7px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); font:inherit; }
 .vault-app .vault-bookmark-error { margin:12px 20px; color:var(--tt-destructive,#d70015); font-size:12px; }
 .vault-app .vault-bookmark-reader .vault-reading { max-width:800px; margin:auto; }
 .vault-app .vault-bookmark-reader .tt-document { --paper:#fff; --ink:#202020; --muted:#686868; --tt-measure:44rem; margin:auto; padding-top:30px; background:var(--surface); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }

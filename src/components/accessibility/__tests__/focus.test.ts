@@ -152,11 +152,11 @@ it.each(["upper", "lower"])("overlapping modal branches restore only their origi
   expect(trigger.inert).toBe(false); expect(permanent.inert).toBe(true); expect(upperBranch.inert).toBe(false);
 });
 
-it("keeps a logically closed lower surface inert after the upper modal exits", () => {
+it("clears managed inert when a modal closes while the background is briefly aria-hidden", () => {
   const lower = new Control("lower").append(new Control("lower close"));
   const upper = new Control("upper").append(new Control("upper close"));
   doc.body.append(lower, upper); const closeLower = mount(lower), closeUpper = mount(upper);
-  lower.attributes.set("aria-hidden", "true"); lower.inert = true;
+  lower.attributes.set("aria-hidden", "true");
   closeLower(); closeUpper();
-  expect(lower.inert).toBe(true); expect(upper.inert).toBe(false);
+  expect(lower.inert).toBe(false); expect(upper.inert).toBe(false);
 });

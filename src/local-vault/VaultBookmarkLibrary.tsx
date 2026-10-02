@@ -3,7 +3,8 @@ import { vaultRequest, type VaultFile, type VaultItem } from "./bridge";
 import type { FolderPreview } from "./folder-collection";
 import { ArticleReader } from "./ArticleReader";
 import { readDocument, readTemplate, writePayload } from "./model";
-import type { DocumentSnapshot } from "@/lib/documents/model";
+import type { DocumentFieldValue, DocumentSnapshot } from "@/lib/documents/model";
+import type { DocumentFieldDefinition } from "@/lib/presentation/schema";
 
 function host(url?: string): string {
   try { return url ? new URL(url).hostname.replace(/^www\./, "") : "Saved link"; }
@@ -112,6 +113,8 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [error, setError] = useState("");
   const [editingNotePath, setEditingNotePath] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
+  const [editingField, setEditingField] = useState("");
+  const [fieldDraft, setFieldDraft] = useState("");
   useEffect(() => {
     if (!current) return;
     let active = true;
@@ -145,7 +148,36 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const readAt = typeof document?.content.fields.texttextBookmarkReadAt === "string" ? document.content.fields.texttextBookmarkReadAt : null;
   const archivedAt = typeof document?.content.fields.texttextBookmarkArchivedAt === "string" ? document.content.fields.texttextBookmarkArchivedAt : null;
   const personalNote = typeof document?.content.fields.texttextBookmarkNote === "string" ? document.content.fields.texttextBookmarkNote : "";
+  const customFields = template?.fields.filter(field => field.visibility !== "hidden" && !["cover", "sourceUrl", "sourceLabel", "links"].includes(field.id)) ?? [];
   const noteIsEditing = Boolean(current && editingNotePath === current.path);
+  const saveCustomField = async (field: DocumentFieldDefinition) => {
+    if (!opened || opened.path !== current?.path || updating || busy || previewOnly) return;
+    const raw = fieldDraft.trim();
+    let value: DocumentFieldValue = raw || null;
+    if (field.type === "number" && raw) {
+      const number = Number(raw);
+      if (!Number.isFinite(number) || field.min !== undefined && number < field.min || field.max !== undefined && number > field.max) { setError("Enter a number within the allowed range."); return; }
+      value = number;
+    } else if (field.type === "boolean") {
+      value = raw === "true";
+    } else if (field.type === "url" && raw) {
+      try { const url = new URL(raw); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(); }
+      catch { setError("Enter a web address beginning with http or https."); return; }
+    } else if (field.type === "enum" && raw && !field.options.some(option => option.value === raw)) {
+      setError("Choose an available option."); return;
+    }
+    if (field.required && value === null) { setError(`${field.label} is required.`); return; }
+    setUpdating(true); setError("");
+    try {
+      const canonical = readDocument(opened.file);
+      const fields = { ...canonical.content.fields, [field.id]: value };
+      const updated = await vaultRequest<VaultFile>("write", writePayload(opened.file, { ...canonical, content: { ...canonical.content, fields } }));
+      setOpened(previous => previous?.path === updated.path ? { ...previous, file: updated, document: { ...previous.document, content: { ...previous.document.content, fields } } } : previous);
+      setEditingField("");
+      window.dispatchEvent(new Event("texttext:vault-changed"));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "The detail could not be saved."); }
+    finally { setUpdating(false); }
+  };
   const updateReader = (transform: (snapshot: DocumentSnapshot) => DocumentSnapshot) => {
     if (!opened || opened.path !== current?.path || busy || previewOnly) return;
     const path = opened.path;
@@ -222,6 +254,13 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       {current && <header><div className="vault-bookmark-reader-navigation"><button aria-label="Previous bookmark" title="Previous bookmark" disabled={busy || currentIndex <= 0} onClick={() => setSelected(shown[currentIndex - 1].path)}>‹</button><button aria-label="Next bookmark" title="Next bookmark" disabled={busy || currentIndex >= shown.length - 1} onClick={() => setSelected(shown[currentIndex + 1].path)}>›</button></div><div className="vault-bookmark-reader-tabs"><span aria-current="page">Reader</span>{preview?.sourceURL && <a href={preview.sourceURL} target="_blank" rel="noopener noreferrer">Original ↗</a>}</div><div className="vault-bookmark-reader-actions"><button disabled={busy || previewOnly || updating || !document} aria-pressed={favorite} onClick={() => void changeFlag("texttextBookmarkFavorite")}>{favorite ? "★ Favorite" : "☆ Favorite"}</button><button disabled={busy || previewOnly || updating || !document} onClick={() => void changeFlag("texttextBookmarkReadAt")}>{readAt ? "Mark unread" : "Mark read"}</button><button disabled={busy || previewOnly || updating || !document} onClick={() => void changeFlag("texttextBookmarkArchivedAt")}>{archivedAt ? "Move to inbox" : "Archive"}</button><button disabled={busy || previewOnly} onClick={() => onOpen(current.path)}>Edit</button></div><details className="vault-bookmark-inspector"><summary aria-label="Bookmark details" title="Bookmark details">•••</summary><div className="vault-bookmark-inspector-panel">
       {document && <div className="vault-bookmark-tags" aria-label="Bookmark tags"><span>Tags</span>{document.content.tags.map(tag => <button key={tag} type="button" disabled={busy || previewOnly || updating} aria-label={`Remove ${tag} tag`} onClick={() => void changeTags(document.content.tags.filter(value => value !== tag))}>#{tag} ×</button>)}<form onSubmit={event => { event.preventDefault(); const tag = tagDraft.trim().replace(/^#/, "").slice(0, 40); if (!tag || document.content.tags.some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return; void changeTags([...document.content.tags, tag]); setTagDraft(""); }}><input aria-label="Add bookmark tag" value={tagDraft} onChange={event => setTagDraft(event.target.value)} placeholder="Add tag" maxLength={41} disabled={busy || previewOnly || updating} /><button type="submit" disabled={busy || previewOnly || updating || !tagDraft.trim()}>Add</button></form></div>}
       {document && <section className="vault-bookmark-note" aria-label="Personal note"><div><strong>My note</strong>{!noteIsEditing && !previewOnly && <button type="button" disabled={busy || updating} onClick={() => { setNoteDraft(personalNote); setEditingNotePath(current?.path ?? ""); }}>{personalNote ? "Edit note" : "Add note"}</button>}</div>{noteIsEditing ? <form onSubmit={event => { event.preventDefault(); void saveNote(); }}><textarea autoFocus aria-label="Personal note text" value={noteDraft} onChange={event => setNoteDraft(event.target.value)} maxLength={10000} disabled={busy || updating} placeholder="What do you want to remember?" /><div><button type="button" disabled={updating} onClick={() => setEditingNotePath("")}>Cancel</button><button type="submit" disabled={busy || updating || noteDraft.trim() === personalNote}>{updating ? "Saving…" : "Save note"}</button></div></form> : personalNote && <p>{personalNote}</p>}</section>}
+      {document && customFields.length > 0 && <section className="vault-bookmark-custom-fields" aria-label="Bookmark details fields"><h2>Details</h2>{customFields.map(field => {
+        const value = document.content.fields[field.id];
+        const key = `${current.path}:${field.id}`;
+        const editable = ["text", "richtext", "url", "date", "number", "boolean"].includes(field.type) || field.type === "enum" && !field.multiple;
+        const display = value == null || value === "" ? "Not set" : typeof value === "boolean" ? value ? "Yes" : "No" : Array.isArray(value) ? value.every(entry => typeof entry === "string") ? value.join(", ") : `${value.length} entries` : typeof value === "object" ? "Open item to view" : field.type === "enum" ? field.options.find(option => option.value === value)?.label ?? String(value) : String(value);
+        return <div className="vault-bookmark-custom-field" key={field.id}><div><strong>{field.label}</strong>{editable && editingField !== key && !previewOnly && <button type="button" disabled={busy || updating} aria-label={`Edit ${field.label}`} onClick={() => { setEditingField(key); setFieldDraft(value == null ? "" : String(value)); }}>Edit</button>}</div>{editingField === key ? <form onSubmit={event => { event.preventDefault(); void saveCustomField(field); }}>{field.type === "enum" ? <select aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating}><option value="">Not set</option>{field.options.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select> : field.type === "boolean" ? <select aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating}><option value="false">No</option><option value="true">Yes</option></select> : field.type === "richtext" ? <textarea aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} /> : <input aria-label={field.label} type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "url" ? "url" : "text"} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} />}<div><button type="button" onClick={() => setEditingField("")} disabled={updating}>Cancel</button><button type="submit" disabled={updating}>Save</button></div></form> : <p>{display}</p>}</div>;
+      })}</section>}
       </div></details></header>}
       {error && <p role="alert" className="vault-bookmark-error">{error}</p>}
       {document && template ? <ArticleReader document={document} template={template} update={previewOnly || busy ? undefined : updateReader} /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
