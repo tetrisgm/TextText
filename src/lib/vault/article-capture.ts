@@ -18,6 +18,8 @@ export type ArticleCapture = {
 export type CaptureApplication = { document: DocumentSnapshot; appliedToBody: boolean };
 
 export function articleSource(document: DocumentSnapshot): string | null {
+  // Gallery source metadata points to the image's origin, not an article to extract.
+  if (document.presentation.template.id === "texttext.gallery") return null;
   const source = document.content.fields.sourceUrl;
   if (typeof source !== "string") return null;
   try {

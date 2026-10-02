@@ -87,4 +87,10 @@ describe("file-backed article capture", () => {
     expect(() => applyArticleCapture(note(), note(), { ...capture, markdown: "x".repeat(2_000_001) })).toThrow(/invalid/);
     expect(() => applyArticleCapture(note(), note(), { ...capture, capturedAt: "bad" })).toThrow(/invalid/);
   });
+  it("keeps a gallery image source out of the article capture flow", () => {
+    const image = emptyDocumentSnapshot({ id: "texttext.gallery", version: 1 });
+    image.content.fields.sourceUrl = sourceURL;
+    expect(articleSource(image)).toBeNull();
+    expect(articleNeedsEnrichment(image)).toBe(false);
+  });
 });

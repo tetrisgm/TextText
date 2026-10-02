@@ -2020,6 +2020,19 @@ export function UnifiedDocumentEditor({
         <h2>Details</h2>
         <label>Title<input aria-label="Image title" value={document.content.title} onChange={(event) => updateText("title", event.target.value)} maxLength={240} /></label>
         <label>Caption<textarea aria-label="Image caption" value={document.content.body} onChange={(event) => updateText("body", event.target.value)} rows={5} placeholder="Add a caption" /></label>
+        <label>Source<input aria-label="Image source" type="url" placeholder="https://" value={typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : ""} onChange={(event) => updateField("sourceUrl", event.target.value)} /></label>
+        <div className="tt-gallery-edit-tags"><h3>Tags</h3><div>{document.content.tags.map((tag) => <span key={tag}>{tag}<button type="button" aria-label={`Remove ${tag}`} onClick={() => {
+          const current = currentLocalDocument();
+          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: current.content.tags.filter((value) => value !== tag) } });
+        }}>×</button></span>)}</div>{document.content.tags.length < 500 && <form onSubmit={(event) => {
+          event.preventDefault();
+          const tag = tagDraft.trim().replace(/^#/, "").slice(0, 120);
+          if (!tag) return;
+          const current = currentLocalDocument();
+          if (current.content.tags.some((value) => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
+          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, tag] } });
+          setTagDraft("");
+        }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
       </aside></div> : documentSurface}
       {(["texttext.article", "texttext.note"].includes(activeTemplate.id)) && <section className={activeTemplate.id === "texttext.note" ? "tt-article-topics tt-note-tags" : "tt-article-topics"} aria-label={activeTemplate.id === "texttext.note" ? "Note tags" : "Story topics"}>
         <h3>{activeTemplate.id === "texttext.note" ? "Tags" : "Topics"}</h3>
@@ -2118,6 +2131,13 @@ export function UnifiedDocumentEditor({
         .tt-gallery-edit-details label{display:block;margin-bottom:18px;color:var(--muted,#666);font-size:12px}
         .tt-gallery-edit-details input,.tt-gallery-edit-details textarea{display:block;width:100%;margin-top:7px;padding:9px 10px;border:1px solid var(--line,#ddd);border-radius:5px;background:var(--paper,#fff);color:var(--ink,#1d1d1f);font:inherit;font-size:14px;line-height:1.5;resize:vertical}
         .tt-gallery-edit-details :is(input,textarea):focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:2px}
+        .tt-gallery-edit-tags h3{margin:0 0 9px;color:var(--muted,#666);font-size:12px;font-weight:400}
+        .tt-gallery-edit-tags>div{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+        .tt-gallery-edit-tags span{display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border-radius:4px;background:var(--sidebar,#f6f6f5);font-size:12px}
+        .tt-gallery-edit-tags span button{padding:0 2px;font-size:16px;line-height:1}
+        .tt-gallery-edit-tags form{display:flex;align-items:center;gap:5px}
+        .tt-gallery-edit-tags form button{padding:7px;font-size:12px}
+        .tt-gallery-edit-tags form button:disabled{opacity:.5}
         @media(max-width:800px){.tt-gallery-edit-layout{grid-template-columns:1fr;padding:0 16px}.tt-gallery-edit-details{position:static}}
         @media(max-width:700px){.tt-document-editor{padding-top:3.5rem}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:0.3125rem;padding-inline:0.5rem}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}

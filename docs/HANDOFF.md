@@ -12,6 +12,8 @@ The Bookmarks reader now uses compact previous/next navigation, Reader and Origi
 
 The Gallery detail viewer now occupies the workspace beside the still-visible folder sidebar, with a large image, right inspector, zoom, and Fit. Folder navigation closes the viewer. A single Gallery import opens its image-first item editor for title and caption; batch imports return to the grid. This follows Resurf’s public image detail view while the assets remain inside the Gallery TextPack.
 
+The Gallery inspector also edits source and tags on the same TextPack. The viewer shows those tags and opens valid web sources directly.
+
 Feed source creation now starts with a website or feed address, shows discovered sources, and keeps folder/topic choices optional until after discovery. The dialog sizes to its contents. Selecting a source still saves a subscription TextPack in Feeds.
 
 The Blog reader now uses a bold sans-serif title, a long-form serif body, and reading time computed from TextPack content. New Blog drafts have an empty content title and a Title placeholder while retaining a safe TextPack filename. The reader remains a view of the article template, not a separate content type.
@@ -38,6 +40,7 @@ New bookmarks record their save time in the initial TextPack snapshot. The Bookm
 - Bookmark day grouping and initial saved timestamp pass TypeScript, the local UI build, the full browser contract, and the targeted Swift bookmark-capture test. `/tmp/texttext-bookmark-light-reference.png` shows Today and legacy Saved links groups.
 - The integrated Gallery viewer passes TypeScript, the local UI build, and the full browser contract. The browser verifies a visible folder sidebar, image navigation and zoom, and closing on folder navigation; `/tmp/texttext-gallery-light-reference.png` shows the updated light-theme view.
 - Single-image Gallery import now opens its TextPack editor. The browser contract verifies the imported title, caption save, and persisted image dimensions; drop and paste creation reach the editor too. Multi-image imports still leave the collection grid visible.
+- Gallery source and tags pass TypeScript, the article-capture unit test, and the local browser contract. The browser confirms they persist and appear in the image viewer, and that a Gallery source does not activate article capture controls. `/tmp/texttext-gallery-editor-light-reference.png` shows the updated inspector.
 
 ## Boundaries
 

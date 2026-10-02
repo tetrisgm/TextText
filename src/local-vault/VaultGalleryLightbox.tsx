@@ -9,6 +9,13 @@ type Image = { id: string; url: string; alt: string; width?: number; height?: nu
 
 type GalleryEntry = { path: string; index: number };
 
+function sourceLink(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
+}
+
 function imageDetails(source: string): Promise<{ colors: string[]; width: number; height: number }> {
   return new Promise(resolve => {
     const sample = new Image();
@@ -72,6 +79,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   let title = path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Image";
   let caption = "";
   let source = "";
+  let tags: string[] = [];
   let images: Image[] = [];
   let size = 0;
   try {
@@ -80,10 +88,12 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
       title = document.content.title || title;
       caption = document.content.body;
       source = typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : "";
+      tags = document.content.tags;
       images = document.content.assets.filter(asset => asset.kind === "image" && local.has(asset.src)).map(asset => ({ id: asset.id, url: local.get(asset.src)!, alt: asset.alt || title, width: asset.width, height: asset.height }));
     }
   } catch { /* Show a readable error below while preserving the original file. */ }
   const image = images[Math.min(index, Math.max(0, images.length - 1))];
+  const sourceHref = sourceLink(source);
   useEffect(() => setZoom(1), [image?.url]);
   const asset = image && file?.assets?.find(entry => local.get(`assets/${entry.filename}`) === image.url || (entry.remoteURL && local.get(entry.remoteURL) === image.url));
   if (asset) size = Math.floor(asset.data.length * 3 / 4) - (asset.data.endsWith("==") ? 2 : asset.data.endsWith("=") ? 1 : 0);
@@ -117,7 +127,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
         {/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.alt} style={{ transform: `scale(${zoom})` }} />
         {entries.length > 1 && <button aria-label="Next image" disabled={selection >= entries.length - 1} onClick={next}>›</button>}
         <div className="vault-gallery-zoom" role="group" aria-label="Image zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, Math.round((value - .25) * 100) / 100))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, Math.round((value + .25) * 100) / 100))}>+</button><button aria-label="Fit image" disabled={zoom === 1} onClick={() => setZoom(1)}>Fit</button></div>
-      </div><aside><dl>{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}{size > 0 && <><dt>Size</dt><dd>{size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`}</dd></>}{source && <><dt>Source</dt><dd className="vault-gallery-source">{source}</dd></>}{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}</dl>{caption && <div className="vault-gallery-inspector-section"><h2>Caption</h2><p>{caption}</p></div>}{details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
+      </div><aside><dl>{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}{size > 0 && <><dt>Size</dt><dd>{size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`}</dd></>}{source && <><dt>Source</dt><dd className="vault-gallery-source">{sourceHref ? <a href={sourceHref} target="_blank" rel="noopener noreferrer">{source}</a> : source}</dd></>}{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}</dl>{caption && <div className="vault-gallery-inspector-section"><h2>Caption</h2><p>{caption}</p></div>}{tags.length > 0 && <div className="vault-gallery-inspector-section"><h2>Tags</h2><div className="vault-gallery-tags">{tags.map(tag => <span key={tag}>{tag}</span>)}</div></div>}{details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
     </div>
   </section>, shell);
 }
