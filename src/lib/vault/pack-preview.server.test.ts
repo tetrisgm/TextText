@@ -8,15 +8,18 @@ describe("TextPack folder previews", () => {
   it("uses current markdown and a bounded still from embedded image bytes", async () => {
     const document = emptyDocumentSnapshot();
     document.content.title = "Old title"; document.content.body = "Old body";
+    document.content.subtitle = "A line beneath the title";
     document.content.assets = [{ id: "photo", kind: "image", src: "assets/photo.png" }];
     const image = await sharp({ create: { width: 900, height: 600, channels: 3, background: "#657183" } }).png().toBuffer();
     const bytes = zipSync({ "Document.textbundle/document.json": strToU8(JSON.stringify(document)), "Document.textbundle/text.md": strToU8('---\ntitle: "New title"\n---\n\nCurrent writing in the file.'), "Document.textbundle/assets/photo.png": image });
     const metadataOnly = await previewTextpack(bytes, true);
     expect(metadataOnly.image).toBeUndefined();
     expect(metadataOnly.document.content.title).toBe("New title");
+    expect(metadataOnly.document.content.subtitle).toBe("A line beneath the title");
     const preview = await previewTextpack(bytes);
     expect(preview.document.content.title).toBe("New title");
     expect(preview.document.content.body).toBe("Current writing in the file.");
+    expect(preview.document.content.subtitle).toBe("A line beneath the title");
     expect(preview.document.content.assets).toEqual([]);
     expect(preview.title).toBe("New title");
     expect(preview.excerpt).toBe("Current writing in the file.");

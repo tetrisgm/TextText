@@ -21,6 +21,7 @@ export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): 
   const markdown = metadata[prefix + "text.md"];
   const parsed = markdown ? parsePostMarkdownFile(strFromU8(markdown)) : null;
   const projection = emptyDocumentSnapshot(document.presentation.template);
+  projection.content.subtitle = document.content.subtitle?.slice(0, 300);
   projection.content.tags = document.content.tags.slice(0, 100);
   for (const [key, value] of Object.entries(document.content.fields).slice(0, 64)) {
     if (key.length > 120) continue;
@@ -34,6 +35,7 @@ export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): 
   };
   const incomplete: string[] = [];
   if ((parsed?.fields.title ?? document.content.title) !== result.title) incomplete.push("title");
+  if (document.content.subtitle !== projection.content.subtitle) incomplete.push("subtitle");
   if ((parsed?.body ?? document.content.body) !== result.excerpt) incomplete.push("body");
   if (document.content.tags.length > 100) incomplete.push("tags");
   for (const [key, value] of Object.entries(document.content.fields)) {

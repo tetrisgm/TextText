@@ -555,10 +555,15 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         let originalTags = content?["tags"] as? [String] ?? []
         let tags = originalTags.prefix(100).map { rawBounded($0, to: 120) }.filter { !$0.isEmpty }
         if tags != originalTags { incomplete.append("tags") }
+        let originalSubtitle = content?["subtitle"] as? String
+        let subtitle = originalSubtitle.map { rawBounded($0, to: 300) }
+        if subtitle != originalSubtitle { incomplete.append("subtitle") }
         result["incompleteFields"] = incomplete.count > 2048 ? ["*"] : incomplete
         if !incomplete.isEmpty { result["metadataTruncated"] = true }
+        var projectedContent: [String: Any] = ["title": result["title"]!, "body": result["excerpt"]!, "fields": fields, "tags": tags, "assets": []]
+        if let subtitle { projectedContent["subtitle"] = subtitle }
         result["document"] = ["schemaVersion": 1,
-            "content": ["title": result["title"]!, "body": result["excerpt"]!, "fields": fields, "tags": tags, "assets": []] as [String: Any],
+            "content": projectedContent,
             "presentation": ["template": ["id": "texttext.note", "version": 1], "theme": [:]] as [String: Any]] as [String: Any]
         if let fields = content?["fields"] as? [String: Any],
            let raw = fields["sourceUrl"] as? String, raw.utf8.count <= 4096,

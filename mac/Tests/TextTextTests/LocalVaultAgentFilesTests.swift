@@ -12,6 +12,7 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         let initial = try store.read(path: "Preview.textpack")
         var snapshot = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(initial.contents.documentJSON).utf8)) as? [String: Any])
         var content = try XCTUnwrap(snapshot["content"] as? [String: Any])
+        content["subtitle"] = "A considered subtitle"
         content["fields"] = ["annotations": [["quote": "Saved highlight"]], "description": String(repeating: "x", count: 2049), "category": "  Research  notes  "]
         snapshot["content"] = content
         let changed = try store.write(path: initial.path, expectedHash: initial.hash, markdown: initial.contents.markdown,
@@ -24,6 +25,7 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertFalse(incomplete.contains("content.fields.category"))
         let projected = try XCTUnwrap(preview["document"] as? [String: Any])
         let projectedContent = try XCTUnwrap(projected["content"] as? [String: Any])
+        XCTAssertEqual(projectedContent["subtitle"] as? String, "A considered subtitle")
         let fields = try XCTUnwrap(projectedContent["fields"] as? [String: Any])
         XCTAssertEqual(fields["category"] as? String, "  Research  notes  ")
     }

@@ -820,6 +820,7 @@ try {
     files.set(`Bookmarks/${name}.textpack`, sample(`Bookmarks/${name}.textpack`, "bookmark", name, "A saved reference.", { sourceUrl: `https://example.net/${index}` }));
   }
   const publishedStory = { ...sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph."), hash: "a".repeat(64) };
+  publishedStory.documentJSON = JSON.stringify({ ...JSON.parse(publishedStory.documentJSON), content: { ...JSON.parse(publishedStory.documentJSON).content, subtitle: "A considered subtitle" } });
   storyItemId = publishedStory.markdown.match(/textTextId: "([^"]+)"/)?.[1];
   files.set("Blog/Story.textpack", publishedStory);
   files.set("Notes/Formatted.textpack", sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point"));
@@ -895,6 +896,7 @@ try {
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.locator(".vault-story-list").getByText("An essay title").waitFor();
+  await page.locator(".vault-story-list").getByText("A considered subtitle").waitFor();
   await page.screenshot({ path: "/tmp/texttext-blog-reference.png" });
   await page.getByRole("button", { name: "Open An essay title" }).click();
   await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
