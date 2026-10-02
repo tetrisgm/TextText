@@ -1038,9 +1038,12 @@ try {
   assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["Design"]);
   await storyReader.getByRole("button", { name: "Edit story" }).click();
   await page.getByRole("textbox", { name: "Subtitle" }).waitFor();
-  await chooseFolder("Blog");
+  await page.getByRole("button", { name: "Back to Blog" }).click();
+  await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.getByRole("button", { name: "Write a story", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  assert.equal(await page.locator(".vault-sidebar").isVisible(), false);
+  await page.getByRole("button", { name: "Back to Blog" }).waitFor();
   const newStory = [...files.values()].at(-1);
   assert.equal(JSON.parse(newStory.documentJSON).presentation.template.id, "texttext.article");
   assert.equal(JSON.parse(newStory.documentJSON).content.title, "");
@@ -1068,6 +1071,7 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-new-story-editor-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-new-story-editor-dark-reference.png" });
   await page.getByRole("textbox", { name: "Subtitle" }).focus();
   await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
@@ -1115,6 +1119,7 @@ try {
   await page.getByRole("button", { name: "Add image to story" }).waitFor();
   await page.getByLabel("Choose story images").setInputFiles({ name: "story.png", mimeType: "image/png", buffer: Buffer.from(pixel, "base64") });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/story.png"));
+  await page.getByRole("button", { name: "Back to Blog" }).click();
   await chooseFolder("Gallery");
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.subtitle, "A short line beneath the title");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
@@ -1404,6 +1409,7 @@ try {
   const builtInStory = [...files.values()].at(-1);
   assert.ok(builtInStory.path.startsWith("Blog/"));
   assert.equal(JSON.parse(builtInStory.documentJSON).presentation.template.id, "texttext.article");
+  await page.getByRole("button", { name: "Back to Blog" }).click();
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseMoreAction("New from template");
   const connectedPicker = page.getByRole("dialog", { name: "New from template", exact: true });

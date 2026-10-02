@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog drafts now use the full workspace width while writing, with the folder sidebar hidden and a Back to Blog action that flushes the draft before navigation. The reader and other folders keep their shell. Disabled Publish colors are readable in light and dark. The local browser flow passed across draft creation, editor formatting, navigation, and the remaining surfaces; TypeScript and web vault browser checks passed. `/tmp/texttext-new-story-editor-light-reference.png` and `/tmp/texttext-new-story-editor-dark-reference.png` show the updated draft. Medium editing parity remains open; no app release was run.
+
 Command K now ranks the current item or folder actions before generic creation commands and shows a matched everyday alias, such as `Save bookmark (Read later)`. Its icon, shortcut, centered layout, dismissal, and folder/file search behavior remain. Local and web browser flows, focused search tests, and TypeScript passed. This follows Superhuman's published command-palette guidance; a side-by-side visual review in the signed-in product is still needed. No app release was run.
 
 Web vault editing and creation now pass the browser flow again. The browser fixture follows the current Notes navigation and exercises the real vault collaboration codec. A newly created Note exposed an empty-subtitle mismatch between saved snapshots and Yjs projections; `src/lib/vault/collaboration.ts` now compares those equivalent values consistently. `node src/local-vault/__tests__/verify-web-browser.mjs`, 60 targeted collaboration/transport tests, and `npx tsc --noEmit` passed. Reference parity across Bookmarks, Gallery, Feeds, Blog, Notes, and Command K remains open; no app release was run.

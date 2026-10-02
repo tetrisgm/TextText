@@ -1020,6 +1020,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     <main>
       {listing?.root && <header className="vault-context-header">
         <div className="vault-context-location">
+          {selectedStory && <button type="button" className="vault-story-back" aria-label="Back to Blog" onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder("Blog"); setFolderDesignOpen(false); }, true)}>← Blog</button>}
           {!sidebarOpen && <button ref={sidebarReopenButton} type="button" className="vault-sidebar-open"
             aria-controls="vault-sidebar" aria-expanded={false} onClick={() => setSidebarVisible(true)}>Show folders</button>}
           <div><p>{contextParent}</p><h2 title={selected?.path || destinationFolder.trim() || contextTitle}>{contextTitle}</h2></div>
