@@ -18,6 +18,8 @@ Saved template cards now preview bounded title, excerpt, source, and tag data fr
 
 The bundled Gallery choice now shows the four actual photos from its starter TextPack rather than colored blocks. The local bundle copies those existing assets for offline display; the browser contract checks an image loads. Light and dark picker screenshots show the image-led choice.
 
+The creation picker now offers Feeds when the workspace can read and create feed subscriptions. Its news preview leads into the existing URL-first Add source dialog, which writes the subscription as a TextPack in Feeds. The card is absent before connection or without permission; `/tmp/texttext-template-picker-feeds-reference.png` shows it in a connected local fixture.
+
 The Bookmarks reader now uses compact previous/next navigation, Reader and Original controls, a sans-serif title/body, and a source line below the title to track Shiori’s public dashboard example. Its items remain bookmark TextPacks, and URL-first capture remains the creation path.
 
 The Gallery detail viewer now occupies the workspace beside the still-visible folder sidebar, with a large image, right inspector, zoom, and Fit. Folder navigation closes the viewer. A single Gallery import opens its image-first item editor for title and caption; batch imports return to the grid. This follows Resurf’s public image detail view while the assets remain inside the Gallery TextPack.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
@@ -68,11 +68,12 @@ function TemplatePreview({ template, preview }: { template: TemplateDefinition; 
   </span>;
 }
 
-export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use template", disabled = false }: {
+export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use template", disabled = false, extra }: {
   looks: VaultLook[];
   onChoose: (look: VaultLook) => void;
   actionLabel?: string;
   disabled?: boolean;
+  extra?: ReactNode;
 }) {
   const id = useId();
   return <div className="vault-template-grid">{looks.map((look, index) =>
@@ -84,15 +85,16 @@ export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use templat
       <span className="vault-template-description" id={`${id}-${index}`}>{look.template.description || "Your own reusable document template."}</span>
       <span className="vault-template-action">{actionLabel} <span aria-hidden="true">↗</span></span>
     </button>,
-  )}</div>;
+  )}{extra}</div>;
 }
 
-export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCreateFromFile, onCreateFromBuiltIn }: {
+export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCreateFromFile, onCreateFromBuiltIn, onCreateFeed }: {
   onApply: (template: TemplateDefinition, sourceJSON?: string | null) => void;
   onClose: () => void;
   currentTemplate?: TemplateDefinition;
   onCreateFromFile?: (path: string) => void;
   onCreateFromBuiltIn?: (template: TemplateDefinition) => void;
+  onCreateFeed?: () => void;
 }) {
   const { looks, loading, notice, reload } = useVaultTemplates();
   const [query, setQuery] = useState("");
@@ -105,6 +107,12 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
   const included = BUILTIN_TEMPLATES
     .filter((template) => !retiredStarterIds.has(template.id) && !looks.some((look) => look.template.id === template.id))
     .map((template) => ({ template })).filter(matches);
+  const showFeed = Boolean(onCreateFromFile && onCreateFeed && (!query.trim() || /feed|news|source|publisher|rss|atom/i.test(query)));
+  const feedCard = showFeed && <button className="vault-template-card" type="button" aria-label="Follow a feed" onClick={onCreateFeed}>
+    <span className="vault-template-preview" data-template="feed" aria-hidden="true"><span className="preview-feed"><span>For You　 Headlines</span><strong>Stories from your sources</strong><small>◉ Publisher　·　Latest story</small><small>◉ Another source　·　More to read</small></span></span>
+    <span className="vault-template-name">Feeds</span><span className="vault-template-description">Follow a site and read its latest stories in Feeds.</span>
+    <span className="vault-template-action">Add source <span aria-hidden="true">↗</span></span>
+  </button>;
   const current = !onCreateFromFile && currentTemplate &&
     !looks.some((look) => look.template.id === currentTemplate.id && look.template.version === currentTemplate.version) &&
     !BUILTIN_TEMPLATES.some((template) => template.id === currentTemplate.id) ? [{ template: currentTemplate }].filter(matches) : [];
@@ -122,8 +130,8 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
     {!loading && !looks.length && !notice && !onCreateFromFile && <p>Save a look from any document to add your own.</p>}
     {visible.length > 0 && <><h3>Your templates</h3><VaultTemplateCards looks={visible} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} /></>}
     {current.length > 0 && <><h3>This item</h3><VaultTemplateCards looks={current} onChoose={choose} actionLabel="Apply look" /></>}
-    {included.length > 0 && <><h3>{onCreateFromFile ? "Ready to create" : "Included looks"}</h3><VaultTemplateCards looks={included} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} /></>}
-    {!loading && query.trim() && visible.length + included.length + current.length === 0 && <p>No templates match “{query.trim()}”. Try another name.</p>}
+    {(included.length > 0 || showFeed) && <><h3>{onCreateFromFile ? "Ready to create" : "Included looks"}</h3><VaultTemplateCards looks={included} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} extra={feedCard} /></>}
+    {!loading && query.trim() && visible.length + included.length + current.length === 0 && !showFeed && <p>No templates match “{query.trim()}”. Try another name.</p>}
     {notice && <div className="vault-template-notice"><p role="status">{notice}</p><button onClick={reload}>Read templates again</button></div>}
     <p className="vault-template-help">Edit a saved template yourself or ask the assistant to customize it.</p>
   </div>;

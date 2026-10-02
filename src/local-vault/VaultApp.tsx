@@ -1104,7 +1104,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
       }} />}
-      {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFromBuiltIn={(template) => {
+      {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFeed={canSubscribeFeed ? () => {
+        setTemplatePicker(false); setDestinationFolder("Feeds"); openFeedSubscribe(searchButton.current);
+      } : undefined} onCreateFromBuiltIn={(template) => {
         setTemplatePicker(false);
         if (template.id === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setCaptureMode("bookmark"); return; }
         if (template.id === "texttext.gallery") { setDestinationFolder("Gallery"); requestAnimationFrame(() => imageInput.current?.click()); return; }

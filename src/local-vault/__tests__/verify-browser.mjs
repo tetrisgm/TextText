@@ -212,6 +212,7 @@ try {
   await newFromTemplate.getByRole("button", { name: "Agent made look", exact: true }).waitFor();
   assert.equal(await newFromTemplate.getByRole("button", { name: "Agent made look", exact: true }).locator(".preview-generic strong").textContent(), "Offline note");
   await newFromTemplate.getByRole("button", { name: "Blog post", exact: true }).waitFor();
+  assert.equal(await newFromTemplate.getByRole("button", { name: "Follow a feed", exact: true }).count(), 0);
   await page.screenshot({ path: "/tmp/texttext-template-picker-reference.png" });
   assert.equal(await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').count(), 4);
   const galleryPhotoLoaded = await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').first().evaluate((element) => new Promise((resolve) => {
@@ -1023,14 +1024,26 @@ try {
   await page.getByRole("form", { name: "Add story link" }).getByRole("button", { name: "Add link" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Link](<https://example.com/article>)"));
   await storyBody.fill("Heading");
-  await storyBody.press("End");
-  await storyBody.press("Shift+Home");
-  await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Heading", exact: true }).click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await storyBody.evaluate((element) => {
+    element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
+    const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, text.textContent.length);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Heading", exact: true }).click({ force: true });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.startsWith("# Heading"));
   await storyBody.fill("Quote");
-  await storyBody.press("End");
-  await storyBody.press("Shift+Home");
-  await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Quote" }).click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await storyBody.evaluate((element) => {
+    element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
+    const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, text.textContent.length);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Quote" }).click({ force: true });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.startsWith("> Quote"));
   await storyBody.click();
   await page.getByRole("button", { name: "Add image to story" }).waitFor();
@@ -1270,6 +1283,14 @@ try {
   const builtInStory = [...files.values()].at(-1);
   assert.ok(builtInStory.path.startsWith("Blog/"));
   assert.equal(JSON.parse(builtInStory.documentJSON).presentation.template.id, "texttext.article");
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseMoreAction("New from template");
+  const connectedPicker = page.getByRole("dialog", { name: "New from template", exact: true });
+  await connectedPicker.getByRole("button", { name: "Follow a feed", exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "/tmp/texttext-template-picker-feeds-reference.png" });
+  await connectedPicker.getByRole("button", { name: "Follow a feed", exact: true }).click();
+  await page.getByRole("dialog", { name: "Subscribe to a feed" }).getByRole("textbox", { name: "Website or feed address" }).waitFor();
+  await page.getByRole("dialog", { name: "Subscribe to a feed" }).getByRole("button", { name: "Close", exact: true }).click();
   assert.deepEqual(failures, []);
   console.log("Bookmark reader, URL-first capture, story list, gallery viewer, and feed headlines passed.");
   console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");
