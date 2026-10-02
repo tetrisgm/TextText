@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery creation now opens the same image-first capture dialog from the folder action, Command K, More, and built-in or custom template creation. Paste works in that dialog even when another TextPack is open; cancel clears a queued custom look, while canceling the file picker keeps the dialog and look available. TypeScript and local/web vault browser flows passed. Resurf capture from other apps and full gallery parity remain open; no app release was run.
+
 Command K now includes a Keyboard shortcuts view listing the available actions and their direct keys, with Back to commands. The backdrop uses pointer events so outside clicks close it across mouse and touch input. The offline browser flow exercises navigation and outside dismissal; TypeScript, local/web browser flows, and focused action-filter tests passed. Checked dark view: `/tmp/texttext-command-shortcuts-reference.png`. Full Superhuman visual and command coverage remains open; no app release was run.
 
 Notes Find cards now searches full TextPack body text on demand, beyond the 400-character card preview. It debounces requests, keeps tag filters, and reports incomplete scans. The offline browser contract finds a deep-body phrase; TypeScript and local/web vault browser flows passed. Supernotes parity remains open; no app release was run.

@@ -1260,6 +1260,10 @@ try {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.keyboard.press("Escape");
   await imageCapture.waitFor({ state: "hidden" });
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "Add images", exact: true }).click();
+  await imageCapture.waitFor();
+  await imageCapture.getByRole("button", { name: "Close image capture" }).click();
   await page.locator(".vault-photo-grid img").first().waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid img")].every(image => image.complete && image.naturalHeight > 0));
   assert.equal(await page.getByRole("searchbox", { name: "Find images" }).count(), 0);
@@ -1674,6 +1678,7 @@ try {
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseMoreAction("New from template");
   await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Custom gallery look", exact: true }).click();
+  await page.getByRole("dialog", { name: "Add images" }).waitFor();
   await page.waitForFunction(() => !document.querySelector('.vault-context-header .vault-primary-action')?.hasAttribute('disabled'));
   const customPhoto = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#ad826c" } }).png().toBuffer();
   await page.getByLabel("Choose images").setInputFiles({ name: "Custom gallery photo.png", mimeType: "image/png", buffer: customPhoto });
@@ -1686,6 +1691,17 @@ try {
   await page.getByText("Ink on paper", { exact: true }).waitFor();
   assert.equal(JSON.parse(files.get(galleryWithLook.path).documentJSON).content.fields.material, "Ink on paper");
   await page.screenshot({ path: "/tmp/texttext-custom-gallery-look-reference.png" });
+  await page.getByRole("button", { name: "Close image" }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseMoreAction("New from template");
+  await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Custom gallery look", exact: true }).click();
+  await page.getByRole("dialog", { name: "Add images" }).getByRole("button", { name: "Close image capture" }).click();
+  await page.getByRole("button", { name: "Add images", exact: true }).click();
+  await page.getByRole("dialog", { name: "Add images" }).waitFor();
+  await page.getByLabel("Choose images").setInputFiles({ name: "Plain after cancel.png", mimeType: "image/png", buffer: customPhoto });
+  await page.getByRole("region", { name: "Plain after cancel" }).waitFor();
+  const plainAfterCancel = [...files.values()].find(file => file.path.startsWith("Gallery/") && JSON.parse(file.documentJSON).content.title === "Plain after cancel");
+  assert.equal(JSON.parse(plainAfterCancel.documentJSON).presentation.template.id, "texttext.gallery");
   await page.getByRole("button", { name: "Close image" }).click();
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseMoreAction("New from template");

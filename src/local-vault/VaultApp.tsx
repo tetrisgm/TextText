@@ -544,14 +544,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
-  const imagePickerCancelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const input = imageInput.current;
-    if (!input) return;
-    const cancel = () => { imagePickerCancelTimer.current = setTimeout(() => setPendingCreationLook(null), 250); };
-    input.addEventListener("cancel", cancel);
-    return () => { input.removeEventListener("cancel", cancel); if (imagePickerCancelTimer.current) clearTimeout(imagePickerCancelTimer.current); };
-  }, []);
   const searchButton = useRef<HTMLButtonElement>(null);
   const feedSubscribeButton = useRef<HTMLButtonElement>(null);
   const moreActions = useRef<HTMLDetailsElement>(null);
@@ -784,6 +776,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       });
     } finally { importing.current = false; }
   };
+  const closeImageCapture = () => { setImageCaptureOpen(false); setPendingCreationLook(null); };
   const closeMoreActions = () => { moreActions.current?.removeAttribute("open"); };
   const openWorkspaceFolder = () => {
     closeMoreActions();
@@ -971,7 +964,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     if (id === "capture") { openCapture("mixed"); return; }
     if (id === "new-from-template") { openTemplateLibrary(); return; }
     if (id === "subscribe-feed") { setDestinationFolder("Feeds"); openFeedSubscribe(searchButton.current); return; }
-    if (id === "import-images") { setDestinationFolder("Gallery"); imageInput.current?.click(); return; }
+    if (id === "import-images") { setDestinationFolder("Gallery"); setImageCaptureOpen(true); return; }
     if (id === "import-file") { importFile(); return; }
     if (id === "folder-design") { openFolderDesign(); return; }
     if (id === "customize") return customizeCurrent();
@@ -1039,7 +1032,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     onDrop={(event) => { if (selected) return; if (event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } else if (currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list")) { event.preventDefault(); if (canCreate) saveDroppedBookmark(event.dataTransfer.getData("text/uri-list").split("\n").find(line => line.trim() && !line.startsWith("#")) || ""); } }}
     onPaste={(event) => {
       const target = event.target as HTMLElement;
-      if (selected || target.closest("input,textarea,[contenteditable=true]")) return;
+      if (selected && !imageCaptureOpen || target.closest("input,textarea,[contenteditable=true]")) return;
       const files = Array.from(event.clipboardData.files);
       if (files.length) { event.preventDefault(); if (canCreate) void importImages(files); }
     }}>
@@ -1102,7 +1095,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
                 {canCreate && <button disabled={busy} onClick={() => openCapture()}>Capture a link or note</button>}
                 {canCreate && <button disabled={busy} onClick={openTemplateLibrary}>New from template</button>}
                 {canSubscribeFeed && <button ref={feedSubscribeButton} disabled={busy} onClick={() => openFeedSubscribe(moreActionsSummary.current)}>Subscribe to a feed</button>}
-                {canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); imageInput.current?.click(); }}>Import images…</button>}
+                {canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); setDestinationFolder("Gallery"); setImageCaptureOpen(true); }}>Import images…</button>}
                 {allowFolderPicker && <button disabled={busy} onClick={importFile}>Import file…</button>}
                 {canCreate && <label className="vault-folder-destination">Current folder
                   <input list="vault-folders" aria-label="Current folder" value={destinationFolder} placeholder="Workspace root"
@@ -1121,14 +1114,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         aria-controls="vault-sidebar" aria-expanded={false} onClick={() => setSidebarVisible(true)}>Show folders</button>}
       <datalist id="vault-folders">{folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
       <input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images" onChange={(event) => {
-        if (imagePickerCancelTimer.current) clearTimeout(imagePickerCancelTimer.current);
         const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
       }} />
-      {imageCaptureOpen && <div className="vault-image-capture-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setImageCaptureOpen(false); }}>
-        <div className="vault-image-capture" role="dialog" aria-modal="true" aria-label="Add images" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setImageCaptureOpen(false); } }}
+      {imageCaptureOpen && <div className="vault-image-capture-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) closeImageCapture(); }}>
+        <div className="vault-image-capture" role="dialog" aria-modal="true" aria-label="Add images" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); closeImageCapture(); } }}
           onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
           onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); void importImages(Array.from(event.dataTransfer.files)); }}>
-          <header><div><h2>Add images</h2><p>Collect visual references in your Gallery.</p></div><button type="button" aria-label="Close image capture" onClick={() => setImageCaptureOpen(false)}>✕</button></header>
+          <header><div><h2>Add images</h2><p>Collect visual references in your Gallery.</p></div><button type="button" aria-label="Close image capture" onClick={closeImageCapture}>✕</button></header>
           <div className="vault-image-capture-target"><span aria-hidden="true">＋</span><strong>Drop images here</strong><p>Paste an image with ⌘V, or choose files from your Mac.</p><button type="button" autoFocus disabled={busy} onClick={() => imageInput.current?.click()}>Choose images</button></div>
         </div>
       </div>}
@@ -1210,7 +1202,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         setTemplatePicker(false);
         setPendingCreationLook(null);
         if (template.id === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setCaptureMode("bookmark"); return; }
-        if (template.id === "texttext.gallery") { setDestinationFolder("Gallery"); requestAnimationFrame(() => imageInput.current?.click()); return; }
+        if (template.id === "texttext.gallery") { setDestinationFolder("Gallery"); setImageCaptureOpen(true); return; }
         const destination = template.id === "texttext.article" ? ["Blog", "Blog post"] : template.id === "texttext.talk" ? ["Presentations", "Talk"] : ["Notes", "Note"];
         void createForFolder(destination[0], destination[1], "", template);
       }} onCreateFromFile={(path) => void operate(async () => {
@@ -1219,7 +1211,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         const selectedTemplate = source.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : readTemplate(source, sourceDocument);
         const experience = templateExperience(selectedTemplate);
         if (experience === "bookmark") { setPendingCreationLook({ kind: "bookmark", template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }); setDestinationFolder("Bookmarks"); setTemplatePicker(false); setCaptureMode("bookmark"); return; }
-        if (experience === "gallery") { setPendingCreationLook({ kind: "gallery", template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }); setDestinationFolder("Gallery"); setTemplatePicker(false); requestAnimationFrame(() => imageInput.current?.click()); return; }
+        if (experience === "gallery") { setPendingCreationLook({ kind: "gallery", template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }); setDestinationFolder("Gallery"); setTemplatePicker(false); setImageCaptureOpen(true); return; }
         const folder = experience === "article" ? "Blog" : experience === "note" ? "Notes" : selectedTemplate.id === "texttext.talk" ? "Presentations" : destinationFolder.trim() || "Notes";
         const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, sourcePath: path, sourceHash: source.hash });
         const example = readDocument(cloned);
