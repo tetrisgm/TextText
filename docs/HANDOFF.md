@@ -2,6 +2,8 @@
 
 ## Current work
 
+Open Notes cards now have a direct Back to Notes control. It uses the existing revision-aware flush before returning to the card grid; the browser flow checks that the newly written card is present there. This closes a navigation gap in the Supernotes-style card flow. Full reference parity remains open; no app release was run.
+
 Bookmark capture now has a Paste copied link action that checks the clipboard value before filling the URL field; the user still confirms Save bookmark. The local browser flow exercises this path and verifies the resulting TextPack is in Bookmarks. Full Shiori creation parity remains open; no app release was run.
 
 Gallery image detail now edits its title in the top bar and starts the inspector with image metadata, avoiding a duplicate Title section beside the photo. The local browser contract checks the title control's placement and persists a title edit; TypeScript passed. `/tmp/texttext-gallery-import-detail-light-reference.png` shows the checked light view. Resurf parity remains open; no app release was run.

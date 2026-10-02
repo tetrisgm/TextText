@@ -335,6 +335,8 @@
 .vault-app .tt-document-editor[data-template-id="texttext.article"] :is(.tt-md-surface,.tt-field-body textarea) { font-family:Georgia,Charter,serif; font-size:19px; line-height:1.72; }
 .vault-app .tt-document-editor[data-template-id="texttext.article"] .tt-text-title textarea { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:42px; line-height:1.16; font-weight:750; letter-spacing:-.025em; }
 .vault-app .vault-story-back { display:none; }
+.vault-app .vault-note-back { flex:none; padding:6px 0; color:var(--muted); font-size:13px; }
+.vault-app .vault-note-back:hover { color:var(--ink); }
 .vault-app:has(.tt-document-editor[data-template-id="texttext.article"]) { grid-template-columns:minmax(0,1fr); }
 .vault-app.has-assistant:has(.tt-document-editor[data-template-id="texttext.article"]) { grid-template-columns:minmax(0,1fr) 340px; }
 .vault-app:has(.tt-document-editor[data-template-id="texttext.article"]) .vault-sidebar,

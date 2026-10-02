@@ -971,6 +971,11 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     try { return readDocument(selected).presentation.template.id === "texttext.article"; }
     catch { return false; }
   })();
+  const selectedNote = (() => {
+    if (!selected || folderForItem(selected.path) !== "Notes") return false;
+    try { return readDocument(selected).presentation.template.id === "texttext.note"; }
+    catch { return false; }
+  })();
   const contextTitle = selected
     ? (liveTitle?.path === selected.path ? liveTitle.title.trim() || (selectedStory ? "New story" : "Untitled") : (() => {
         try { return readDocument(selected).content.title.trim() || (selectedStory ? "New story" : "Untitled"); }
@@ -1020,6 +1025,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {listing?.root && <header className="vault-context-header">
         <div className="vault-context-location">
           {selectedStory && <button type="button" className="vault-story-back" aria-label="Back to Blog" onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder("Blog"); setFolderDesignOpen(false); }, true)}>← Blog</button>}
+          {selectedNote && <button type="button" className="vault-note-back" aria-label="Back to Notes" onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder("Notes"); setFolderDesignOpen(false); }, true)}>← Notes</button>}
           {!sidebarOpen && <button ref={sidebarReopenButton} type="button" className="vault-sidebar-open"
             aria-controls="vault-sidebar" aria-expanded={false} onClick={() => setSidebarVisible(true)}>Show folders</button>}
           <div><p>{contextParent}</p><h2 title={selected?.path || destinationFolder.trim() || contextTitle}>{contextTitle}</h2></div>

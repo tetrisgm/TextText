@@ -1406,7 +1406,9 @@ try {
   const newCard = [...files.values()].at(-1);
   assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
   assert.deepEqual(JSON.parse(newCard.documentJSON).content.tags, ["Ideas"]);
-  await chooseFolder("Notes");
+  await page.getByRole("button", { name: "Back to Notes" }).click();
+  await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
+  await page.locator(".vault-note-card").filter({ hasText: "Thought for later" }).waitFor();
   await page.getByRole("button", { name: "New note", exact: true }).waitFor();
   await page.keyboard.press("n");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
