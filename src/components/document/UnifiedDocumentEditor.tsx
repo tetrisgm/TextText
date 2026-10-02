@@ -2026,7 +2026,13 @@ export function UnifiedDocumentEditor({
         <h2>Details</h2>
         <label>Title<input aria-label="Image title" value={document.content.title} onChange={(event) => updateText("title", event.target.value)} maxLength={240} /></label>
         <label>Caption<textarea aria-label="Image caption" value={document.content.body} onChange={(event) => updateText("body", event.target.value)} rows={5} placeholder="Add a caption" /></label>
-        <label>Source<input aria-label="Image source" type="url" placeholder="https://" value={typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : ""} onChange={(event) => updateField("sourceUrl", event.target.value)} /></label>
+        <label>Source<input aria-label="Image source" type="url" placeholder="https://" value={typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : ""} onChange={(event) => {
+          const current = currentLocalDocument();
+          const source = event.target.value;
+          updateDocumentSnapshot({ ...current, content: { ...current.content, fields: { ...current.content.fields,
+            sourceUrl: source || null, sourceLabel: source || null, links: source ? [{ href: source, label: source }] : [],
+          } } });
+        }} /></label>
         <div className="tt-gallery-edit-tags"><h3>Tags</h3><div>{document.content.tags.map((tag) => <span key={tag}>{tag}<button type="button" aria-label={`Remove ${tag}`} onClick={() => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: current.content.tags.filter((value) => value !== tag) } });

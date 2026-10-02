@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery image detail now edits title and source beside the image, in addition to caption and tags. Source changes synchronize the TextPack's legacy `links` projection with `sourceUrl`, so reopening the image shows the new link instead of an older one. The full Gallery editor uses the same source-field update. TypeScript and the local browser flow passed, including reopen; `/tmp/texttext-gallery-inline-inspector-light-reference.png` is the checked light screenshot. No app release was run.
+
 Blog's draft header now keeps Publish and Done prominent while putting Share and Comments in More (they remain in Command K). Routine save labels no longer crowd the local toolbar; error/offline/unconfirmed states remain visible. TypeScript and the local browser flow passed; the checked light screenshot is `/tmp/texttext-new-story-editor-light-reference.png`. No app release was run.
 
 Notes quick creation now starts in the card body whether invoked by the top New note button, the grid's Start typing card, or a first printable key while browsing Notes. The keyboard path seeds that first character in the Note TextPack before opening the editor, so it is not lost. The title remains editable. TypeScript and the local browser contract passed; no app release was run.

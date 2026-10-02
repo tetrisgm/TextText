@@ -1131,7 +1131,7 @@ try {
   assert.ok(firstGalleryRow.gap < 2 && firstGalleryRow.heights.every(height => Math.abs(height - firstGalleryRow.heights[0]) < 1) && firstGalleryRow.uncropped);
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });
   await page.getByRole("button", { name: "Open Two photographs image 1" }).click();
-  const lightbox = page.getByRole("region", { name: "Two photographs" });
+  const lightbox = page.locator(".vault-gallery-lightbox");
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
   assert.ok(await page.getByRole("button", { name: "TextText", exact: true }).isVisible());
   assert.ok((await lightbox.boundingBox()).x >= 239);
@@ -1171,6 +1171,16 @@ try {
   await lightbox.getByRole("button", { name: "Save caption" }).click();
   await lightbox.getByText("Edited beside the image.").waitFor();
   assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.body, "Edited beside the image.");
+  await lightbox.getByRole("button", { name: "Edit image title" }).click();
+  await lightbox.getByRole("textbox", { name: "Image title" }).fill("Two color studies");
+  await lightbox.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("region", { name: "Two color studies" }).waitFor();
+  await lightbox.getByRole("button", { name: "Edit image source" }).click();
+  await lightbox.getByRole("textbox", { name: "Image source" }).fill("https://example.com/original");
+  await lightbox.getByRole("button", { name: "Save source" }).click();
+  await lightbox.getByRole("link", { name: "https://example.com/original" }).waitFor();
+  assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.title, "Two color studies");
+  assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.fields.sourceUrl, "https://example.com/original");
   await lightbox.getByRole("textbox", { name: "Add image tag" }).fill("reference");
   await lightbox.getByRole("button", { name: "Add", exact: true }).click();
   await lightbox.getByRole("button", { name: "Remove reference tag" }).waitFor();
