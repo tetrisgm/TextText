@@ -3,6 +3,16 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultAgentFilesTests: XCTestCase {
+    func testOversizedGalleryPreviewKeepsPrimaryImageAndFittingTiles() throws {
+        let thumbnail = ["contentType": "image/jpeg", "data": String(repeating: "A", count: 160_000)]
+        var preview: [String: Any] = ["title": "Visual collection", "image": thumbnail,
+                                      "images": [thumbnail, thumbnail, thumbnail]]
+        try LocalVaultWindowController.fitPreviewImages(&preview)
+        XCTAssertNotNil(preview["image"])
+        XCTAssertEqual((preview["images"] as? [[String: String]])?.count, 2)
+        XCTAssertLessThanOrEqual(try JSONSerialization.data(withJSONObject: preview).count, 512 * 1024)
+    }
+
     func testPreviewMarksOnlyIncompleteBindingsAndPreservesScalarWhitespace() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

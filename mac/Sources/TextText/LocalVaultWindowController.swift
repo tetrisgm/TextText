@@ -606,11 +606,20 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 if images.count > 1 { result["images"] = images }
             }
         }
-        if try JSONSerialization.data(withJSONObject: result).count > 512 * 1024 {
-            result.removeValue(forKey: "image")
-            result.removeValue(forKey: "images")
-        }
+        try fitPreviewImages(&result)
         return result
+    }
+    static func fitPreviewImages(_ result: inout [String: Any], byteLimit: Int = 512 * 1024) throws {
+        while try JSONSerialization.data(withJSONObject: result).count > byteLimit,
+              let images = result["images"] as? [[String: String]], !images.isEmpty {
+            // Keep the primary thumbnail when a multi-image pack exceeds the
+            // bridge budget, and retain as many grid tiles as will fit.
+            if images.count <= 2 { result.removeValue(forKey: "images") }
+            else { result["images"] = Array(images.dropLast()) }
+        }
+        if try JSONSerialization.data(withJSONObject: result).count > byteLimit {
+            result.removeValue(forKey: "image")
+        }
     }
     private static func previewImage(_ data: Data, maximumPixelSize: Int = 480) -> [String: String]? {
         guard let source = CGImageSourceCreateWithData(data as CFData,
