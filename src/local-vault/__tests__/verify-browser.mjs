@@ -351,7 +351,16 @@ try {
   await page.keyboard.press("Meta+k");
   const itemCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
   await itemCommands.getByRole("option", { name: "Add agent to this item", exact: true }).waitFor();
-  await page.keyboard.press("Escape");
+  await itemCommands.getByRole("option", { name: "Version history", exact: true }).waitFor();
+  if (await page.getByRole("button", { name: "Share", exact: true }).count()) await itemCommands.getByRole("option", { name: "Share this item", exact: true }).waitFor();
+  if (await page.getByRole("button", { name: "Comments", exact: true }).count()) await itemCommands.getByRole("option", { name: "Show comments", exact: true }).waitFor();
+  await itemCommands.getByRole("combobox", { name: "Search workspace" }).fill("share");
+  await itemCommands.getByRole("option", { name: "Share this item", exact: true }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-command-item-actions-reference.png" });
+  await itemCommands.getByRole("combobox", { name: "Search workspace" }).fill("version");
+  await itemCommands.getByRole("option", { name: "Version history", exact: true }).click();
+  await page.getByRole("dialog", { name: "Version history", exact: true }).waitFor();
+  await page.getByRole("dialog", { name: "Version history", exact: true }).getByRole("button", { name: "Close recovery" }).click();
   await itemCommands.waitFor({ state: "hidden" });
   let addAgent = page.getByRole("button", { name: "Add agent", exact: true });
   await addAgent.click();
@@ -1327,7 +1336,6 @@ try {
   await page.reload();
   await chooseFolder("Feeds");
   await page.getByRole("heading", { name: "Personalize your feed" }).waitFor();
-  await page.getByRole("searchbox", { name: "Search loaded stories" }).waitFor({ state: "hidden" });
   await page.screenshot({ path: "/tmp/texttext-feeds-starter-reference.png" });
   const interests = page.getByRole("group", { name: "News interests" });
   await interests.getByRole("button", { name: /Technology/ }).click();

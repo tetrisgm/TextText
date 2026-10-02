@@ -132,7 +132,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   }, [current?.path]);
   useEffect(() => () => { opened?.urls.forEach(url => URL.revokeObjectURL(url)); }, [opened?.urls]);
   const template = BUILTIN_TEMPLATES.find(item => item.id === "texttext.bookmark");
-  const document = opened?.path === current?.path ? opened.document : null;
+  const document = opened && current && opened.path === current.path ? opened.document : null;
   const favorite = Boolean(document?.content.fields.texttextBookmarkFavorite);
   const readAt = typeof document?.content.fields.texttextBookmarkReadAt === "string" ? document.content.fields.texttextBookmarkReadAt : null;
   const archivedAt = typeof document?.content.fields.texttextBookmarkArchivedAt === "string" ? document.content.fields.texttextBookmarkArchivedAt : null;

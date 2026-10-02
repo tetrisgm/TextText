@@ -37,6 +37,7 @@ const actionIcons: Record<string, string> = {
   "new-from-template": "▧", "import-images": "▣", "subscribe-feed": "◌",
   "import-file": "⇧", "folder-design": "▦", customize: "◈", "add-agent": "✧",
   "trash-recovery": "↺", "open-folder": "▱",
+  "share-current": "↗", "show-comments": "☷", "publish-current": "◎", "version-history": "◷",
 };
 
 export function filterVaultSearchActions(actions: readonly VaultSearchAction[], query: string): VaultSearchAction[] {

@@ -861,6 +861,11 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     }
     beginCustomize(path);
   }, [beginCustomize, destinationFolder, selected?.path]);
+  const shareCurrent = () => {
+    if (!canShare || !sharingWorkspaceId) return;
+    if (selected) setSharing({ workspaceId: sharingWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" });
+    else if (destinationFolder.trim()) setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: destinationFolder.trim(), label: destinationFolder.trim().split("/").at(-1) || destinationFolder.trim() });
+  };
   useEffect(() => {
     const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true); };
     const newFile = () => { if (canCreate) createNote(focusedControl()); };
@@ -898,6 +903,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     shortcut: "A",
     keywords: ["assistant", "collaborate", "edit"],
   });
+  if (canShare && sharingWorkspaceId && (selected || commandFolder)) commandActions.push({ id: "share-current", label: selected ? "Share this item" : "Share this folder", description: "Manage access to the current location.", keywords: ["collaborate", "invite", "permissions"] });
+  if (canOpenComments) commandActions.push({ id: "show-comments", label: "Show comments", description: "Discuss the open item.", keywords: ["discussion", "replies"] });
+  if (selected && canPublish) commandActions.push({ id: "publish-current", label: "Publish this item", description: "Review public access before publishing.", keywords: ["public", "website"] });
+  if (selected && canOpenRecovery) commandActions.push({ id: "version-history", label: "Version history", description: "Inspect saved versions of this item.", keywords: ["restore", "revisions"] });
   if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
   for (const folder of folders) commandActions.push({
@@ -919,6 +928,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     if (id === "folder-design") { openFolderDesign(); return; }
     if (id === "customize") return customizeCurrent();
     if (id === "add-agent") { beginAddAgent(); return; }
+    if (id === "share-current") { shareCurrent(); return; }
+    if (id === "show-comments") { setCommentsOpen(true); return; }
+    if (id === "publish-current") { openPublish(); return; }
+    if (id === "version-history" && selected) { openRecovery(selected.path); return; }
     if (id === "trash-recovery") { openRecovery(); return; }
     if (id === "open-folder") { openWorkspaceFolder(); return; }
   };
@@ -1014,9 +1027,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           {selected && allowFolderPicker && <LocalParticipantsRow postId={selected.path} />}
           {selected && canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
             disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
-          {canShare && sharingWorkspaceId && (selected || destinationFolder.trim()) && <button disabled={busy} onClick={() => selected
-            ? setSharing({ workspaceId: sharingWorkspaceId, scopeType: "item", scopeKey: packIdentity(selected.markdown), label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" })
-            : setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: destinationFolder.trim(), label: destinationFolder.trim().split("/").at(-1) || destinationFolder.trim() })}>Share</button>}
+          {canShare && sharingWorkspaceId && (selected || destinationFolder.trim()) && <button disabled={busy} onClick={shareCurrent}>Share</button>}
           <details ref={moreActions} className="vault-context-menu" onKeyDown={(event) => {
             if (event.key !== "Escape" || !event.currentTarget.open) return;
             event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; moreActionsSummary.current?.focus();
