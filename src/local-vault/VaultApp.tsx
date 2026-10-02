@@ -942,7 +942,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
   for (const folder of folders) commandActions.push({
     id: `go-to-folder:${folder}`, label: `Go to ${folder}`,
-    description: "Open this workspace folder.", keywords: ["navigate", "folder", folder], searchOnly: true,
+    description: "Open this workspace folder.", keywords: ["navigate", "folder", folder],
   });
   const runCommandAction = (id: string) => {
     if (id.startsWith("go-to-folder:")) return operate(async () => {

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now lists folder navigation commands before any query, so users can discover them while browsing all actions and learn the same commands they can search for. The local browser contract checks a folder command in the default list and keyboard wrapping; TypeScript and local/web browser flows passed. Broader Superhuman command coverage and exact visual parity remain open; no app release was run.
+
 Notes creation now handles plain-text paste on the card area: the first line becomes the title and subsequent lines become the body of a Note TextPack. Pasting into search or another input remains ordinary input. The local browser contract verifies the saved title, body, and template; TypeScript and web browser flows passed. Supernotes parity remains open; no app release was run.
 
 Note cards now receive a separate bounded formatted body from full Mac and web TextPack previews, preserving paragraphs and lists beyond the 400-character search excerpt. Metadata-only scans remain compact. The card display allows more vertical content. TypeScript, focused web and Swift tests, and the local browser flow passed. Supernotes creation and interaction parity remains open; no app release was run.

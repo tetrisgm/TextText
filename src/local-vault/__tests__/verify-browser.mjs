@@ -267,6 +267,7 @@ try {
   assert.equal(await page.getByRole("option", { name: "New note", exact: true }).locator("kbd").textContent(), "N");
   assert.equal(await page.getByRole("option", { name: "Write a story", exact: true }).locator("kbd").textContent(), "C");
   assert.equal(await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("kbd").textContent(), "B");
+  await page.getByRole("option", { name: "Go to Notes", exact: true }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
   await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowUp");
   assert.equal(await page.getByRole("dialog", { name: "Search and actions", exact: true }).evaluate(dialog => {
