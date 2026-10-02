@@ -8,7 +8,7 @@ import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { VaultDocumentGrid } from "./VaultDocumentGrid";
 
 export function FolderPresentation({ listing, folder, busy, editable = true, designOpen = false, onOpen, onRevealBookmark, onCreateNote, onQuickSaveBookmark, onCustomize, onCloseDesign, preferredBookmarkPath }: {
-  listing: VaultListing; folder: string; busy: boolean; editable?: boolean; onOpen: (path: string) => void; onRevealBookmark?: (path: string) => void; onCreateNote?: () => void; onQuickSaveBookmark?: (address: string) => Promise<void>; onCustomize?: (path: string) => void;
+  listing: VaultListing; folder: string; busy: boolean; editable?: boolean; onOpen: (path: string) => void; onRevealBookmark?: (path: string) => void; onCreateNote?: (pastedText?: string) => void; onQuickSaveBookmark?: (address: string) => Promise<void>; onCustomize?: (path: string) => void;
   designOpen?: boolean; onCloseDesign?: () => void; preferredBookmarkPath?: string;
 }) {
   const [view, setView] = useState<FolderView | null>(null);

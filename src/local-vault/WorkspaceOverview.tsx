@@ -6,7 +6,7 @@ export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sha
   designOpen?: boolean; preferredBookmarkPath?: string;
   onOpen: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
-  onCreateNote?: () => void;
+  onCreateNote?: (pastedText?: string) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   onCustomize?: (path: string) => void;
   onCloseDesign?: () => void;

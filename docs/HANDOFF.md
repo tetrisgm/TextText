@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes creation now handles plain-text paste on the card area: the first line becomes the title and subsequent lines become the body of a Note TextPack. Pasting into search or another input remains ordinary input. The local browser contract verifies the saved title, body, and template; TypeScript and web browser flows passed. Supernotes parity remains open; no app release was run.
+
 Note cards now receive a separate bounded formatted body from full Mac and web TextPack previews, preserving paragraphs and lists beyond the 400-character search excerpt. Metadata-only scans remain compact. The card display allows more vertical content. TypeScript, focused web and Swift tests, and the local browser flow passed. Supernotes creation and interaction parity remains open; no app release was run.
 
 Blog now has Find stories across saved titles, subtitles, opening excerpts, and tags, backed by the same bounded TextPack metadata index as Gallery. Search works past the visible page without loading full documents, and fails closed when required metadata is truncated. The browser flow filters by subtitle and checks empty results, then opens the story; `/tmp/texttext-blog-reference.png` is the checked dark list. TypeScript and local/web browser flows passed. Medium publishing and story-management parity remains open; no app release was run.

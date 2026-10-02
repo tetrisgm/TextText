@@ -1504,6 +1504,17 @@ try {
   assert.equal(JSON.parse(shortcutNote.documentJSON).presentation.template.id, "texttext.note");
   assert.equal(JSON.parse(shortcutNote.documentJSON).content.title, "note from keyboard");
   assert.equal(JSON.parse(shortcutNote.documentJSON).content.body, "");
+  await page.getByRole("button", { name: "Back to Notes" }).click();
+  await page.getByRole("button", { name: "Start typing Make a new card" }).evaluate(button => {
+    const clipboard = new DataTransfer();
+    clipboard.setData("text/plain", "Pasted card title\n\n- First idea\n- Second idea");
+    button.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: clipboard }));
+  });
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  const pastedCard = [...files.values()].at(-1);
+  assert.equal(JSON.parse(pastedCard.documentJSON).content.title, "Pasted card title");
+  assert.equal(JSON.parse(pastedCard.documentJSON).content.body, "- First idea\n- Second idea");
+  assert.equal(JSON.parse(pastedCard.documentJSON).presentation.template.id, "texttext.note");
   for (const path of files.keys()) if (path.startsWith("Feeds/")) files.delete(path);
   await page.reload();
   await chooseFolder("Feeds");
