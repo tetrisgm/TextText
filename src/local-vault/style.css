@@ -101,6 +101,8 @@
 .vault-app .vault-search [role=option] strong em { color:#aeb4be; font-size:12px; font-style:normal; font-weight:400; }
 .vault-app .vault-search [role=option] span,.vault-app .vault-search [role=option] small { grid-column:2; margin:0; color:#aeb4be; font-size:12px; }
 .vault-app .vault-search [role=option] kbd { grid-column:3; grid-row:1; padding:3px 6px; color:#f0f1f4; border:1px solid #a6a8b0; border-radius:4px; font-size:11px; }
+.vault-app .vault-search .vault-command-file strong { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.vault-app .vault-search .vault-command-file small { grid-column:3; grid-row:1; max-width:180px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:right; }
 .vault-app .vault-search [role=option]:hover,.vault-app .vault-search [role=option][aria-selected=true] { background:#7d808a; }
 .vault-app .vault-photo-grid { display:grid; gap:8px; min-width:0; }
 .vault-app .vault-photo-row { display:flex; gap:8px; min-width:0; overflow:hidden; }

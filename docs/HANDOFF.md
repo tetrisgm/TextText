@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K file matches now sit under a Files heading in compact rows with the path at the right. This keeps actions and files distinct while preserving accessible result text and arrow-key order. Local and web vault browser flows and TypeScript passed. The first local browser run hit a timing-sensitive bookmark highlight autosave assertion; a direct rerun passed. Full Superhuman parity remains open; no app release was run.
+
 Notes cards now use each saved TextPack look for their grid preview, including its validated collection renderer and theme, instead of always drawing the built-in Note card. The Mac metadata preview retains the saved template reference; visible custom cards fetch only the look JSON through the metadata reader, without expanding assets. The local browser flow creates a custom monospace Note and checks its grid card, with `/tmp/texttext-custom-note-look-grid-reference.png` as the dark screenshot. The focused Mac test, local/web browser flows, and TypeScript passed. Full Supernotes parity remains open; no app release was run.
 
 Notes now has a card-library search, tag chips, and title sorting. It indexes local metadata for up to 2,048 TextPacks and 8 MiB, searching titles, tags, and the first 400 characters of each card preview without loading media or contacting the cloud. The local browser flow finds a card beyond page one, filters by tag, checks title order, and renders the dark grid; screenshot: `/tmp/texttext-note-grid-reference.png`. The web browser flow and TypeScript passed. Full Supernotes parity, including full-body search and saved-look card previews, remains open; no app release was run.
