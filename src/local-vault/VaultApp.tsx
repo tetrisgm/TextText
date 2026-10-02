@@ -84,6 +84,8 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [external, setExternal] = useState(initialDocument);
   const [reading, setReading] = useState(() => Boolean(articleSource(initialDocument) ||
+    initialDocument.presentation.template.id === "texttext.note" && !focusNewNote && !focusNewNoteTitle &&
+    (initialDocument.content.title.trim() || initialDocument.content.body.trim()) ||
     initialDocument.presentation.template.id === "texttext.article" && !focusNewNoteTitle &&
     (initialDocument.content.title.trim() || initialDocument.content.body.trim())));
   useEffect(() => {

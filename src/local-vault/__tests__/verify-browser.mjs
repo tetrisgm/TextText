@@ -318,6 +318,7 @@ try {
   await connectedCommands.getByRole("option", { name: "Trash and recovery", exact: true }).waitFor();
   await connectedCommands.getByRole("combobox", { name: "Search workspace" }).fill("Offline note");
   await connectedCommands.getByRole("option", { name: /Notes\/Offline.textpack/ }).click();
+  await page.getByRole("button", { name: "Edit card" }).click();
   const body = page.getByRole("textbox", { name: "Document body", exact: true });
   await body.fill("Local first line\nSecond line");
   await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
@@ -811,7 +812,7 @@ try {
   await versions.getByRole("button", { name: "Close recovery" }).click();
   await versions.waitFor({ state: "hidden" });
   assert.equal(await page.locator("dialog.vault-recovery").count(), 0);
-  await page.getByRole("textbox", { name: "Title" }).waitFor();
+  await page.getByRole("region", { name: "Note card" }).waitFor();
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   const newNotePath = [...files.keys()].at(-1);
@@ -1234,6 +1235,10 @@ try {
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
   await page.screenshot({ path: "/tmp/texttext-note-grid-reference.png" });
+  await page.getByRole("button", { name: "Open A concise card" }).click();
+  await page.getByRole("region", { name: "Note card" }).getByText("A concise card").waitFor();
+  assert.equal(await page.getByRole("textbox", { name: "Document body" }).count(), 0);
+  await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
   await page.getByRole("textbox", { name: "Title" }).fill("Thought for later");
