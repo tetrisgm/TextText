@@ -777,6 +777,9 @@ try {
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
     { id: "one", kind: "image", src: "assets/one.png", alt: "First photograph" }, { id: "two", kind: "image", src: "assets/two.png", alt: "Second photograph" },
   ]), assets: [{ filename: "one.png", contentType: "image/png", data: pixel }, { filename: "two.png", contentType: "image/png", data: pixel }] });
+  files.set("Gallery/Single.textpack", { ...sample("Gallery/Single.textpack", "gallery", "One photograph", "A separate image.", {}, [
+    { id: "third", kind: "image", src: "assets/third.png", alt: "Third photograph" },
+  ]), assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
   files.set("Feeds/Design.textpack", sample("Feeds/Design.textpack", "bookmark", "Design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.com/feed.xml" }));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
@@ -834,6 +837,16 @@ try {
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
   await lightbox.getByRole("button", { name: "Next image" }).click();
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
+  const galleryOrder = await page.locator(".vault-photo-grid button").evaluateAll(buttons => buttons.map(button => button.getAttribute("aria-label")));
+  const pairSecond = galleryOrder.indexOf("Open Two photographs image 2");
+  const single = galleryOrder.indexOf("Open One photograph");
+  assert.ok(pairSecond >= 0 && single >= 0);
+  const towardsSingle = single < pairSecond ? "ArrowLeft" : "ArrowRight";
+  const towardsPair = single < pairSecond ? "ArrowRight" : "ArrowLeft";
+  for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsSingle);
+  await page.getByRole("dialog", { name: "One photograph" }).getByRole("img", { name: "Third photograph" }).waitFor();
+  for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsPair);
+  await page.getByRole("dialog", { name: "Two photographs" }).getByRole("img", { name: "Second photograph" }).waitFor();
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
   await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
   await lightbox.getByRole("button", { name: "Close image" }).click();

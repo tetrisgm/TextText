@@ -47,8 +47,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
 }) {
   const [page, setPage] = useState(0);
   const [view, setView] = useState("");
-  const [galleryPath, setGalleryPath] = useState("");
-  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [galleryState, setGalleryState] = useState<{ entries: { path: string; index: number }[]; selection: number } | null>(null);
   const [previews, setPreviews] = useState<Record<string, FolderPreview>>({});
   const [query, setQuery] = useState<{ key: string; listing?: VaultListing; previews: Record<string, FolderPreview>; done: boolean; error?: string }>({ key: "", previews: {}, done: false });
   const template = useMemo(() => folderTemplate ? { ...folderTemplate, collection: selectCollectionView(folderTemplate.collection, view || folderTemplate.collection.defaultView || "") } : undefined, [folderTemplate, view]);
@@ -126,6 +125,11 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
   const feedsFolder = folder === "Feeds";
   const referenceFolder = photoFolder || bookmarkFolder || notesFolder || blogFolder || feedsFolder;
   const fallbackTitle = (item: VaultListing["items"][number]) => item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
+  const galleryEntries = photoFolder ? visible.flatMap(item => {
+    const count = previews[item.path]?.images?.length || 1;
+    return Array.from({ length: count }, (_, index) => ({ path: item.path, index }));
+  }) : [];
+  let galleryTile = 0;
   return <section aria-label="Documents" className={referenceFolder ? `vault-${folder.toLowerCase()}-folder` : undefined}>{!referenceFolder && <h3>{folder ? "Files" : "Explore your documents"}</h3>}
     {template && !referenceFolder && template.collection.views.length > 0 && <label>Folder view <select aria-label="Folder view" value={view || template.collection.defaultView || ""} onChange={(event) => { setView(event.target.value); setPage(0); }}><option value="">Default</option>{template.collection.views.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>}
     {!supported && <p role="status">The {requestedLayout} layout is not available here yet. Showing a readable list.</p>}
@@ -133,7 +137,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
     {photoFolder ? <div className="vault-photo-grid">{visible.flatMap(item => {
       const preview = previews[item.path];
       const images = preview?.images?.length ? preview.images : [preview?.image];
-      return images.map((image, index) => <PreviewImage key={`${item.path}:${index}`} preview={preview ? { ...preview, image } : undefined}>{source => <GalleryTile source={source} title={`${preview?.title || fallbackTitle(item)}${images.length > 1 ? ` image ${index + 1}` : ""}`} disabled={busy || previewOnly} onOpen={() => { setGalleryIndex(index); setGalleryPath(item.path); }} />}</PreviewImage>);
+      return images.map((image, index) => { const selection = galleryTile++; return <PreviewImage key={`${item.path}:${index}`} preview={preview ? { ...preview, image } : undefined}>{source => <GalleryTile source={source} title={`${preview?.title || fallbackTitle(item)}${images.length > 1 ? ` image ${index + 1}` : ""}`} disabled={busy || previewOnly} onOpen={() => setGalleryState({ entries: galleryEntries, selection })} />}</PreviewImage>; });
     })}</div> : bookmarkFolder ? <VaultBookmarkLibrary items={visible} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} /> : notesFolder ? <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; return <button key={item.path} disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallbackTitle(item)}`}><strong>{preview?.title || fallbackTitle(item)}</strong><p>{preview?.excerpt || "Start writing…"}</p><small>{preview?.document?.content.tags.slice(0, 3).map(tag => `#${tag}`).join("  ")}</small></button>; })}</div> : blogFolder ? <div className="vault-story-list">{visible.map(item => { const preview = previews[item.path]; return <PreviewImage key={item.path} preview={preview}>{source => <button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallbackTitle(item)}`}><span className="vault-story-copy"><small>TextText · Story</small><strong>{preview?.title || fallbackTitle(item)}</strong><span>{preview?.excerpt}</span></span>{source && /* eslint-disable-next-line @next/next/no-img-element */ <img src={source} alt="" loading="lazy" />}</button>}</PreviewImage>; })}</div> : feedsFolder ? <VaultFeedHeadlines sources={visible.map(item => previews[item.path]).filter((entry): entry is FolderPreview => Boolean(entry))} ready={visible.every(item => Boolean(previews[item.path]))} canAdd={!busy && !previewOnly} sourceList={<div className="vault-feed-sources">{visible.map(item => { const preview = previews[item.path]; return <button key={item.path} disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallbackTitle(item)}`}><span className="vault-feed-source-icon" aria-hidden="true">◉</span><span><strong>{preview?.title || fallbackTitle(item)}</strong><small>{typeof preview?.document?.content.fields.feedUrl === "string" ? preview.document.content.fields.feedUrl : "Open latest stories"}</small></span><span aria-hidden="true">›</span></button>; })}</div>} /> : template && layout === "index" ? <div className="vault-folder-table-wrapper"><table className="vault-folder-table"><thead><tr><th>Title</th><th>Source</th><th>Tags</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{visible.map((item) => {
       const preview = previews[item.path];
       return <tr key={item.path}><td>{preview?.title || fallbackTitle(item)}</td><td>{preview?.sourceURL || ""}</td><td>{preview?.document?.content.tags.join(", ") || ""}</td><td><button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallbackTitle(item)}`}>Open</button></td></tr>;
@@ -152,7 +156,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, folderTemplat
       </button>}</PreviewImage>;
     })}</div>}
     {!items.length && !feedsFolder && <p>{members.length ? "No files match this view." : emptyMessage ?? "No files here yet. Choose a template to get started."}</p>}
-    {galleryPath && <VaultGalleryLightbox path={galleryPath} initialIndex={galleryIndex} onClose={() => setGalleryPath("")} onEdit={path => { setGalleryPath(""); onOpen(path); }} />}
+    {galleryState && <VaultGalleryLightbox entries={galleryState.entries} initialSelection={galleryState.selection} onClose={() => setGalleryState(null)} onEdit={path => { setGalleryState(null); onOpen(path); }} />}
     {lastPage > 0 && <nav className="vault-file-pages" aria-label="File pages"><button disabled={busy || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage + 1} of {lastPage + 1}</span><button disabled={busy || currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next</button></nav>}
   </section>;
 }
