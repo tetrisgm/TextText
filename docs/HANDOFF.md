@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog's writing toolbar now labels its autosaved edit transition Done and moves Change look into the editor's More menu. The story title, subtitle, body, and Publish action remain visible. The local browser contract verifies the menu and title-to-subtitle keyboard path, and its light screenshot is `/tmp/texttext-new-story-editor-light-reference.png`. TypeScript and the full local browser flow passed; no app release was run.
+
 Command K now offers the open item's Share, Comments, Publish, and Version history actions when the same permissions permit their visible controls; Share also works for the current folder. The browser contract opens Version history through the palette and checks contextual command visibility. `/tmp/texttext-command-item-actions-reference.png` shows the filtered Share action. A null-path guard fixes an intermittent Bookmarks reader crash during URL capture. TypeScript and two consecutive full local browser runs passed. No app release was run.
 
 Gallery image detail now edits captions and tags in its right inspector while the image remains visible. These controls write the same Gallery TextPack used by the full editor. The local browser contract verifies save/remove behavior and passed; light and dark screenshots are `/tmp/texttext-gallery-inline-inspector-light-reference.png` and `/tmp/texttext-gallery-inline-inspector-reference.png`. No app release was run.

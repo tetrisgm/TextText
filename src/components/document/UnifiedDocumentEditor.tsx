@@ -1815,7 +1815,7 @@ export function UnifiedDocumentEditor({
             {leadingControls}
         {networkEnabled && <ParticipantsRow key={collab.postId} postId={networkEnabled ? collab.postId : null}
           handle={blog.handle} canReviewChanges={canReviewAgentChanges} />}
-          {(onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
+          {activeTemplate.id !== "texttext.article" && (onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
             <button
               type="button"
               className="ac-btn ac-btn-gray tt-look-button"
@@ -1839,6 +1839,12 @@ export function UnifiedDocumentEditor({
               <span aria-hidden="true">•••</span>
             </summary>
             <div className="tt-editor-more-menu">
+              {activeTemplate.id === "texttext.article" && (onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
+                <button type="button" onClick={() => {
+                  if (availableTemplates?.length) setChoosingTemplate(true);
+                  else onChooseTemplate?.();
+                }}>Change look</button>
+              )}
               {onCustomizeDocument && (
                 <button type="button" onClick={onCustomizeDocument}>
                   Customize this document
@@ -1929,8 +1935,8 @@ export function UnifiedDocumentEditor({
           </details>
           )}
           {activeTemplate.id !== "texttext.note" && <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
-            <span className="tt-stop-edit-label-full">{transport === "local" ? "Save" : "Stop editing"}</span>
-            <span className="tt-stop-edit-label-compact">{transport === "local" ? "Save" : "Done"}</span>
+            <span className="tt-stop-edit-label-full">{activeTemplate.id === "texttext.article" ? "Done" : transport === "local" ? "Save" : "Stop editing"}</span>
+            <span className="tt-stop-edit-label-compact">{activeTemplate.id === "texttext.article" ? "Done" : transport === "local" ? "Save" : "Done"}</span>
           </button>}
             <div className={`tt-save-state is-${saveState}`}>
               {saveStateLabel}

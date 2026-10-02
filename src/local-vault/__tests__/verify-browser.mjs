@@ -1021,7 +1021,7 @@ try {
   await topicInput.fill("Design");
   await page.locator(".tt-article-topics").getByRole("button", { name: "Add", exact: true }).click();
   await page.locator(".tt-article-topic-list").getByText("Design").waitFor();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await storyReader.getByRole("button", { name: "Edit story" }).waitFor();
   assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["Design"]);
   await storyReader.getByRole("button", { name: "Edit story" }).click();
@@ -1034,9 +1034,15 @@ try {
   assert.equal(JSON.parse(newStory.documentJSON).content.title, "");
   assert.equal(await page.getByRole("textbox", { name: "Title", exact: true }).getAttribute("placeholder"), "Title");
   assert.equal(await page.locator(".vault-context-location h2").textContent(), "New story");
+  assert.equal(await page.locator(".tt-look-button").count(), 0);
+  await page.locator(".tt-editor-more").getByLabel("More actions", { exact: true }).click();
+  await page.getByRole("button", { name: "Change look" }).waitFor();
+  await page.locator(".tt-editor-more").getByLabel("More actions", { exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).waitFor();
   assert.match(newStory.markdown, /kind: "article"/);
   await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
   assert.equal(await page.locator(".vault-context-actions > .vault-primary-action").isDisabled(), true);
+  await page.getByRole("textbox", { name: "Title", exact: true }).focus();
   await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Subtitle");
   await page.getByRole("textbox", { name: "Subtitle" }).fill("A short line beneath the title");
