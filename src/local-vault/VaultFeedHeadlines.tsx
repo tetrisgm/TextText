@@ -60,7 +60,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [full, setFull] = useState<{ key: string; value: FullEntry } | null>(null);
   const [storyError, setStoryError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<Set<string>>(() => new Set());
   const [sourceLimit, setSourceLimit] = useState(8);
   const cachedSources = useRef(new Map<string, FeedStory[]>());
@@ -116,16 +116,31 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
       .catch(reason => { if (!controller.signal.aborted) setStoryError(reason instanceof Error ? reason.message : "This story could not be opened."); });
     return () => controller.abort();
   }, [activeKey]);
-  const saveStory = async () => {
-    if (!active || !full || full.key !== activeKey || saving || saved.has(activeKey) || !canAdd) return;
-    setSaving(true); setStoryError("");
+  const saveStory = async (story: FeedStory) => {
+    const key = `${story.feedURL}\n${story.externalKey}`;
+    if (saving || saved.has(key) || !canAdd) return;
+    setSaving(key);
+    if (activeKey === key) setStoryError(""); else setError("");
     try {
-      const pack = await createKeptFeedEntryPack(full.value, "bookmark");
+      const entry = full?.key === key ? full.value : await vaultRequest<FullEntry>("feedEntry", { feedURL: story.feedURL, externalKey: story.externalKey });
+      if (entry.feedURL !== story.feedURL || entry.entry?.externalKey !== story.externalKey) throw new Error("This story no longer matches the selected feed entry. Refresh Feeds and try again.");
+      const pack = await createKeptFeedEntryPack(entry, "bookmark");
       await vaultRequest("importPack", { title: pack.title, folder: "Bookmarks", data: encodeBase64(pack.bytes) });
-      setSaved(previous => new Set(previous).add(activeKey));
+      setSaved(previous => new Set(previous).add(key));
       window.dispatchEvent(new Event("texttext:vault-changed"));
-    } catch (reason) { setStoryError(reason instanceof Error ? reason.message : "This story could not be saved."); }
-    finally { setSaving(false); }
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "This story could not be saved.";
+      if (activeKey === key) setStoryError(message); else setError(message);
+    } finally { setSaving(null); }
+  };
+  const readLaterAction = (story: FeedStory) => {
+    const key = `${story.feedURL}\n${story.externalKey}`;
+    const kept = saved.has(key);
+    return <button type="button" className="vault-feed-read-later" aria-label={`${kept ? "Saved" : "Read later"}: ${story.title}`}
+      disabled={!canAdd || Boolean(saving) || kept} onClick={() => void saveStory(story)}>
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true" fill={kept ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><path d="M5 3h10v14l-5-3.4L5 17z" /></svg>
+      {saving === key ? "Saving…" : kept ? "Saved" : "Read later"}
+    </button>;
   };
   const followInterests = async () => {
     if (!canAdd || following || !interests.size) return;
@@ -174,7 +189,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     {!activeFull && !storyError && <p role="status">Opening story…</p>}
     {activeFull && readerDocument && storyTemplate && <><div className="vault-feed-reader-content"><DocumentRenderer document={readerDocument} template={storyTemplate} metadata={{ author: active.source, date: storyDate(activeFull.entry.publishedAt) }} />
       {activeFull.entry.availability !== "full" && <p className="vault-feed-reader-availability">{activeFull.entry.availability === "excerpt" ? "This source provided an excerpt." : "This source provided only story details."}</p>}</div>
-      <footer><button type="button" disabled={!canAdd || saving || saved.has(activeKey)} onClick={() => void saveStory()}>{saving ? "Saving…" : saved.has(activeKey) ? "Saved to Bookmarks" : "Save to Bookmarks"}</button>{activeFull.entry.permalink && <a href={activeFull.entry.permalink} target="_blank" rel="noopener noreferrer">Open original</a>}</footer></>}
+      <footer><button type="button" disabled={!canAdd || Boolean(saving) || saved.has(activeKey)} onClick={() => void saveStory(active)}>{saving === activeKey ? "Saving…" : saved.has(activeKey) ? "Saved to Bookmarks" : "Save to Bookmarks"}</button>{activeFull.entry.permalink && <a href={activeFull.entry.permalink} target="_blank" rel="noopener noreferrer">Open original</a>}</footer></>}
   </section>;
   if (activeGroup) return <section className="vault-feed-coverage" aria-label="Headline coverage">
     <header><button type="button" onClick={() => setActiveGroupId(null)}>‹ {tab === "Headlines" ? "Headlines" : "For You"}</button></header>
@@ -203,6 +218,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
             {group.members.length > 1 ? <p>{group.members.length} articles covering this story</p> : story.excerpt && <p>{story.excerpt}</p>}</div>
             {group.imageUrl && !featured && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={group.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = "none"; }} />}
           </div>
+          {group.members.length === 1 && readLaterAction(story)}
         </li>;
       })}</ol>
     </> : <>
@@ -219,6 +235,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
         </div>
         {story.imageUrl && index % 5 !== 4 && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         </div>
+        {readLaterAction(story)}
       </li>)}</ol>
     </>}
   </section>;

@@ -1177,6 +1177,11 @@ try {
   await page.getByText("No loaded stories match this search.").waitFor();
   await feedSearch.fill("");
   await page.getByRole("button", { name: "Latest", exact: true }).click();
+  await page.screenshot({ path: "/tmp/texttext-feeds-latest-reference.png" });
+  const keptBeforeScan = [...files.values()].filter(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash).length;
+  await page.getByRole("button", { name: "Read later: Design headline 2" }).first().click();
+  await page.getByRole("button", { name: "Saved: Design headline 2" }).first().waitFor();
+  assert.equal([...files.values()].filter(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash).length, keptBeforeScan + 1);
   await page.getByRole("button", { name: "A considered design headline" }).first().click();
   await page.getByRole("region", { name: "Feed story" }).getByText("A full in-app reading view for this story.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feed-reader-reference.png" });
