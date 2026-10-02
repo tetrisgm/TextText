@@ -227,7 +227,8 @@
 .vault-app .tt-document-editor[data-template-id="texttext.article"] { max-width:740px; padding-top:46px; font-family:Georgia,Charter,serif; }
 .vault-app .tt-document-editor[data-template-id="texttext.article"] :is(.tt-md-surface,.tt-field-body textarea) { font-family:Georgia,Charter,serif; font-size:19px; line-height:1.72; }
 .vault-app .tt-document-editor[data-template-id="texttext.article"] .tt-text-title textarea { font-family:Georgia,Charter,serif; font-size:42px; line-height:1.16; font-weight:700; letter-spacing:-.025em; }
-.vault-app .tt-document-editor[data-template-id="texttext.note"] { max-width:520px; min-height:0; margin-top:25px; padding:22px 24px 30px; border:1px solid var(--line); border-radius:10px; background:var(--surface); box-shadow:0 5px 24px #0000000b; }
+.vault-app .tt-document-editor[data-template-id="texttext.note"] { max-width:520px; min-height:0; margin-top:25px; padding:22px 24px 18px; border:1px solid var(--line); border-bottom:0; border-radius:10px 10px 0 0; background:var(--surface); box-shadow:0 5px 24px #0000000b; }
+.vault-app .tt-note-tags { margin-top:0; background:var(--surface); }
 .vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-text-title textarea { font-size:21px; line-height:1.3; font-weight:650; }
 .vault-app .tt-document-editor[data-template-id="texttext.note"] :is(.tt-md-surface,.tt-field-body textarea) { font-size:15px; line-height:1.65; }
 .vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-md-surface { min-height:100px; }

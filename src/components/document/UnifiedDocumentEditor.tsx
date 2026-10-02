@@ -565,7 +565,7 @@ export function UnifiedDocumentEditor({
       initialDocument, `${collab.postId}:${post.revision ?? 0}`,
     ));
   const [document, setDocument] = useState(initialDocument);
-  const [articleTopicDraft, setArticleTopicDraft] = useState("");
+  const [tagDraft, setTagDraft] = useState("");
   const [articleSelection, setArticleSelection] = useState<{ start: number; end: number; text: string; x: number; y: number } | null>(null);
   const [articleCaret, setArticleCaret] = useState<{ offset: number; x: number; y: number } | null>(null);
   const articleImageInput = useRef<HTMLInputElement>(null);
@@ -1970,21 +1970,21 @@ export function UnifiedDocumentEditor({
         slots={slots}
         className="tt-document-editor"
       />
-      {activeTemplate.id === "texttext.article" && <section className="tt-article-topics" aria-label="Story topics">
-        <h3>Topics</h3>
-        <div className="tt-article-topic-list">{document.content.tags.slice(0, 5).map((topic) => <span key={topic}>{topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
+      {(["texttext.article", "texttext.note"].includes(activeTemplate.id)) && <section className={activeTemplate.id === "texttext.note" ? "tt-article-topics tt-note-tags" : "tt-article-topics"} aria-label={activeTemplate.id === "texttext.note" ? "Note tags" : "Story topics"}>
+        <h3>{activeTemplate.id === "texttext.note" ? "Tags" : "Topics"}</h3>
+        <div className="tt-article-topic-list">{document.content.tags.slice(0, activeTemplate.id === "texttext.note" ? 500 : 5).map((topic) => <span key={topic}>{activeTemplate.id === "texttext.note" ? `#${topic}` : topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: current.content.tags.filter((tag) => tag !== topic) } });
         }}>×</button></span>)}</div>
-        {document.content.tags.length < 5 && <form onSubmit={(event) => {
+        {document.content.tags.length < (activeTemplate.id === "texttext.note" ? 500 : 5) && <form onSubmit={(event) => {
           event.preventDefault();
-          const topic = articleTopicDraft.trim().slice(0, 40);
+          const topic = tagDraft.trim().replace(/^#/, "").slice(0, 40);
           if (!topic) return;
           const current = currentLocalDocument();
           if (current.content.tags.some((tag) => tag.toLocaleLowerCase() === topic.toLocaleLowerCase())) return;
-          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, 5) } });
-          setArticleTopicDraft("");
-        }}><input aria-label="Add story topic" placeholder="Add a topic" value={articleTopicDraft} onChange={(event) => setArticleTopicDraft(event.target.value)} maxLength={40} /><button type="submit" disabled={!articleTopicDraft.trim()}>Add</button></form>}
+          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, activeTemplate.id === "texttext.note" ? 500 : 5) } });
+          setTagDraft("");
+        }}><input aria-label={activeTemplate.id === "texttext.note" ? "Add note tag" : "Add story topic"} placeholder={activeTemplate.id === "texttext.note" ? "Add a tag" : "Add a topic"} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
       </section>}
       {onPasteImages && articleCaret && activeTemplate.id === "texttext.article" && <div className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
         <button type="button" aria-label="Add image to story" title="Add image" onMouseDown={(event) => event.preventDefault()} onClick={() => articleImageInput.current?.click()}>+</button>
@@ -2044,6 +2044,9 @@ export function UnifiedDocumentEditor({
         .tt-article-topic-list button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:16px;line-height:1}
         .tt-article-topics form{display:flex;gap:8px}.tt-article-topics input{min-width:0;padding:7px 8px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 20%,transparent);border-radius:4px;background:var(--paper,#fff);color:var(--ink,#1d1d1f)}
         .tt-article-topics form button{border:0;background:transparent;color:var(--tt-accent,#0071e3);cursor:pointer}.tt-article-topics form button:disabled{opacity:.5}
+        .tt-note-tags{max-width:520px;margin:-1px auto 40px;padding:12px 24px 20px;border:1px solid var(--line,#ddd);border-top:0;border-radius:0 0 10px 10px;background:var(--paper,#fff)}
+        .tt-note-tags h3{font-size:11px;color:var(--muted,#666)}
+        .tt-note-tags .tt-article-topic-list{margin-bottom:8px}
         @media(max-width:700px){.tt-document-editor{padding-top:3.5rem}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:0.3125rem;padding-inline:0.5rem}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}

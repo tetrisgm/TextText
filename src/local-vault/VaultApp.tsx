@@ -66,7 +66,7 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
+function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, registerFlush, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
   const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
@@ -165,9 +165,10 @@ function VaultEditor({ initial, root, onChanged, onRemoved, registerFlush, focus
   const change = useCallback((next: DocumentSnapshot) => {
     if (equal(next, current.current)) return;
     current.current = next; remember();
+    onTitleChange?.(file.current.path, next.content.title);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
-  }, [flush, remember]);
+  }, [flush, onTitleChange, remember]);
   const pasteImages = useCallback(async (request: EditorImagePasteRequest): Promise<EditorImagePasteResult> => {
     try {
       if (conflict.current) throw new Error("Resolve the file conflict before pasting an image.");
@@ -472,9 +473,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [sidebarOpen, setSidebarVisible]);
   const [listing, setListing] = useState<VaultListing | null>(null);
   const [selected, setSelectedState] = useState<VaultFile | null>(null);
+  const [liveTitle, setLiveTitle] = useState<{ path: string; title: string } | null>(null);
+  const updateSelectedTitle = useCallback((path: string, title: string) => {
+    setLiveTitle(current => current?.path === path && current.title === title ? current : { path, title });
+  }, []);
   const selectedRef = useRef<VaultFile | null>(null);
   const setSelected = useCallback((file: VaultFile | null) => {
     selectedRef.current = file;
+    setLiveTitle(null);
     setSelectedState(file);
   }, []);
   const restoredLocationRoot = useRef("");
@@ -886,7 +892,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", openSearch); };
   });
   const contextTitle = selected
-    ? selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled"
+    ? (liveTitle?.path === selected.path ? liveTitle.title.trim() || "Untitled" : (() => {
+        try { return readDocument(selected).content.title.trim() || "Untitled"; }
+        catch { return selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled"; }
+      })())
     : destinationFolder.trim() || (access && !access.fullAccess ? "Shared files" : "All files");
   const contextParent = selected
     ? folderForItem(selected.path) || "All files"
@@ -1078,7 +1087,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         {selectedFeed.error ? <div className="vault-notice" role="alert">{selectedFeed.error}</div> : selectedFeed.subscription
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />
-          : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onRemoved={() => closeRemoved(selected.path)}
+          : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onTitleChange={updateSelectedTitle} onRemoved={() => closeRemoved(selected.path)}
               focusNewNote={!busy && newNoteFocus?.file === selected && newNoteFocus.focusPending}
               focusNewNoteTitle={Boolean(newNoteFocus?.file === selected && newNoteFocus.focusTitle)}
               focusNewNoteOrigin={newNoteFocus?.file === selected ? newNoteFocus.origin : undefined}

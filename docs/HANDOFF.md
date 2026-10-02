@@ -2,13 +2,13 @@
 
 ## Current work
 
-The October 2 work is the folder-based template redesign, committed through `b0af1615`. The current follow-up gives Feeds a For You order based on freshness and independent coverage, with source diversity in the first screen; Latest retains the chronological list. Headlines groups matching cross-publisher entries and opens a coverage page before the in-app reader. Feeds saves chosen stories as bookmark TextPacks in Bookmarks. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
+The October 2 work is the folder-based template redesign, committed through `3e98251f`. Feeds has ranked For You, chronological Latest, grouped cross-publisher Headlines, an in-app reader, and Save to Bookmarks as bookmark TextPacks. The current follow-up adds Notes tags during card editing and uses the document title in the workspace header. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
 
 Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](HANDOFF-history-2026-09-30.md).
 
 ## Verification
 
-- October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. The latest browser run verifies cross-publisher coverage, the full-entry feed reader, and a feed story saved as a bookmark TextPack. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
+- October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. The latest browser run verifies note tags, cross-publisher coverage, the full-entry feed reader, and a feed story saved as a bookmark TextPack. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
 
 ## Boundaries
 
