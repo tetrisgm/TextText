@@ -2,9 +2,16 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { vaultRequest } from "./bridge";
 import type { FolderPreview } from "./folder-collection";
 
-type Headline = { externalKey: string; title: string; permalink: string | null; publishedAt: string | null; excerpt: string | null };
+type Headline = { externalKey: string; title: string; permalink: string | null; publishedAt: string | null; excerpt: string | null; imageUrl: string | null };
 type FeedPage = { entries: Headline[] };
 type Story = Headline & { source: string; feedURL: string };
+
+function age(value: string): string {
+  const elapsed = Math.max(0, Date.now() - Date.parse(value));
+  if (!Number.isFinite(elapsed)) return "";
+  const hours = Math.floor(elapsed / 3_600_000);
+  return hours < 1 ? "now" : hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}
 
 /** The index is read only and transient. Opening Feeds reads each source once;
  * a timer never polls, and stories become TextPacks only when a person keeps one. */
@@ -47,10 +54,16 @@ export function VaultFeedHeadlines({ sources, ready, sourceList }: { sources: Fo
       {loading && <p role="status">Reading your sources…</p>}
       {error && <p role="status">{error}</p>}
       {!loading && !stories.length && <p>Your sources have no stories to show yet.</p>}
-      <ol>{stories.map(story => <li key={`${story.feedURL}:${story.externalKey}`}>
-        <span className="vault-feed-publisher"><span aria-hidden="true">{story.source.slice(0, 1).toUpperCase()}</span>{story.source}{story.publishedAt && <time dateTime={story.publishedAt}>{new Date(story.publishedAt).toLocaleDateString()}</time>}</span>
+      <ol>{stories.map((story, index) => <li className={story.imageUrl && index % 5 === 4 ? "vault-feed-featured" : ""} key={`${story.feedURL}:${story.externalKey}`}>
+        {story.imageUrl && index % 5 === 4 && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+        <div className="vault-feed-story">
+        <div>
+        <span className="vault-feed-publisher"><span aria-hidden="true">{story.source.slice(0, 1).toUpperCase()}</span>{story.source}{story.publishedAt && <time dateTime={story.publishedAt}>{age(story.publishedAt)}</time>}</span>
         {story.permalink ? <a href={story.permalink} target="_blank" rel="noopener noreferrer">{story.title}</a> : <strong>{story.title}</strong>}
         {story.excerpt && <p>{story.excerpt}</p>}
+        </div>
+        {story.imageUrl && index % 5 !== 4 && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+        </div>
       </li>)}</ol>
     </>}
   </section>;

@@ -27,6 +27,13 @@ function safeLink(value: string | null): string | null {
   try { return publicFeedURL(value); } catch { return null; }
 }
 
+function safePreviewImage(value: string | null): string | null {
+  const link = safeLink(value);
+  if (!link) return null;
+  const url = new URL(link);
+  return url.protocol === "https:" && isFetchableBookmarkUrl(url) ? link : null;
+}
+
 function stableExternalKey(entry: NormalizedEntry): string {
   return entry.externalKey.length > 2048
     ? `hash:${createHash("sha256").update(entry.externalKey).digest("hex")}` : entry.externalKey;
@@ -51,10 +58,11 @@ function safeEntry(entry: NormalizedEntry): NormalizedEntry {
 export type VaultFeedPreview = {
   externalKey: string; title: string; permalink: string | null; externalUrl: string | null;
   authors: string[]; publishedAt: string | null; updatedAt: string | null;
-  availability: NormalizedEntry["availability"]; excerpt: string | null; bodyPreview: string;
+  availability: NormalizedEntry["availability"]; excerpt: string | null; bodyPreview: string; imageUrl: string | null;
 };
 
 function previewEntry(entry: NormalizedEntry): VaultFeedPreview {
+  const image = entry.attachments.slice(0, 20).find((attachment) => attachment.mimeType?.toLowerCase().startsWith("image/"));
   return {
     externalKey: stableExternalKey(entry), title: entry.title.slice(0, 1000),
     permalink: safeLink(entry.permalink), externalUrl: safeLink(entry.externalUrl),
@@ -63,6 +71,7 @@ function previewEntry(entry: NormalizedEntry): VaultFeedPreview {
     updatedAt: entry.updatedAt?.slice(0, 100) ?? null,
     availability: entry.availability, excerpt: entry.excerpt?.slice(0, 400) ?? null,
     bodyPreview: entry.bodyMarkdown.slice(0, 512),
+    imageUrl: image ? safePreviewImage(image.url) : null,
   };
 }
 

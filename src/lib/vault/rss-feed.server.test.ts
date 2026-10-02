@@ -23,6 +23,17 @@ describe("transient vault feed reads", () => {
     expect(result.truncated).toBe(false);
   });
 
+  it("returns a bounded public image enclosure for visual headlines", async () => {
+    const feed = rss.replace("<description>", '<enclosure url="https://publisher.example/cover.jpg" type="image/jpeg"/><description>');
+    mocks.fetch.mockResolvedValue({ kind: "ok", body: feed, contentType: "application/rss+xml", finalUrl: "https://publisher.example/feed" });
+    const result = await readVaultFeed("https://publisher.example/feed");
+    expect(result.entries[0].imageUrl).toBe("https://publisher.example/cover.jpg");
+    expect("attachments" in result.entries[0]).toBe(false);
+    const privateImage = rss.replace("<description>", '<enclosure url="http://127.0.0.1/internal" type="image/png"/><description>');
+    mocks.fetch.mockResolvedValue({ kind: "ok", body: privateImage, contentType: "application/rss+xml", finalUrl: "https://publisher.example/feed" });
+    expect((await readVaultFeed("https://publisher.example/feed")).entries[0].imageUrl).toBeNull();
+  });
+
   it("rejects unsafe addresses before fetch and gives bounded public failures", async () => {
     mocks.gate.mockReturnValue(false);
     await expect(readVaultFeed("http://127.0.0.1/feed")).rejects.toMatchObject({ status: 400 });

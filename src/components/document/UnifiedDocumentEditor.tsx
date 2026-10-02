@@ -429,6 +429,7 @@ function CollaborativeTextarea({
   onChange,
   onSelection,
   inputRef,
+  onAdvance,
   rows = 1,
   grow = false,
 }: {
@@ -440,6 +441,7 @@ function CollaborativeTextarea({
   onChange: (value: string) => void;
   onSelection: (field: EditableField, anchor: number, head: number) => void;
   inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  onAdvance?: () => void;
   rows?: number;
   grow?: boolean;
 }) {
@@ -501,6 +503,11 @@ function CollaborativeTextarea({
         onKeyUp={reportSelection}
         onMouseUp={reportSelection}
         onSelect={reportSelection}
+        onKeyDown={(event) => {
+          if (onAdvance && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && (event.key === "Enter" || event.key === "Tab")) {
+            event.preventDefault(); onAdvance();
+          }
+        }}
         onScroll={syncScroll}
         onBlur={() => onSelection(field, -1, -1)}
       />
@@ -558,6 +565,14 @@ export function UnifiedDocumentEditor({
       initialDocument, `${collab.postId}:${post.revision ?? 0}`,
     ));
   const [document, setDocument] = useState(initialDocument);
+  const [articleSelection, setArticleSelection] = useState<{ start: number; end: number; text: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!articleSelection) return;
+    const dismiss = () => setArticleSelection(null);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => { window.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
+  }, [articleSelection]);
   const documentRef = useRef(document);
   const networkEnabled = transport === "cloud" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     collab.postId,
@@ -1395,6 +1410,12 @@ export function UnifiedDocumentEditor({
 
   const updateSelection = useCallback(
     (field: EditableField, anchor: number, head: number) => {
+      if (activeTemplate.id === "texttext.article" && field === "body" && anchor >= 0 && head >= 0 && anchor !== head) {
+        const selection = window.getSelection();
+        const rect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
+        const start = Math.min(anchor, head), end = Math.max(anchor, head);
+        setArticleSelection(rect && rect.width >= 0 ? { start, end, text: currentLocalDocument().content.body.slice(start, end), x: rect.left + rect.width / 2, y: rect.top } : null);
+      } else setArticleSelection(null);
       // The draft store names the subtitle field "excerpt"; same text, two
       // vocabularies.
       const draftField = field === "subtitle" ? "excerpt" : field;
@@ -1440,7 +1461,7 @@ export function UnifiedDocumentEditor({
       };
       awareness.setLocalStateField("selection", selection);
     },
-    [awareness, collab.postId, currentLocalDocument, doc, ready],
+    [activeTemplate.id, awareness, collab.postId, currentLocalDocument, doc, ready],
   );
 
   const resolveBodySelection = useCallback(() => {
@@ -1453,6 +1474,17 @@ export function UnifiedDocumentEditor({
       return anchor?.type === body && head?.type === body ? { anchor: anchor.index, head: head.index } : null;
     } catch { return null; }
   }, [awareness, doc]);
+
+  const formatArticleSelection = useCallback((marker: "**" | "*" | "`") => {
+    if (!articleSelection || activeTemplate.id !== "texttext.article") return;
+    const body = currentLocalDocument().content.body;
+    const { start, end, text } = articleSelection;
+    if (!text || body.slice(start, end) !== text) { setArticleSelection(null); return; }
+    const next = `${body.slice(0, start)}${marker}${text}${marker}${body.slice(end)}`;
+    updateText("body", next);
+    setArticleSelection(null);
+    window.requestAnimationFrame(() => requestDocumentCaret(start + marker.length, end + marker.length));
+  }, [activeTemplate.id, articleSelection, currentLocalDocument, updateText]);
 
 
   const remoteSelections = useMemo(
@@ -1529,6 +1561,10 @@ export function UnifiedDocumentEditor({
             onChange={(value) => updateText("title", value)}
             onSelection={updateSelection}
             inputRef={titleRef}
+            onAdvance={activeTemplate.id === "texttext.article" || activeTemplate.id === "texttext.note" ? () => {
+              bodySurfaceRef.current?.focus();
+              requestDocumentCaret(0, 0);
+            } : undefined}
             grow
           />
         ),
@@ -1904,7 +1940,7 @@ export function UnifiedDocumentEditor({
         </div>
       )}
       {!localDocument && <EditorSaveNotice state={saveState} onRetry={retrySaving} />}
-      {!document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
+      {!(["texttext.article", "texttext.note"].includes(activeTemplate.id)) && !document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
       {/* No byline while writing: an author and a reading time are reader
           chrome, and showing them here turns the page into a preview of
           itself instead of the thing being written.
@@ -1922,6 +1958,11 @@ export function UnifiedDocumentEditor({
         slots={slots}
         className="tt-document-editor"
       />
+      {articleSelection && activeTemplate.id === "texttext.article" && <div className="tt-article-format" role="toolbar" aria-label="Format selected story text" style={{ left: Math.max(90, Math.min(typeof window === "undefined" ? articleSelection.x : window.innerWidth - 90, articleSelection.x)), top: Math.max(8, articleSelection.y - 48) }}>
+        <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("**")}><strong>B</strong></button>
+        <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("*")}><em>I</em></button>
+        <button type="button" aria-label="Inline code" title="Inline code" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("`")}><code>⌘</code></button>
+      </div>}
       {unboundFields.length > 0 && (
         // Fields the look declares but does not place stay one level down, so
         // the writing surface is a document rather than a form.
@@ -1954,6 +1995,9 @@ export function UnifiedDocumentEditor({
       <style>{`
         .tt-unified-editor{min-height:100%;background:var(--paper,#fff)}
         .tt-document-editor{min-height:100vh;padding-bottom:3rem}
+        .tt-article-format{position:fixed;z-index:80;display:flex;transform:translateX(-50%);gap:2px;padding:5px;border-radius:7px;background:#242424;color:#fff;box-shadow:0 8px 28px #0005;font:500 14px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
+        .tt-article-format button{display:grid;place-items:center;min-width:32px;height:30px;padding:0 7px;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}
+        .tt-article-format button:hover,.tt-article-format button:focus-visible{background:#ffffff29;outline:0}
         @media(max-width:700px){.tt-document-editor{padding-top:3.5rem}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:0.3125rem;padding-inline:0.5rem}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}

@@ -80,12 +80,13 @@ try {
       else {
         const document = JSON.parse(file.documentJSON);
         const poster = file.assets?.find((asset) => asset.filename === "preview.png");
-        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(!request.params.metadataOnly && poster ? { image: { data: poster.data, contentType: "image/png" } } : {}) };
+        const images = (file.assets ?? []).filter((asset) => asset.contentType.startsWith("image/")).slice(0, 8).map((asset) => ({ data: asset.data, contentType: asset.contentType }));
+        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(!request.params.metadataOnly ? { ...(poster ? { image: { data: poster.data, contentType: "image/png" } } : {}), ...(images.length ? { images } : {}) } : {}) };
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
-    else if (request.method === "feedRead") result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 1, truncated: false,
-      entries: [{ externalKey: "story-1", title: "A considered design headline", permalink: "https://example.com/story", authors: ["Editor"], publishedAt: "2026-10-02T00:00:00Z", availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story." }] };
+    else if (request.method === "feedRead") result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
+      entries: Array.from({ length: 5 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
     else if (request.method === "agentStatus") result = { state: agentState, ...(agentState === "ready" ? { accountEmail: agentAccountEmail } : {}) };
     else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState, accountEmail: agentAccountEmail }; }
     else if (request.method === "agentDisconnect") { agentDisconnectCount++; agentState = "disconnected"; result = { state: agentState }; }
@@ -793,9 +794,21 @@ try {
   const newStory = [...files.values()].at(-1);
   assert.equal(JSON.parse(newStory.documentJSON).presentation.template.id, "texttext.article");
   assert.match(newStory.markdown, /kind: "article"/);
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
+  const storyBody = page.getByRole("textbox", { name: "Document body" });
+  await storyBody.click();
+  await storyBody.type("Draft text");
+  await page.keyboard.down("Shift");
+  for (let index = 0; index < 4; index++) await page.keyboard.press("ArrowLeft");
+  await page.keyboard.up("Shift");
+  await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Bold" }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("**text**"));
   await chooseFolder("Gallery");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Open Two photographs" }).click();
+  await page.locator(".vault-photo-grid img").first().waitFor();
+  await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });
+  await page.getByRole("button", { name: "Open Two photographs image 1" }).click();
   const lightbox = page.getByRole("dialog", { name: "Two photographs" });
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
   await lightbox.getByRole("button", { name: "Next image" }).click();
@@ -806,10 +819,15 @@ try {
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
   await page.getByRole("link", { name: "A considered design headline" }).waitFor();
+  await page.locator(".vault-feed-thumb").first().waitFor();
+  await page.locator(".vault-feed-lead").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
+  await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
   const newCard = [...files.values()].at(-1);
   assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
   assert.deepEqual(failures, []);
