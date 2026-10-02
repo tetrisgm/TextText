@@ -8,8 +8,8 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
     "engineVersion": 1,
     "id": "texttext.article",
     "version": 1,
-    "name": "Article",
-    "description": "A long-form story in one reading column.",
+    "name": "Blog post",
+    "description": "A clear story with a title, byline, cover, and one reading column.",
     "fields": [
       {
         "id": "cover",
@@ -301,7 +301,7 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
     "id": "texttext.gallery",
     "version": 1,
     "name": "Gallery",
-    "description": "An image-first page where the pictures lead.",
+    "description": "A set of photos that leads with the images.",
     "fields": [
       {
         "id": "cover",
@@ -319,41 +319,17 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
       "align": "stretch",
       "children": [
         {
-          "id": "gallery-copy",
-          "type": "masthead",
-          "gap": "sm",
-          "children": [
-            {
-              "type": "text",
-              "bind": "content.title",
-              "role": "title",
-              "fallback": "Untitled"
-            },
-            {
-              "showWhen": "content.subtitle",
-              "type": "text",
-              "bind": "content.subtitle",
-              "role": "subtitle"
-            }
-          ]
-        },
-        {
           "id": "gallery-media",
           "type": "gallery",
           "bind": "content.assets",
           "columns": 4,
-          "showCaptions": true
-        },
-        {
-          "showWhen": "content.body",
-          "type": "prose",
-          "bind": "content.body"
+          "showCaptions": false
         }
       ]
     },
     "collection": {
       "layout": "cards",
-      "columns": 3,
+      "columns": 4,
       "gap": "md",
       "sort": [
         {
@@ -364,31 +340,10 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
       "filters": [],
       "views": [],
       "item": {
-        "type": "stack",
-        "direction": "vertical",
-        "gap": "sm",
-        "align": "stretch",
-        "children": [
-          {
-            "type": "cover",
-            "bind": "content.fields.cover",
-            "alt": "content.title",
-            "fit": "cover",
-            "height": "compact"
-          },
-          {
-            "type": "text",
-            "bind": "content.title",
-            "role": "heading",
-            "fallback": "Untitled"
-          },
-          {
-            "showWhen": "content.subtitle",
-            "type": "text",
-            "bind": "content.subtitle",
-            "role": "caption"
-          }
-        ]
+        "type": "gallery",
+        "bind": "content.assets",
+        "columns": 1,
+        "showCaptions": false
       }
     },
     "theme": {
@@ -403,8 +358,8 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
     "engineVersion": 1,
     "id": "texttext.talk",
     "version": 1,
-    "name": "Talk",
-    "description": "A video or talk with its notes underneath.",
+    "name": "Presentation",
+    "description": "A talk with a cover, recording, and speaker notes.",
     "fields": [
       {
         "id": "cover",
@@ -429,22 +384,6 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
       "align": "stretch",
       "children": [
         {
-          "showWhen": "content.fields.videoUrl",
-          "type": "video",
-          "bind": "content.fields.videoUrl",
-          "alt": "content.title",
-          "fit": "cover",
-          "height": "large"
-        },
-        {
-          "showWhen": "content.fields.cover",
-          "type": "cover",
-          "bind": "content.fields.cover",
-          "alt": "content.title",
-          "fit": "cover",
-          "height": "large"
-        },
-        {
           "type": "masthead",
           "gap": "sm",
           "children": [
@@ -464,6 +403,22 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
               "role": "subtitle"
             }
           ]
+        },
+        {
+          "showWhen": "content.fields.cover",
+          "type": "cover",
+          "bind": "content.fields.cover",
+          "alt": "content.title",
+          "fit": "cover",
+          "height": "large"
+        },
+        {
+          "showWhen": "content.fields.videoUrl",
+          "type": "video",
+          "bind": "content.fields.videoUrl",
+          "alt": "content.title",
+          "fit": "cover",
+          "height": "large"
         },
         {
           "type": "prose",
@@ -899,46 +854,12 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
     "engineVersion": 1,
     "id": "texttext.todo",
     "version": 1,
-    "name": "Tasks",
-    "description": "A focused list of things to finish.",
+    "name": "Task list",
+    "description": "A simple checklist in one file.",
     "fields": [
       {
-        "id": "area",
-        "label": "Area",
-        "required": false,
-        "visibility": "public",
-        "type": "enum",
-        "options": [
-          {
-            "value": "personal",
-            "label": "Personal",
-            "tone": "accent",
-            "icon": "🌱"
-          },
-          {
-            "value": "work",
-            "label": "Work",
-            "tone": "info",
-            "icon": "💼"
-          },
-          {
-            "value": "home",
-            "label": "Home",
-            "tone": "success",
-            "icon": "🏠"
-          },
-          {
-            "value": "errands",
-            "label": "Errands",
-            "tone": "warning",
-            "icon": "🛒"
-          }
-        ],
-        "multiple": false
-      },
-      {
         "id": "items",
-        "label": "Items",
+        "label": "Tasks",
         "required": false,
         "visibility": "public",
         "type": "rows",
@@ -956,39 +877,6 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
             "required": false,
             "visibility": "public",
             "type": "boolean"
-          },
-          {
-            "id": "when",
-            "label": "When",
-            "required": false,
-            "visibility": "public",
-            "type": "date"
-          },
-          {
-            "id": "priority",
-            "label": "Priority",
-            "required": false,
-            "visibility": "public",
-            "type": "enum",
-            "options": [
-              {
-                "value": "low",
-                "label": "Low",
-                "tone": "neutral"
-              },
-              {
-                "value": "medium",
-                "label": "Medium",
-                "tone": "warning"
-              },
-              {
-                "value": "high",
-                "label": "High",
-                "tone": "danger",
-                "icon": "🔥"
-              }
-            ],
-            "multiple": false
           }
         ],
         "maxRows": 200
@@ -1007,35 +895,14 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
           "fallback": "Untitled list"
         },
         {
-          "showWhen": "content.subtitle",
-          "type": "text",
-          "bind": "content.subtitle",
-          "role": "subtitle"
-        },
-        {
-          "showWhen": "content.fields.area",
-          "type": "badge",
-          "bind": "content.fields.area",
-          "variant": "pill",
-          "showIcon": true
-        },
-        {
-          "showWhen": "content.body",
-          "type": "prose",
-          "bind": "content.body"
-        },
-        {
           "type": "checklist",
           "bind": "content.fields.items",
           "doneBind": "row.done",
           "labelBind": "row.task",
-          "meta": [
-            "row.when",
-            "row.priority"
-          ],
+          "meta": [],
           "mode": "document",
-          "sortCheckedLast": true,
-          "rollup": true
+          "sortCheckedLast": false,
+          "rollup": false
         }
       ]
     },
@@ -1062,13 +929,6 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
             "bind": "content.title",
             "role": "heading",
             "fallback": "Untitled list"
-          },
-          {
-            "showWhen": "content.fields.area",
-            "type": "badge",
-            "bind": "content.fields.area",
-            "variant": "pill",
-            "showIcon": true
           },
           {
             "showWhen": "content.fields.items",

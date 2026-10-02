@@ -18,7 +18,7 @@ final class LocalVaultStarterTests: XCTestCase {
     func testRealPresetsHaveAllFoldersDistinctIdentitiesAndExactTemplatePayloads() throws {
         try fixture { root in
             let result = try LocalVaultStarter.seed(root: root, presets: bundled)
-            XCTAssertEqual(result.createdPaths.count, 22)
+            XCTAssertEqual(result.createdPaths.count, 10)
             XCTAssertEqual(try LocalVaultStarter.listFolders(root: root), LocalVaultStarter.folders.sorted())
             let store = LocalVaultDocumentStore(root: root)
             var identities: Set<String> = []
@@ -43,7 +43,7 @@ final class LocalVaultStarterTests: XCTestCase {
                     XCTAssertNotNil(document.contents.templateJSON)
                 }
             }
-            XCTAssertEqual(identities.count, 22)
+            XCTAssertEqual(identities.count, 10)
         }
     }
     func testCompletedSeedDoesNotResurrectDeletedFilesOrFolders() throws {
@@ -68,7 +68,7 @@ final class LocalVaultStarterTests: XCTestCase {
             try Data("{\"version\":1,\"complete\":false,\"processed\":[\"Templates/Note.textpack\"]}".utf8)
                 .write(to: root.appendingPathComponent(".texttext/starter-v1.json"))
             let result = try LocalVaultStarter.seed(root: root, presets: bundled)
-            XCTAssertEqual(result.createdPaths.count, 20)
+            XCTAssertEqual(result.createdPaths.count, 8)
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Templates/Bookmark.textpack")), userData)
             XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("Templates/Note.textpack").path))
         }

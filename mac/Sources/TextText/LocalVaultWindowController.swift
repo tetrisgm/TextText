@@ -578,13 +578,22 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             // whose canonical URL happens to be remote. Never fetch that URL.
             let asset = embedded(first["poster"] as? String) ?? embedded(first["src"] as? String)
             if let asset, let image = previewImage(asset.data) { result["image"] = image }
+            if assets.filter({ ($0["kind"] as? String) == "image" }).count > 1 {
+                var images: [[String: String]] = []
+                for entry in assets.filter({ ($0["kind"] as? String) == "image" }).prefix(8) {
+                    let source = embedded(entry["poster"] as? String) ?? embedded(entry["src"] as? String)
+                    if let source, let image = previewImage(source.data, maximumPixelSize: 280) { images.append(image) }
+                }
+                if images.count > 1 { result["images"] = images }
+            }
         }
         if try JSONSerialization.data(withJSONObject: result).count > 512 * 1024 {
             result.removeValue(forKey: "image")
+            result.removeValue(forKey: "images")
         }
         return result
     }
-    private static func previewImage(_ data: Data) -> [String: String]? {
+    private static func previewImage(_ data: Data, maximumPixelSize: Int = 480) -> [String: String]? {
         guard let source = CGImageSourceCreateWithData(data as CFData,
                 [kCGImageSourceShouldCache: false] as CFDictionary),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -594,7 +603,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
               let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 480,
+                kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
                 kCGImageSourceShouldCacheImmediately: true,
               ] as CFDictionary) else { return nil }
         let encoded = NSMutableData()

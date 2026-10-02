@@ -2497,9 +2497,9 @@ const rsvp = {
   },
 } as const;
 
-const activeDefinitions = GENERATED_BUILTIN_TEMPLATES.map((template) =>
-  validateTemplateDefinition(template),
-);
+const activeIds = new Set(["texttext.article", "texttext.note", "texttext.bookmark", "texttext.gallery", "texttext.talk", "texttext.todo"]);
+const activeDefinitions = GENERATED_BUILTIN_TEMPLATES.filter(template => activeIds.has(template.id)).map(validateTemplateDefinition);
+const retiredGeneratedDefinitions = GENERATED_BUILTIN_TEMPLATES.filter(template => !activeIds.has(template.id)).map(validateTemplateDefinition);
 
 const legacyDefinitions = [
   // Retired from the catalogue at the owner's request. Kept resolvable so any
@@ -2560,10 +2560,10 @@ export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] =
  * anything that checks rendering has to walk these, not just the catalogue.
  */
 export const ALL_RESOLVABLE_TEMPLATES: readonly TemplateDefinition[] =
-  Object.freeze([...activeDefinitions, ...legacyDefinitions]);
+  Object.freeze([...activeDefinitions, ...retiredGeneratedDefinitions, ...legacyDefinitions]);
 
 const templatesByKey = new Map(
-  [...activeDefinitions, ...legacyDefinitions].map((template) => [
+  [...activeDefinitions, ...retiredGeneratedDefinitions, ...legacyDefinitions].map((template) => [
     `${template.id}@${template.version}`,
     template,
   ]),
@@ -2632,13 +2632,8 @@ export const TEMPLATE_CATALOG: readonly {
   category: TemplateCategory;
 }[] = Object.freeze([
   { id: "texttext.article", category: "Text" },
-  { id: "texttext.timeline", category: "Publish" },
   { id: "texttext.note", category: "Text" },
-  { id: "texttext.page", category: "Text" },
-  { id: "texttext.casestudy", category: "Publish" },
   { id: "texttext.todo", category: "Plan" },
-  { id: "texttext.project", category: "Plan" },
-  { id: "texttext.brief", category: "Text" },
   { id: "texttext.bookmark", category: "Collect" },
   { id: "texttext.gallery", category: "Collect" },
   { id: "texttext.talk", category: "Publish" },

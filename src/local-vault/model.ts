@@ -4,7 +4,7 @@ import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
 import { parsePostMarkdownFile, renderPostMarkdownFile } from "@/lib/markdown-files";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
-import type { Blog, Post } from "@/lib/content";
+import type { Blog, ItemKind, Post } from "@/lib/content";
 import type { VaultFile } from "./bridge";
 import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
 export const localBlog: Blog = { handle: "local", name: "Workspace", author: "", homeLayout: "list" };
@@ -51,16 +51,23 @@ export function readTemplate(file: VaultFile, document: DocumentSnapshot) {
 }
 export function asPost(document: DocumentSnapshot, path: string): Post {
   const projected = legacyProjectionFromDocument(document);
+  const kind: ItemKind = document.presentation.template.id === "texttext.article" ? "article"
+    : document.presentation.template.id === "texttext.bookmark" ? "bookmark"
+    : document.presentation.template.id === "texttext.gallery" ? "media_post" : "note";
   return { ...projected, accent: projected.accent ?? undefined, cover: projected.cover ?? undefined,
     coverCaption: projected.coverCaption ?? undefined, coverHeight: projected.coverHeight ?? undefined,
     videoUrl: projected.videoUrl ?? undefined, venue: projected.venue ?? undefined, duration: projected.duration ?? undefined,
-    links: projected.links ?? undefined, id: path, slug: path, type: "note", status: "draft", document };
+    links: projected.links ?? undefined, id: path, slug: path, type: kind, status: "draft", document };
 }
 export type VaultTemplateSelection = { template: TemplateDefinition; sourceJSON?: string | null };
 export function writePayload(file: VaultFile, document: DocumentSnapshot, look?: VaultTemplateSelection | null) {
   const template = look?.template ?? readTemplate(file, document);
   if (template.id !== document.presentation.template.id || template.version !== document.presentation.template.version) throw new Error("The selected template does not match this document.");
-  const projection = renderPostMarkdownFile({ blog: localBlog, post: asPost(document, file.path) });
+  const originalKind = parsePostMarkdownFile(file.markdown).fields.type;
+  const post = asPost(document, file.path);
+  const kind: ItemKind = document.presentation.template.id.startsWith("texttext.") ? post.type
+    : originalKind === "article" || originalKind === "media_post" || originalKind === "video_post" || originalKind === "bookmark" ? originalKind : post.type;
+  const projection = renderPostMarkdownFile({ blog: localBlog, post: { ...post, type: kind } });
   const header = projection.match(/^---\n([\s\S]*?)\n---\n/)![1];
   const markdown = `---\n${header}\nexcerpt: ${JSON.stringify(document.content.subtitle ?? "")}\n---\n\n${document.content.body}`;
   // Retain file identity and other authored metadata that the projection does

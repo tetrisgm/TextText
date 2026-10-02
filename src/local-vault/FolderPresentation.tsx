@@ -61,6 +61,6 @@ export function FolderPresentation({ listing, folder, busy, editable = true, des
     {designOpen && editable && draft && <p role="status">Previewing {draft.name}. Keeping this design changes only the folder’s design file.</p>}
     {error && <p role="alert">{error} Your files remain available below.</p>}
     <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy || saving} onOpen={onOpen} folderTemplate={editable ? draft ?? view?.template : view?.template} excludedPath={view?.path}
-      emptyMessage={editable ? "No files here yet. Create a note or use More for other options." : "No files in this folder."} />
+      emptyMessage={editable ? ({ Bookmarks: "Save a web address to start your reading library.", Gallery: "Add images to start your visual library.", Feeds: "Add a source to see its latest stories here.", Blog: "Write a story to start your publication.", Notes: "Create a note to start your card library." } as Record<string, string>)[folder] || "No files here yet. Choose a template to get started." : "No files in this folder."} />
   </section>;
 }

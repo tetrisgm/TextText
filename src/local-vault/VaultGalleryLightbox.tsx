@@ -1,0 +1,61 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
+import { useEscapeLayer } from "./LocalKeyboard";
+import { vaultRequest, type VaultFile } from "./bridge";
+import { readDocument } from "./model";
+
+type Image = { id: string; url: string; alt: string; width?: number; height?: number };
+
+export function VaultGalleryLightbox({ path, initialIndex = 0, onClose, onEdit }: { path: string; initialIndex?: number; onClose: () => void; onEdit: (path: string) => void }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  const [file, setFile] = useState<VaultFile | null>(null);
+  const [error, setError] = useState("");
+  const [index, setIndex] = useState(initialIndex);
+  useEscapeLayer(true, "gallery-image", onClose);
+  useDialogFocus(dialog, true);
+  useEffect(() => {
+    const controller = new AbortController();
+    void vaultRequest<VaultFile>("read", { path }, controller.signal)
+      .then(setFile).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "The image could not be opened."); });
+    return () => controller.abort();
+  }, [path]);
+  const local = useMemo(() => {
+    const images = new Map<string, string>();
+    for (const asset of file?.assets || []) {
+      if (!asset.contentType.startsWith("image/") || asset.data.length > 32 * 1024 * 1024) continue;
+      try {
+        const bytes = Uint8Array.from(atob(asset.data), character => character.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: asset.contentType }));
+        images.set(`assets/${asset.filename}`, url);
+        if (asset.remoteURL) images.set(asset.remoteURL, url);
+      } catch { /* A malformed asset cannot prevent the rest of the gallery from opening. */ }
+    }
+    return images;
+  }, [file]);
+  useEffect(() => () => { for (const url of new Set(local.values())) URL.revokeObjectURL(url); }, [local]);
+  let title = path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Image";
+  let caption = "";
+  let images: Image[] = [];
+  try {
+    if (file) {
+      const document = readDocument(file);
+      title = document.content.title || title;
+      caption = document.content.body;
+      images = document.content.assets.filter(asset => asset.kind === "image" && local.has(asset.src)).map(asset => ({ id: asset.id, url: local.get(asset.src)!, alt: asset.alt || title, width: asset.width, height: asset.height }));
+    }
+  } catch { /* Show a readable error below while preserving the original file. */ }
+  const image = images[Math.min(index, Math.max(0, images.length - 1))];
+  return <div className="vault-gallery-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div ref={dialog} className="vault-gallery-lightbox" role="dialog" aria-modal="true" aria-label={title}>
+      <header><button onClick={onClose} aria-label="Close image">✕</button><span>{title}</span><button onClick={() => onEdit(path)} disabled={!file}>Edit item</button></header>
+      {error && <p role="alert">{error}</p>}
+      {!file && !error && <p role="status">Opening image…</p>}
+      {file && !images.length && <p role="status">This item has no embedded image to display. Open the item to inspect its contents.</p>}
+      {image && <div className="vault-gallery-detail"><div className="vault-gallery-stage">
+        {images.length > 1 && <button aria-label="Previous image" disabled={index === 0} onClick={() => setIndex(value => Math.max(0, value - 1))}>‹</button>}
+        {/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.alt} />
+        {images.length > 1 && <button aria-label="Next image" disabled={index >= images.length - 1} onClick={() => setIndex(value => Math.min(images.length - 1, value + 1))}>›</button>}
+      </div><aside><h2>{title}</h2>{caption && <p>{caption}</p>}<dl>{images.length > 1 && <><dt>Image</dt><dd>{index + 1} of {images.length}</dd></>}{image.width && image.height && <><dt>Dimensions</dt><dd>{image.width} × {image.height}</dd></>}</dl></aside></div>}
+    </div>
+  </div>;
+}

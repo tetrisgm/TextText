@@ -31,8 +31,8 @@ describe("template library", () => {
       entry("texttext.article", "personal"),
       entry("texttext.todo", "workspace"),
     ];
-    expect(filterTemplateLibrary(entries, "article", "all")).toHaveLength(1);
-    expect(filterTemplateLibrary(entries, "area", "all")).toHaveLength(1);
+    expect(filterTemplateLibrary(entries, "blog post", "all")).toHaveLength(1);
+    expect(filterTemplateLibrary(entries, "task", "all")).toHaveLength(1);
     expect(filterTemplateLibrary(entries, "", "workspace")[0]?.scope).toBe(
       "workspace",
     );

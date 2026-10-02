@@ -84,6 +84,8 @@ try {
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
+    else if (request.method === "feedRead") result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 1, truncated: false,
+      entries: [{ externalKey: "story-1", title: "A considered design headline", permalink: "https://example.com/story", authors: ["Editor"], publishedAt: "2026-10-02T00:00:00Z", availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story." }] };
     else if (request.method === "agentStatus") result = { state: agentState, ...(agentState === "ready" ? { accountEmail: agentAccountEmail } : {}) };
     else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState, accountEmail: agentAccountEmail }; }
     else if (request.method === "agentDisconnect") { agentDisconnectCount++; agentState = "disconnected"; result = { state: agentState }; }
@@ -190,8 +192,18 @@ try {
   await page.waitForFunction(() => JSON.parse(localStorage.getItem("texttext:vault-location:/test/Workspace") || "null")?.folder === "Empty");
   await page.reload();
   await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();
-  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   await page.getByRole("heading", { name: "All files", exact: true }).waitFor();
+  const searchTrigger = page.getByRole("button", { name: /Search and actions/ });
+  await searchTrigger.hover();
+  await page.locator(".vault-search-trigger kbd").waitFor({ state: "visible" });
+  await searchTrigger.click();
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
+  await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowDown");
+  assert.equal(await page.getByRole("combobox", { name: "Search workspace" }).getAttribute("aria-activedescendant"), "action:capture");
+  await page.locator(".vault-search-backdrop").click({ position: { x: 4, y: 4 } });
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
   await page.screenshot({ path: "/tmp/texttext-starter-overview-light.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-starter-overview-dark.png" });
@@ -205,10 +217,10 @@ try {
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace" } })));
   await page.keyboard.press("Meta+k");
   const connectedCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
-  await connectedCommands.getByRole("button", { name: "Subscribe to a feed", exact: true }).waitFor();
-  await connectedCommands.getByRole("button", { name: "Trash and recovery", exact: true }).waitFor();
-  await connectedCommands.getByRole("searchbox", { name: "Search workspace" }).fill("Offline note");
-  await connectedCommands.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
+  await connectedCommands.getByRole("option", { name: "Subscribe to a feed", exact: true }).waitFor();
+  await connectedCommands.getByRole("option", { name: "Trash and recovery", exact: true }).waitFor();
+  await connectedCommands.getByRole("combobox", { name: "Search workspace" }).fill("Offline note");
+  await connectedCommands.getByRole("option", { name: /Notes\/Offline.textpack/ }).click();
   const body = page.getByRole("textbox", { name: "Document body", exact: true });
   await body.fill("Local first line\nSecond line");
   await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
@@ -240,7 +252,7 @@ try {
   assert.ok([...files.values()].some((file) => file.path.startsWith("Templates/") && JSON.parse(file.templateJSON).name === "Saved local look"));
   await page.keyboard.press("Meta+k");
   const itemCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
-  await itemCommands.getByRole("button", { name: "Add agent to this item", exact: true }).waitFor();
+  await itemCommands.getByRole("option", { name: "Add agent to this item", exact: true }).waitFor();
   await page.keyboard.press("Escape");
   await itemCommands.waitFor({ state: "hidden" });
   let addAgent = page.getByRole("button", { name: "Add agent", exact: true });
@@ -451,7 +463,7 @@ try {
   assert.ok(!files.has(createdWhileOpen));
   delayedRemoval = null;
   await page.keyboard.press("Meta+k");
-  await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("button", { name: "New from template", exact: true }).click();
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "New from template", exact: true }).click();
   await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Agent made look", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
   const cloned = [...files.values()].at(-1);
@@ -471,16 +483,16 @@ try {
   assert.ok(!files.has("Projects/Renamed.textpack"));
   await page.getByRole("button", { name: /Search and actions/ }).click();
   const commandDialog = page.getByRole("dialog", { name: "Search and actions", exact: true });
-  await commandDialog.getByRole("button", { name: "New note", exact: true }).waitFor();
-  await commandDialog.getByRole("button", { name: "Capture", exact: true }).waitFor();
-  await commandDialog.getByRole("button", { name: "New from template", exact: true }).waitFor();
-  await commandDialog.getByRole("button", { name: "Import images", exact: true }).waitFor();
-  await commandDialog.getByRole("button", { name: "Import file", exact: true }).waitFor();
-  await commandDialog.getByRole("button", { name: "Choose folder design", exact: true }).waitFor();
-  await commandDialog.getByRole("button", { name: "Trash and recovery", exact: true }).waitFor();
-  await commandDialog.getByRole("button", { name: "Customize this folder", exact: true }).waitFor();
-  await page.getByRole("searchbox", { name: "Search workspace" }).fill("Their conflicting version");
-  await commandDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
+  await commandDialog.getByRole("option", { name: "New note", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "Capture", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "New from template", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "Import images", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "Import file", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "Choose folder design", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "Trash and recovery", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "Customize this folder", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("Their conflicting version");
+  await commandDialog.getByRole("option", { name: /Notes\/Offline.textpack/ }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   await expectAgentTarget(initial.path);
   assert.match(await body.innerText(), /Their conflicting version/);
@@ -489,7 +501,7 @@ try {
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   assert.match(await body.innerText(), /Their conflicting version/);
   await page.keyboard.press("Meta+k");
-  await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("button", { name: "Capture", exact: true }).click();
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "Capture", exact: true }).click();
   await page.getByRole("textbox", { name: "Link or note", exact: true }).fill("https://example.com/capture");
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-vault-capture-light.png" });
@@ -519,7 +531,7 @@ try {
   });
   await page.getByRole("button", { name: "Highlight selection", exact: true }).click();
   await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).fill("Keep this cited excerpt.");
-  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   await page.locator("main .vault-document-grid > button").filter({ hasText: "example.com" }).click();
   await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).waitFor();
   assert.equal(await page.getByRole("textbox", { name: "Note about this highlight", exact: true }).inputValue(), "Keep this cited excerpt.");
@@ -532,6 +544,7 @@ try {
   await page.screenshot({ path: "/tmp/texttext-article-reader-dark.png" });
   await page.emulateMedia({ colorScheme: "light" });
   // A clean open file deleted by another replica must close, not offer Retry save.
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector("[inert]"));
   const removed = [...files.keys()].at(-1);
@@ -556,7 +569,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
   assert.deepEqual(network, []);
   assert.deepEqual(failures, []);
-  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   await openMoreActions();
   await page.getByLabel("Current folder", { exact: true }).fill("Visuals");
   await page.keyboard.press("Escape");
@@ -583,7 +596,7 @@ try {
   await page.locator('main img[src^="blob:"]').first().waitFor();
   assert.equal(JSON.parse(visual.documentJSON).presentation.template.id, "texttext.gallery");
   assert.deepEqual(failures, []);
-  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   for (const gesture of ["drop", "paste"]) {
     await page.evaluate(({ gesture, data }) => {
       const transfer = new DataTransfer();
@@ -593,13 +606,13 @@ try {
     }, { gesture, data: gif.toString("base64") });
     await page.getByRole("button", { name: new RegExp(`${gesture}-`) }).first().waitFor();
     await page.keyboard.press("Meta+k");
-    await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("button", { name: "Import images", exact: true }).waitFor();
+    await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "Import images", exact: true }).waitFor();
     await page.keyboard.press("Escape");
   }
   assert.equal(importedPacks.length, 3);
   assert.deepEqual(failures, []);
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
-  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   for (let index = 0; index < 30; index++) files.set(`Large/Note ${index}.textpack`, { ...initial, path: `Large/Note ${index}.textpack` });
   const referenceFixture = files.get("Large/Note 0.textpack");
   const referenceDocument = JSON.parse(referenceFixture.documentJSON);
@@ -629,7 +642,7 @@ try {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-folder-reference-dark.png" });
   await page.emulateMedia({ colorScheme: "light" });
-  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseFolder("Large");
   await page.getByRole("table").waitFor();
   assert.equal(await page.getByRole("table").getByText("Folder view", { exact: true }).count(), 0);
@@ -697,12 +710,12 @@ try {
   assert.ok(newNotePath);
   assert.equal(JSON.parse(files.get(newNotePath).documentJSON).content.body, "");
   await page.keyboard.insertText("Typing starts in the new note.");
-  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
   assert.match(files.get(newNotePath).markdown, /Typing starts in the new note\./);
   await page.keyboard.press("Meta+k");
   const reopenCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
-  await reopenCommands.getByRole("searchbox", { name: "Search workspace" }).fill("Their conflicting version");
-  await reopenCommands.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
+  await reopenCommands.getByRole("combobox", { name: "Search workspace" }).fill("Their conflicting version");
+  await reopenCommands.getByRole("option", { name: /Notes\/Offline.textpack/ }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Document body");
   const closeAssistant = page.getByRole("button", { name: "Close assistant" });
@@ -748,7 +761,59 @@ try {
   await page.reload();
   await page.getByRole("button", { name: "Show folders" }).waitFor();
   assert.equal(await page.locator(".vault-sidebar").isVisible(), false);
+  const sample = (path, kind, title, body, fields = {}, assets = []) => {
+    const document = { schemaVersion: 1, content: { title, body, fields, tags: [], assets }, presentation: { template: { id: `texttext.${kind}`, version: 1 }, theme: {} } };
+    return { path, hash: `sample-${path}`, markdown: `---\ntextTextId: "${crypto.randomUUID()}"\ntitle: ${JSON.stringify(title)}\n---\n\n${body}`, documentJSON: JSON.stringify(document) };
+  };
+  files.set("Bookmarks/Reading.textpack", sample("Bookmarks/Reading.textpack", "bookmark", "A saved article", "The complete saved reading text.", { sourceUrl: "https://example.com/article" }));
+  files.set("Blog/Story.textpack", sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph."));
+  const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
+  files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
+    { id: "one", kind: "image", src: "assets/one.png", alt: "First photograph" }, { id: "two", kind: "image", src: "assets/two.png", alt: "Second photograph" },
+  ]), assets: [{ filename: "one.png", contentType: "image/png", data: pixel }, { filename: "two.png", contentType: "image/png", data: pixel }] });
+  files.set("Feeds/Design.textpack", sample("Feeds/Design.textpack", "bookmark", "Design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.com/feed.xml" }));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.reload();
+  await page.getByRole("button", { name: "Show folders" }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseFolder("Bookmarks");
+  await page.getByRole("button", { name: "Save bookmark", exact: true }).waitFor();
+  await page.getByRole("option", { name: /A saved article/ }).click();
+  await page.getByRole("article", { name: "Bookmark reader" }).getByText("The complete saved reading text.").waitFor();
+  await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
+  await page.getByRole("button", { name: "Save bookmark", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("textbox", { name: "Web address" }).waitFor();
+  await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
+  await chooseFolder("Blog");
+  await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
+  await page.locator(".vault-story-list").getByText("An essay title").waitFor();
+  await page.screenshot({ path: "/tmp/texttext-blog-reference.png" });
+  await page.getByRole("button", { name: "Write a story", exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  const newStory = [...files.values()].at(-1);
+  assert.equal(JSON.parse(newStory.documentJSON).presentation.template.id, "texttext.article");
+  assert.match(newStory.markdown, /kind: "article"/);
+  await chooseFolder("Gallery");
+  await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Open Two photographs" }).click();
+  const lightbox = page.getByRole("dialog", { name: "Two photographs" });
+  await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
+  await lightbox.getByRole("button", { name: "Next image" }).click();
+  await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
+  await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
+  await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
+  await lightbox.getByRole("button", { name: "Close image" }).click();
+  await chooseFolder("Feeds");
+  await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
+  await page.getByRole("link", { name: "A considered design headline" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
+  await chooseFolder("Notes");
+  await page.getByRole("button", { name: "New note", exact: true }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  const newCard = [...files.values()].at(-1);
+  assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
   assert.deepEqual(failures, []);
+  console.log("Bookmark reader, URL-first capture, story list, gallery viewer, and feed headlines passed.");
   console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");
   console.log("Recovery preview/cancel, full pack restore as copy, and version history passed.");
   console.log("Bounded folder previews and pagination passed.");

@@ -692,15 +692,19 @@ function RowsEditor({
   disabled?: boolean;
   onChange: (value: DocumentFieldValue) => void;
 }) {
+  const checklist = field.id === "items" && field.fields.some(sub => sub.id === "task" && sub.type === "text") &&
+    field.fields.some(sub => sub.id === "done" && sub.type === "boolean");
+  const visibleFields = checklist ? field.fields.filter(sub => sub.id === "done" || sub.id === "task")
+    .sort((a, b) => (a.id === "done" ? -1 : b.id === "done" ? 1 : 0)) : field.fields;
   const setRow = (index: number, subId: string, value: DocumentFieldRow[string]) => {
     const next = rows.map((row, i) => (i === index ? { ...row, [subId]: value } : row));
     onChange(next);
   };
   return (
-    <div className="tt-rows-editor">
+    <div className={`tt-rows-editor${checklist ? " is-checklist" : ""}`}>
       {rows.map((row, index) => (
         <div className="tt-rows-editor-row" key={index}>
-          {field.fields.map((sub) => (
+          {visibleFields.map((sub) => (
             <RowScalarInput
               key={sub.id}
               sub={sub}
@@ -726,7 +730,7 @@ function RowsEditor({
         disabled={disabled || rows.length >= field.maxRows}
         onClick={() => onChange([...rows, emptyRow(field)])}
       >
-        Add row
+        {checklist ? "Add task" : "Add row"}
       </button>
     </div>
   );

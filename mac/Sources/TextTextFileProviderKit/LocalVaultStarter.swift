@@ -5,7 +5,7 @@ import Foundation
 /// deliberately independent of the app version: deleting a starter is an edit,
 /// not a request to restore it at the next launch or update.
 public enum LocalVaultStarter {
-    public static let folders = ["Notes", "Reading", "Projects", "Tasks", "Journal", "Writing", "Gallery", "Presentations", "Templates"]
+    public static let folders = ["Notes", "Bookmarks", "Blog", "Gallery", "Feeds", "Presentations", "Templates"]
     public struct Preset: Sendable {
         public let id: String
         public let name: String
@@ -13,16 +13,10 @@ public enum LocalVaultStarter {
     }
     public static let presets: [Preset] = [
         .init(id: "note", name: "Note", example: "Notes/Things I keep relearning.textpack"),
-        .init(id: "bookmark", name: "Bookmark", example: "Reading/How Figma multiplayer works.textpack"),
-        .init(id: "article", name: "Article", example: "Reading/The case for slow publishing.textpack"),
-        .init(id: "brief", name: "Living brief", example: "Projects/Agentic writing launch brief.textpack"),
-        .init(id: "casestudy", name: "Case study", example: "Writing/Rebuilding a studio around live service.textpack"),
+        .init(id: "bookmark", name: "Bookmark", example: "Bookmarks/How Figma multiplayer works.textpack"),
+        .init(id: "article", name: "Blog post", example: "Blog/The case for slow publishing.textpack"),
         .init(id: "gallery", name: "Gallery", example: "Gallery/Nights and weather.textpack"),
-        .init(id: "page", name: "Page", example: "Writing/How we decide what to build.textpack"),
-        .init(id: "project", name: "Project", example: "Projects/Website relaunch.textpack"),
-        .init(id: "talk", name: "Talk", example: "Presentations/Writing for people who will never meet you.textpack"),
-        .init(id: "timeline", name: "Timeline", example: "Journal/Timeline.textpack"),
-        .init(id: "todo", name: "To-do", example: "Tasks/Launch week.textpack")
+        .init(id: "talk", name: "Talk", example: "Presentations/Writing for people who will never meet you.textpack")
     ]
     public struct Result: Sendable {
         public let createdPaths: [String]

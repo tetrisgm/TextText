@@ -48,24 +48,14 @@ describe("built-in templates", () => {
   });
 
   it("offers only the focused catalog at version 1", () => {
-    expect(BUILTIN_TEMPLATES).toHaveLength(11);
+    expect(BUILTIN_TEMPLATES).toHaveLength(6);
     expect(BUILTIN_TEMPLATES.map((template) => template.name)).toEqual([
-      "Article",
+      "Blog post",
       "Note",
       "Bookmark",
       "Gallery",
-      "Talk",
-      // Timeline is Article's document with a timeline index, and it sits
-      // after the original five because those stay first and byte-compatible.
-      // It is in the catalogue because folder looks govern how an index
-      // renders, and without it no look declared that layout, so a blog could
-      // not be a timeline at all.
-      "Timeline",
-      "Case study",
-      "Page",
-      "Tasks",
-      "Project",
-      "Living brief",
+      "Presentation",
+      "Task list",
     ]);
     // A look is named for the document it makes, never for another product.
     const borrowed =

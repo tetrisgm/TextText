@@ -86,9 +86,10 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
   const title = onCreateFromFile ? "New from template" : "Choose a look";
   useDialogFocus(dialog, true); useEscapeLayer(true, title, onClose);
   const matches = (look: VaultLook) => `${look.template.name} ${look.template.description ?? ""} ${look.path ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
-  const visible = looks.filter(matches);
+  const retiredStarterIds = new Set(["texttext.timeline", "texttext.page", "texttext.casestudy", "texttext.project", "texttext.brief", "texttext.todo"]);
+  const visible = looks.filter(look => !retiredStarterIds.has(look.template.id) && matches(look));
   const included = onCreateFromFile ? [] : BUILTIN_TEMPLATES
-    .filter((template) => !looks.some((look) => look.template.id === template.id))
+    .filter((template) => !retiredStarterIds.has(template.id) && !looks.some((look) => look.template.id === template.id))
     .map((template) => ({ template })).filter(matches);
   const current = !onCreateFromFile && currentTemplate &&
     !looks.some((look) => look.template.id === currentTemplate.id && look.template.version === currentTemplate.version) &&

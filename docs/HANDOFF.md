@@ -2,31 +2,21 @@
 
 ## Current work
 
-TextText 0.203 build 1150 shipped on 2026-10-01 from `eef38b7e`; `e3f75ce7` records the public release in source. Clean `main` at `012d78bc` was then promoted to Oracle as `tt-1151-012d78bc-6abe91a4`. `/Applications/TextText.app` is the sole installed copy at 0.203 build 1151. It is Developer ID signed, arm64, and contains the three extensions plus the bundled `texttext` command. The public 1150 artifact remains the notarized Sparkle release.
+The October 2 work is the folder-based template redesign: Shiori-style Bookmarks reader and URL capture, Resurf-style Gallery grid and image viewer, Artifact-style transient feed headlines, Medium-style Blog list and writing surface, Supernotes-style Note cards, and a keyboard-driven Command-K palette. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
 
-The product now uses ordinary folders and self-contained TextPacks. The Mac app, web workspace, Finder projection, and agent commands share the same document model. The starter library contains eleven item TextPacks plus Reading list, Contact sheet, and Reference index folder presets. The shipped release is recorded once in `Shoku's Space/My Notes/TextText Changelog.textpack`.
-
-Media, PostgreSQL, retained database dumps, and Mac release artifacts all live on the Oracle host. There is no Cloudflare R2 or Vercel Blob dependency. Relevant implementation commits are `bb67703b`, `ac930295`, and `7d17d419`.
+Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](HANDOFF-history-2026-09-30.md).
 
 ## Verification
 
-- The complete release gate passed on `eef38b7e`: 4,157 web tests, 109 database tests plus four scale tests, live token/workflow/sync/collaboration checks, the full Swift suite, TypeScript, local promotion, TestFlight packaging, and Apple release checks.
-- Oracle first deployed release identity `texttext-0_203-1150`, then promoted current `main` as `tt-1151-012d78bc-6abe91a4`. Both authenticated production smokes created, read, edited, audited, and removed a scratch note.
-- Public appcast, immutable ZIP, stable download, version, and sign-in routes pass. Public artifact hashes match the private Oracle files. The ZIP supports range requests.
-- TextText and Algorave services are active with zero restarts. Both backup timers are active; their newest private archives have readable `pg_restore` tables of contents.
-- Cached item open improved from 590.9 ms to 339.6 ms p95 in the bounded six-sample comparison after `7f59e8fd`. This is a useful improvement, not the 100 ms target. The benchmark does not prove the absence of a memory leak.
+- October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
 
 ## Boundaries
 
-- Oracle-local retention protects against application and database mistakes but not loss of the Oracle VM or its block storage. This is the deliberate Oracle-only storage boundary.
-- Interactive OAuth was not re-entered during the automated release. `/signin` is live, native Apple sign-in passed its release checks, and the previously installed flow was accepted manually.
+- The installed app remains 0.203 build 1151. The rebuilt UI bundle under `mac/build/LocalVault` is test-only and has not been installed or published. Visual parity with the named products has not been established by a side-by-side review on real content. Artifact's original 28 screenshots described in [the historical plan](plans/artifact-home-replication.md) are not present in this checkout or their former Downloads paths.
 
 ## References
 
 - [Content checkpoint](TEXTTEXT_UX_CHECKPOINT.md)
 - [File-vault architecture](design/texttext-file-vault-migration.md)
-- [Performance receipt](file-vault-performance-2026-09-30.md)
 - [Oracle operations](../release/oracle/README.md)
-- [Media storage](MEDIA-STORAGE.md)
-- [Release storage](RELEASE-STORAGE.md)
-- Resolved history: [September 30 archive](HANDOFF-history-2026-09-30.md)
+- [Resolved release history](HANDOFF-history-2026-09-30.md)

@@ -33,6 +33,15 @@ describe("local vault document projection", () => {
     expect(next.content.tags).toEqual([]);
     expect(next.content.fields.cover).toBeUndefined();
   });
+  it("writes the item kind that matches a built-in template", () => {
+    for (const [id, kind] of [["texttext.article", "article"], ["texttext.bookmark", "bookmark"], ["texttext.gallery", "media_post"]] as const) {
+      const document = emptyDocumentSnapshot({ id, version: 1 });
+      document.content.title = "New item";
+      const payload = writePayload(file, document);
+      expect(payload.markdown).toContain(`kind: "${kind}"`);
+      expect(readDocument(payload).presentation.template.id).toBe(id);
+    }
+  });
   it("rejects malformed canonical JSON instead of overwriting it with a blank note", () => {
     expect(() => readDocument({ ...file, documentJSON: '{"bad":true}' })).toThrow();
   });

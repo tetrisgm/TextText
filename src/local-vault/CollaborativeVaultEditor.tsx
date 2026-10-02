@@ -26,7 +26,7 @@ import { currentVaultWindowActive } from "./window-activity";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
-export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void; focusNewNote?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
+export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>) => void; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
   if (typeof value === "string") {
     let text = value as string;
@@ -44,7 +44,7 @@ function avatarTextColor(color: string): string {
 }
 
 /** The relay owns shared writes; this component never snapshot-autosaves them. */
-export function CollaborativeVaultEditor({ initial, root, config, registerFlush, onChanged, onLocalFallback, focusNewNote, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
+export function CollaborativeVaultEditor({ initial, root, config, registerFlush, onChanged, onLocalFallback, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
   const file = useRef(initial);
   const [opened, setOpened] = useState(initial);
   const [snapshot, setSnapshot] = useState(() => readDocument(initial));
@@ -421,7 +421,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
       {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : <DocumentRenderer document={display} template={template} />) :
         <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
-          focusNewNote={focusNewNote} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
+          focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
           onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { await flush(); }}
           renderTemplateLibrary={props => <WorkspaceTypeLibrary currentTemplate={template} onClose={props.onClose} onApply={(nextTemplate, sourceJSON) => {

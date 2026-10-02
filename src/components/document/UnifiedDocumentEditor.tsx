@@ -133,6 +133,7 @@ type UnifiedDocumentEditorProps = {
   }) => ReactNode;
   /** Focus the body when opening a newly created note, including after its optimistic ID is saved. */
   focusNewNote?: boolean;
+  focusNewNoteTitle?: boolean;
   /** The control that started local note creation, used to avoid stealing a later focus choice. */
   focusNewNoteOrigin?: HTMLElement | null;
   /** Keep the body's caret when a just-created local note joins shared editing. */
@@ -516,6 +517,7 @@ export function UnifiedDocumentEditor({
   resolveDocumentAssets,
   renderTemplateLibrary,
   focusNewNote = false,
+  focusNewNoteTitle = false,
   focusNewNoteOrigin,
   focusNewNoteSelection,
   onNewNoteFocusHandled,
@@ -829,7 +831,7 @@ export function UnifiedDocumentEditor({
   useEffect(() => {
     if (!active || !focusNewNote || newNoteFocusClaimedRef.current) return;
     const frame = window.requestAnimationFrame(() => {
-      const surface = bodySurfaceRef.current;
+      const surface = focusNewNoteTitle ? titleRef.current : bodySurfaceRef.current;
       if (!surface || !activeRef.current) return;
       const focused = window.document.activeElement;
       const editor = surface.closest(".tt-unified-editor");
@@ -845,8 +847,9 @@ export function UnifiedDocumentEditor({
         return;
       }
       surface.focus({ preventScroll: true });
-      const end = documentRef.current.content.body.length;
-      if (focusNewNoteSelection) {
+      const end = focusNewNoteTitle ? documentRef.current.content.title.length : documentRef.current.content.body.length;
+      if (focusNewNoteTitle && surface instanceof HTMLTextAreaElement) surface.setSelectionRange(end, end);
+      else if (focusNewNoteSelection) {
         const anchor = Math.max(0, Math.min(end, focusNewNoteSelection.anchor));
         const head = Math.max(0, Math.min(end, focusNewNoteSelection.head));
         requestDocumentCaret(anchor, head);
@@ -855,7 +858,7 @@ export function UnifiedDocumentEditor({
       onNewNoteFocusHandled?.();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, focusNewNote, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled]);
+  }, [active, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled]);
   const publishDocument = useCallback(
     (next: DocumentSnapshot) => {
       documentRef.current = next;
@@ -2082,6 +2085,10 @@ export function UnifiedDocumentEditor({
         .tt-rows-editor-row{display:flex;align-items:center;gap:0.375rem;min-width:0}
         .tt-rows-editor-row .tt-field-input{flex:1 1 0;min-width:3rem}
         .tt-rows-editor-row .tt-field-input.is-checkbox{flex:0 0 auto}
+        .tt-field-row:has(>.tt-rows-editor.is-checklist){display:block}
+        .tt-field-row:has(>.tt-rows-editor.is-checklist)>.tt-field-label{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+        .tt-rows-editor.is-checklist .tt-rows-editor-row{padding:0.35rem 0;border-bottom:1px solid var(--ac-hairline,#d2d2d7)}
+        .tt-rows-editor.is-checklist .tt-field-input:not(.is-checkbox){border:0;background:transparent;box-shadow:none}
         .tt-rows-editor-remove{flex:0 0 auto;width:1.375rem;height:1.375rem;border:0;border-radius:50%;background:transparent;color:var(--muted,#6e6e73);font-size:0.9375rem;line-height:1;cursor:pointer}
         .tt-rows-editor-remove:hover{background:color-mix(in srgb,var(--ink,#1d1d1f) 8%,transparent)}
         .tt-rows-editor-add{align-self:flex-start;padding:0.25rem 0.75rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--tt-accent,#0071e3);font:inherit;font-size:0.75rem;font-weight:600;cursor:pointer}
