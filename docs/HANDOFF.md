@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery image detail now edits captions and tags in its right inspector while the image remains visible. These controls write the same Gallery TextPack used by the full editor. The local browser contract verifies save/remove behavior and passed; light and dark screenshots are `/tmp/texttext-gallery-inline-inspector-light-reference.png` and `/tmp/texttext-gallery-inline-inspector-reference.png`. No app release was run.
+
 Dropping a web link into the Bookmarks folder now saves it directly as a Bookmark TextPack and selects it in the reader. It uses the same URL validation and enrichment path as Save bookmark. The local browser contract covers the drop and passed; no app release was run.
 
 Existing Note TextPacks now open as finished cards, with Edit card or Enter switching to editing. Newly created notes still open ready for typing. The local browser contract covers both paths and passed; no app release was run.

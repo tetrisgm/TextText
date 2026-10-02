@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { usePopoverFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { vaultRequest, type VaultFile } from "./bridge";
-import { readDocument } from "./model";
+import { readDocument, writePayload } from "./model";
 
 type Image = { id: string; url: string; alt: string; width?: number; height?: number };
 
@@ -48,6 +48,10 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const [error, setError] = useState("");
   const [selection, setSelection] = useState(initialSelection);
   const [zoom, setZoom] = useState(1);
+  const [editingCaption, setEditingCaption] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState("");
+  const [tagDraft, setTagDraft] = useState("");
+  const [updating, setUpdating] = useState(false);
   const [details, setDetails] = useState<{ colors: string[]; width: number; height: number }>({ colors: [], width: 0, height: 0 });
   const chosen = entries[Math.min(selection, entries.length - 1)];
   const path = chosen?.path || "";
@@ -94,6 +98,24 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   } catch { /* Show a readable error below while preserving the original file. */ }
   const image = images[Math.min(index, Math.max(0, images.length - 1))];
   const sourceHref = sourceLink(source);
+  useEffect(() => { setEditingCaption(false); setTagDraft(""); }, [path]);
+  const updateContent = async (change: (content: ReturnType<typeof readDocument>["content"]) => ReturnType<typeof readDocument>["content"]) => {
+    if (!file || file.path !== path || updating) return false;
+    setUpdating(true); setError("");
+    try {
+      const document = readDocument(file);
+      const updated = await vaultRequest<VaultFile>("write", writePayload(file, { ...document, content: change(document.content) }));
+      setFile(current => current?.path === updated.path ? updated : current);
+      window.dispatchEvent(new Event("texttext:vault-changed"));
+      return true;
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "The image details could not be saved."); return false; }
+    finally { setUpdating(false); }
+  };
+  const addTag = async () => {
+    const tag = tagDraft.trim().replace(/^#/, "").slice(0, 40);
+    if (!tag || tags.some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
+    if (await updateContent(content => ({ ...content, tags: [...content.tags, tag] }))) setTagDraft("");
+  };
   useEffect(() => setZoom(1), [image?.url]);
   const asset = image && file?.assets?.find(entry => local.get(`assets/${entry.filename}`) === image.url || (entry.remoteURL && local.get(entry.remoteURL) === image.url));
   if (asset) size = Math.floor(asset.data.length * 3 / 4) - (asset.data.endsWith("==") ? 2 : asset.data.endsWith("=") ? 1 : 0);
@@ -127,7 +149,10 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
         {/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.alt} style={{ transform: `scale(${zoom})` }} />
         {entries.length > 1 && <button aria-label="Next image" disabled={selection >= entries.length - 1} onClick={next}>›</button>}
         <div className="vault-gallery-zoom" role="group" aria-label="Image zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, Math.round((value - .25) * 100) / 100))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, Math.round((value + .25) * 100) / 100))}>+</button><button aria-label="Fit image" disabled={zoom === 1} onClick={() => setZoom(1)}>Fit</button></div>
-      </div><aside><dl>{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}{size > 0 && <><dt>Size</dt><dd>{size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`}</dd></>}{source && <><dt>Source</dt><dd className="vault-gallery-source">{sourceHref ? <a href={sourceHref} target="_blank" rel="noopener noreferrer">{source}</a> : source}</dd></>}{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}</dl>{caption && <div className="vault-gallery-inspector-section"><h2>Caption</h2><p>{caption}</p></div>}{tags.length > 0 && <div className="vault-gallery-inspector-section"><h2>Tags</h2><div className="vault-gallery-tags">{tags.map(tag => <span key={tag}>{tag}</span>)}</div></div>}{details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
+      </div><aside><dl>{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}{size > 0 && <><dt>Size</dt><dd>{size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`}</dd></>}{source && <><dt>Source</dt><dd className="vault-gallery-source">{sourceHref ? <a href={sourceHref} target="_blank" rel="noopener noreferrer">{source}</a> : source}</dd></>}{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}</dl>
+        <div className="vault-gallery-inspector-section"><div className="vault-gallery-inspector-heading"><h2>Caption</h2>{!editingCaption && <button aria-label="Edit caption" disabled={updating} onClick={() => { setCaptionDraft(caption); setEditingCaption(true); }}>Edit</button>}</div>{editingCaption ? <form onSubmit={event => { event.preventDefault(); void updateContent(content => ({ ...content, body: captionDraft.trim() })).then(saved => { if (saved) setEditingCaption(false); }); }}><textarea aria-label="Image caption" value={captionDraft} onChange={event => setCaptionDraft(event.target.value)} maxLength={4000} disabled={updating} /><div><button type="button" onClick={() => setEditingCaption(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating}>Save caption</button></div></form> : <p>{caption || "No caption yet"}</p>}</div>
+        <div className="vault-gallery-inspector-section"><h2>Tags</h2><div className="vault-gallery-tags">{tags.map(tag => <button key={tag} aria-label={`Remove ${tag} tag`} disabled={updating} onClick={() => void updateContent(content => ({ ...content, tags: content.tags.filter(value => value !== tag) }))}>#{tag} ×</button>)}</div><form className="vault-gallery-tag-form" onSubmit={event => { event.preventDefault(); void addTag(); }}><input aria-label="Add image tag" value={tagDraft} onChange={event => setTagDraft(event.target.value)} placeholder="Add a tag" maxLength={41} disabled={updating} /><button type="submit" disabled={updating || !tagDraft.trim()}>Add</button></form></div>
+        {details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
     </div>
   </section>, shell);
 }
