@@ -1566,7 +1566,7 @@ export function UnifiedDocumentEditor({
           <CollaborativeTextarea
             field="title"
             label="Title"
-            placeholder="Untitled"
+            placeholder={activeTemplate.id === "texttext.article" ? "Title" : "Untitled"}
             value={document.content.title}
             selections={remoteSelections.title}
             onChange={(value) => updateText("title", value)}

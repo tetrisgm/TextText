@@ -921,7 +921,15 @@ try {
   await page.getByRole("button", { name: "Open An essay title" }).click();
   const storyReader = page.getByRole("region", { name: "Story reader" });
   await storyReader.getByText("An opening paragraph.").waitFor();
+  await storyReader.getByText("1 min read").waitFor();
   await page.screenshot({ path: "/tmp/texttext-blog-reader-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForFunction(() => {
+    const title = document.querySelector('.vault-story-display .tt-text-title');
+    return title && getComputedStyle(title).color === 'rgb(32, 32, 32)';
+  });
+  await page.screenshot({ path: "/tmp/texttext-blog-reader-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
   await page.locator(".vault-context-actions > .vault-primary-action").click();
   const publishing = page.getByRole("dialog", { name: "Publish An essay title" });
@@ -946,6 +954,8 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
   const newStory = [...files.values()].at(-1);
   assert.equal(JSON.parse(newStory.documentJSON).presentation.template.id, "texttext.article");
+  assert.equal(JSON.parse(newStory.documentJSON).content.title, "");
+  assert.equal(await page.getByRole("textbox", { name: "Title", exact: true }).getAttribute("placeholder"), "Title");
   assert.match(newStory.markdown, /kind: "article"/);
   await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
   assert.equal(await page.locator(".vault-context-actions > .vault-primary-action").isDisabled(), true);
