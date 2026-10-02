@@ -32,7 +32,7 @@ Command K now shows five full commands with the next partially visible, and arro
 
 Blog folder rows now project author, title, subtitle, opening excerpt, and a cover when available from the story TextPack. The subtitle no longer displaces the excerpt. The browser fixture verifies these distinct fields; `/tmp/texttext-blog-reference.png` shows the row.
 
-Single-story rows in Feeds now have a Read later action. It fetches that full feed entry only when clicked and saves a bookmark TextPack in Bookmarks, using the same pack creation path as the reader action. The local browser contract verifies the new pack and saved state; `/tmp/texttext-feeds-latest-reference.png` shows the row action. Saved state in the feed view is session-local, so cross-session duplicate prevention remains open.
+Single-story rows in Feeds now have a Read later action. It fetches that full feed entry only when clicked and saves a bookmark TextPack in Bookmarks, using the same pack creation path as the reader action. The local browser contract verifies the new pack and saved state; `/tmp/texttext-feeds-latest-reference.png` shows the row action. A native metadata scan now reads only `document.json` from bookmark TextPacks to restore saved state after Feeds reopens; saving rechecks the stored feed identity before import. Swift, RSS, and browser checks cover this path. The read-before-import check is not atomic across separate app processes.
 
 The Bookmarks reader now uses compact previous/next navigation, Reader and Original controls, a sans-serif title/body, and a source line below the title to track Shiori’s public dashboard example. Its items remain bookmark TextPacks, and URL-first capture remains the creation path.
 

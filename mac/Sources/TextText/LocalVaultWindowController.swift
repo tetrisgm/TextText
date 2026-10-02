@@ -327,6 +327,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 let store = LocalVaultDocumentStore(root: root)
                 switch method {
                 case "list": return try Self.list(root: root)
+                case "keptFeedEntries": return ["hashes": try store.keptFeedEntryHashes()]
                 case "folderViews": return ["files": try store.folderViews(folder: Self.string(params, "folder"))]
                 case "search":
                     let page = try DocumentStore(root: root).searchPage(Self.string(params, "query"), textpacksOnly: true)

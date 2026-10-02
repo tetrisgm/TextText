@@ -109,6 +109,43 @@ public struct LocalVaultDocumentStore: Sendable {
         return try outcome.get()
     }
 
+    /// Read only document.json from bookmark TextPacks. Feed rows use these
+    /// stable identities to show saved state after the app is reopened.
+    public func keptFeedEntryHashes() throws -> [String] {
+        var hashes = Set<String>()
+        for path in try list() where path.hasPrefix("Bookmarks/") {
+            let target = try url(for: path)
+            var outcome: Result<String?, Error>?
+            var coordinationError: NSError?
+            NSFileCoordinator().coordinate(readingItemAt: target, options: [], error: &coordinationError) { coordinated in
+                outcome = Result {
+                    guard (try coordinated.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+                    let archive = try Archive(url: coordinated, accessMode: .read)
+                    let markdown = try canonicalMarkdownEntry(archive)
+                    let prefix = String(markdown.path.dropLast("text.md".count))
+                    guard let entry = archive[prefix + "document.json"] else { return nil }
+                    guard entry.type == .file, entry.uncompressedSize <= 4 * 1024 * 1024 else { throw Failure.tooLarge }
+                    var data = Data()
+                    _ = try archive.extract(entry) { chunk in
+                        guard data.count <= 4 * 1024 * 1024 - chunk.count else { throw Failure.tooLarge }
+                        data.append(chunk)
+                    }
+                    guard let document = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let content = document["content"] as? [String: Any],
+                          let fields = content["fields"] as? [String: Any],
+                          fields["texttextFeedEntry"] as? String == "v1" else { return nil }
+                    return fields["feedEntryHash"] as? String
+                }
+            }
+            if let coordinationError { throw coordinationError }
+            guard let outcome else { throw CocoaError(.fileReadUnknown) }
+            if let hash = try outcome.get(), hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil {
+                hashes.insert(hash)
+            }
+        }
+        return hashes.sorted()
+    }
+
     /// Extract only definition metadata; image entries are never inflated.
     public func folderViews(folder: String) throws -> [[String: String]] {
         let sentinel = try url(for: (folder.isEmpty ? "" : folder + "/") + "Folder view.textpack")

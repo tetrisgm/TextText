@@ -3,7 +3,7 @@ import { strFromU8 } from "fflate";
 import type { NormalizedEntry } from "@/lib/reading/feed-parse";
 import { openPack, encodePack } from "@/local-vault/pack";
 import { readDocument, writePayload } from "@/local-vault/model";
-import { createFeedSubscriptionPack, createKeptFeedEntryPack, publicFeedURL, readFeedSubscription } from "./rss";
+import { createFeedSubscriptionPack, createKeptFeedEntryPack, feedEntryHash, publicFeedURL, readFeedSubscription } from "./rss";
 
 const entry: NormalizedEntry = {
   externalKey: "id:article-1", declaredId: "article-1", title: "A careful article",
@@ -56,6 +56,7 @@ describe("file-vault feeds", () => {
     expect(document.presentation.template.id).toBe("texttext.bookmark");
     expect(document.content.body).toBe(entry.bodyMarkdown);
     expect(document.content.fields).toMatchObject({ sourceUrl: entry.permalink, texttextFeedEntry: "v1" });
+    expect(document.content.fields.feedEntryHash).toBe(await feedEntryHash("https://publisher.example/feed.xml", entry.externalKey));
     expect(pack.entries[pack.prefix + "feed-entry.json"]).toBeTruthy();
   });
 

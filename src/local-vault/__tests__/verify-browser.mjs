@@ -49,6 +49,7 @@ try {
       }
     }
     else if (request.method === "folderViews") result = { files: [...files.values()].filter((file) => file.path.split("/").slice(0, -1).join("/") === request.params.folder && JSON.parse(file.documentJSON).content.fields.texttextFolderView) };
+    else if (request.method === "keptFeedEntries") result = { hashes: [...files.values()].filter(file => file.path.startsWith("Bookmarks/")).map(file => JSON.parse(file.documentJSON).content.fields.feedEntryHash).filter(Boolean) };
     else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
       if (request.method === "connect") connected = true;
@@ -1201,6 +1202,12 @@ try {
   await page.waitForFunction(() => document.querySelector('.vault-feed-source-window button') === null);
   assert.equal(feedReadURLs.length, 25);
   assert.equal(new Set(feedReadURLs).size, 25);
+  await chooseFolder("Notes");
+  await chooseFolder("Feeds");
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
+  const reopenedKept = page.getByRole("button", { name: "Saved: Design headline 2" }).first();
+  await reopenedKept.waitFor();
+  assert.equal(await reopenedKept.isDisabled(), true);
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Open Extra feed 23" }).waitFor();

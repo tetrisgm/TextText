@@ -105,6 +105,12 @@ function validDate(value: string | null): string | null {
 
 function cleanAuthor(value: string): string { return value.trim().slice(0, 200); }
 
+export async function feedEntryHash(feedURL: string, externalKey: string): Promise<string> {
+  const keyBytes = new TextEncoder().encode(`${publicFeedURL(feedURL)}\n${externalKey}`);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", keyBytes));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** Explicit Keep snapshots the selected entry into a new, portable pack. The
  * caller imports it through the normal create-only vault operation. A later
  * feed refresh cannot alter this snapshot. */
@@ -124,9 +130,7 @@ export async function createKeptFeedEntryPack(input: {
   const document = emptyDocumentSnapshot({ id: selected.id, version: selected.version });
   document.content.title = title;
   document.content.body = entry.bodyMarkdown || String(entry.excerpt ?? "").slice(0, 2000) || sourceURL || "";
-  const keyBytes = new TextEncoder().encode(`${feedURL}\n${entry.externalKey}`);
-  const keyDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", keyBytes));
-  const entryHash = [...keyDigest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const entryHash = await feedEntryHash(feedURL, entry.externalKey);
   const authors = (Array.isArray(entry.authors) ? entry.authors : []).filter((author): author is string => typeof author === "string").slice(0, 20).map(cleanAuthor).filter(Boolean);
   const publishedAt = validDate(entry.publishedAt), updatedAt = validDate(entry.updatedAt);
   document.content.fields = {

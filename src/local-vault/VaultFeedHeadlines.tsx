@@ -4,7 +4,7 @@ import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import type { NormalizedEntry } from "@/lib/reading/feed-parse";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { vaultRequest } from "./bridge";
-import { createFeedSubscriptionPack, createKeptFeedEntryPack } from "@/lib/vault/rss";
+import { createFeedSubscriptionPack, createKeptFeedEntryPack, feedEntryHash } from "@/lib/vault/rss";
 import { encodeBase64 } from "./image-import";
 import type { FolderPreview } from "./folder-collection";
 import { clusterFeedStories, rankFeedClusters, type FeedStory, type FeedCluster } from "./feed-clusters";
@@ -62,6 +62,8 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   const [storyError, setStoryError] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<Set<string>>(() => new Set());
+  const [keptHashes, setKeptHashes] = useState<Set<string> | null>(null);
+  const [keptError, setKeptError] = useState("");
   const [sourceLimit, setSourceLimit] = useState(8);
   const cachedSources = useRef(new Map<string, FeedStory[]>());
   const feedKey = useMemo(() => JSON.stringify(sources.map(source => {
@@ -72,6 +74,14 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   const sourceRows = useMemo(() => JSON.parse(feedKey) as SourceRow[], [feedKey]);
   const topics = [...new Set(sourceRows.map(row => row.topic).filter((topic): topic is string => Boolean(topic)))];
   const hasFeeds = sourceRows.length > 0;
+  useEffect(() => {
+    if (!ready || !hasFeeds) return;
+    let active = true;
+    void vaultRequest<{ hashes: string[] }>("keptFeedEntries").then(value => {
+      if (active) { setKeptHashes(new Set(value.hashes)); setKeptError(""); }
+    }).catch(reason => { if (active) setKeptError(reason instanceof Error ? reason.message : "Saved stories could not be checked."); });
+    return () => { active = false; };
+  }, [ready, hasFeeds]);
   useEffect(() => {
     if (!ready || !hasFeeds) { setStories([]); return; }
     const controller = new AbortController();
@@ -104,6 +114,14 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   }, [feedKey, ready, hasFeeds, sourceRows, sourceLimit]);
   const activeKey = active ? `${active.feedURL}\n${active.externalKey}` : "";
   useEffect(() => {
+    if (!keptHashes?.size || !stories.length) return;
+    let current = true;
+    void Promise.all(stories.map(async story => ({ key: `${story.feedURL}\n${story.externalKey}`, hash: await feedEntryHash(story.feedURL, story.externalKey) })))
+      .then(rows => { if (current) setSaved(previous => new Set([...previous, ...rows.filter(row => keptHashes.has(row.hash)).map(row => row.key)])); })
+      .catch(reason => { if (current) setKeptError(reason instanceof Error ? reason.message : "Saved stories could not be matched."); });
+    return () => { current = false; };
+  }, [stories, keptHashes]);
+  useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
     const { feedURL, externalKey } = active;
@@ -122,10 +140,15 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     setSaving(key);
     if (activeKey === key) setStoryError(""); else setError("");
     try {
+      const hash = await feedEntryHash(story.feedURL, story.externalKey);
+      const existing = await vaultRequest<{ hashes: string[] }>("keptFeedEntries");
+      setKeptHashes(new Set(existing.hashes));
+      if (existing.hashes.includes(hash)) { setSaved(previous => new Set(previous).add(key)); return; }
       const entry = full?.key === key ? full.value : await vaultRequest<FullEntry>("feedEntry", { feedURL: story.feedURL, externalKey: story.externalKey });
       if (entry.feedURL !== story.feedURL || entry.entry?.externalKey !== story.externalKey) throw new Error("This story no longer matches the selected feed entry. Refresh Feeds and try again.");
       const pack = await createKeptFeedEntryPack(entry, "bookmark");
       await vaultRequest("importPack", { title: pack.title, folder: "Bookmarks", data: encodeBase64(pack.bytes) });
+      setKeptHashes(previous => new Set([...(previous ?? []), hash]));
       setSaved(previous => new Set(previous).add(key));
       window.dispatchEvent(new Event("texttext:vault-changed"));
     } catch (reason) {
@@ -202,6 +225,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     </li>)}</ol>
   </section>;
   return <section className="vault-feed-home" aria-label="Latest stories">
+    {keptError && <p role="alert">Saved stories could not be checked: {keptError}</p>}
     {tab !== "Sources" && <label className="vault-feed-search"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4.5 4.5" /></svg><input type="search" aria-label="Search loaded stories" placeholder="Search loaded stories" value={search} onChange={event => setSearch(event.target.value)} /></label>}
     <nav aria-label="Feed sections"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button><button aria-pressed={tab === "Latest"} onClick={() => setTab("Latest")}>Latest</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
     {sourceRows.length > 8 && tab !== "Sources" && <div className="vault-feed-source-window"><span>Reading {Math.min(sourceLimit, sourceRows.length)} of {sourceRows.length} sources</span>{sourceLimit < sourceRows.length && <button type="button" disabled={loading} onClick={() => setSourceLimit(limit => limit + 8)}>Load more sources</button>}</div>}

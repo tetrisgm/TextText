@@ -32,6 +32,21 @@ final class LocalVaultImportTests: XCTestCase {
         }
     }
 
+    func testKeptFeedIdentityReadsBookmarkMetadataAcrossReopens() throws {
+        try fixture { root, store in
+            let hash = String(repeating: "a", count: 64)
+            let metadata = """
+                {"schemaVersion":1,"content":{"title":"Saved story","body":"A story","fields":{"texttextFeedEntry":"v1","feedEntryHash":"\(hash)"},"tags":[],"assets":[]},"presentation":{"template":{"id":"texttext.bookmark","version":1},"theme":{}}}
+                """
+            let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "A story", documentJSON: metadata,
+                assets: [], sourceURL: nil, in: root)
+            let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)
+            _ = try store.importFile(from: packed, newPath: "Bookmarks/Saved story.textpack")
+            _ = try store.importFile(from: packed, newPath: "Notes/Not in reading list.textpack")
+            XCTAssertEqual(try LocalVaultDocumentStore(root: store.root).keptFeedEntryHashes(), [hash])
+        }
+    }
+
     func testPackImportPreservesOpaqueEntriesAssetsSourceAndAllocatesIdentity() throws {
         try fixture { root, store in
             let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: original\n---\n\nHello ![](assets/photo.png)",
