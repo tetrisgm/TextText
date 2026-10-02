@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery now has a local Find images field that searches saved titles, captions, tags, and source links from bounded TextPack metadata, then loads full image previews only for visible results. The browser flow verifies title and tag filtering, clears the query, and continues into the image viewer; `/tmp/texttext-gallery-grid-reference.png` shows the checked dark grid. TypeScript and local/web browser flows passed. Full Resurf parity remains open, especially capture from other apps and a richer visual search; no app release was run.
+
 The Bookmarks list now accepts a pasted web address inline and saves it directly as a TextPack in Bookmarks, then refreshes and opens that library position for enrichment. Invalid prose stays in the field with an error and creates no file; the existing modal and drag-and-drop paths remain. The local browser flow covers invalid and valid quick saves, the web browser flow and TypeScript passed. Full Shiori creation and library parity remains open; no app release was run.
 
 Bookmarks library search now matches the saved URL, captured excerpt, and tags as well as the title. The local browser flow checks excerpt and URL matches across paginated bookmarks; local/web browser flows and TypeScript passed. Full Shiori parity, including its capture integrations and full-text indexing, remains open; no app release was run.

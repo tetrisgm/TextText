@@ -930,9 +930,11 @@ try {
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
     { id: "one", kind: "image", src: "assets/one.png", alt: "First photograph" }, { id: "two", kind: "image", src: "assets/two.png", alt: "Second photograph" },
   ]), assets: [{ filename: "one.png", contentType: "image/png", data: portrait }, { filename: "two.png", contentType: "image/png", data: landscape }] });
-  files.set("Gallery/Single.textpack", { ...sample("Gallery/Single.textpack", "gallery", "One photograph", "A separate image.", {}, [
+  const singlePhoto = sample("Gallery/Single.textpack", "gallery", "One photograph", "A separate image.", {}, [
     { id: "third", kind: "image", src: "assets/third.png", alt: "Third photograph" },
-  ]), assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
+  ]);
+  singlePhoto.documentJSON = JSON.stringify({ ...JSON.parse(singlePhoto.documentJSON), content: { ...JSON.parse(singlePhoto.documentJSON).content, tags: ["fieldwork"] } });
+  files.set("Gallery/Single.textpack", { ...singlePhoto, assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
   for (const [path, title, feedUrl] of [["Feeds/Design.textpack", "Design feed", "https://example.com/feed.xml"], ["Feeds/Design second.textpack", "Second design feed", "https://example.org/feed.xml"]]) {
     const source = sample(path, "bookmark", title, "", { texttextFeedSubscription: "v1", feedUrl });
     const document = JSON.parse(source.documentJSON);
@@ -1199,6 +1201,15 @@ try {
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
   await page.locator(".vault-photo-grid img").first().waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid img")].every(image => image.complete && image.naturalHeight > 0));
+  const gallerySearch = page.getByRole("searchbox", { name: "Find images" });
+  await gallerySearch.waitFor({ state: "visible" });
+  await page.waitForFunction(() => !document.querySelector('input[aria-label="Find images"]')?.disabled);
+  await gallerySearch.fill("Two photographs");
+  await page.waitForFunction(() => document.querySelectorAll(".vault-photo-grid button").length === 2);
+  await gallerySearch.fill("fieldwork");
+  await page.waitForFunction(() => document.querySelectorAll(".vault-photo-grid button").length === 1 && document.querySelector('.vault-photo-grid button')?.getAttribute('aria-label') === "Open One photograph");
+  await gallerySearch.fill("");
+  await page.getByRole("button", { name: "Open One photograph" }).waitFor();
   const portraitTile = await page.getByRole("button", { name: "Open Two photographs image 1" }).boundingBox();
   const landscapeTile = await page.getByRole("button", { name: "Open Two photographs image 2" }).boundingBox();
   assert.ok(portraitTile && landscapeTile && portraitTile.width < landscapeTile.width * .6);

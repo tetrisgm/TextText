@@ -135,6 +135,40 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     catch (error) { queryMessage = error instanceof Error ? error.message : "Folder details are unavailable."; }
   }
   const fallbackTitle = (item: VaultListing["items"][number]) => item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
+  const galleryFolder = folder === "Gallery";
+  const [gallerySearch, setGallerySearch] = useState("");
+  const galleryIndexKey = galleryFolder ? JSON.stringify([listing.root, items.map(item => item.path)]) : "";
+  const [galleryIndex, setGalleryIndex] = useState<{ key: string; listing?: VaultListing; previews: Record<string, FolderPreview>; error: string }>({ key: "", previews: {}, error: "" });
+  useEffect(() => {
+    if (!galleryIndexKey || busy || galleryIndex.key === galleryIndexKey && galleryIndex.listing === listing) return;
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (items.length > 2048) { if (active) setGalleryIndex({ key: galleryIndexKey, listing, previews: {}, error: "Search supports up to 2,048 visual items in one folder." }); return; }
+      const found: Record<string, FolderPreview> = {};
+      let totalBytes = 0;
+      for (const item of items) {
+        if (!active) return;
+        try {
+          const preview = await requestPreview(item.path, () => active, true);
+          if (!preview?.document || preview.incompleteFields?.some(field => ["*", "title", "tags", "content.fields.sourceUrl"].includes(field))) {
+            if (active) setGalleryIndex({ key: galleryIndexKey, listing, previews: {}, error: "Visual search is unavailable because some item details could not be read." });
+            return;
+          }
+          const compact: FolderPreview = { title: preview.title, excerpt: preview.excerpt, sourceURL: preview.sourceURL, document: { ...preview.document,
+            content: { ...preview.document.content, body: "", fields: {}, assets: [] } } };
+          totalBytes += new TextEncoder().encode(JSON.stringify(compact)).byteLength;
+          if (totalBytes > 8 * 1024 * 1024) { if (active) setGalleryIndex({ key: galleryIndexKey, listing, previews: {}, error: "Visual item details exceed the 8 MiB search limit." }); return; }
+          found[item.path] = compact;
+        } catch { if (active) setGalleryIndex({ key: galleryIndexKey, listing, previews: {}, error: "Visual search is unavailable while an item cannot be read." }); return; }
+      }
+      if (active) setGalleryIndex({ key: galleryIndexKey, listing, previews: found, error: "" });
+    });
+    return () => { active = false; };
+    // The key captures the folder listing without restarting the metadata scan on render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, galleryIndexKey, listing]);
+  const galleryIndexReady = galleryFolder && galleryIndex.key === galleryIndexKey && galleryIndex.listing === listing && !galleryIndex.error;
+  const galleryQuery = gallerySearch.trim().toLocaleLowerCase();
   const notesFolder = folder === "Notes";
   const [noteSearch, setNoteSearch] = useState("");
   const [noteTag, setNoteTag] = useState("");
@@ -177,7 +211,10 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     const preview = noteIndex.previews[item.path];
     const tags = preview?.document?.content.tags ?? [];
     return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery));
-  }).sort((left, right) => noteSort === "title" ? indexedNoteTitle(left).localeCompare(indexedNoteTitle(right)) : 0) : items;
+  }).sort((left, right) => noteSort === "title" ? indexedNoteTitle(left).localeCompare(indexedNoteTitle(right)) : 0) : galleryIndexReady && galleryFolder && galleryQuery ? items.filter(item => {
+    const preview = galleryIndex.previews[item.path];
+    return `${preview?.title || fallbackTitle(item)} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryQuery);
+  }) : items;
   const feedIndexKey = folder === "Feeds" ? JSON.stringify([listing.root, items.map(item => item.path)]) : "";
   const [feedIndex, setFeedIndex] = useState<{ key: string; previews: Record<string, FolderPreview>; done: boolean; error: string }>({ key: "", previews: {}, done: false, error: "" });
   useEffect(() => {
@@ -260,7 +297,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     {!supported && <p role="status">The {requestedLayout} layout is not available here yet. Showing a readable list.</p>}
     {queryMessage && <p role="status">{queryMessage}</p>}
     {folder === "Feeds" && feedIndex.key === feedIndexKey && feedIndex.error && <p role="alert">{feedIndex.error}</p>}
-    {photoFolder ? <div className="vault-photo-grid" ref={galleryRef}>{galleryRows.map((row, rowIndex) => <div className="vault-photo-row" key={galleryTiles[galleryTile]?.key || rowIndex}>{row.map(size => { const tile = galleryTiles[galleryTile]; const selection = galleryTile++; return <PreviewImage key={tile.key} preview={tile.preview ? { ...tile.preview, image: tile.image } : undefined}>{source => <GalleryTile source={source} title={tile.title} disabled={busy || previewOnly} onOpen={() => setGalleryState({ entries: galleryEntries, selection })} width={size.width} height={size.height} onAspect={aspect => setGalleryAspects(previous => previous[tile.key] === aspect ? previous : { ...previous, [tile.key]: aspect })} />}</PreviewImage>; })}</div>)}</div> : bookmarkFolder ? <VaultBookmarkLibrary items={items} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} onQuickSave={onQuickSaveBookmark} preferredPath={preferredBookmarkPath} /> : notesFolder ? <>
+    {photoFolder ? <><label className="vault-gallery-search"><span className="ac-sr-only">Find images</span><input type="search" aria-label="Find images" value={gallerySearch} onChange={event => { setGallerySearch(event.target.value); setPage(0); }} disabled={!galleryIndexReady} placeholder={galleryIndexReady ? "Find images" : "Reading image details…"} /></label>{galleryIndex.key === galleryIndexKey && galleryIndex.error && <p role="status">{galleryIndex.error}</p>}{galleryIndexReady && galleryQuery && !displayedItems.length && <p role="status">No images match.</p>}<div className="vault-photo-grid" ref={galleryRef}>{galleryRows.map((row, rowIndex) => <div className="vault-photo-row" key={galleryTiles[galleryTile]?.key || rowIndex}>{row.map(size => { const tile = galleryTiles[galleryTile]; const selection = galleryTile++; return <PreviewImage key={tile.key} preview={tile.preview ? { ...tile.preview, image: tile.image } : undefined}>{source => <GalleryTile source={source} title={tile.title} disabled={busy || previewOnly} onOpen={() => setGalleryState({ entries: galleryEntries, selection })} width={size.width} height={size.height} onAspect={aspect => setGalleryAspects(previous => previous[tile.key] === aspect ? previous : { ...previous, [tile.key]: aspect })} />}</PreviewImage>; })}</div>)}</div></> : bookmarkFolder ? <VaultBookmarkLibrary items={items} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} onQuickSave={onQuickSaveBookmark} preferredPath={preferredBookmarkPath} /> : notesFolder ? <>
       {onCreateNote && !previewOnly && <button className="vault-note-start" aria-label="Start typing Make a new card" disabled={busy} onClick={onCreateNote}>Start typing or paste to make a card</button>}
       <div className="vault-note-tools"><label><span className="ac-sr-only">Find cards</span><input type="search" aria-label="Find cards" value={noteSearch} onChange={event => { setNoteSearch(event.target.value); setPage(0); }} disabled={!noteIndexReady} placeholder={noteIndexReady ? "Find cards" : "Reading cards…"} /></label><label><span className="ac-sr-only">Sort cards</span><select aria-label="Sort cards" value={noteSort} onChange={event => { setNoteSort(event.target.value as "folder" | "title"); setPage(0); }} disabled={!noteIndexReady}><option value="folder">Folder order</option><option value="title">Title A–Z</option></select></label></div>
       {noteIndex.key === noteIndexKey && noteIndex.listing === listing && noteIndex.error && <p role="status" className="vault-note-index-status">{noteIndex.error}</p>}
