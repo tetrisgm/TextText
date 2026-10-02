@@ -263,7 +263,16 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       <div role="listbox" aria-label="Saved bookmarks">{groups.map(group => <div role="group" aria-label={group.label} key={group.label}><div className="vault-bookmark-day">{group.label}</div>{group.items.map(item => { const entry = previews[item.path] || metadata[item.path]; const title = entry?.title || item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
         const itemFavorite = flags[item.path]?.favorite ?? Boolean(entry?.document?.content.fields.texttextBookmarkFavorite);
         const itemRead = flags[item.path] ? flags[item.path].readAt : (typeof entry?.document?.content.fields.texttextBookmarkReadAt === "string" ? entry.document.content.fields.texttextBookmarkReadAt : null);
-        return <button role="option" aria-selected={current?.path === item.path} key={item.path} disabled={busy || previewOnly} onClick={() => setSelected(item.path)} onDoubleClick={() => onOpen(item.path)}>
+        return <button role="option" aria-selected={current?.path === item.path} key={item.path} disabled={busy || previewOnly} onClick={() => setSelected(item.path)} onDoubleClick={() => onOpen(item.path)} onKeyDown={event => {
+          const nextIndex = event.key === "ArrowDown" ? shown.findIndex(entry => entry.path === item.path) + 1
+            : event.key === "ArrowUp" ? shown.findIndex(entry => entry.path === item.path) - 1
+            : event.key === "Home" ? 0 : event.key === "End" ? shown.length - 1 : -1;
+          if (nextIndex < 0 || nextIndex >= shown.length) return;
+          event.preventDefault();
+          setSelected(shown[nextIndex].path);
+          const options = event.currentTarget.closest('[role="listbox"]')?.querySelectorAll<HTMLElement>('[role="option"]');
+          options?.[nextIndex]?.focus();
+        }}>
           <span className="vault-bookmark-mark" aria-hidden="true">{host(entry?.sourceURL).slice(0, 1).toUpperCase()}</span>
           <span className="vault-bookmark-copy"><strong>{title}</strong><small>{host(entry?.sourceURL)}{itemRead ? " · Read" : ""}</small></span>{itemFavorite && <span className="vault-bookmark-favorite" aria-label="Favorite">★</span>}
         </button>; })}</div>)}</div>

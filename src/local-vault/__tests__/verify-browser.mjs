@@ -983,6 +983,13 @@ try {
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /Another saved link/ }).waitFor();
   assert.equal(await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").count(), 1);
   await bookmarkSearch.fill("");
+  const savedOptions = page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option");
+  await savedOptions.first().focus();
+  await savedOptions.first().press("End");
+  assert.equal(await savedOptions.last().getAttribute("aria-selected"), "true");
+  assert.equal(await savedOptions.last().evaluate(element => document.activeElement === element), true);
+  await savedOptions.last().press("Home");
+  assert.equal(await savedOptions.first().getAttribute("aria-selected"), "true");
   await page.getByRole("option", { name: /A saved article/ }).click();
   const bookmarkReader = page.getByRole("article", { name: "Bookmark reader" });
   const bookmarkDetails = bookmarkReader.locator("details.vault-bookmark-inspector");
