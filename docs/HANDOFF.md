@@ -2,6 +2,8 @@
 
 ## Current work
 
+The Notes library now places its Start typing prompt across the full card area and uses the available desktop width for up to five card columns. The local browser flow and TypeScript passed; `/tmp/texttext-note-grid-reference.png` shows the checked dark view. The card editor and TextPack content model are unchanged; reference parity remains open. No app release was run.
+
 Notes creation now begins in the card title from New note, Start typing, and type-to-create. Tab moves into the body; the first typed shortcut character is preserved in the title with a single create operation. The local and web browser flows and TypeScript passed. Full reference parity across all requested surfaces remains open; no app release was run.
 
 Gallery single-image creation now opens directly in the image detail view instead of the generic TextPack editor. Picker, drag/drop, and paste share this path; the user can edit title, source, caption, and tags beside the image, then return to the grid or enter the full editor. Command K now layers above the image viewer and Escape dismisses only the palette. TypeScript and the local/web browser flows passed; `/tmp/texttext-gallery-import-detail-light-reference.png` and `/tmp/texttext-gallery-import-detail-dark-reference.png` show the new creation result. This is closer to Resurf's image-first library; full reference parity remains open. No app release was run.
