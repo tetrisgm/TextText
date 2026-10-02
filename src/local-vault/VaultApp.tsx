@@ -722,16 +722,22 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     try {
       await operate(async () => {
         let completed = 0;
+        let imported: VaultFile | null = null;
+        const folder = destinationFolder.trim() || "Gallery";
         try {
           for (const file of files) {
             setImportStatus(`Importing image ${completed + 1} of ${files.length}…`);
             if (file.size > MAX_IMAGE_BYTES) throw new Error(`${file.name}: choose an image no larger than 20 MiB.`);
             const pack = await prepareImagePack(new Uint8Array(await file.arrayBuffer()), file.name);
-            await vaultRequest<VaultFile>("importPack", { title: pack.title, data: encodeBase64(pack.bytes), folder: destinationFolder.trim() || "Gallery" });
+            imported = await vaultRequest<VaultFile>("importPack", { title: pack.title, data: encodeBase64(pack.bytes), folder });
             completed++;
           }
           closeRemoved();
-          setImportStatus(`Imported ${completed} ${completed === 1 ? "image" : "images"}.`);
+          if (completed === 1 && folder === "Gallery" && imported) {
+            setSelected(imported);
+            setDestinationFolder(folder);
+            setImportStatus("");
+          } else setImportStatus(`Imported ${completed} ${completed === 1 ? "image" : "images"}.`);
         } catch (error) {
           setImportStatus(completed ? `Imported ${completed} of ${files.length} images. Earlier imports are saved.` : "");
           throw error;

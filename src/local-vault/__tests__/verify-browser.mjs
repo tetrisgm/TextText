@@ -659,10 +659,12 @@ try {
       const event = gesture === "drop" ? new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }) : new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer });
       document.querySelector(".vault-app").dispatchEvent(event);
     }, { gesture, data: gif.toString("base64") });
-    await page.getByRole("button", { name: new RegExp(`${gesture}-`) }).first().waitFor();
+    await page.getByRole("textbox", { name: "Image title" }).waitFor();
+    assert.equal(await page.getByRole("textbox", { name: "Image title" }).inputValue(), gesture);
     await page.keyboard.press("Meta+k");
     await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "Add images", exact: true }).waitFor();
     await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "TextText", exact: true }).click();
   }
   assert.equal(importedPacks.length, 3);
   assert.deepEqual(failures, []);
@@ -1083,9 +1085,13 @@ try {
   assert.equal(await page.locator(".vault-gallery-view").count(), 0);
   await chooseFolder("Gallery");
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Measured.png", mimeType: "image/png", buffer: Buffer.from(portrait, "base64") });
-  await page.getByRole("button", { name: "Open Measured" }).waitFor();
+  await page.getByRole("textbox", { name: "Image title" }).waitFor();
+  assert.equal(await page.getByRole("textbox", { name: "Image title" }).inputValue(), "Measured");
+  await page.getByRole("textbox", { name: "Image caption" }).fill("A measured portrait.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   const measured = [...files.values()].find(file => file.path.startsWith("Gallery/Measured-"));
   assert.deepEqual(JSON.parse(measured.documentJSON).content.assets.map(asset => [asset.width, asset.height]), [[120, 240]]);
+  assert.equal(JSON.parse(measured.documentJSON).content.body, "A measured portrait.");
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
   assert.equal(await page.getByRole("status").filter({ hasText: "Imported 1 image." }).count(), 0);
