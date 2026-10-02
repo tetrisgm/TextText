@@ -226,10 +226,11 @@
 .vault-app .vault-feed-recommendations { padding:26px 0; }
 .vault-app .vault-feed-recommendations h2 { margin:0 0 5px; color:var(--ink); font-size:26px; }
 .vault-app .vault-feed-recommendations>p { margin:0 0 19px; color:var(--muted); font-size:13px; line-height:1.5; }
-.vault-app .vault-feed-interests { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-.vault-app .vault-feed-interests button { display:flex; flex-direction:column; align-items:flex-start; gap:8px; min-height:90px; padding:15px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+.vault-app .vault-feed-interests { display:flex; flex-wrap:wrap; gap:9px; }
+.vault-app .vault-feed-interests button { display:inline-flex; align-items:center; min-height:42px; padding:9px 15px; border:1px solid var(--line); border-radius:22px; background:var(--surface); }
 .vault-app .vault-feed-interests button[aria-pressed=true] { border-color:var(--tt-accent); background:var(--selection); }
-.vault-app .vault-feed-interests strong { font-size:16px; }
+.vault-app .vault-feed-interests strong { font-size:14px; }
+.vault-app .vault-feed-interest-count { margin:16px 0 0; color:var(--muted); font-size:12px; }
 .vault-app .vault-feed-interests small { color:var(--muted); font-size:12px; line-height:1.4; }
 .vault-app .vault-feed-continue { display:block; min-width:180px; margin:22px 0 0 auto; padding:10px 16px; border-radius:7px; background:var(--tt-accent); color:#fff; text-align:center; font-weight:650; }
 .vault-app .vault-feed-continue:hover { background:var(--tt-accent); filter:brightness(.94); }

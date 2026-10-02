@@ -17,22 +17,22 @@ type KeptEntry = { hash: string; path: string; title: string; source: string; ke
 type KeptResponse = { hashes: string[]; entries: KeptEntry[] };
 const storyTemplate = BUILTIN_TEMPLATES.find(template => template.id === "texttext.article");
 const RECOMMENDED = [
-  { title: "The Verge", topic: "Technology", feedURL: "https://www.theverge.com/rss/index.xml", siteUrl: "https://www.theverge.com" },
-  { title: "Ars Technica", topic: "Technology", feedURL: "https://feeds.arstechnica.com/arstechnica/index", siteUrl: "https://arstechnica.com" },
-  { title: "Wired", topic: "Technology", feedURL: "https://www.wired.com/feed/rss", siteUrl: "https://www.wired.com" },
-  { title: "TechCrunch", topic: "Technology", feedURL: "https://techcrunch.com/feed/", siteUrl: "https://techcrunch.com" },
-  { title: "MIT Technology Review", topic: "Technology", feedURL: "https://www.technologyreview.com/feed/", siteUrl: "https://www.technologyreview.com" },
-  { title: "Hacker News: Front Page", topic: "Technology", feedURL: "https://hnrss.org/frontpage", siteUrl: "https://news.ycombinator.com" },
+  { title: "The Verge", topic: "Tech", feedURL: "https://www.theverge.com/rss/index.xml", siteUrl: "https://www.theverge.com" },
+  { title: "Ars Technica", topic: "Tech", feedURL: "https://feeds.arstechnica.com/arstechnica/index", siteUrl: "https://arstechnica.com" },
+  { title: "Wired", topic: "AI", feedURL: "https://www.wired.com/feed/rss", siteUrl: "https://www.wired.com" },
+  { title: "TechCrunch", topic: "Startups", feedURL: "https://techcrunch.com/feed/", siteUrl: "https://techcrunch.com" },
+  { title: "MIT Technology Review", topic: "AI", feedURL: "https://www.technologyreview.com/feed/", siteUrl: "https://www.technologyreview.com" },
+  { title: "Hacker News: Front Page", topic: "Programming", feedURL: "https://hnrss.org/frontpage", siteUrl: "https://news.ycombinator.com" },
   { title: "Quanta Magazine", topic: "Science", feedURL: "https://www.quantamagazine.org/feed/", siteUrl: "https://www.quantamagazine.org" },
   { title: "Nature News", topic: "Science", feedURL: "https://www.nature.com/nature.rss", siteUrl: "https://www.nature.com" },
-  { title: "NASA", topic: "Science", feedURL: "https://www.nasa.gov/news-release/feed/", siteUrl: "https://www.nasa.gov" },
+  { title: "NASA", topic: "Space", feedURL: "https://www.nasa.gov/news-release/feed/", siteUrl: "https://www.nasa.gov" },
   { title: "Dezeen", topic: "Design", feedURL: "https://www.dezeen.com/feed/", siteUrl: "https://www.dezeen.com" },
-  { title: "ArchDaily", topic: "Design", feedURL: "https://www.archdaily.com/feed", siteUrl: "https://www.archdaily.com" },
+  { title: "ArchDaily", topic: "Architecture", feedURL: "https://www.archdaily.com/feed", siteUrl: "https://www.archdaily.com" },
   { title: "BBC News: World", topic: "World", feedURL: "https://feeds.bbci.co.uk/news/world/rss.xml", siteUrl: "https://www.bbc.com/news/world" },
   { title: "The Guardian: World", topic: "World", feedURL: "https://www.theguardian.com/world/rss", siteUrl: "https://www.theguardian.com/world" },
   { title: "NPR: News", topic: "World", feedURL: "https://feeds.npr.org/1001/rss.xml", siteUrl: "https://www.npr.org" },
-  { title: "Polygon", topic: "Games", feedURL: "https://www.polygon.com/rss/index.xml", siteUrl: "https://www.polygon.com" },
-  { title: "Rock Paper Shotgun", topic: "Games", feedURL: "https://www.rockpapershotgun.com/feed", siteUrl: "https://www.rockpapershotgun.com" },
+  { title: "Polygon", topic: "Gaming", feedURL: "https://www.polygon.com/rss/index.xml", siteUrl: "https://www.polygon.com" },
+  { title: "Rock Paper Shotgun", topic: "Gaming", feedURL: "https://www.rockpapershotgun.com/feed", siteUrl: "https://www.rockpapershotgun.com" },
 ] as const;
 const INTERESTS = [...new Set(RECOMMENDED.map(source => source.topic))];
 
@@ -192,7 +192,8 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       const next = new Set(current);
       if (next.has(topic)) next.delete(topic); else next.add(topic);
       return next;
-    })}><strong>{topic}</strong><small>{RECOMMENDED.filter(source => source.topic === topic).slice(0, 3).map(source => source.title).join(" · ")}</small></button>)}</div>
+    })}><strong>{topic}</strong></button>)}</div>
+    <p className="vault-feed-interest-count" role="status">{interests.size} {interests.size === 1 ? "topic" : "topics"} selected</p>
     <button type="button" className="vault-feed-continue" disabled={!canAdd || !interests.size || Boolean(following)} onClick={() => void followInterests()}>{following ? "Adding sources…" : `Continue with ${interests.size} ${interests.size === 1 ? "topic" : "topics"}`}</button>
     {followError && <p role="alert">{followError}</p>}
   </div>;
