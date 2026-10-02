@@ -80,9 +80,12 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
         }
       }
       if (!active) return;
-      for (const { feedURL, source, topic } of sourceRows.slice(0, sourceLimit)) next.push(...cachedSources.current.get(JSON.stringify([feedURL, source, topic])) || []);
+      const batches = sourceRows.slice(0, sourceLimit).map(({ feedURL, source, topic }) => cachedSources.current.get(JSON.stringify([feedURL, source, topic])) || []);
+      for (let index = 0; index < 12 && next.length < 240; index++) {
+        for (const batch of batches) if (batch[index] && next.length < 240) next.push(batch[index]);
+      }
       next.sort((a, b) => Date.parse(b.publishedAt || "") - Date.parse(a.publishedAt || ""));
-      setStories(next.slice(0, 60)); setError(failures[0] || ""); setLoading(false);
+      setStories(next); setError(failures[0] || ""); setLoading(false);
     });
     return () => { active = false; controller.abort(); };
   }, [feedKey, ready, hasFeeds, sourceRows, sourceLimit]);
@@ -137,6 +140,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     document.content.fields = activeFull.entry.permalink ? { sourceUrl: activeFull.entry.permalink } : {};
     return document;
   })() : null;
+  if (!ready) return <section className="vault-feed-home" aria-label="Latest stories"><p role="status">Reading feed subscriptions…</p></section>;
   if (active) return <section className="vault-feed-reader" aria-label="Feed story">
     <header><button type="button" onClick={() => setActive(null)}>‹ Back to {activeGroup ? "coverage" : "Feeds"}</button><span>{active.source}</span></header>
     {storyError && <p role="alert">{storyError}</p>}
@@ -157,7 +161,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   </section>;
   return <section className="vault-feed-home" aria-label="Latest stories">
     <nav aria-label="Feed sections"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button><button aria-pressed={tab === "Latest"} onClick={() => setTab("Latest")}>Latest</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
-    {sourceRows.length > 8 && tab !== "Sources" && <div className="vault-feed-source-window"><span>Reading {Math.min(sourceLimit, sourceRows.length)} of {sourceRows.length} sources on this page</span>{sourceLimit < sourceRows.length && <button type="button" disabled={loading} onClick={() => setSourceLimit(limit => limit + 8)}>Load more sources</button>}</div>}
+    {sourceRows.length > 8 && tab !== "Sources" && <div className="vault-feed-source-window"><span>Reading {Math.min(sourceLimit, sourceRows.length)} of {sourceRows.length} sources</span>{sourceLimit < sourceRows.length && <button type="button" disabled={loading} onClick={() => setSourceLimit(limit => limit + 8)}>Load more sources</button>}</div>}
     {tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !coverage.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{coverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
       {loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}
       {!loading && !rankedCoverage.length && (ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}

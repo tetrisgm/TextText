@@ -557,6 +557,7 @@ try {
   await page.screenshot({ path: "/tmp/texttext-vault-capture-dark.png" });
   await page.getByRole("button", { name: "Save to folder", exact: true }).click();
   await page.getByRole("dialog", { name: "Save a link or note" }).waitFor({ state: "hidden" });
+  await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Edit" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-after-capture-reference.png" });
   await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Edit" }).click();
   await page.getByText("Article captured. Your original link is retained.", { exact: true }).waitFor();
@@ -837,7 +838,7 @@ try {
   ]), assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
   files.set("Feeds/Design.textpack", sample("Feeds/Design.textpack", "bookmark", "Design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.com/feed.xml" }));
   files.set("Feeds/Design second.textpack", sample("Feeds/Design second.textpack", "bookmark", "Second design feed", "", { texttextFeedSubscription: "v1", feedUrl: "https://example.org/feed.xml" }));
-  for (let index = 1; index <= 7; index++) files.set(`Feeds/Extra ${index}.textpack`, sample(`Feeds/Extra ${index}.textpack`, "bookmark", `Extra feed ${index}`, "", { texttextFeedSubscription: "v1", feedUrl: `https://example.net/feed-${index}.xml` }));
+  for (let index = 1; index <= 23; index++) files.set(`Feeds/Extra ${index}.textpack`, sample(`Feeds/Extra ${index}.textpack`, "bookmark", `Extra feed ${index}`, "", { texttextFeedSubscription: "v1", feedUrl: `https://example.net/feed-${index}.xml` }));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
   await page.getByRole("button", { name: "Show folders" }).click();
@@ -1019,7 +1020,7 @@ try {
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
   await page.locator(".vault-feed-thumb").first().waitFor();
   await page.locator(".vault-feed-lead").first().waitFor();
-  await page.getByText("Reading 8 of 9 sources on this page").waitFor();
+  await page.getByText("Reading 8 of 25 sources").waitFor();
   assert.equal(feedReadURLs.length, 8);
   await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
   await page.getByRole("button", { name: "Headlines", exact: true }).click();
@@ -1041,9 +1042,19 @@ try {
   assert.equal(JSON.parse(keptFeedBookmark.documentJSON).presentation.template.id, "texttext.bookmark");
   await page.getByRole("button", { name: "Back to Feeds" }).click();
   await page.getByRole("button", { name: "Load more sources" }).click();
-  await page.getByText("Reading 9 of 9 sources on this page").waitFor();
+  await page.getByText("Reading 16 of 25 sources").waitFor();
+  await page.getByRole("button", { name: "Load more sources" }).click();
+  await page.getByText("Reading 24 of 25 sources").waitFor();
+  await page.getByRole("button", { name: "Load more sources" }).click();
+  await page.getByText("Reading 25 of 25 sources").waitFor();
+  await page.getByRole("button", { name: "For You", exact: true }).click();
+  await page.getByText("25 articles covering this story").first().waitFor();
   await page.waitForFunction(() => document.querySelector('.vault-feed-source-window button') === null);
-  assert.equal(feedReadURLs.length, 9);
+  assert.equal(feedReadURLs.length, 25);
+  assert.equal(new Set(feedReadURLs).size, 25);
+  await page.getByRole("button", { name: "Sources", exact: true }).click();
+  await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Open Extra feed 23" }).waitFor();
   await chooseFolder("Notes");
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
