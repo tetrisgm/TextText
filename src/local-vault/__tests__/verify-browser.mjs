@@ -39,7 +39,7 @@ try {
   await page.exposeBinding("nativeVaultRequest", async ({ page }, request) => {
     let result, error, confirmsDelayedRemoval = false;
     if (request.method === "list" || request.method === "open") {
-      result = { root: "/test/Workspace", folders: ["Empty"], items: [...files.values()].map((file) => ({ path: file.path })) };
+      result = { root: "/test/Workspace", folders: ["Empty", "Feeds"], items: [...files.values()].map((file) => ({ path: file.path })) };
       if (request.method === "list" && delayedRemoval?.confirming) {
         delayedRemoval.confirming = false;
         confirmsDelayedRemoval = true;
@@ -200,10 +200,15 @@ try {
   await page.locator(".vault-search-trigger kbd").waitFor({ state: "visible" });
   await searchTrigger.click();
   await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor();
+  assert.equal(await page.getByRole("option", { name: "New note", exact: true }).locator("kbd").textContent(), "N");
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
   await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowDown");
   assert.equal(await page.getByRole("combobox", { name: "Search workspace" }).getAttribute("aria-activedescendant"), "action:capture");
   await page.locator(".vault-search-backdrop").click({ position: { x: 4, y: 4 } });
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
+  await page.keyboard.press("/");
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
   await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
   await page.screenshot({ path: "/tmp/texttext-starter-overview-light.png" });
   await page.emulateMedia({ colorScheme: "dark" });
@@ -218,7 +223,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace" } })));
   await page.keyboard.press("Meta+k");
   const connectedCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
-  await connectedCommands.getByRole("option", { name: "Subscribe to a feed", exact: true }).waitFor();
+  await connectedCommands.getByRole("option", { name: "Add source", exact: true }).waitFor();
   await connectedCommands.getByRole("option", { name: "Trash and recovery", exact: true }).waitFor();
   await connectedCommands.getByRole("combobox", { name: "Search workspace" }).fill("Offline note");
   await connectedCommands.getByRole("option", { name: /Notes\/Offline.textpack/ }).click();
@@ -487,7 +492,7 @@ try {
   await commandDialog.getByRole("option", { name: "New note", exact: true }).waitFor();
   await commandDialog.getByRole("option", { name: "Capture", exact: true }).waitFor();
   await commandDialog.getByRole("option", { name: "New from template", exact: true }).waitFor();
-  await commandDialog.getByRole("option", { name: "Import images", exact: true }).waitFor();
+  await commandDialog.getByRole("option", { name: "Add images", exact: true }).waitFor();
   await commandDialog.getByRole("option", { name: "Import file", exact: true }).waitFor();
   await commandDialog.getByRole("option", { name: "Choose folder design", exact: true }).waitFor();
   await commandDialog.getByRole("option", { name: "Trash and recovery", exact: true }).waitFor();
@@ -607,7 +612,7 @@ try {
     }, { gesture, data: gif.toString("base64") });
     await page.getByRole("button", { name: new RegExp(`${gesture}-`) }).first().waitFor();
     await page.keyboard.press("Meta+k");
-    await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "Import images", exact: true }).waitFor();
+    await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "Add images", exact: true }).waitFor();
     await page.keyboard.press("Escape");
   }
   assert.equal(importedPacks.length, 3);
@@ -780,10 +785,20 @@ try {
   await chooseFolder("Bookmarks");
   await page.getByRole("button", { name: "Save bookmark", exact: true }).waitFor();
   await page.getByRole("option", { name: /A saved article/ }).click();
-  await page.getByRole("article", { name: "Bookmark reader" }).getByText("The complete saved reading text.").waitFor();
+  const bookmarkReader = page.getByRole("article", { name: "Bookmark reader" });
+  await bookmarkReader.getByText("The complete saved reading text.").waitFor();
+  await bookmarkReader.getByRole("button", { name: /Favorite/ }).click();
+  await bookmarkReader.getByRole("button", { name: "Mark read" }).click();
+  await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("Read"));
+  const savedBookmark = JSON.parse(files.get("Bookmarks/Reading.textpack").documentJSON);
+  assert.equal(savedBookmark.content.fields.texttextBookmarkFavorite, true);
+  assert.equal(typeof savedBookmark.content.fields.texttextBookmarkReadAt, "string");
   await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
   await page.getByRole("button", { name: "Save bookmark", exact: true }).click();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("textbox", { name: "Web address" }).waitFor();
+  await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
+  await page.keyboard.press("b");
+  await page.getByRole("dialog", { name: "Save bookmark" }).waitFor();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
@@ -794,6 +809,8 @@ try {
   const newStory = [...files.values()].at(-1);
   assert.equal(JSON.parse(newStory.documentJSON).presentation.template.id, "texttext.article");
   assert.match(newStory.markdown, /kind: "article"/);
+  await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
+  assert.equal(await page.locator(".vault-context-actions > .vault-primary-action").isDisabled(), true);
   await page.keyboard.press("Tab");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   const storyBody = page.getByRole("textbox", { name: "Document body" });
@@ -804,6 +821,10 @@ try {
   await page.keyboard.up("Shift");
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Bold" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("**text**"));
+  await storyBody.click();
+  await page.getByRole("button", { name: "Add image to story" }).waitFor();
+  await page.getByLabel("Choose story images").setInputFiles({ name: "story.png", mimeType: "image/png", buffer: Buffer.from(pixel, "base64") });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/story.png"));
   await chooseFolder("Gallery");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
   await page.locator(".vault-photo-grid img").first().waitFor();
@@ -830,6 +851,25 @@ try {
   await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
   const newCard = [...files.values()].at(-1);
   assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
+  await chooseFolder("Notes");
+  await page.getByRole("button", { name: "New note", exact: true }).waitFor();
+  await page.keyboard.press("n");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
+  const shortcutNote = [...files.values()].at(-1);
+  assert.ok(shortcutNote.path.startsWith("Notes/"));
+  assert.equal(JSON.parse(shortcutNote.documentJSON).presentation.template.id, "texttext.note");
+  files.delete("Feeds/Design.textpack");
+  await page.reload();
+  await chooseFolder("Feeds");
+  await page.getByRole("heading", { name: "Choose your sources" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feeds-starter-reference.png" });
+  await page.locator(".vault-feed-recommendations").getByRole("button", { name: "Follow" }).first().click();
+  await page.getByRole("link", { name: "A considered design headline" }).waitFor();
+  await page.getByRole("button", { name: "Technology", exact: true }).click();
+  await page.getByRole("link", { name: "A considered design headline" }).waitFor();
+  const followed = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://www.theverge.com/rss/index.xml");
+  assert.ok(followed?.path.startsWith("Feeds/"));
+  assert.deepEqual(JSON.parse(followed.documentJSON).content.tags, ["Technology"]);
   assert.deepEqual(failures, []);
   console.log("Bookmark reader, URL-first capture, story list, gallery viewer, and feed headlines passed.");
   console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");

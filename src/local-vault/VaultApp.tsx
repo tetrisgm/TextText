@@ -819,49 +819,88 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     window.addEventListener("texttext:vault-new", newFile);
     return () => { window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
   });
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        if (document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
-        event.preventDefault(); openSearch();
-      }
-    };
-    window.addEventListener("keydown", key);
-    window.addEventListener("texttext:vault-search", openSearch);
-    return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", openSearch); };
-  }, [openSearch]);
   const commandActions: VaultSearchAction[] = [];
   const commandFolder = destinationFolder.trim();
   const commandLocation = commandFolder || "the workspace root";
-  if (canCreate) commandActions.push(
-    { id: "new-note", label: "New note", description: `Create a note in ${commandLocation}.` },
-    { id: "capture", label: "Capture", description: `Save a link or note in ${commandLocation}.`, keywords: ["save", "link", "note", "bookmark"] },
-    { id: "new-from-template", label: "New from template", description: `Create from a saved template in ${commandLocation}.`, keywords: ["starter", "look"] },
-    { id: "import-images", label: "Import images", description: `Add images to ${commandLocation}.`, keywords: ["visual", "gallery", "photo", "gif"] },
-  );
-  if (canSubscribeFeed) commandActions.push({ id: "subscribe-feed", label: "Subscribe to a feed", description: `Follow a site or feed in ${commandLocation}.`, keywords: ["rss", "atom", "news"] });
-  if (allowFolderPicker && listing?.root) commandActions.push({ id: "import-file", label: "Import file", description: `Add a file to ${commandLocation}.`, keywords: ["textpack", "document"] });
-  if (!selected && canCreate) commandActions.push({ id: "folder-design", label: "Choose folder design", description: `Change how ${commandLocation} is presented.`, keywords: ["view", "layout", "gallery", "table"] });
+  if (canCreate) {
+    commandActions.push({ id: "new-note", label: "New note", description: "Write a card in Notes.", shortcut: "N" });
+    if (commandFolder === "Blog") commandActions.push({ id: "write-story", label: "Write a story", description: "Start a draft in Blog.", shortcut: "C", keywords: ["blog", "article", "medium"] });
+    if (commandFolder === "Bookmarks") commandActions.push({ id: "save-bookmark", label: "Save bookmark", description: "Capture a link in Bookmarks.", shortcut: "B", keywords: ["shiori", "read later"] });
+    else commandActions.push({ id: "capture", label: "Capture", description: "Save a link or note.", shortcut: "L", keywords: ["save", "link", "bookmark"] });
+    commandActions.push(
+      { id: "new-from-template", label: "New from template", description: `Create from a saved template in ${commandLocation}.`, shortcut: "T", keywords: ["starter", "look"] },
+      { id: "import-images", label: "Add images", description: "Collect images in Gallery.", shortcut: "I", keywords: ["visual", "gallery", "photo", "gif"] },
+    );
+  }
+  if (canSubscribeFeed) commandActions.push({ id: "subscribe-feed", label: "Add source", description: "Follow a site in Feeds.", shortcut: "F", keywords: ["rss", "atom", "news", "feed"] });
+  if (allowFolderPicker && listing?.root) commandActions.push({ id: "import-file", label: "Import file", description: `Add a file to ${commandLocation}.`, shortcut: "P", keywords: ["textpack", "document"] });
+  if (!selected && canCreate) commandActions.push({ id: "folder-design", label: "Choose folder design", description: `Change how ${commandLocation} is presented.`, shortcut: "V", keywords: ["view", "layout", "gallery", "table"] });
   if (allowFolderPicker && listing?.root) commandActions.push({
     id: "customize",
     label: selected ? "Customize this item" : "Customize this folder",
     description: selected ? "Change how the open item looks." : `Change how ${commandLocation} looks.`,
+    shortcut: "U",
     keywords: ["design", "look", "template"],
   });
   if (allowFolderPicker && selected?.path) commandActions.push({
     id: "add-agent",
     label: "Add agent to this item",
     description: "Give Codex a task for the open item.",
+    shortcut: "A",
     keywords: ["assistant", "collaborate", "edit"],
   });
-  if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", keywords: ["restore", "history", "deleted"] });
-  if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", keywords: ["workspace", "switch"] });
+  if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
+  if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
+  const runCommandAction = (id: string) => {
+    if (id === "new-note") return createForFolder("Notes", "Note");
+    if (id === "write-story") return createForFolder("Blog", "Blog post");
+    if (id === "save-bookmark" || id === "capture") { openCapture(); return; }
+    if (id === "new-from-template") { openTemplateLibrary(); return; }
+    if (id === "subscribe-feed") { setDestinationFolder("Feeds"); openFeedSubscribe(searchButton.current); return; }
+    if (id === "import-images") { setDestinationFolder("Gallery"); imageInput.current?.click(); return; }
+    if (id === "import-file") { importFile(); return; }
+    if (id === "folder-design") { openFolderDesign(); return; }
+    if (id === "customize") return customizeCurrent();
+    if (id === "add-agent") { beginAddAgent(); return; }
+    if (id === "trash-recovery") { openRecovery(); return; }
+    if (id === "open-folder") { openWorkspaceFolder(); return; }
+  };
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.repeat) return;
+      const dialogOpen = Boolean(document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]'));
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        if (!dialogOpen) { event.preventDefault(); openSearch(); }
+        return;
+      }
+      if (dialogOpen || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || busy) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return;
+      if (event.key === "/") { event.preventDefault(); openSearch(); return; }
+      const action = commandActions.find(item => item.shortcut?.toLowerCase() === event.key.toLowerCase());
+      if (action) { event.preventDefault(); void runCommandAction(action.id); }
+    };
+    window.addEventListener("keydown", key);
+    window.addEventListener("texttext:vault-search", openSearch);
+    return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", openSearch); };
+  });
   const contextTitle = selected
     ? selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled"
     : destinationFolder.trim() || (access && !access.fullAccess ? "Shared files" : "All files");
   const contextParent = selected
     ? folderForItem(selected.path) || "All files"
     : listing?.name || listing?.root.split("/").filter(Boolean).at(-1) || "TextText";
+  const selectedStory = (() => {
+    if (!selected || folderForItem(selected.path) !== "Blog") return false;
+    try { return readDocument(selected).presentation.template.id === "texttext.article"; }
+    catch { return false; }
+  })();
+  const openPublish = () => {
+    if (!selected || !sharingWorkspaceId || !selectedItemId || !canPublish) return;
+    let label = selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file";
+    try { label = readDocument(selected).content.title || label; } catch { /* The file label remains usable. */ }
+    setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label });
+  };
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
     onDrop={(event) => { if (!selected && event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } }}
@@ -900,7 +939,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           <div><p>{contextParent}</p><h2 title={selected?.path || destinationFolder.trim() || contextTitle}>{contextTitle}</h2></div>
         </div>
         <div className="vault-context-actions">
-          {canCreate && <button className="vault-primary-action" disabled={busy} onClick={primaryAction}>{primaryLabel}</button>}
+          {selectedStory ? <button className="vault-primary-action" disabled={busy || !canPublish} title={canPublish ? "Review public access for this story" : "Connect your workspace to publish this story"} onClick={openPublish}>Publish</button>
+            : canCreate && <button className="vault-primary-action" disabled={busy} onClick={primaryAction}>{primaryLabel}</button>}
           {selected && <div className="vault-editor-actions workspace-action-bar-host">
             <div className="workspace-action-bar-slot is-right" />
           </div>}
@@ -917,7 +957,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             <summary ref={moreActionsSummary} aria-label="More actions">More</summary>
             <div className="vault-context-menu-items">
               {selected ? <>
-                {canPublish && sharingWorkspaceId && selectedItemId && <button disabled={busy} onClick={() => { closeMoreActions(); setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label: selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file" }); }}>Publish</button>}
+                {canPublish && sharingWorkspaceId && selectedItemId && !selectedStory && <button disabled={busy} onClick={() => { closeMoreActions(); openPublish(); }}>Publish</button>}
+                {selectedStory && canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); void createForFolder("Blog", "Blog post"); }}>Write another story</button>}
                 {canManageFiles && <button disabled={busy} onClick={() => { closeMoreActions(); setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
                 {canManageFiles && <button disabled={busy} onClick={() => { closeMoreActions(); setFileAction("delete"); }}>Delete</button>}
                 {allowFolderPicker && <button disabled={busy} onClick={() => { closeMoreActions(); beginCustomize(selected.path); }}>Customize</button>}
@@ -995,19 +1036,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {feedSubscribeOpen && <FeedSubscribeDialog folder={destinationFolder.trim()} folders={folders} onClose={closeFeedSubscribe} onSaved={file => {
         closeRemoved(); setSelected(file); setDestinationFolder(folderForItem(file.path)); refresh();
       }} />}
-      {searchOpen && <VaultSearch actions={commandActions} namesOnly={!allowFolderPicker} onClose={closeSearch} onAction={(action) => {
-        if (action.id === "new-note") return createNote(null);
-        if (action.id === "capture") { openCapture(); return; }
-        if (action.id === "new-from-template") { openTemplateLibrary(); return; }
-        if (action.id === "subscribe-feed") { openFeedSubscribe(searchButton.current); return; }
-        if (action.id === "import-images") { imageInput.current?.click(); return; }
-        if (action.id === "import-file") { importFile(); return; }
-        if (action.id === "folder-design") { openFolderDesign(); return; }
-        if (action.id === "customize") return customizeCurrent();
-        if (action.id === "add-agent") { beginAddAgent(); return; }
-        if (action.id === "trash-recovery") { openRecovery(); return; }
-        if (action.id === "open-folder") { openWorkspaceFolder(); return; }
-      }} onOpen={async (path) => {
+      {searchOpen && <VaultSearch actions={commandActions} namesOnly={!allowFolderPicker} onClose={closeSearch} onAction={(action) => runCommandAction(action.id)} onOpen={async (path) => {
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
       }} />}
@@ -1017,7 +1046,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (templateId === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setTemplatePicker(false); setCaptureOpen(true); return; }
         if (templateId === "texttext.gallery") { setDestinationFolder("Gallery"); setTemplatePicker(false); requestAnimationFrame(() => imageInput.current?.click()); return; }
         const defaultFolder: Record<string, string> = { "texttext.article": "Blog", "texttext.note": "Notes", "texttext.bookmark": "Bookmarks", "texttext.gallery": "Gallery", "texttext.talk": "Presentations" };
-        const folder = destinationFolder.trim() || defaultFolder[templateId] || "Notes";
+        const folder = defaultFolder[templateId] || destinationFolder.trim() || "Notes";
         const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, sourcePath: path, sourceHash: source.hash });
         const example = readDocument(cloned);
         const selectedTemplate = source.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : readTemplate(source, readDocument(source));

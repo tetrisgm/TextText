@@ -19,6 +19,7 @@ export type FeedSubscription = {
   description: string | null;
   siteUrl: string | null;
   format: NormalizedFeed["format"] | null;
+  topic?: string | null;
 };
 
 export function publicFeedURL(value: string): string {
@@ -64,6 +65,7 @@ export function createFeedSubscriptionPack(input: FeedSubscription): { title: st
   const document = emptyDocumentSnapshot({ id: selected.id, version: selected.version });
   document.content.title = title;
   document.content.body = input.description?.trim().slice(0, 2000) ?? "";
+  document.content.tags = input.topic?.trim() ? [input.topic.trim().slice(0, 40)] : [];
   document.content.fields = {
     [FEED_SUBSCRIPTION_FIELD]: MARKER_VERSION,
     feedUrl: feedURL,
@@ -93,6 +95,7 @@ export function readFeedSubscription(file: Pick<VaultFile, "documentJSON">): Fee
     description: document.content.body || null,
     siteUrl: typeof fields.feedSiteUrl === "string" ? optionalPublicURL(fields.feedSiteUrl) : null,
     format: format === "rss" || format === "atom" || format === "jsonfeed" ? format : null,
+    topic: document.content.tags[0] ?? null,
   };
 }
 

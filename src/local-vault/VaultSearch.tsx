@@ -4,7 +4,7 @@ import { useEscapeLayer } from "./LocalKeyboard";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 
 type SearchPage = { items: { path: string; title: string; snippet: string }[]; truncated?: boolean; skippedCount?: number };
-export type VaultSearchAction = { id: string; label: string; description: string; keywords?: readonly string[] };
+export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[] };
 
 export function filterVaultSearchActions(actions: readonly VaultSearchAction[], query: string): VaultSearchAction[] {
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -73,7 +73,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     {namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
     <div id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3>Actions</h3><div>{visibleActions.map((action, index) => <button
       id={`action:${action.id}`} key={action.id} role="option" aria-selected={selectedIndex === index} aria-label={action.label} disabled={acting} onMouseEnter={() => setActiveIndex(index)} onClick={() => runAction(action)}>
-      <strong>{action.label}</strong><span>{action.description}</span><kbd>↵</kbd>
+      <strong>{action.label}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
     </button>)}</div></section>}
     {busy && <p role="status">Searching…</p>}{error && <p role="alert">{error}</p>}
     {!busy && query.trim() && !result.items.length && !visibleActions.length && !error && <p>No matching files or actions.</p>}

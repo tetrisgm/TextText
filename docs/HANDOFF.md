@@ -2,17 +2,17 @@
 
 ## Current work
 
-The October 2 work is the folder-based template redesign, committed through `6744427b`. A follow-up adds feed image previews and Artifact-style rows, Medium-like selection formatting and title-to-body keyboard flow, a more compact Supernotes card editor, and image-proportional Gallery rows. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
+The October 2 work is the folder-based template redesign, committed through `0801e0e7`. The current follow-up adds contextual keyboard actions, inline image insertion and Publish entry for Blog, bookmark favorite/read controls, and a curated Feeds source catalogue with TextPack-backed topic tabs. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
 
 Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](HANDOFF-history-2026-09-30.md).
 
 ## Verification
 
-- October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. The follow-up browser check also covers selection formatting, title-to-body Tab, feed images, and multi-image gallery tiles. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
+- October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. The latest local browser check also covers keyboard shortcuts, Blog image insertion, bookmark flags, and following a feed. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
 
 ## Boundaries
 
-- The installed app remains 0.203 build 1151. The rebuilt UI bundle under `mac/build/LocalVault` is test-only and has not been installed or published. Visual parity with the named products has not been established by a side-by-side review on real content. Feeds still lack topic personalization and story grouping; Blog still lacks Medium's image insertion and publishing flow. Artifact's original 28 screenshots described in [the historical plan](plans/artifact-home-replication.md) are not present in this checkout or their former Downloads paths.
+- The installed app remains 0.203 build 1151. The rebuilt UI bundle under `mac/build/LocalVault` is test-only and has not been installed or published. Visual parity with the named products has not been established by a side-by-side review on real content. Feeds still lack ranking and story grouping; Blog publishing still needs a Medium-like preview flow. Artifact's original 28 screenshots described in [the historical plan](plans/artifact-home-replication.md) are not present in this checkout or their former Downloads paths.
 
 ## References
 

@@ -566,6 +566,9 @@ export function UnifiedDocumentEditor({
     ));
   const [document, setDocument] = useState(initialDocument);
   const [articleSelection, setArticleSelection] = useState<{ start: number; end: number; text: string; x: number; y: number } | null>(null);
+  const [articleCaret, setArticleCaret] = useState<{ offset: number; x: number; y: number } | null>(null);
+  const articleImageInput = useRef<HTMLInputElement>(null);
+  const articleBodyOffset = useRef(0);
   useEffect(() => {
     if (!articleSelection) return;
     const dismiss = () => setArticleSelection(null);
@@ -1410,12 +1413,20 @@ export function UnifiedDocumentEditor({
 
   const updateSelection = useCallback(
     (field: EditableField, anchor: number, head: number) => {
-      if (activeTemplate.id === "texttext.article" && field === "body" && anchor >= 0 && head >= 0 && anchor !== head) {
+      if (activeTemplate.id === "texttext.article" && field === "body" && anchor >= 0 && head >= 0) {
+        articleBodyOffset.current = head;
         const selection = window.getSelection();
         const rect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
-        const start = Math.min(anchor, head), end = Math.max(anchor, head);
-        setArticleSelection(rect && rect.width >= 0 ? { start, end, text: currentLocalDocument().content.body.slice(start, end), x: rect.left + rect.width / 2, y: rect.top } : null);
-      } else setArticleSelection(null);
+        if (anchor !== head) {
+          const start = Math.min(anchor, head), end = Math.max(anchor, head);
+          setArticleSelection(rect ? { start, end, text: currentLocalDocument().content.body.slice(start, end), x: rect.left + rect.width / 2, y: rect.top } : null);
+          setArticleCaret(null);
+        } else {
+          setArticleSelection(null);
+          const bodyRect = bodySurfaceRef.current?.getBoundingClientRect();
+          setArticleCaret(rect && bodyRect ? { offset: head, x: bodyRect.left - 34, y: Math.max(bodyRect.top, rect.top) } : null);
+        }
+      } else { setArticleSelection(null); setArticleCaret(null); }
       // The draft store names the subtitle field "excerpt"; same text, two
       // vocabularies.
       const draftField = field === "subtitle" ? "excerpt" : field;
@@ -1958,6 +1969,14 @@ export function UnifiedDocumentEditor({
         slots={slots}
         className="tt-document-editor"
       />
+      {onPasteImages && articleCaret && activeTemplate.id === "texttext.article" && <div className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
+        <button type="button" aria-label="Add image to story" title="Add image" onMouseDown={(event) => event.preventDefault()} onClick={() => articleImageInput.current?.click()}>+</button>
+      </div>}
+      {onPasteImages && activeTemplate.id === "texttext.article" && <input ref={articleImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose story images" onChange={(event) => {
+        const files = Array.from(event.currentTarget.files ?? []);
+        event.currentTarget.value = "";
+        if (files.length) pasteImages(files, { from: articleBodyOffset.current, to: articleBodyOffset.current });
+      }} />}
       {articleSelection && activeTemplate.id === "texttext.article" && <div className="tt-article-format" role="toolbar" aria-label="Format selected story text" style={{ left: Math.max(90, Math.min(typeof window === "undefined" ? articleSelection.x : window.innerWidth - 90, articleSelection.x)), top: Math.max(8, articleSelection.y - 48) }}>
         <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("**")}><strong>B</strong></button>
         <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("*")}><em>I</em></button>
@@ -1998,6 +2017,9 @@ export function UnifiedDocumentEditor({
         .tt-article-format{position:fixed;z-index:80;display:flex;transform:translateX(-50%);gap:2px;padding:5px;border-radius:7px;background:#242424;color:#fff;box-shadow:0 8px 28px #0005;font:500 14px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
         .tt-article-format button{display:grid;place-items:center;min-width:32px;height:30px;padding:0 7px;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}
         .tt-article-format button:hover,.tt-article-format button:focus-visible{background:#ffffff29;outline:0}
+        .tt-article-insert{position:fixed;z-index:70;transform:translateY(-4px)}
+        .tt-article-insert button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 55%,transparent);border-radius:50%;background:var(--paper,#fff);color:var(--ink,#1d1d1f);font:300 23px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-article-insert button:hover,.tt-article-insert button:focus-visible{border-color:var(--tt-accent,#0071e3);color:var(--tt-accent,#0071e3);outline:0}
         @media(max-width:700px){.tt-document-editor{padding-top:3.5rem}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:0.3125rem;padding-inline:0.5rem}}
         .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
         .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}

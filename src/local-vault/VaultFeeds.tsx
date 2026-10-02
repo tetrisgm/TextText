@@ -24,6 +24,7 @@ export function FeedSubscribeDialog({ folder, folders, onClose, onSaved }: {
 }) {
   const [address, setAddress] = useState("");
   const [targetFolder, setTargetFolder] = useState(folder || "Feeds");
+  const [topic, setTopic] = useState("");
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -46,7 +47,7 @@ export function FeedSubscribeDialog({ folder, folders, onClose, onSaved }: {
     setBusy(true); setError("");
     try {
       const pack = createFeedSubscriptionPack({ feedURL: candidate.url, title: candidate.title,
-        description: null, siteUrl: candidate.siteUrl, format: candidate.format });
+        description: null, siteUrl: candidate.siteUrl, format: candidate.format, topic });
       const file = await vaultRequest<VaultFile>("importPack", { title: pack.title, data: encodeBase64(pack.bytes), folder: targetFolder.trim() });
       onSaved(file); onClose();
     } catch (reason) { setError(message(reason)); }
@@ -58,6 +59,8 @@ export function FeedSubscribeDialog({ folder, folders, onClose, onSaved }: {
       <label htmlFor="feed-folder">Folder</label>
       <input className={styles.folderInput} id="feed-folder" list="feed-folders" value={targetFolder} onChange={event => setTargetFolder(event.target.value)} placeholder="Workspace root" maxLength={500} disabled={busy} />
       <datalist id="feed-folders">{folders.map(path => <option key={path} value={path} />)}</datalist>
+      <label htmlFor="feed-topic">Topic</label>
+      <select className={styles.folderInput} id="feed-topic" value={topic} onChange={event => setTopic(event.target.value)} disabled={busy}><option value="">No topic</option>{["Technology", "Science", "Design", "World", "Gaming", "Arts", "Business", "Health"].map(value => <option key={value} value={value}>{value}</option>)}</select>
       <label htmlFor="feed-address">Website or feed address</label>
       <div className={styles.formRow}><input id="feed-address" autoFocus type="text" inputMode="url" value={address} onChange={event => { setAddress(event.target.value); setDiscovery(null); }} placeholder="https://example.com" maxLength={4096} disabled={busy} required />
         <button type="submit" disabled={busy || !address.trim()}>{busy && !discovery ? "Finding…" : "Find feeds"}</button></div>

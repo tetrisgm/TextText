@@ -17,11 +17,12 @@ const entry: NormalizedEntry = {
 describe("file-vault feeds", () => {
   it("creates a marked, self-contained subscription pack without saving feed entries", () => {
     const created = createFeedSubscriptionPack({ feedURL: "https://publisher.example/feed.xml#fragment", title: "Publisher", description: "Daily dispatches",
-      siteUrl: "https://publisher.example/", format: "rss" });
+      siteUrl: "https://publisher.example/", format: "rss", topic: "Design" });
     const pack = openPack(created.bytes, "Reading/Publisher.textpack", "new");
     const subscription = readFeedSubscription(pack.file);
     expect(subscription).toEqual({ feedURL: "https://publisher.example/feed.xml", title: "Publisher",
-      description: "Daily dispatches", siteUrl: "https://publisher.example/", format: "rss" });
+      description: "Daily dispatches", siteUrl: "https://publisher.example/", format: "rss", topic: "Design" });
+    expect(readDocument(pack.file).content.tags).toEqual(["design"]);
     expect(pack.file.templateJSON).toBeTruthy();
     expect(readDocument(pack.file).content.body).toBe("Daily dispatches");
     expect(Object.keys(pack.entries)).not.toContain(pack.prefix + "feed-entry.json");
