@@ -882,8 +882,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const commandLocation = commandFolder || "the workspace root";
   if (canCreate) {
     commandActions.push({ id: "new-note", label: "New note", description: "Write a card in Notes.", shortcut: "N" });
-    commandActions.push({ id: "write-story", label: "Write a story", description: "Start a draft in Blog.", shortcut: "C", keywords: ["blog", "article", "medium"] });
-    commandActions.push({ id: "save-bookmark", label: "Save bookmark", description: "Capture a link in Bookmarks.", shortcut: "B", keywords: ["shiori", "read later"] });
+    commandActions.push({ id: "write-story", label: "Write a story", description: "Start a draft in Blog.", shortcut: "C", keywords: ["medium"], aliases: ["New blog post", "Write article"] });
+    commandActions.push({ id: "save-bookmark", label: "Save bookmark", description: "Capture a link in Bookmarks.", shortcut: "B", keywords: ["shiori"], aliases: ["Read later", "Save link"] });
     commandActions.push({ id: "capture", label: "Capture", description: "Save a link or note.", shortcut: "L", keywords: ["save", "link"] });
     commandActions.push(
       { id: "new-from-template", label: "New from template", description: `Create from a saved template in ${commandLocation}.`, shortcut: "T", keywords: ["starter", "look"] },
@@ -907,10 +907,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     shortcut: "A",
     keywords: ["assistant", "collaborate", "edit"],
   });
-  if (canShare && sharingWorkspaceId && (selected || commandFolder)) commandActions.push({ id: "share-current", label: selected ? "Share this item" : "Share this folder", description: "Manage access to the current location.", keywords: ["collaborate", "invite", "permissions"] });
-  if (canOpenComments) commandActions.push({ id: "show-comments", label: "Show comments", description: "Discuss the open item.", keywords: ["discussion", "replies"] });
-  if (selected && canPublish) commandActions.push({ id: "publish-current", label: "Publish this item", description: "Review public access before publishing.", keywords: ["public", "website"] });
-  if (selected && canOpenRecovery) commandActions.push({ id: "version-history", label: "Version history", description: "Inspect saved versions of this item.", keywords: ["restore", "revisions"] });
+  const contextualActions: VaultSearchAction[] = [];
+  if (canShare && sharingWorkspaceId && (selected || commandFolder)) contextualActions.push({ id: "share-current", label: selected ? "Share this item" : "Share this folder", description: "Manage access to the current location.", keywords: ["collaborate", "invite", "permissions"] });
+  if (canOpenComments) contextualActions.push({ id: "show-comments", label: "Show comments", description: "Discuss the open item.", keywords: ["discussion", "replies"] });
+  if (selected && canPublish) contextualActions.push({ id: "publish-current", label: "Publish this item", description: "Review public access before publishing.", keywords: ["public", "website"] });
+  if (selected && canOpenRecovery) contextualActions.push({ id: "version-history", label: "Version history", description: "Inspect saved versions of this item.", aliases: ["Restore version"], keywords: ["restore", "revisions"] });
+  commandActions.unshift(...contextualActions);
   if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
   for (const folder of folders) commandActions.push({

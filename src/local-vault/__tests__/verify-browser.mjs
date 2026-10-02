@@ -277,6 +277,10 @@ try {
   assert.equal(await page.getByRole("combobox", { name: "Search workspace" }).getAttribute("aria-activedescendant"), "action:write-story");
   await page.getByRole("combobox", { name: "Search workspace" }).fill("save bookmark");
   await page.getByRole("option", { name: "Save bookmark", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("read later");
+  await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("strong em").waitFor();
+  assert.match(await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("strong").innerText(), /Save bookmark \(Read later\)/);
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("save bookmark");
   await page.getByRole("combobox", { name: "Search workspace" }).press("Enter");
   await page.getByRole("dialog", { name: "Save bookmark" }).waitFor();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
@@ -350,6 +354,7 @@ try {
   assert.ok([...files.values()].some((file) => file.path.startsWith("Templates/") && JSON.parse(file.templateJSON).name === "Saved local look"));
   await page.keyboard.press("Meta+k");
   const itemCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
+  assert.match(await itemCommands.getByRole("option").first().getAttribute("id") || "", /^action:(share-current|show-comments|publish-current|version-history)$/);
   await itemCommands.getByRole("option", { name: "Add agent to this item", exact: true }).waitFor();
   await itemCommands.getByRole("option", { name: "Version history", exact: true }).waitFor();
   if (await page.getByRole("button", { name: "Share", exact: true }).count()) await itemCommands.getByRole("option", { name: "Share this item", exact: true }).waitFor();

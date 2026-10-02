@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now ranks the current item or folder actions before generic creation commands and shows a matched everyday alias, such as `Save bookmark (Read later)`. Its icon, shortcut, centered layout, dismissal, and folder/file search behavior remain. Local and web browser flows, focused search tests, and TypeScript passed. This follows Superhuman's published command-palette guidance; a side-by-side visual review in the signed-in product is still needed. No app release was run.
+
 Web vault editing and creation now pass the browser flow again. The browser fixture follows the current Notes navigation and exercises the real vault collaboration codec. A newly created Note exposed an empty-subtitle mismatch between saved snapshots and Yjs projections; `src/lib/vault/collaboration.ts` now compares those equivalent values consistently. `node src/local-vault/__tests__/verify-web-browser.mjs`, 60 targeted collaboration/transport tests, and `npx tsc --noEmit` passed. Reference parity across Bookmarks, Gallery, Feeds, Blog, Notes, and Command K remains open; no app release was run.
 
 Gallery image detail now edits title and source beside the image, in addition to caption and tags. Source changes synchronize the TextPack's legacy `links` projection with `sourceUrl`, so reopening the image shows the new link instead of an older one. The full Gallery editor uses the same source-field update. TypeScript and the local browser flow passed, including reopen; `/tmp/texttext-gallery-inline-inspector-light-reference.png` is the checked light screenshot. No app release was run.

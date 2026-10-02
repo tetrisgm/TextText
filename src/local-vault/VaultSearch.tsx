@@ -4,7 +4,7 @@ import { useEscapeLayer } from "./LocalKeyboard";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 
 type SearchPage = { items: { path: string; title: string; snippet: string }[]; truncated?: boolean; skippedCount?: number };
-export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[]; searchOnly?: boolean };
+export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[]; aliases?: readonly string[]; searchOnly?: boolean };
 
 function oneEditAway(query: string, candidate: string): boolean {
   if (query.length < 4 || Math.abs(query.length - candidate.length) > 1) return false;
@@ -45,11 +45,17 @@ export function filterVaultSearchActions(actions: readonly VaultSearchAction[], 
   if (!words.length) return actions.filter(action => !action.searchOnly);
   return actions.map((action, index) => {
     const score = words.reduce((total, word) => {
-      const best = Math.max(wordScore(word, action.label) * 3, ...((action.keywords ?? []).map(keyword => wordScore(word, keyword) * 2)), wordScore(word, action.description));
+      const best = Math.max(wordScore(word, action.label) * 3, ...([...(action.keywords ?? []), ...(action.aliases ?? [])].map(keyword => wordScore(word, keyword) * 2)), wordScore(word, action.description));
       return total < 0 || best === 0 ? -1 : total + best;
     }, 0);
     return { action, index, score };
   }).filter(entry => entry.score >= 0).sort((left, right) => right.score - left.score || left.index - right.index).map(entry => entry.action);
+}
+
+function matchingAlias(action: VaultSearchAction, query: string): string | null {
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length || words.every(word => wordScore(word, action.label) > 0)) return null;
+  return action.aliases?.find(alias => words.every(word => wordScore(word, alias) > 0)) ?? null;
 }
 
 export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly = false }: {
@@ -121,7 +127,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     {namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
     <div ref={results} id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3>Actions</h3><div>{visibleActions.map((action, index) => <button
       id={`action:${action.id}`} key={action.id} role="option" aria-selected={selectedIndex === index} aria-label={action.label} disabled={acting} onMouseEnter={() => setActiveIndex(index)} onClick={() => runAction(action)}>
-      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
+      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}{matchingAlias(action, query) && <em> ({matchingAlias(action, query)})</em>}</strong><span>{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
     </button>)}</div></section>}
     {busy && <p role="status">Searching…</p>}{error && <p role="alert">{error}</p>}
     {!busy && query.trim() && !result.items.length && !visibleActions.length && !error && <p>No matching files or actions.</p>}
