@@ -2,13 +2,13 @@
 
 ## Current work
 
-The October 2 work is the folder-based template redesign, committed through `2b6c0af7`. The current follow-up renders Notes folder cards through the shared validated note template and narrows the note editor to a card-sized surface. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
+The October 2 work is the folder-based template redesign, committed through `10a09080`. The current follow-up makes the main creation commands available from every folder, gives Save bookmark an explicit URL-only flow, and clears stale Command K search hits as queries change. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
 
 Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](HANDOFF-history-2026-09-30.md).
 
 ## Verification
 
-- October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. The latest local browser check also verifies formatted note cards and the narrower editor. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
+- October 2 checks: TypeScript, focused Vitest tests, Swift starter tests, and the rebuilt local browser contract in light and dark passed. Browser checks cover bookmark reading and capture, story and note creation, multi-image viewing, feed headlines, command navigation, save and recovery. The latest local browser check also verifies global creation commands, the direct bookmark shortcut, and clearing stale search hits. Screenshots are saved under `/tmp/texttext-*-reference.png` on this Mac.
 
 ## Boundaries
 

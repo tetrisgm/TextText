@@ -495,7 +495,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     return () => { cancelAnimationFrame(frame); narrow.removeEventListener("change", closeForAssistant); };
   }, [assistantOpen, setSidebarVisible]);
   const [templatePicker, setTemplatePicker] = useState(false);
-  const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureMode, setCaptureMode] = useState<"bookmark" | "mixed" | null>(null);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
   const [folderDesignOpen, setFolderDesignOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -747,7 +747,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     if (currentFolder === "Notes") { void createForFolder("Notes", "Note"); return; }
     createNote(focusedControl());
   };
-  const openCapture = () => { closeMoreActions(); void operate(async () => setCaptureOpen(true)); };
+  const openCapture = (mode?: "bookmark" | "mixed") => { closeMoreActions(); void operate(async () => setCaptureMode(mode || (destinationFolder.trim() === "Bookmarks" ? "bookmark" : "mixed"))); };
   const openFeedSubscribe = (returnFocus: HTMLElement | null) => {
     feedSubscribeReturnFocus.current = returnFocus;
     closeMoreActions();
@@ -824,9 +824,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const commandLocation = commandFolder || "the workspace root";
   if (canCreate) {
     commandActions.push({ id: "new-note", label: "New note", description: "Write a card in Notes.", shortcut: "N" });
-    if (commandFolder === "Blog") commandActions.push({ id: "write-story", label: "Write a story", description: "Start a draft in Blog.", shortcut: "C", keywords: ["blog", "article", "medium"] });
-    if (commandFolder === "Bookmarks") commandActions.push({ id: "save-bookmark", label: "Save bookmark", description: "Capture a link in Bookmarks.", shortcut: "B", keywords: ["shiori", "read later"] });
-    else commandActions.push({ id: "capture", label: "Capture", description: "Save a link or note.", shortcut: "L", keywords: ["save", "link", "bookmark"] });
+    commandActions.push({ id: "write-story", label: "Write a story", description: "Start a draft in Blog.", shortcut: "C", keywords: ["blog", "article", "medium"] });
+    commandActions.push({ id: "save-bookmark", label: "Save bookmark", description: "Capture a link in Bookmarks.", shortcut: "B", keywords: ["shiori", "read later"] });
+    commandActions.push({ id: "capture", label: "Capture", description: "Save a link or note.", shortcut: "L", keywords: ["save", "link"] });
     commandActions.push(
       { id: "new-from-template", label: "New from template", description: `Create from a saved template in ${commandLocation}.`, shortcut: "T", keywords: ["starter", "look"] },
       { id: "import-images", label: "Add images", description: "Collect images in Gallery.", shortcut: "I", keywords: ["visual", "gallery", "photo", "gif"] },
@@ -854,7 +854,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const runCommandAction = (id: string) => {
     if (id === "new-note") return createForFolder("Notes", "Note");
     if (id === "write-story") return createForFolder("Blog", "Blog post");
-    if (id === "save-bookmark" || id === "capture") { openCapture(); return; }
+    if (id === "save-bookmark") { openCapture("bookmark"); return; }
+    if (id === "capture") { openCapture("mixed"); return; }
     if (id === "new-from-template") { openTemplateLibrary(); return; }
     if (id === "subscribe-feed") { setDestinationFolder("Feeds"); openFeedSubscribe(searchButton.current); return; }
     if (id === "import-images") { setDestinationFolder("Gallery"); imageInput.current?.click(); return; }
@@ -964,7 +965,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
                 {allowFolderPicker && <button disabled={busy} onClick={() => { closeMoreActions(); beginCustomize(selected.path); }}>Customize</button>}
                 {canOpenRecovery && <button disabled={busy} onClick={() => openRecovery(selected.path)}>Version history</button>}
               </> : <>
-                {canCreate && <button disabled={busy} onClick={openCapture}>Capture a link or note</button>}
+                {canCreate && <button disabled={busy} onClick={() => openCapture()}>Capture a link or note</button>}
                 {canCreate && <button disabled={busy} onClick={openTemplateLibrary}>New from template</button>}
                 {canSubscribeFeed && <button ref={feedSubscribeButton} disabled={busy} onClick={() => openFeedSubscribe(moreActionsSummary.current)}>Subscribe to a feed</button>}
                 {canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); imageInput.current?.click(); }}>Import images…</button>}
@@ -1027,7 +1028,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {publishing && canPublish && selectedItemId === publishing.itemId && <VaultPublishDialog
         key={`${publishing.workspaceId}:${publishing.itemId}`} {...publishing}
         beforeChange={() => publishFlushRef.current()} onClose={() => setPublishing(null)} />}
-      {captureOpen && <CaptureDialog bookmarkOnly={destinationFolder.trim() === "Bookmarks"} onClose={() => setCaptureOpen(false)} onSave={async (input) => {
+      {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => setCaptureMode(null)} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: input.sourceURL ? "Bookmarks" : destinationFolder.trim() || "Notes" });
         if (input.sourceURL && listing?.root) queueArticleEnrichment(listing.root, created.path);
@@ -1043,7 +1044,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFromFile={(path) => void operate(async () => {
         const source = await vaultRequest<VaultFile>("read", { path });
         const templateId = readDocument(source).presentation.template.id;
-        if (templateId === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setTemplatePicker(false); setCaptureOpen(true); return; }
+        if (templateId === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setTemplatePicker(false); setCaptureMode("bookmark"); return; }
         if (templateId === "texttext.gallery") { setDestinationFolder("Gallery"); setTemplatePicker(false); requestAnimationFrame(() => imageInput.current?.click()); return; }
         const defaultFolder: Record<string, string> = { "texttext.article": "Blog", "texttext.note": "Notes", "texttext.bookmark": "Bookmarks", "texttext.gallery": "Gallery", "texttext.talk": "Presentations" };
         const folder = defaultFolder[templateId] || destinationFolder.trim() || "Notes";
@@ -1079,7 +1080,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
                 setNativePublishRefresh(value => value + 1);
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
-      : browseListing?.root ? <div aria-hidden={templatePicker || captureOpen || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
+      : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}
