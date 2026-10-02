@@ -2,6 +2,8 @@
 
 ## Current work
 
+Web vault editing and creation now pass the browser flow again. The browser fixture follows the current Notes navigation and exercises the real vault collaboration codec. A newly created Note exposed an empty-subtitle mismatch between saved snapshots and Yjs projections; `src/lib/vault/collaboration.ts` now compares those equivalent values consistently. `node src/local-vault/__tests__/verify-web-browser.mjs`, 60 targeted collaboration/transport tests, and `npx tsc --noEmit` passed. Reference parity across Bookmarks, Gallery, Feeds, Blog, Notes, and Command K remains open; no app release was run.
+
 Gallery image detail now edits title and source beside the image, in addition to caption and tags. Source changes synchronize the TextPack's legacy `links` projection with `sourceUrl`, so reopening the image shows the new link instead of an older one. The full Gallery editor uses the same source-field update. TypeScript and the local browser flow passed, including reopen; `/tmp/texttext-gallery-inline-inspector-light-reference.png` is the checked light screenshot. No app release was run.
 
 Blog's draft header now keeps Publish and Done prominent while putting Share and Comments in More (they remain in Command K). Routine save labels no longer crowd the local toolbar; error/offline/unconfirmed states remain visible. TypeScript and the local browser flow passed; the checked light screenshot is `/tmp/texttext-new-story-editor-light-reference.png`. No app release was run.

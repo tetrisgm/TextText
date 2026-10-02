@@ -14,6 +14,9 @@ function canonicalJSON(value: unknown): string {
   return JSON.stringify(value, (_key, entry) => entry && typeof entry === "object" && !Array.isArray(entry)
     ? Object.fromEntries(Object.entries(entry).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) : entry);
 }
+function canonicalDocument(snapshot: ReturnType<typeof validateDocumentSnapshot>): string {
+  return canonicalJSON({ ...snapshot, content: { ...snapshot.content, subtitle: snapshot.content.subtitle || undefined } });
+}
 function fail(): never { throw new Error("Invalid or incomplete file collaboration state."); }
 function decode(value: string, maximumChars: number): Uint8Array {
   if (typeof value !== "string" || !value.length || value.length > maximumChars || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) fail();
@@ -91,7 +94,7 @@ export function applyVaultCollaboration(state: VaultCollaborationState, currentP
   try {
     doc.getMap("document");
     Y.applyUpdate(doc, baseline);
-    if (canonicalJSON(checkedSnapshot(doc)) !== canonicalJSON(before)) fail();
+    if (canonicalDocument(checkedSnapshot(doc)) !== canonicalDocument(before)) fail();
     for (const update of decoded) Y.applyUpdate(doc, update);
     const snapshot = checkedSnapshot(doc);
     const update = boundedState(doc);
@@ -103,7 +106,7 @@ export function applyVaultCollaboration(state: VaultCollaborationState, currentP
     }
     readTemplate(pack.file, snapshot);
     let bytes = currentPackBytes;
-    if (canonicalJSON(before) !== canonicalJSON(snapshot)) {
+    if (canonicalDocument(before) !== canonicalDocument(snapshot)) {
       const payload = writePayload(pack.file, snapshot);
       // Keep the original template bytes and opaque authoring metadata intact.
       bytes = encodePack(pack, { ...payload, templateJSON: pack.file.templateJSON, templateAuthoringSourceJSON: pack.file.templateAuthoringSourceJSON });
