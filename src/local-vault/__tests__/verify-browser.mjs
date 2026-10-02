@@ -964,6 +964,15 @@ try {
   await page.getByRole("button", { name: "Save bookmark", exact: true }).waitFor();
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("group", { name: "Today" }).getByRole("option", { name: /A saved article/ }).waitFor();
   const bookmarkSearch = page.getByRole("searchbox", { name: "Search saved links" });
+  await page.waitForFunction(() => !document.querySelector('.vault-bookmark-toolbar input[type="search"]')?.disabled);
+  await page.keyboard.press("/");
+  assert.equal(await bookmarkSearch.evaluate(element => document.activeElement === element), true);
+  await page.keyboard.type("complete saved reading");
+  await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /A saved article/ }).waitFor();
+  await bookmarkSearch.press("Escape");
+  assert.equal(await bookmarkSearch.inputValue(), "");
+  await bookmarkSearch.press("Escape");
+  assert.equal(await bookmarkSearch.evaluate(element => document.activeElement === element), false);
   await bookmarkSearch.fill("complete saved reading");
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /A saved article/ }).waitFor();
   assert.equal(await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").count(), 1);

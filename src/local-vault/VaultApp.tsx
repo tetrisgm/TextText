@@ -994,7 +994,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         return;
       }
       if (event.shiftKey) return;
-      if (event.key === "/") { event.preventDefault(); openSearch(); return; }
+      if (event.key === "/") {
+        event.preventDefault();
+        const bookmarkSearch = !selected && destinationFolder.trim() === "Bookmarks" ? document.querySelector<HTMLInputElement>('.vault-bookmark-toolbar input[type="search"]:not(:disabled)') : null;
+        if (bookmarkSearch) bookmarkSearch.focus(); else openSearch();
+        return;
+      }
       const action = commandActions.find(item => item.shortcut?.toLowerCase() === event.key.toLowerCase());
       if (action) { event.preventDefault(); void runCommandAction(action.id); }
     };

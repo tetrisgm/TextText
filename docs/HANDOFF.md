@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now uses `/` to focus Search saved links while the library is open, matching Shiori's visible search shortcut. Escape clears a query, then leaves the field; outside Bookmarks `/` still opens Command K. The local browser flow checks focus, filtering, clear, and blur; TypeScript and local/web browser flows passed. Shiori capture integrations and full parity remain open; no app release was run.
+
 Feeds reader now has an Artifact-style bottom action bar for Back, Share, Read later, and More, plus an Aa control that visibly resizes the local article. Open original and Copy link remain in More; saving still creates a Bookmark TextPack. The local browser flow checks sizing, share fallback, save, and the rendered dark/light views (`/tmp/texttext-feed-reader-reference.png`, `/tmp/texttext-feed-reader-light-reference.png`); TypeScript and web browser flow passed. The 28 Artifact originals referenced by `docs/plans/artifact-home-replication.md` are absent from Downloads on this Mac, so the written breakdown is the current reference. Exact Artifact reader behavior and broader Feeds parity remain open; no app release was run.
 
 Gallery creation now opens the same image-first capture dialog from the folder action, Command K, More, and built-in or custom template creation. Paste works in that dialog even when another TextPack is open; cancel clears a queued custom look, while canceling the file picker keeps the dialog and look available. TypeScript and local/web vault browser flows passed. Resurf capture from other apps and full gallery parity remain open; no app release was run.
