@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks library search now matches the saved URL, captured excerpt, and tags as well as the title. The local browser flow checks excerpt and URL matches across paginated bookmarks; local/web browser flows and TypeScript passed. Full Shiori parity, including its capture integrations and full-text indexing, remains open; no app release was run.
+
 Command K file matches now sit under a Files heading in compact rows with the path at the right. This keeps actions and files distinct while preserving accessible result text and arrow-key order. Local and web vault browser flows and TypeScript passed. The first local browser run hit a timing-sensitive bookmark highlight autosave assertion; a direct rerun passed. Full Superhuman parity remains open; no app release was run.
 
 Notes cards now use each saved TextPack look for their grid preview, including its validated collection renderer and theme, instead of always drawing the built-in Note card. The Mac metadata preview retains the saved template reference; visible custom cards fetch only the look JSON through the metadata reader, without expanding assets. The local browser flow creates a custom monospace Note and checks its grid card, with `/tmp/texttext-custom-note-look-grid-reference.png` as the dark screenshot. The focused Mac test, local/web browser flows, and TypeScript passed. Full Supernotes parity remains open; no app release was run.

@@ -947,6 +947,12 @@ try {
   await chooseFolder("Bookmarks");
   await page.getByRole("button", { name: "Save bookmark", exact: true }).waitFor();
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("group", { name: "Today" }).getByRole("option", { name: /A saved article/ }).waitFor();
+  const bookmarkSearch = page.getByRole("searchbox", { name: "Search saved links" });
+  await bookmarkSearch.fill("complete saved reading");
+  assert.equal(await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").count(), 1);
+  await bookmarkSearch.fill("example.org/another");
+  assert.equal(await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").count(), 1);
+  await bookmarkSearch.fill("");
   await page.getByRole("option", { name: /A saved article/ }).click();
   const bookmarkReader = page.getByRole("article", { name: "Bookmark reader" });
   const bookmarkDetails = bookmarkReader.locator("details.vault-bookmark-inspector");
@@ -1005,12 +1011,12 @@ try {
   await page.getByRole("option", { name: /A saved article/ }).click();
   await bookmarkReader.getByRole("button", { name: "Move to inbox" }).click();
   await page.getByRole("group", { name: "Bookmark filters" }).getByRole("button", { name: "Inbox" }).click();
-  await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("example.org");
+  await page.getByRole("searchbox", { name: "Search saved links" }).fill("example.org");
   await page.getByRole("option", { name: /Another saved link/ }).waitFor();
   assert.equal(await page.getByRole("option", { name: /A saved article/ }).count(), 0);
-  await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("Z filler 24");
+  await page.getByRole("searchbox", { name: "Search saved links" }).fill("Z filler 24");
   await page.getByRole("option", { name: /Z filler 24/ }).waitFor();
-  await page.getByRole("searchbox", { name: "Filter bookmarks by title or site" }).fill("");
+  await page.getByRole("searchbox", { name: "Search saved links" }).fill("");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   if (await bookmarkDetails.evaluate(element => element.open)) await toggleBookmarkDetails.click();
   await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
