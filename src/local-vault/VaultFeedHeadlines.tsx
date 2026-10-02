@@ -17,11 +17,22 @@ const storyTemplate = BUILTIN_TEMPLATES.find(template => template.id === "textte
 const RECOMMENDED = [
   { title: "The Verge", topic: "Technology", feedURL: "https://www.theverge.com/rss/index.xml", siteUrl: "https://www.theverge.com" },
   { title: "Ars Technica", topic: "Technology", feedURL: "https://feeds.arstechnica.com/arstechnica/index", siteUrl: "https://arstechnica.com" },
+  { title: "Wired", topic: "Technology", feedURL: "https://www.wired.com/feed/rss", siteUrl: "https://www.wired.com" },
+  { title: "TechCrunch", topic: "Technology", feedURL: "https://techcrunch.com/feed/", siteUrl: "https://techcrunch.com" },
+  { title: "MIT Technology Review", topic: "Technology", feedURL: "https://www.technologyreview.com/feed/", siteUrl: "https://www.technologyreview.com" },
+  { title: "Hacker News: Front Page", topic: "Technology", feedURL: "https://hnrss.org/frontpage", siteUrl: "https://news.ycombinator.com" },
   { title: "Quanta Magazine", topic: "Science", feedURL: "https://www.quantamagazine.org/feed/", siteUrl: "https://www.quantamagazine.org" },
+  { title: "Nature News", topic: "Science", feedURL: "https://www.nature.com/nature.rss", siteUrl: "https://www.nature.com" },
+  { title: "NASA", topic: "Science", feedURL: "https://www.nasa.gov/news-release/feed/", siteUrl: "https://www.nasa.gov" },
   { title: "Dezeen", topic: "Design", feedURL: "https://www.dezeen.com/feed/", siteUrl: "https://www.dezeen.com" },
+  { title: "ArchDaily", topic: "Design", feedURL: "https://www.archdaily.com/feed", siteUrl: "https://www.archdaily.com" },
   { title: "BBC News: World", topic: "World", feedURL: "https://feeds.bbci.co.uk/news/world/rss.xml", siteUrl: "https://www.bbc.com/news/world" },
-  { title: "Polygon", topic: "Gaming", feedURL: "https://www.polygon.com/rss/index.xml", siteUrl: "https://www.polygon.com" },
+  { title: "The Guardian: World", topic: "World", feedURL: "https://www.theguardian.com/world/rss", siteUrl: "https://www.theguardian.com/world" },
+  { title: "NPR: News", topic: "World", feedURL: "https://feeds.npr.org/1001/rss.xml", siteUrl: "https://www.npr.org" },
+  { title: "Polygon", topic: "Games", feedURL: "https://www.polygon.com/rss/index.xml", siteUrl: "https://www.polygon.com" },
+  { title: "Rock Paper Shotgun", topic: "Games", feedURL: "https://www.rockpapershotgun.com/feed", siteUrl: "https://www.rockpapershotgun.com" },
 ] as const;
+const INTERESTS = [...new Set(RECOMMENDED.map(source => source.topic))];
 
 function age(value: string): string {
   const elapsed = Math.max(0, Date.now() - Date.parse(value));
@@ -43,6 +54,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState("");
+  const [interests, setInterests] = useState<Set<string>>(() => new Set());
   const [followError, setFollowError] = useState("");
   const [active, setActive] = useState<FeedStory | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -115,19 +127,28 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     } catch (reason) { setStoryError(reason instanceof Error ? reason.message : "This story could not be saved."); }
     finally { setSaving(false); }
   };
-  const follow = async (source: typeof RECOMMENDED[number]) => {
-    if (!canAdd || following) return;
-    setFollowing(source.title); setFollowError("");
+  const followInterests = async () => {
+    if (!canAdd || following || !interests.size) return;
+    const chosen = RECOMMENDED.filter(source => interests.has(source.topic) && !sourceRows.some(row => row.feedURL === source.feedURL));
+    setFollowing("selected interests"); setFollowError("");
+    let added = 0;
     try {
-      const pack = createFeedSubscriptionPack({ feedURL: source.feedURL, title: source.title, siteUrl: source.siteUrl, description: null, format: "rss", topic: source.topic });
-      await vaultRequest("importPack", { title: pack.title, folder: "Feeds", data: encodeBase64(pack.bytes) });
-      window.dispatchEvent(new Event("texttext:vault-changed"));
-    } catch (reason) { setFollowError(reason instanceof Error ? reason.message : "This source could not be added."); }
-    finally { setFollowing(""); }
+      for (const source of chosen) {
+        const pack = createFeedSubscriptionPack({ feedURL: source.feedURL, title: source.title, siteUrl: source.siteUrl, description: null, format: "rss", topic: source.topic });
+        await vaultRequest("importPack", { title: pack.title, folder: "Feeds", data: encodeBase64(pack.bytes) });
+        added++;
+      }
+    } catch (reason) { setFollowError(`${added} of ${chosen.length} sources added. ${reason instanceof Error ? reason.message : "A source could not be added."}`); }
+    finally { if (added) window.dispatchEvent(new Event("texttext:vault-changed")); setFollowing(""); }
   };
-  const recommendations = <div className="vault-feed-recommendations"><h2>Choose your sources</h2><p>Follow publishers to build your news feed. Stories load when you open Feeds.</p>
+  const recommendations = <div className="vault-feed-recommendations"><h2>Personalize your feed</h2><p>Choose the topics you want to follow. You can add individual sources later.</p>
+    <div className="vault-feed-interests" role="group" aria-label="News interests">{INTERESTS.map(topic => <button key={topic} type="button" aria-pressed={interests.has(topic)} disabled={!canAdd || Boolean(following)} onClick={() => setInterests(current => {
+      const next = new Set(current);
+      if (next.has(topic)) next.delete(topic); else next.add(topic);
+      return next;
+    })}><strong>{topic}</strong><small>{RECOMMENDED.filter(source => source.topic === topic).slice(0, 3).map(source => source.title).join(" · ")}</small></button>)}</div>
+    <button type="button" className="vault-feed-continue" disabled={!canAdd || !interests.size || Boolean(following)} onClick={() => void followInterests()}>{following ? "Adding sources…" : `Continue with ${interests.size} ${interests.size === 1 ? "topic" : "topics"}`}</button>
     {followError && <p role="alert">{followError}</p>}
-    <ul>{RECOMMENDED.map(source => <li key={source.feedURL}><span><strong>{source.title}</strong><small>{source.topic}</small></span><button disabled={!canAdd || Boolean(following)} onClick={() => void follow(source)}>{following === source.title ? "Adding…" : "Follow"}</button></li>)}</ul>
   </div>;
   const query = search.trim().toLocaleLowerCase();
   const matchesStory = (story: FeedStory) => !query || [story.title, story.source, story.excerpt, story.topic].some(value => value?.toLocaleLowerCase().includes(query));
@@ -146,6 +167,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd }: { sou
     return document;
   })() : null;
   if (!ready) return <section className="vault-feed-home" aria-label="Latest stories"><p role="status">Reading feed subscriptions…</p></section>;
+  if (!hasFeeds) return <section className="vault-feed-home vault-feed-onboarding" aria-label="News interests">{recommendations}</section>;
   if (active) return <section className="vault-feed-reader" aria-label="Feed story">
     <header><button type="button" onClick={() => setActive(null)}>‹ Back to {activeGroup ? "coverage" : "Feeds"}</button><span>{active.source}</span></header>
     {storyError && <p role="alert">{storyError}</p>}
