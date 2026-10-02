@@ -34,6 +34,7 @@ for (const [kind, name] of [["bookmark", "Custom bookmark look"], ["gallery", "C
   const preset = unzipSync(await readFile(`presets/builtin/${kind}.textpack`));
   const look = JSON.parse(strFromU8(preset[Object.keys(preset).find((entry) => entry.endsWith("/template.json"))]));
   look.id = `local.custom-${kind}-look`; look.name = name; look.experience = kind;
+  if (kind === "gallery") look.fields.push({ id: "material", label: "Material", type: "text", required: false, visibility: "public" });
   files.set(`Templates/${name}.textpack`, { ...initial, path: `Templates/${name}.textpack`, hash: `template-${kind}-1`, templateJSON: JSON.stringify(look) });
 }
 const retainedEntries = {
@@ -1492,6 +1493,11 @@ try {
   await page.getByRole("region", { name: "Custom gallery photo" }).waitFor();
   const galleryWithLook = [...files.values()].find(file => file.path.startsWith("Gallery/") && JSON.parse(file.documentJSON).presentation.template.id === "local.custom-gallery-look");
   assert.ok(galleryWithLook);
+  await page.getByRole("button", { name: "Edit Material" }).click();
+  await page.getByRole("textbox", { name: "Material" }).fill("Ink on paper");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("Ink on paper", { exact: true }).waitFor();
+  assert.equal(JSON.parse(files.get(galleryWithLook.path).documentJSON).content.fields.material, "Ink on paper");
   await page.screenshot({ path: "/tmp/texttext-custom-gallery-look-reference.png" });
   await page.getByRole("button", { name: "Close image" }).click();
   await page.getByRole("button", { name: "TextText", exact: true }).click();

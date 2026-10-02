@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePopoverFocus } from "@/components/accessibility/useDialogFocus";
+import type { DocumentFieldValue } from "@/lib/documents/model";
+import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { vaultRequest, type VaultFile } from "./bridge";
-import { readDocument, writePayload } from "./model";
+import { readDocument, readTemplate, writePayload } from "./model";
 
 type Image = { id: string; url: string; alt: string; width?: number; height?: number };
 
@@ -55,6 +57,8 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const [editingSource, setEditingSource] = useState(false);
   const [sourceDraft, setSourceDraft] = useState("");
   const [tagDraft, setTagDraft] = useState("");
+  const [editingField, setEditingField] = useState("");
+  const [fieldDraft, setFieldDraft] = useState("");
   const [updating, setUpdating] = useState(false);
   const [details, setDetails] = useState<{ colors: string[]; width: number; height: number }>({ colors: [], width: 0, height: 0 });
   const chosen = entries[Math.min(selection, entries.length - 1)];
@@ -88,6 +92,8 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   let caption = "";
   let source = "";
   let tags: string[] = [];
+  let extraFields: TemplateDefinition["fields"] = [];
+  let fieldValues: Record<string, DocumentFieldValue> = {};
   let images: Image[] = [];
   let size = 0;
   try {
@@ -97,12 +103,15 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
       caption = document.content.body;
       source = typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : "";
       tags = document.content.tags;
+      fieldValues = document.content.fields;
+      try { extraFields = readTemplate(file, document).fields.filter(field => field.visibility !== "hidden" && !["cover", "sourceUrl", "sourceLabel", "links"].includes(field.id)); }
+      catch { extraFields = []; }
       images = document.content.assets.filter(asset => asset.kind === "image" && local.has(asset.src)).map(asset => ({ id: asset.id, url: local.get(asset.src)!, alt: asset.alt || title, width: asset.width, height: asset.height }));
     }
   } catch { /* Show a readable error below while preserving the original file. */ }
   const image = images[Math.min(index, Math.max(0, images.length - 1))];
   const sourceHref = sourceLink(source);
-  useEffect(() => { setEditingCaption(false); setEditingTitle(false); setEditingSource(false); setTagDraft(""); }, [path]);
+  useEffect(() => { setEditingCaption(false); setEditingTitle(false); setEditingSource(false); setEditingField(""); setTagDraft(""); }, [path]);
   const updateContent = async (change: (content: ReturnType<typeof readDocument>["content"]) => ReturnType<typeof readDocument>["content"]) => {
     if (!file || file.path !== path || updating) return false;
     setUpdating(true); setError("");
@@ -119,6 +128,22 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
     const tag = tagDraft.trim().replace(/^#/, "").slice(0, 40);
     if (!tag || tags.some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
     if (await updateContent(content => ({ ...content, tags: [...content.tags, tag] }))) setTagDraft("");
+  };
+  const saveField = async (field: TemplateDefinition["fields"][number]) => {
+    let value: DocumentFieldValue = fieldDraft.trim();
+    if (field.type === "number") {
+      if (fieldDraft.trim() && !Number.isFinite(Number(fieldDraft))) { setError("Enter a valid number."); return; }
+      value = fieldDraft.trim() ? Number(fieldDraft) : null;
+    } else if (field.type === "url" && fieldDraft.trim() && !sourceLink(fieldDraft.trim())) {
+      setError("Enter a web address beginning with http or https."); return;
+    } else if (!fieldDraft.trim()) value = null;
+    if (await updateContent(content => ({ ...content, fields: { ...content.fields, [field.id]: value } }))) setEditingField("");
+  };
+  const displayField = (value: DocumentFieldValue | undefined): string => {
+    if (value == null || value === "") return "Not set";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (Array.isArray(value)) return value.every(item => typeof item === "string") ? value.join(", ") : `${value.length} entries`;
+    return String(value);
   };
   useEffect(() => setZoom(1), [image?.url]);
   const asset = image && file?.assets?.find(entry => local.get(`assets/${entry.filename}`) === image.url || (entry.remoteURL && local.get(entry.remoteURL) === image.url));
@@ -157,6 +182,11 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
         <div className="vault-gallery-inspector-section"><div className="vault-gallery-inspector-heading"><h2>Source</h2>{!editingSource && <button aria-label="Edit image source" disabled={updating} onClick={() => { setSourceDraft(source); setEditingSource(true); }}>Edit</button>}</div>{editingSource ? <form onSubmit={event => { event.preventDefault(); const next = sourceDraft.trim(); if (next && !sourceLink(next)) { setError("Enter a web address beginning with http or https, without a username or password."); return; } void updateContent(content => ({ ...content, fields: { ...content.fields, sourceUrl: next || null, sourceLabel: next || null, links: next ? [{ href: next, label: next }] : [] } })).then(saved => { if (saved) setEditingSource(false); }); }}><input aria-label="Image source" type="url" value={sourceDraft} onChange={event => setSourceDraft(event.target.value)} placeholder="https://example.com" maxLength={4096} disabled={updating} /><div><button type="button" onClick={() => setEditingSource(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating}>Save source</button></div></form> : sourceHref ? <p className="vault-gallery-source"><a href={sourceHref} target="_blank" rel="noopener noreferrer">{source}</a></p> : <p>{source || "No source yet"}</p>}</div>
         <div className="vault-gallery-inspector-section"><div className="vault-gallery-inspector-heading"><h2>Caption</h2>{!editingCaption && <button aria-label="Edit caption" disabled={updating} onClick={() => { setCaptionDraft(caption); setEditingCaption(true); }}>Edit</button>}</div>{editingCaption ? <form onSubmit={event => { event.preventDefault(); void updateContent(content => ({ ...content, body: captionDraft.trim() })).then(saved => { if (saved) setEditingCaption(false); }); }}><textarea aria-label="Image caption" value={captionDraft} onChange={event => setCaptionDraft(event.target.value)} maxLength={4000} disabled={updating} /><div><button type="button" onClick={() => setEditingCaption(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating}>Save caption</button></div></form> : <p>{caption || "No caption yet"}</p>}</div>
         <div className="vault-gallery-inspector-section"><h2>Tags</h2><div className="vault-gallery-tags">{tags.map(tag => <button key={tag} aria-label={`Remove ${tag} tag`} disabled={updating} onClick={() => void updateContent(content => ({ ...content, tags: content.tags.filter(value => value !== tag) }))}>#{tag} ×</button>)}</div><form className="vault-gallery-tag-form" onSubmit={event => { event.preventDefault(); void addTag(); }}><input aria-label="Add image tag" value={tagDraft} onChange={event => setTagDraft(event.target.value)} placeholder="Add a tag" maxLength={41} disabled={updating} /><button type="submit" disabled={updating || !tagDraft.trim()}>Add</button></form></div>
+        {extraFields.length > 0 && <div className="vault-gallery-inspector-section vault-gallery-extra-fields"><h2>Details</h2>{extraFields.map(field => {
+          const value = fieldValues[field.id];
+          const editable = ["text", "richtext", "url", "date", "number", "boolean"].includes(field.type) || field.type === "enum" && !field.multiple;
+          return <div className="vault-gallery-extra-field" key={field.id}><div className="vault-gallery-inspector-heading"><h3>{field.label}</h3>{editable && editingField !== field.id && <button aria-label={`Edit ${field.label}`} disabled={updating} onClick={() => { setEditingField(field.id); setFieldDraft(value == null ? "" : String(value)); }}>Edit</button>}</div>{editingField === field.id ? field.type === "boolean" ? <div className="vault-gallery-field-actions"><button disabled={updating} onClick={() => void updateContent(content => ({ ...content, fields: { ...content.fields, [field.id]: !Boolean(value) } })).then(saved => { if (saved) setEditingField(""); })}>{value ? "Set to No" : "Set to Yes"}</button><button onClick={() => setEditingField("")}>Cancel</button></div> : <form onSubmit={event => { event.preventDefault(); void saveField(field); }}>{field.type === "enum" ? <select aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating}><option value="">Not set</option>{field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.type === "richtext" ? <textarea aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} /> : <input aria-label={field.label} type={field.type === "date" ? "date" : field.type === "number" ? "number" : field.type === "url" ? "url" : "text"} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} />}<div className="vault-gallery-field-actions"><button type="button" onClick={() => setEditingField("")}>Cancel</button><button type="submit" disabled={updating}>Save</button></div></form> : <p>{displayField(value)}</p>}</div>;
+        })}</div>}
         {details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
     </div>
   </section>, shell);
