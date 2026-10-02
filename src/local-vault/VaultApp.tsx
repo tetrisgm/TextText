@@ -712,8 +712,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     catch (error) { setError(error instanceof Error ? error.message : "The file operation failed."); }
     finally { setBusy(false); }
   };
-  const createNote = (origin: HTMLElement | null) => operate(async () => {
+  const createNote = (origin: HTMLElement | null, firstText = "") => operate(async () => {
     let created = await vaultRequest<VaultFile>("create", { title: "Untitled", folder: destinationFolder.trim() || "Notes" });
+    if (firstText) {
+      const document = readDocument(created);
+      created = await vaultRequest<VaultFile>("write", writePayload(created, { ...document, content: { ...document.content, body: firstText } }));
+    }
     if (destinationFolder.trim() === "Blog") {
       const document = readDocument(created);
       if (document.presentation.template.id === "texttext.article") created = await vaultRequest<VaultFile>("write", writePayload(created, { ...document, content: { ...document.content, title: "" } }));
@@ -949,7 +953,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return;
       if (!selected && destinationFolder.trim() === "Notes" && canCreate && event.key.length === 1 && /\S/u.test(event.key) && event.key !== "/") {
         event.preventDefault();
-        void createForFolder("Notes", "Note", event.key);
+        void createNote(focusedControl(), event.key);
         return;
       }
       if (event.shiftKey) return;
@@ -1182,7 +1186,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath}
-        onCreateNote={() => void createForFolder("Notes", "Note")}
+        onCreateNote={() => void createNote(focusedControl())}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes quick creation now starts in the card body whether invoked by the top New note button, the grid's Start typing card, or a first printable key while browsing Notes. The keyboard path seeds that first character in the Note TextPack before opening the editor, so it is not lost. The title remains editable. TypeScript and the local browser contract passed; no app release was run.
+
 The Bookmarks reader now has an inline personal note above the saved article. Add, edit, and save write `texttextBookmarkNote` into the Bookmark TextPack with the existing revision-aware vault write; article body and tags stay separate. TypeScript and the browser contract passed, including saved field assertion; `/tmp/texttext-bookmark-note-reference.png` is the dark screenshot. No app release was run.
 
 Feeds now leads For You and Latest with the first available story image, then uses a five-row rhythm for later large images. Cross-publisher source names stay compact with the full list in the hover title. TypeScript and the local browser contract passed; visual checks are `/tmp/texttext-feeds-ranked-reference.png` and `/tmp/texttext-feeds-latest-reference.png`. Artifact parity is still open, and no app release was run.
