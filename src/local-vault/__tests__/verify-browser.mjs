@@ -1175,16 +1175,22 @@ try {
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Bold" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("**text**"));
   await storyBody.fill("Link");
-  await storyBody.scrollIntoViewIfNeeded();
-  await storyBody.press("End");
-  await page.keyboard.down("Shift");
-  for (let index = 0; index < 4; index++) await page.keyboard.press("ArrowLeft");
-  await page.keyboard.up("Shift");
+  // Let the 350 ms local save settle before selecting text for the floating toolbar.
+  await page.waitForTimeout(450);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await storyBody.evaluate((element) => {
+    element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
+    const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, text.textContent.length);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Link" }).click();
   await page.getByRole("form", { name: "Add story link" }).getByRole("textbox", { name: "Link address" }).fill("example.com/article");
   await page.getByRole("form", { name: "Add story link" }).getByRole("button", { name: "Add link" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Link](<https://example.com/article>)"));
   await storyBody.fill("Heading");
+  await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
     element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
@@ -1196,6 +1202,7 @@ try {
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Heading", exact: true }).click({ force: true });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.startsWith("# Heading"));
   await storyBody.fill("Quote");
+  await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
     element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
@@ -1214,6 +1221,16 @@ try {
   await chooseFolder("Gallery");
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.subtitle, "A short line beneath the title");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Add images", exact: true }).click();
+  const imageCapture = page.getByRole("dialog", { name: "Add images" });
+  await imageCapture.getByText("Drop images here").waitFor();
+  await imageCapture.getByRole("button", { name: "Choose images" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-gallery-capture-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-gallery-capture-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.keyboard.press("Escape");
+  await imageCapture.waitFor({ state: "hidden" });
   await page.locator(".vault-photo-grid img").first().waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid img")].every(image => image.complete && image.naturalHeight > 0));
   const gallerySearch = page.getByRole("searchbox", { name: "Find images" });
@@ -1325,7 +1342,10 @@ try {
   await chooseFolder("Notes");
   assert.equal(await page.locator(".vault-gallery-view").count(), 0);
   await chooseFolder("Gallery");
+  await page.getByRole("button", { name: "Add images", exact: true }).click();
+  await page.getByRole("dialog", { name: "Add images" }).waitFor();
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Measured.png", mimeType: "image/png", buffer: Buffer.from(portrait, "base64") });
+  await page.getByRole("dialog", { name: "Add images" }).waitFor({ state: "hidden" });
   const importedImage = page.getByRole("region", { name: "Measured" });
   await importedImage.waitFor();
   await importedImage.getByRole("img", { name: "Measured" }).waitFor();

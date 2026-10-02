@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery's Add images action now opens a focused capture dialog that exposes drop, paste, and file selection before importing into TextPacks. Existing single-image import still opens the image viewer and the dialog closes after a successful import. The local browser flow checks dialog opening and Escape, while the existing picker/drop/paste/import flows still pass. TypeScript and the local UI build passed. Dark and light captures: `/tmp/texttext-gallery-capture-reference.png` and `/tmp/texttext-gallery-capture-light-reference.png`. Resurf-wide capture and organization parity remains open; no app release was run.
+
 Gallery now uses a four-column responsive masonry library like Resurf instead of justified, equal-height rows. Full image proportions remain visible, with no crop. The local browser contract verifies portrait and landscape sizing and the existing viewer, import, and search flow; TypeScript and the local UI build passed. `/tmp/texttext-gallery-grid-reference.png` shows the checked dark grid. Full Resurf creation and capture parity remains open; no app release was run.
 
 Bookmarks Find saved links now searches full TextPack article text through the existing bounded Mac scan or one debounced Oracle server request. Short metadata matches for titles, URLs, excerpts, and tags remain available. The web search endpoint scans only visible items, rechecks grants before returning, and caps files, bytes, and results. The local browser contract finds a sentence beyond the 400-character preview; focused route, web transport, pack search, and Swift tests, TypeScript, and local/web browser flows passed. Search is still on demand rather than indexed, and Shiori parity remains open. No app release was run.

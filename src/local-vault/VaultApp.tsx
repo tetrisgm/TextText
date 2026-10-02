@@ -522,6 +522,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [pendingCreationLook, setPendingCreationLook] = useState<{ kind: "bookmark" | "gallery"; template: TemplateDefinition; sourceJSON?: string | null } | null>(null);
   const [preferredBookmarkPath, setPreferredBookmarkPath] = useState("");
   const [importedGalleryPath, setImportedGalleryPath] = useState<string | null>(null);
+  const [imageCaptureOpen, setImageCaptureOpen] = useState(false);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
   const [folderDesignOpen, setFolderDesignOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -759,6 +760,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             }
           }
           closeRemoved();
+          setImageCaptureOpen(false);
           if (completed === 1 && folder === "Gallery" && imported) {
             setImportedGalleryPath(imported.path);
             setDestinationFolder(folder);
@@ -798,7 +800,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const primaryLabel = currentFolder === "Bookmarks" ? "Save bookmark" : currentFolder === "Gallery" ? "Add images" : currentFolder === "Feeds" ? "Add source" : currentFolder === "Blog" ? "Write a story" : "New note";
   const primaryAction = () => {
     if (currentFolder === "Bookmarks") { openCapture(); return; }
-    if (currentFolder === "Gallery") { imageInput.current?.click(); return; }
+    if (currentFolder === "Gallery") { setImageCaptureOpen(true); return; }
     if (currentFolder === "Feeds") { openFeedSubscribe(focusedControl()); return; }
     if (currentFolder === "Blog") { void createForFolder("Blog", "Blog post"); return; }
     if (currentFolder === "Notes") { void createForFolder("Notes", "Note"); return; }
@@ -1107,6 +1109,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (imagePickerCancelTimer.current) clearTimeout(imagePickerCancelTimer.current);
         const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
       }} />
+      {imageCaptureOpen && <div className="vault-image-capture-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setImageCaptureOpen(false); }}>
+        <div className="vault-image-capture" role="dialog" aria-modal="true" aria-label="Add images" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setImageCaptureOpen(false); } }}
+          onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
+          onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); void importImages(Array.from(event.dataTransfer.files)); }}>
+          <header><div><h2>Add images</h2><p>Collect visual references in your Gallery.</p></div><button type="button" aria-label="Close image capture" onClick={() => setImageCaptureOpen(false)}>✕</button></header>
+          <div className="vault-image-capture-target"><span aria-hidden="true">＋</span><strong>Drop images here</strong><p>Paste an image with ⌘V, or choose files from your Mac.</p><button type="button" autoFocus disabled={busy} onClick={() => imageInput.current?.click()}>Choose images</button></div>
+        </div>
+      </div>}
       {importStatus && <p role="status">{importStatus}</p>}
       {selected && canManageFiles && fileAction === "rename" && <div className="vault-file-operation"><form onSubmit={(event) => { event.preventDefault(); void operate(async () => {
           const observed = currentFileRef.current?.();
