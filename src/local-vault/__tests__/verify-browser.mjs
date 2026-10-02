@@ -1004,7 +1004,9 @@ try {
   const saveBookmark = page.getByRole("dialog", { name: "Save bookmark" });
   assert.equal(await saveBookmark.getByRole("textbox", { name: "Capture title" }).isVisible(), false);
   await page.screenshot({ path: "/tmp/texttext-save-bookmark-reference.png" });
-  await saveBookmark.getByRole("textbox", { name: "Web address" }).fill("example.com/fresh-reading");
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "example.com/fresh-reading" } }));
+  await saveBookmark.getByRole("button", { name: "Paste copied link" }).click();
+  assert.equal(await saveBookmark.getByRole("textbox", { name: "Web address" }).inputValue(), "example.com/fresh-reading");
   await saveBookmark.getByRole("button", { name: "Save bookmark" }).click();
   await page.getByRole("option", { name: /example.com/ }).filter({ hasText: "example.com" }).first().waitFor();
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.com"));

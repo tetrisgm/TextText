@@ -19,6 +19,7 @@
 .vault-app .vault-capture{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);width:min(460px,calc(100vw - 24px));max-height:calc(100vh - 24px);padding:22px;border:1px solid var(--line);border-radius:10px}
 .vault-app .vault-capture header h2{margin:0;font-size:20px}.vault-app .vault-capture details{margin:4px 0 18px;color:var(--muted);font-size:13px}.vault-app .vault-capture details summary{cursor:pointer}.vault-app .vault-capture details label{color:var(--ink)}
 .vault-app .vault-capture form>button[type=submit]{width:100%;padding:10px 14px;text-align:center;background:var(--tt-accent);color:#fff;font-weight:650}.vault-app .vault-capture form>button[type=submit]:disabled{opacity:.5}
+.vault-app .vault-capture .vault-capture-paste{margin:-10px 0 14px;padding:5px 0;color:var(--tt-accent);font-size:13px;font-weight:600}
 
 .vault-overview{max-width:none;margin:0;padding:24px clamp(20px,4vw,48px) 80px;color:var(--ink)}
 .vault-overview header{margin-bottom:32px}.vault-overview h2{font-size:32px;letter-spacing:-.035em;margin:8px 0 12px}.vault-overview h3{font-size:18px;margin:0 0 16px}.vault-overview p{color:var(--muted);line-height:1.55}.vault-overview section{margin:32px 0}.vault-eyebrow{font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}

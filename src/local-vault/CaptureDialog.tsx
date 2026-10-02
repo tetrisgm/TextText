@@ -20,6 +20,15 @@ export function CaptureDialog({ onClose, onSave, bookmarkOnly = false }: { onClo
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const pasteLink = async () => {
+    try {
+      const copied = (await navigator.clipboard.readText()).trim();
+      if (!copied) throw new Error("Copy a web address first.");
+      if (copied.length > 4096) throw new Error("The copied web address is too long.");
+      if (!captureInput(copied, "").sourceURL) throw new Error("The copied text is not a web address.");
+      setText(copied); setError("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not read the clipboard. Paste the link into the field."); }
+  };
   useEscapeLayer(!busy, "capture", onClose);
   return <section className="vault-template-dialog vault-capture" role="dialog" aria-modal="true" aria-label={bookmarkOnly ? "Save bookmark" : "Save a link or note"}>
     <header><h2>{bookmarkOnly ? "Save bookmark" : "Save a link or note"}</h2><button disabled={busy} onClick={onClose}>Cancel</button></header>
@@ -28,7 +37,7 @@ export function CaptureDialog({ onClose, onSave, bookmarkOnly = false }: { onClo
       catch (error) { setError(error instanceof Error ? error.message : "Could not save. Your text is still here."); }
       finally { setBusy(false); }
     })(); }}>
-      {bookmarkOnly ? <label>Web address<input autoFocus type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address" placeholder="Paste a link or enter example.com" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={4096} /></label> : <label>Link or note<textarea autoFocus aria-label="Link or note" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={1_000_000} /></label>}
+      {bookmarkOnly ? <><label>Web address<input autoFocus type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address" placeholder="Paste a link or enter example.com" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={4096} /></label><button className="vault-capture-paste" type="button" disabled={busy} onClick={() => void pasteLink()}>Paste copied link</button></> : <label>Link or note<textarea autoFocus aria-label="Link or note" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={1_000_000} /></label>}
       {bookmarkOnly ? <details><summary>Set a title</summary><label>Title (optional)<input aria-label="Capture title" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} /></label></details>
         : <label>Title (optional)<input aria-label="Capture title" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} /></label>}
       {error && <p role="alert">{error}</p>}
