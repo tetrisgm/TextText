@@ -27,6 +27,16 @@ describe("TextPack folder previews", () => {
     const metadata = await sharp(Buffer.from(preview.image!.data, "base64")).metadata();
     expect(metadata.width).toBe(480); expect(metadata.height).toBe(320);
   });
+  it("keeps formatted card text in full previews while metadata scans stay compact", async () => {
+    const document = emptyDocumentSnapshot();
+    document.content.body = `${"Opening sentence. ".repeat(28)}\n\n- First point\n- Second point`;
+    const bytes = zipSync({ "document.json": strToU8(JSON.stringify(document)) });
+    const metadata = await previewTextpack(bytes, true);
+    const full = await previewTextpack(bytes);
+    expect(metadata.cardBody).toBeUndefined();
+    expect(full.excerpt.length).toBeLessThanOrEqual(400);
+    expect(full.cardBody).toContain("\n\n- First point\n- Second point");
+  });
   it("reports incomplete query bindings without invalidating unrelated title or scalar fields", async () => {
     const document = emptyDocumentSnapshot();
     document.content.title = "A  title";

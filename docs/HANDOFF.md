@@ -2,6 +2,8 @@
 
 ## Current work
 
+Note cards now receive a separate bounded formatted body from full Mac and web TextPack previews, preserving paragraphs and lists beyond the 400-character search excerpt. Metadata-only scans remain compact. The card display allows more vertical content. TypeScript, focused web and Swift tests, and the local browser flow passed. Supernotes creation and interaction parity remains open; no app release was run.
+
 Blog now has Find stories across saved titles, subtitles, opening excerpts, and tags, backed by the same bounded TextPack metadata index as Gallery. Search works past the visible page without loading full documents, and fails closed when required metadata is truncated. The browser flow filters by subtitle and checks empty results, then opens the story; `/tmp/texttext-blog-reference.png` is the checked dark list. TypeScript and local/web browser flows passed. Medium publishing and story-management parity remains open; no app release was run.
 
 Feeds first-use picker now presents ten compact topic choices instead of five large publisher cards, with a visible selection count. It reuses the existing tested feed endpoints and stores the chosen topic on each subscription TextPack; the browser flow checks ten choices, follows two, and verifies source tags and the topic strip. `/tmp/texttext-feeds-starter-reference.png` is the checked dark render. TypeScript and local/web browser flows passed (one local run stopped earlier on an unrelated transient selection Range error; rerun passed). Full Artifact News parity remains open, including the broader topic catalogue and reading signals; no app release was run.

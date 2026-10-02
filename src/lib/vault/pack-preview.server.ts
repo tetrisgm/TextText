@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { emptyDocumentSnapshot, validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
 
-export type VaultPreview = { metadataTruncated?: boolean; incompleteFields: string[]; document: DocumentSnapshot; title: string; excerpt: string; sourceURL?: string; image?: { data: string; contentType: string } };
+export type VaultPreview = { metadataTruncated?: boolean; incompleteFields: string[]; document: DocumentSnapshot; title: string; excerpt: string; cardBody?: string; sourceURL?: string; image?: { data: string; contentType: string } };
 
 /** No remote fetches or full asset transfer. Decode one local image, one frame. */
 export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): Promise<VaultPreview> {
@@ -50,6 +50,7 @@ export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): 
     try { const url = new URL(source); if (["http:", "https:"].includes(url.protocol) && !url.username && !url.password) result.sourceURL = url.href; } catch { /* Optional metadata. */ }
   }
   if (metadataOnly) return result;
+  result.cardBody = (parsed?.body ?? document.content.body).slice(0, 1200);
   const asset = document.content.assets.find((asset) => asset.kind === "image");
   const reference = asset?.poster || asset?.src;
   if (!reference || !/^assets\/[A-Za-z0-9 _./-]+$/.test(reference) || reference.split("/").includes("..")) return result;

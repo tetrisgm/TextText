@@ -4,7 +4,7 @@ import type { CollectionRenderSpec } from "@/lib/presentation/schema";
 import type { VaultItem } from "./bridge";
 import { folderForItem } from "./folders";
 
-export type FolderPreview = { title: string; excerpt: string; sourceURL?: string; document?: DocumentSnapshot; templateJSON?: string; metadataTruncated?: boolean; incompleteFields?: string[]; image?: { data: string; contentType: string }; images?: { data: string; contentType: string }[] };
+export type FolderPreview = { title: string; excerpt: string; cardBody?: string; sourceURL?: string; document?: DocumentSnapshot; templateJSON?: string; metadataTruncated?: boolean; incompleteFields?: string[]; image?: { data: string; contentType: string }; images?: { data: string; contentType: string }[] };
 
 export function collectionMembers(items: VaultItem[], folder: string, templated: boolean, excludedPath?: string): VaultItem[] {
   return items
@@ -35,4 +35,11 @@ export function collectionDocument(preview: FolderPreview | undefined, fallback:
   else delete fields.cover;
   return { ...document, content: { ...document.content, title: preview?.title || document.content.title || fallback,
     fields, body: preview?.excerpt || document.content.body, assets: thumbnailURL ? [{ id: "folder-thumbnail", kind: "image", src: thumbnailURL, alt: "" }] : [] } };
+}
+
+export function noteCardDocument(preview: FolderPreview | undefined, fallback: string): DocumentSnapshot {
+  const document = collectionDocument(preview, fallback);
+  return preview?.cardBody === undefined ? document : {
+    ...document, content: { ...document.content, body: preview.cardBody },
+  };
 }

@@ -347,7 +347,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case "preview":
                     return try autoreleasepool {
                         let path = try Self.string(params, "path")
-                        return try Self.preview(params["metadataOnly"] as? Bool == true ? store.readMetadata(path: path) : store.read(path: path))
+                        let metadataOnly = params["metadataOnly"] as? Bool == true
+                        return try Self.preview(metadataOnly ? store.readMetadata(path: path) : store.read(path: path), metadataOnly: metadataOnly)
                     }
                 case "importPack":
                     let maximumSize = 32 * 1024 * 1024
@@ -530,7 +531,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 "contentType": $0.contentType ?? "application/octet-stream", "data": $0.data.base64EncodedString(),
                 "remoteURL": $0.remoteURL ?? "assets/\($0.filename)"] }]
     }
-    static func preview(_ document: LocalVaultDocumentStore.Document) throws -> [String: Any] {
+    static func preview(_ document: LocalVaultDocumentStore.Document, metadataOnly: Bool = false) throws -> [String: Any] {
         let contents = document.contents
         let snapshot = contents.documentJSON.flatMap {
             (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
@@ -552,6 +553,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             ?? URL(fileURLWithPath: document.path).deletingPathExtension().lastPathComponent
         var result: [String: Any] = ["title": rawBounded(title, to: 240),
                                    "excerpt": bounded(markdown.body, to: 400)]
+        if !metadataOnly { result["cardBody"] = rawBounded(markdown.body, to: 1200) }
         var fields: [String: Any] = [:]
         for (key, value) in (content?["fields"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }).prefix(64) where key.utf8.count <= 120 {
             if let text = value as? String { fields[key] = rawBounded(text, to: 2048) }

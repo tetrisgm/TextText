@@ -136,7 +136,7 @@
 .vault-app .vault-note-card .tt-document :is(h1,h2,h3) { margin:0 0 8px; font-size:16px; line-height:1.35; font-weight:650; }
 .vault-app .vault-note-card .tt-document p { margin:0 0 7px; }
 .vault-app .vault-note-card .tt-document :is(ul,ol) { margin:4px 0; padding-left:20px; }
-.vault-app .vault-note-card .tt-document .tt-prose { max-height:165px; overflow:hidden; }
+.vault-app .vault-note-card .tt-document .tt-prose { max-height:260px; overflow:hidden; }
 .vault-app .vault-note-card>small { display:block; margin-top:13px; color:var(--muted); font-size:11px; text-align:right; }
 .vault-app .vault-note-card>button { position:absolute; inset:0; width:100%; padding:0; border-radius:9px; }
 .vault-app .vault-note-card>button:hover { background:color-mix(in srgb,var(--selection) 32%,transparent); }

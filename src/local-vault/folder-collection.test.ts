@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
-import { collectionDocument, collectionMembers, queryFolderMembers } from "./folder-collection";
+import { collectionDocument, collectionMembers, noteCardDocument, queryFolderMembers } from "./folder-collection";
 
 const spec = getBuiltinTemplate("texttext.note", 1)!.collection;
 const preview = (title: string, score: number) => ({ title, excerpt: "excerpt", document: { ...emptyDocumentSnapshot(), content: { ...emptyDocumentSnapshot().content, title, fields: { score } } } });
@@ -45,6 +45,11 @@ describe("folder collection projections", () => {
     expect(collectionDocument(original, "Fallback").content.fields.cover).toBeUndefined();
     expect(original.document.content.fields).toHaveProperty("cover", "https://example.com/original.jpg");
     expect(original.document.content.assets[0].src).toBe("remote-original.jpg");
+  });
+  it("renders note cards from the formatted preview without changing list excerpts", () => {
+    const card = { ...preview("Card", 1), cardBody: "Paragraph\n\n- First\n- Second" };
+    expect(noteCardDocument(card, "Fallback").content.body).toBe(card.cardBody);
+    expect(collectionDocument(card, "Fallback").content.body).toBe("excerpt");
   });
   it("sorts complete title metadata despite unrelated omitted article annotations", () => {
     const items = [{ path: "z" }, { path: "a" }];
