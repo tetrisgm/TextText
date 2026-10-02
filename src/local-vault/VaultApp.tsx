@@ -910,20 +910,20 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     window.addEventListener("texttext:vault-search", openSearch);
     return () => { window.removeEventListener("keydown", key); window.removeEventListener("texttext:vault-search", openSearch); };
   });
+  const selectedStory = (() => {
+    if (!selected || folderForItem(selected.path) !== "Blog") return false;
+    try { return readDocument(selected).presentation.template.id === "texttext.article"; }
+    catch { return false; }
+  })();
   const contextTitle = selected
-    ? (liveTitle?.path === selected.path ? liveTitle.title.trim() || "Untitled" : (() => {
-        try { return readDocument(selected).content.title.trim() || "Untitled"; }
+    ? (liveTitle?.path === selected.path ? liveTitle.title.trim() || (selectedStory ? "New story" : "Untitled") : (() => {
+        try { return readDocument(selected).content.title.trim() || (selectedStory ? "New story" : "Untitled"); }
         catch { return selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled"; }
       })())
     : destinationFolder.trim() || (access && !access.fullAccess ? "Shared files" : "All files");
   const contextParent = selected
     ? folderForItem(selected.path) || "All files"
     : listing?.name || listing?.root.split("/").filter(Boolean).at(-1) || "TextText";
-  const selectedStory = (() => {
-    if (!selected || folderForItem(selected.path) !== "Blog") return false;
-    try { return readDocument(selected).presentation.template.id === "texttext.article"; }
-    catch { return false; }
-  })();
   const openPublish = () => {
     if (!selected || !sharingWorkspaceId || !selectedItemId || !canPublish) return;
     let label = selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file";

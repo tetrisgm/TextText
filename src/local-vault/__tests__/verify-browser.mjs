@@ -956,6 +956,7 @@ try {
   assert.equal(JSON.parse(newStory.documentJSON).presentation.template.id, "texttext.article");
   assert.equal(JSON.parse(newStory.documentJSON).content.title, "");
   assert.equal(await page.getByRole("textbox", { name: "Title", exact: true }).getAttribute("placeholder"), "Title");
+  assert.equal(await page.locator(".vault-context-location h2").textContent(), "New story");
   assert.match(newStory.markdown, /kind: "article"/);
   await page.locator(".vault-context-actions > .vault-primary-action").getByText("Publish").waitFor();
   assert.equal(await page.locator(".vault-context-actions > .vault-primary-action").isDisabled(), true);
