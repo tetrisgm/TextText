@@ -1074,6 +1074,19 @@ try {
   await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").waitFor();
   await page.getByRole("region", { name: "Note card" }).getByText("#Ideas").waitFor();
   await page.screenshot({ path: "/tmp/texttext-note-card-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForFunction(() => {
+    const title = document.querySelector('.vault-note-display .tt-text-title');
+    return title && getComputedStyle(title).color === 'rgb(32, 32, 32)';
+  });
+  const lightCardColors = await page.getByRole("region", { name: "Note card" }).evaluate((card) => {
+    const title = card.querySelector(".tt-text-title");
+    const body = card.querySelector(".tt-prose");
+    return { title: title && getComputedStyle(title).color, body: body && getComputedStyle(body).color };
+  });
+  assert.deepEqual(lightCardColors, { title: "rgb(32, 32, 32)", body: "rgb(32, 32, 32)" });
+  await page.screenshot({ path: "/tmp/texttext-note-card-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Edit card" }).click();
   await page.getByRole("textbox", { name: "Title" }).waitFor();
   const newCard = [...files.values()].at(-1);

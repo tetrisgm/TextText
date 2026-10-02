@@ -115,7 +115,7 @@
 .vault-app .vault-note-card .tt-document p { margin:0 0 7px; }
 .vault-app .vault-note-card .tt-document :is(ul,ol) { margin:4px 0; padding-left:20px; }
 .vault-app .vault-note-card .tt-document .tt-prose { max-height:165px; overflow:hidden; }
-.vault-app .vault-note-card>small { display:block; margin-top:10px; color:var(--tt-accent); font-size:11px; }
+.vault-app .vault-note-card>small { display:block; margin-top:13px; color:var(--muted); font-size:11px; text-align:right; }
 .vault-app .vault-note-card>button { position:absolute; inset:0; width:100%; padding:0; border-radius:9px; }
 .vault-app .vault-note-card>button:hover { background:color-mix(in srgb,var(--selection) 32%,transparent); }
 .vault-app .vault-note-card:focus-within { outline:2px solid var(--tt-accent); outline-offset:2px; }
@@ -251,13 +251,18 @@
 .vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-md-surface { min-height:100px; }
 .vault-app .tt-document-editor[data-template-id="texttext.note"] .tt-field-body :is(textarea,.tt-collaborative-mirror) { min-height:100px; }
 .vault-app .tt-document-editor[data-template-id="texttext.note"] > .tt-stack { gap:10px; padding:0; }
-.vault-app .vault-note-display { max-width:520px; margin:25px auto; padding:17px 24px 21px; border:1px solid var(--line); border-radius:10px; background:var(--surface); box-shadow:0 5px 24px #0000000b; }
-.vault-app .vault-note-display-actions { display:flex; justify-content:flex-end; margin-bottom:8px; }
-.vault-app .vault-note-display-actions button { border:0; background:none; color:var(--tt-accent); font:inherit; font-size:12px; cursor:pointer; }
-.vault-app .vault-note-display .tt-document { min-height:0; margin:0; padding:0; border:0; background:transparent !important; box-shadow:none; }
+.vault-app .vault-note-display { position:relative; max-width:520px; margin:25px auto; padding:25px 27px 21px; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:0 8px 22px #00000013,0 2px 4px #0000000d; }
+.vault-app .vault-note-display-actions { position:absolute; top:16px; right:17px; z-index:1; }
+.vault-app .vault-note-display-actions button { display:grid; place-items:center; width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:50%; background:var(--surface); color:var(--muted); cursor:pointer; }
+.vault-app .vault-note-display-actions button:hover { color:var(--ink); background:var(--selection); }
+.vault-app .vault-note-display-actions button:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
+.vault-app .vault-note-display .tt-document { --ink:#202020; min-height:0; margin:0; padding:0; border:0; background:transparent !important; color:var(--ink); box-shadow:none; }
+@media(prefers-color-scheme:dark){.vault-app .vault-note-display .tt-document{--ink:#eee}}
+.vault-app .vault-note-display .tt-document :is(.tt-text-title,.tt-prose) { color:var(--ink) !important; }
+.vault-app .vault-note-display .tt-document:not(.tt-collection-item) { padding-right:28px; }
 .vault-app .vault-note-display .tt-document:not(.tt-collection-item) > .tt-stack { gap:10px; padding:0; }
-.vault-app .vault-note-display-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:17px; }
-.vault-app .vault-note-display-tags span { border:1px solid var(--line); border-radius:5px; padding:3px 7px; color:var(--muted); font-size:12px; }
+.vault-app .vault-note-display-tags { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:9px; margin-top:20px; }
+.vault-app .vault-note-display-tags span { color:var(--muted); font-size:12px; }
 .vault-app .vault-story-display { max-width:900px; margin:0 auto; padding:18px 28px 72px; }
 .vault-app .vault-story-display-actions { display:flex; justify-content:flex-end; margin-bottom:12px; }
 .vault-app .vault-story-display-actions button { border:0; background:none; color:var(--tt-accent); font:inherit; font-size:13px; cursor:pointer; }
