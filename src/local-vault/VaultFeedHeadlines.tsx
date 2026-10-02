@@ -222,9 +222,11 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const rankedCoverage = rankFeedClusters(coverage, Date.now());
   const visibleCoverage = coverage.filter(group => !query || group.headline.toLocaleLowerCase().includes(query) || group.members.some(matchesStory));
   const visibleRankedCoverage = rankedCoverage.filter(group => !query || group.headline.toLocaleLowerCase().includes(query) || group.members.some(matchesStory));
+  const topicHeadlines = topics.includes(tab) ? clusterFeedStories(stories.filter(story => story.topic === tab))
+    .filter(group => group.members.length > 1 && group.imageUrl && (!query || group.headline.toLocaleLowerCase().includes(query) || group.members.some(matchesStory))).slice(0, 8) : [];
   const rankedLeadIndex = visibleRankedCoverage.findIndex(group => Boolean(group.imageUrl));
   const latestLeadIndex = visibleStories.findIndex(story => Boolean(story.imageUrl));
-  const activeGroup: FeedCluster | undefined = coverage.find(group => group.id === activeGroupId);
+  const activeGroup: FeedCluster | undefined = topicHeadlines.find(group => group.id === activeGroupId) ?? coverage.find(group => group.id === activeGroupId);
   const activeFull = full?.key === activeKey ? full.value : null;
   const readerDocument = activeFull && storyTemplate ? (() => {
     const document = emptyDocumentSnapshot({ id: storyTemplate.id, version: storyTemplate.version });
@@ -244,7 +246,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       <footer><button type="button" disabled={!canAdd || Boolean(saving) || saved.has(activeKey)} onClick={() => void saveStory(active)}>{saving === activeKey ? "Saving…" : saved.has(activeKey) ? "Saved to Bookmarks" : "Save to Bookmarks"}</button>{activeFull.entry.permalink && <a href={activeFull.entry.permalink} target="_blank" rel="noopener noreferrer">Open original</a>}</footer></>}
   </section>;
   if (activeGroup) return <section className="vault-feed-coverage" aria-label="Headline coverage">
-    <header><button type="button" onClick={() => setActiveGroupId(null)}>‹ {tab === "Headlines" ? "Headlines" : "For You"}</button></header>
+    <header><button type="button" onClick={() => setActiveGroupId(null)}>‹ {tab === "Headlines" ? "Headlines" : topics.includes(tab) ? tab : "For You"}</button></header>
     <h1>{activeGroup.headline}</h1>
     <p>{activeGroup.members.length} {activeGroup.members.length === 1 ? "article" : "articles"} · {activeGroup.sources.join(", ")}</p>
     {activeGroup.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-coverage-image" src={activeGroup.imageUrl} alt="" referrerPolicy="no-referrer" />}
@@ -279,6 +281,10 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       {loading && <p role="status">Reading your sources…</p>}
       {error && <p role="status">{error}</p>}
       {!loading && !visibleStories.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
+      {topicHeadlines.length > 0 && <section className="vault-feed-topic-headlines" aria-label="Topic headlines"><h2>Headlines</h2><div className="vault-feed-topic-carousel">{topicHeadlines.map(group => <button type="button" key={group.id} onClick={() => setActiveGroupId(group.id)} aria-label={`Coverage: ${group.headline}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}<img src={group.imageUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" />
+        <strong>{group.headline}</strong><small>{group.members.length} articles · {group.sources.length} sources</small>
+      </button>)}</div></section>}
       <ol>{visibleStories.map((story, index) => <li className={story.imageUrl && latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0)) ? "vault-feed-featured" : ""} key={`${story.feedURL}:${story.externalKey}`}>
         {story.imageUrl && latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0)) && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         <div className="vault-feed-story">

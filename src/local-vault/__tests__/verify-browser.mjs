@@ -1370,6 +1370,15 @@ try {
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
   const newsTopics = page.getByRole("navigation", { name: "News topics" });
   await newsTopics.getByRole("button", { name: "Design", exact: true }).click();
+  const topicHeadlines = page.getByRole("region", { name: "Topic headlines" });
+  await topicHeadlines.getByRole("heading", { name: "Headlines" }).waitFor();
+  await topicHeadlines.getByRole("button", { name: /Coverage: A considered design headline/ }).click();
+  await page.getByRole("region", { name: "Headline coverage" }).getByText("2 articles", { exact: false }).waitFor();
+  await page.locator(".vault-feed-coverage > header button").getByText("Design", { exact: false }).click();
+  await page.screenshot({ path: "/tmp/texttext-feed-topic-headlines-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-feed-topic-headlines-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
   assert.equal(await newsTopics.getByRole("button", { name: "Design", exact: true }).getAttribute("aria-pressed"), "true");
   await newsTopics.getByRole("button", { name: "For You", exact: true }).click();
