@@ -10,7 +10,7 @@ The saved Note card now uses a corner pencil control and bottom-aligned tags, fo
 
 The Bookmarks reader now uses compact previous/next navigation, Reader and Original controls, a sans-serif title/body, and a source line below the title to track Shiori’s public dashboard example. Its items remain bookmark TextPacks, and URL-first capture remains the creation path.
 
-The Gallery detail viewer now gives the image most of the window, keeps dimensions, file size, optional source, caption, and colors in a right inspector, and offers scrollable zoom plus Fit. This follows Resurf’s public image detail view while the assets remain inside the Gallery TextPack.
+The Gallery detail viewer now occupies the workspace beside the still-visible folder sidebar, with a large image, right inspector, zoom, and Fit. Folder navigation closes the viewer. This follows Resurf’s public image detail view while the assets remain inside the Gallery TextPack.
 
 Feed source creation now starts with a website or feed address, shows discovered sources, and keeps folder/topic choices optional until after discovery. The dialog sizes to its contents. Selecting a source still saves a subscription TextPack in Feeds.
 
@@ -36,6 +36,7 @@ New bookmarks record their save time in the initial TextPack snapshot. The Bookm
 - The New story header passes the full local browser contract; `/tmp/texttext-new-story-editor-light-reference.png` shows the title placeholder and corrected header.
 - The compact Notes editor passes TypeScript, the local UI build, and the browser layout check; screenshots are `/tmp/texttext-note-editor-reference.png` and `/tmp/texttext-note-editor-light-reference.png`.
 - Bookmark day grouping and initial saved timestamp pass TypeScript, the local UI build, the full browser contract, and the targeted Swift bookmark-capture test. `/tmp/texttext-bookmark-light-reference.png` shows Today and legacy Saved links groups.
+- The integrated Gallery viewer passes TypeScript, the local UI build, and the full browser contract. The browser verifies a visible folder sidebar, image navigation and zoom, and closing on folder navigation; `/tmp/texttext-gallery-light-reference.png` shows the updated light-theme view.
 
 ## Boundaries
 

@@ -235,8 +235,10 @@
 .vault-app .vault-bookmark-reader .tt-document .tt-prose { width:min(var(--tt-measure),100%); margin-inline:auto; font-family:inherit; font-size:16px; line-height:1.7; }
 @media(prefers-color-scheme:dark){.vault-app .vault-bookmark-reader .tt-document{--paper:#232323;--ink:#eee;--muted:#aaa}}
 @media(max-width:760px){.vault-app .vault-bookmark-library{grid-template-columns:1fr;margin:0}.vault-app .vault-bookmark-list{border-right:0;border-bottom:1px solid var(--line);max-height:220px;overflow:auto}}
-.vault-app .vault-gallery-backdrop { position:fixed; inset:0; z-index:230; display:grid; place-items:center; padding:12px; background:#111a; }
-.vault-app .vault-gallery-lightbox { width:min(1560px,100%); height:calc(100vh - 24px); overflow:hidden; display:flex; flex-direction:column; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:11px; box-shadow:0 24px 90px #0005; }
+.vault-app .vault-gallery-view { position:fixed; inset:0 0 0 240px; z-index:230; background:var(--surface); }
+.vault-app.sidebar-collapsed .vault-gallery-view { left:0; }
+.vault-app .vault-gallery-lightbox { width:100%; height:100%; overflow:hidden; display:flex; flex-direction:column; background:var(--surface); color:var(--ink); }
+@media(max-width:700px){.vault-app .vault-gallery-view{left:0}}
 .vault-app .vault-gallery-lightbox>header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0; padding:8px 16px; border-bottom:1px solid var(--line); font-size:13px; }
 .vault-app .vault-gallery-lightbox>header button { min-width:70px; }
 .vault-app .vault-gallery-lightbox>header button:last-child { text-align:right; }

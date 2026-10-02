@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
+import { createPortal } from "react-dom";
+import { usePopoverFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { vaultRequest, type VaultFile } from "./bridge";
 import { readDocument } from "./model";
@@ -35,7 +36,7 @@ function imageDetails(source: string): Promise<{ colors: string[]; width: number
 }
 
 export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdit }: { entries: GalleryEntry[]; initialSelection: number; onClose: () => void; onEdit: (path: string) => void }) {
-  const dialog = useRef<HTMLDivElement>(null);
+  const viewer = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<VaultFile | null>(null);
   const [error, setError] = useState("");
   const [selection, setSelection] = useState(initialSelection);
@@ -45,7 +46,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const path = chosen?.path || "";
   const index = chosen?.index || 0;
   useEscapeLayer(true, "gallery-image", onClose);
-  useDialogFocus(dialog, true);
+  usePopoverFocus(viewer, true);
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();
@@ -103,8 +104,10 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selection, entries.length]);
-  return <div className="vault-gallery-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <div ref={dialog} className="vault-gallery-lightbox" role="dialog" aria-modal="true" aria-label={title}>
+  const shell = document.querySelector(".vault-app");
+  if (!shell) return null;
+  return createPortal(<section className="vault-gallery-view">
+    <div ref={viewer} className="vault-gallery-lightbox" role="region" aria-label={title}>
       <header><button onClick={onClose} aria-label="Close image">‹ <span>Gallery</span></button><span>{title}</span><button aria-label="Edit item" onClick={() => onEdit(path)} disabled={!file}>Edit</button></header>
       {error && <p role="alert">{error}</p>}
       {file?.path !== path && !error && <p role="status">Opening image…</p>}
@@ -116,5 +119,5 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
         <div className="vault-gallery-zoom" role="group" aria-label="Image zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, Math.round((value - .25) * 100) / 100))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, Math.round((value + .25) * 100) / 100))}>+</button><button aria-label="Fit image" disabled={zoom === 1} onClick={() => setZoom(1)}>Fit</button></div>
       </div><aside><dl>{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}{size > 0 && <><dt>Size</dt><dd>{size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`}</dd></>}{source && <><dt>Source</dt><dd className="vault-gallery-source">{source}</dd></>}{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}</dl>{caption && <div className="vault-gallery-inspector-section"><h2>Caption</h2><p>{caption}</p></div>}{details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
     </div>
-  </div>;
+  </section>, shell);
 }

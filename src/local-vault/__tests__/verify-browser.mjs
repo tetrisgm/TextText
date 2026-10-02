@@ -1030,8 +1030,10 @@ try {
   assert.ok(firstGalleryRow.gap < 2 && firstGalleryRow.heights.every(height => Math.abs(height - firstGalleryRow.heights[0]) < 1) && firstGalleryRow.uncropped);
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });
   await page.getByRole("button", { name: "Open Two photographs image 1" }).click();
-  const lightbox = page.getByRole("dialog", { name: "Two photographs" });
+  const lightbox = page.getByRole("region", { name: "Two photographs" });
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
+  assert.ok(await page.getByRole("button", { name: "TextText", exact: true }).isVisible());
+  assert.ok((await lightbox.boundingBox()).x >= 239);
   await lightbox.getByRole("button", { name: "Next image" }).click();
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
   await lightbox.getByText("240 × 120").waitFor();
@@ -1045,13 +1047,13 @@ try {
   const towardsSingle = single < pairSecond ? "ArrowLeft" : "ArrowRight";
   const towardsPair = single < pairSecond ? "ArrowRight" : "ArrowLeft";
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsSingle);
-  await page.getByRole("dialog", { name: "One photograph" }).getByRole("img", { name: "Third photograph" }).waitFor();
+  await page.getByRole("region", { name: "One photograph" }).getByRole("img", { name: "Third photograph" }).waitFor();
   await page.waitForFunction(previous => {
     const color = document.querySelector('.vault-gallery-colors span')?.getAttribute('aria-label');
     return color && color !== previous;
   }, pairColor);
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsPair);
-  await page.getByRole("dialog", { name: "Two photographs" }).getByRole("img", { name: "Second photograph" }).waitFor();
+  await page.getByRole("region", { name: "Two photographs" }).getByRole("img", { name: "Second photograph" }).waitFor();
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
   await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
   await lightbox.getByRole("button", { name: "Zoom in" }).click();
@@ -1074,6 +1076,11 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-editor-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  await chooseFolder("Gallery");
+  await page.getByRole("button", { name: "Open Collected photographs image 1" }).click();
+  await page.getByRole("region", { name: "Collected photographs" }).waitFor();
+  await chooseFolder("Notes");
+  assert.equal(await page.locator(".vault-gallery-view").count(), 0);
   await chooseFolder("Gallery");
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Measured.png", mimeType: "image/png", buffer: Buffer.from(portrait, "base64") });
   await page.getByRole("button", { name: "Open Measured" }).waitFor();
