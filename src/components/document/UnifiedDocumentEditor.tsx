@@ -567,6 +567,9 @@ export function UnifiedDocumentEditor({
   const [document, setDocument] = useState(initialDocument);
   const [tagDraft, setTagDraft] = useState("");
   const [articleSelection, setArticleSelection] = useState<{ start: number; end: number; text: string; x: number; y: number } | null>(null);
+  const [articleLinkTarget, setArticleLinkTarget] = useState<typeof articleSelection>(null);
+  const [articleLinkURL, setArticleLinkURL] = useState("");
+  const [articleLinkError, setArticleLinkError] = useState("");
   const [articleCaret, setArticleCaret] = useState<{ offset: number; x: number; y: number } | null>(null);
   const articleImageInput = useRef<HTMLInputElement>(null);
   const articleBodyOffset = useRef(0);
@@ -577,6 +580,16 @@ export function UnifiedDocumentEditor({
     window.addEventListener("resize", dismiss);
     return () => { window.removeEventListener("scroll", dismiss, true); window.removeEventListener("resize", dismiss); };
   }, [articleSelection]);
+  useEffect(() => {
+    if (!articleLinkTarget) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".tt-article-link")) setArticleLinkTarget(null);
+    };
+    const dismissOnScroll = () => setArticleLinkTarget(null);
+    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("scroll", dismissOnScroll, true);
+    return () => { window.removeEventListener("pointerdown", dismiss); window.removeEventListener("scroll", dismissOnScroll, true); };
+  }, [articleLinkTarget]);
   const documentRef = useRef(document);
   const networkEnabled = transport === "cloud" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     collab.postId,
@@ -1486,7 +1499,7 @@ export function UnifiedDocumentEditor({
     } catch { return null; }
   }, [awareness, doc]);
 
-  const formatArticleSelection = useCallback((marker: "**" | "*" | "`") => {
+  const formatArticleSelection = useCallback((marker: "**" | "*") => {
     if (!articleSelection || activeTemplate.id !== "texttext.article") return;
     const body = currentLocalDocument().content.body;
     const { start, end, text } = articleSelection;
@@ -1496,6 +1509,39 @@ export function UnifiedDocumentEditor({
     setArticleSelection(null);
     window.requestAnimationFrame(() => requestDocumentCaret(start + marker.length, end + marker.length));
   }, [activeTemplate.id, articleSelection, currentLocalDocument, updateText]);
+
+  const formatArticleBlock = useCallback((prefix: "# " | "## " | "> ") => {
+    if (!articleSelection || activeTemplate.id !== "texttext.article") return;
+    const body = currentLocalDocument().content.body;
+    const { start, end, text } = articleSelection;
+    if (!text || body.slice(start, end) !== text) { setArticleSelection(null); return; }
+    const lineStart = body.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const nextNewline = body.indexOf("\n", Math.max(start, end - 1));
+    const lineEnd = nextNewline < 0 ? body.length : nextNewline;
+    const block = body.slice(lineStart, lineEnd);
+    const nextBlock = block.split("\n").map((line) => line.startsWith(prefix) ? line.slice(prefix.length) : `${prefix}${line}`).join("\n");
+    updateText("body", `${body.slice(0, lineStart)}${nextBlock}${body.slice(lineEnd)}`);
+    setArticleSelection(null);
+    window.requestAnimationFrame(() => requestDocumentCaret(lineStart, lineStart + nextBlock.length));
+  }, [activeTemplate.id, articleSelection, currentLocalDocument, updateText]);
+
+  const linkArticleSelection = useCallback(() => {
+    if (!articleLinkTarget || activeTemplate.id !== "texttext.article") return;
+    let url: URL;
+    try {
+      url = new URL(/^https?:\/\//i.test(articleLinkURL.trim()) ? articleLinkURL.trim() : `https://${articleLinkURL.trim()}`);
+      if (!(["https:", "http:"].includes(url.protocol) && url.hostname)) throw new Error("Invalid URL");
+    } catch { setArticleLinkError("Enter a valid web address."); return; }
+    const body = currentLocalDocument().content.body;
+    const { start, end, text } = articleLinkTarget;
+    if (body.slice(start, end) !== text) { setArticleLinkError("The selected text changed. Select it again."); return; }
+    const markdown = `[${text.replaceAll("]", "\\]")}](<${url.href}>)`;
+    updateText("body", `${body.slice(0, start)}${markdown}${body.slice(end)}`);
+    setArticleLinkTarget(null);
+    setArticleSelection(null);
+    setArticleLinkError("");
+    window.requestAnimationFrame(() => requestDocumentCaret(start, start + markdown.length));
+  }, [activeTemplate.id, articleLinkTarget, articleLinkURL, currentLocalDocument, updateText]);
 
 
   const remoteSelections = useMemo(
@@ -1999,11 +2045,19 @@ export function UnifiedDocumentEditor({
         event.currentTarget.value = "";
         if (files.length) pasteImages(files, { from: articleBodyOffset.current, to: articleBodyOffset.current });
       }} />}
-      {articleSelection && activeTemplate.id === "texttext.article" && <div className="tt-article-format" role="toolbar" aria-label="Format selected story text" style={{ left: Math.max(90, Math.min(typeof window === "undefined" ? articleSelection.x : window.innerWidth - 90, articleSelection.x)), top: Math.max(8, articleSelection.y - 48) }}>
+      {articleSelection && !articleLinkTarget && activeTemplate.id === "texttext.article" && <div className="tt-article-format" role="toolbar" aria-label="Format selected story text" style={{ left: Math.max(90, Math.min(typeof window === "undefined" ? articleSelection.x : window.innerWidth - 90, articleSelection.x)), top: Math.max(8, articleSelection.y - 48) }}>
         <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("**")}><strong>B</strong></button>
         <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("*")}><em>I</em></button>
-        <button type="button" aria-label="Inline code" title="Inline code" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("`")}><code>⌘</code></button>
+        <button type="button" aria-label="Link" title="Link" onMouseDown={(event) => event.preventDefault()} onClick={() => { setArticleLinkTarget(articleSelection); setArticleLinkURL(""); setArticleLinkError(""); }}>⌁</button>
+        <button type="button" aria-label="Heading" title="Heading" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleBlock("# ")}>T</button>
+        <button type="button" aria-label="Subheading" title="Subheading" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleBlock("## ")}><small>T</small></button>
+        <button type="button" aria-label="Quote" title="Quote" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleBlock("> ")}>“</button>
       </div>}
+      {articleLinkTarget && activeTemplate.id === "texttext.article" && <form className="tt-article-format tt-article-link" aria-label="Add story link" style={{ left: Math.max(170, Math.min(typeof window === "undefined" ? articleLinkTarget.x : window.innerWidth - 170, articleLinkTarget.x)), top: Math.max(8, articleLinkTarget.y - 48) }} onSubmit={(event) => { event.preventDefault(); linkArticleSelection(); }}>
+        <input autoFocus aria-label="Link address" placeholder="Paste or type a link" value={articleLinkURL} onChange={(event) => { setArticleLinkURL(event.target.value); setArticleLinkError(""); }} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setArticleLinkTarget(null); } }} />
+        <button type="submit" disabled={!articleLinkURL.trim()}>Add link</button>
+        {articleLinkError && <span role="alert">{articleLinkError}</span>}
+      </form>}
       {unboundFields.length > 0 && (
         // Fields the look declares but does not place stay one level down, so
         // the writing surface is a document rather than a form.
@@ -2039,6 +2093,11 @@ export function UnifiedDocumentEditor({
         .tt-article-format{position:fixed;z-index:80;display:flex;transform:translateX(-50%);gap:2px;padding:5px;border-radius:7px;background:#242424;color:#fff;box-shadow:0 8px 28px #0005;font:500 14px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
         .tt-article-format button{display:grid;place-items:center;min-width:32px;height:30px;padding:0 7px;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}
         .tt-article-format button:hover,.tt-article-format button:focus-visible{background:#ffffff29;outline:0}
+        .tt-article-link{width:min(340px,calc(100vw - 20px));flex-wrap:wrap;padding:7px}
+        .tt-article-link input{flex:1;min-width:0;padding:5px 8px;border:0;border-radius:4px;background:#fff;color:#222;font:inherit}
+        .tt-article-link button{min-width:auto;white-space:nowrap}
+        .tt-article-link button:disabled{opacity:.5;cursor:default}
+        .tt-article-link [role=alert]{width:100%;padding:4px 7px;color:#ffd5d5;font-size:12px}
         .tt-article-insert{position:fixed;z-index:70;transform:translateY(-4px)}
         .tt-article-insert button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 55%,transparent);border-radius:50%;background:var(--paper,#fff);color:var(--ink,#1d1d1f);font:300 23px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
         .tt-article-insert button:hover,.tt-article-insert button:focus-visible{border-color:var(--tt-accent,#0071e3);color:var(--tt-accent,#0071e3);outline:0}
