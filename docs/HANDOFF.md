@@ -10,6 +10,8 @@ The saved Note card now uses a corner pencil control and bottom-aligned tags, fo
 
 Command K now searches the live folder tree for `Go to…` actions. These destinations stay out of the initial action list, and selecting one flushes the open item before navigating. The local browser contract verifies the keyboard flow.
 
+New from template now includes bundled Blog, Note, Bookmark, Gallery, and Presentation choices when a workspace lacks matching Templates files. Built-in choices keep the same TextPack creation paths as the folder actions.
+
 The Bookmarks reader now uses compact previous/next navigation, Reader and Original controls, a sans-serif title/body, and a source line below the title to track Shiori’s public dashboard example. Its items remain bookmark TextPacks, and URL-first capture remains the creation path.
 
 The Gallery detail viewer now occupies the workspace beside the still-visible folder sidebar, with a large image, right inspector, zoom, and Fit. Folder navigation closes the viewer. A single Gallery import opens its image-first item editor for title and caption; batch imports return to the grid. This follows Resurf’s public image detail view while the assets remain inside the Gallery TextPack.

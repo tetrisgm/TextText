@@ -74,11 +74,12 @@ export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use templat
   )}</div>;
 }
 
-export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCreateFromFile }: {
+export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCreateFromFile, onCreateFromBuiltIn }: {
   onApply: (template: TemplateDefinition, sourceJSON?: string | null) => void;
   onClose: () => void;
   currentTemplate?: TemplateDefinition;
   onCreateFromFile?: (path: string) => void;
+  onCreateFromBuiltIn?: (template: TemplateDefinition) => void;
 }) {
   const { looks, loading, notice, reload } = useVaultTemplates();
   const [query, setQuery] = useState("");
@@ -88,7 +89,7 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
   const matches = (look: VaultLook) => `${look.template.name} ${look.template.description ?? ""} ${look.path ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   const retiredStarterIds = new Set(["texttext.timeline", "texttext.page", "texttext.casestudy", "texttext.project", "texttext.brief", "texttext.todo"]);
   const visible = looks.filter(look => !retiredStarterIds.has(look.template.id) && matches(look));
-  const included = onCreateFromFile ? [] : BUILTIN_TEMPLATES
+  const included = BUILTIN_TEMPLATES
     .filter((template) => !retiredStarterIds.has(template.id) && !looks.some((look) => look.template.id === template.id))
     .map((template) => ({ template })).filter(matches);
   const current = !onCreateFromFile && currentTemplate &&
@@ -96,6 +97,7 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
     !BUILTIN_TEMPLATES.some((template) => template.id === currentTemplate.id) ? [{ template: currentTemplate }].filter(matches) : [];
   const choose = (look: VaultLook) => {
     if (onCreateFromFile && look.path) onCreateFromFile(look.path);
+    else if (onCreateFromFile && onCreateFromBuiltIn) onCreateFromBuiltIn(look.template);
     else onApply(look.template, look.sourceJSON ?? null);
   };
   return <div ref={dialog} className="vault-template-dialog vault-template-library" role="dialog" aria-modal="true" aria-label={title}>
@@ -104,10 +106,10 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
       <button onClick={onClose}>Close</button></header>
     <input className="vault-template-search" type="search" aria-label="Search templates" placeholder="Search templates" value={query} onChange={(event) => setQuery(event.target.value)} />
     {loading && <p role="status">Reading template files…</p>}
-    {!loading && !looks.length && !notice && <p>Your reusable documents live in the Templates folder. Save a look from any document to add your own.</p>}
+    {!loading && !looks.length && !notice && !onCreateFromFile && <p>Your reusable documents live in the Templates folder. Save a look from any document to add your own.</p>}
     {visible.length > 0 && <><h3>In your Templates folder</h3><VaultTemplateCards looks={visible} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} /></>}
     {current.length > 0 && <><h3>This item</h3><VaultTemplateCards looks={current} onChoose={choose} actionLabel="Apply look" /></>}
-    {included.length > 0 && <><h3>Included looks</h3><VaultTemplateCards looks={included} onChoose={choose} actionLabel="Apply look" /></>}
+    {included.length > 0 && <><h3>{onCreateFromFile ? "Ready to create" : "Included looks"}</h3><VaultTemplateCards looks={included} onChoose={choose} actionLabel={onCreateFromFile ? "Create document" : "Apply look"} /></>}
     {!loading && query.trim() && visible.length + included.length + current.length === 0 && <p>No templates match “{query.trim()}”. Try another name.</p>}
     {notice && <div className="vault-template-notice"><p role="status">{notice}</p><button onClick={reload}>Read templates again</button></div>}
     <p className="vault-template-help">Each saved template is a TextPack file. Edit it yourself or ask the assistant to customize it.</p>

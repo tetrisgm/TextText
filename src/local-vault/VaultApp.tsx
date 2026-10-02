@@ -3,7 +3,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
-import { validateTemplateDefinition } from "@/lib/presentation/schema";
+import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
@@ -755,12 +755,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     });
   };
   const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => setTemplatePicker(true)); };
-  const createForFolder = (folder: string, templateName: string, initialTitle = "") => operate(async () => {
+  const createForFolder = (folder: string, templateName: string, initialTitle = "", builtinTemplate?: TemplateDefinition) => operate(async () => {
     const sourcePath = `Templates/${templateName}.textpack`;
     const source = listing?.items.some(item => item.path === sourcePath) ? await vaultRequest<VaultFile>("read", { path: sourcePath }) : null;
     const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, ...(source ? { sourcePath, sourceHash: source.hash } : {}) });
     const example = readDocument(cloned);
-    const fallback = source?.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : BUILTIN_TEMPLATES.find(template => template.id === (folder === "Blog" ? "texttext.article" : "texttext.note"));
+    const fallback = builtinTemplate ?? (source?.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : BUILTIN_TEMPLATES.find(template => template.id === (folder === "Blog" ? "texttext.article" : "texttext.note")));
     const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle, subtitle: "", body: "", fields: {}, tags: [], assets: [] },
       presentation: fallback ? { ...example.presentation, template: { id: fallback.id, version: fallback.version } } : example.presentation };
     const created = await vaultRequest<VaultFile>("write", writePayload(cloned, blank, fallback ? { template: fallback } : undefined));
@@ -1104,7 +1104,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
       }} />}
-      {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFromFile={(path) => void operate(async () => {
+      {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFromBuiltIn={(template) => {
+        setTemplatePicker(false);
+        if (template.id === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setCaptureMode("bookmark"); return; }
+        if (template.id === "texttext.gallery") { setDestinationFolder("Gallery"); requestAnimationFrame(() => imageInput.current?.click()); return; }
+        const destination = template.id === "texttext.article" ? ["Blog", "Blog post"] : template.id === "texttext.talk" ? ["Presentations", "Talk"] : ["Notes", "Note"];
+        void createForFolder(destination[0], destination[1], "", template);
+      }} onCreateFromFile={(path) => void operate(async () => {
         const source = await vaultRequest<VaultFile>("read", { path });
         const templateId = readDocument(source).presentation.template.id;
         if (templateId === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setTemplatePicker(false); setCaptureMode("bookmark"); return; }

@@ -767,7 +767,7 @@ try {
   await versions.getByRole("button", { name: "Close recovery" }).click();
   await versions.waitFor({ state: "hidden" });
   assert.equal(await page.locator("dialog.vault-recovery").count(), 0);
-  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  await page.getByRole("textbox", { name: "Title" }).waitFor();
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   const newNotePath = [...files.keys()].at(-1);
@@ -1197,7 +1197,7 @@ try {
   await page.screenshot({ path: "/tmp/texttext-note-card-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Edit card" }).click();
-  await page.getByRole("textbox", { name: "Title" }).waitFor();
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
   const newCard = [...files.values()].at(-1);
   assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
   assert.deepEqual(JSON.parse(newCard.documentJSON).content.tags, ["Ideas"]);
@@ -1244,6 +1244,14 @@ try {
   const discovered = [...files.values()].find(file => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://journal.example/feed.xml");
   assert.ok(discovered?.path.startsWith("Feeds/"));
   assert.deepEqual(JSON.parse(discovered.documentJSON).content.tags, ["Design"]);
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseMoreAction("New from template");
+  const builtInPicker = page.getByRole("dialog", { name: "New from template", exact: true });
+  await builtInPicker.getByRole("button", { name: "Blog post", exact: true }).click();
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  const builtInStory = [...files.values()].at(-1);
+  assert.ok(builtInStory.path.startsWith("Blog/"));
+  assert.equal(JSON.parse(builtInStory.documentJSON).presentation.template.id, "texttext.article");
   assert.deepEqual(failures, []);
   console.log("Bookmark reader, URL-first capture, story list, gallery viewer, and feed headlines passed.");
   console.log("New note focused its body for immediate typing; reopening another note kept the user's focus.");
