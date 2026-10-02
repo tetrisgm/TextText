@@ -957,7 +957,18 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid img")].every(image => image.complete && image.naturalHeight > 0));
   const portraitTile = await page.getByRole("button", { name: "Open Two photographs image 1" }).boundingBox();
   const landscapeTile = await page.getByRole("button", { name: "Open Two photographs image 2" }).boundingBox();
-  assert.ok(portraitTile && landscapeTile && portraitTile.height > landscapeTile.height * 1.7);
+  assert.ok(portraitTile && landscapeTile && portraitTile.width < landscapeTile.width * .6);
+  const firstGalleryRow = await page.locator(".vault-photo-row").first().evaluate(row => {
+    const tiles = [...row.querySelectorAll("button")];
+    const bounds = row.getBoundingClientRect();
+    return { gap: bounds.right - tiles.at(-1).getBoundingClientRect().right,
+      heights: tiles.map(tile => tile.getBoundingClientRect().height),
+      uncropped: tiles.filter(tile => tile.querySelector("img")).every(tile => {
+        const image = tile.querySelector("img");
+        return Math.abs(tile.clientWidth / tile.clientHeight - image.naturalWidth / image.naturalHeight) < .03;
+      }) };
+  });
+  assert.ok(firstGalleryRow.gap < 2 && firstGalleryRow.heights.every(height => Math.abs(height - firstGalleryRow.heights[0]) < 1) && firstGalleryRow.uncropped);
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });
   await page.getByRole("button", { name: "Open Two photographs image 1" }).click();
   const lightbox = page.getByRole("dialog", { name: "Two photographs" });
