@@ -502,6 +502,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [assistantOpen, setSidebarVisible]);
   const [templatePicker, setTemplatePicker] = useState(false);
   const [captureMode, setCaptureMode] = useState<"bookmark" | "mixed" | null>(null);
+  const [preferredBookmarkPath, setPreferredBookmarkPath] = useState("");
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
   const [folderDesignOpen, setFolderDesignOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1056,7 +1057,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         const created = await vaultRequest<VaultFile>("create", { ...input, folder: input.sourceURL ? "Bookmarks" : destinationFolder.trim() || "Notes" });
         if (input.sourceURL && listing?.root) queueArticleEnrichment(listing.root, created.path);
-        setSelected(created); refresh();
+        if (input.sourceURL) {
+          setPreferredBookmarkPath(created.path);
+          setDestinationFolder("Bookmarks");
+          setSelected(null);
+        } else setSelected(created);
+        refresh();
       }} />}
       {feedSubscribeOpen && <FeedSubscribeDialog folder={destinationFolder.trim()} folders={folders} onClose={closeFeedSubscribe} onSaved={file => {
         closeRemoved(); setSelected(file); setDestinationFolder(folderForItem(file.path)); refresh();
@@ -1104,7 +1110,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
                 setNativePublishRefresh(value => value + 1);
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
-      : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)}
+      : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}

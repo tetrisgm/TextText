@@ -544,6 +544,8 @@ try {
   await page.screenshot({ path: "/tmp/texttext-vault-capture-dark.png" });
   await page.getByRole("button", { name: "Save to folder", exact: true }).click();
   await page.getByRole("dialog", { name: "Save a link or note" }).waitFor({ state: "hidden" });
+  await page.screenshot({ path: "/tmp/texttext-after-capture-reference.png" });
+  await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Edit" }).click();
   await page.getByText("Article captured. Your original link is retained.", { exact: true }).waitFor();
   await page.getByText("Your notes", { exact: true }).click();
   await page.getByRole("textbox", { name: "Your article notes", exact: true }).fill("My annotation survives source refresh.");
@@ -853,8 +855,16 @@ try {
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("textbox", { name: "Web address" }).waitFor();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
   await page.keyboard.press("b");
-  await page.getByRole("dialog", { name: "Save bookmark" }).waitFor();
-  await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
+  const saveBookmark = page.getByRole("dialog", { name: "Save bookmark" });
+  assert.equal(await saveBookmark.getByRole("textbox", { name: "Capture title" }).isVisible(), false);
+  await page.screenshot({ path: "/tmp/texttext-save-bookmark-reference.png" });
+  await saveBookmark.getByRole("textbox", { name: "Web address" }).fill("https://example.com/fresh-reading");
+  await saveBookmark.getByRole("button", { name: "Save bookmark" }).click();
+  await page.getByRole("option", { name: /example.com/ }).filter({ hasText: "example.com" }).first().waitFor();
+  await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.com"));
+  assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/fresh-reading"), true);
+  assert.equal(await page.getByRole("article", { name: "Bookmark reader" }).count(), 1);
+  assert.equal(await page.getByRole("main", { name: "Edit item" }).count(), 0);
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.locator(".vault-story-list").getByText("An essay title").waitFor();

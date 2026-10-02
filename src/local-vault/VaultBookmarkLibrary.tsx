@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { vaultRequest, type VaultFile, type VaultItem } from "./bridge";
 import type { FolderPreview } from "./folder-collection";
@@ -13,10 +13,12 @@ function host(url?: string): string {
 const PAGE_SIZE = 24;
 type BookmarkFilter = "all" | "unread" | "favorites";
 
-export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpen }: {
-  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void;
+export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpen, preferredPath }: {
+  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void; preferredPath?: string;
 }) {
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(preferredPath || "");
+  const pendingPreferred = useRef(preferredPath || "");
+  useEffect(() => { if (preferredPath) { pendingPreferred.current = preferredPath; setSelected(preferredPath); setFilter("all"); setSearch(""); } }, [preferredPath]);
   const [filter, setFilter] = useState<BookmarkFilter>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -59,6 +61,13 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     const text = `${entry?.title || item.title || ""} ${host(entry?.sourceURL)}`.toLocaleLowerCase();
     return matchesStatus && text.includes(search.trim().toLocaleLowerCase());
   }) : items;
+  const preferredIndex = preferredPath ? filtered.findIndex(item => item.path === preferredPath) : -1;
+  useEffect(() => {
+    if (pendingPreferred.current === preferredPath && filter === "all" && !search && preferredIndex >= 0) {
+      setPage(Math.floor(preferredIndex / PAGE_SIZE));
+      pendingPreferred.current = "";
+    }
+  }, [filter, preferredIndex, preferredPath, search]);
   const lastPage = Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1);
   const currentPage = Math.min(page, lastPage);
   const shown = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);

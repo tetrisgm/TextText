@@ -28,7 +28,8 @@ export function CaptureDialog({ onClose, onSave, bookmarkOnly = false }: { onClo
       finally { setBusy(false); }
     })(); }}>
       {bookmarkOnly ? <label>Web address<input autoFocus type="url" inputMode="url" aria-label="Web address" placeholder="https://example.com/article" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={4096} /></label> : <label>Link or note<textarea autoFocus aria-label="Link or note" disabled={busy} value={text} onChange={(event) => setText(event.target.value)} maxLength={1_000_000} /></label>}
-      <label>Title (optional)<input aria-label="Capture title" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} /></label>
+      {bookmarkOnly ? <details><summary>Set a title</summary><label>Title (optional)<input aria-label="Capture title" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} /></label></details>
+        : <label>Title (optional)<input aria-label="Capture title" disabled={busy} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} /></label>}
       {error && <p role="alert">{error}</p>}
       <button disabled={busy || !text.trim()} type="submit">{busy ? "Saving…" : bookmarkOnly ? "Save bookmark" : "Save to folder"}</button>
     </form>
