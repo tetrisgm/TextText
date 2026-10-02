@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery now uses a four-column responsive masonry library like Resurf instead of justified, equal-height rows. Full image proportions remain visible, with no crop. The local browser contract verifies portrait and landscape sizing and the existing viewer, import, and search flow; TypeScript and the local UI build passed. `/tmp/texttext-gallery-grid-reference.png` shows the checked dark grid. Full Resurf creation and capture parity remains open; no app release was run.
+
 Bookmarks Find saved links now searches full TextPack article text through the existing bounded Mac scan or one debounced Oracle server request. Short metadata matches for titles, URLs, excerpts, and tags remain available. The web search endpoint scans only visible items, rechecks grants before returning, and caps files, bytes, and results. The local browser contract finds a sentence beyond the 400-character preview; focused route, web transport, pack search, and Swift tests, TypeScript, and local/web browser flows passed. Search is still on demand rather than indexed, and Shiori parity remains open. No app release was run.
 
 Command K now lists folder navigation commands before any query, so users can discover them while browsing all actions and learn the same commands they can search for. The local browser contract checks a folder command in the default list and keyboard wrapping; TypeScript and local/web browser flows passed. Broader Superhuman command coverage and exact visual parity remain open; no app release was run.

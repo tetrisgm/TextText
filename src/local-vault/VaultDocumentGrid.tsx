@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { DocumentCollectionRenderer } from "@/components/document/DocumentRenderer";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { selectCollectionView } from "@/lib/presentation/collection-views";
@@ -46,28 +46,10 @@ function PreviewImage({ preview, children }: { preview?: FolderPreview; children
   }, [image]);
   return children(source?.image === image ? source?.url : undefined);
 }
-function GalleryTile({ source, title, disabled, onOpen, width, height, onAspect }: { source?: string; title: string; disabled: boolean; onOpen: () => void; width: number; height: number; onAspect: (aspect: number) => void }) {
-  return <button disabled={disabled} onClick={onOpen} aria-label={`Open ${title}`} style={{ width, height }}>
-    {source ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={source} alt="" loading="lazy" decoding="async" onLoad={event => { const image = event.currentTarget; if (image.naturalHeight) onAspect(image.naturalWidth / image.naturalHeight); }} /> : <span>{title}</span>}
+function GalleryTile({ source, title, disabled, onOpen }: { source?: string; title: string; disabled: boolean; onOpen: () => void }) {
+  return <button disabled={disabled} onClick={onOpen} aria-label={`Open ${title}`}>
+    {source ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={source} alt="" loading="lazy" decoding="async" /> : <span>{title}</span>}
   </button>;
-}
-export function justifiedRows(aspects: number[], availableWidth: number, targetHeight = 210, gap = 8): { width: number; height: number }[][] {
-  const rows: { width: number; height: number }[][] = [];
-  const width = Math.max(240, availableWidth);
-  for (let start = 0; start < aspects.length;) {
-    let end = start;
-    let sum = 0;
-    while (end < aspects.length) {
-      sum += Math.max(.25, Math.min(5, aspects[end] || 1));
-      end++;
-      if (sum * targetHeight + (end - start - 1) * gap >= width) break;
-    }
-    const fillsRow = sum * targetHeight + (end - start - 1) * gap >= width;
-    const height = fillsRow ? Math.min(300, (width - (end - start - 1) * gap) / sum) : targetHeight;
-    rows.push(aspects.slice(start, end).map(aspect => ({ width: Math.max(.25, Math.min(5, aspect || 1)) * height, height })));
-    start = end;
-  }
-  return rows;
 }
 export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookmark, onCreateNote, onQuickSaveBookmark, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath }: {
   listing: VaultListing; folder: string; busy: boolean; onOpen: (path: string) => void;
@@ -79,16 +61,6 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
   const [page, setPage] = useState(0);
   const [view, setView] = useState("");
   const [galleryState, setGalleryState] = useState<{ entries: { path: string; index: number }[]; selection: number } | null>(null);
-  const galleryRef = useRef<HTMLDivElement>(null);
-  const [galleryWidth, setGalleryWidth] = useState(900);
-  const [galleryAspects, setGalleryAspects] = useState<Record<string, number>>({});
-  useEffect(() => {
-    const element = galleryRef.current;
-    if (!element) return;
-    const observer = new ResizeObserver(entries => setGalleryWidth(entries[0]?.contentRect.width || 900));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [folder]);
   const [previews, setPreviews] = useState<Record<string, FolderPreview>>({});
   const [query, setQuery] = useState<{ key: string; listing?: VaultListing; previews: Record<string, FolderPreview>; done: boolean; error?: string }>({ key: "", previews: {}, done: false });
   const template = useMemo(() => folderTemplate ? { ...folderTemplate, collection: selectCollectionView(folderTemplate.collection, view || folderTemplate.collection.defaultView || "") } : undefined, [folderTemplate, view]);
@@ -291,8 +263,6 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     const images = preview?.images?.length ? preview.images : [preview?.image];
     return images.map((image, index) => ({ item, preview, image, index, key: `${item.path}:${index}`, title: `${preview?.title || fallbackTitle(item)}${images.length > 1 ? ` image ${index + 1}` : ""}` }));
   }) : [];
-  const galleryRows = justifiedRows(galleryTiles.map(tile => galleryAspects[tile.key] || 1), galleryWidth);
-  let galleryTile = 0;
   const filePages = lastPage > 0 && !bookmarkFolder ? <nav className="vault-file-pages" aria-label="File pages"><button disabled={busy || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage + 1} of {lastPage + 1}</span><button disabled={busy || currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next</button></nav> : null;
   return <section aria-label="Documents" className={referenceFolder ? `vault-${folder.toLowerCase()}-folder` : undefined} onPaste={event => {
     if (!notesFolder || !onCreateNote || busy || previewOnly) return;
@@ -306,7 +276,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onRevealBookm
     {!supported && <p role="status">The {requestedLayout} layout is not available here yet. Showing a readable list.</p>}
     {queryMessage && <p role="status">{queryMessage}</p>}
     {folder === "Feeds" && feedIndex.key === feedIndexKey && feedIndex.error && <p role="alert">{feedIndex.error}</p>}
-    {photoFolder ? <><label className="vault-gallery-search"><span className="ac-sr-only">Find images</span><input type="search" aria-label="Find images" value={gallerySearch} onChange={event => { setGallerySearch(event.target.value); setPage(0); }} disabled={!collectionSearchReady} placeholder={collectionSearchReady ? "Find images" : "Reading image details…"} /></label>{collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.error && <p role="status">{collectionSearchIndex.error}</p>}{collectionSearchReady && galleryQuery && !displayedItems.length && <p role="status">No images match.</p>}<div className="vault-photo-grid" ref={galleryRef}>{galleryRows.map((row, rowIndex) => <div className="vault-photo-row" key={galleryTiles[galleryTile]?.key || rowIndex}>{row.map(size => { const tile = galleryTiles[galleryTile]; const selection = galleryTile++; return <PreviewImage key={tile.key} preview={tile.preview ? { ...tile.preview, image: tile.image } : undefined}>{source => <GalleryTile source={source} title={tile.title} disabled={busy || previewOnly} onOpen={() => setGalleryState({ entries: galleryEntries, selection })} width={size.width} height={size.height} onAspect={aspect => setGalleryAspects(previous => previous[tile.key] === aspect ? previous : { ...previous, [tile.key]: aspect })} />}</PreviewImage>; })}</div>)}</div></> : bookmarkFolder ? <VaultBookmarkLibrary items={items} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} onQuickSave={onQuickSaveBookmark} preferredPath={preferredBookmarkPath} /> : notesFolder ? <>
+    {photoFolder ? <><label className="vault-gallery-search"><span className="ac-sr-only">Find images</span><input type="search" aria-label="Find images" value={gallerySearch} onChange={event => { setGallerySearch(event.target.value); setPage(0); }} disabled={!collectionSearchReady} placeholder={collectionSearchReady ? "Find images" : "Reading image details…"} /></label>{collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.error && <p role="status">{collectionSearchIndex.error}</p>}{collectionSearchReady && galleryQuery && !displayedItems.length && <p role="status">No images match.</p>}<div className="vault-photo-grid">{galleryTiles.map((tile, selection) => <PreviewImage key={tile.key} preview={tile.preview ? { ...tile.preview, image: tile.image } : undefined}>{source => <GalleryTile source={source} title={tile.title} disabled={busy || previewOnly} onOpen={() => setGalleryState({ entries: galleryEntries, selection })} />}</PreviewImage>)}</div></> : bookmarkFolder ? <VaultBookmarkLibrary items={items} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} onQuickSave={onQuickSaveBookmark} preferredPath={preferredBookmarkPath} /> : notesFolder ? <>
       {onCreateNote && !previewOnly && <button className="vault-note-start" aria-label="Start typing Make a new card" disabled={busy} onClick={() => onCreateNote()}>Start typing or paste to make a card</button>}
       <div className="vault-note-tools"><label><span className="ac-sr-only">Find cards</span><input type="search" aria-label="Find cards" value={noteSearch} onChange={event => { setNoteSearch(event.target.value); setPage(0); }} disabled={!noteIndexReady} placeholder={noteIndexReady ? "Find cards" : "Reading cards…"} /></label><label><span className="ac-sr-only">Sort cards</span><select aria-label="Sort cards" value={noteSort} onChange={event => { setNoteSort(event.target.value as "folder" | "title"); setPage(0); }} disabled={!noteIndexReady}><option value="folder">Folder order</option><option value="title">Title A–Z</option></select></label></div>
       {noteIndex.key === noteIndexKey && noteIndex.listing === listing && noteIndex.error && <p role="status" className="vault-note-index-status">{noteIndex.error}</p>}
