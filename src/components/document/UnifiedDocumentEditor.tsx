@@ -1883,8 +1883,8 @@ export function UnifiedDocumentEditor({
           </details>
           )}
           <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
-            <span className="tt-stop-edit-label-full">{transport === "local" ? "Save" : "Stop editing"}</span>
-            <span className="tt-stop-edit-label-compact">{transport === "local" ? "Save" : "Done"}</span>
+            <span className="tt-stop-edit-label-full">{activeTemplate.id === "texttext.note" ? "Finish" : transport === "local" ? "Save" : "Stop editing"}</span>
+            <span className="tt-stop-edit-label-compact">{activeTemplate.id === "texttext.note" ? "Finish" : transport === "local" ? "Save" : "Done"}</span>
           </button>
             <div className={`tt-save-state is-${saveState}`}>
               {saveStateLabel}

@@ -16,6 +16,7 @@ import * as Y from "yjs";
 import { VaultError, vaultRequest, type VaultFile } from "./bridge";
 import { asPost, localBlog, readDocument, readTemplate, writePayload } from "./model";
 import { ArticleReader } from "./ArticleReader";
+import { VaultNoteDisplay } from "./VaultNoteDisplay";
 import { ArticleCapture } from "./ArticleCapture";
 import { articleSource } from "@/lib/vault/article-capture";
 import { WorkspaceTypeLibrary } from "./LocalTemplateLibrary";
@@ -419,11 +420,11 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
     {ready && <>
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />}
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
-      {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : <DocumentRenderer document={display} template={template} />) :
+      {!editable || reading ? (snapshot.presentation.template.id === "texttext.note" ? <VaultNoteDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : <DocumentRenderer document={display} template={template} />) :
         <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
           focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
           onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
-          collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { await flush(); }}
+          collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { if (await flush() && latestSnapshot.current.presentation.template.id === "texttext.note") setReading(true); }}
           renderTemplateLibrary={props => <WorkspaceTypeLibrary currentTemplate={template} onClose={props.onClose} onApply={(nextTemplate, sourceJSON) => {
             props.onClose(); setBusy(true);
             void (async () => {

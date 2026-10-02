@@ -986,8 +986,13 @@ try {
   await page.getByRole("textbox", { name: "Add note tag" }).fill("#Ideas");
   await page.getByRole("region", { name: "Note tags" }).getByRole("button", { name: "Add", exact: true }).click();
   await page.getByRole("region", { name: "Note tags" }).getByText("#Ideas").waitFor();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
+  await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").waitFor();
+  await page.getByRole("region", { name: "Note card" }).getByText("#Ideas").waitFor();
+  await page.screenshot({ path: "/tmp/texttext-note-card-reference.png" });
+  await page.getByRole("button", { name: "Edit card" }).click();
+  await page.getByRole("textbox", { name: "Title" }).waitFor();
   const newCard = [...files.values()].at(-1);
   assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
   assert.deepEqual(JSON.parse(newCard.documentJSON).content.tags, ["Ideas"]);
