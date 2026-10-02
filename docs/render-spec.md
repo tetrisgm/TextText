@@ -25,6 +25,7 @@ A template is data, not code. It is one validated `TemplateDefinition`:
 | --- | --- |
 | `schemaVersion`, `engineVersion` | Pinned. A document renders against the exact version it was written for. |
 | `id`, `version`, `name`, `description` | Identity. Versions are additive; retiring one never deletes it. |
+| `experience` | Optional built-in article, note, bookmark, or gallery editing and creation flow retained when a person saves a modified look under a new id. It is a closed label, not executable UI. |
 | `fields` | The data schema: what a document of this type holds beyond title and body. |
 | `item` | One render node tree: how a single document reads. |
 | `collection` | How a folder of them renders, plus its saved views. |

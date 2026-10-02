@@ -99,6 +99,7 @@ try {
   await page.goto("https://vault.test/vault/workspace");
   await page.getByRole("navigation", { name: "Folders" }).locator("summary").filter({ hasText: "Notes" }).click();
   await page.getByRole("button", { name: "Open Web note" }).click();
+  await page.getByRole("button", { name: "Edit card" }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   const body = page.getByRole("textbox", { name: "Document body", exact: true });
   await body.fill("Edited through the web");

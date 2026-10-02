@@ -2552,6 +2552,14 @@ export function styleFamilyFor(templateId: string): string | undefined {
   return STYLE_FAMILIES[templateId];
 }
 
+export type TemplateExperience = "article" | "note" | "bookmark" | "gallery";
+
+export function templateExperience(template: Pick<TemplateDefinition, "id" | "experience">): TemplateExperience | null {
+  if (template.experience) return template.experience;
+  const builtIn = /^texttext\.(article|note|bookmark|gallery)$/.exec(template.id);
+  return builtIn ? builtIn[1] as TemplateExperience : null;
+}
+
 export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] =
   Object.freeze(activeDefinitions);
 

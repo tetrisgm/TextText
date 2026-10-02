@@ -21,7 +21,7 @@ import type {
   TemplateDefinition,
 } from "@/lib/presentation/schema";
 import { ScrollAnchoring } from "@/components/document/ScrollAnchoring";
-import { styleFamilyFor, styleTemplateIdFor } from "@/lib/presentation/templates";
+import { styleFamilyFor, styleTemplateIdFor, templateExperience } from "@/lib/presentation/templates";
 import { remarkHighlight } from "@/components/document/HighlightMarkdown";
 import { remarkWikiLinks } from "@/components/WikiLinkMarkdown";
 import type { WikiLinkRenderTargets } from "@/lib/wikilinks";
@@ -1310,6 +1310,7 @@ function DocumentRendererContent({
       className={["tt-document", className].filter(Boolean).join(" ")}
       data-template={styleTemplateId}
       data-template-id={template.id}
+      data-template-experience={templateExperience(template) ?? undefined}
       data-style-family={styleTemplateId === template.id ? styleFamilyFor(template.id) : undefined}
       data-preview={preview ? "true" : undefined}
       data-typography={theme.typography ?? "system"}
@@ -1354,6 +1355,7 @@ function DocumentCollectionRendererContent({
         .join(" ")}
       data-template={styleTemplateId}
       data-template-id={template.id}
+      data-template-experience={templateExperience(template) ?? undefined}
       data-style-family={styleTemplateId === template.id ? styleFamilyFor(template.id) : undefined}
       data-typography={theme.typography ?? "system"}
       data-density={theme.density ?? "comfortable"}

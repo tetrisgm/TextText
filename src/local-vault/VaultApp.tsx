@@ -6,7 +6,7 @@ import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
-import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
+import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
 import { VaultError, vaultRequest, type VaultFile, type VaultListing } from "./bridge";
@@ -85,9 +85,9 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [external, setExternal] = useState(initialDocument);
   const [reading, setReading] = useState(() => Boolean(articleSource(initialDocument) ||
-    initialDocument.presentation.template.id === "texttext.note" && !focusNewNote && !focusNewNoteTitle &&
+    templateExperience(initialTemplate) === "note" && !focusNewNote && !focusNewNoteTitle &&
     (initialDocument.content.title.trim() || initialDocument.content.body.trim()) ||
-    initialDocument.presentation.template.id === "texttext.article" && !focusNewNoteTitle &&
+    templateExperience(initialTemplate) === "article" && !focusNewNoteTitle &&
     (initialDocument.content.title.trim() || initialDocument.content.body.trim())));
   useEffect(() => {
     const editTopics = () => {
@@ -309,12 +309,12 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     if (!await flush()) return { ok: false, message: "Save this item before keeping its look." };
     const original = readTemplate(file.current, current.current);
     const identity = { id: `local.${crypto.randomUUID()}`, version: 1 };
-    let template = validateTemplateDefinition({ ...original, ...identity, name });
+    let template = validateTemplateDefinition({ ...original, ...identity, name, experience: templateExperience(original) ?? undefined });
     let sourceJSON: string | null = null;
     if (file.current.templateAuthoringSourceJSON) {
       const source = authoringSourceSchema.parse(JSON.parse(file.current.templateAuthoringSourceJSON));
       source.blueprint.name = name;
-      template = compileItemTypeBlueprint(source.blueprint, identity);
+      template = validateTemplateDefinition({ ...compileItemTypeBlueprint(source.blueprint, identity), experience: templateExperience(original) ?? undefined });
       sourceJSON = JSON.stringify(source);
     }
     const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash });
@@ -325,13 +325,15 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   };
   const display = useMemo(() => mapStrings(external, assets.forward), [external, assets]);
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
-  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} update={updateArticle} /> : external.presentation.template.id === "texttext.article" ? <VaultStoryDisplay document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} onEdit={() => setReading(false)} /> : <UnifiedDocumentEditor transport="local" externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={templates.find((template) => template.id === external.presentation.template.id && template.version === external.presentation.template.version) ?? initialTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  const displayTemplate = templates.find((candidate) => candidate.id === external.presentation.template.id && candidate.version === external.presentation.template.version) ?? initialTemplate;
+  const experience = templateExperience(displayTemplate);
+  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void flush()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={displayTemplate} update={updateArticle} /> : experience === "article" ? <VaultStoryDisplay document={display} template={displayTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} template={displayTemplate} onEdit={() => setReading(false)} /> : <UnifiedDocumentEditor transport="local" externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={displayTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush(); }, 350);
-  }} />} focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { if (await flush() && ["texttext.note", "texttext.article"].includes(current.current.presentation.template.id)) { setExternal(current.current); setReading(true); } }} />}</section>;
+  }} />} focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { if (await flush() && (experience === "note" || experience === "article")) { setExternal(current.current); setReading(true); } }} />}</section>;
 }
 
 function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; onSharedMode?: () => void }) {
@@ -517,6 +519,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [assistantOpen, setSidebarVisible]);
   const [templatePicker, setTemplatePicker] = useState(false);
   const [captureMode, setCaptureMode] = useState<"bookmark" | "mixed" | null>(null);
+  const [pendingCreationLook, setPendingCreationLook] = useState<{ kind: "bookmark" | "gallery"; template: TemplateDefinition; sourceJSON?: string | null } | null>(null);
   const [preferredBookmarkPath, setPreferredBookmarkPath] = useState("");
   const [importedGalleryPath, setImportedGalleryPath] = useState<string | null>(null);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
@@ -529,6 +532,14 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [fileAction, setFileAction] = useState<"rename" | "delete" | null>(null);
   const [newPath, setNewPath] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
+  const imagePickerCancelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const input = imageInput.current;
+    if (!input) return;
+    const cancel = () => { imagePickerCancelTimer.current = setTimeout(() => setPendingCreationLook(null), 250); };
+    input.addEventListener("cancel", cancel);
+    return () => { input.removeEventListener("cancel", cancel); if (imagePickerCancelTimer.current) clearTimeout(imagePickerCancelTimer.current); };
+  }, []);
   const searchButton = useRef<HTMLButtonElement>(null);
   const feedSubscribeButton = useRef<HTMLButtonElement>(null);
   const moreActions = useRef<HTMLDetailsElement>(null);
@@ -742,6 +753,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
             const pack = await prepareImagePack(new Uint8Array(await file.arrayBuffer()), file.name);
             imported = await vaultRequest<VaultFile>("importPack", { title: pack.title, data: encodeBase64(pack.bytes), folder });
             completed++;
+            if (pendingCreationLook?.kind === "gallery" && folder === "Gallery") {
+              const document = readDocument(imported);
+              imported = await vaultRequest<VaultFile>("write", writePayload(imported, { ...document, presentation: { ...document.presentation, template: { id: pendingCreationLook.template.id, version: pendingCreationLook.template.version } } }, { template: pendingCreationLook.template, sourceJSON: pendingCreationLook.sourceJSON }));
+            }
           }
           closeRemoved();
           if (completed === 1 && folder === "Gallery" && imported) {
@@ -752,7 +767,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         } catch (error) {
           setImportStatus(completed ? `Imported ${completed} of ${files.length} images. Earlier imports are saved.` : "");
           throw error;
-        } finally { refresh(); }
+        } finally { setPendingCreationLook(null); refresh(); }
       });
     } finally { importing.current = false; }
   };
@@ -968,12 +983,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   });
   const selectedStory = (() => {
     if (!selected || folderForItem(selected.path) !== "Blog") return false;
-    try { return readDocument(selected).presentation.template.id === "texttext.article"; }
+    try { return templateExperience(readTemplate(selected, readDocument(selected))) === "article"; }
     catch { return false; }
   })();
   const selectedNote = (() => {
     if (!selected || folderForItem(selected.path) !== "Notes") return false;
-    try { return readDocument(selected).presentation.template.id === "texttext.note"; }
+    try { return templateExperience(readTemplate(selected, readDocument(selected))) === "note"; }
     catch { return false; }
   })();
   const contextTitle = selected
@@ -1078,6 +1093,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         aria-controls="vault-sidebar" aria-expanded={false} onClick={() => setSidebarVisible(true)}>Show folders</button>}
       <datalist id="vault-folders">{folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
       <input ref={imageInput} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images" onChange={(event) => {
+        if (imagePickerCancelTimer.current) clearTimeout(imagePickerCancelTimer.current);
         const files = Array.from(event.target.files ?? []); event.target.value = ""; void importImages(files);
       }} />
       {importStatus && <p role="status">{importStatus}</p>}
@@ -1130,9 +1146,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
           window.dispatchEvent(new Event("texttext:vault-edit-story-topics"));
         } : undefined}
         onClose={() => setPublishing(null)} />}
-      {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => setCaptureMode(null)} onSave={async (input) => {
+      {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => { setCaptureMode(null); setPendingCreationLook(null); }} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
-        const created = await vaultRequest<VaultFile>("create", { ...input, folder: input.sourceURL ? "Bookmarks" : destinationFolder.trim() || "Notes" });
+        let created = await vaultRequest<VaultFile>("create", { ...input, folder: input.sourceURL ? "Bookmarks" : destinationFolder.trim() || "Notes" });
+        if (input.sourceURL && pendingCreationLook?.kind === "bookmark") {
+          const document = readDocument(created);
+          created = await vaultRequest<VaultFile>("write", writePayload(created, { ...document, presentation: { ...document.presentation, template: { id: pendingCreationLook.template.id, version: pendingCreationLook.template.version } } }, { template: pendingCreationLook.template, sourceJSON: pendingCreationLook.sourceJSON }));
+        }
         if (input.sourceURL && listing?.root) queueArticleEnrichment(listing.root, created.path);
         if (input.sourceURL) {
           setPreferredBookmarkPath(created.path);
@@ -1152,24 +1172,25 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         setTemplatePicker(false); setDestinationFolder("Feeds"); openFeedSubscribe(searchButton.current);
       } : undefined} onCreateFromBuiltIn={(template) => {
         setTemplatePicker(false);
+        setPendingCreationLook(null);
         if (template.id === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setCaptureMode("bookmark"); return; }
         if (template.id === "texttext.gallery") { setDestinationFolder("Gallery"); requestAnimationFrame(() => imageInput.current?.click()); return; }
         const destination = template.id === "texttext.article" ? ["Blog", "Blog post"] : template.id === "texttext.talk" ? ["Presentations", "Talk"] : ["Notes", "Note"];
         void createForFolder(destination[0], destination[1], "", template);
       }} onCreateFromFile={(path) => void operate(async () => {
         const source = await vaultRequest<VaultFile>("read", { path });
-        const templateId = readDocument(source).presentation.template.id;
-        if (templateId === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setTemplatePicker(false); setCaptureMode("bookmark"); return; }
-        if (templateId === "texttext.gallery") { setDestinationFolder("Gallery"); setTemplatePicker(false); requestAnimationFrame(() => imageInput.current?.click()); return; }
-        const defaultFolder: Record<string, string> = { "texttext.article": "Blog", "texttext.note": "Notes", "texttext.bookmark": "Bookmarks", "texttext.gallery": "Gallery", "texttext.talk": "Presentations" };
-        const folder = defaultFolder[templateId] || destinationFolder.trim() || "Notes";
+        const sourceDocument = readDocument(source);
+        const selectedTemplate = source.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : readTemplate(source, sourceDocument);
+        const experience = templateExperience(selectedTemplate);
+        if (experience === "bookmark") { setPendingCreationLook({ kind: "bookmark", template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }); setDestinationFolder("Bookmarks"); setTemplatePicker(false); setCaptureMode("bookmark"); return; }
+        if (experience === "gallery") { setPendingCreationLook({ kind: "gallery", template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }); setDestinationFolder("Gallery"); setTemplatePicker(false); requestAnimationFrame(() => imageInput.current?.click()); return; }
+        const folder = experience === "article" ? "Blog" : experience === "note" ? "Notes" : selectedTemplate.id === "texttext.talk" ? "Presentations" : destinationFolder.trim() || "Notes";
         const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, sourcePath: path, sourceHash: source.hash });
         const example = readDocument(cloned);
-        const selectedTemplate = source.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : readTemplate(source, readDocument(source));
         const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: "", subtitle: "", body: "", fields: {}, tags: [], assets: [] },
           presentation: { ...example.presentation, template: { id: selectedTemplate.id, version: selectedTemplate.version } } };
         const created = await vaultRequest<VaultFile>("write", writePayload(cloned, blank, { template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }));
-        setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: templateId === "texttext.article" || templateId === "texttext.note", awaitSharedMode: allowFolderPicker });
+        setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: experience === "article" || experience === "note", awaitSharedMode: allowFolderPicker });
         setSelected(created); setDestinationFolder(folder); setTemplatePicker(false); refresh();
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}

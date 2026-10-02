@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
+import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "./LocalKeyboard";
@@ -54,7 +54,7 @@ export function useVaultTemplates(refreshKey?: string) {
 
 /** Small, content-shaped previews distinguish each creation path without loading assets. */
 function TemplatePreview({ template, preview }: { template: TemplateDefinition; preview?: TemplatePreviewContent }) {
-  const kind = template.id.replace(/^texttext\./, "");
+  const kind = templateExperience(template) ?? template.id.replace(/^texttext\./, "");
   const body = preview?.body?.split("\n").map(line => line.trim()).find(Boolean)?.replace(/^\s*(?:#{1,6}\s+|[-*+]\s+)/, "") || "";
   let host = "example.com";
   if (preview?.sourceUrl) { try { host = new URL(preview.sourceUrl).hostname; } catch { /* Keep a neutral fallback. */ } }

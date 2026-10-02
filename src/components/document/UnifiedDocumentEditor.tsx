@@ -1,6 +1,7 @@
 "use client";
 
 import { DocumentUndoManager, replaceSharedText } from "@/lib/collab/text-transactions";
+import { templateExperience } from "@/lib/presentation/templates";
 
 import { dismissOpenDetails } from "@/components/accessibility/keyboard";
 import { DocumentHistoryDialog } from "@/components/workspace/DocumentHistoryDialog";
@@ -979,7 +980,8 @@ export function UnifiedDocumentEditor({
       ) ?? template
     );
   }, [availableTemplates, document.presentation.template, template]);
-  const canAddSubtitle = activeTemplate.id !== "texttext.article" && !showSubtitle && !document.content.subtitle?.trim();
+  const experience = templateExperience(activeTemplate);
+  const canAddSubtitle = experience !== "article" && !showSubtitle && !document.content.subtitle?.trim();
 
   // The canonical revision changes on every successful save, and nothing here
   // reads it. It must never be a dependency of the provider effect, and it
@@ -1426,7 +1428,7 @@ export function UnifiedDocumentEditor({
 
   const updateSelection = useCallback(
     (field: EditableField, anchor: number, head: number) => {
-      if (activeTemplate.id === "texttext.article" && field === "body" && anchor >= 0 && head >= 0) {
+      if (experience === "article" && field === "body" && anchor >= 0 && head >= 0) {
         articleBodyOffset.current = head;
         const selection = window.getSelection();
         const rect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
@@ -1485,7 +1487,7 @@ export function UnifiedDocumentEditor({
       };
       awareness.setLocalStateField("selection", selection);
     },
-    [activeTemplate.id, awareness, collab.postId, currentLocalDocument, doc, ready],
+    [experience, awareness, collab.postId, currentLocalDocument, doc, ready],
   );
 
   const resolveBodySelection = useCallback(() => {
@@ -1500,7 +1502,7 @@ export function UnifiedDocumentEditor({
   }, [awareness, doc]);
 
   const formatArticleSelection = useCallback((marker: "**" | "*") => {
-    if (!articleSelection || activeTemplate.id !== "texttext.article") return;
+    if (!articleSelection || experience !== "article") return;
     const body = currentLocalDocument().content.body;
     const { start, end, text } = articleSelection;
     if (!text || body.slice(start, end) !== text) { setArticleSelection(null); return; }
@@ -1508,10 +1510,10 @@ export function UnifiedDocumentEditor({
     updateText("body", next);
     setArticleSelection(null);
     window.requestAnimationFrame(() => requestDocumentCaret(start + marker.length, end + marker.length));
-  }, [activeTemplate.id, articleSelection, currentLocalDocument, updateText]);
+  }, [experience, articleSelection, currentLocalDocument, updateText]);
 
   const formatArticleBlock = useCallback((prefix: "# " | "## " | "> ") => {
-    if (!articleSelection || activeTemplate.id !== "texttext.article") return;
+    if (!articleSelection || experience !== "article") return;
     const body = currentLocalDocument().content.body;
     const { start, end, text } = articleSelection;
     if (!text || body.slice(start, end) !== text) { setArticleSelection(null); return; }
@@ -1523,10 +1525,10 @@ export function UnifiedDocumentEditor({
     updateText("body", `${body.slice(0, lineStart)}${nextBlock}${body.slice(lineEnd)}`);
     setArticleSelection(null);
     window.requestAnimationFrame(() => requestDocumentCaret(lineStart, lineStart + nextBlock.length));
-  }, [activeTemplate.id, articleSelection, currentLocalDocument, updateText]);
+  }, [experience, articleSelection, currentLocalDocument, updateText]);
 
   const linkArticleSelection = useCallback(() => {
-    if (!articleLinkTarget || activeTemplate.id !== "texttext.article") return;
+    if (!articleLinkTarget || experience !== "article") return;
     let url: URL;
     try {
       url = new URL(/^https?:\/\//i.test(articleLinkURL.trim()) ? articleLinkURL.trim() : `https://${articleLinkURL.trim()}`);
@@ -1541,7 +1543,7 @@ export function UnifiedDocumentEditor({
     setArticleSelection(null);
     setArticleLinkError("");
     window.requestAnimationFrame(() => requestDocumentCaret(start, start + markdown.length));
-  }, [activeTemplate.id, articleLinkTarget, articleLinkURL, currentLocalDocument, updateText]);
+  }, [experience, articleLinkTarget, articleLinkURL, currentLocalDocument, updateText]);
 
 
   const remoteSelections = useMemo(
@@ -1612,32 +1614,32 @@ export function UnifiedDocumentEditor({
           <CollaborativeTextarea
             field="title"
             label="Title"
-            placeholder={activeTemplate.id === "texttext.article" ? "Title" : "Untitled"}
+            placeholder={experience === "article" ? "Title" : "Untitled"}
             value={document.content.title}
             selections={remoteSelections.title}
             onChange={(value) => updateText("title", value)}
             onSelection={updateSelection}
             inputRef={titleRef}
-            onAdvance={activeTemplate.id === "texttext.article" || activeTemplate.id === "texttext.note" ? () => {
-              if (activeTemplate.id === "texttext.article") subtitleRef.current?.focus();
+            onAdvance={experience === "article" || experience === "note" ? () => {
+              if (experience === "article") subtitleRef.current?.focus();
               else { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); }
             } : undefined}
             grow
           />
         ),
-        ...(activeTemplate.id === "texttext.article" || showSubtitle || document.content.subtitle?.trim()
+        ...(experience === "article" || showSubtitle || document.content.subtitle?.trim()
           ? {
               "content.subtitle": (
                 <CollaborativeTextarea
                   field="subtitle"
-                  label={activeTemplate.id === "texttext.article" ? "Subtitle" : "Description"}
-                  placeholder={activeTemplate.id === "texttext.article" ? "Add a subtitle" : "Add a description"}
+                  label={experience === "article" ? "Subtitle" : "Description"}
+                  placeholder={experience === "article" ? "Add a subtitle" : "Add a description"}
                   value={document.content.subtitle ?? ""}
                   selections={remoteSelections.subtitle}
                   onChange={(value) => updateText("subtitle", value)}
                   onSelection={updateSelection}
                   inputRef={subtitleRef}
-                  onAdvance={activeTemplate.id === "texttext.article" ? () => { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); } : undefined}
+                  onAdvance={experience === "article" ? () => { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); } : undefined}
                   grow
                 />
               ),
@@ -1687,7 +1689,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -1815,7 +1817,7 @@ export function UnifiedDocumentEditor({
             {leadingControls}
         {networkEnabled && <ParticipantsRow key={collab.postId} postId={networkEnabled ? collab.postId : null}
           handle={blog.handle} canReviewChanges={canReviewAgentChanges} />}
-          {activeTemplate.id !== "texttext.article" && (onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
+          {experience !== "article" && (onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
             <button
               type="button"
               className="ac-btn ac-btn-gray tt-look-button"
@@ -1839,7 +1841,7 @@ export function UnifiedDocumentEditor({
               <span aria-hidden="true">•••</span>
             </summary>
             <div className="tt-editor-more-menu">
-              {activeTemplate.id === "texttext.article" && (onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
+              {experience === "article" && (onChooseTemplate || (availableTemplates && availableTemplates.length > 0)) && (
                 <button type="button" onClick={() => {
                   if (availableTemplates?.length) setChoosingTemplate(true);
                   else onChooseTemplate?.();
@@ -1934,9 +1936,9 @@ export function UnifiedDocumentEditor({
             </div>
           </details>
           )}
-          {activeTemplate.id !== "texttext.note" && <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
-            <span className="tt-stop-edit-label-full">{activeTemplate.id === "texttext.article" ? "Done" : transport === "local" ? "Save" : "Stop editing"}</span>
-            <span className="tt-stop-edit-label-compact">{activeTemplate.id === "texttext.article" ? "Done" : transport === "local" ? "Save" : "Done"}</span>
+          {experience !== "note" && <button type="button" className="ac-btn ac-btn-gray" onClick={() => void stopEditing()}>
+            <span className="tt-stop-edit-label-full">{experience === "article" ? "Done" : transport === "local" ? "Save" : "Stop editing"}</span>
+            <span className="tt-stop-edit-label-compact">{experience === "article" ? "Done" : transport === "local" ? "Save" : "Done"}</span>
           </button>}
             <div className={`tt-save-state is-${saveState}`}>
               {saveStateLabel}
@@ -2012,7 +2014,7 @@ export function UnifiedDocumentEditor({
         </div>
       )}
       {!localDocument && <EditorSaveNotice state={saveState} onRetry={retrySaving} />}
-      {!(["texttext.article", "texttext.note"].includes(activeTemplate.id)) && !document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
+      {!(experience === "article" || experience === "note") && !document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
       {/* No byline while writing: an author and a reading time are reader
           chrome, and showing them here turns the page into a preview of
           itself instead of the thing being written.
@@ -2046,32 +2048,32 @@ export function UnifiedDocumentEditor({
           setTagDraft("");
         }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
       </aside></div> : documentSurface}
-      {(["texttext.article", "texttext.note"].includes(activeTemplate.id)) && <section className={activeTemplate.id === "texttext.note" ? "tt-article-topics tt-note-tags" : "tt-article-topics"} aria-label={activeTemplate.id === "texttext.note" ? "Note tags" : "Story topics"}>
-        <h3>{activeTemplate.id === "texttext.note" ? "Tags" : "Topics"}</h3>
-        <div className="tt-article-topic-list">{document.content.tags.slice(0, activeTemplate.id === "texttext.note" ? 500 : 5).map((topic) => <span key={topic}>{activeTemplate.id === "texttext.note" ? `#${topic}` : topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
+      {(experience === "article" || experience === "note") && <section className={experience === "note" ? "tt-article-topics tt-note-tags" : "tt-article-topics"} aria-label={experience === "note" ? "Note tags" : "Story topics"}>
+        <h3>{experience === "note" ? "Tags" : "Topics"}</h3>
+        <div className="tt-article-topic-list">{document.content.tags.slice(0, experience === "note" ? 500 : 5).map((topic) => <span key={topic}>{experience === "note" ? `#${topic}` : topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: current.content.tags.filter((tag) => tag !== topic) } });
         }}>×</button></span>)}</div>
-        {document.content.tags.length < (activeTemplate.id === "texttext.note" ? 500 : 5) && <form onSubmit={(event) => {
+        {document.content.tags.length < (experience === "note" ? 500 : 5) && <form onSubmit={(event) => {
           event.preventDefault();
           const topic = tagDraft.trim().replace(/^#/, "").slice(0, 40);
           if (!topic) return;
           const current = currentLocalDocument();
           if (current.content.tags.some((tag) => tag.toLocaleLowerCase() === topic.toLocaleLowerCase())) return;
-          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, activeTemplate.id === "texttext.note" ? 500 : 5) } });
+          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, experience === "note" ? 500 : 5) } });
           setTagDraft("");
-        }}><input aria-label={activeTemplate.id === "texttext.note" ? "Add note tag" : "Add story topic"} placeholder={activeTemplate.id === "texttext.note" ? "Add a tag" : "Add a topic"} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
-        {activeTemplate.id === "texttext.note" && <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>}
+        }}><input aria-label={experience === "note" ? "Add note tag" : "Add story topic"} placeholder={experience === "note" ? "Add a tag" : "Add a topic"} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
+        {experience === "note" && <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>}
       </section>}
-      {onPasteImages && articleCaret && activeTemplate.id === "texttext.article" && <div className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
+      {onPasteImages && articleCaret && experience === "article" && <div className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
         <button type="button" aria-label="Add image to story" title="Add image" onMouseDown={(event) => event.preventDefault()} onClick={() => articleImageInput.current?.click()}>+</button>
       </div>}
-      {onPasteImages && activeTemplate.id === "texttext.article" && <input ref={articleImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose story images" onChange={(event) => {
+      {onPasteImages && experience === "article" && <input ref={articleImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose story images" onChange={(event) => {
         const files = Array.from(event.currentTarget.files ?? []);
         event.currentTarget.value = "";
         if (files.length) pasteImages(files, { from: articleBodyOffset.current, to: articleBodyOffset.current });
       }} />}
-      {articleSelection && !articleLinkTarget && activeTemplate.id === "texttext.article" && <div className="tt-article-format" role="toolbar" aria-label="Format selected story text" style={{ left: Math.max(90, Math.min(typeof window === "undefined" ? articleSelection.x : window.innerWidth - 90, articleSelection.x)), top: Math.max(8, articleSelection.y - 48) }}>
+      {articleSelection && !articleLinkTarget && experience === "article" && <div className="tt-article-format" role="toolbar" aria-label="Format selected story text" style={{ left: Math.max(90, Math.min(typeof window === "undefined" ? articleSelection.x : window.innerWidth - 90, articleSelection.x)), top: Math.max(8, articleSelection.y - 48) }}>
         <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("**")}><strong>B</strong></button>
         <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleSelection("*")}><em>I</em></button>
         <button type="button" aria-label="Link" title="Link" onMouseDown={(event) => event.preventDefault()} onClick={() => { setArticleLinkTarget(articleSelection); setArticleLinkURL(""); setArticleLinkError(""); }}>⌁</button>
@@ -2079,7 +2081,7 @@ export function UnifiedDocumentEditor({
         <button type="button" aria-label="Subheading" title="Subheading" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleBlock("## ")}><small>T</small></button>
         <button type="button" aria-label="Quote" title="Quote" onMouseDown={(event) => event.preventDefault()} onClick={() => formatArticleBlock("> ")}>“</button>
       </div>}
-      {articleLinkTarget && activeTemplate.id === "texttext.article" && <form className="tt-article-format tt-article-link" aria-label="Add story link" style={{ left: Math.max(170, Math.min(typeof window === "undefined" ? articleLinkTarget.x : window.innerWidth - 170, articleLinkTarget.x)), top: Math.max(8, articleLinkTarget.y - 48) }} onSubmit={(event) => { event.preventDefault(); linkArticleSelection(); }}>
+      {articleLinkTarget && experience === "article" && <form className="tt-article-format tt-article-link" aria-label="Add story link" style={{ left: Math.max(170, Math.min(typeof window === "undefined" ? articleLinkTarget.x : window.innerWidth - 170, articleLinkTarget.x)), top: Math.max(8, articleLinkTarget.y - 48) }} onSubmit={(event) => { event.preventDefault(); linkArticleSelection(); }}>
         <input autoFocus aria-label="Link address" placeholder="Paste or type a link" value={articleLinkURL} onChange={(event) => { setArticleLinkURL(event.target.value); setArticleLinkError(""); }} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setArticleLinkTarget(null); } }} />
         <button type="submit" disabled={!articleLinkURL.trim()}>Add link</button>
         {articleLinkError && <span role="alert">{articleLinkError}</span>}

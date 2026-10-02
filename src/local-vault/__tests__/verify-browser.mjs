@@ -24,6 +24,18 @@ const preset = unzipSync(await readFile("presets/builtin/note.textpack"));
 const template = JSON.parse(strFromU8(preset[Object.keys(preset).find((name) => name.endsWith("/template.json"))]));
 template.id = "custom.agent-look"; template.name = "Agent made look";
 files.set("Templates/Agent look.textpack", { ...initial, path: "Templates/Agent look.textpack", hash: "template-1", templateJSON: JSON.stringify(template) });
+const customNoteLook = { ...template, id: "local.custom-note-look", name: "Custom note look", experience: "note" };
+files.set("Templates/Custom note look.textpack", { ...initial, path: "Templates/Custom note look.textpack", hash: "template-note-1", templateJSON: JSON.stringify(customNoteLook) });
+const articlePreset = unzipSync(await readFile("presets/builtin/article.textpack"));
+const customStoryLook = JSON.parse(strFromU8(articlePreset[Object.keys(articlePreset).find((name) => name.endsWith("/template.json"))]));
+customStoryLook.id = "local.custom-story-look"; customStoryLook.name = "Custom story look"; customStoryLook.experience = "article";
+files.set("Templates/Custom story look.textpack", { ...initial, path: "Templates/Custom story look.textpack", hash: "template-story-1", templateJSON: JSON.stringify(customStoryLook) });
+for (const [kind, name] of [["bookmark", "Custom bookmark look"], ["gallery", "Custom gallery look"]]) {
+  const preset = unzipSync(await readFile(`presets/builtin/${kind}.textpack`));
+  const look = JSON.parse(strFromU8(preset[Object.keys(preset).find((entry) => entry.endsWith("/template.json"))]));
+  look.id = `local.custom-${kind}-look`; look.name = name; look.experience = kind;
+  files.set(`Templates/${name}.textpack`, { ...initial, path: `Templates/${name}.textpack`, hash: `template-${kind}-1`, templateJSON: JSON.stringify(look) });
+}
 const retainedEntries = {
   "Recovery.textbundle/text.md": strToU8(initial.markdown),
   "Recovery.textbundle/document.json": strToU8(initial.documentJSON),
@@ -225,7 +237,7 @@ try {
   await newFromTemplate.getByRole("button", { name: "Blog post", exact: true }).waitFor();
   assert.equal(await newFromTemplate.getByRole("button", { name: "Follow a feed", exact: true }).count(), 0);
   await page.screenshot({ path: "/tmp/texttext-template-picker-reference.png" });
-  assert.equal(await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').count(), 4);
+  assert.equal(await newFromTemplate.getByRole("button", { name: "Gallery", exact: true }).locator('.preview-gallery span').count(), 4);
   const galleryPhotoLoaded = await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').first().evaluate((element) => new Promise((resolve) => {
     const url = getComputedStyle(element).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1];
     if (!url) { resolve(false); return; }
@@ -1460,6 +1472,49 @@ try {
   assert.ok(builtInStory.path.startsWith("Blog/"));
   assert.equal(JSON.parse(builtInStory.documentJSON).presentation.template.id, "texttext.article");
   await page.getByRole("button", { name: "Back to Blog" }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseMoreAction("New from template");
+  await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Custom bookmark look", exact: true }).click();
+  const customBookmarkDialog = page.getByRole("dialog", { name: "Save bookmark" });
+  await customBookmarkDialog.getByRole("textbox", { name: "Web address" }).fill("https://example.com/custom-look");
+  await customBookmarkDialog.getByRole("button", { name: "Save bookmark" }).click();
+  await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+  const customBookmark = [...files.values()].find(file => JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/custom-look");
+  assert.ok(customBookmark?.path.startsWith("Bookmarks/"));
+  assert.equal(JSON.parse(customBookmark.documentJSON).presentation.template.id, "local.custom-bookmark-look");
+  await page.screenshot({ path: "/tmp/texttext-custom-bookmark-look-reference.png" });
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseMoreAction("New from template");
+  await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Custom gallery look", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.vault-context-header .vault-primary-action')?.hasAttribute('disabled'));
+  const customPhoto = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#ad826c" } }).png().toBuffer();
+  await page.getByLabel("Choose images").setInputFiles({ name: "Custom gallery photo.png", mimeType: "image/png", buffer: customPhoto });
+  await page.getByRole("region", { name: "Custom gallery photo" }).waitFor();
+  const galleryWithLook = [...files.values()].find(file => file.path.startsWith("Gallery/") && JSON.parse(file.documentJSON).presentation.template.id === "local.custom-gallery-look");
+  assert.ok(galleryWithLook);
+  await page.screenshot({ path: "/tmp/texttext-custom-gallery-look-reference.png" });
+  await page.getByRole("button", { name: "Close image" }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseMoreAction("New from template");
+  await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Custom story look", exact: true }).click();
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  assert.ok(await page.locator('.tt-document-editor[data-template-experience="article"]').count());
+  const customStory = [...files.values()].at(-1);
+  assert.ok(customStory.path.startsWith("Blog/"));
+  assert.equal(JSON.parse(customStory.documentJSON).presentation.template.id, "local.custom-story-look");
+  await page.screenshot({ path: "/tmp/texttext-custom-story-look-reference.png" });
+  await page.getByRole("button", { name: "Back to Blog" }).click();
+  await page.getByRole("button", { name: "TextText", exact: true }).click();
+  await chooseMoreAction("New from template");
+  await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Custom note look", exact: true }).click();
+  await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
+  assert.ok(await page.locator('.tt-document-editor[data-template-experience="note"]').count());
+  const customNote = [...files.values()].at(-1);
+  assert.ok(customNote.path.startsWith("Notes/"));
+  assert.equal(JSON.parse(customNote.documentJSON).presentation.template.id, "local.custom-note-look");
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
+  await page.getByRole("region", { name: "Note card" }).waitFor();
+  await page.getByRole("button", { name: "Back to Notes" }).click();
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseMoreAction("New from template");
   const connectedPicker = page.getByRole("dialog", { name: "New from template", exact: true });

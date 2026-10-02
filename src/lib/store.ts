@@ -382,6 +382,7 @@ import { resolveDocumentVisibility } from "./documents/visibility";
 import {
   getBuiltinTemplate,
   BUILTIN_TEMPLATES,
+  templateExperience,
 } from "./presentation/templates";
 import {
   validateTemplateDefinition,
@@ -4816,6 +4817,7 @@ export async function saveDocumentAsLook(input: {
     id: templateId,
     version: 1,
     name,
+    experience: templateExperience(base) ?? undefined,
     // The document's own theme is what makes it look the way it does; without
     // this the saved look would be the base template again under a new name.
     theme: { ...base.theme, ...document.presentation.theme },

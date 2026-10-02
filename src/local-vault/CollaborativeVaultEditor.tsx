@@ -6,7 +6,7 @@ import { applyDocumentSnapshot, documentSnapshotFromYDoc } from "@/lib/collab/do
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
-import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
+import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { FileCollaborationClient, type FileCollaborationStatus } from "./collaboration-client";
 import { FilePresenceClient, type FilePresenceMethod } from "./presence-client";
@@ -61,7 +61,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const [canEdit, setCanEdit] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [reading, setReading] = useState(() => Boolean(articleSource(snapshot) ||
-    (snapshot.presentation.template.id === "texttext.article" && !focusNewNoteTitle &&
+    (["article", "note"].includes(templateExperience(readTemplate(initial, snapshot)) ?? "") && !focusNewNote && !focusNewNoteTitle &&
       (snapshot.content.title.trim() || snapshot.content.body.trim()))));
   useEffect(() => {
     const editTopics = () => {
@@ -396,12 +396,12 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const saveLook = async (name: string) => {
     if (!await flush()) return { ok: false, message: "Save this item before keeping its look." };
     const identity = { id: `local.${crypto.randomUUID()}`, version: 1 };
-    let look = validateTemplateDefinition({ ...template, ...identity, name });
+    let look = validateTemplateDefinition({ ...template, ...identity, name, experience: templateExperience(template) ?? undefined });
     let sourceJSON: string | null = null;
     if (file.current.templateAuthoringSourceJSON) {
       const source = authoringSourceSchema.parse(JSON.parse(file.current.templateAuthoringSourceJSON));
       source.blueprint.name = name;
-      look = compileItemTypeBlueprint(source.blueprint, identity); sourceJSON = JSON.stringify(source);
+      look = validateTemplateDefinition({ ...compileItemTypeBlueprint(source.blueprint, identity), experience: templateExperience(template) ?? undefined }); sourceJSON = JSON.stringify(source);
     }
     const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash });
     const document = { ...latestSnapshot.current, presentation: { ...latestSnapshot.current.presentation, template: identity } };
@@ -413,6 +413,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const editable = ready && canEdit && !blocked && !busy;
   const readOnly = ready && !canEdit && !detail && status !== "offline" && !blocked;
   const display = resolveAssets(snapshot);
+  const experience = templateExperience(template);
   return <section className="vault-document">
     {presencePeers.length > 0 && <div className="vault-document-presence"><span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here: ${presencePeers.slice(0, 3).map(peer => peer.userName).join(", ")}${presencePeers.length > 3 ? ` and ${presencePeers.length - 3} more` : ""}`}
         style={{ display: "inline-flex", alignItems: "center", flexShrink: 0, gap: 3 }}>
@@ -435,11 +436,11 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
     {ready && <>
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />}
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
-      {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : snapshot.presentation.template.id === "texttext.note" ? <VaultNoteDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : snapshot.presentation.template.id === "texttext.article" ? <VaultStoryDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : <DocumentRenderer document={display} template={template} />) :
+      {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : experience === "note" ? <VaultNoteDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : experience === "article" ? <VaultStoryDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : <DocumentRenderer document={display} template={template} />) :
         <UnifiedDocumentEditor key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
           focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
           onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
-          collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { if (await flush() && ["texttext.note", "texttext.article"].includes(latestSnapshot.current.presentation.template.id)) setReading(true); }}
+          collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { if (await flush() && (experience === "note" || experience === "article")) setReading(true); }}
           renderTemplateLibrary={props => <WorkspaceTypeLibrary currentTemplate={template} onClose={props.onClose} onApply={(nextTemplate, sourceJSON) => {
             props.onClose(); setBusy(true);
             void (async () => {

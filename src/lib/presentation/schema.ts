@@ -860,6 +860,9 @@ export const templateDefinitionSchema = z
     version: z.number().int().positive(),
     name: z.string().trim().min(1).max(160),
     description: z.string().trim().max(1000).optional(),
+    /** Preserve the creation and editing flow when a built-in look is saved
+     * under a new local template id. This never selects executable UI. */
+    experience: z.enum(["article", "note", "bookmark", "gallery"]).optional(),
     fields: z.array(documentFieldDefinitionSchema).max(80).default([]),
     starter: templateStarterSchema.optional(),
     item: renderNodeSchema,

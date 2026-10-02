@@ -2,6 +2,8 @@
 
 ## Current work
 
+Saved looks now retain a validated article/note/bookmark/gallery experience label, so a look with a new id keeps its picker preview and creation destination. Custom article and note looks keep their specialized editor controls and reader; custom Bookmark and Gallery looks retain their look IDs after URL capture and image import. The local browser contract creates these custom item types and checks their TextPack template IDs; the web browser contract, TypeScript, render-spec tests, look contract, and preset checks passed. Screenshots: `/tmp/texttext-custom-story-look-reference.png`, `/tmp/texttext-custom-bookmark-look-reference.png`, `/tmp/texttext-custom-gallery-look-reference.png`. Template creation lineage is repaired; visual and interaction parity with the reference services remains open. No app release was run.
+
 Open Notes cards now have a direct Back to Notes control. It uses the existing revision-aware flush before returning to the card grid; the browser flow checks that the newly written card is present there. This closes a navigation gap in the Supernotes-style card flow. Full reference parity remains open; no app release was run.
 
 Bookmark capture now has a Paste copied link action that checks the clipboard value before filling the URL field; the user still confirms Save bookmark. The local browser flow exercises this path and verifies the resulting TextPack is in Bookmarks. Full Shiori creation parity remains open; no app release was run.
