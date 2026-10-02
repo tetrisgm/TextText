@@ -203,6 +203,14 @@ try {
   await chooseMoreAction("New from template");
   const newFromTemplate = page.getByRole("dialog", { name: "New from template", exact: true });
   await newFromTemplate.getByRole("button", { name: "Agent made look", exact: true }).waitFor();
+  await newFromTemplate.getByRole("button", { name: "Blog post", exact: true }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-template-picker-reference.png" });
+  assert.equal(await newFromTemplate.locator('.vault-template-preview[data-template="gallery"] .preview-gallery span').count(), 4);
+  await newFromTemplate.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await page.screenshot({ path: "/tmp/texttext-template-picker-gallery-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-template-picker-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
   await newFromTemplate.getByRole("button", { name: "Close", exact: true }).click();
   await chooseFolder("Empty");
   await page.getByRole("heading", { name: "Empty", exact: true }).waitFor();

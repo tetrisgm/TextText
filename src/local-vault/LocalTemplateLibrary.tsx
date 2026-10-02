@@ -51,7 +51,19 @@ export function useVaultTemplates(refreshKey?: string) {
   return { looks, loading, notice, reload };
 }
 
-/** Lightweight layout sketches keep a full catalog inexpensive to open. */
+/** Small, content-shaped previews distinguish each creation path without loading assets. */
+function TemplatePreview({ template }: { template: TemplateDefinition }) {
+  const kind = template.id.replace(/^texttext\./, "");
+  return <span className="vault-template-preview" data-template={kind} aria-hidden="true">
+    {kind === "article" ? <span className="preview-story"><span className="preview-eyebrow">Draft story</span><strong>A story worth telling</strong><em>A thought to carry into the article</em><span className="preview-line" /><span className="preview-line short" /></span>
+      : kind === "note" ? <span className="preview-note"><strong>A useful thought</strong><span>Capture it while it is fresh.</span><small>Ideas</small></span>
+      : kind === "bookmark" ? <span className="preview-bookmark"><span className="preview-site">◉ example.com</span><strong>An article to keep</strong><span>Open in a clean reader whenever you return.</span></span>
+      : kind === "gallery" ? <span className="preview-gallery"><span /><span /><span /><span /></span>
+      : kind === "talk" ? <span className="preview-talk"><strong>Make your point.</strong><span>One idea per slide</span></span>
+      : <span className="preview-generic"><strong>{template.name}</strong><span className="preview-line" /><span className="preview-line short" /></span>}
+  </span>;
+}
+
 export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use template", disabled = false }: {
   looks: VaultLook[];
   onChoose: (look: VaultLook) => void;
@@ -63,10 +75,7 @@ export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use templat
     <button className="vault-template-card" key={look.path ?? look.template.id} disabled={disabled}
       aria-label={look.template.name} aria-describedby={`${id}-${index}`} title={look.path}
       onClick={() => onChoose(look)}>
-      <span className="vault-template-preview" data-template={look.template.id.replace(/^texttext\./, "")} aria-hidden="true">
-        <span className="vault-template-preview-heading" /><span className="vault-template-preview-body" />
-        <span className="vault-template-preview-detail" /><span className="vault-template-preview-footer" />
-      </span>
+      <TemplatePreview template={look.template} />
       <span className="vault-template-name">{look.template.name}</span>
       <span className="vault-template-description" id={`${id}-${index}`}>{look.template.description || "Your own reusable document template."}</span>
       <span className="vault-template-action">{actionLabel} <span aria-hidden="true">↗</span></span>
