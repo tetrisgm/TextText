@@ -2087,6 +2087,20 @@ try {
   assert.equal(await page.locator('.tt-note-image-previews').count(), 0);
   const thoughtImageFile = [...files.values()].find(file => JSON.parse(file.documentJSON).content.body.includes("Thought-photo.png"));
   assert.ok(thoughtImageFile?.assets?.some(asset => asset.filename === "Thought-photo.png"));
+  const galleryCountBeforeNoteDrop = [...files.keys()].filter(path => path.startsWith("Gallery/")).length;
+  await page.getByRole("textbox", { name: "Document body" }).evaluate((body, bytes) => {
+    const image = new File([new Uint8Array(bytes)], "Dropped photo.png", { type: "image/png" });
+    const transfer = new DataTransfer();
+    transfer.items.add(image);
+    const rect = body.getBoundingClientRect();
+    const options = { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+    body.dispatchEvent(new DragEvent("dragover", options));
+    body.dispatchEvent(new DragEvent("drop", options));
+  }, [...firstStoryImage]);
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/Dropped-photo.png"));
+  const droppedNote = [...files.values()].find(file => JSON.parse(file.documentJSON).content.body.includes("Dropped-photo.png"));
+  assert.ok(droppedNote?.assets?.some(asset => asset.filename === "Dropped-photo.png"));
+  assert.equal([...files.keys()].filter(path => path.startsWith("Gallery/")).length, galleryCountBeforeNoteDrop);
   assert.equal(await page.getByRole("button", { name: "Finish", exact: true }).count(), 1);
   await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });

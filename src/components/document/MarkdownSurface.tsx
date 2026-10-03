@@ -1687,6 +1687,30 @@ export function MarkdownSurface({
         event.preventDefault();
         onPasteImages(files, { from: Math.min(at.anchor, at.head), to: Math.max(at.anchor, at.head) });
       }}
+      onDragOver={(event) => {
+        if (!onPasteImages || disabled || !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(event) => {
+        if (!onPasteImages || disabled) return;
+        const files = Array.from(event.dataTransfer.files).filter(file =>
+          ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type.toLowerCase()));
+        if (!files.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const root = ref.current;
+        const range = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+        if (root && range && root.contains(range.startContainer)) {
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        }
+        const at = selectionOffsets();
+        const from = at ? Math.min(at.anchor, at.head) : valueRef.current.length;
+        const to = at ? Math.max(at.anchor, at.head) : from;
+        onPasteImages(files, { from, to });
+      }}
       onCut={(event) => {
         if (!copySelection(event)) return;
         const at = selectionOffsets();

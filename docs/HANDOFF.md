@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes now accepts image files dropped directly onto the card body. The editor computes the insertion position from the drop point when available and routes the file through the existing TextPack image asset path; the drop does not create a separate Gallery item. TypeScript and the full local vault browser flow pass. Supernotes' broader Coupler and visual parity remain open; no release was run.
+
 Gallery color swatches now use average sampled RGB values instead of snapped 32-step bin corners, separate near-duplicate colors, and copy their hex value. The Mac file-based viewer uses a copy fallback when Clipboard API permission is unavailable. The local browser flow checks copying a swatch; TypeScript and the full local vault browser flow pass. Resurf's public Image details view still has keywords, summary, and comments that TextText does not match; no release was run.
 
 Story image placement now checks the source image's decoded width. Wide and Full width appear for images at least 1192 px across; smaller images show Inline with a short explanation, while a previously saved wider placement remains available to undo. The browser flow checks a 1600 px image and a 1 px image in the same TextPack. TypeScript and local/web browser flows pass. Native Safari and broader Medium composition fidelity remain open; no release was run.
