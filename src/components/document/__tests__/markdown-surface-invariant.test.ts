@@ -59,6 +59,8 @@ const CONSTRUCTS = [
   "~~struck~~",
   "[[Wiki Link]]",
   "[link](https://example.com)",
+  "[Card](<#texttext-card=abc-123>)",
+  "[site](https://example.com/path) and **strong**",
   "![image](a.png)",
   "```\nfenced\n```",
   "Footnote[^1]\n\n[^1]: note",
@@ -104,6 +106,20 @@ describe("the writing surface never changes the source", () => {
       }
       expect(joined(segmentsForValue(value))).toBe(value);
     }
+  });
+});
+
+describe("link editing presentation", () => {
+  it("keeps the link label visible and its syntax in the source", () => {
+    const value = "See [Card](<#texttext-card=abc-123>) and [site](https://example.com).";
+    const segments = segmentsForValue(value);
+    expect(joined(segments)).toBe(value);
+    expect(segments.filter(segment => segment.className === "tt-md-link").map(segment => segment.text)).toEqual(["Card", "site"]);
+    expect(segments.filter(segment => segment.className?.includes("tt-md-link-syntax")).map(segment => segment.text).join("")).toContain("<#texttext-card=abc-123>");
+  });
+
+  it("leaves image Markdown to the image surface", () => {
+    expect(segmentsForValue("![Photo](assets/photo.png)").some(segment => segment.className === "tt-md-link")).toBe(false);
   });
 });
 

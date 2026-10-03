@@ -1537,6 +1537,8 @@ try {
     console.error("Story link body:", await storyBody.textContent());
     throw error;
   });
+  await storyBody.fill("Replaced");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Replaced");
   await storyBody.fill("Heading");
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Heading");
   await page.waitForTimeout(450);
@@ -1612,7 +1614,7 @@ try {
   await page.waitForFunction(() => { const image = document.querySelector('[aria-label="Document body"] .tt-md-image-preview'); return image?.complete && image.naturalWidth > 0; });
   assert.equal(await page.locator('[aria-label="Document body"] .tt-md-image-preview').evaluate((image) => image.complete && image.naturalWidth > 0), true);
   assert.match(await storyBody.textContent(), /!\[[^\]]*\]\(assets\/story\.png\)/);
-  assert.equal(await page.locator('[aria-label="Document body"] [data-tt-ln]:has(.tt-md-image-preview) .tt-md-syntax').evaluate((marker) => getComputedStyle(marker).display), "none");
+  assert.equal(await page.locator('[aria-label="Document body"] [data-tt-ln]:has(.tt-md-image-preview) .tt-md-syntax').evaluate((marker) => getComputedStyle(marker).fontSize), "0px");
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-blog-inline-image-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
@@ -2626,9 +2628,22 @@ try {
   const droppedNote = [...files.values()].find(file => JSON.parse(file.documentJSON).content.body.includes("Dropped-photo.png"));
   assert.ok(droppedNote?.assets?.some(asset => asset.filename === "Dropped-photo.png"));
   assert.equal([...files.keys()].filter(path => path.startsWith("Gallery/")).length, galleryCountBeforeNoteDrop);
+  await page.locator('[aria-label="Document body"] .tt-md-image-preview').nth(1).waitFor();
+  assert.equal(await page.locator('[aria-label="Document body"] .tt-md-image-preview').count(), 2);
+  assert.equal(await page.locator('[aria-label="Document body"] .tt-md-image-preview').first().evaluate(image => image.complete && image.naturalWidth > 0), true);
   assert.equal(await page.getByRole("button", { name: "Finish", exact: true }).count(), 1);
+  await page.getByRole("textbox", { name: "Title", exact: true }).focus();
+  await page.waitForFunction(() => {
+    const body = document.querySelector('[aria-label="Document body"]');
+    return body?.querySelectorAll('.tt-md-link').length >= 2 && [...body.querySelectorAll('.tt-md-link-syntax')].some(marker => getComputedStyle(marker).fontSize === '0px');
+  });
   await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForFunction(() => {
+    const title = document.querySelector('.tt-document-editor [aria-label="Title"]');
+    const channel = title && Number(getComputedStyle(title).color.match(/\d+/)?.[0]);
+    return channel != null && channel < 100;
+  });
   await page.screenshot({ path: "/tmp/texttext-note-editor-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("textbox", { name: "Document body" }).focus();
@@ -2792,7 +2807,7 @@ try {
   const cardLinkDraft = page.getByRole("form", { name: "New card draft" });
   await cardLinkDraft.getByRole("textbox", { name: "New card title" }).fill("Card reference");
   await cardLinkDraft.getByRole("textbox", { name: "New card body" }).fill("See Rapid thought again.");
-  await cardLinkDraft.getByRole("textbox", { name: "New card body" }).evaluate(element => { element.focus(); element.setSelectionRange(4, 23); });
+  await cardLinkDraft.getByRole("textbox", { name: "New card body" }).evaluate(element => { element.focus(); element.setSelectionRange(4, 23); element.dispatchEvent(new Event("select", { bubbles: true })); });
   await cardLinkDraft.getByRole("button", { name: "Add to new card" }).click();
   await cardLinkDraft.getByRole("menuitem", { name: /Link/ }).first().click();
   await cardLinkDraft.getByRole("searchbox", { name: "Find a card to link" }).fill("Rapid thought again");
@@ -2818,6 +2833,7 @@ try {
   await selectedLinkDraft.getByRole("textbox", { name: "New card body" }).evaluate(element => {
     element.focus();
     element.setSelectionRange(9, 21);
+    element.dispatchEvent(new Event("select", { bubbles: true }));
   });
   await selectedLinkDraft.getByRole("button", { name: "Add to new card" }).click();
   await selectedLinkDraft.getByRole("menuitem", { name: "Web link" }).click();

@@ -106,7 +106,7 @@ function segmentsForLine(line: string, concealImageLine = false, renderDivider =
     return [{ text: line, className: `${MARKER} ${SYNTAX}` }];
   }
   if (concealImageLine && /^!\[[^\]]*\]\((?:assets\/[^)]+|blob:[^)]+)\)$/.test(line.trim())) {
-    return [{ text: line, className: `${MARKER} ${SYNTAX}` }];
+    return [{ text: line, className: `${MARKER} ${SYNTAX} tt-md-image-syntax` }];
   }
   const heading = /^(\s*)(#{1,6})(\s+)(.*)$/.exec(line);
   if (heading) {
@@ -142,24 +142,34 @@ function segmentsForLine(line: string, concealImageLine = false, renderDivider =
 /** Emphasis and code, marked so the syntax recedes and the words stand out. */
 function inlineSegments(text: string): Segment[] {
   const out: Segment[] = [];
-  const pattern = /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3|(`)([^`]+?)(`)/g;
+  const pattern = /(\[)([^\]\n]+)(\]\()(<[^>\n]+>|[^)\n]+)(\))|(\*\*|__)(.+?)\6|(\*|_)(.+?)\8|(`)([^`]+?)(`)/g;
   let last = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
+    if (match[1] && match.index > 0 && text[match.index - 1] === "!") continue;
     if (match.index > last) out.push({ text: text.slice(last, match.index) });
     const syntax = `${MARKER} ${SYNTAX}`;
     if (match[1]) {
-      out.push({ text: match[1], className: syntax });
-      out.push({ text: match[2], className: "tt-md-strong" });
-      out.push({ text: match[1], className: syntax });
-    } else if (match[3]) {
-      out.push({ text: match[3], className: syntax });
-      out.push({ text: match[4], className: "tt-md-em" });
-      out.push({ text: match[3], className: syntax });
+      // A zero-size glyph remains selectable. display:none here would make
+      // Select All replace only the visible label and leave the URL behind.
+      const linkSyntax = `${syntax} tt-md-link-syntax`;
+      out.push({ text: match[1], className: linkSyntax });
+      out.push({ text: match[2], className: "tt-md-link" });
+      out.push({ text: match[3], className: linkSyntax });
+      out.push({ text: match[4], className: linkSyntax });
+      out.push({ text: match[5], className: linkSyntax });
+    } else if (match[6]) {
+      out.push({ text: match[6], className: syntax });
+      out.push({ text: match[7], className: "tt-md-strong" });
+      out.push({ text: match[6], className: syntax });
+    } else if (match[8]) {
+      out.push({ text: match[8], className: syntax });
+      out.push({ text: match[9], className: "tt-md-em" });
+      out.push({ text: match[8], className: syntax });
     } else {
-      out.push({ text: match[5], className: syntax });
-      out.push({ text: match[6], className: "tt-md-code" });
-      out.push({ text: match[7], className: syntax });
+      out.push({ text: match[10], className: syntax });
+      out.push({ text: match[11], className: "tt-md-code" });
+      out.push({ text: match[12], className: syntax });
     }
     last = pattern.lastIndex;
   }
@@ -801,10 +811,17 @@ export function MarkdownSurface({
       pushText(text.slice(cut - segStart), cut, className);
       at = segEnd;
     };
-    const image = /^!\[([^\]]*)\]\((assets\/[^)]+|blob:[^)]+)\)$/.exec(line.trim());
+    const image = /!\[([^\]]*)\]\((assets\/[^)]+|blob:[^)]+)\)/.exec(line);
     const imageSource = image && imageSources?.[image[2]];
     if (image && selectedImagePath === image[2]) wrapper.classList.add("tt-md-image-selected");
-    for (const segment of segmentsForLine(line, concealImageLines || !!imageSource, renderDividers)) {
+    const imageSegments = imageSource && image && (image.index !== 0 || image[0].length !== line.length)
+      ? [
+          ...segmentsForLine(line.slice(0, image.index), concealImageLines, renderDividers),
+          { text: image[0], className: `${MARKER} ${SYNTAX} tt-md-image-syntax` },
+          ...segmentsForLine(line.slice(image.index + image[0].length), concealImageLines, renderDividers),
+        ]
+      : segmentsForLine(line, concealImageLines || !!imageSource, renderDividers);
+    for (const segment of imageSegments) {
       emitSegment(segment.text, segment.className);
     }
     if (renderDividers && /^\s*(?:---|\*\*\*)\s*$/.test(line)) {

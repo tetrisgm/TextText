@@ -856,16 +856,9 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     setSelected(null);
     await refresh();
   };
-  const saveDroppedBookmark = (address: string) => void operate(async () => {
-    const input = captureInput(address, "");
-    if (!input.sourceURL) throw new Error("Drop a web link to save it in Bookmarks.");
-    const created = await vaultRequest<VaultFile>("create", { ...input, folder: "Bookmarks" });
-    if (listing?.root) queueArticleEnrichment(listing.root, created.path);
-    setPreferredBookmarkPath(created.path);
-    setDestinationFolder("Bookmarks");
-    setSelected(null);
-    await refresh();
-  });
+  const saveDroppedBookmark = (address: string) => {
+    void quickSaveBookmark(address).catch(reason => setError(reason instanceof Error ? reason.message : "Could not save this link."));
+  };
   const openFeedSubscribe = (returnFocus: HTMLElement | null) => {
     feedSubscribeReturnFocus.current = returnFocus;
     closeMoreActions();

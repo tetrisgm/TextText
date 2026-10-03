@@ -1921,7 +1921,7 @@ export function UnifiedDocumentEditor({
               onPasteImages={onPasteImages ? pasteImages : undefined}
               onSlash={experience === "note" ? (insertLiteral) => { noteSlashLiteral.current = insertLiteral; setNoteInsertOpen(true); } : undefined}
               checklistShortcut={experience === "note"}
-              imageSources={experience === "article" ? bodyImageSources : undefined}
+              imageSources={experience === "article" || experience === "note" ? bodyImageSources : undefined}
               imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
               imageAltTexts={experience === "article" ? bodyImageAltTexts : undefined}
               imagePlacements={experience === "article" ? bodyImagePlacements : undefined}
@@ -2546,8 +2546,13 @@ export function UnifiedDocumentEditor({
         .tt-md-marker{color:color-mix(in srgb,currentColor 32%,transparent);font-weight:400}
         .tt-md-syntax{display:none}
         .tt-md-syntax.is-open{display:inline}
+        .tt-md-link-syntax{display:inline;font-size:0;line-height:0}
+        .tt-md-link-syntax.is-open{font-size:inherit;line-height:inherit}
+        .tt-md-image-syntax{display:inline;font-size:0;line-height:0}
+        .tt-md-image-syntax.is-open{font-size:inherit;line-height:inherit}
         .tt-md-strong{font-weight:700}
         .tt-md-em{font-style:italic}
+        .tt-md-link{color:var(--tt-accent);text-decoration:underline;text-underline-offset:.12em}
         .tt-md-code{font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:.94em}
         .tt-md-h1{font-size:1.85em;font-weight:700;line-height:1.2}
         .tt-md-h2{font-size:1.45em;font-weight:700;line-height:1.25}
