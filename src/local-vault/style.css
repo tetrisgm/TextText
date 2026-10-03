@@ -369,6 +369,12 @@
 .vault-app .vault-feed-unfollow p { flex:1 1 100%; margin:0; color:var(--ink); font-size:13px; }
 .vault-app .vault-feed-unfollow button { padding:6px 10px; border:1px solid var(--line); border-radius:6px; color:var(--ink); font-size:12px; }
 .vault-app .vault-feed-unfollow button:last-child { border-color:var(--tt-accent); color:var(--tt-accent); }
+.vault-app .vault-feed-hide-overlay { position:fixed; z-index:60; inset:0; display:grid; place-items:center; padding:16px; background:#0008; }
+.vault-app .vault-feed-hide-dialog { width:min(420px,100%); margin:0; padding:20px; border:1px solid var(--line); border-radius:12px; background:var(--surface); box-shadow:0 18px 60px #0005; }
+.vault-app .vault-feed-hidden-publishers { margin-top:24px; border-top:1px solid var(--line); }
+.vault-app .vault-feed-hidden-publishers h2 { margin:18px 0 8px; font-size:16px; }
+.vault-app .vault-feed-hidden-publishers>div { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+.vault-app .vault-feed-hidden-publishers button { color:var(--tt-accent); font-size:12px; }
 .vault-app .vault-feed-interest-actions { display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:22px; }
 .vault-app .vault-feed-interest-actions>button:first-child:not(.vault-feed-continue) { color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-continue { display:block; min-width:180px; margin:22px 0 0 auto; padding:10px 16px; border-radius:7px; background:var(--tt-accent); color:#fff; text-align:center; font-weight:650; }
