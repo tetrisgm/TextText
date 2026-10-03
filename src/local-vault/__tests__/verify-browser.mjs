@@ -1166,6 +1166,10 @@ try {
   await page.locator(".vault-bookmark-quick-save").getByRole("button", { name: "Save" }).click();
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-quick-save input')?.value === "");
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.net/quick-save"), true);
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "example.org/copied-reading" } }));
+  await page.locator(".vault-bookmark-quick-save").getByRole("button", { name: "Save copied link" }).click();
+  await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.org"));
+  assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/copied-reading"), true);
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.locator(".vault-story-list").getByText("An essay title").waitFor();

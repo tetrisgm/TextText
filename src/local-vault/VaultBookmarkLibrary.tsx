@@ -46,6 +46,17 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [quickLink, setQuickLink] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickError, setQuickError] = useState("");
+  const saveQuickLink = async () => {
+    if (!onQuickSave || quickSaving || busy) return;
+    setQuickSaving(true); setQuickError("");
+    try {
+      const address = quickLink.trim() || (await navigator.clipboard.readText()).trim();
+      if (!address) throw new Error("Copy a web address or enter one first.");
+      await onQuickSave(address);
+      setQuickLink("");
+    } catch (reason) { setQuickError(reason instanceof Error ? reason.message : "Could not save this link."); }
+    finally { setQuickSaving(false); }
+  };
   const [page, setPage] = useState(0);
   const bookmarkList = useRef<HTMLDivElement>(null);
   const pendingKeyboardFocus = useRef("");
@@ -266,7 +277,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   };
   return <div className="vault-bookmark-library">
     <div className="vault-bookmark-list">
-      {onQuickSave && !previewOnly && <form className="vault-bookmark-quick-save" onSubmit={event => { event.preventDefault(); if (quickSaving || busy || !quickLink.trim()) return; setQuickSaving(true); setQuickError(""); void onQuickSave(quickLink).then(() => setQuickLink("")).catch(reason => setQuickError(reason instanceof Error ? reason.message : "Could not save this link.")).finally(() => setQuickSaving(false)); }}><label><span className="ac-sr-only">Web address to save</span><input type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address to save" placeholder="Paste a link to save" value={quickLink} disabled={quickSaving || busy} onChange={event => setQuickLink(event.target.value)} maxLength={4096} /></label><button type="submit" disabled={quickSaving || busy || !quickLink.trim()}>{quickSaving ? "Saving…" : "Save"}</button>{quickError && <p role="alert">{quickError}</p>}</form>}
+      {onQuickSave && !previewOnly && <form className="vault-bookmark-quick-save" onSubmit={event => { event.preventDefault(); void saveQuickLink(); }}><label><span className="ac-sr-only">Web address to save</span><input type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address to save" placeholder="Paste a link to save" value={quickLink} disabled={quickSaving || busy} onChange={event => setQuickLink(event.target.value)} maxLength={4096} /></label><button type="submit" disabled={quickSaving || busy}>{quickSaving ? "Saving…" : quickLink.trim() ? "Save" : "Save copied link"}</button>{quickError && <p role="alert">{quickError}</p>}</form>}
       <div className="vault-bookmark-toolbar"><label><span className="ac-sr-only">Search saved links</span><input type="search" value={search} disabled={!canFilter} onChange={event => { setSearch(event.target.value); setContentSearch(previous => ({ ...previous, searching: true })); setPage(0); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (search) { setSearch(""); setPage(0); } else event.currentTarget.blur(); } }} placeholder="Search saved links" /></label><div role="group" aria-label="Bookmark filters">{(["inbox", "unread", "favorites", "archive"] as const).map(option => <button key={option} aria-pressed={filter === option} disabled={!canFilter} onClick={() => { setFilter(option); setPage(0); }}>{option === "inbox" ? "Inbox" : option === "unread" ? "Unread" : option === "archive" ? "Archive" : "Favorites"}</button>)}</div>{(tags.length > 0 || tagFilter) && <div className="vault-bookmark-tag-filters" role="group" aria-label="Filter bookmark tags"><button aria-pressed={!tagFilter} onClick={() => { setTagFilter(""); setPage(0); }}>All tags</button>{tags.map(tag => <button key={tag} aria-pressed={tagFilter === tag} onClick={() => { setTagFilter(tag); setPage(0); }}>#{tag}</button>)}</div>}</div>
       {searchQuery && !searchReady && !contentSearch.error && <p role="status" className="vault-bookmark-index-status">Searching saved articles…</p>}
       {searchQuery && contentSearch.query === searchQuery && contentSearch.error && <p role="alert" className="vault-bookmark-index-status">{contentSearch.error}</p>}

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks' inline URL capture now saves a copied link in one click when the field is empty, while typed URLs still use Save. The local browser contract verifies the copied URL becomes a Bookmark TextPack; TypeScript passes. Shiori's current product page is the reference: <https://www.shiori.sh/>. Full Shiori parity remains open; no release was run.
+
 Blog reader now uses a centered, distraction-free story view, with a visible Back to Blog control. Local and web browser flows and TypeScript passed in dark and light mode; screenshot: `/tmp/texttext-blog-reader-reference.png`. This is source work only; no app release was run. Full reference-service parity remains open.
 
 Command K now aborts a superseded file search before accepting the next query. A deliberately delayed search in the local browser fixture no longer holds the next result hostage; debounce, action filtering, close-on-backdrop, Cmd-K toggle, and focus restoration still pass. TypeScript and web browser flow pass. This improves the responsiveness described in Superhuman's [command palette guide](https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/) without claiming exact visual or command parity. No app release was run.
