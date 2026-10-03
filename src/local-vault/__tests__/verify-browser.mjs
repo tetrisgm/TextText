@@ -2157,6 +2157,10 @@ try {
   await hidePublisherDialog.getByRole("button", { name: "Hide publisher" }).click();
   await page.waitForFunction(publisher => ![...document.querySelectorAll('.vault-feed-source-name')].some(element => element.textContent === publisher), hiddenPublisher);
   assert.equal(JSON.parse(files.get(hiddenSubscription.path).documentJSON).content.fields.texttextFeedMuted, true);
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
+  await page.locator(".vault-feed-publisher").filter({ hasText: hiddenPublisher }).first().waitFor();
+  await page.getByRole("button", { name: "Headlines", exact: true }).click();
+  await page.waitForFunction(publisher => ![...document.querySelectorAll('.vault-feed-coverage-list li')].some(element => element.textContent?.includes(publisher)), hiddenPublisher);
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByRole("region", { name: "Hidden publishers" }).waitFor();
   await page.emulateMedia({ colorScheme: "light" });
