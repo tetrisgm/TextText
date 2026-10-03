@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds Profile now opens an interest explorer after onboarding. Existing topics show Following; selecting a new topic imports the corresponding recommended source as an ordinary TextPack and returns to Profile. The local browser flow verifies a NASA source file for Space and captures `/tmp/texttext-feeds-interests-reference.png`; TypeScript and local/web browser flows pass. The picker adds topics; source removal remains in Sources. Broader Artifact parity is open; no release was run.
+
 Feeds Profile now shows distinct days read in the past seven days and a current reading streak based only on completed History/Read Later entries. The ring is a real activity measure, not an invented points score. TypeScript, three focused calendar tests, and local/web browser flows pass; `/tmp/texttext-feeds-profile-light-reference.png` shows the light profile. The two Artifact image folders named in the old plan are absent on this Mac, and the repository contains no originals; a public [Artifact profile screenshot](https://goldsguide.com/artifact-review-instagram-cofounders/) informed this change. Partial reading progress and broader Artifact parity remain open; no release was run.
 
 Notes now opens its card insert menu with `/` at a body word boundary. Arrow keys choose Tag or Image; Escape and Space insert a literal slash. A source guard prevents stale slash insertion from replacing newer collaborative text. TypeScript and local/web browser flows passed, including keyboard selection and a dark capture at `/tmp/texttext-note-slash-menu-reference.png`. The full Supernotes coupler and visual parity remain open; no release was run.

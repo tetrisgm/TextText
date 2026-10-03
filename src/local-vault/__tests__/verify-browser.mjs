@@ -1866,6 +1866,16 @@ try {
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Open Extra feed 23" }).waitFor();
+  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Explore interests 1" }).click();
+  await page.getByRole("heading", { name: "Explore interests" }).waitFor();
+  assert.equal(await page.getByRole("group", { name: "News interests" }).getByRole("button", { name: "Design Following" }).isDisabled(), true);
+  await page.getByRole("group", { name: "News interests" }).getByRole("button", { name: "Space", exact: true }).click();
+  await page.screenshot({ path: "/tmp/texttext-feeds-interests-reference.png" });
+  await page.getByRole("button", { name: "Follow 1 topic" }).click();
+  for (let attempt = 0; attempt < 100 && ![...files.values()].some(file => file.path.startsWith("Feeds/") && JSON.parse(file.documentJSON).content.fields.feedUrl === "https://www.nasa.gov/news-release/feed/"); attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal([...files.values()].some(file => file.path.startsWith("Feeds/") && JSON.parse(file.documentJSON).content.fields.feedUrl === "https://www.nasa.gov/news-release/feed/"), true);
+  await page.getByRole("heading", { name: "Profile", exact: true }).waitFor();
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
   const richNoteCard = page.locator(".vault-note-card").filter({ hasText: "Field observations" });
