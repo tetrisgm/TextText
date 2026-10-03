@@ -1652,7 +1652,7 @@ try {
   assert.equal(await feedReader.getByRole("progressbar", { name: "Reading progress" }).getAttribute("aria-valuenow") !== "100", true);
   assert.equal([...files.values()].some(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash && JSON.parse(file.documentJSON).content.title === "Design headline 5"), false);
   await page.locator(".vault-app>main").evaluate(element => { element.scrollTop = element.scrollHeight; });
-  await feedReader.getByRole("progressbar", { name: "Reading progress" }).getAttribute("aria-valuenow").then(value => assert.equal(value, "100"));
+  await page.waitForFunction(() => document.querySelector('.vault-feed-reading-progress')?.getAttribute('aria-valuenow') === '100');
   for (let attempt = 0; attempt < 100 && ![...files.values()].some(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.title === "Design headline 5"); attempt++) await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal([...files.values()].some(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.title === "Design headline 5"), true);
   await feedReader.getByRole("button", { name: "Back to feed", exact: true }).click();
@@ -1685,6 +1685,17 @@ try {
   await page.getByRole("heading", { name: "Reading history" }).waitFor();
   await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 2" }).getByText("✓ Read").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-history-reference.png" });
+  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.getByRole("heading", { name: "Profile", exact: true }).waitFor();
+  assert.equal(await page.locator(".vault-feed-profile-count strong").textContent(), "2");
+  await page.getByText("stories read", { exact: true }).waitFor();
+  await page.getByRole("region", { name: "Most read publishers" }).getByText("Design feed").waitFor();
+  await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Subscriptions 25" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feeds-profile-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-feeds-profile-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Reading history 2" }).click();
   await page.getByRole("button", { name: "Mark Design headline 2 unread" }).click();
   await page.getByRole("button", { name: "Mark Design headline 2 unread" }).waitFor({ state: "hidden" });
   await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 5" }).getByText("✓ Read").waitFor();

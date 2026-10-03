@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds now has a Profile view that links to Read Later, History, and subscriptions, with counts and top publishers derived from real read TextPacks. The local browser flow checks two actual read stories, 25 subscriptions, navigation back to History, and the dark render at `/tmp/texttext-feeds-profile-reference.png`; TypeScript, the local bundle, and local/web browser flows pass. The 28 Artifact screenshots named in the old plan are absent from both cited Downloads folders; full Artifact visual and interaction parity remains open. No release was run.
+
 Long Feeds stories now display scroll-based reading progress and enter History when the reader scrolls through them. The history write happens once per story; loading a feed or opening a story alone does not create a TextPack. A long-story browser fixture verifies this path, and TypeScript, the local bundle, local browser flow, and web browser flow pass. Progress is still transient, short stories require Mark read, and Artifact reference parity remains open. No release was run.
 
 Command K now starts the newest file search after its debounce without waiting for a cancelled search to settle. The browser flow verifies a new query returns while an earlier two-second request is still pending; TypeScript, local bundle, and browser flow pass. Superhuman command and visual parity remain open; no release was run.
