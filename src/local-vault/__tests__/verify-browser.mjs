@@ -1566,8 +1566,10 @@ try {
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
   await lightbox.getByText("240 × 120").waitFor();
   await lightbox.getByText("Size", { exact: true }).waitFor();
-  await lightbox.getByLabel("Image colors").locator("span").first().waitFor();
-  const pairColor = await lightbox.getByLabel("Image colors").locator("span").first().getAttribute("aria-label");
+  await lightbox.getByLabel("Image colors").getByRole("button").first().waitFor();
+  const pairColor = await lightbox.getByLabel("Image colors").getByRole("button").first().getAttribute("aria-label");
+  await lightbox.getByRole("button", { name: pairColor }).click();
+  await lightbox.getByText(`Copied ${pairColor.replace("Copy color ", "")}`).waitFor();
   const galleryOrder = await page.locator(".vault-photo-grid button").evaluateAll(buttons => buttons.map(button => button.getAttribute("aria-label")));
   const pairSecond = galleryOrder.indexOf("Open Two photographs image 2");
   const single = galleryOrder.indexOf("Open One photograph");
@@ -1577,7 +1579,7 @@ try {
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsSingle);
   await page.getByRole("region", { name: "One photograph" }).getByRole("img", { name: "Third photograph" }).waitFor();
   await page.waitForFunction(previous => {
-    const color = document.querySelector('.vault-gallery-colors span')?.getAttribute('aria-label');
+    const color = document.querySelector('.vault-gallery-colors button')?.getAttribute('aria-label');
     return color && color !== previous;
   }, pairColor);
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsPair);

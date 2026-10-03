@@ -19,6 +19,23 @@ function sourceLink(value: string): string | null {
   } catch { return null; }
 }
 
+async function copyColorValue(value: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value);
+    return;
+  } catch { /* Local file views may not have Clipboard API permission. */ }
+  const field = document.createElement("textarea");
+  field.value = value;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("The color could not be copied.");
+}
+
 function imageDetails(source: string): Promise<{ colors: string[]; width: number; height: number }> {
   return new Promise(resolve => {
     const sample = new Image();
@@ -30,14 +47,23 @@ function imageDetails(source: string): Promise<{ colors: string[]; width: number
         if (!context) { resolve({ colors: [], width: sample.naturalWidth, height: sample.naturalHeight }); return; }
         context.drawImage(sample, 0, 0, 48, 48);
         const pixels = context.getImageData(0, 0, 48, 48).data;
-        const counts = new Map<string, number>();
+        const buckets = new Map<string, { count: number; red: number; green: number; blue: number }>();
         for (let offset = 0; offset < pixels.length; offset += 4) {
           if (pixels[offset + 3] < 128) continue;
-          const color = [0, 1, 2].map(channel => Math.min(255, Math.round(pixels[offset + channel] / 32) * 32));
-          const hex = `#${color.map(value => value.toString(16).padStart(2, "0")).join("")}`;
-          counts.set(hex, (counts.get(hex) || 0) + 1);
+          const [red, green, blue] = [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
+          const key = [red, green, blue].map(value => Math.floor(value / 32)).join(":");
+          const bucket = buckets.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
+          bucket.count++; bucket.red += red; bucket.green += green; bucket.blue += blue;
+          buckets.set(key, bucket);
         }
-        resolve({ colors: [...counts].sort((left, right) => right[1] - left[1]).slice(0, 5).map(([color]) => color), width: sample.naturalWidth, height: sample.naturalHeight });
+        const colors: { rgb: number[]; hex: string }[] = [];
+        for (const bucket of [...buckets.values()].sort((left, right) => right.count - left.count)) {
+          const rgb = [bucket.red, bucket.green, bucket.blue].map(value => Math.round(value / bucket.count));
+          if (colors.some(color => Math.hypot(...rgb.map((value, channel) => value - color.rgb[channel])) < 42)) continue;
+          colors.push({ rgb, hex: `#${rgb.map(value => value.toString(16).padStart(2, "0")).join("")}` });
+          if (colors.length === 6) break;
+        }
+        resolve({ colors: colors.map(color => color.hex), width: sample.naturalWidth, height: sample.naturalHeight });
       } catch { resolve({ colors: [], width: sample.naturalWidth, height: sample.naturalHeight }); }
     };
     sample.onerror = () => resolve({ colors: [], width: 0, height: 0 });
@@ -63,6 +89,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const [fieldDraft, setFieldDraft] = useState("");
   const [updating, setUpdating] = useState(false);
   const [details, setDetails] = useState<{ colors: string[]; width: number; height: number }>({ colors: [], width: 0, height: 0 });
+  const [copiedColor, setCopiedColor] = useState("");
   const [localImages, setLocalImages] = useState<{ path: string; file: VaultFile; urls: Map<string, string> } | null>(null);
   const chosen = entries[Math.min(selection, entries.length - 1)];
   const path = chosen?.path || "";
@@ -161,6 +188,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(() => setDetails({ colors: [], width: 0, height: 0 }));
+    void Promise.resolve().then(() => setCopiedColor(""));
     if (image?.url) void imageDetails(image.url).then(value => { if (active) setDetails(value); });
     return () => { active = false; };
   }, [image?.url]);
@@ -197,7 +225,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
           const editable = ["text", "richtext", "url", "date", "number", "boolean"].includes(field.type) || field.type === "enum" && !field.multiple;
           return <div className="vault-gallery-extra-field" key={field.id}><div className="vault-gallery-inspector-heading"><h3>{field.label}</h3>{editable && editingField !== field.id && <button aria-label={`Edit ${field.label}`} disabled={updating} onClick={() => { setEditingField(field.id); setFieldDraft(value == null ? "" : String(value)); }}>Edit</button>}</div>{editingField === field.id ? field.type === "boolean" ? <div className="vault-gallery-field-actions"><button disabled={updating} onClick={() => void updateContent(content => ({ ...content, fields: { ...content.fields, [field.id]: !Boolean(value) } })).then(saved => { if (saved) setEditingField(""); })}>{value ? "Set to No" : "Set to Yes"}</button><button onClick={() => setEditingField("")}>Cancel</button></div> : <form onSubmit={event => { event.preventDefault(); void saveField(field); }}>{field.type === "enum" ? <select aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating}><option value="">Not set</option>{field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.type === "richtext" ? <textarea aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} /> : <input aria-label={field.label} type={field.type === "date" ? "date" : field.type === "number" ? "number" : field.type === "url" ? "url" : "text"} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} />}<div className="vault-gallery-field-actions"><button type="button" onClick={() => setEditingField("")}>Cancel</button><button type="submit" disabled={updating}>Save</button></div></form> : <p>{displayField(value)}</p>}</div>;
         })}</div>}
-        {details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <span key={color} title={color} aria-label={color} style={{ backgroundColor: color }} />)}</div></div>}</aside></div>}
+        {details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <button key={color} type="button" title={`Copy ${color}`} aria-label={`Copy color ${color}`} style={{ backgroundColor: color }} onClick={() => void copyColorValue(color).then(() => setCopiedColor(color)).catch(() => setError("The color could not be copied."))} />)}</div><p role="status">{copiedColor ? `Copied ${copiedColor}` : "Select a color to copy its value"}</p></div>}</aside></div>}
     </div>
   </section>, shell);
 }

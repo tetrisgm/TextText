@@ -487,7 +487,9 @@
 .vault-app .vault-gallery-colors { margin-bottom:0; }
 .vault-app .vault-gallery-colors h3 { margin:0 0 9px; color:var(--muted); font-size:12px; font-weight:600; }
 .vault-app .vault-gallery-colors>div { display:flex; gap:6px; }
-.vault-app .vault-gallery-colors span { display:block; width:24px; height:24px; border:1px solid var(--line); border-radius:50%; }
+.vault-app .vault-gallery-colors button { display:block; width:24px; height:24px; padding:0; border:1px solid var(--line); border-radius:50%; cursor:pointer; }
+.vault-app .vault-gallery-colors button:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
+.vault-app .vault-gallery-colors p { margin:8px 0 0; font-size:11px; }
 .vault-app .vault-gallery-detail dl { display:grid; grid-template-columns:86px minmax(0,1fr); gap:13px 8px; margin:0; font-size:12px; }
 .vault-app .vault-gallery-detail dt { color:var(--muted); }
 .vault-app .vault-gallery-detail dd { margin:0; }
