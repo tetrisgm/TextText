@@ -89,6 +89,15 @@ function cachedOpenFixture() {
 }
 
 describe("web file vault transport", () => {
+  it("resolves a stable card identity after its TextPack moves", async () => {
+    const test = fixture();
+    expect(await test.transport.request("resolveItemId", { itemId: test.id })).toEqual({ path: test.path });
+    test.files.get(test.id)!.path = "Notes/Moved.textpack";
+    expect(await test.transport.request("resolveItemId", { itemId: test.id })).toEqual({ path: "Notes/Moved.textpack" });
+    await expect(test.transport.request("resolveItemId", { itemId: "missing-card" })).rejects.toMatchObject({ code: "not_found" });
+    await expect(test.transport.request("resolveItemId", { itemId: "../bad" })).rejects.toMatchObject({ code: "invalid_id" });
+    test.transport.destroy();
+  });
   it("loads saved feed metadata with one bounded server request", async () => {
     const urls: string[] = [];
     const transport = createWebVaultTransport("workspace", "Workspace", async url => {

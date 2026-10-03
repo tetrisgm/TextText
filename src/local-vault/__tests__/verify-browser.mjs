@@ -94,6 +94,11 @@ try {
       if (request.params.query === "slowquery") await new Promise(resolve => setTimeout(resolve, 2000));
       result = { items: [...files.values()].filter((file) => (!request.params.folder || file.path.startsWith(`${request.params.folder}/`)) && file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
     }
+    else if (request.method === "resolveItemId") {
+      const matches = [...files.values()].filter(file => file.markdown.includes(`textTextId: "${request.params.itemId}"`));
+      if (matches.length === 1) result = { path: matches[0].path };
+      else error = { message: "This linked card is no longer in the workspace.", code: "not_found" };
+    }
     else if (request.method === "read" || request.method === "template") {
       const removal = delayedRemoval;
       if (request.method === "read" && removal?.path === request.params.path && !files.has(request.params.path)) {
@@ -2430,6 +2435,8 @@ try {
   await page.keyboard.press("ArrowDown");
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Link");
   await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Web link");
+  await page.keyboard.press("ArrowDown");
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Image");
   await page.screenshot({ path: "/tmp/texttext-note-slash-menu-reference.png" });
   await page.keyboard.press("!");
@@ -2443,8 +2450,7 @@ try {
   await page.getByRole("textbox", { name: "Document body" }).focus();
   await page.keyboard.press("Slash");
   await page.getByRole("menu", { name: "Add to note" }).waitFor();
-  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Tag" }).focus();
-  await page.keyboard.type("^");
+  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Web link" }).click();
   const noteLinkForm = page.getByRole("form", { name: "Add note link" });
   await noteLinkForm.waitFor();
   await page.screenshot({ path: "/tmp/texttext-note-link-dark-reference.png" });
@@ -2457,6 +2463,18 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Related thought](<https://example.com/thought>)"));
   for (let attempt = 0; attempt < 100 && ![...files.values()].some(file => JSON.parse(file.documentJSON).content.body.includes("[Related thought](<https://example.com/thought>)")); attempt++) await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok([...files.values()].some(file => JSON.parse(file.documentJSON).content.body.includes("[Related thought](<https://example.com/thought>)")));
+  await page.getByRole("button", { name: "Add to note" }).click();
+  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Link", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Find a card to link" }).fill("Field observations");
+  await page.locator(".tt-card-link-results button").first().waitFor();
+  await page.screenshot({ path: "/tmp/texttext-note-card-link-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-note-card-link-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.locator(".tt-card-link-results button").first().click();
+  const fieldCardId = /textTextId: "([^"]+)"/.exec(files.get("Notes/Field observations.textpack").markdown)?.[1];
+  assert.ok(fieldCardId);
+  await page.waitForFunction(id => document.querySelector('[aria-label="Document body"]')?.textContent?.includes(`#texttext-card=${id}`), fieldCardId);
   const galleryCountBeforeNoteDrop = [...files.keys()].filter(path => path.startsWith("Gallery/")).length;
   await page.getByRole("textbox", { name: "Document body" }).evaluate((body, bytes) => {
     const image = new File([new Uint8Array(bytes)], "Dropped photo.png", { type: "image/png" });
@@ -2583,8 +2601,7 @@ try {
   await linkDraft.getByRole("textbox", { name: "New card title" }).fill("Linked idea");
   await linkDraft.getByRole("textbox", { name: "New card body" }).focus();
   await page.keyboard.press("/");
-  await linkDraft.getByRole("menu", { name: "Add to new card" }).getByRole("menuitem", { name: /Tag/ }).focus();
-  await page.keyboard.type("^");
+  await linkDraft.getByRole("menu", { name: "Add to new card" }).getByRole("menuitem", { name: "Web link" }).click();
   await linkDraft.getByRole("textbox", { name: "New card link address" }).fill("https://example.com/related");
   await linkDraft.getByRole("textbox", { name: "New card link text" }).fill("Related reading");
   await linkDraft.getByRole("button", { name: "Insert link" }).click();
@@ -2592,6 +2609,25 @@ try {
   await linkDraft.getByRole("button", { name: "Finish" }).click();
   const linkedCard = [...files.values()].find(file => JSON.parse(file.documentJSON).content.title === "Linked idea");
   assert.equal(JSON.parse(linkedCard.documentJSON).content.body, "[Related reading](https://example.com/related)");
+  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  const cardLinkDraft = page.getByRole("form", { name: "New card draft" });
+  await cardLinkDraft.getByRole("textbox", { name: "New card title" }).fill("Card reference");
+  await cardLinkDraft.getByRole("textbox", { name: "New card body" }).fill("See Rapid thought again.");
+  await cardLinkDraft.getByRole("textbox", { name: "New card body" }).evaluate(element => { element.focus(); element.setSelectionRange(4, 23); });
+  await cardLinkDraft.getByRole("button", { name: "Add to new card" }).click();
+  await cardLinkDraft.getByRole("menuitem", { name: /Link/ }).first().click();
+  await cardLinkDraft.getByRole("searchbox", { name: "Find a card to link" }).fill("Rapid thought again");
+  await cardLinkDraft.locator(".tt-card-link-results button").first().click();
+  const rapidId = /textTextId: "([^"]+)"/.exec(rapidCard.markdown)?.[1];
+  assert.ok(rapidId);
+  assert.equal(await cardLinkDraft.getByRole("textbox", { name: "New card body" }).inputValue(), `See [Rapid thought again](<#texttext-card=${rapidId}>).`);
+  await cardLinkDraft.getByRole("button", { name: "Finish" }).click();
+  await page.locator(".vault-note-card").filter({ hasText: "Card reference" }).getByRole("button", { name: "Open Card reference" }).click();
+  files.delete(rapidCard.path);
+  files.set("Notes/Moved thought.textpack", { ...rapidCard, path: "Notes/Moved thought.textpack" });
+  await page.getByRole("region", { name: "Note card" }).getByRole("link", { name: "Rapid thought again" }).click();
+  await page.getByRole("region", { name: "Note card" }).getByText("Rapid thought again").waitFor();
+  await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   const selectedLinkDraft = page.getByRole("form", { name: "New card draft" });
   await selectedLinkDraft.getByRole("textbox", { name: "New card title" }).fill("Selected link idea");
@@ -2601,7 +2637,7 @@ try {
     element.setSelectionRange(9, 21);
   });
   await selectedLinkDraft.getByRole("button", { name: "Add to new card" }).click();
-  await selectedLinkDraft.getByRole("menuitem", { name: /Link/ }).click();
+  await selectedLinkDraft.getByRole("menuitem", { name: "Web link" }).click();
   assert.equal(await selectedLinkDraft.getByRole("textbox", { name: "New card link text" }).inputValue(), "related card");
   await selectedLinkDraft.getByRole("textbox", { name: "New card link address" }).fill("https://example.com/card");
   await selectedLinkDraft.getByRole("button", { name: "Insert link" }).click();

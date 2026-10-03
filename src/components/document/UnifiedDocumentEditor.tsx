@@ -74,6 +74,7 @@ import {
 } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
+import { noteCardHref } from "@/lib/note-card-links";
 import { peerLabelInk } from "@/lib/collab/peer-color";
 import { downloadJsonCopy } from "@/lib/native-download";
 import { MarkdownSurface } from "./MarkdownSurface";
@@ -132,6 +133,7 @@ type UnifiedDocumentEditorProps = {
     onApply: (template: TemplateDefinition) => void;
     onClose: () => void;
   }) => ReactNode;
+  renderNoteCardLinkPicker?: (props: { onPick: (target: { id: string; title: string }) => void; onCancel: () => void }) => ReactNode;
   /** Focus the body when opening a newly created note, including after its optimistic ID is saved. */
   focusNewNote?: boolean;
   focusNewNoteTitle?: boolean;
@@ -524,6 +526,7 @@ export function UnifiedDocumentEditor({
   localPresence,
   resolveDocumentAssets,
   renderTemplateLibrary,
+  renderNoteCardLinkPicker,
   focusNewNote = false,
   focusNewNoteTitle = false,
   focusNewNoteOrigin,
@@ -581,6 +584,7 @@ export function UnifiedDocumentEditor({
   const noteImageSelection = useRef({ from: 0, to: 0 });
   const [noteInsertOpen, setNoteInsertOpen] = useState(false);
   const [noteLink, setNoteLink] = useState<{ from: number; to: number; body: string; label: string; url: string; error: string } | null>(null);
+  const [noteCardLink, setNoteCardLink] = useState<{ from: number; to: number; body: string; label: string; error: string } | null>(null);
   const noteInsertRef = useRef<HTMLDivElement>(null);
   const noteTagInput = useRef<HTMLInputElement>(null);
   const noteSlashLiteral = useRef<((text: string) => void) | null>(null);
@@ -1639,6 +1643,29 @@ export function UnifiedDocumentEditor({
     setNoteLink({ from: start, to: end, body, label: body.slice(start, end), url: "", error: "" });
   }, [currentLocalDocument]);
 
+  const openNoteCardLink = useCallback(() => {
+    const body = currentLocalDocument().content.body;
+    const { from, to } = noteImageSelection.current;
+    const start = Math.max(0, Math.min(from, body.length));
+    const end = Math.max(start, Math.min(to, body.length));
+    noteSlashLiteral.current = null;
+    setNoteInsertOpen(false);
+    setNoteCardLink({ from: start, to: end, body, label: body.slice(start, end), error: "" });
+  }, [currentLocalDocument]);
+
+  const insertNoteCardLink = useCallback((target: { id: string; title: string }) => {
+    if (!noteCardLink) return;
+    if (currentLocalDocument().content.body !== noteCardLink.body) {
+      setNoteCardLink(current => current && { ...current, error: "The note changed. Close this link and try again." });
+      return;
+    }
+    const label = (noteCardLink.label.trim() || target.title).replaceAll("[", "\\[").replaceAll("]", "\\]");
+    const markdown = `[${label}](<${noteCardHref(target.id)}>)`;
+    updateText("body", `${noteCardLink.body.slice(0, noteCardLink.from)}${markdown}${noteCardLink.body.slice(noteCardLink.to)}`);
+    setNoteCardLink(null);
+    window.requestAnimationFrame(() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(noteCardLink.from + markdown.length, noteCardLink.from + markdown.length); });
+  }, [noteCardLink, currentLocalDocument, updateText]);
+
   const insertNoteChecklist = useCallback(() => {
     if (experience !== "note") return;
     const body = currentLocalDocument().content.body;
@@ -1815,7 +1842,8 @@ export function UnifiedDocumentEditor({
               items[next]?.focus();
             }}>
               {document.content.tags.length < 500 && <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteTagInput.current?.focus(); }}>Tag</button>}
-              <button type="button" role="menuitem" onClick={openNoteLink}>Link</button>
+              <button type="button" role="menuitem" onClick={renderNoteCardLinkPicker ? openNoteCardLink : openNoteLink}>Link</button>
+              {renderNoteCardLinkPicker && <button type="button" role="menuitem" onClick={openNoteLink}>Web link</button>}
               {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
               <button type="button" role="menuitem" onClick={insertNoteChecklist}>Checklist</button>
             </div>}
@@ -1909,7 +1937,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, openNoteLink, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, openNoteLink, openNoteCardLink, renderNoteCardLinkPicker, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2298,6 +2326,7 @@ export function UnifiedDocumentEditor({
         <button type="submit">Insert link</button><button type="button" onClick={() => { setNoteLink(null); bodySurfaceRef.current?.focus(); }}>Cancel</button>
         {noteLink.error && <p role="alert">{noteLink.error}</p>}
       </form>}
+      {experience === "note" && noteCardLink && renderNoteCardLinkPicker && <div className="tt-note-link" aria-label="Add card link">{renderNoteCardLinkPicker({ onPick: insertNoteCardLink, onCancel: () => { setNoteCardLink(null); bodySurfaceRef.current?.focus(); } })}{noteCardLink.error && <p role="alert">{noteCardLink.error}</p>}</div>}
         <h3>Tags</h3>
         <div className="tt-article-topic-list">{document.content.tags.slice(0, 500).map((topic) => <span key={topic}>#{topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
           const current = currentLocalDocument();

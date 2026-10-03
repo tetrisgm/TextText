@@ -46,12 +46,13 @@ public struct LocalVaultDocumentStore: Sendable {
     }
 
     public enum Failure: Error, LocalizedError {
-        case invalidPath, changed, tooLarge
+        case invalidPath, changed, tooLarge, duplicateIdentity
         public var errorDescription: String? {
             switch self {
             case .invalidPath: return "Choose a TextPack inside this workspace folder."
             case .changed: return "This file changed. Your edit is still available to merge or save as a copy."
             case .tooLarge: return "This TextPack is too large to open in the local editor."
+            case .duplicateIdentity: return "More than one TextPack has this item identity. Resolve the duplicate before opening a card link."
             }
         }
     }
@@ -82,6 +83,22 @@ public struct LocalVaultDocumentStore: Sendable {
             if result.count >= 20_000 { break }
         }
         return result.sorted()
+    }
+
+    /// Resolve a stable TextPack identity only when a link is opened. The
+    /// folder listing stays cheap, and ambiguous copies fail closed.
+    public func path(forItemId itemId: String) throws -> String? {
+        guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil else {
+            throw Failure.invalidPath
+        }
+        var match: String?
+        for path in try list() {
+            guard let document = try? readMetadata(path: path),
+                  MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == itemId else { continue }
+            if match != nil { throw Failure.duplicateIdentity }
+            match = path
+        }
+        return match
     }
 
     public func read(path: String) throws -> Document {

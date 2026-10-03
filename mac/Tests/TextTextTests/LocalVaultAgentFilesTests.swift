@@ -1,9 +1,26 @@
 import XCTest
 import TextTextFileProviderKit
+import TextTextWorkspaceCore
 import ZIPFoundation
 @testable import TextTextApp
 
 final class LocalVaultAgentFilesTests: XCTestCase {
+    func testCardIdentityResolvesAfterMoveAndRejectsDuplicatePacks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try run("create_file", arguments: ["title": "Card", "body": "Linked note"], root: root)
+        let store = LocalVaultDocumentStore(root: root)
+        let original = try XCTUnwrap(store.list().first)
+        let id = try XCTUnwrap(MarkdownIdentityCodec.extract(from: store.readMetadata(path: original).contents.markdown)?.itemId)
+        XCTAssertEqual(try store.path(forItemId: id), original)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Notes"), withIntermediateDirectories: true)
+        let moved = "Notes/Card.textpack"
+        try FileManager.default.moveItem(at: root.appendingPathComponent(original), to: root.appendingPathComponent(moved))
+        XCTAssertEqual(try store.path(forItemId: id), moved)
+        try FileManager.default.copyItem(at: root.appendingPathComponent(moved), to: root.appendingPathComponent("Copy.textpack"))
+        XCTAssertThrowsError(try store.path(forItemId: id))
+    }
     func testStoryPreviewReadsPublicationFromTheTextPack() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -341,6 +341,11 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     return ["items": page.items.map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet] },
                         "truncated": page.truncated, "skippedCount": page.skippedCount]
                 case "read": return try Self.payload(store.read(path: Self.string(params, "path")))
+                case "resolveItemId":
+                    guard let path = try store.path(forItemId: Self.string(params, "itemId")) else {
+                        throw VaultBridgeError("This linked card is no longer in the workspace.")
+                    }
+                    return ["path": path]
                 case "recoveryList":
                     let page = try store.recoveryList(path: params["path"] as? String)
                     return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated]

@@ -365,6 +365,14 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       return response.json();
     }
     if (method === "read") return read(String(params.path), params.prefetchCollaboration === true, signal);
+    if (method === "resolveItemId") {
+      const itemId = String(params.itemId ?? "");
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new VaultError("The card link has an invalid identity.", "invalid_id");
+      await listing();
+      const matches = manifest!.items.filter(item => item.itemId === itemId);
+      if (matches.length !== 1) throw new VaultError(matches.length ? "More than one TextPack has this item identity." : "This linked card is no longer in the workspace.", "not_found");
+      return { path: matches[0].relativePath };
+    }
     if (method === "template" || method === "preview") {
       if (!manifest) await listing();
       const item = manifest!.items.find((entry) => entry.relativePath === params.path);
