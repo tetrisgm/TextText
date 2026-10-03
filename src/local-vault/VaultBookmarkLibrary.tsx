@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { vaultRequest, type VaultFile, type VaultItem } from "./bridge";
 import type { FolderPreview } from "./folder-collection";
 import { ArticleReader } from "./ArticleReader";
+import { captureInput } from "./CaptureDialog";
 import { readDocument, readTemplate, writePayload } from "./model";
 import type { DocumentFieldValue, DocumentSnapshot } from "@/lib/documents/model";
 import type { DocumentFieldDefinition } from "@/lib/presentation/schema";
@@ -322,7 +323,20 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Bookmark tags could not be saved."); }
     finally { setUpdating(false); }
   };
-  return <div className="vault-bookmark-library">
+  return <div className="vault-bookmark-library" onPaste={event => {
+    if (!onQuickSave || busy || previewOnly || quickSaving || (event.target as HTMLElement).closest("input,textarea,[contenteditable=true]")) return;
+    const pasted = event.clipboardData.getData("text/plain").trim();
+    try {
+      if (!captureInput(pasted, "").sourceURL) return;
+    } catch { return; }
+    event.preventDefault();
+    void (async () => {
+      setQuickSaving(true); setQuickError("");
+      try { await onQuickSave(pasted); }
+      catch (reason) { setShowQuickSave(true); setQuickLink(pasted); setQuickError(reason instanceof Error ? reason.message : "Could not save this link."); }
+      finally { setQuickSaving(false); }
+    })();
+  }}>
     <div className="vault-bookmark-list">
       {onQuickSave && !previewOnly && (showQuickSave ? <form className="vault-bookmark-quick-save" onSubmit={event => { event.preventDefault(); void saveQuickLink(); }}><label><span className="ac-sr-only">Web address to save</span><input autoFocus type="text" inputMode="url" autoCapitalize="none" spellCheck={false} aria-label="Web address to save" placeholder="Paste a link to save" value={quickLink} disabled={quickSaving || busy} onChange={event => setQuickLink(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setShowQuickSave(false); setQuickError(""); } }} maxLength={4096} /></label><button type="submit" disabled={quickSaving || busy}>{quickSaving ? "Saving…" : quickLink.trim() ? "Save" : "Save copied link"}</button><button type="button" className="vault-bookmark-save-cancel" disabled={quickSaving} onClick={() => { setShowQuickSave(false); setQuickError(""); }}>Cancel</button>{quickError && <p role="alert">{quickError}</p>}</form> : <button className="vault-bookmark-add-link" type="button" onClick={() => setShowQuickSave(true)}>+ Add link</button>)}
       <div className="vault-bookmark-toolbar"><label><span className="ac-sr-only">Search saved links</span><input type="search" value={search} disabled={!canFilter} onChange={event => { setSearch(event.target.value); setContentSearch(previous => ({ ...previous, searching: true })); setPage(0); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (search) { setSearch(""); setPage(0); } else event.currentTarget.blur(); } }} placeholder="Search saved links" /></label><div role="group" aria-label="Bookmark filters">{(["inbox", "unread", "favorites", "archive"] as const).map(option => <button key={option} aria-pressed={filter === option} disabled={!canFilter} onClick={() => { setFilter(option); setPage(0); }}>{option === "inbox" ? "Inbox" : option === "unread" ? "Unread" : option === "archive" ? "Archive" : "Favorites"}</button>)}</div>{(tags.length > 0 || tagFilter) && <div className="vault-bookmark-tag-filters" role="group" aria-label="Filter bookmark tags"><button aria-pressed={!tagFilter} onClick={() => { setTagFilter(""); setPage(0); }}>All tags</button>{tags.map(tag => <button key={tag} aria-pressed={tagFilter === tag} onClick={() => { setTagFilter(tag); setPage(0); }}>#{tag}</button>)}</div>}</div>

@@ -1216,6 +1216,13 @@ try {
   await page.locator(".vault-bookmark-quick-save").getByRole("button", { name: "Save copied link" }).click();
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.org"));
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/copied-reading"), true);
+  await page.locator('.vault-bookmark-library').filter({ has: page.getByRole('button', { name: '+ Add link' }) }).locator('.vault-bookmark-list [role="option"][aria-selected="true"]').first().evaluate(element => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "https://example.org/pasted-reading");
+    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+  });
+  await page.locator('.vault-bookmark-reader a[href="https://example.org/pasted-reading"]').first().waitFor();
+  assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/pasted-reading"), true);
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.locator(".vault-story-list").getByText("An essay title").waitFor();

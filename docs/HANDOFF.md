@@ -2,6 +2,8 @@
 
 ## Current work
 
+Pasting a web address on the Bookmark inbox now saves it directly through the existing TextPack capture and enrichment path. Paste into an input remains normal; invalid text is ignored. The local browser flow checks the saved URL and reader selection, and TypeScript plus local/web browser flows pass. Shiori parity remains open; no release was run.
+
 Notes now conceals a standalone local image Markdown line while its caret is elsewhere, leaving the source bytes intact for editing and collaboration. The browser flow asserts both the hidden syntax and saved asset; the light editor capture is `/tmp/texttext-note-editor-light-reference.png`. TypeScript, Markdown offset tests, and local/web browser flows pass. Supernotes parity remains open; no release was run.
 
 The Gallery browser fixture now matches both preview services: it converts source images, including GIFs, into bounded first-frame JPEG stills. Drop and paste use photographic GIFs in the dense-library capture; the separate transparent one-pixel import check remains. The local browser flow asserts both GIF items render images, and `/tmp/texttext-gallery-dense-light-reference.png` now shows an all-photo grid. This corrects a misleading visual fixture; Resurf parity still needs product work and real-content comparison. No release was run.
