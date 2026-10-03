@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds' interest picker now lets a person unfollow a topic. It confirms the number of subscription TextPacks, validates each subscription before moving it to Trash through the revision-aware file API, and refreshes Feeds afterward. The local browser flow checks cancel and unfollow of a NASA source; TypeScript and the web browser flow pass. Original Artifact screenshots remain absent from this Mac and repository, so broader parity remains open; no release was run.
+
 Notes' insert menu now accepts Supernotes-style quick keys for its supported actions: `#` focuses Tag and `!` opens Image. Both work after the top-right plus or slash invocation and retain the existing TextPack writes. TypeScript and the full local vault browser flow pass. Other Coupler actions and reference fidelity remain open; no release was run.
 
 Notes now accepts image files dropped directly onto the card body. The editor computes the insertion position from the drop point when available and routes the file through the existing TextPack image asset path; the drop does not create a separate Gallery item. TypeScript and the full local vault browser flow pass. Supernotes' broader Coupler and visual parity remain open; no release was run.

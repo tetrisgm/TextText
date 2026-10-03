@@ -5,7 +5,7 @@ import type { NormalizedEntry } from "@/lib/reading/feed-parse";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { vaultRequest, type VaultFile } from "./bridge";
 import { readDocument, writePayload } from "./model";
-import { createFeedSubscriptionPack, createKeptFeedEntryPack, createReadFeedEntryPack, feedEntryHash } from "@/lib/vault/rss";
+import { createFeedSubscriptionPack, createKeptFeedEntryPack, createReadFeedEntryPack, feedEntryHash, readFeedSubscription } from "@/lib/vault/rss";
 import { encodeBase64 } from "./image-import";
 import type { FolderPreview } from "./folder-collection";
 import { clusterFeedStories, rankFeedClusters, type FeedStory, type FeedCluster } from "./feed-clusters";
@@ -13,7 +13,7 @@ import { readingActivity } from "./reading-activity";
 
 type Headline = { externalKey: string; title: string; permalink: string | null; publishedAt: string | null; excerpt: string | null; imageUrl: string | null };
 type FeedPage = { entries: Headline[] };
-type SourceRow = { source: string; feedURL: string; topic: string | null };
+type SourceRow = { path: string; source: string; feedURL: string; topic: string | null };
 type FullEntry = { feedURL: string; feedTitle: string; entry: NormalizedEntry };
 type KeptEntry = { hash: string; path: string; title: string; source: string; keptAt: string; readAt?: string };
 type KeptResponse = { hashes: string[]; entries: KeptEntry[] };
@@ -72,7 +72,7 @@ function storyDate(value: string | null): string | undefined {
 }
 /** The index is read only and transient. Opening Feeds reads each source once;
  * a timer never polls, and stories become TextPacks only when a person keeps one. */
-export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canReadLater, canOpenBookmark, onOpenBookmark, onOpenHistory }: { sources: FolderPreview[]; ready: boolean; sourceList: ReactNode; canAdd: boolean; canReadLater: boolean; canOpenBookmark: boolean; onOpenBookmark: (path: string) => void; onOpenHistory: (path: string) => void }) {
+export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canReadLater, canOpenBookmark, onOpenBookmark, onOpenHistory }: { sources: (FolderPreview & { path: string })[]; ready: boolean; sourceList: ReactNode; canAdd: boolean; canReadLater: boolean; canOpenBookmark: boolean; onOpenBookmark: (path: string) => void; onOpenHistory: (path: string) => void }) {
   const [tab, setTab] = useState("For You");
   const [search, setSearch] = useState("");
   const [stories, setStories] = useState<FeedStory[]>([]);
@@ -83,6 +83,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const [interests, setInterests] = useState<Set<string>>(() => new Set());
   const [exploringInterests, setExploringInterests] = useState(false);
   const [followError, setFollowError] = useState("");
+  const [confirmUnfollow, setConfirmUnfollow] = useState("");
   const [active, setActive] = useState<FeedStory | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [full, setFull] = useState<{ key: string; value: FullEntry } | null>(null);
@@ -107,7 +108,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const feedKey = useMemo(() => JSON.stringify(sources.map(source => {
     const fields = source.document?.content.fields;
     return fields?.texttextFeedSubscription === "v1" && typeof fields.feedUrl === "string"
-      ? { feedURL: fields.feedUrl, source: source.title, topic: source.document?.content.tags[0] || null } : null;
+      ? { path: source.path, feedURL: fields.feedUrl, source: source.title, topic: source.document?.content.tags[0] || null } : null;
   }).filter((row): row is SourceRow => row !== null)), [sources]);
   const sourceRows = useMemo(() => JSON.parse(feedKey) as SourceRow[], [feedKey]);
   const topics = [...new Set(sourceRows.map(row => row.topic).filter((topic): topic is string => Boolean(topic)))];
@@ -357,12 +358,37 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     } catch (reason) { setFollowError(`${added} of ${chosen.length} sources added. ${reason instanceof Error ? reason.message : "A source could not be added."}`); }
     finally { if (added) window.dispatchEvent(new Event("texttext:vault-changed")); setFollowing(""); }
   };
-  const recommendations = <div className="vault-feed-recommendations"><h2>{hasFeeds ? "Explore interests" : "Personalize your feed"}</h2><p>{hasFeeds ? "Choose more topics. Your current subscriptions stay in Sources." : "Choose at least ten topics. You can add individual sources later."}</p>
-    <div role="group" aria-label="News interests">{INTEREST_GROUPS.map(group => <section className="vault-feed-interest-group" key={group.title}><h3>{group.title}</h3><div className="vault-feed-interests">{group.topics.map(topic => <button key={topic} type="button" aria-pressed={followedTopics.has(topic) || interests.has(topic)} disabled={!canAdd || Boolean(following) || followedTopics.has(topic)} onClick={() => setInterests(current => {
+  const unfollowInterest = async (topic: string) => {
+    if (!canAdd || following) return;
+    const subscriptions = sourceRows.filter(row => row.topic === topic);
+    if (!subscriptions.length) { setConfirmUnfollow(""); return; }
+    setFollowing(topic); setFollowError("");
+    let removed = 0;
+    try {
+      for (const subscription of subscriptions) {
+        const file = await vaultRequest<VaultFile>("read", { path: subscription.path });
+        const saved = readFeedSubscription(file);
+        if (!file.path.startsWith("Feeds/") || saved?.feedURL !== subscription.feedURL || saved?.topic !== topic) {
+          throw new Error("A subscription changed. Refresh Feeds and try again.");
+        }
+        await vaultRequest("delete", { path: file.path, hash: file.hash });
+        removed++;
+      }
+      setConfirmUnfollow("");
+    } catch (reason) {
+      setFollowError(`${removed} of ${subscriptions.length} sources removed. ${reason instanceof Error ? reason.message : "A source could not be removed."}`);
+    } finally {
+      if (removed) window.dispatchEvent(new Event("texttext:vault-changed"));
+      setFollowing("");
+    }
+  };
+  const recommendations = <div className="vault-feed-recommendations"><h2>{hasFeeds ? "Explore interests" : "Personalize your feed"}</h2><p>{hasFeeds ? "Choose topics to follow, or select a followed topic to remove its sources." : "Choose at least ten topics. You can add individual sources later."}</p>
+    <div role="group" aria-label="News interests">{INTEREST_GROUPS.map(group => <section className="vault-feed-interest-group" key={group.title}><h3>{group.title}</h3><div className="vault-feed-interests">{group.topics.map(topic => <button key={topic} type="button" aria-pressed={followedTopics.has(topic) || interests.has(topic)} disabled={!canAdd || Boolean(following)} onClick={() => { if (followedTopics.has(topic)) { setConfirmUnfollow(topic); return; } setConfirmUnfollow(""); setInterests(current => {
       const next = new Set(current);
       if (next.has(topic)) next.delete(topic); else next.add(topic);
       return next;
-    })}><strong>{topic}</strong>{followedTopics.has(topic) && <small>Following</small>}</button>)}</div></section>)}</div>
+    }); }}><strong>{topic}</strong>{followedTopics.has(topic) && <small>Following</small>}</button>)}</div></section>)}</div>
+    {confirmUnfollow && <div className="vault-feed-unfollow" role="group" aria-label={`Unfollow ${confirmUnfollow}`}><p>Remove {sourceRows.filter(row => row.topic === confirmUnfollow).length} {confirmUnfollow} {sourceRows.filter(row => row.topic === confirmUnfollow).length === 1 ? "source" : "sources"} from Feeds? You can restore them from Trash.</p><button type="button" disabled={Boolean(following)} onClick={() => setConfirmUnfollow("")}>Cancel</button><button type="button" disabled={Boolean(following)} onClick={() => void unfollowInterest(confirmUnfollow)}>{following ? "Removing…" : `Unfollow ${confirmUnfollow}`}</button></div>}
     <p className="vault-feed-interest-count" role="status">{hasFeeds ? `${interests.size} new ${interests.size === 1 ? "topic" : "topics"} selected` : `${interests.size} of ${MIN_INTERESTS} topics selected`}</p>
     <div className="vault-feed-interest-actions">{hasFeeds && <button type="button" onClick={() => { setExploringInterests(false); setInterests(new Set()); }}>Back to profile</button>}<button type="button" className="vault-feed-continue" disabled={!canAdd || interests.size < (hasFeeds ? 1 : MIN_INTERESTS) || Boolean(following)} onClick={() => void followInterests()}>{following ? "Adding sources…" : hasFeeds ? `Follow ${interests.size} ${interests.size === 1 ? "topic" : "topics"}` : `Continue with ${interests.size} ${interests.size === 1 ? "topic" : "topics"}`}</button></div>
     {followError && <p role="alert">{followError}</p>}

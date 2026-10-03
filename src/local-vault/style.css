@@ -330,10 +330,14 @@
 .vault-app .vault-feed-interests button { display:inline-flex; align-items:center; min-height:42px; padding:9px 15px; border:1px solid var(--line); border-radius:22px; background:var(--surface); }
 .vault-app .vault-feed-interests button[aria-pressed=true] { border-color:var(--tt-accent); background:var(--selection); }
 .vault-app .vault-feed-interests button:disabled { opacity:1; cursor:default; }
-.vault-app .vault-feed-interests button:disabled small { margin-left:8px; }
+.vault-app .vault-feed-interests button small { margin-left:8px; }
 .vault-app .vault-feed-interests strong { font-size:14px; }
 .vault-app .vault-feed-interest-count { margin:16px 0 0; color:var(--muted); font-size:12px; }
 .vault-app .vault-feed-interests small { color:var(--muted); font-size:12px; line-height:1.4; }
+.vault-app .vault-feed-unfollow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:16px; padding:12px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.vault-app .vault-feed-unfollow p { flex:1 1 100%; margin:0; color:var(--ink); font-size:13px; }
+.vault-app .vault-feed-unfollow button { padding:6px 10px; border:1px solid var(--line); border-radius:6px; color:var(--ink); font-size:12px; }
+.vault-app .vault-feed-unfollow button:last-child { border-color:var(--tt-accent); color:var(--tt-accent); }
 .vault-app .vault-feed-interest-actions { display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:22px; }
 .vault-app .vault-feed-interest-actions>button:first-child:not(.vault-feed-continue) { color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-continue { display:block; min-width:180px; margin:22px 0 0 auto; padding:10px 16px; border-radius:7px; background:var(--tt-accent); color:#fff; text-align:center; font-weight:650; }
