@@ -15,7 +15,11 @@ export function ArticleReader({ document, template, update, flushUpdate, compact
   const [selectionAvailable, setSelectionAvailable] = useState(false);
   const [error, setError] = useState("");
   const [highlightsOpen, setHighlightsOpen] = useState(!compact);
+  const [summaryOpen, setSummaryOpen] = useState(true);
   const highlights = readerHighlights(document);
+  const summary = compact && template.id === "texttext.bookmark" && document.content.subtitle
+    ? <details className="vault-bookmark-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>Summary</summary><p>{document.content.subtitle}</p></details>
+    : undefined;
   useEffect(() => {
     const root = content.current;
     if (!root) return;
@@ -69,7 +73,7 @@ export function ArticleReader({ document, template, update, flushUpdate, compact
       catch (error) { setError(error instanceof Error ? error.message : "Could not save the highlight."); }
     }}>Highlight selection</button>{!compact && <span>Select text to keep a cited excerpt.</span>}</div>}
     {error && <p role="alert">{error}</p>}
-    <div ref={content}><DocumentRenderer documentId="vault-reader" document={document} template={template} /></div>
+    <div ref={content}><DocumentRenderer documentId="vault-reader" document={document} template={template} slots={summary ? { bindings: { "content.subtitle": summary } } : undefined} /></div>
     {!!highlights.length && <details className="vault-highlights" open={highlightsOpen} onToggle={(event) => setHighlightsOpen(event.currentTarget.open)}><summary>Highlights ({highlights.length})</summary>{highlights.map((highlight) => <div key={highlight.id}>
       <blockquote>{highlight.quote}</blockquote><label>Note about this highlight<textarea readOnly={!update} maxLength={20_000} value={highlight.note} onChange={(event) => {
         const note = event.target.value;

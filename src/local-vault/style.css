@@ -423,7 +423,12 @@
 .vault-app .vault-bookmark-reader .tt-document .tt-text-caption { order:2 !important; margin-top:7px; font-family:inherit; font-size:14px; font-weight:400; letter-spacing:0; text-transform:none; }
 .vault-app .vault-bookmark-reader .tt-document .tt-text-caption,.vault-app .vault-bookmark-reader .tt-document .tt-text-caption a { color:var(--muted) !important; }
 .vault-app .vault-bookmark-reader .tt-document .tt-text-subtitle { order:3; align-self:stretch; width:100%; max-width:44rem; margin:20px 0 0; padding:15px 17px; border-radius:10px; background:var(--sidebar); color:var(--ink); font-family:inherit; font-size:15px; font-weight:400; line-height:1.6; }
-.vault-app .vault-bookmark-reader .tt-document .tt-text-subtitle::before { display:block; margin-bottom:7px; color:var(--muted); content:"Summary"; font-size:12px; font-weight:700; }
+.vault-app .vault-bookmark-summary summary { color:var(--muted); cursor:pointer; font-size:12px; font-weight:700; list-style:none; }
+.vault-app .vault-bookmark-summary summary::-webkit-details-marker { display:none; }
+.vault-app .vault-bookmark-summary summary::after { content:"⌄"; float:right; font-size:16px; line-height:1; }
+.vault-app .vault-bookmark-summary:not([open]) summary::after { transform:rotate(-90deg); }
+.vault-app .vault-bookmark-summary summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.vault-app .vault-bookmark-summary p { margin:7px 0 0; }
 .vault-app .vault-bookmark-reader .tt-document .tt-text-caption a { border:0; }
 .vault-app .vault-bookmark-reader .tt-document .tt-source-link-action { display:none; }
 .vault-app .vault-bookmark-reader .tt-document .tt-prose { width:min(var(--tt-measure),100%); margin-inline:auto; font-family:inherit; font-size:16px; line-height:1.7; }

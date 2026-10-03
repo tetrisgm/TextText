@@ -2,7 +2,7 @@
 
 ## Current work
 
-Bookmarks now presents the saved Summary as a full-width neutral card beneath the source, matching the placement and surface in [Shiori's dashboard preview](https://www.shiori.sh/). The same TextPack subtitle remains editable through Bookmark details. Local browser checks cover width and light/dark colors; `/tmp/texttext-bookmark-summary-light-reference.png` is the light capture. The web browser flow passes. Shiori's expandable summary and automatic enrichment remain open; no release was run.
+Bookmarks' saved Summary card now expands and collapses in the reader. Pointer and keyboard checks confirm the TextPack subtitle is unchanged by toggling; switching bookmarks resets it open. TypeScript and the local/web browser flows pass. Automatic enrichment and broader Shiori parity remain open; no release was run.
 
 Feeds Profile now opens an interest explorer after onboarding. Existing topics show Following; selecting a new topic imports the corresponding recommended source as an ordinary TextPack and returns to Profile. The local browser flow verifies a NASA source file for Space and captures `/tmp/texttext-feeds-interests-reference.png`; TypeScript and local/web browser flows pass. The picker adds topics; source removal remains in Sources. Broader Artifact parity is open; no release was run.
 

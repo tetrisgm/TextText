@@ -1110,6 +1110,15 @@ try {
   await bookmarkDetails.locator("summary").click();
   assert.equal(await bookmarkReader.locator(".tt-text-subtitle").evaluate(element => getComputedStyle(element).backgroundColor), "rgb(246, 246, 245)");
   assert.ok(await bookmarkReader.locator(".tt-text-subtitle").evaluate(element => element.getBoundingClientRect().width >= 500), "the summary card should fill the reading column");
+  const bookmarkSummary = bookmarkReader.locator(".vault-bookmark-summary");
+  await bookmarkSummary.locator("summary").click();
+  assert.equal(await bookmarkSummary.evaluate(element => element.open), false);
+  assert.equal(await bookmarkSummary.getByText("A concise account of this saved article.").isVisible(), false);
+  assert.equal(JSON.parse(files.get("Bookmarks/Reading.textpack").documentJSON).content.subtitle, "A concise account of this saved article.");
+  await bookmarkSummary.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await bookmarkSummary.evaluate(element => element.open), true);
+  assert.equal(await bookmarkSummary.getByText("A concise account of this saved article.").isVisible(), true);
   await page.screenshot({ path: "/tmp/texttext-bookmark-summary-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.vault-bookmark-reader .tt-text-subtitle')).backgroundColor === 'rgb(28, 28, 28)');
