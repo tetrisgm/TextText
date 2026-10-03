@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery image detail now gives the photo a neutral stage and keeps empty Source, Caption, and Tags controls compact. Editing remains available beside the image. Compared against the public [Resurf image-detail tour](https://resurf.so/); TypeScript, local and web browser flows pass, with dark/light captures at `/tmp/texttext-gallery-import-detail-{dark,light}-reference.png`. A real photographic-library comparison remains open. No release was run.
+
 The six requested reference experiences are not proven complete. The current evidence and missing creation/edit/read proof are mapped in [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). The Artifact originals named in the old plan are absent on this Mac. No release was run.
 
 Bookmarks' inline URL capture now saves a copied link in one click when the field is empty, while typed URLs still use Save. The local browser contract verifies the copied URL becomes a Bookmark TextPack; TypeScript passes. Shiori's current product page is the reference: <https://www.shiori.sh/>. Full Shiori parity remains open; no release was run.

@@ -1462,7 +1462,8 @@ try {
   await lightbox.getByRole("link", { name: "https://example.com/original" }).waitFor();
   assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.title, "Two color studies");
   assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.fields.sourceUrl, "https://example.com/original");
-  await lightbox.getByRole("textbox", { name: "Add image tag" }).fill("reference");
+  await lightbox.getByRole("button", { name: "Add image tag" }).click();
+  await lightbox.getByRole("textbox", { name: "New image tag" }).fill("reference");
   await lightbox.getByRole("button", { name: "Add", exact: true }).click();
   await lightbox.getByRole("button", { name: "Remove reference tag" }).waitFor();
   assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.tags, ["reference"]);
