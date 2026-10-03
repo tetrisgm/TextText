@@ -475,9 +475,9 @@
 .vault-app .vault-bookmark-capture-status { max-width:736px; margin:18px auto 0; padding:12px 16px; border-radius:8px; background:var(--sidebar); color:var(--muted); font-size:13px; }
 .vault-app .vault-bookmark-capture-status p { margin:0; }
 @media(max-width:700px){.vault-app .vault-bookmark-capture-status{margin-inline:16px}}
-.vault-app .vault-bookmark-reader .vault-reading { max-width:800px; margin:auto; }
-.vault-app .vault-bookmark-reader .tt-document { --paper:#fff; --ink:#202020; --muted:#686868; --tt-measure:44rem; margin:auto; padding-top:30px; background:var(--surface); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-.vault-app .vault-bookmark-reader .tt-document:not(.tt-collection-item)>.tt-stack { gap:17px; padding:22px 32px 72px; }
+.vault-app .vault-bookmark-reader .vault-reading { max-width:800px; margin:auto; padding-bottom:0; }
+.vault-app .vault-bookmark-reader .tt-document { --paper:#fff; --ink:#202020; --muted:#686868; --tt-measure:44rem; min-height:0; margin:auto; padding-top:30px; padding-bottom:0; background:var(--surface); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.vault-app .vault-bookmark-reader .tt-document:not(.tt-collection-item)>.tt-stack { gap:17px; padding:22px 32px 24px; }
 .vault-app .vault-bookmark-reader .tt-document .tt-text-title { font-family:inherit; font-size:clamp(28px,3.1vw,42px); line-height:1.13; letter-spacing:-.025em; }
 .vault-app .vault-bookmark-reader .tt-document :is(.tt-text-title,.tt-prose) { color:var(--ink) !important; }
 .vault-app .vault-bookmark-reader .tt-document .tt-text-caption { order:2 !important; margin-top:7px; font-family:inherit; font-size:14px; font-weight:400; letter-spacing:0; text-transform:none; }
@@ -492,8 +492,13 @@
 .vault-app .vault-bookmark-reader .tt-document .tt-text-caption a { border:0; }
 .vault-app .vault-bookmark-reader .tt-document .tt-source-link-action { display:none; }
 .vault-app .vault-bookmark-reader .tt-document .tt-prose { width:min(var(--tt-measure),100%); margin-inline:auto; font-family:inherit; font-size:16px; line-height:1.7; }
-.vault-app .vault-bookmark-ask { display:flex; align-items:center; justify-content:space-between; width:min(44rem,calc(100% - 64px)); margin:0 auto 48px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--muted); text-align:left; }
-.vault-app .vault-bookmark-ask:hover,.vault-app .vault-bookmark-ask:focus-visible { border-color:var(--tt-accent); color:var(--ink); }
+.vault-app .vault-bookmark-ask { display:flex; align-items:center; gap:8px; width:min(44rem,calc(100% - 64px)); margin:0 auto 48px; padding:5px 7px 5px 14px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--muted); }
+.vault-app .vault-bookmark-ask:focus-within { border-color:var(--tt-accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--tt-accent) 18%,transparent); }
+.vault-app .vault-bookmark-ask input { flex:1; min-width:0; padding:7px 0; border:0; outline:0; background:transparent; color:var(--ink); font:inherit; }
+.vault-app .vault-bookmark-ask input::placeholder { color:var(--muted); }
+.vault-app .vault-bookmark-ask button { display:grid; place-items:center; width:34px; height:34px; border-radius:6px; color:var(--tt-accent); }
+.vault-app .vault-bookmark-ask button:hover:not(:disabled),.vault-app .vault-bookmark-ask button:focus-visible { background:var(--selection); }
+.vault-app .vault-bookmark-ask button:disabled { color:var(--muted); opacity:.5; }
 @media(prefers-color-scheme:dark){.vault-app .vault-bookmark-reader .tt-document{--paper:#232323;--ink:#eee;--muted:#aaa}}
 @media(max-width:760px){.vault-app .vault-bookmark-library{grid-template-columns:1fr;margin:0}.vault-app .vault-bookmark-list{min-height:calc(100vh - 210px);border-right:0;overflow:auto}.vault-app .vault-bookmark-library[data-compact-reader="list"] .vault-bookmark-reader{display:none}.vault-app .vault-bookmark-library[data-compact-reader="open"] .vault-bookmark-list{display:none}.vault-app .vault-bookmark-reader-close{display:inline-flex;align-items:center;gap:4px;margin-right:4px;color:var(--tt-accent);font-size:13px!important}.vault-app .vault-bookmark-reader-close span{font-size:13px}.vault-app .vault-bookmark-reader-actions{display:none!important}.vault-app .vault-bookmark-inspector-actions{display:grid;gap:2px;padding:7px;border-bottom:1px solid var(--line)}.vault-app .vault-bookmark-inspector-actions button{text-align:left;padding:9px 10px;border-radius:5px;color:var(--ink)}.vault-app .vault-bookmark-inspector-actions button:hover,.vault-app .vault-bookmark-inspector-actions button:focus-visible{background:var(--selection)}.vault-app .vault-bookmark-reader>header{flex-wrap:nowrap;gap:6px;padding:9px 8px}.vault-app .vault-bookmark-reader>header>.vault-bookmark-reader-navigation,.vault-app .vault-bookmark-reader>header>.vault-bookmark-reader-tabs{flex:none;flex-wrap:nowrap;margin-right:0;white-space:nowrap}.vault-app .vault-bookmark-inspector{flex:none;margin-left:auto}}
 .vault-app .vault-gallery-view { position:fixed; inset:0 0 0 240px; z-index:230; background:var(--surface); }

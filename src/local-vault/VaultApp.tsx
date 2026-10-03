@@ -909,13 +909,13 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: activeItemPath });
     setAssistantOpen(true);
   }, [activeItemPath, activeWorkspaceRoot, setSidebarVisible]);
-  const askBookmarkAgent = useCallback((path: string) => {
+  const askBookmarkAgent = useCallback((path: string, question: string) => {
     if (!activeWorkspaceRoot || !listing?.items.some(item => item.path === path)) return;
     assistantReturnFocus.current = focusedControl();
     if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
     setAssistantTargetPath(path);
     setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: path,
-      suggestedPrompt: "What are the key ideas in this saved link? Summarize them and cite the relevant passages." });
+      suggestedPrompt: question });
     setAssistantOpen(true);
   }, [activeWorkspaceRoot, listing?.items, setSidebarVisible]);
   useEffect(() => {

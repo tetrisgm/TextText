@@ -36,7 +36,7 @@ function savedDay(timestamp: number): string {
 }
 
 export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpen, onQuickSave, onAskAgent, preferredPath }: {
-  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void; onQuickSave?: (address: string) => Promise<void>; onAskAgent?: (path: string) => void; preferredPath?: string;
+  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void; onQuickSave?: (address: string) => Promise<void>; onAskAgent?: (path: string, question: string) => void; preferredPath?: string;
 }) {
   const [selected, setSelected] = useState(preferredPath || "");
   const [compactReaderOpen, setCompactReaderOpen] = useState(Boolean(preferredPath));
@@ -57,6 +57,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [showQuickSave, setShowQuickSave] = useState(false);
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickError, setQuickError] = useState("");
+  const [askDraft, setAskDraft] = useState({ path: "", text: "" });
   const saveQuickLink = async () => {
     if (!onQuickSave || quickSaving || busy) return;
     setQuickSaving(true); setQuickError("");
@@ -436,7 +437,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       {document && (captureFailed || linkPlaceholder) && <div className="vault-bookmark-capture-status" role="status"><p>{captureFailed ? "The page could not be captured. Your link is still saved." : "The link is saved. A readable copy is being prepared."}</p></div>}
       {document && resumeProgress > 0 && <button type="button" className="vault-bookmark-resume" onClick={resumeReading}>Continue at {resumeProgress}%</button>}
       {document && template ? <ArticleReader key={current?.path} document={document} template={template} update={previewOnly || busy ? undefined : updateReader} flushUpdate={flushReaderDraft} compact /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
-      {onAskAgent && current && document && !previewOnly && <button type="button" className="vault-bookmark-ask" onClick={() => onAskAgent(current.path)}>Ask about this link <span aria-hidden="true">↗</span></button>}
+      {onAskAgent && current && document && !previewOnly && <form className="vault-bookmark-ask" aria-label="Ask about saved link" onSubmit={event => { event.preventDefault(); const question = askDraft.path === current.path ? askDraft.text.trim() : ""; if (question) onAskAgent(current.path, question); }}><input aria-label="Question about this link" placeholder="Ask anything about this link…" maxLength={4000} value={askDraft.path === current.path ? askDraft.text : ""} onChange={event => setAskDraft({ path: current.path, text: event.target.value })} /><button type="submit" aria-label="Review question with agent" disabled={askDraft.path !== current.path || !askDraft.text.trim()} title="Review with agent">↗</button></form>}
     </article>
   </div>;
 }

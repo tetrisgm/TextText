@@ -1097,15 +1097,26 @@ try {
   const toggleBookmarkDetails = bookmarkDetails.locator("summary");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   const sendsBeforeBookmarkAsk = agentSendCount;
-  await bookmarkReader.getByRole("button", { name: "Ask about this link" }).click();
+  const bookmarkQuestion = bookmarkReader.getByRole("textbox", { name: "Question about this link" });
+  await bookmarkQuestion.fill("What evidence supports the main point of this saved link?");
+  await bookmarkReader.getByRole("button", { name: "Review question with agent" }).click();
   const bookmarkAgentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
   await bookmarkAgentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).waitFor();
-  assert.match(await bookmarkAgentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), /key ideas in this saved link/);
+  assert.equal(await bookmarkAgentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), "What evidence supports the main point of this saved link?");
   assert.match(await bookmarkAgentPanel.getByRole("group", { name: "Agent task target", exact: true }).textContent(), /Bookmarks\//);
   assert.equal(agentSendCount, sendsBeforeBookmarkAsk);
   await page.keyboard.press("Escape");
   await bookmarkAgentPanel.waitFor({ state: "hidden" });
+  await page.getByRole("option", { name: /Another saved link/ }).click();
+  assert.equal(await page.getByRole("textbox", { name: "Question about this link" }).inputValue(), "");
+  await page.getByRole("option", { name: /A saved article/ }).click();
+  assert.equal(await bookmarkQuestion.inputValue(), "What evidence supports the main point of this saved link?");
   assert.equal(await bookmarkReader.getByRole("button", { name: "Highlight selection" }).count(), 0);
+  assert.ok(await bookmarkReader.evaluate(reader => {
+    const prose = reader.querySelector(".tt-prose");
+    const ask = reader.querySelector(".vault-bookmark-ask");
+    return Boolean(prose && ask && ask.getBoundingClientRect().top - prose.getBoundingClientRect().bottom < 80);
+  }), "the question field should follow a short saved article without an empty page of space");
   await page.emulateMedia({ colorScheme: "light" });
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.vault-bookmark-reader .tt-text-title')).color === 'rgb(32, 32, 32)');
   await page.screenshot({ path: "/tmp/texttext-bookmark-clean-reader-light-reference.png" });
@@ -1514,6 +1525,7 @@ try {
   const storyInsertMenu = page.getByRole("menu", { name: "Insert story content" });
   const storyImageAction = storyInsertMenu.getByRole("menuitem", { name: "Image" });
   await storyImageAction.waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem" && document.activeElement?.textContent === "Image");
   await storyImageAction.press("ArrowDown");
   await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem" && document.activeElement?.textContent === "Quote");
   await page.keyboard.press("Escape");

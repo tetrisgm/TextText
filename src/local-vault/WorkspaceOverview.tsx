@@ -11,7 +11,7 @@ export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sha
   onCreateNote?: (pastedText?: string) => void;
   onCreateCard?: (title: string, body: string, tags: string[], images: File[], onCreated: () => void) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
-  onAskBookmarkAgent?: (path: string) => void;
+  onAskBookmarkAgent?: (path: string, question: string) => void;
   onCustomize?: (path: string) => void;
   onCloseDesign?: () => void;
 }) {
