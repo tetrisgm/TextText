@@ -1638,6 +1638,12 @@ export function UnifiedDocumentEditor({
     () => resolveDocumentAssets ? resolveDocumentAssets(document) : document,
     [document, resolveDocumentAssets],
   );
+  const bodyImageSources = useMemo(() => Object.fromEntries(
+    document.content.assets.flatMap((asset, index) => {
+      const source = displayDocument.content.assets[index]?.src;
+      return asset.kind === "image" && source ? [[asset.src, source]] : [];
+    }),
+  ), [document.content.assets, displayDocument.content.assets]);
   const slots = useMemo(
     () => ({
       bindings: {
@@ -1715,13 +1721,14 @@ export function UnifiedDocumentEditor({
               resolveSelection={resolveBodySelection}
               onPasteImages={onPasteImages ? pasteImages : undefined}
               concealImageLines={experience === "note"}
+              imageSources={experience === "article" ? bodyImageSources : undefined}
               disabled={imagePastePending}
             />
           </div>
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2241,6 +2248,7 @@ export function UnifiedDocumentEditor({
            newline character stays in the text (every offset depends on it)
            but renders zero-height, because the block break already shows it. */
         .tt-md-surface>[data-tt-ln]{display:block}
+        .tt-md-surface .tt-md-image-preview{display:block;width:100%;max-height:480px;margin:1rem 0;object-fit:contain;pointer-events:none;user-select:none}
         .tt-md-nl{font-size:0;line-height:0}
         .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
         /* Syntax the styling already speaks for shows only on the line you are

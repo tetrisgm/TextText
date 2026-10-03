@@ -20,7 +20,8 @@ describe("editor image paste", () => {
       files: [bytesFile("Diagram.png", png), bytesFile("Motion.gif", gif)],
       makeId: (() => { let value = 0; return () => `asset-${++value}`; })(),
     });
-    expect(result.document.content.body).toBe("Before ![Diagram](assets/Diagram.png)\n\n![Motion](assets/Motion.gif)after");
+    expect(result.document.content.body).toBe("Before \n\n![Diagram](assets/Diagram.png)\n\n![Motion](assets/Motion.gif)\n\nafter");
+    expect(result.caret).toBe(result.document.content.body.indexOf("after"));
     expect(result.document.content.assets).toEqual([
       { id: "asset-1", kind: "image", src: "assets/Diagram.png", alt: "Diagram", contentType: "image/png" },
       { id: "asset-2", kind: "image", src: "assets/Motion.gif", alt: "Motion", contentType: "image/gif" },

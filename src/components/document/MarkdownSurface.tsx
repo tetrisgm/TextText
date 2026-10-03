@@ -377,6 +377,7 @@ export function MarkdownSurface({
   resolveSelection,
   onPasteImages,
   concealImageLines = false,
+  imageSources,
   disabled = false,
 }: {
   value: string;
@@ -389,6 +390,8 @@ export function MarkdownSurface({
   resolveSelection?: () => { anchor: number; head: number } | null;
   onPasteImages?: (files: File[], selection: { from: number; to: number }) => void;
   concealImageLines?: boolean;
+  /** Resolved URLs keyed by the image paths stored in Markdown. */
+  imageSources?: Readonly<Record<string, string>>;
   disabled?: boolean;
 }) {
   const localRef = useRef<HTMLDivElement>(null);
@@ -407,6 +410,7 @@ export function MarkdownSurface({
   const overlaySigsRef = useRef<string[]>([]);
   const openLineRef = useRef<number | null>(null);
   const builtRef = useRef<string | null>(null);
+  const builtImagesRef = useRef<string | null>(null);
   /** Where the caret must land after a controlled structural edit. */
   const pendingCaretRef = useRef<number | null>(null);
 
@@ -763,8 +767,21 @@ export function MarkdownSurface({
       pushText(text.slice(cut - segStart), cut, className);
       at = segEnd;
     };
-    for (const segment of segmentsForLine(line, concealImageLines)) {
+    const image = /^!\[([^\]]*)\]\((assets\/[^)]+|blob:[^)]+)\)$/.exec(line.trim());
+    const imageSource = image && imageSources?.[image[2]];
+    for (const segment of segmentsForLine(line, concealImageLines || !!imageSource)) {
       emitSegment(segment.text, segment.className);
+    }
+    if (imageSource) {
+      // The image contributes no text nodes. Its Markdown remains the exact
+      // editable source, so Yjs positions, copy, and agent ranges stay valid.
+      const preview = document.createElement("img");
+      preview.className = "tt-md-image-preview";
+      preview.src = imageSource;
+      preview.alt = image[1] || "Story image";
+      preview.contentEditable = "false";
+      preview.draggable = false;
+      wrapper.appendChild(preview);
     }
     if (line.length === 0) {
       // A block row with only the zero-height newline collapses; the <br>
@@ -807,6 +824,9 @@ export function MarkdownSurface({
   const selectionsSignature = selections
     .map((s) => `${s.clientId}:${s.from}:${s.to}:${s.color}:${s.userName}`)
     .join("|");
+  const imagesSignature = imageSources
+    ? JSON.stringify(Object.entries(imageSources))
+    : "";
   const builtValueRef = useRef<string | null>(null);
   /** Native edits since the last reconcile; cleared once the DOM is trusted. */
   const domDirtyRef = useRef(false);
@@ -1125,6 +1145,7 @@ export function MarkdownSurface({
     if (composingRef.current) return;
     if (
       builtRef.current === selectionsSignature &&
+      builtImagesRef.current === imagesSignature &&
       builtValueRef.current === value &&
       !domDirtyRef.current &&
       pendingCaretRef.current === null
@@ -1157,6 +1178,7 @@ export function MarkdownSurface({
     const nextStarts = lineStartsOf(nextLines);
     const nextOverlays = lineOverlaySignatures(nextLines, nextStarts, selections);
     const windowed = value.length >= WINDOW_THRESHOLD;
+    const imagesChanged = builtImagesRef.current !== imagesSignature;
 
     // The DOM is ours to splice only while it still has the exact wrapper
     // list the last reconcile left behind. Typing mutates text INSIDE a
@@ -1165,7 +1187,7 @@ export function MarkdownSurface({
     // surface) falls back to materializing the window, which for a windowed
     // document is O(window) rather than O(document).
     const wrappers = wrappersRef.current;
-    const structureTrusted = structureMatchesWrappers();
+    const structureTrusted = !imagesChanged && structureMatchesWrappers();
     const win = winRef.current;
 
     const previousLines = structureTrusted ? linesRef.current : [];
@@ -1206,6 +1228,7 @@ export function MarkdownSurface({
       lineStartsRef.current = nextStarts;
       overlaySigsRef.current = nextOverlays;
       builtRef.current = selectionsSignature;
+      builtImagesRef.current = imagesSignature;
       builtValueRef.current = value;
       domDirtyRef.current = false;
       if (focused && keep && !draggingRef.current) {
@@ -1263,6 +1286,7 @@ export function MarkdownSurface({
         lineStartsRef.current = nextStarts;
         overlaySigsRef.current = nextOverlays;
         builtRef.current = selectionsSignature;
+        builtImagesRef.current = imagesSignature;
         builtValueRef.current = value;
         domDirtyRef.current = false;
         return;
@@ -1342,6 +1366,7 @@ export function MarkdownSurface({
     lineStartsRef.current = nextStarts;
     overlaySigsRef.current = nextOverlays;
     builtRef.current = selectionsSignature;
+    builtImagesRef.current = imagesSignature;
     builtValueRef.current = value;
     domDirtyRef.current = false;
 

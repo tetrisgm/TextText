@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog now previews embedded TextPack images inline while writing. The image node adds no text to the editable DOM; the Markdown source and its cursor offsets remain intact. Inserting an image leaves a blank paragraph and places the caret there, keeping the image visible while the next sentence is written. The local browser flow checks image decoding, hidden idle syntax, and the saved source; `/tmp/texttext-blog-inline-image-light-reference.png` shows the current light view. TypeScript, offset tests, and local/web browser flows pass. Full Medium composition parity remains open; no release was run.
+
 Blog's editor plus now opens an insert menu instead of immediately opening the image picker. Image uses the existing guarded asset path; Divider inserts a Markdown rule at the current caret in the same TextPack. Escape and outside clicks dismiss the menu. The local browser flow checks menu navigation, saved divider text, image insertion, and `/tmp/texttext-blog-insert-menu-light-reference.png`; TypeScript and local/web browser flows pass. Medium editing parity remains open; no release was run.
 
 Gallery's image inspector now uses a separate neutral panel and a compact source row showing the hostname while retaining the full saved URL as the link target. Metadata sections have tighter spacing beside the image. The local browser flow verifies the link destination, panel contrast, editing, and light/dark captures at `/tmp/texttext-gallery-inline-inspector-light-reference.png`; TypeScript and local/web browser flows pass. Resurf detail parity remains open; no release was run.

@@ -94,7 +94,10 @@ export async function prepareEditorImagePaste(input: {
   const before = body.slice(0, from);
   const after = body.slice(to);
   const leading = before && !before.endsWith("\n\n") ? before.endsWith("\n") ? "\n" : "\n\n" : "";
-  const trailing = after && !after.startsWith("\n\n") ? after.startsWith("\n") ? "\n" : "\n\n" : "";
+  // Leave a paragraph after the image, including at end of document. The
+  // returned caret belongs there so the preview stays visible, ready for
+  // continued prose instead of revealing the image's Markdown source.
+  const trailing = !after ? "\n\n" : !after.startsWith("\n\n") ? after.startsWith("\n") ? "\n" : "\n\n" : "";
   return {
     document: validateDocumentSnapshot({
       ...input.document,
@@ -105,6 +108,6 @@ export async function prepareEditorImagePaste(input: {
       },
     }),
     addedAssets: additions,
-    caret: from + leading.length + inserted.length,
+    caret: from + leading.length + inserted.length + trailing.length + (after.startsWith("\n\n") ? 2 : 0),
   };
 }

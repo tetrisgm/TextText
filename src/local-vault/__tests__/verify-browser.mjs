@@ -1426,9 +1426,17 @@ try {
   await page.getByRole("menu", { name: "Insert story content" }).getByRole("menuitem", { name: "Image" }).click();
   await page.getByLabel("Choose story images").setInputFiles({ name: "story.png", mimeType: "image/png", buffer: Buffer.from(pixel, "base64") });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/story.png"));
+  await page.locator('[aria-label="Document body"] .tt-md-image-preview').waitFor();
+  assert.equal(await page.locator('[aria-label="Document body"] .tt-md-image-preview').evaluate((image) => image.complete && image.naturalWidth > 0), true);
+  assert.match(await storyBody.textContent(), /!\[[^\]]*\]\(assets\/story\.png\)/);
+  assert.equal(await page.locator('[aria-label="Document body"] [data-tt-ln]:has(.tt-md-image-preview) .tt-md-syntax').evaluate((marker) => getComputedStyle(marker).display), "none");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-blog-inline-image-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Back to Blog" }).click();
   await chooseFolder("Gallery");
   assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /---/);
+  assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /!\[[^\]]*\]\(assets\/story\.png\)/);
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.subtitle, "A short line beneath the title");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
   await page.getByRole("button", { name: "Add images", exact: true }).click();
