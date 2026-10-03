@@ -572,10 +572,22 @@ export function UnifiedDocumentEditor({
   const [articleLinkURL, setArticleLinkURL] = useState("");
   const [articleLinkError, setArticleLinkError] = useState("");
   const [articleCaret, setArticleCaret] = useState<{ offset: number; x: number; y: number } | null>(null);
+  const [articleInsertOpen, setArticleInsertOpen] = useState(false);
+  const articleInsertRef = useRef<HTMLDivElement>(null);
   const articleImageInput = useRef<HTMLInputElement>(null);
   const articleBodyOffset = useRef(0);
   const noteImageInput = useRef<HTMLInputElement>(null);
   const noteImageSelection = useRef({ from: 0, to: 0 });
+  useEffect(() => {
+    if (!articleInsertOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !articleInsertRef.current?.contains(event.target)) setArticleInsertOpen(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setArticleInsertOpen(false); bodySurfaceRef.current?.focus(); } };
+    window.document.addEventListener("pointerdown", dismiss);
+    window.document.addEventListener("keydown", escape, true);
+    return () => { window.document.removeEventListener("pointerdown", dismiss); window.document.removeEventListener("keydown", escape, true); };
+  }, [articleInsertOpen]);
   useEffect(() => {
     if (!articleSelection) return;
     const dismiss = () => setArticleSelection(null);
@@ -1532,6 +1544,20 @@ export function UnifiedDocumentEditor({
     window.requestAnimationFrame(() => requestDocumentCaret(lineStart, lineStart + nextBlock.length));
   }, [experience, articleSelection, currentLocalDocument, updateText]);
 
+  const insertArticleDivider = useCallback(() => {
+    if (experience !== "article") return;
+    const body = currentLocalDocument().content.body;
+    const at = Math.max(0, Math.min(articleBodyOffset.current, body.length));
+    const before = body.slice(0, at), after = body.slice(at);
+    const prefix = before && !before.endsWith("\n\n") ? before.endsWith("\n") ? "\n" : "\n\n" : "";
+    const suffix = after && !after.startsWith("\n\n") ? after.startsWith("\n") ? "\n" : "\n\n" : "\n\n";
+    const inserted = `${prefix}---${suffix}`;
+    updateText("body", `${before}${inserted}${after}`);
+    setArticleInsertOpen(false);
+    bodySurfaceRef.current?.focus();
+    window.requestAnimationFrame(() => requestDocumentCaret(at + inserted.length, at + inserted.length));
+  }, [experience, currentLocalDocument, updateText]);
+
   const linkArticleSelection = useCallback(() => {
     if (!articleLinkTarget || experience !== "article") return;
     let url: URL;
@@ -2082,8 +2108,9 @@ export function UnifiedDocumentEditor({
         event.currentTarget.value = "";
         if (files.length) pasteImages(files, noteImageSelection.current);
       }} />}
-      {onPasteImages && articleCaret && experience === "article" && <div className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
-        <button type="button" aria-label="Add image to story" title="Add image" onMouseDown={(event) => event.preventDefault()} onClick={() => articleImageInput.current?.click()}>+</button>
+      {onPasteImages && articleCaret && experience === "article" && <div ref={articleInsertRef} className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
+        <button type="button" aria-label="Insert story content" aria-expanded={articleInsertOpen} title="Insert content" onMouseDown={(event) => event.preventDefault()} onClick={() => setArticleInsertOpen(open => !open)}>+</button>
+        {articleInsertOpen && <div className="tt-article-insert-menu" role="menu" aria-label="Insert story content" onMouseDown={event => event.preventDefault()}><button type="button" role="menuitem" onClick={() => { setArticleInsertOpen(false); articleImageInput.current?.click(); }}>Image</button><button type="button" role="menuitem" onClick={insertArticleDivider}>Divider</button></div>}
       </div>}
       {onPasteImages && experience === "article" && <input ref={articleImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose story images" onChange={(event) => {
         const files = Array.from(event.currentTarget.files ?? []);
@@ -2146,6 +2173,9 @@ export function UnifiedDocumentEditor({
         .tt-article-insert{position:fixed;z-index:70;transform:translateY(-4px)}
         .tt-article-insert button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 55%,transparent);border-radius:50%;background:var(--paper,#fff);color:var(--ink,#1d1d1f);font:300 23px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
         .tt-article-insert button:hover,.tt-article-insert button:focus-visible{border-color:var(--tt-accent,#0071e3);color:var(--tt-accent,#0071e3);outline:0}
+        .tt-article-insert .tt-article-insert-menu{position:absolute;left:38px;top:0;display:grid;min-width:150px;padding:5px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 16%,transparent);border-radius:7px;background:var(--paper,#fff);box-shadow:0 8px 28px #0003}
+        .tt-article-insert .tt-article-insert-menu button{display:block;width:100%;height:auto;padding:8px 10px;border:0;border-radius:4px;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left}
+        .tt-article-insert .tt-article-insert-menu button:hover,.tt-article-insert .tt-article-insert-menu button:focus-visible{background:color-mix(in srgb,var(--ink,#1d1d1f) 8%,transparent)}
         .tt-article-topics{max-width:720px;margin:0 auto 48px;padding:24px 0;border-top:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 15%,transparent);font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;color:var(--muted,#666)}
         .tt-article-topics h3{margin:0 0 12px;font-size:12px;font-weight:600;color:var(--ink,#1d1d1f)}
         .tt-article-topic-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
