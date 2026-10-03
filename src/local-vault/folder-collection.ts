@@ -40,6 +40,10 @@ export function collectionDocument(preview: FolderPreview | undefined, fallback:
 export function noteCardDocument(preview: FolderPreview | undefined, fallback: string): DocumentSnapshot {
   const document = collectionDocument(preview, fallback);
   const body = (preview?.cardBody ?? document.content.body)
-    .replace(/!\[[^\]]*\]\((?:<[^>]+>|[^)]+)\)/g, "").trim();
+    .replace(/!\[[^\]]*\]\((?:<[^>]+>|[^)]+)\)/g, "")
+    // GFM treats a task marker with no label as plain list text. Keep the
+    // TextPack untouched and give only the card preview a nonempty label.
+    .replace(/^(\s*[-*+] \[[ xX]\])\s*$/gm, "$1 \u200b")
+    .trim();
   return { ...document, content: { ...document.content, body } };
 }

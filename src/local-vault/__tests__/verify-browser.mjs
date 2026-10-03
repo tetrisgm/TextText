@@ -2610,6 +2610,7 @@ try {
   assert.equal(JSON.parse(rapidCard.documentJSON).content.fields.texttextNoteColor, "blue");
   const rapidCardTile = page.locator(".vault-note-card").filter({ hasText: "Rapid thought again" });
   assert.equal(await rapidCardTile.getAttribute("data-note-color"), "blue");
+  assert.equal(await rapidCardTile.locator('input[type="checkbox"]').count(), 1);
   await rapidCardTile.getByRole("button", { name: "Open Rapid thought again" }).click();
   assert.equal(await page.getByRole("region", { name: "Note card" }).getAttribute("data-note-color"), "blue");
   await page.screenshot({ path: "/tmp/texttext-note-blue-reader-dark-reference.png" });
