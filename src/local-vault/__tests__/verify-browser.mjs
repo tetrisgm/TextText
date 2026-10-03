@@ -1096,6 +1096,15 @@ try {
   const bookmarkDetails = bookmarkReader.locator("details.vault-bookmark-inspector");
   const toggleBookmarkDetails = bookmarkDetails.locator("summary");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
+  const sendsBeforeBookmarkAsk = agentSendCount;
+  await bookmarkReader.getByRole("button", { name: "Ask about this link" }).click();
+  const bookmarkAgentPanel = page.getByRole("complementary", { name: "Add agent", exact: true });
+  await bookmarkAgentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).waitFor();
+  assert.match(await bookmarkAgentPanel.getByRole("textbox", { name: "Message assistant", exact: true }).inputValue(), /key ideas in this saved link/);
+  assert.match(await bookmarkAgentPanel.getByRole("group", { name: "Agent task target", exact: true }).textContent(), /Bookmarks\//);
+  assert.equal(agentSendCount, sendsBeforeBookmarkAsk);
+  await page.keyboard.press("Escape");
+  await bookmarkAgentPanel.waitFor({ state: "hidden" });
   assert.equal(await bookmarkReader.getByRole("button", { name: "Highlight selection" }).count(), 0);
   await page.emulateMedia({ colorScheme: "light" });
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.vault-bookmark-reader .tt-text-title')).color === 'rgb(32, 32, 32)');

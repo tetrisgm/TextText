@@ -35,8 +35,8 @@ function savedDay(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", ...(date.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }) }).format(date);
 }
 
-export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpen, onQuickSave, preferredPath }: {
-  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void; onQuickSave?: (address: string) => Promise<void>; preferredPath?: string;
+export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpen, onQuickSave, onAskAgent, preferredPath }: {
+  items: VaultItem[]; previews: Record<string, FolderPreview>; busy: boolean; previewOnly: boolean; onOpen: (path: string) => void; onQuickSave?: (address: string) => Promise<void>; onAskAgent?: (path: string) => void; preferredPath?: string;
 }) {
   const [selected, setSelected] = useState(preferredPath || "");
   const [compactReaderOpen, setCompactReaderOpen] = useState(Boolean(preferredPath));
@@ -436,6 +436,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       {document && (captureFailed || linkPlaceholder) && <div className="vault-bookmark-capture-status" role="status"><p>{captureFailed ? "The page could not be captured. Your link is still saved." : "The link is saved. A readable copy is being prepared."}</p></div>}
       {document && resumeProgress > 0 && <button type="button" className="vault-bookmark-resume" onClick={resumeReading}>Continue at {resumeProgress}%</button>}
       {document && template ? <ArticleReader key={current?.path} document={document} template={template} update={previewOnly || busy ? undefined : updateReader} flushUpdate={flushReaderDraft} compact /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
+      {onAskAgent && current && document && !previewOnly && <button type="button" className="vault-bookmark-ask" onClick={() => onAskAgent(current.path)}>Ask about this link <span aria-hidden="true">↗</span></button>}
     </article>
   </div>;
 }

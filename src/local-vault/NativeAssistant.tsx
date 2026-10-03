@@ -15,7 +15,7 @@ type Status = { state: AgentState; message?: string; accountEmail?: string; diag
 type Message = { id: number; role: "user" | "assistant"; text: string };
 type AgentEvent = Partial<Status> & { type: string; taskId?: string; text?: string; tool?: string; path?: string };
 export type NativeAssistantRequest =
-  | { type: "agent"; requestId: number; root: string; target: string }
+  | { type: "agent"; requestId: number; root: string; target: string; suggestedPrompt?: string }
   | { type: "customize"; requestId: number; taskId: string; path: string };
 type ActiveTurnFence = { type: "agent" | "customize"; taskId: string; root: string; target: string };
 const MAX_MESSAGES = 50, MAX_TEXT = 24_000, MAX_TOTAL = 120_000;
@@ -128,7 +128,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       try {
         activeTaskFence.current = null;
         const next = resumeAgentTask(localStorage, root, targetPath, () => crypto.randomUUID());
-        acceptTask(next); setCustomizing(null); setCustomizationTaskId(null); setPrompt(next.prompt); changeProposal(null);
+        acceptTask(next); setCustomizing(null); setCustomizationTaskId(null); setPrompt(next.prompt || request.suggestedPrompt || ""); changeProposal(null);
         setNotice(next.phase === "submitted"
           ? "This task may already have started before TextText closed. It was not sent again. Check the item before sending it again."
           : next.phase === "connecting" ? "Your task is saved. Continue connecting Codex when you are ready." : "");

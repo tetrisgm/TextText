@@ -528,6 +528,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const [destinationFolder, setDestinationFolder] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantRequest, setAssistantRequest] = useState<NativeAssistantRequest | null>(null);
+  const [assistantTargetPath, setAssistantTargetPath] = useState<string | null>(null);
   const assistantRequestId = useRef(0);
   useEffect(() => {
     if (!assistantOpen) return;
@@ -563,7 +564,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const assistantReturnFocus = useRef<HTMLElement | null>(null);
   const importing = useRef(false);
   const [importStatus, setImportStatus] = useState("");
-  useEffect(() => { setImportStatus(""); }, [listing?.root, selected?.path, destinationFolder]);
+  useEffect(() => { queueMicrotask(() => setImportStatus("")); }, [listing?.root, selected?.path, destinationFolder]);
   const [webAccess, setWebAccess] = useState<{ workspaceId: string; value: VaultAccess } | null>(null);
   const [nativeConnection, setNativeConnection] = useState<{ root: string; workspaceId: string } | null>(null);
   const [nativePublishAccess, setNativePublishAccess] = useState<{ workspaceId: string; itemId: string; canPublish: boolean } | null>(null);
@@ -894,6 +895,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   }, [setSidebarVisible]);
   const closeAssistant = useCallback(() => {
     setAssistantOpen(false);
+    setAssistantTargetPath(null);
     restoreDialogFocus(assistantReturnFocus.current, searchButton.current);
     assistantReturnFocus.current = null;
   }, []);
@@ -901,11 +903,21 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const activeItemPath = selected?.path ?? "";
   const beginAddAgent = useCallback(() => {
     if (!activeWorkspaceRoot || !activeItemPath) return;
+    setAssistantTargetPath(null);
     assistantReturnFocus.current = focusedControl();
     if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
     setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: activeItemPath });
     setAssistantOpen(true);
   }, [activeItemPath, activeWorkspaceRoot, setSidebarVisible]);
+  const askBookmarkAgent = useCallback((path: string) => {
+    if (!activeWorkspaceRoot || !listing?.items.some(item => item.path === path)) return;
+    assistantReturnFocus.current = focusedControl();
+    if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
+    setAssistantTargetPath(path);
+    setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: path,
+      suggestedPrompt: "What are the key ideas in this saved link? Summarize them and cite the relevant passages." });
+    setAssistantOpen(true);
+  }, [activeWorkspaceRoot, listing?.items, setSidebarVisible]);
   useEffect(() => {
     window.addEventListener(REQUEST_ADD_ITEM_AGENT_EVENT, beginAddAgent);
     return () => window.removeEventListener(REQUEST_ADD_ITEM_AGENT_EVENT, beginAddAgent);
@@ -1082,12 +1094,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const contextParent = selected
     ? folderForItem(selected.path) || "All files"
     : listing?.name || listing?.root.split("/").filter(Boolean).at(-1) || "TextText";
-  const openPublish = () => {
+  function openPublish() {
     if (!selected || !sharingWorkspaceId || !selectedItemId || !canPublish) return;
     let label = selected.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "file";
     try { label = readDocument(selected).content.title || label; } catch { /* The file label remains usable. */ }
     setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label });
-  };
+  }
   return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${selectedStory ? " has-story" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && (event.dataTransfer.types.includes("Files") || currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list"))) event.preventDefault(); }}
     onDrop={(event) => { if (selected) return; if (event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } else if (currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list")) { event.preventDefault(); if (canCreate) saveDroppedBookmark(event.dataTransfer.getData("text/uri-list").split("\n").find(line => line.trim() && !line.startsWith("#")) || ""); } }}
@@ -1310,6 +1322,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         onEditNote={canCreate ? (path) => void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true) : undefined}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
+        onAskBookmarkAgent={allowFolderPicker ? askBookmarkAgent : undefined}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}
@@ -1322,6 +1335,6 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess}
       onClose={() => { setImportedGalleryPath(null); refresh(); }}
       onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
-    {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
+    {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
   </div>;
 }
