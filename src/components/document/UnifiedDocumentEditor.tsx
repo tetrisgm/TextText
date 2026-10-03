@@ -616,7 +616,8 @@ export function UnifiedDocumentEditor({
     const escape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setArticleInsertOpen(false); bodySurfaceRef.current?.focus(); } };
     window.document.addEventListener("pointerdown", dismiss);
     window.document.addEventListener("keydown", escape, true);
-    return () => { window.document.removeEventListener("pointerdown", dismiss); window.document.removeEventListener("keydown", escape, true); };
+    const frame = window.requestAnimationFrame(() => articleInsertRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus());
+    return () => { window.cancelAnimationFrame(frame); window.document.removeEventListener("pointerdown", dismiss); window.document.removeEventListener("keydown", escape, true); };
   }, [articleInsertOpen]);
   useEffect(() => {
     if (!articleSelection) return;
@@ -1486,9 +1487,13 @@ export function UnifiedDocumentEditor({
         } else {
           setArticleSelection(null);
           const bodyRect = bodySurfaceRef.current?.getBoundingClientRect();
-          setArticleCaret(rect && bodyRect ? { offset: head, x: bodyRect.left - 34, y: Math.max(bodyRect.top, rect.top) } : null);
+          const body = currentLocalDocument().content.body;
+          const lineStart = body.lastIndexOf("\n", head - 1) + 1;
+          const nextLine = body.indexOf("\n", head);
+          const line = body.slice(lineStart, nextLine < 0 ? body.length : nextLine);
+          if (!articleInsertOpen) setArticleCaret(rect && bodyRect && !line.trim() ? { offset: head, x: bodyRect.left - 34, y: Math.max(bodyRect.top, rect.top) } : null);
         }
-      } else { setArticleSelection(null); setArticleCaret(null); }
+      } else { setArticleSelection(null); if (!articleInsertOpen) setArticleCaret(null); }
       // The draft store names the subtitle field "excerpt"; same text, two
       // vocabularies.
       const draftField = field === "subtitle" ? "excerpt" : field;
@@ -1534,7 +1539,7 @@ export function UnifiedDocumentEditor({
       };
       awareness.setLocalStateField("selection", selection);
     },
-    [experience, awareness, collab.postId, currentLocalDocument, doc, ready],
+    [experience, articleInsertOpen, awareness, collab.postId, currentLocalDocument, doc, ready],
   );
 
   const resolveBodySelection = useCallback(() => {
@@ -1586,6 +1591,24 @@ export function UnifiedDocumentEditor({
     setArticleInsertOpen(false);
     bodySurfaceRef.current?.focus();
     window.requestAnimationFrame(() => requestDocumentCaret(at + inserted.length, at + inserted.length));
+  }, [experience, currentLocalDocument, updateText]);
+
+  const insertArticleBlock = useCallback((kind: "quote" | "bullet" | "number" | "code") => {
+    if (experience !== "article") return;
+    const body = currentLocalDocument().content.body;
+    const at = Math.max(0, Math.min(articleBodyOffset.current, body.length));
+    const lineStart = body.lastIndexOf("\n", at - 1) + 1;
+    const nextLine = body.indexOf("\n", at);
+    const lineEnd = nextLine < 0 ? body.length : nextLine;
+    const blank = body.slice(lineStart, lineEnd);
+    if (blank.trim()) return;
+    const marker = kind === "quote" ? "> " : kind === "bullet" ? "- " : kind === "number" ? "1. " : "```\n\n```";
+    const inserted = `${blank}${marker}`;
+    updateText("body", `${body.slice(0, lineStart)}${inserted}${body.slice(lineEnd)}`);
+    setArticleInsertOpen(false);
+    bodySurfaceRef.current?.focus();
+    const caret = lineStart + blank.length + (kind === "code" ? 4 : marker.length);
+    window.requestAnimationFrame(() => requestDocumentCaret(caret, caret));
   }, [experience, currentLocalDocument, updateText]);
 
   const linkArticleSelection = useCallback(() => {
@@ -2285,7 +2308,15 @@ export function UnifiedDocumentEditor({
       }} />}
       {onPasteImages && articleCaret && experience === "article" && <div ref={articleInsertRef} className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
         <button type="button" aria-label="Insert story content" aria-expanded={articleInsertOpen} title="Insert content" onMouseDown={(event) => event.preventDefault()} onClick={() => setArticleInsertOpen(open => !open)}>+</button>
-        {articleInsertOpen && <div className="tt-article-insert-menu" role="menu" aria-label="Insert story content" onMouseDown={event => event.preventDefault()}><button type="button" role="menuitem" onClick={() => { setArticleInsertOpen(false); articleImageInput.current?.click(); }}>Image</button><button type="button" role="menuitem" onClick={insertArticleDivider}>Divider</button></div>}
+        {articleInsertOpen && <div className="tt-article-insert-menu" role="menu" aria-label="Insert story content" style={articleCaret.y > (typeof window === "undefined" ? Infinity : window.innerHeight - 240) ? { top: "auto", bottom: 0 } : undefined} onMouseDown={event => event.preventDefault()} onKeyDown={event => {
+          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+          if (!items.length) return;
+          event.preventDefault();
+          const current = items.indexOf(window.document.activeElement as HTMLButtonElement);
+          const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+          items[next]?.focus();
+        }}><button type="button" role="menuitem" onClick={() => { setArticleInsertOpen(false); articleImageInput.current?.click(); }}>Image</button><button type="button" role="menuitem" onClick={() => insertArticleBlock("quote")}>Quote</button><button type="button" role="menuitem" onClick={() => insertArticleBlock("bullet")}>Bulleted list</button><button type="button" role="menuitem" onClick={() => insertArticleBlock("number")}>Numbered list</button><button type="button" role="menuitem" onClick={() => insertArticleBlock("code")}>Code block</button><button type="button" role="menuitem" onClick={insertArticleDivider}>Divider</button></div>}
       </div>}
       {onPasteImages && experience === "article" && <input ref={articleImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose story images" onChange={(event) => {
         const files = Array.from(event.currentTarget.files ?? []);

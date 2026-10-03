@@ -1481,6 +1481,7 @@ try {
     throw error;
   });
   await storyBody.fill("Heading");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Heading");
   await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
@@ -1493,6 +1494,7 @@ try {
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Heading", exact: true }).click({ force: true });
   await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Document body"]')].some(element => element.getClientRects().length && element.textContent?.startsWith("# Heading")));
   await storyBody.fill("Quote");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Quote");
   await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
@@ -1505,21 +1507,29 @@ try {
   await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Quote" }).click({ force: true });
   await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Document body"]')].some(element => element.getClientRects().length && element.textContent?.startsWith("> Quote")));
   await storyBody.click();
+  await storyBody.press("End");
+  await storyBody.press("Enter");
   const insertStory = page.getByRole("button", { name: "Insert story content" });
   await insertStory.click();
-  await page.getByRole("menu", { name: "Insert story content" }).getByRole("menuitem", { name: "Image" }).waitFor();
+  const storyInsertMenu = page.getByRole("menu", { name: "Insert story content" });
+  const storyImageAction = storyInsertMenu.getByRole("menuitem", { name: "Image" });
+  await storyImageAction.waitFor();
+  await storyImageAction.press("ArrowDown");
+  assert.equal(await storyInsertMenu.getByRole("menuitem", { name: "Quote" }).evaluate(element => document.activeElement === element), true);
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("menu", { name: "Insert story content" }).count(), 0);
-  await storyBody.click();
   await insertStory.click();
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-blog-insert-menu-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-blog-insert-menu-dark-reference.png" });
   await page.getByRole("menu", { name: "Insert story content" }).getByRole("menuitem", { name: "Divider" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("---"));
   await page.locator('[aria-label="Document body"] .tt-md-divider').waitFor();
   assert.equal(await page.locator('[aria-label="Document body"] [data-tt-ln]:has(.tt-md-divider) .tt-md-syntax').evaluate((marker) => getComputedStyle(marker).display), "none");
   await storyBody.click();
+  await storyBody.press("End");
+  await storyBody.press("Enter");
   await insertStory.click();
   await page.getByRole("menu", { name: "Insert story content" }).getByRole("menuitem", { name: "Image" }).click();
   await page.getByLabel("Choose story images").setInputFiles({ name: "story.png", mimeType: "image/png", buffer: await sharp({ create: { width: 1600, height: 900, channels: 4, background: "#d22" } }).png().toBuffer() });
@@ -1548,7 +1558,19 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-blog-inline-image-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
-  await storyBody.click();
+  await storyBody.evaluate(element => {
+    element.focus();
+    const lines = element.querySelectorAll("[data-tt-ln]");
+    const range = document.createRange();
+    range.selectNodeContents(lines[lines.length - 1]);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  await storyBody.press("Enter");
+  await insertStory.waitFor();
   await insertStory.click();
   await page.getByRole("menu", { name: "Insert story content" }).getByRole("menuitem", { name: "Image" }).click();
   await page.getByLabel("Choose story images").setInputFiles({ name: "story-small.png", mimeType: "image/png", buffer: Buffer.from(pixel, "base64") });
@@ -1563,9 +1585,25 @@ try {
   assert.equal(await smallPlacement.getByRole("button", { name: "Image wide" }).count(), 0);
   assert.equal(await smallPlacement.getByRole("button", { name: "Image full width" }).count(), 0);
   assert.match(await smallPlacement.getAttribute("data-hint"), /1192 px/);
+  await storyBody.evaluate(element => {
+    element.focus();
+    const lines = element.querySelectorAll("[data-tt-ln]");
+    const range = document.createRange();
+    range.selectNodeContents(lines[lines.length - 1]);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  await storyBody.press("Enter");
+  await insertStory.click();
+  await storyInsertMenu.getByRole("menuitem", { name: "Bulleted list" }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("- "));
   await page.getByRole("button", { name: "Back to Blog" }).click();
   await chooseFolder("Gallery");
   assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /---/);
+  assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /\n- /);
   assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /!\[[^\]]*\]\(assets\/story\.png\)/);
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.assets.find((asset) => asset.src === "assets/story.png")?.caption, "A short caption below the image");
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.assets.find((asset) => asset.src === "assets/story.png")?.alt, "A quiet blue square on a dark background");
