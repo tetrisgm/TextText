@@ -558,6 +558,7 @@
 .vault-app .vault-gallery-zoom span { min-width:42px; font-size:12px; text-align:center; }
 @media(prefers-reduced-motion:reduce){.vault-app .vault-gallery-stage img{transition:none}}
 .vault-app .vault-gallery-detail > aside { padding:18px 16px; overflow:auto; border-left:1px solid var(--line); background:var(--sidebar); }
+.vault-app .vault-gallery-download { display:inline-block; margin-top:10px; color:var(--tt-accent); font-size:12px; text-underline-offset:2px; }
 .vault-app .vault-gallery-detail h2 { margin:0 0 10px; color:var(--muted); font-size:12px; font-weight:500; }
 .vault-app .vault-gallery-detail p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; color:var(--muted); }
 .vault-app .vault-gallery-inspector-section { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }

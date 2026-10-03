@@ -1700,6 +1700,10 @@ try {
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
   await lightbox.getByText("240 × 120").waitFor();
   await lightbox.getByText("Size", { exact: true }).waitFor();
+  await lightbox.getByText("PNG", { exact: true }).waitFor();
+  const originalDownload = page.waitForEvent("download");
+  await lightbox.getByRole("link", { name: "Download original" }).click();
+  assert.equal((await originalDownload).suggestedFilename(), "two.png");
   await lightbox.getByLabel("Image colors").getByRole("button").first().waitFor();
   const pairColor = await lightbox.getByLabel("Image colors").getByRole("button").first().getAttribute("aria-label");
   await lightbox.getByRole("button", { name: pairColor }).click();
