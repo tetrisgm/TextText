@@ -336,7 +336,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case "folderViews": return ["files": try store.folderViews(folder: Self.string(params, "folder"))]
                 case "search":
                     let folder = params["folder"] as? String
-                    let prefix = folder == "Bookmarks" ? "Bookmarks/" : nil
+                    let prefix = ["Bookmarks", "Notes"].contains(folder ?? "") ? folder.map { "\($0)/" } : nil
                     let page = try DocumentStore(root: root).searchPage(Self.string(params, "query"), textpacksOnly: true, folderPrefix: prefix)
                     return ["items": page.items.map { ["path": $0.id, "title": $0.title, "snippet": $0.snippet] },
                         "truncated": page.truncated, "skippedCount": page.skippedCount]

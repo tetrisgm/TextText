@@ -93,7 +93,7 @@ try {
     else if (request.method === "search") {
       searchQueries.push(request.params.query);
       if (request.params.query === "slowquery") await new Promise(resolve => setTimeout(resolve, 2000));
-      result = { items: [...files.values()].filter((file) => (!request.params.folder || file.path.startsWith(`${request.params.folder}/`)) && file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
+      result = { items: [...files.values()].filter((file) => (!request.params.folder || file.path.startsWith(`${request.params.folder}/`)) && file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: JSON.parse(file.documentJSON).content.title, snippet: "Matched in file" })), truncated: false };
     }
     else if (request.method === "resolveItemId") {
       const matches = [...files.values()].filter(file => file.markdown.includes(`textTextId: "${request.params.itemId}"`));
@@ -1122,6 +1122,20 @@ try {
   assert.equal(agentSendCount, sendsBeforeBookmarkAsk);
   await page.keyboard.press("Escape");
   await bookmarkAgentPanel.waitFor({ state: "hidden" });
+  await toggleBookmarkDetails.click();
+  await page.screenshot({ path: "/tmp/texttext-bookmark-summary-action-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-bookmark-summary-action-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await bookmarkReader.getByRole("button", { name: "Summarize with agent" }).click();
+  const summaryTask = bookmarkAgentPanel.getByRole("textbox", { name: "Message assistant", exact: true });
+  await summaryTask.waitFor();
+  assert.match(await summaryTask.inputValue(), /write a concise, accurate summary in its Summary field/);
+  assert.match(await bookmarkAgentPanel.getByRole("group", { name: "Agent task target", exact: true }).textContent(), /Bookmarks\//);
+  assert.equal(agentSendCount, sendsBeforeBookmarkAsk);
+  await page.keyboard.press("Escape");
+  await bookmarkAgentPanel.waitFor({ state: "hidden" });
+  await toggleBookmarkDetails.click();
   await page.getByRole("option", { name: /Another saved link/ }).click();
   assert.equal(await page.getByRole("textbox", { name: "Question about this link" }).inputValue(), "");
   await page.getByRole("option", { name: /A saved article/ }).click();
@@ -2768,7 +2782,7 @@ try {
   await cardLinkDraft.getByRole("button", { name: "Add to new card" }).click();
   await cardLinkDraft.getByRole("menuitem", { name: /Link/ }).first().click();
   await cardLinkDraft.getByRole("searchbox", { name: "Find a card to link" }).fill("Rapid thought again");
-  await cardLinkDraft.locator(".tt-card-link-results button").first().click();
+  await cardLinkDraft.locator(".tt-card-link-results button").filter({ has: page.getByText("Rapid thought again", { exact: true }) }).first().click();
   const rapidId = /textTextId: "([^"]+)"/.exec(rapidCard.markdown)?.[1];
   assert.ok(rapidId);
   assert.equal(await cardLinkDraft.getByRole("textbox", { name: "New card body" }).inputValue(), `See [Rapid thought again](<#texttext-card=${rapidId}>).`);

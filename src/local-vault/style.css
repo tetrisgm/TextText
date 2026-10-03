@@ -489,6 +489,7 @@
 .vault-app .vault-bookmark-inspector-panel .vault-bookmark-tags { padding:10px 14px; }
 .vault-app .vault-bookmark-inspector-panel .vault-bookmark-summary-editor { padding:12px 14px; border-top:1px solid var(--line); }
 .vault-app .vault-bookmark-summary-editor>div:first-child,.vault-app .vault-bookmark-summary-editor form>div { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.vault-app .vault-bookmark-summary-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:6px 12px; }
 .vault-app .vault-bookmark-summary-editor strong { font-size:12px; }
 .vault-app .vault-bookmark-summary-editor button { color:var(--tt-accent); font-size:12px; }
 .vault-app .vault-bookmark-summary-editor p { margin:10px 0 0; font-size:13px; line-height:1.5; white-space:pre-wrap; }
