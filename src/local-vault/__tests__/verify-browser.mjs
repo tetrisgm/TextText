@@ -2208,9 +2208,18 @@ try {
   await page.getByRole("textbox", { name: "Document body" }).focus();
   await page.keyboard.press("Meta+Enter");
   await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").waitFor();
-  await page.getByRole("region", { name: "Note card" }).getByRole("checkbox").waitFor();
-  assert.ok([...files.values()].some(file => JSON.parse(file.documentJSON).content.title === "Thought for later" &&
-    JSON.parse(file.documentJSON).content.body.includes("- [ ] A next step")));
+  const noteTask = page.getByRole("region", { name: "Note card" }).getByRole("checkbox", { name: "A next step" });
+  await noteTask.waitFor();
+  await noteTask.click();
+  await page.waitForFunction(() => document.querySelector('.vault-note-display li.task-list-item[role="checkbox"]')?.getAttribute("aria-checked") === "true");
+  const savedNoteBody = () => [...files.values()].map(file => JSON.parse(file.documentJSON).content).find(content => content.title === "Thought for later")?.body ?? "";
+  for (let attempt = 0; attempt < 30 && !savedNoteBody().includes("- [x] A next step"); attempt++) await page.waitForTimeout(50);
+  assert.ok(savedNoteBody().includes("- [x] A next step"));
+  await noteTask.focus();
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.querySelector('.vault-note-display li.task-list-item[role="checkbox"]')?.getAttribute("aria-checked") === "false");
+  for (let attempt = 0; attempt < 30 && !savedNoteBody().includes("- [ ] A next step"); attempt++) await page.waitForTimeout(50);
+  assert.ok(savedNoteBody().includes("- [ ] A next step"));
   await page.getByRole("region", { name: "Note card" }).getByText(/#ideas/i).waitFor();
   await page.waitForFunction(() => {
     const image = document.querySelector('.vault-note-display img');

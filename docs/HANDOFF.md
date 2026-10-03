@@ -2,6 +2,8 @@
 
 ## Current work
 
+Finished Notes cards now allow a checklist item to be toggled by click or Space/Enter without reopening the editor. The local and shared editor paths apply the change to the TextPack body only if the displayed source still matches the current document, so a concurrent edit is not overwritten. The local browser flow verifies click, keyboard, saved body, and dark/light rendering; TypeScript, a focused task-marker test, and local/web browser flows pass. Broader Supernotes parity and real Mac/web checks remain open; no release was run.
+
 Notes now turns `[]` followed by Space at the start of a body line into a Markdown checklist item, matching Supernotes' shorthand while keeping the item in its TextPack body. The local browser flow checks both the edit and rendered checkbox. TypeScript and the local browser flow pass. Other Coupler actions and visual parity remain open; no release was run.
 
 Saved feed stories now offer an explicit Continue at N% button when opened in the Bookmark reader. It uses the progress stored in that TextPack, scrolls to the corresponding part of the captured article, and moves keyboard focus into the visible prose; ordinary opening stays at the top. The local browser flow checks the return from Feeds through Read Later into Bookmarks, scroll, and focus. TypeScript and local/web browser flows pass. Unsaved-story resume and real Mac/web checks remain open; no release was run.
