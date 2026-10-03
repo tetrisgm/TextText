@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery's full editor now exposes the same per-image Summary as the inspector, beside each image's caption. For a multi-image TextPack, edits to one summary leave the others intact. The full editor also calls TextPack tags Keywords to match the inspector. The local browser flow verifies the saved values and a narrow editor capture; TypeScript and local/web browser flows pass. Broader Resurf creation and visual parity remain open; no release was run.
+
 Command K now follows Superhuman's editor exception for a selected story passage: the first Cmd K opens the link form, and a second Cmd K opens TextText Command. The Notes list's displayed N shortcut now creates a blank note; other printable keys still start a titled card. The local browser flow covers both key paths. TypeScript and local/web browser flows pass; broader command ordering and exact visual parity remain open. No release was run.
 
 Gallery image detail now offers an editable Summary for the selected image and calls item tags Keywords. The summary is validated on the image asset in the same TextPack, so multi-image items keep separate descriptions. The local browser flow checks saving and switching images; TypeScript and local/web browser flows pass. Automatic opt-in keyword and summary generation, comments, and broader Resurf comparison remain open; no release was run.

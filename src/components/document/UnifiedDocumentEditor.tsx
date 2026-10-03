@@ -2181,10 +2181,13 @@ export function UnifiedDocumentEditor({
       {activeTemplate.id === "texttext.gallery" ? <div className="tt-gallery-edit-layout">{documentSurface}<aside className="tt-gallery-edit-details" aria-label="Image details">
         <h2>Details</h2>
         <label>Title<input aria-label="Image title" value={document.content.title} onChange={(event) => updateText("title", event.target.value)} maxLength={240} /></label>
-        {galleryImages.map((asset, index) => <label key={asset.id}>{galleryImages.length === 1 ? "Caption" : `Image ${index + 1} caption`}<textarea aria-label={galleryImages.length === 1 ? "Image caption" : `Image ${index + 1} caption`} value={asset.caption ?? (galleryImages.length === 1 ? document.content.body : "")} onChange={(event) => {
+        {galleryImages.map((asset, index) => <div key={asset.id} className="tt-gallery-image-fields">{galleryImages.length > 1 && <h3>Image {index + 1}</h3>}<label>Caption<textarea aria-label={galleryImages.length === 1 ? "Image caption" : `Image ${index + 1} caption`} value={asset.caption ?? (galleryImages.length === 1 ? document.content.body : "")} onChange={(event) => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map((entry) => entry.id === asset.id ? { ...entry, caption: event.target.value } : entry) } });
-        }} rows={3} placeholder="Add a caption" /></label>)}
+        }} rows={3} placeholder="Add a caption" /></label><label>Summary<textarea aria-label={galleryImages.length === 1 ? "Image summary" : `Image ${index + 1} summary`} value={asset.summary ?? ""} onChange={(event) => {
+          const current = currentLocalDocument();
+          updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map((entry) => entry.id === asset.id ? { ...entry, summary: event.target.value } : entry) } });
+        }} rows={3} maxLength={4000} placeholder="Add a summary" /></label></div>)}
         {document.content.body.trim() && galleryImages.length > 1 && <label>Collection note<textarea aria-label="Collection note" value={document.content.body} onChange={(event) => updateText("body", event.target.value)} rows={3} /></label>}
         <label>Source<input aria-label="Image source" type="url" placeholder="https://" value={typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : ""} onChange={(event) => {
           const current = currentLocalDocument();
@@ -2193,7 +2196,7 @@ export function UnifiedDocumentEditor({
             sourceUrl: source || null, sourceLabel: source || null, links: source ? [{ href: source, label: source }] : [],
           } } });
         }} /></label>
-        <div className="tt-gallery-edit-tags"><h3>Tags</h3><div>{document.content.tags.map((tag) => <span key={tag}>{tag}<button type="button" aria-label={`Remove ${tag}`} onClick={() => {
+        <div className="tt-gallery-edit-tags"><h3>Keywords</h3><div>{document.content.tags.map((tag) => <span key={tag}>{tag}<button type="button" aria-label={`Remove ${tag}`} onClick={() => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: current.content.tags.filter((value) => value !== tag) } });
         }}>×</button></span>)}</div>{document.content.tags.length < 500 && <form onSubmit={(event) => {
@@ -2204,7 +2207,7 @@ export function UnifiedDocumentEditor({
           if (current.content.tags.some((value) => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, tag] } });
           setTagDraft("");
-        }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
+        }}><input aria-label="Add image keyword" placeholder="Add a keyword" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
       </aside></div> : documentSurface}
       {experience === "note" && <section className="tt-article-topics tt-note-tags" aria-label="Note tags">
         <h3>Tags</h3>
@@ -2321,6 +2324,8 @@ export function UnifiedDocumentEditor({
         .tt-gallery-edit-layout .tt-document-editor{min-width:0;max-width:none;margin:0;padding:0}
         .tt-gallery-edit-details{position:sticky;top:24px;padding:4px 0;color:var(--ink,#1d1d1f)}
         .tt-gallery-edit-details h2{margin:0 0 22px;font-size:13px;font-weight:650}
+        .tt-gallery-image-fields:not(:last-child){margin-bottom:18px;padding-bottom:4px;border-bottom:1px solid var(--line,#ddd)}
+        .tt-gallery-image-fields h3{margin:0 0 12px;color:var(--ink,#1d1d1f);font-size:12px;font-weight:650}
         .tt-gallery-edit-details label{display:block;margin-bottom:18px;color:var(--muted,#666);font-size:12px}
         .tt-gallery-edit-details input,.tt-gallery-edit-details textarea{display:block;width:100%;margin-top:7px;padding:9px 10px;border:1px solid var(--line,#ddd);border-radius:5px;background:var(--paper,#fff);color:var(--ink,#1d1d1f);font:inherit;font-size:14px;line-height:1.5;resize:vertical}
         .tt-gallery-edit-details :is(input,textarea):focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:2px}
