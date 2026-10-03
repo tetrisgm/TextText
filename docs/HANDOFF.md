@@ -2,6 +2,8 @@
 
 ## Current work
 
+The six requested reference experiences are not proven complete. The current evidence and missing creation/edit/read proof are mapped in [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). The Artifact originals named in the old plan are absent on this Mac. No release was run.
+
 Bookmarks' inline URL capture now saves a copied link in one click when the field is empty, while typed URLs still use Save. The local browser contract verifies the copied URL becomes a Bookmark TextPack; TypeScript passes. Shiori's current product page is the reference: <https://www.shiori.sh/>. Full Shiori parity remains open; no release was run.
 
 Blog reader now uses a centered, distraction-free story view, with a visible Back to Blog control. Local and web browser flows and TypeScript passed in dark and light mode; screenshot: `/tmp/texttext-blog-reader-reference.png`. This is source work only; no app release was run. Full reference-service parity remains open.
