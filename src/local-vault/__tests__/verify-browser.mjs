@@ -1472,6 +1472,20 @@ try {
   await lightbox.getByText("100%", { exact: true }).waitFor();
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-light-reference.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "/tmp/texttext-gallery-narrow-light-reference.png" });
+  assert.ok(await lightbox.evaluate(view => {
+    const stage = view.querySelector(".vault-gallery-stage");
+    const inspector = view.querySelector(".vault-gallery-detail aside");
+    const image = stage?.querySelector("img");
+    return stage && inspector && image && image.getBoundingClientRect().width >= innerWidth * .9
+      && stage.getBoundingClientRect().bottom <= inspector.getBoundingClientRect().top + 1
+      && inspector.getBoundingClientRect().right <= innerWidth + 1;
+  }));
+  await lightbox.getByRole("button", { name: "Next image" }).click();
+  await lightbox.getByRole("button", { name: "Previous image" }).click();
+  await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ colorScheme: "dark" });
   await lightbox.getByRole("button", { name: "Edit caption" }).click();
   await lightbox.getByRole("textbox", { name: "Image caption" }).fill("Edited beside the image.");

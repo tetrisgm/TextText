@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery's narrow detail view now overlays navigation controls on the photograph instead of shrinking it between buttons. The 390px browser capture at `/tmp/texttext-gallery-narrow-light-reference.png` shows the image using nearly the full width; the browser contract checks width, inspector placement, and next/previous controls. Resurf detail and broader Gallery parity remain open. No release was run.
+
 Gallery previews now load in bounded groups of four so a populated photo library fills without serial blank tiles. A 12-photo TextPack browser fixture checks that every grid image loads, then captures dark/light references at `/tmp/texttext-gallery-dense-{dark,light}-reference.png`. TypeScript, local bundle, local browser, and web browser flows pass; the first local browser run hit an unrelated story-selection timing error and passed on rerun. Resurf detail, multi-image, GIF, and narrow-window parity remain open. No release was run.
 
 Bookmarks now displays a labeled Summary between the saved page's source and body when its TextPack subtitle is present. The reader details can add or edit it; the same content remains agent-editable in the ordinary DocumentSnapshot. A local browser test verifies the write and rendering, with light/dark captures at `/tmp/texttext-bookmark-summary-{light,dark}-reference.png`; TypeScript, local bundle, and local/web browser flows pass. Automatic Shiori-style summarization and real video/PDF capture remain open. No release was run.
