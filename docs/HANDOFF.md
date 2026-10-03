@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds story rows now have an Artifact-style More menu for Read later, Share, Open original, and Copy link. The persistent save still creates a Bookmark TextPack; the row stays visually quiet until the menu opens. TypeScript, local and web browser flows passed, including save after reopening Feeds. Checked dark/light menu captures: `/tmp/texttext-feed-story-actions-dark-reference.png` and `/tmp/texttext-feed-story-actions-light-reference.png`. Durable reading history and broader Artifact parity remain open; no app release was run.
+
 Published Blog links now use the story's saved preview title, subtitle, and selected embedded image in page metadata. The public page and metadata share one request-scoped TextPack read; unpublished items produce no preview metadata. The publication test covers private-field exclusion and unpublish behavior, and TypeScript passes. This is source work only; no app release was run. Medium parity remains open.
 
 Blog Publish can now choose a preview image already embedded in the story. The choice is saved as `texttextFeaturedImage` in its TextPack, separate from the article cover, and Mac and Oracle folder previews select that image. The publish action stays visible at the bottom of the scrollable dialog. Local browser, shared web browser, TypeScript, focused Mac, and server preview tests passed; light/dark dialog screenshots are `/tmp/texttext-blog-publish-topics-light-reference.png` and `/tmp/texttext-blog-publish-reference.png`. Medium's publish help is the reference: <https://help.medium.com/hc/en-us/articles/225168768-Writing-and-publishing-your-first-story>. Full Medium parity remains open; no app release was run.

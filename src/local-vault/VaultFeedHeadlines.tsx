@@ -221,6 +221,22 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       setReaderNotice("Could not share this story.");
     }
   };
+  const storyMenu = (story: FeedStory) => <details className="vault-feed-story-menu">
+    <summary aria-label={`More actions: ${story.title}`} title="More actions">•••</summary>
+    <div>
+      {readLaterAction(story)}
+      <button type="button" disabled={!story.permalink} onClick={event => {
+        event.currentTarget.closest("details")?.removeAttribute("open");
+        void shareStory(story);
+      }}>Share</button>
+      {story.permalink && <a href={story.permalink} target="_blank" rel="noopener noreferrer">Open original</a>}
+      <button type="button" disabled={!story.permalink} onClick={event => {
+        event.currentTarget.closest("details")?.removeAttribute("open");
+        void navigator.clipboard.writeText(story.permalink!).then(() => setReaderNotice("Story link copied."))
+          .catch(() => setReaderNotice("Could not copy the story link."));
+      }}>Copy link</button>
+    </div>
+  </details>;
   const followInterests = async () => {
     if (!canAdd || following || interests.size < MIN_INTERESTS) return;
     const chosen = RECOMMENDED.filter(source => interests.has(source.topic) && !sourceRows.some(row => row.feedURL === source.feedURL));
@@ -288,6 +304,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   </section>;
   return <section className="vault-feed-home" aria-label="Latest stories">
     {keptError && <p role="alert">Saved stories could not be checked: {keptError}</p>}
+    {readerNotice && <p className="vault-feed-list-notice" role="status">{readerNotice}</p>}
     {tab !== "Sources" && <label className="vault-feed-search"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4.5 4.5" /></svg><input type="search" aria-label={tab === "Read Later" ? "Search saved stories" : "Search loaded stories"} placeholder={tab === "Read Later" ? "Search saved stories" : "Search loaded stories"} value={search} onChange={event => setSearch(event.target.value)} /></label>}
     <nav className="vault-feed-topics" aria-label="News topics"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}</nav>
     <nav className="vault-feed-sections" aria-label="Feed sections"><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button><button aria-pressed={tab === "Latest"} onClick={() => setTab("Latest")}>Latest</button>{canReadLater && <button aria-pressed={tab === "Read Later"} onClick={() => setTab("Read Later")}>Read Later</button>}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
@@ -305,7 +322,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
             {group.members.length > 1 ? <p>{group.members.length} articles covering this story</p> : story.excerpt && <p>{story.excerpt}</p>}</div>
             {group.imageUrl && !featured && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={group.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = "none"; }} />}
           </div>
-          {group.members.length === 1 && readLaterAction(story)}
+          {group.members.length === 1 && <div className="vault-feed-row-actions">{storyMenu(story)}</div>}
         </li>;
       })}</ol>
     </> : <>
@@ -326,7 +343,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
         </div>
         {story.imageUrl && !(latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0))) && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         </div>
-        {readLaterAction(story)}
+        <div className="vault-feed-row-actions">{storyMenu(story)}</div>
       </li>)}</ol>
     </>}
   </section>;

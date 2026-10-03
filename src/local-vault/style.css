@@ -280,6 +280,18 @@
 .vault-app .vault-feed-read-later:hover { background:transparent; color:var(--tt-accent); }
 .vault-app .vault-feed-read-later:focus-visible { outline:2px solid var(--tt-accent); outline-offset:3px; }
 .vault-app .vault-feed-read-later:disabled { opacity:.6; cursor:default; }
+.vault-app .vault-feed-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+.vault-app .vault-feed-row-actions .vault-feed-read-later { margin:0; }
+.vault-app .vault-feed-story-menu { position:relative; }
+.vault-app .vault-feed-story-menu>summary { display:grid; place-items:center; width:32px; height:30px; border-radius:6px; color:var(--muted); font-size:17px; font-weight:700; cursor:pointer; list-style:none; }
+.vault-app .vault-feed-story-menu>summary::-webkit-details-marker { display:none; }
+.vault-app .vault-feed-story-menu>summary:hover,.vault-app .vault-feed-story-menu[open]>summary { background:var(--selection); color:var(--ink); }
+.vault-app .vault-feed-story-menu>summary:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
+.vault-app .vault-feed-story-menu>div { position:absolute; z-index:6; right:0; top:calc(100% + 4px); min-width:170px; padding:5px; border:1px solid var(--line); border-radius:8px; background:var(--surface); box-shadow:0 10px 28px #0003; }
+.vault-app .vault-feed-story-menu>div :is(button,a) { display:block; width:100%; margin:0; padding:8px 10px; border:0; border-radius:4px; background:transparent; color:var(--ink); font-size:13px; text-align:left; text-decoration:none; }
+.vault-app .vault-feed-story-menu>div :is(button,a):hover { background:var(--selection); }
+.vault-app .vault-feed-story-menu>div :is(button,a):disabled { opacity:.5; }
+.vault-app .vault-feed-list-notice { margin:0 0 8px; color:var(--muted); font-size:12px; }
 .vault-app .vault-feed-source-window { display:flex; order:3; align-items:center; justify-content:space-between; gap:12px; margin-top:22px; padding:11px 0; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
 .vault-app .vault-feed-source-window button { color:var(--tt-accent); font-size:12px; font-weight:600; }
 .vault-app .vault-feed-recommendations { padding:26px 0; }
