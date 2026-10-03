@@ -9,6 +9,7 @@ export const documentAssetSchema = z
     kind: z.enum(["image", "video", "audio", "file"]),
     src: z.string().trim().min(1).max(4096),
     alt: z.string().max(1000).optional(),
+    title: z.string().trim().max(240).optional(),
     caption: z.string().max(4000).optional(),
     summary: z.string().max(4000).optional(),
     placement: z.enum(["inline", "wide", "full"]).optional(),

@@ -11,7 +11,7 @@ import { VaultComments } from "./VaultComments";
 
 export type GalleryCommentsAccess = (itemId: string, path: string) => { canComment: boolean; canResolve: boolean } | null;
 
-type Image = { id: string; url: string; alt: string; caption?: string; summary?: string; width?: number; height?: number };
+type Image = { id: string; url: string; alt: string; title?: string; caption?: string; summary?: string; width?: number; height?: number };
 
 type GalleryEntry = { path: string; index: number };
 const EMPTY_IMAGES = new Map<string, string>();
@@ -148,10 +148,11 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
       try { extraFields = readTemplate(file, document).fields.filter(field => field.visibility !== "hidden" && !["cover", "sourceUrl", "sourceLabel", "links"].includes(field.id)); }
       catch { extraFields = []; }
       imageAssetCount = document.content.assets.filter(asset => asset.kind === "image").length;
-      images = document.content.assets.filter(asset => asset.kind === "image" && local.has(asset.src)).map(asset => ({ id: asset.id, url: local.get(asset.src)!, alt: asset.alt || title, caption: asset.caption, summary: asset.summary, width: asset.width, height: asset.height }));
+      images = document.content.assets.filter(asset => asset.kind === "image" && local.has(asset.src)).map(asset => ({ id: asset.id, url: local.get(asset.src)!, alt: asset.alt || title, title: asset.title, caption: asset.caption, summary: asset.summary, width: asset.width, height: asset.height }));
     }
   } catch { /* Show a readable error below while preserving the original file. */ }
   const image = images[Math.min(index, Math.max(0, images.length - 1))];
+  const imageTitle = imageAssetCount > 1 ? image?.title || image?.alt || title : title;
   const caption = image?.caption ?? (imageAssetCount === 1 ? legacyCaption : "");
   const summary = image?.summary || "";
   const sourceHref = sourceLink(source);
@@ -217,8 +218,8 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const shell = document.querySelector(".vault-app");
   if (!shell) return null;
   return createPortal(<section className="vault-gallery-view">
-    <div ref={viewer} className="vault-gallery-lightbox" role="region" aria-label={title}>
-      <header><button onClick={onClose} aria-label="Close image">‹ <span>Gallery</span></button><div className="vault-gallery-title">{editingTitle ? <form onSubmit={event => { event.preventDefault(); const next = titleDraft.trim(); if (!next) return; void updateContent(content => ({ ...content, title: next })).then(saved => { if (saved) setEditingTitle(false); }); }}><input autoFocus aria-label="Image title" value={titleDraft} onChange={event => setTitleDraft(event.target.value)} maxLength={240} disabled={updating} /><button type="button" onClick={() => setEditingTitle(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating || !titleDraft.trim()}>Save title</button></form> : <button className="vault-gallery-title-button" aria-label="Edit image title" title="Edit image title" disabled={updating || !file} onClick={() => { setTitleDraft(title); setEditingTitle(true); }}>{title}</button>}</div><button aria-label="Edit item" onClick={() => onEdit(path)} disabled={!file}>Edit</button></header>
+    <div ref={viewer} className="vault-gallery-lightbox" role="region" aria-label={imageTitle}>
+      <header><button onClick={onClose} aria-label="Close image">‹ <span>Gallery</span></button><div className="vault-gallery-title">{editingTitle ? <form onSubmit={event => { event.preventDefault(); const next = titleDraft.trim(); if (!next) return; void updateContent(content => imageAssetCount > 1 && image ? ({ ...content, assets: content.assets.map(asset => asset.id === image.id ? { ...asset, title: next } : asset) }) : ({ ...content, title: next })).then(saved => { if (saved) setEditingTitle(false); }); }}><input autoFocus aria-label="Image title" value={titleDraft} onChange={event => setTitleDraft(event.target.value)} maxLength={240} disabled={updating} /><button type="button" onClick={() => setEditingTitle(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating || !titleDraft.trim()}>Save title</button></form> : <button className="vault-gallery-title-button" aria-label="Edit image title" title="Edit image title" disabled={updating || !file} onClick={() => { setTitleDraft(imageTitle); setEditingTitle(true); }}>{imageTitle}</button>}</div><button aria-label="Edit item" onClick={() => onEdit(path)} disabled={!file}>Edit</button></header>
       {error && <p role="alert">{error}</p>}
       {file?.path !== path && !error && <p role="status">Opening image…</p>}
       {file?.path === path && !images.length && <p role="status">This item has no embedded image to display. Open the item to inspect its contents.</p>}

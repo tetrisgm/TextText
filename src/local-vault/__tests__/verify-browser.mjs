@@ -1644,7 +1644,7 @@ try {
     return color && color !== previous;
   }, pairColor);
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsPair);
-  await page.getByRole("region", { name: "Two photographs" }).getByRole("img", { name: "Second photograph" }).waitFor();
+  await page.getByRole("region", { name: "Second photograph" }).getByRole("img", { name: "Second photograph" }).waitFor();
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
   await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
   await lightbox.getByRole("button", { name: "Zoom in" }).click();
@@ -1700,7 +1700,9 @@ try {
     const stage = view.querySelector(".vault-gallery-stage");
     return inspector && stage && getComputedStyle(inspector).backgroundColor !== getComputedStyle(stage).backgroundColor;
   }));
-  assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.title, "Two color studies");
+  const titledPair = JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content;
+  assert.equal(titledPair.title, "Two photographs");
+  assert.deepEqual(titledPair.assets.map(asset => asset.title), [undefined, "Two color studies"]);
   assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.fields.sourceUrl, "https://example.com/original");
   await lightbox.getByRole("button", { name: "Edit image summary" }).click();
   await lightbox.getByRole("textbox", { name: "Image summary" }).fill("A study in blue and orange light.");
@@ -1779,7 +1781,7 @@ try {
   await page.emulateMedia({ colorScheme: "dark" });
   await chooseFolder("Gallery");
   await page.getByRole("button", { name: "Open Collected photographs image 1" }).click();
-  const collected = page.getByRole("region", { name: "Collected photographs" });
+  const collected = page.getByRole("region", { name: "First photograph" });
   await collected.waitFor();
   await collected.getByRole("link", { name: "example.com" }).waitFor();
   assert.equal(await collected.getByRole("link", { name: "example.com" }).getAttribute("href"), "https://example.com/photos");
