@@ -39,7 +39,7 @@ export function collectionDocument(preview: FolderPreview | undefined, fallback:
 
 export function noteCardDocument(preview: FolderPreview | undefined, fallback: string): DocumentSnapshot {
   const document = collectionDocument(preview, fallback);
-  return preview?.cardBody === undefined ? document : {
-    ...document, content: { ...document.content, body: preview.cardBody },
-  };
+  const body = (preview?.cardBody ?? document.content.body)
+    .replace(/!\[[^\]]*\]\((?:<[^>]+>|[^)]+)\)/g, "").trim();
+  return { ...document, content: { ...document.content, body } };
 }

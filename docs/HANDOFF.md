@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes cards now show a bounded local image thumbnail alongside rich Markdown text and up to five visible tags. Card projection removes inline image Markdown so embedded assets do not render twice or as broken relative URLs; the original TextPack body stays intact. A realistic checklist/photo/four-tag fixture is captured in light and dark at `/tmp/texttext-note-rich-{light,dark}-reference.png`, and the local browser flow checks one loaded image and the fourth tag. Full Supernotes composition and hierarchy parity remain open. No release was run.
+
 The folder drawer now starts closed at narrow widths, even if it was open on desktop, and closes when an existing window narrows; returning to desktop restores the saved desktop preference. This prevents it from obscuring Gallery's image editor and Add images dialog. The local browser flow captures both 390px screens at `/tmp/texttext-gallery-narrow-{editor,import}-light-reference.png` and checks the drawer is closed before interacting. TypeScript and the local browser flow pass; no release was run.
 
 Gallery's narrow detail view now overlays navigation controls on the photograph instead of shrinking it between buttons. The 390px browser capture at `/tmp/texttext-gallery-narrow-light-reference.png` shows the image using nearly the full width; the browser contract checks width, inspector placement, and next/previous controls. Resurf detail and broader Gallery parity remain open. No release was run.

@@ -160,9 +160,11 @@
 .vault-app .vault-note-card .tt-document p { margin:0 0 7px; }
 .vault-app .vault-note-card .tt-document :is(ul,ol) { margin:4px 0; padding-left:20px; }
 .vault-app .vault-note-card .tt-document .tt-prose { max-height:260px; overflow:hidden; }
+.vault-app .vault-note-card-image { display:block; width:100%; max-height:180px; margin-top:10px; border-radius:5px; object-fit:cover; }
 .vault-app .vault-note-card-tags { position:relative; z-index:1; display:flex; flex-wrap:wrap; gap:5px; margin-top:13px; }
 .vault-app .vault-note-card-tags button { padding:3px 6px; border-radius:5px; color:var(--muted); font-size:11px; }
 .vault-app .vault-note-card-tags button:hover { background:var(--selection); color:var(--ink); }
+.vault-app .vault-note-card-tags span { padding:3px 6px; color:var(--muted); font-size:11px; }
 .vault-app .vault-note-card>.vault-note-open { position:relative; z-index:1; display:block; margin:9px 0 0 auto; padding:2px 5px; border-radius:5px; color:var(--muted); font-size:15px; line-height:1; }
 .vault-app .vault-note-card>.vault-note-open:hover { background:var(--selection); color:var(--ink); }
 .vault-app .vault-note-card>.vault-note-card-edit { position:absolute; top:8px; right:8px; z-index:1; display:grid; place-items:center; width:28px; height:28px; padding:0; border:1px solid var(--line); border-radius:50%; background:var(--surface); color:var(--muted); font-size:16px; }

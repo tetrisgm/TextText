@@ -125,9 +125,9 @@ try {
       if (!file) error = { message: "File not found" };
       else {
         const document = JSON.parse(file.documentJSON);
-        const poster = file.assets?.find((asset) => asset.filename === "preview.png");
+        const poster = file.assets?.find((asset) => asset.filename === "preview.png") || file.assets?.find((asset) => asset.contentType.startsWith("image/"));
         const images = (file.assets ?? []).filter((asset) => asset.contentType.startsWith("image/")).slice(0, 8).map((asset) => ({ data: asset.data, contentType: asset.contentType }));
-        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(file.publishedAt ? { publishedAt: file.publishedAt } : {}), ...(!request.params.metadataOnly ? { ...(poster ? { image: { data: poster.data, contentType: "image/png" } } : {}), ...(images.length ? { images } : {}) } : {}) };
+        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(file.publishedAt ? { publishedAt: file.publishedAt } : {}), ...(!request.params.metadataOnly ? { ...(poster ? { image: { data: poster.data, contentType: poster.contentType } } : {}), ...(images.length ? { images } : {}) } : {}) };
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
@@ -980,6 +980,11 @@ try {
   }
   files.set("Notes/Deep.textpack", sample("Notes/Deep.textpack", "note", "Long card", `${"First paragraph of this card. ".repeat(22)}A distant sentence about copper telescopes.`));
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
+  const richCard = sample("Notes/Field observations.textpack", "note", "Field observations", "**Morning walk**\n\n- [ ] Compare the light\n- [x] Keep the color study\n\nThe river path changes after rain.\n\n![Sunlit leaves](assets/study.jpg)");
+  richCard.documentJSON = JSON.stringify({ ...JSON.parse(richCard.documentJSON), content: { ...JSON.parse(richCard.documentJSON).content,
+    tags: ["photography", "field notes", "light", "autumn"], assets: [{ id: "study", kind: "image", src: "assets/study.jpg", alt: "Sunlit leaves" }] } });
+  richCard.assets = [{ filename: "study.jpg", contentType: "image/jpeg", data: (await sharp("public/covers/cover-016.jpg").resize(720, 480, { fit: "cover" }).jpeg({ quality: 76 }).toBuffer()).toString("base64") }];
+  files.set(richCard.path, richCard);
   const portrait = (await sharp("public/fixtures/content-first/portrait.jpg").resize(120, 240, { fit: "cover" }).png().toBuffer()).toString("base64");
   const landscape = (await sharp("public/fixtures/content-first/square.jpg").resize(240, 120, { fit: "cover" }).png().toBuffer()).toString("base64");
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
@@ -1774,6 +1779,21 @@ try {
   await page.getByRole("button", { name: "Open Extra feed 23" }).waitFor();
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
+  const richNoteCard = page.locator(".vault-note-card").filter({ hasText: "Field observations" });
+  await richNoteCard.waitFor();
+  await page.waitForFunction(() => {
+    const card = [...document.querySelectorAll(".vault-note-card")].find(element => element.textContent?.includes("Field observations"));
+    const image = card?.querySelector(".vault-note-card-image");
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+  });
+  assert.equal(await richNoteCard.getByText("Morning walk").count(), 1);
+  assert.equal(await richNoteCard.locator("img").count(), 1);
+  await richNoteCard.getByRole("button", { name: "Filter cards by autumn" }).waitFor();
+  await richNoteCard.evaluate(card => card.scrollIntoView({ block: "center" }));
+  await page.screenshot({ path: "/tmp/texttext-note-rich-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-note-rich-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   const keyboardCard = page.locator(".vault-note-card").filter({ hasText: "A concise card" });
   await keyboardCard.focus();
