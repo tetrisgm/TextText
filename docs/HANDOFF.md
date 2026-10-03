@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds Profile now shows reading-topic counts from completed story history matched to currently followed source topics. The label makes that scope explicit, so a removed or untagged subscription is not silently assigned a topic. The local browser flow checks the count, both themes were captured, and TypeScript, local build, and local/web browser flows pass. Historic topic attribution remains open because older history TextPacks do not record a topic; no release was run.
+
 The [parity audit](design/template-reference-parity.md) now links the Artifact team's public launch and topic screens. They replace the missing local screenshot copies as the available comparison reference for the next Feeds pass. The current fixture still does not prove equivalent navigation, composition, or reading behavior; no product change or release followed this reference update.
 
 Gallery image detail now exposes the existing hosted item comments inside its inspector when the workspace has comment access. Opening the section loads comments on demand; the same permission-aware read/post/resolve path used elsewhere remains in control. It is labeled Item comments because multi-image TextPacks share one comment thread, rather than claiming per-image threads. The local browser flow posts a comment and checks dark, light, and narrow rendering; TypeScript and local/web browser flows pass. Per-image threads and real Mac/web interaction checks remain open; no release was run.

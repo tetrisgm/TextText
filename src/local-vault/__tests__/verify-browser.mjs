@@ -2028,6 +2028,9 @@ try {
   await page.getByRole("img", { name: "1 of 7 days read in the past week" }).waitFor();
   await page.getByText("1-day reading streak", { exact: true }).waitFor();
   await page.getByRole("region", { name: "Most read publishers" }).getByText("Design feed").waitFor();
+  const readingTopics = page.getByRole("region", { name: "Reading topics from followed sources" });
+  await readingTopics.getByText("Design", { exact: true }).waitFor();
+  assert.equal(await readingTopics.locator("li").first().textContent(), "Design2");
   await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Subscriptions 25" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-profile-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });

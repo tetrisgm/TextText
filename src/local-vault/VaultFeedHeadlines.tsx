@@ -436,9 +436,16 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const activity = readingActivity(readHistory.flatMap(entry => entry.readAt ? [entry.readAt] : []));
   const topPublishers = [...readHistory.reduce((counts, entry) => counts.set(entry.source || "Unknown source", (counts.get(entry.source || "Unknown source") ?? 0) + 1), new Map<string, number>())]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).slice(0, 5);
+  const topicsBySource = new Map(sourceRows.filter(row => row.topic).map(row => [row.source, row.topic!]));
+  const topReadingTopics = [...readHistory.reduce((counts, entry) => {
+    const topic = topicsBySource.get(entry.source);
+    if (topic) counts.set(topic, (counts.get(topic) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>())].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).slice(0, 5);
   const profile = <div className="vault-feed-profile"><h2>Profile</h2><div className="vault-feed-profile-summary"><div className="vault-feed-profile-ring" role="img" aria-label={`${activity.daysThisWeek} of 7 days read in the past week`}><svg viewBox="0 0 100 100" aria-hidden="true"><circle className="vault-feed-profile-ring-track" cx="50" cy="50" r="42" pathLength="100" /><circle className="vault-feed-profile-ring-fill" cx="50" cy="50" r="42" pathLength="100" strokeDasharray={`${activity.daysThisWeek * 100 / 7} 100`} /></svg><strong>{activity.daysThisWeek}</strong><span>of 7 days</span></div><div className="vault-feed-profile-count"><strong>{readHistory.length}</strong><span>{readHistory.length === 1 ? "story read" : "stories read"}</span><small>{activity.streak ? `${activity.streak}-day reading streak` : "No current reading streak"}</small></div></div>
     <nav aria-label="Reading library"><button type="button" onClick={() => { setSearch(""); setTab("Read Later"); }}>Read Later <span>{keptEntries.length}</span></button><button type="button" onClick={() => { setSearch(""); setTab("History"); }}>Reading history <span>{readHistory.length}</span></button><button type="button" onClick={() => { setSearch(""); setTab("Sources"); }}>Subscriptions <span>{sourceRows.length}</span></button><button type="button" onClick={() => { setInterests(new Set()); setExploringInterests(true); }}>Explore interests <span>{topics.length}</span></button></nav>
     {topPublishers.length > 0 && <section aria-label="Most read publishers"><h3>Most read publishers</h3><ol>{topPublishers.map(([source, count]) => <li key={source}><span>{source}</span><span>{count}</span></li>)}</ol></section>}
+    {topReadingTopics.length > 0 && <section aria-label="Reading topics from followed sources"><h3>Reading topics</h3><p>From sources you follow now</p><ol>{topReadingTopics.map(([topic, count]) => <li key={topic}><span>{topic}</span><span>{count}</span></li>)}</ol></section>}
   </div>;
   const matchesStory = (story: FeedStory) => !query || [story.title, story.source, story.excerpt, story.topic].some(value => value?.toLocaleLowerCase().includes(query));
   const visibleStories = (tab === "Latest" ? stories : stories.filter(story => story.topic === tab)).filter(matchesStory);
