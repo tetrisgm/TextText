@@ -235,20 +235,22 @@ public struct LocalVaultDocumentStore: Sendable {
                   fields["texttextFeedHistoryEntry"] as? String == "v1",
                   let hash = fields["feedEntryHash"] as? String,
                   hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
-                  let readAt = fields["readAt"] as? String, !readAt.isEmpty else { continue }
+                  let viewedAt = (fields["viewedAt"] as? String) ?? (fields["readAt"] as? String), !viewedAt.isEmpty else { continue }
             var entry = ["hash": hash, "path": path, "revision": file.hash,
                 "title": String((content["title"] as? String ?? "Read story").prefix(300)),
                 "source": String((fields["feedTitle"] as? String ?? "").prefix(160)),
-                "readAt": String(readAt.prefix(32))]
+                "viewedAt": String(viewedAt.prefix(32))]
+            if let readAt = fields["readAt"] as? String, !readAt.isEmpty { entry["readAt"] = String(readAt.prefix(32)) }
+            if let progress = fields["texttextFeedReadingProgress"] as? Int, (0...100).contains(progress) { entry["progress"] = String(progress) }
             if let topic = fields["feedTopic"] as? String, !topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 entry["topic"] = String(topic.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
             }
-            if records[hash] == nil || (entry["readAt"] ?? "") > (records[hash]?["readAt"] ?? "") {
+            if records[hash] == nil || (entry["viewedAt"] ?? "") > (records[hash]?["viewedAt"] ?? "") {
                 records[hash] = entry
             }
         }
         return records.values.sorted {
-            if $0["readAt"] != $1["readAt"] { return ($0["readAt"] ?? "") > ($1["readAt"] ?? "") }
+            if $0["viewedAt"] != $1["viewedAt"] { return ($0["viewedAt"] ?? "") > ($1["viewedAt"] ?? "") }
             return ($0["path"] ?? "") < ($1["path"] ?? "")
         }
     }

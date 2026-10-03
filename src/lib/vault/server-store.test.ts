@@ -136,9 +136,22 @@ describe("directory TextPack store", () => {
     const items = (await listVaultTextpacks({ root, workspaceId })).items;
     expect(await listVaultReadFeedEntries({ root, workspaceId, items })).toEqual([{
       itemId: "read-feed", hash: "b".repeat(64), path: "Feeds/History/Read.textpack", revision: hash(bytes),
-      title: "Read headline", source: "Publisher", topic: "Science", readAt: "2026-10-02T11:00:00Z",
+      title: "Read headline", source: "Publisher", topic: "Science", viewedAt: "2026-10-02T11:00:00Z", readAt: "2026-10-02T11:00:00Z",
     }]);
     expect(await listVaultKeptFeedEntries({ root, workspaceId, items })).toEqual([]);
+  });
+
+  it("lists partial unsaved reading history without marking it complete", async () => {
+    const document = emptyDocumentSnapshot();
+    document.content.title = "Partway through";
+    document.content.fields = { texttextFeedHistoryEntry: "v1", feedEntryHash: "c".repeat(64), feedTitle: "Publisher", viewedAt: "2026-10-02T11:00:00Z", texttextFeedReadingProgress: 43 };
+    const bytes = buildTextpack("Partway through", { document, markdown: '---\ntextTextId: "partial-feed"\n---\nPartial story' });
+    await writeVaultTextpack({ root, workspaceId, itemId: "partial-feed", relativePath: "Feeds/History/Partial.textpack", operationId: "partial-feed", bytes, baseRevision: null });
+    const items = (await listVaultTextpacks({ root, workspaceId })).items;
+    expect(await listVaultReadFeedEntries({ root, workspaceId, items })).toEqual([{
+      itemId: "partial-feed", hash: "c".repeat(64), path: "Feeds/History/Partial.textpack", revision: hash(bytes),
+      title: "Partway through", source: "Publisher", viewedAt: "2026-10-02T11:00:00Z", progress: 43,
+    }]);
   });
 
   it("stores the complete original pack in a normal folder and reads file edits directly", async () => {

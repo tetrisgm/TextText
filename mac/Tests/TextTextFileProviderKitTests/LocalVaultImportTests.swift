@@ -65,9 +65,27 @@ final class LocalVaultImportTests: XCTestCase {
             let reopened = LocalVaultDocumentStore(root: store.root)
             XCTAssertEqual(try reopened.readFeedEntries(), [[
                 "hash": hash, "path": imported.path, "revision": imported.hash, "title": "Read story",
-                "source": "Example News", "topic": "Science", "readAt": "2026-10-02T11:00:00Z",
+                "source": "Example News", "topic": "Science", "viewedAt": "2026-10-02T11:00:00Z", "readAt": "2026-10-02T11:00:00Z",
             ]])
             XCTAssertTrue(try reopened.keptFeedEntries().isEmpty)
+        }
+    }
+
+    func testPartialFeedReadRemainsIncompleteAcrossReopens() throws {
+        try fixture { root, store in
+            let hash = String(repeating: "c", count: 64)
+            let metadata = """
+                {"schemaVersion":1,"content":{"title":"Partway through","body":"A story","fields":{"texttextFeedHistoryEntry":"v1","feedEntryHash":"\(hash)","feedTitle":"Example News","viewedAt":"2026-10-02T11:00:00Z","texttextFeedReadingProgress":43},"tags":[],"assets":[]},"presentation":{"template":{"id":"texttext.article","version":1},"theme":{}}}
+                """
+            let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "A story", assets: [], sourceURL: nil, in: root)
+            try Data(metadata.utf8).write(to: package.url.appendingPathComponent("document.json"))
+            let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)
+            let imported = try store.importFile(from: packed, newPath: "Feeds/History/Partial.textpack")
+            let reopened = LocalVaultDocumentStore(root: store.root)
+            XCTAssertEqual(try reopened.readFeedEntries(), [[
+                "hash": hash, "path": imported.path, "revision": imported.hash, "title": "Partway through",
+                "source": "Example News", "viewedAt": "2026-10-02T11:00:00Z", "progress": "43",
+            ]])
         }
     }
 

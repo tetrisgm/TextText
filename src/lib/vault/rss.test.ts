@@ -3,7 +3,7 @@ import { strFromU8 } from "fflate";
 import type { NormalizedEntry } from "@/lib/reading/feed-parse";
 import { openPack, encodePack } from "@/local-vault/pack";
 import { readDocument, writePayload } from "@/local-vault/model";
-import { createFeedSubscriptionPack, createKeptFeedEntryPack, createReadFeedEntryPack, feedEntryHash, publicFeedURL, readFeedSubscription } from "./rss";
+import { createFeedSubscriptionPack, createKeptFeedEntryPack, createReadFeedEntryPack, createViewedFeedEntryPack, feedEntryHash, publicFeedURL, readFeedSubscription } from "./rss";
 
 const entry: NormalizedEntry = {
   externalKey: "id:article-1", declaredId: "article-1", title: "A careful article",
@@ -68,6 +68,14 @@ describe("file-vault feeds", () => {
     expect(document.content.fields).toMatchObject({ texttextFeedHistoryEntry: "v1", feedEntryHash: await feedEntryHash("https://publisher.example/feed.xml", entry.externalKey), feedTopic: "Science", readAt: "2026-10-02T12:00:00.000Z" });
     expect(document.content.fields.texttextFeedEntry).toBeUndefined();
     expect(document.content.fields.keptAt).toBeUndefined();
+  });
+
+  it("records a partial read separately from a completed read", async () => {
+    const viewed = await createViewedFeedEntryPack({ feedURL: "https://publisher.example/feed.xml", feedTitle: "Publisher", entry, viewedAt: "2026-10-02T12:00:00Z", progress: 43 });
+    const document = readDocument(openPack(viewed.bytes, "Feeds/History/Partial.textpack", "new").file);
+    expect(document.content.fields).toMatchObject({ texttextFeedHistoryEntry: "v1", viewedAt: "2026-10-02T12:00:00.000Z", texttextFeedReadingProgress: 43 });
+    expect(document.content.fields.readAt).toBeUndefined();
+    expect(() => createViewedFeedEntryPack({ feedURL: "https://publisher.example/feed.xml", feedTitle: "Publisher", entry, progress: 5 })).toThrow("Reading progress is invalid");
   });
 
   it("refuses credentialed endpoints and strips credentialed feed links from kept articles", async () => {

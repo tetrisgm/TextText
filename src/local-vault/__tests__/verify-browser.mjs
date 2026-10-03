@@ -80,7 +80,7 @@ try {
       const entries = [...files.values()].filter(file => file.path.startsWith("Feeds/History/")).flatMap(file => {
         const content = JSON.parse(file.documentJSON).content;
         const fields = content.fields || {};
-        return fields.texttextFeedHistoryEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, revision: file.hash, title: content.title, source: fields.feedTitle || "", ...(fields.feedTopic ? { topic: fields.feedTopic } : {}), readAt: fields.readAt || "" }] : [];
+        return fields.texttextFeedHistoryEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, revision: file.hash, title: content.title, source: fields.feedTitle || "", ...(fields.feedTopic ? { topic: fields.feedTopic } : {}), viewedAt: fields.viewedAt || fields.readAt || "", ...(fields.readAt ? { readAt: fields.readAt } : {}), ...(typeof fields.texttextFeedReadingProgress === "number" ? { progress: fields.texttextFeedReadingProgress } : {}) }] : [];
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
@@ -2104,6 +2104,42 @@ try {
   await page.getByText("No stories in reading history yet.").waitFor();
   assert.equal(files.has(readFeedPack.path), false);
   await openFeedLatest();
+  await page.getByRole("button", { name: "Design headline 5" }).first().click();
+  await feedReader.getByText("Paragraph 45 of the long reading test.").waitFor();
+  await page.locator(".vault-app>main").evaluate(element => { element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.45); });
+  await page.waitForFunction(() => { const value = Number(document.querySelector('.vault-feed-reading-progress')?.getAttribute('aria-valuenow')); return value >= 15 && value < 90; });
+  await feedReader.getByRole("button", { name: "Back to feed", exact: true }).click();
+  let partialHistory;
+  for (let attempt = 0; attempt < 100 && !partialHistory; attempt++) {
+    partialHistory = [...files.values()].find(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.title === "Design headline 5");
+    if (!partialHistory) await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.ok(partialHistory, "meaningful unsaved reading should create a history TextPack");
+  const partialHistoryFields = JSON.parse(partialHistory.documentJSON).content.fields;
+  assert.ok(partialHistoryFields.texttextFeedReadingProgress >= 15 && partialHistoryFields.texttextFeedReadingProgress < 90);
+  assert.equal(partialHistoryFields.readAt, undefined);
+  await openFeedHistory();
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 5" }).getByText(`${partialHistoryFields.texttextFeedReadingProgress}% read`).waitFor();
+  await chooseFolder("Notes");
+  await chooseFolder("Feeds");
+  await openFeedHistory();
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 5" }).getByText(`${partialHistoryFields.texttextFeedReadingProgress}% read`).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feeds-partial-history-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-feeds-partial-history-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openFeedLatest();
+  await page.getByRole("button", { name: "Design headline 5" }).first().click();
+  await feedReader.getByText("Paragraph 45 of the long reading test.").waitFor();
+  await page.locator(".vault-app>main").evaluate(element => { element.scrollTop = element.scrollHeight; });
+  for (let attempt = 0; attempt < 100 && !JSON.parse(files.get(partialHistory.path).documentJSON).content.fields.readAt; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(JSON.parse(files.get(partialHistory.path).documentJSON).content.fields.texttextFeedReadingProgress, 100);
+  await feedReader.getByRole("button", { name: "Back to feed", exact: true }).click();
+  await openFeedHistory();
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 5" }).getByText("✓ Read").waitFor();
+  await page.getByRole("button", { name: "Remove Design headline 5 from history" }).click();
+  await page.getByText("No stories in reading history yet.").waitFor();
+  await openFeedLatest();
   await page.getByRole("button", { name: "A considered design headline" }).first().click();
   await feedReader.getByText("A full in-app reading view for this story.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feed-reader-reference.png" });
@@ -2225,7 +2261,7 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-feeds-profile-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
-  await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Reading history 2" }).click();
+  await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Reading history 3" }).click();
   await page.getByRole("button", { name: "Mark Design headline 2 unread" }).click();
   await page.getByRole("button", { name: "Mark Design headline 2 unread" }).waitFor({ state: "hidden" });
   await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 5" }).getByText("✓ Read").waitFor();

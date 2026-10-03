@@ -116,13 +116,13 @@ export async function feedEntryHash(feedURL: string, externalKey: string): Promi
  * caller imports it through the normal create-only vault operation. A later
  * feed refresh cannot alter this snapshot. */
 async function createFeedEntryPack(input: {
-  feedURL: string; feedTitle: string; entry: NormalizedEntry; topic?: string; keptAt?: string; readAt?: string;
-}, destination: "article" | "bookmark", kind: "kept" | "read"): Promise<{ title: string; bytes: Uint8Array }> {
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; topic?: string; keptAt?: string; readAt?: string; viewedAt?: string; progress?: number;
+}, destination: "article" | "bookmark", kind: "kept" | "read" | "viewed"): Promise<{ title: string; bytes: Uint8Array }> {
   const feedURL = publicFeedURL(input.feedURL);
   const entry = input.entry;
   if (!entry || typeof entry.externalKey !== "string" || !entry.externalKey || entry.externalKey.length > 8 * 1024 * 1024 ||
       typeof entry.bodyMarkdown !== "string" || entry.bodyMarkdown.length > 2_000_000) throw new Error("This feed entry cannot be kept.");
-  const recordedAt = validDate((kind === "read" ? input.readAt : input.keptAt) ?? new Date().toISOString());
+  const recordedAt = validDate((kind === "kept" ? input.keptAt : kind === "read" ? input.readAt : input.viewedAt) ?? new Date().toISOString());
   if (!recordedAt) throw new Error("The saved date is invalid.");
   const sourceURL = optionalPublicURL(entry.permalink) ?? optionalPublicURL(entry.externalUrl);
   const title = String(entry.title || "").trim().slice(0, 1000) || sourceURL || "Untitled article";
@@ -136,10 +136,10 @@ async function createFeedEntryPack(input: {
   const authors = (Array.isArray(entry.authors) ? entry.authors : []).filter((author): author is string => typeof author === "string").slice(0, 20).map(cleanAuthor).filter(Boolean);
   const publishedAt = validDate(entry.publishedAt), updatedAt = validDate(entry.updatedAt);
   document.content.fields = {
-    [kind === "read" ? READ_FEED_ENTRY_FIELD : KEPT_FEED_ENTRY_FIELD]: MARKER_VERSION,
+    [kind === "kept" ? KEPT_FEED_ENTRY_FIELD : READ_FEED_ENTRY_FIELD]: MARKER_VERSION,
     feedUrl: feedURL, feedTitle, feedEntryHash: entryHash,
     ...(topic ? { feedTopic: topic } : {}),
-    ...(kind === "read" ? { readAt: recordedAt } : { keptAt: recordedAt }),
+    ...(kind === "read" ? { readAt: recordedAt } : kind === "viewed" ? { viewedAt: recordedAt, texttextFeedReadingProgress: input.progress! } : { keptAt: recordedAt }),
     feedAvailability: ["full", "excerpt", "metadata"].includes(entry.availability) ? entry.availability : "metadata",
     ...(sourceURL ? { sourceUrl: sourceURL } : {}),
     ...(authors.length ? { authors } : {}),
@@ -155,7 +155,7 @@ async function createFeedEntryPack(input: {
       return url ? [{ url, mimeType: typeof attachment.mimeType === "string" ? attachment.mimeType.slice(0, 200) : null }] : [];
     }),
   };
-  return { title, bytes: packDocument(document, kind === "read" ? "Read feed article" : "Kept feed article", { "feed-entry.json": strToU8(JSON.stringify(sourceRecord)) }) };
+  return { title, bytes: packDocument(document, kind === "kept" ? "Kept feed article" : "Feed reading history", { "feed-entry.json": strToU8(JSON.stringify(sourceRecord)) }) };
 }
 
 export function createKeptFeedEntryPack(input: {
@@ -170,4 +170,12 @@ export function createReadFeedEntryPack(input: {
   feedURL: string; feedTitle: string; entry: NormalizedEntry; topic?: string; readAt?: string;
 }) {
   return createFeedEntryPack(input, "article", "read");
+}
+
+/** One meaningful partial read becomes a portable article snapshot on close. */
+export function createViewedFeedEntryPack(input: {
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; topic?: string; viewedAt?: string; progress: number;
+}) {
+  if (!Number.isInteger(input.progress) || input.progress < 15 || input.progress > 89) throw new Error("Reading progress is invalid.");
+  return createFeedEntryPack(input, "article", "viewed");
 }
