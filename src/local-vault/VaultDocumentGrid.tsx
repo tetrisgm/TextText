@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { DocumentCollectionRenderer } from "@/components/document/DocumentRenderer";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { selectCollectionView } from "@/lib/presentation/collection-views";
@@ -10,8 +10,10 @@ import { collectionDocument, collectionMembers, noteCardDocument, queryFolderMem
 import { VaultFeedHeadlines } from "./VaultFeedHeadlines";
 import { VaultBookmarkLibrary } from "./VaultBookmarkLibrary";
 import { VaultGalleryLightbox, type GalleryCommentsAccess } from "./VaultGalleryLightbox";
+import { IMAGE_ACCEPT, MAX_IMAGE_BYTES } from "./image-import";
 
 const PAGE_SIZE = 24;
+type DraftImage = { id: string; file: File; url: string };
 function storyExcerpt(markdown: string): string {
   return markdown.replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
@@ -68,7 +70,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
   onCreateNote?: (pastedText?: string) => void; canUsePersonalBookmarks?: boolean;
-  onCreateCard?: (title: string, body: string, tags: string[], onCreated: () => void) => void;
+  onCreateCard?: (title: string, body: string, tags: string[], images: File[], onCreated: () => void) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
 }) {
@@ -177,6 +179,11 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const [cardDraft, setCardDraft] = useState<{ title: string; body: string; tags: string[] } | null>(null);
   const cardDraftRef = useRef<{ title: string; body: string; tags: string[] } | null>(null);
   const [draftTagOpen, setDraftTagOpen] = useState(false);
+  const [draftInsertOpen, setDraftInsertOpen] = useState(false);
+  const [draftImages, setDraftImages] = useState<DraftImage[]>([]);
+  const draftImagesRef = useRef<DraftImage[]>([]);
+  const [draftImageError, setDraftImageError] = useState("");
+  const draftImageInputRef = useRef<HTMLInputElement>(null);
   const draftTagRef = useRef<HTMLInputElement>(null);
   const draftTitleRef = useRef<HTMLTextAreaElement>(null);
   const draftBodyRef = useRef<HTMLTextAreaElement>(null);
@@ -186,6 +193,8 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     cardDraftRef.current = next;
     setCardDraft(next);
     setDraftTagOpen(false);
+    setDraftInsertOpen(false);
+    setDraftImageError("");
     window.dispatchEvent(new Event("texttext:note-draft-started"));
     requestAnimationFrame(() => draftTitleRef.current?.focus());
   };
@@ -199,6 +208,46 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     setCardDraft(next);
     if (draftTagRef.current) draftTagRef.current.value = "";
     draftTagRef.current?.focus();
+  };
+  const addDraftImages = (files: File[]) => {
+    if (!files.length) return;
+    const previous = draftImagesRef.current;
+    const combined = [...previous.map(image => image.file), ...files];
+    if (combined.length > 16 || combined.some(file => !file.size || file.size > MAX_IMAGE_BYTES) || combined.reduce((total, file) => total + file.size, 0) > 40 * 1024 * 1024) {
+      setDraftImageError("Choose up to 16 images, no larger than 20 MiB each or 40 MiB together.");
+      return;
+    }
+    const added = files.map(file => ({ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) }));
+    draftImagesRef.current = [...previous, ...added];
+    setDraftImages(draftImagesRef.current);
+    setDraftImageError("");
+    setDraftInsertOpen(false);
+  };
+  const clearDraftImages = () => {
+    for (const image of draftImagesRef.current) URL.revokeObjectURL(image.url);
+    draftImagesRef.current = [];
+    setDraftImages([]);
+    setDraftImageError("");
+  };
+  useEffect(() => () => { for (const image of draftImagesRef.current) URL.revokeObjectURL(image.url); }, []);
+  const resetCardDraft = () => {
+    cardDraftRef.current = null;
+    setCardDraft(null);
+    clearDraftImages();
+    setDraftInsertOpen(false);
+    setDraftTagOpen(false);
+    window.dispatchEvent(new Event("texttext:note-draft-ended"));
+  };
+  const finishCardDraft = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!onCreateCard) return;
+    const title = draftTitleRef.current?.value ?? cardDraftRef.current?.title ?? "";
+    const body = draftBodyRef.current?.value ?? cardDraftRef.current?.body ?? "";
+    if (!title.trim() && !body.trim() && !draftImagesRef.current.length) { draftTitleRef.current?.focus(); return; }
+    const savedTags = cardDraftRef.current?.tags ?? [];
+    const pendingTag = draftTagRef.current?.value.trim().replace(/^#/, "").slice(0, 40) ?? "";
+    const tags = pendingTag && savedTags.length < 500 && !savedTags.some(tag => tag.toLocaleLowerCase() === pendingTag.toLocaleLowerCase()) ? [...savedTags, pendingTag] : savedTags;
+    onCreateCard(title.trim(), body, tags, draftImagesRef.current.map(image => image.file), resetCardDraft);
   };
   useEffect(() => {
     if (!notesFolder || !onCreateCard || previewOnly) return;
@@ -388,13 +437,15 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       {noteQuery && noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && (noteContentSearch.error || noteContentSearch.truncated) && <p role="status" className="vault-note-index-status">{noteContentSearch.error || "Some long cards were not searched. Results may be incomplete."}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
-      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" aria-label="New card draft" onSubmit={event => { event.preventDefault(); const draft = { title: draftTitleRef.current?.value ?? cardDraftRef.current?.title ?? "", body: draftBodyRef.current?.value ?? cardDraftRef.current?.body ?? "", tags: cardDraftRef.current?.tags ?? [] }; if (!draft.title.trim() && !draft.body.trim()) { draftTitleRef.current?.focus(); return; } const pendingTag = draftTagRef.current?.value.trim().replace(/^#/, "").slice(0, 40) ?? ""; const tags = pendingTag && draft.tags.length < 500 && !draft.tags.some(tag => tag.toLocaleLowerCase() === pendingTag.toLocaleLowerCase()) ? [...draft.tags, pendingTag] : draft.tags; onCreateCard(draft.title.trim(), draft.body, tags, () => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }); }}>
-        <div className="vault-note-draft-tools"><button type="button" aria-label="Add tag to new card" disabled={busy || cardDraft.tags.length >= 500} onClick={() => { setDraftTagOpen(true); requestAnimationFrame(() => draftTagRef.current?.focus()); }}>+</button></div>
+      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" aria-label="New card draft" onSubmit={finishCardDraft} onPaste={event => { const files = [...event.clipboardData.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); addDraftImages(files); } }} onDragOver={event => { if ([...event.dataTransfer.items].some(item => item.kind === "file")) event.preventDefault(); }} onDrop={event => { const files = [...event.dataTransfer.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); event.stopPropagation(); addDraftImages(files); } }}>
+        <div className="vault-note-draft-tools"><button type="button" aria-label="Add to new card" aria-expanded={draftInsertOpen} disabled={busy} onClick={() => setDraftInsertOpen(open => !open)}>+</button>{draftInsertOpen && <div className="vault-note-draft-insert" role="menu"><button type="button" role="menuitem" disabled={cardDraft.tags.length >= 500} onClick={() => { setDraftInsertOpen(false); setDraftTagOpen(true); requestAnimationFrame(() => draftTagRef.current?.focus()); }}>Tag</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); draftImageInputRef.current?.click(); }}>Image</button></div>}<input ref={draftImageInputRef} type="file" accept={IMAGE_ACCEPT} multiple aria-label="Choose new card images" hidden onChange={event => { addDraftImages(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} /></div>
         <textarea ref={draftTitleRef} aria-label="New card title" rows={1} placeholder="Title" defaultValue={cardDraft.title} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), title: event.currentTarget.value }; }} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); draftBodyRef.current?.focus(); } }} />
         <textarea ref={draftBodyRef} aria-label="New card body" rows={4} placeholder="Write a card…" defaultValue={cardDraft.body} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), body: event.currentTarget.value }; }} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+        {draftImages.length > 0 && <div className="vault-note-draft-images">{draftImages.map(image => <div key={image.id} className="vault-note-draft-image">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.file.name} /><button type="button" aria-label={`Remove ${image.file.name} from new card`} onClick={() => { URL.revokeObjectURL(image.url); draftImagesRef.current = draftImagesRef.current.filter(item => item.id !== image.id); setDraftImages(draftImagesRef.current); }}>×</button></div>)}</div>}
+        {draftImageError && <p role="alert" className="vault-note-draft-error">{draftImageError}</p>}
         {cardDraft.tags.length > 0 && <div className="vault-note-draft-tags">{cardDraft.tags.map(tag => <span key={tag}>#{tag}<button type="button" aria-label={`Remove ${tag} from new card`} onClick={() => { const current = cardDraftRef.current; if (!current) return; const next = { ...current, tags: current.tags.filter(value => value !== tag) }; cardDraftRef.current = next; setCardDraft(next); }}>×</button></span>)}</div>}
         {draftTagOpen && <div className="vault-note-draft-tag-entry"><input ref={draftTagRef} aria-label="New card tag" maxLength={41} placeholder="Add a tag" onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDraftTag(); } else if (event.key === "Escape") { event.preventDefault(); setDraftTagOpen(false); draftBodyRef.current?.focus(); } }} /><button type="button" onClick={addDraftTag}>Add</button></div>}
-        <div className="vault-note-draft-actions"><button type="button" disabled={busy} onClick={() => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }}>Cancel</button><button type="submit" disabled={busy}>Finish</button></div>
+        <div className="vault-note-draft-actions"><button type="button" disabled={busy} onClick={resetCardDraft}>Cancel</button><button type="submit" disabled={busy}>Finish</button></div>
       </form>}{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path} role="article" aria-label={`${title} card`} tabIndex={busy || previewOnly ? -1 : 0} onKeyDown={event => {
         if (event.target !== event.currentTarget || busy || previewOnly) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {

@@ -2,6 +2,8 @@
 
 ## Current work
 
+The inline Notes draft now accepts images through its plus menu, file picker, paste, and drop. It previews images before Finish, then uses the guarded editor asset path to write the image and Markdown reference into one TextPack; Cancel leaves no file. The local browser flow checks that no file exists before Finish and verifies the saved asset. TypeScript, local build, and local browser checks pass. This has not shipped; the richer Supernotes Coupler and live-product visual comparison remain open.
+
 The inline Notes draft now adds and removes tags before Finish, using the same normalized TextPack tags as the full editor. It rejects duplicate tags without changing case, and Finish also includes a tag still typed in the tag field. The local browser flow verifies both saved tags and dark/light/narrow draft renders; TypeScript, local build, and local/web browser flows pass. Personal-only tags and the full Supernotes Coupler are still absent; no release was run.
 
 Notes creation now opens an inline card draft immediately from typing on the board or clicking Start typing. Rapid typing stays in the draft title, Tab moves to its body, Finish writes the note TextPack and returns to the grid, and Cancel leaves no file. The existing explicit New note command still opens the full editor. The local browser flow checks rapid typing, no pre-Finish file, Finish, Cancel, and dark/light/narrow rendering; TypeScript, local build, and local/web browser flows pass. The inline draft has plain Markdown editing and still needs the richer Supernotes Coupler and image tools; no release was run.

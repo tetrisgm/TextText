@@ -9,7 +9,7 @@ import { VaultDocumentGrid } from "./VaultDocumentGrid";
 import type { GalleryCommentsAccess } from "./VaultGalleryLightbox";
 
 export function FolderPresentation({ listing, folder, busy, editable = true, designOpen = false, onOpen, onEditNote, onRevealBookmark, onCreateNote, onCreateCard, onQuickSaveBookmark, onCustomize, onCloseDesign, preferredBookmarkPath, galleryCommentsAccess }: {
-  listing: VaultListing; folder: string; busy: boolean; editable?: boolean; onOpen: (path: string) => void; onEditNote?: (path: string) => void; onRevealBookmark?: (path: string) => void; onCreateNote?: (pastedText?: string) => void; onCreateCard?: (title: string, body: string, tags: string[], onCreated: () => void) => void; onQuickSaveBookmark?: (address: string) => Promise<void>; onCustomize?: (path: string) => void;
+  listing: VaultListing; folder: string; busy: boolean; editable?: boolean; onOpen: (path: string) => void; onEditNote?: (path: string) => void; onRevealBookmark?: (path: string) => void; onCreateNote?: (pastedText?: string) => void; onCreateCard?: (title: string, body: string, tags: string[], images: File[], onCreated: () => void) => void; onQuickSaveBookmark?: (address: string) => Promise<void>; onCustomize?: (path: string) => void;
   designOpen?: boolean; onCloseDesign?: () => void; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
 }) {
   const [view, setView] = useState<FolderView | null>(null);
