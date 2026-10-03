@@ -9,7 +9,7 @@ import { folderForItem } from "./folders";
 import { collectionDocument, collectionMembers, noteCardDocument, queryFolderMembers, type FolderPreview } from "./folder-collection";
 import { VaultFeedHeadlines } from "./VaultFeedHeadlines";
 import { VaultBookmarkLibrary } from "./VaultBookmarkLibrary";
-import { VaultGalleryLightbox } from "./VaultGalleryLightbox";
+import { VaultGalleryLightbox, type GalleryCommentsAccess } from "./VaultGalleryLightbox";
 
 const PAGE_SIZE = 24;
 function storyExcerpt(markdown: string): string {
@@ -63,13 +63,13 @@ function GalleryTile({ source, title, disabled, onOpen, onMeasured, width, heigh
     }} /> : <span>{title}</span>}
   </button>;
 }
-export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, onRevealBookmark, onCreateNote, onQuickSaveBookmark, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath }: {
+export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, onRevealBookmark, onCreateNote, onQuickSaveBookmark, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath, galleryCommentsAccess }: {
   listing: VaultListing; folder: string; busy: boolean; onOpen: (path: string) => void;
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
   onCreateNote?: (pastedText?: string) => void; canUsePersonalBookmarks?: boolean;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
-  folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string;
+  folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
 }) {
   const [page, setPage] = useState(0);
   const [view, setView] = useState("");
@@ -395,7 +395,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       </button>}</PreviewImage>;
     })}</div>}
     {!items.length && !feedsFolder && <p>{members.length ? "No files match this view." : emptyMessage ?? "No files here yet. Choose a template to get started."}</p>}
-    {galleryState && <VaultGalleryLightbox entries={galleryState.entries} initialSelection={galleryState.selection} onClose={() => setGalleryState(null)} onEdit={path => { setGalleryState(null); onOpen(path); }} />}
+    {galleryState && <VaultGalleryLightbox entries={galleryState.entries} initialSelection={galleryState.selection} onClose={() => setGalleryState(null)} onEdit={path => { setGalleryState(null); onOpen(path); }} commentsAccess={galleryCommentsAccess} />}
     {!feedsFolder && filePages}
   </section>;
 }

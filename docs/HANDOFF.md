@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery image detail now exposes the existing hosted item comments inside its inspector when the workspace has comment access. Opening the section loads comments on demand; the same permission-aware read/post/resolve path used elsewhere remains in control. It is labeled Item comments because multi-image TextPacks share one comment thread, rather than claiming per-image threads. The local browser flow posts a comment and checks dark, light, and narrow rendering; TypeScript and local/web browser flows pass. Per-image threads and real Mac/web interaction checks remain open; no release was run.
+
 Command K now leads with the main creation action for the current folder while keeping item-specific commands first for an open item. Its visible list clips the fifth row on desktop and narrow widths, following Superhuman's published command palette behavior; keyboard selection still scrolls the chosen row fully into view. TypeScript and local/web browser flows pass, and the desktop fixture was visually inspected. Broader command coverage and live-product comparison remain open; no release was run.
 
 Finished Notes cards now allow a checklist item to be toggled by click or Space/Enter without reopening the editor. The local and shared editor paths apply the change to the TextPack body only if the displayed source still matches the current document, so a concurrent edit is not overwritten. The local browser flow verifies click, keyboard, saved body, and dark/light rendering; TypeScript, a focused task-marker test, and local/web browser flows pass. Broader Supernotes parity and real Mac/web checks remain open; no release was run.

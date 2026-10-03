@@ -6,6 +6,10 @@ import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { vaultRequest, type VaultFile } from "./bridge";
 import { readDocument, readTemplate, writePayload } from "./model";
+import { packIdentity } from "./pack";
+import { VaultComments } from "./VaultComments";
+
+export type GalleryCommentsAccess = (itemId: string, path: string) => { canComment: boolean; canResolve: boolean } | null;
 
 type Image = { id: string; url: string; alt: string; caption?: string; summary?: string; width?: number; height?: number };
 
@@ -71,7 +75,7 @@ function imageDetails(source: string): Promise<{ colors: string[]; width: number
   });
 }
 
-export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdit }: { entries: GalleryEntry[]; initialSelection: number; onClose: () => void; onEdit: (path: string) => void }) {
+export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdit, commentsAccess }: { entries: GalleryEntry[]; initialSelection: number; onClose: () => void; onEdit: (path: string) => void; commentsAccess?: GalleryCommentsAccess }) {
   const viewer = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<VaultFile | null>(null);
   const [error, setError] = useState("");
@@ -92,6 +96,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const [updating, setUpdating] = useState(false);
   const [details, setDetails] = useState<{ colors: string[]; width: number; height: number }>({ colors: [], width: 0, height: 0 });
   const [copiedColor, setCopiedColor] = useState("");
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const [localImages, setLocalImages] = useState<{ path: string; file: VaultFile; urls: Map<string, string> } | null>(null);
   const chosen = entries[Math.min(selection, entries.length - 1)];
   const path = chosen?.path || "";
@@ -150,6 +155,9 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const caption = image?.caption ?? (imageAssetCount === 1 ? legacyCaption : "");
   const summary = image?.summary || "";
   const sourceHref = sourceLink(source);
+  let commentItemId: string | null = null;
+  try { if (file?.path === path) commentItemId = packIdentity(file.markdown); } catch { /* A pack without an identity cannot have hosted comments. */ }
+  const commentAccess = commentItemId && commentsAccess?.(commentItemId, path);
   useEffect(() => { setEditingCaption(false); setEditingSummary(false); setEditingTitle(false); setEditingSource(false); setEditingTags(false); setEditingField(""); setTagDraft(""); }, [path, index]);
   const updateContent = async (change: (content: ReturnType<typeof readDocument>["content"]) => ReturnType<typeof readDocument>["content"]) => {
     if (!file || file.path !== path || updating) return false;
@@ -214,7 +222,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
       {error && <p role="alert">{error}</p>}
       {file?.path !== path && !error && <p role="status">Opening image…</p>}
       {file?.path === path && !images.length && <p role="status">This item has no embedded image to display. Open the item to inspect its contents.</p>}
-      {image && <div className="vault-gallery-detail"><div className="vault-gallery-stage">
+      {image && <div className={`vault-gallery-detail${commentsOpen ? " has-comments" : ""}`}><div className="vault-gallery-stage">
         {entries.length > 1 && <button aria-label="Previous image" disabled={selection === 0} onClick={previous}>‹</button>}
         {/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.alt} style={{ transform: `scale(${zoom})` }} />
         {entries.length > 1 && <button aria-label="Next image" disabled={selection >= entries.length - 1} onClick={next}>›</button>}
@@ -229,7 +237,8 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
           const editable = ["text", "richtext", "url", "date", "number", "boolean"].includes(field.type) || field.type === "enum" && !field.multiple;
           return <div className="vault-gallery-extra-field" key={field.id}><div className="vault-gallery-inspector-heading"><h3>{field.label}</h3>{editable && editingField !== field.id && <button aria-label={`Edit ${field.label}`} disabled={updating} onClick={() => { setEditingField(field.id); setFieldDraft(value == null ? "" : String(value)); }}>Edit</button>}</div>{editingField === field.id ? field.type === "boolean" ? <div className="vault-gallery-field-actions"><button disabled={updating} onClick={() => void updateContent(content => ({ ...content, fields: { ...content.fields, [field.id]: !Boolean(value) } })).then(saved => { if (saved) setEditingField(""); })}>{value ? "Set to No" : "Set to Yes"}</button><button onClick={() => setEditingField("")}>Cancel</button></div> : <form onSubmit={event => { event.preventDefault(); void saveField(field); }}>{field.type === "enum" ? <select aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating}><option value="">Not set</option>{field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.type === "richtext" ? <textarea aria-label={field.label} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} /> : <input aria-label={field.label} type={field.type === "date" ? "date" : field.type === "number" ? "number" : field.type === "url" ? "url" : "text"} value={fieldDraft} onChange={event => setFieldDraft(event.target.value)} disabled={updating} />}<div className="vault-gallery-field-actions"><button type="button" onClick={() => setEditingField("")}>Cancel</button><button type="submit" disabled={updating}>Save</button></div></form> : <p>{displayField(value)}</p>}</div>;
         })}</div>}
-        {details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <button key={color} type="button" title={`Copy ${color}`} aria-label={`Copy color ${color}`} style={{ backgroundColor: color }} onClick={() => void copyColorValue(color).then(() => setCopiedColor(color)).catch(() => setError("The color could not be copied."))} />)}</div><p role="status">{copiedColor ? `Copied ${copiedColor}` : "Select a color to copy its value"}</p></div>}</aside></div>}
+        {details.colors.length > 0 && <div className="vault-gallery-colors vault-gallery-inspector-section" aria-label="Image colors"><h2>Colors</h2><div>{details.colors.map(color => <button key={color} type="button" title={`Copy ${color}`} aria-label={`Copy color ${color}`} style={{ backgroundColor: color }} onClick={() => void copyColorValue(color).then(() => setCopiedColor(color)).catch(() => setError("The color could not be copied."))} />)}</div><p role="status">{copiedColor ? `Copied ${copiedColor}` : "Select a color to copy its value"}</p></div>}
+        {commentAccess && commentItemId && <div className="vault-gallery-inspector-section vault-gallery-comment-section"><div className="vault-gallery-inspector-heading"><h2>Item comments</h2><button type="button" aria-expanded={commentsOpen} onClick={() => setCommentsOpen(open => !open)}>{commentsOpen ? "Hide" : "View comments"}</button></div>{commentsOpen && <VaultComments key={commentItemId} embedded itemId={commentItemId} path={path} canComment={commentAccess.canComment} canResolve={commentAccess.canResolve} onClose={() => setCommentsOpen(false)} />}</div>}</aside></div>}
     </div>
   </section>, shell);
 }

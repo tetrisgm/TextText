@@ -14,6 +14,8 @@ const importedPacks = [];
 const writePaths = [];
 const feedReadURLs = [];
 const searchQueries = [];
+const commentsByItem = new Map();
+let commentReads = 0;
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
@@ -148,6 +150,20 @@ try {
       const number = Number(request.params.externalKey?.replace(/^story-/, "")) || 1;
       const body = number === 5 || number === 6 ? Array.from({ length: 45 }, (_, index) => `Paragraph ${index + 1} of the long reading test.`).join("\n\n") : "A full in-app reading view for this story.";
       result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: number === 1 ? "A considered design headline" : `Design headline ${number}`, permalink: `https://example.com/story/${number}`, externalUrl: null, authors: ["Editor"], publishedAt: `2026-10-0${number}T00:00:00Z`, updatedAt: null, availability: "full", bodyMarkdown: body, bodyText: body, excerpt: "A brief account of the story.", language: "en", attachments: [] } };
+    }
+    else if (request.method === "commentsRead") {
+      commentReads++;
+      const comments = commentsByItem.get(request.params.itemId) ?? [];
+      result = { comments, nextCursor: null, revision: String(comments.length + 1) };
+    }
+    else if (request.method === "commentsAdd") {
+      const comments = commentsByItem.get(request.params.itemId) ?? [];
+      const commentId = crypto.randomUUID();
+      commentsByItem.set(request.params.itemId, [...comments, { id: commentId, parentId: request.params.parentId ?? null,
+        body: request.params.body, authorUserId: "fixture-user", authorName: "Test writer", authorActorType: "human",
+        createdAt: "2026-10-03T00:00:00.000Z", updatedAt: "2026-10-03T00:00:00.000Z",
+        resolvedAt: null, resolvedByUserId: null, resolvedByActorType: null }]);
+      result = { status: "written", itemId: request.params.itemId, commentId };
     }
     else if (request.method === "publicationRead") {
       const story = files.get("Blog/Story.textpack");
@@ -1694,6 +1710,31 @@ try {
   await lightbox.getByRole("button", { name: "Add", exact: true }).click();
   await lightbox.getByRole("button", { name: "Remove reference keyword" }).waitFor();
   assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.tags, ["reference"]);
+  const commentReadsBeforeOpening = commentReads;
+  const galleryComments = lightbox.getByRole("complementary", { name: "Item comments" });
+  await lightbox.getByRole("button", { name: "View comments" }).click();
+  await galleryComments.getByText("No open comments on this file.").waitFor();
+  assert.ok(commentReads > commentReadsBeforeOpening, "gallery comments should load only when opened");
+  await galleryComments.getByRole("textbox", { name: "Add a comment" }).fill("A note beside this visual reference.");
+  await galleryComments.getByRole("button", { name: "Post comment" }).click();
+  await galleryComments.getByRole("region", { name: "Thread by Test writer" }).getByText("A note beside this visual reference.").waitFor();
+  assert.equal([...commentsByItem.values()][0]?.[0]?.body, "A note beside this visual reference.");
+  await galleryComments.evaluate(element => element.scrollIntoView({ block: "center" }));
+  await page.screenshot({ path: "/tmp/texttext-gallery-comments-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-gallery-comments-light-reference.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await galleryComments.evaluate(element => element.scrollIntoView({ block: "end" }));
+  await page.screenshot({ path: "/tmp/texttext-gallery-comments-narrow-light-reference.png" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.keyboard.press("Escape");
+  await galleryComments.waitFor({ state: "hidden" });
+  await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
+  await lightbox.getByRole("button", { name: "View comments" }).click();
+  await galleryComments.getByRole("region", { name: "Thread by Test writer" }).waitFor();
+  await lightbox.getByRole("button", { name: "Hide", exact: true }).click();
+  await galleryComments.waitFor({ state: "hidden" });
   await page.screenshot({ path: "/tmp/texttext-gallery-inline-inspector-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-inline-inspector-light-reference.png" });

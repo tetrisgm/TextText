@@ -12,6 +12,13 @@
   box-shadow: -12px 0 36px #0002;
 }
 
+.embedded { display:flex; flex-direction:column; min-height:220px; color:var(--ink); }
+.embedded .tabs { padding:8px 0; }
+.embedded .list { flex:none; max-height:280px; }
+.embedded .empty { padding:14px 0; }
+.embedded .thread { padding:14px 0; }
+.embedded .composer { padding:12px 0 0; }
+
 .header {
   display: flex;
   align-items: flex-start;

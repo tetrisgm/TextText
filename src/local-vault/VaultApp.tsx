@@ -660,6 +660,11 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const commentCapabilities = allowFolderPicker
     ? { canComment: Boolean(nativeWorkspaceId), canResolve: Boolean(nativeWorkspaceId) }
     : vaultCommentCapabilities(access, selectedItemId ?? "", selected?.path ?? "");
+  const galleryCommentsAccess = sharingWorkspaceId
+    ? (itemId: string, path: string) => allowFolderPicker
+      ? { canComment: Boolean(nativeWorkspaceId), canResolve: Boolean(nativeWorkspaceId) }
+      : vaultCommentCapabilities(access, itemId, path)
+    : undefined;
   const listingRequest = useRef(0);
   const refresh = useCallback(() => {
     const request = ++listingRequest.current;
@@ -1273,7 +1278,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
                 setNativePublishRefresh(value => value + 1);
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
-      : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath}
+      : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath} galleryCommentsAccess={galleryCommentsAccess}
         onEditNote={canCreate ? (path) => void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true) : undefined}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
@@ -1286,7 +1291,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}
     </main>
-    {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0}
+    {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess}
       onClose={() => { setImportedGalleryPath(null); refresh(); }}
       onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
     {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}

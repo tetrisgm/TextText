@@ -466,7 +466,7 @@
 .vault-app .vault-gallery-zoom button { padding:2px 7px; font-size:15px; line-height:1.2; text-align:center; }
 .vault-app .vault-gallery-zoom span { min-width:42px; font-size:12px; text-align:center; }
 @media(prefers-reduced-motion:reduce){.vault-app .vault-gallery-stage img{transition:none}}
-.vault-app .vault-gallery-detail aside { padding:18px 16px; overflow:auto; border-left:1px solid var(--line); background:var(--sidebar); }
+.vault-app .vault-gallery-detail > aside { padding:18px 16px; overflow:auto; border-left:1px solid var(--line); background:var(--sidebar); }
 .vault-app .vault-gallery-detail h2 { margin:0 0 10px; color:var(--muted); font-size:12px; font-weight:500; }
 .vault-app .vault-gallery-detail p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; color:var(--muted); }
 .vault-app .vault-gallery-inspector-section { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
@@ -501,7 +501,8 @@
 .vault-app .vault-gallery-detail dl { display:grid; grid-template-columns:86px minmax(0,1fr); gap:13px 8px; margin:0; font-size:12px; }
 .vault-app .vault-gallery-detail dt { color:var(--muted); }
 .vault-app .vault-gallery-detail dd { margin:0; }
-@media(max-width:740px){.vault-app .vault-gallery-detail{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}.vault-app .vault-gallery-detail aside{max-height:170px;border-left:0;border-top:1px solid var(--line)}}
+@media(max-width:740px){.vault-app .vault-gallery-detail{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}.vault-app .vault-gallery-detail > aside{max-height:170px;border-left:0;border-top:1px solid var(--line)}}
+@media(max-width:740px){.vault-app .vault-gallery-detail.has-comments > aside{max-height:50vh}}
 @media(max-width:740px){.vault-app .vault-gallery-stage{padding:18px 10px 66px}.vault-app .vault-gallery-stage>button{position:absolute;top:50%;z-index:1;width:34px;height:44px;transform:translateY(-50%);border-radius:6px;background:var(--surface);box-shadow:0 1px 8px #0003}.vault-app .vault-gallery-stage>button:first-child{left:8px}.vault-app .vault-gallery-stage>button:nth-of-type(2){right:8px}}
 .vault-app .tt-document-editor[data-template-experience="article"] { max-width:740px; padding-top:46px; font-family:Georgia,Charter,serif; }
 .vault-app .tt-document-editor[data-template-experience="article"] :is(.tt-md-surface,.tt-field-body textarea) { font-family:Georgia,Charter,serif; font-size:19px; line-height:1.72; }

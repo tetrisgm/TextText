@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { VaultError, vaultRequest } from "./bridge";
 import { groupVaultCommentThreads, parseVaultCommentsPage, watchVaultComments, type VaultComment } from "./vault-comments";
+import { useEscapeLayer } from "./LocalKeyboard";
 import styles from "./VaultComments.module.css";
 
 type MutationResult = { status: "written" | "unchanged" | "conflict"; itemId: string; commentId: string };
-type Props = { itemId: string; path: string; canComment: boolean; canResolve: boolean; onClose: () => void };
+type Props = { itemId: string; path: string; canComment: boolean; canResolve: boolean; onClose: () => void; embedded?: boolean };
 const PAGE_SIZE = 100;
 const MAX_COMMENTS = 500;
 
@@ -53,7 +54,8 @@ function CommentBody({ comment }: { comment: VaultComment }) {
   </div>;
 }
 
-export function VaultComments({ itemId, path, canComment, canResolve, onClose }: Props) {
+export function VaultComments({ itemId, path, canComment, canResolve, onClose, embedded = false }: Props) {
+  useEscapeLayer(embedded, "gallery-comments", onClose);
   const headingId = useId();
   const closeButton = useRef<HTMLButtonElement>(null);
   const operation = useRef<{ key: string; id: string } | null>(null);
@@ -103,12 +105,13 @@ export function VaultComments({ itemId, path, canComment, canResolve, onClose }:
   }, [refresh]);
   useEffect(() => { closeButton.current?.focus(); }, []);
   useEffect(() => {
+    if (embedded) return;
     const escape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !event.isComposing) { event.preventDefault(); onClose(); }
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, [onClose]);
+  }, [embedded, onClose]);
 
   const mutate = async (method: "commentsAdd" | "commentsResolve", key: string, params: Record<string, unknown>): Promise<boolean> => {
     if (busyRef.current) return false;
@@ -155,11 +158,11 @@ export function VaultComments({ itemId, path, canComment, canResolve, onClose }:
     void mutate("commentsResolve", JSON.stringify(["resolve", commentId, resolved]), { commentId, resolved });
   };
 
-  return <aside className={styles.panel} aria-labelledby={headingId}>
-    <header className={styles.header}>
+  return <aside className={embedded ? styles.embedded : styles.panel} aria-label={embedded ? "Item comments" : undefined} aria-labelledby={embedded ? undefined : headingId}>
+    {!embedded && <header className={styles.header}>
       <div><h2 id={headingId}>Comments</h2><p title={path}>{path}</p></div>
       <button ref={closeButton} type="button" onClick={onClose} aria-label="Close comments">Close</button>
-    </header>
+    </header>}
     <div className={styles.tabs} role="group" aria-label="Comment threads">
       <button type="button" aria-pressed={mode === "open"} onClick={() => setMode("open")}>Open <span>{openThreads.length}</span></button>
       <button type="button" aria-pressed={mode === "resolved"} onClick={() => setMode("resolved")}>Resolved <span>{resolvedThreads.length}</span></button>

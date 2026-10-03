@@ -1,9 +1,10 @@
 import { FolderPresentation } from "./FolderPresentation";
 import type { VaultListing } from "./bridge";
 import { VaultDocumentGrid } from "./VaultDocumentGrid";
-export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sharedView = false, designOpen = false, onOpen, onEditNote, onRevealBookmark, onCreateNote, onQuickSaveBookmark, onCustomize, onCloseDesign, preferredBookmarkPath }: {
+import type { GalleryCommentsAccess } from "./VaultGalleryLightbox";
+export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sharedView = false, designOpen = false, onOpen, onEditNote, onRevealBookmark, onCreateNote, onQuickSaveBookmark, onCustomize, onCloseDesign, preferredBookmarkPath, galleryCommentsAccess }: {
   listing: VaultListing; folder: string; busy: boolean; canCreate?: boolean; sharedView?: boolean;
-  designOpen?: boolean; preferredBookmarkPath?: string;
+  designOpen?: boolean; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
   onOpen: (path: string) => void;
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
@@ -13,8 +14,8 @@ export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sha
   onCloseDesign?: () => void;
 }) {
   return <div className={`vault-overview${folder === "Gallery" ? " vault-gallery-overview" : ""}`}>
-    {sharedView ? <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy} onOpen={onOpen} onEditNote={onEditNote} canUsePersonalBookmarks={false} onCreateNote={canCreate ? onCreateNote : undefined} onQuickSaveBookmark={canCreate ? onQuickSaveBookmark : undefined} preferredBookmarkPath={preferredBookmarkPath} emptyMessage="No shared files in this folder." /> :
+    {sharedView ? <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy} onOpen={onOpen} onEditNote={onEditNote} canUsePersonalBookmarks={false} onCreateNote={canCreate ? onCreateNote : undefined} onQuickSaveBookmark={canCreate ? onQuickSaveBookmark : undefined} preferredBookmarkPath={preferredBookmarkPath} galleryCommentsAccess={galleryCommentsAccess} emptyMessage="No shared files in this folder." /> :
       <FolderPresentation key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy} editable={canCreate}
-        designOpen={designOpen} onOpen={onOpen} onEditNote={onEditNote} onRevealBookmark={onRevealBookmark} onCreateNote={canCreate ? onCreateNote : undefined} onQuickSaveBookmark={canCreate ? onQuickSaveBookmark : undefined} onCustomize={onCustomize} onCloseDesign={onCloseDesign} preferredBookmarkPath={preferredBookmarkPath} />}
+        designOpen={designOpen} onOpen={onOpen} onEditNote={onEditNote} onRevealBookmark={onRevealBookmark} onCreateNote={canCreate ? onCreateNote : undefined} onQuickSaveBookmark={canCreate ? onQuickSaveBookmark : undefined} onCustomize={onCustomize} onCloseDesign={onCloseDesign} preferredBookmarkPath={preferredBookmarkPath} galleryCommentsAccess={galleryCommentsAccess} />}
   </div>;
 }
