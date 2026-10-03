@@ -179,6 +179,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
   return <div className="vault-sharing-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section ref={dialog} className={`vault-sharing-dialog ${readStoryFile ? styles.storyDialog : ""}`} role="dialog" aria-modal="true" aria-label={`Publish ${story?.title || label}`}>
       <header><div><p className="vault-eyebrow">Public page</p><h2>Publish {story?.title || label}</h2></div><button type="button" aria-label="Close publishing" onClick={onClose}>Close</button></header>
+      <div className={readStoryFile ? styles.storyScroll : undefined}>
       {loading ? <p role="status">Preparing story preview…</p> : state ? <>
         {story && <div className={styles.storyReview}><div className={styles.storyCard}>
           {coverURL && /* eslint-disable-next-line @next/next/no-img-element */ <img src={coverURL} alt="" />}
@@ -193,12 +194,13 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
           <div><button type="button" onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</button>
             <a href={link} target="_blank" rel="noopener noreferrer">Open page</a></div>
         </div>}
-        {state.canPublish === false ? <p>Only the workspace owner can change public access.</p> :
-          <div className={styles.actions}><button type="button" disabled={busy || detailsChanged || (Boolean(readStoryFile) && (!story || (!state.published && !story.ready)))} onClick={() => void change(!state.published)}>
-            {busy ? "Saving…" : state.published ? "Unpublish" : story ? "Publish story" : "Publish file"}
-          </button></div>}
+        {state.canPublish === false && <p>Only the workspace owner can change public access.</p>}
       </> : null}
       {error && <p role="alert" className="vault-sharing-error">{error} {!state && <button onClick={() => void reload().then(() => setError("")).catch(() => {})}>Retry</button>}</p>}
+      </div>
+      {state && state.canPublish !== false && <div className={styles.actions}><button type="button" disabled={busy || detailsChanged || (Boolean(readStoryFile) && (!story || (!state.published && !story.ready)))} onClick={() => void change(!state.published)}>
+        {busy ? "Saving…" : state.published ? "Unpublish" : story ? "Publish story" : "Publish file"}
+      </button></div>}
     </section>
   </div>;
 }

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog Publish now keeps its action footer outside the scrollable story review, so the footer cannot cover review content. TypeScript, local vault build, and local/web browser flows pass; `/tmp/texttext-blog-publish-reference.png` shows the current dialog. The six reference experiences remain incomplete per [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). No release was run.
+
 The local browser's Blog preview and Gallery now render the repository's photographic fixtures in place of flat color blocks. Captures at `/tmp/texttext-blog-publish-reference.png`, `/tmp/texttext-gallery-grid-light-reference.png`, and `/tmp/texttext-gallery-import-detail-light-reference.png` show actual image cropping, aspect ratios, and color extraction. The local browser flow passes. This strengthens visual review but does not establish reference parity; no release was run.
 
 Command K now frames five complete commands with the next row peeking below, following [Superhuman's command-palette design note](https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/). The local browser flow confirms overflow and keyboard scrolling to later commands; screenshot: `/tmp/texttext-command-reference.png`. Exact command parity remains open. No release was run.

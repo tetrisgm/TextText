@@ -6,7 +6,9 @@
 .link div { display: flex; align-items: center; gap: 16px; }
 .link a { color: var(--tt-accent); }
 .actions { position:sticky; bottom:-24px; z-index:1; display:flex; justify-content:flex-end; margin-top:28px; padding:12px 0 0; background:var(--surface); border-top:1px solid var(--line); }
-.storyDialog:global(.vault-sharing-dialog) { width:min(850px,100%); }
+.storyDialog:global(.vault-sharing-dialog) { width:min(850px,100%); display:flex; flex-direction:column; overflow:hidden; }
+.storyScroll { min-height:0; overflow:auto; padding-bottom:16px; }
+.storyDialog .actions { position:static; flex:none; margin-top:0; }
 .actions button:global([type="button"]) { background: var(--tt-accent); color: white; padding:10px 16px; text-align:center; border-radius:5px; }
 .storyReview { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(180px,.9fr); gap:24px; margin-top:20px; padding-top:20px; border-top:1px solid var(--line); }
 .storyCard { min-width:0; border:1px solid var(--line); border-radius:7px; overflow:hidden; }

@@ -1214,6 +1214,13 @@ try {
   await publishing.getByText("Story preview").waitFor();
   await publishing.getByText("An opening paragraph.").waitFor();
   await publishing.getByRole("button", { name: "Publish story" }).waitFor();
+  const publishLayout = await publishing.evaluate(dialog => {
+    const review = dialog.children[1];
+    const action = [...dialog.querySelectorAll("button")].find(button => button.textContent.trim() === "Publish story")?.parentElement;
+    if (!review || !action) throw new Error("Publishing review or action is missing");
+    return { reviewBottom: review.getBoundingClientRect().bottom, actionTop: action.getBoundingClientRect().top };
+  });
+  assert.ok(publishLayout.reviewBottom <= publishLayout.actionTop, "Publishing actions must not cover the story review");
   await page.screenshot({ path: "/tmp/texttext-blog-publish-reference.png" });
   await publishing.getByRole("textbox", { name: "Story preview title" }).fill("A revised essay title");
   await publishing.getByRole("textbox", { name: "Story preview subtitle" }).fill("A short introduction");
