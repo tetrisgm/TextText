@@ -250,6 +250,10 @@
 .vault-app .vault-feed-search svg { flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
 .vault-app .vault-feed-search input { flex:1; min-width:0; padding:0; border:0; outline:0; background:transparent; color:var(--ink); font-size:14px; }
 .vault-app .vault-feed-search:focus-within { outline:2px solid var(--tt-accent); outline-offset:2px; }
+.vault-app .vault-feed-freshness { display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:8px; margin:-3px 0 10px; }
+.vault-app .vault-feed-freshness button { padding:5px 9px; border-radius:15px; color:var(--muted); font-size:12px; }
+.vault-app .vault-feed-freshness button:disabled { opacity:.55; }
+.vault-app .vault-feed-freshness .vault-feed-new-articles { background:var(--tt-accent); color:#fff; font-weight:650; }
 .vault-app .vault-feed-home>nav { display:flex; overflow-x:auto; white-space:nowrap; }
 .vault-app .vault-feed-home>nav button { flex:none; border-radius:0; color:var(--muted); }
 .vault-app .vault-feed-home>nav button[aria-pressed=true] { color:var(--ink); font-weight:750; }

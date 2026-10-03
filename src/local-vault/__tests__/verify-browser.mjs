@@ -13,6 +13,7 @@ const history = new Map();
 const importedPacks = [];
 const writePaths = [];
 const feedReadURLs = [];
+let feedHasNewStory = false;
 const searchQueries = [];
 const commentsByItem = new Map();
 let commentReads = 0;
@@ -149,7 +150,7 @@ try {
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "feedDiscover") result = { pageTitle: "Design Journal", detail: null, candidates: [{ url: "https://journal.example/feed.xml", title: "Design Journal", format: "rss", entryCount: 12, siteUrl: "https://journal.example", sampleTitles: [] }] };
     else if (request.method === "feedRead") { feedReadURLs.push(request.params.feedURL); result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
-      entries: Array.from({ length: 6 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
+      entries: Array.from({ length: feedHasNewStory ? 7 : 6 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
     }
     else if (request.method === "feedEntry") {
       const number = Number(request.params.externalKey?.replace(/^story-/, "")) || 1;
@@ -2216,6 +2217,16 @@ try {
   await page.waitForFunction(() => document.querySelector('.vault-feed-source-window button') === null);
   assert.equal(feedReadURLs.length, 25);
   assert.equal(new Set(feedReadURLs).size, 25);
+  feedHasNewStory = true;
+  await page.getByRole("button", { name: "Check for new stories" }).click();
+  await page.getByRole("button", { name: "New Articles · 25" }).waitFor();
+  assert.equal(feedReadURLs.length, 50);
+  await page.getByRole("button", { name: "New Articles · 25" }).click();
+  await page.getByRole("button", { name: "Design headline 7" }).first().waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feeds-new-articles-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-feeds-new-articles-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
   await chooseFolder("Notes");
   await chooseFolder("Feeds");
   await openFeedLatest();
@@ -2457,6 +2468,7 @@ try {
   await page.getByRole("button", { name: "Edit Thought for later" }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   await page.locator(".vault-context-header h2").getByText("Thought for later", { exact: true }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   await page.keyboard.press("Space");
   await page.keyboard.press("Slash");
   await page.getByRole("menu", { name: "Add to note" }).waitFor();
