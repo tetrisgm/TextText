@@ -1641,11 +1641,14 @@ try {
   await page.screenshot({ path: "/tmp/texttext-feed-coverage-reference.png" });
   await page.locator(".vault-feed-coverage > header button").click();
   await page.getByRole("button", { name: "For You", exact: true }).click();
-  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 8);
+  await page.getByRole("button", { name: "A considered design headline" }).first().click();
+  await page.getByRole("region", { name: "Feed story" }).getByText("A considered design headline").waitFor();
+  await page.getByRole("button", { name: "Back to feed", exact: true }).click();
   await page.screenshot({ path: "/tmp/texttext-feeds-ranked-reference.png" });
   const feedSearch = page.getByRole("searchbox", { name: "Search loaded stories" });
   await feedSearch.fill("A considered");
-  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 8);
   assert.equal(await page.getByRole("button", { name: "Design headline 5" }).count(), 0);
   await feedSearch.fill("no matching headline");
   await page.getByText("No loaded stories match this search.").waitFor();
@@ -1730,7 +1733,9 @@ try {
   await page.getByRole("button", { name: "Load more sources" }).click();
   await page.getByText("Reading 25 of 25 sources").waitFor();
   await page.getByRole("button", { name: "For You", exact: true }).click();
-  await page.getByText("25 articles covering this story").first().waitFor();
+  await page.locator(".vault-feed-home > ol > li").first().waitFor();
+  assert.equal(await page.locator(".vault-feed-home > ol > li").count() >= 25, true);
+  assert.equal(await page.getByText("25 articles covering this story").count(), 0);
   await page.waitForFunction(() => document.querySelector('.vault-feed-source-window button') === null);
   assert.equal(feedReadURLs.length, 25);
   assert.equal(new Set(feedReadURLs).size, 25);
