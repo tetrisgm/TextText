@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now displays a labeled Summary between the saved page's source and body when its TextPack subtitle is present. The reader details can add or edit it; the same content remains agent-editable in the ordinary DocumentSnapshot. A local browser test verifies the write and rendering, with light/dark captures at `/tmp/texttext-bookmark-summary-{light,dark}-reference.png`; TypeScript, local bundle, and local/web browser flows pass. Automatic Shiori-style summarization and real video/PDF capture remain open. No release was run.
+
 Feeds now has a Profile view that links to Read Later, History, and subscriptions, with counts and top publishers derived from real read TextPacks. The local browser flow checks two actual read stories, 25 subscriptions, navigation back to History, and the dark render at `/tmp/texttext-feeds-profile-reference.png`; TypeScript, the local bundle, and local/web browser flows pass. The 28 Artifact screenshots named in the old plan are absent from both cited Downloads folders; full Artifact visual and interaction parity remains open. No release was run.
 
 Long Feeds stories now display scroll-based reading progress and enter History when the reader scrolls through them. The history write happens once per story; loading a feed or opening a story alone does not create a TextPack. A long-story browser fixture verifies this path, and TypeScript, the local bundle, local browser flow, and web browser flow pass. Progress is still transient, short stories require Mark read, and Artifact reference parity remains open. No release was run.

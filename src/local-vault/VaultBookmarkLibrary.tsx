@@ -162,6 +162,8 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [error, setError] = useState("");
   const [editingNotePath, setEditingNotePath] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
+  const [editingSummaryPath, setEditingSummaryPath] = useState("");
+  const [summaryDraft, setSummaryDraft] = useState("");
   const [editingField, setEditingField] = useState("");
   const [fieldDraft, setFieldDraft] = useState("");
   useEffect(() => {
@@ -197,6 +199,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const readAt = typeof document?.content.fields.texttextBookmarkReadAt === "string" ? document.content.fields.texttextBookmarkReadAt : null;
   const archivedAt = typeof document?.content.fields.texttextBookmarkArchivedAt === "string" ? document.content.fields.texttextBookmarkArchivedAt : null;
   const personalNote = typeof document?.content.fields.texttextBookmarkNote === "string" ? document.content.fields.texttextBookmarkNote : "";
+  const summary = document?.content.subtitle ?? "";
   const customFields = template?.fields.filter(field => field.visibility !== "hidden" && !["cover", "sourceUrl", "sourceLabel", "links"].includes(field.id)) ?? [];
   const noteIsEditing = Boolean(current && editingNotePath === current.path);
   const saveCustomField = async (field: DocumentFieldDefinition) => {
@@ -276,6 +279,21 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Your note could not be saved."); }
     finally { setUpdating(false); }
   };
+  const saveSummary = async () => {
+    if (!opened || opened.path !== current?.path || updating || busy || previewOnly) return;
+    setUpdating(true); setError("");
+    try {
+      await readerWrites.current;
+      const latest = await vaultRequest<VaultFile>("read", { path: opened.path });
+      const canonical = readDocument(latest);
+      const subtitle = summaryDraft.trim();
+      const updated = await vaultRequest<VaultFile>("write", writePayload(latest, { ...canonical, content: { ...canonical.content, subtitle } }));
+      setOpened(previous => previous?.path === updated.path ? { ...previous, file: updated, document: { ...previous.document, content: { ...previous.document.content, subtitle } } } : previous);
+      setEditingSummaryPath("");
+      window.dispatchEvent(new Event("texttext:vault-changed"));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "The summary could not be saved."); }
+    finally { setUpdating(false); }
+  };
   const changeFlag = async (field: "texttextBookmarkFavorite" | "texttextBookmarkReadAt" | "texttextBookmarkArchivedAt") => {
     if (!opened || opened.path !== current?.path || updating || busy || previewOnly) return;
     setUpdating(true); setError("");
@@ -334,6 +352,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     <article className="vault-bookmark-reader" aria-label="Bookmark reader">
       {current && <header><div className="vault-bookmark-reader-navigation"><button aria-label="Previous bookmark" title="Previous bookmark" disabled={busy || currentFilteredIndex <= 0} onClick={() => navigateReader(-1)}>‹</button><button aria-label="Next bookmark" title="Next bookmark" disabled={busy || currentFilteredIndex >= filtered.length - 1} onClick={() => navigateReader(1)}>›</button></div><div className="vault-bookmark-reader-tabs"><span aria-current="page">Reader</span>{preview?.sourceURL && <a href={preview.sourceURL} target="_blank" rel="noopener noreferrer">Original ↗</a>}</div><div className="vault-bookmark-reader-actions"><button disabled={busy || previewOnly || updating || !document} aria-pressed={favorite} onClick={() => void changeFlag("texttextBookmarkFavorite")}>{favorite ? "★ Favorite" : "☆ Favorite"}</button><button disabled={busy || previewOnly || updating || !document} onClick={() => void changeFlag("texttextBookmarkReadAt")}>{readAt ? "Mark unread" : "Mark read"}</button><button disabled={busy || previewOnly || updating || !document} onClick={() => void changeFlag("texttextBookmarkArchivedAt")}>{archivedAt ? "Move to inbox" : "Archive"}</button><button disabled={busy || previewOnly} onClick={() => onOpen(current.path)}>Edit</button></div><details className="vault-bookmark-inspector"><summary aria-label="Bookmark details" title="Bookmark details">•••</summary><div className="vault-bookmark-inspector-panel">
       {document && <div className="vault-bookmark-tags" aria-label="Bookmark tags"><span>Tags</span>{document.content.tags.map(tag => <button key={tag} type="button" disabled={busy || previewOnly || updating} aria-label={`Remove ${tag} tag`} onClick={() => void changeTags(document.content.tags.filter(value => value !== tag))}>#{tag} ×</button>)}<form onSubmit={event => { event.preventDefault(); const tag = tagDraft.trim().replace(/^#/, "").slice(0, 40); if (!tag || document.content.tags.some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return; void changeTags([...document.content.tags, tag]); setTagDraft(""); }}><input aria-label="Add bookmark tag" value={tagDraft} onChange={event => setTagDraft(event.target.value)} placeholder="Add tag" maxLength={41} disabled={busy || previewOnly || updating} /><button type="submit" disabled={busy || previewOnly || updating || !tagDraft.trim()}>Add</button></form></div>}
+      {document && <section className="vault-bookmark-summary-editor" aria-label="Bookmark summary"><div><strong>Summary</strong>{!previewOnly && editingSummaryPath !== current?.path && <button type="button" disabled={busy || updating} onClick={() => { setSummaryDraft(summary); setEditingSummaryPath(current?.path ?? ""); }}>{summary ? "Edit summary" : "Add summary"}</button>}</div>{editingSummaryPath === current?.path ? <form onSubmit={event => { event.preventDefault(); void saveSummary(); }}><textarea autoFocus aria-label="Summary text" value={summaryDraft} onChange={event => setSummaryDraft(event.target.value)} maxLength={10000} disabled={busy || updating} placeholder="A short account of this link" /><div><button type="button" disabled={updating} onClick={() => setEditingSummaryPath("")}>Cancel</button><button type="submit" disabled={busy || updating || summaryDraft.trim() === summary}>{updating ? "Saving…" : "Save summary"}</button></div></form> : summary && <p>{summary}</p>}</section>}
       {document && <section className="vault-bookmark-note" aria-label="Personal note"><div><strong>My note</strong>{!noteIsEditing && !previewOnly && <button type="button" disabled={busy || updating} onClick={() => { setNoteDraft(personalNote); setEditingNotePath(current?.path ?? ""); }}>{personalNote ? "Edit note" : "Add note"}</button>}</div>{noteIsEditing ? <form onSubmit={event => { event.preventDefault(); void saveNote(); }}><textarea autoFocus aria-label="Personal note text" value={noteDraft} onChange={event => setNoteDraft(event.target.value)} maxLength={10000} disabled={busy || updating} placeholder="What do you want to remember?" /><div><button type="button" disabled={updating} onClick={() => setEditingNotePath("")}>Cancel</button><button type="submit" disabled={busy || updating || noteDraft.trim() === personalNote}>{updating ? "Saving…" : "Save note"}</button></div></form> : personalNote && <p>{personalNote}</p>}</section>}
       {document && customFields.length > 0 && <section className="vault-bookmark-custom-fields" aria-label="Bookmark details fields"><h2>Details</h2>{customFields.map(field => {
         const value = document.content.fields[field.id];

@@ -1083,6 +1083,17 @@ try {
     return Boolean(title && toolbar && title.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom < 110);
   }), "the bookmarked page title should lead the reader");
   if (!(await bookmarkDetails.evaluate(element => element.open))) await toggleBookmarkDetails.click();
+  await bookmarkReader.getByRole("button", { name: "Add summary" }).click();
+  await bookmarkReader.getByRole("textbox", { name: "Summary text" }).fill("A concise account of this saved article.");
+  await bookmarkReader.getByRole("button", { name: "Save summary" }).click();
+  await bookmarkReader.locator(".tt-text-subtitle").getByText("A concise account of this saved article.").waitFor();
+  assert.equal(JSON.parse(files.get("Bookmarks/Reading.textpack").documentJSON).content.subtitle, "A concise account of this saved article.");
+  await bookmarkDetails.locator("summary").click();
+  await page.screenshot({ path: "/tmp/texttext-bookmark-summary-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-bookmark-summary-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await bookmarkDetails.locator("summary").click();
   await bookmarkReader.getByRole("textbox", { name: "Add bookmark tag" }).fill("research");
   await bookmarkReader.getByRole("button", { name: "Add", exact: true }).click();
   await bookmarkReader.getByRole("button", { name: "Remove research tag" }).waitFor();
