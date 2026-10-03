@@ -1314,6 +1314,13 @@ try {
   await imageCapture.getByRole("button", { name: "Close image capture" }).click();
   await page.locator(".vault-photo-grid img").first().waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid img")].every(image => image.complete && image.naturalHeight > 0));
+  const galleryTags = page.getByRole("combobox", { name: "Filter image tags" });
+  await galleryTags.waitFor();
+  await galleryTags.selectOption("fieldwork");
+  await page.waitForFunction(() => document.querySelectorAll(".vault-photo-grid button").length === 1 && document.querySelector('.vault-photo-grid button')?.getAttribute('aria-label') === "Open One photograph");
+  await galleryTags.selectOption("");
+  await page.getByRole("button", { name: "Open Two photographs image 1" }).waitFor();
+  await page.getByRole("button", { name: "Open One photograph" }).waitFor();
   assert.equal(await page.getByRole("searchbox", { name: "Find images" }).count(), 0);
   await page.getByRole("button", { name: "Search images" }).click();
   const gallerySearch = page.getByRole("searchbox", { name: "Find images" });
