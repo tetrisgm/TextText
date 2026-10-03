@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePopoverFocus } from "@/components/accessibility/useDialogFocus";
 import type { DocumentFieldValue } from "@/lib/documents/model";
@@ -10,6 +10,7 @@ import { readDocument, readTemplate, writePayload } from "./model";
 type Image = { id: string; url: string; alt: string; width?: number; height?: number };
 
 type GalleryEntry = { path: string; index: number };
+const EMPTY_IMAGES = new Map<string, string>();
 
 function sourceLink(value: string): string | null {
   try {
@@ -62,6 +63,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   const [fieldDraft, setFieldDraft] = useState("");
   const [updating, setUpdating] = useState(false);
   const [details, setDetails] = useState<{ colors: string[]; width: number; height: number }>({ colors: [], width: 0, height: 0 });
+  const [localImages, setLocalImages] = useState<{ path: string; file: VaultFile; urls: Map<string, string> } | null>(null);
   const chosen = entries[Math.min(selection, entries.length - 1)];
   const path = chosen?.path || "";
   const index = chosen?.index || 0;
@@ -75,9 +77,10 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
       .then(setFile).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "The image could not be opened."); });
     return () => controller.abort();
   }, [path]);
-  const local = useMemo(() => {
+  useEffect(() => {
+    if (!file || file.path !== path) return;
     const images = new Map<string, string>();
-    for (const asset of (file?.path === path ? file.assets : null) || []) {
+    for (const asset of file.assets || []) {
       if (!asset.contentType.startsWith("image/") || asset.data.length > 32 * 1024 * 1024) continue;
       try {
         const bytes = Uint8Array.from(atob(asset.data), character => character.charCodeAt(0));
@@ -86,9 +89,11 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
         if (asset.remoteURL) images.set(asset.remoteURL, url);
       } catch { /* A malformed asset cannot prevent the rest of the gallery from opening. */ }
     }
-    return images;
+    let active = true;
+    void Promise.resolve().then(() => { if (active) setLocalImages({ path, file, urls: images }); });
+    return () => { active = false; for (const url of new Set(images.values())) URL.revokeObjectURL(url); };
   }, [file, path]);
-  useEffect(() => () => { for (const url of new Set(local.values())) URL.revokeObjectURL(url); }, [local]);
+  const local = localImages?.path === path && localImages.file === file ? localImages.urls : EMPTY_IMAGES;
   let title = path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Image";
   let caption = "";
   let source = "";

@@ -1605,7 +1605,10 @@ try {
     files.set(galleryPath, { ...sample(galleryPath, "gallery", `Photo study ${index + 1}`, "", {}, [{ id: "photo", kind: "image", src: "assets/photo.jpg", alt: `Photo study ${index + 1}` }]), assets: [{ filename: "photo.jpg", contentType: "image/jpeg", data }] });
     denseGalleryPaths.push(galleryPath);
   }
+  const viewedImageURL = await page.locator(".vault-gallery-stage img").getAttribute("src");
+  assert.match(viewedImageURL, /^blob:/);
   await page.getByRole("button", { name: "Close image" }).click();
+  assert.equal(await page.evaluate(url => fetch(url).then(() => true, () => false), viewedImageURL), false);
   await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
   await page.getByRole("button", { name: "Open Photo study 12" }).waitFor();
   await page.waitForFunction(() => {
