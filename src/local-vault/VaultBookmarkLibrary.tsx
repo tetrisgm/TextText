@@ -47,6 +47,8 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickError, setQuickError] = useState("");
   const [page, setPage] = useState(0);
+  const bookmarkList = useRef<HTMLDivElement>(null);
+  const pendingKeyboardFocus = useRef("");
   const [flags, setFlags] = useState<Record<string, BookmarkFlags>>({});
   const [metadata, setMetadata] = useState<Record<string, FolderPreview>>({});
   const [metadataState, setMetadataState] = useState<"reading" | "ready" | "unavailable">("reading");
@@ -119,6 +121,11 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     return result;
   }, []);
   const current = shown.find(item => item.path === selected) || shown[0];
+  useEffect(() => {
+    if (!pendingKeyboardFocus.current || current?.path !== pendingKeyboardFocus.current) return;
+    bookmarkList.current?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')?.focus({ preventScroll: true });
+    pendingKeyboardFocus.current = "";
+  }, [current?.path, currentPage]);
   const currentFilteredIndex = current ? filtered.findIndex(item => item.path === current.path) : -1;
   const navigateReader = (offset: number) => {
     const nextIndex = currentFilteredIndex + offset;
@@ -266,18 +273,19 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       {searchQuery && contentSearch.query === searchQuery && contentSearch.truncated && <p role="status" className="vault-bookmark-index-status">Search reached its limit. Try more specific words.</p>}
       {metadataState === "reading" && <p role="status" className="vault-bookmark-index-status">Reading saved links for filters…</p>}
       {metadataState === "unavailable" && <p role="status" className="vault-bookmark-index-status">Filters are unavailable for this folder. Saved links remain accessible.</p>}
-      <div role="listbox" aria-label="Saved bookmarks">{groups.map(group => <div role="group" aria-label={group.label} key={group.label}><div className="vault-bookmark-day">{group.label}</div>{group.items.map(item => { const entry = previews[item.path] || metadata[item.path]; const title = entry?.title || item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
+      <div ref={bookmarkList} role="listbox" aria-label="Saved bookmarks">{groups.map(group => <div role="group" aria-label={group.label} key={group.label}><div className="vault-bookmark-day">{group.label}</div>{group.items.map(item => { const entry = previews[item.path] || metadata[item.path]; const title = entry?.title || item.title || item.path.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Untitled";
         const itemFavorite = flags[item.path]?.favorite ?? Boolean(entry?.document?.content.fields.texttextBookmarkFavorite);
         const itemRead = flags[item.path] ? flags[item.path].readAt : (typeof entry?.document?.content.fields.texttextBookmarkReadAt === "string" ? entry.document.content.fields.texttextBookmarkReadAt : null);
         return <button role="option" aria-selected={current?.path === item.path} key={item.path} disabled={busy || previewOnly} onClick={() => setSelected(item.path)} onDoubleClick={() => onOpen(item.path)} onKeyDown={event => {
-          const nextIndex = event.key === "ArrowDown" ? shown.findIndex(entry => entry.path === item.path) + 1
-            : event.key === "ArrowUp" ? shown.findIndex(entry => entry.path === item.path) - 1
-            : event.key === "Home" ? 0 : event.key === "End" ? shown.length - 1 : -1;
-          if (nextIndex < 0 || nextIndex >= shown.length) return;
+          const itemIndex = filtered.findIndex(entry => entry.path === item.path);
+          const nextIndex = event.key === "ArrowDown" ? itemIndex + 1
+            : event.key === "ArrowUp" ? itemIndex - 1
+            : event.key === "Home" ? 0 : event.key === "End" ? filtered.length - 1 : -1;
+          if (nextIndex < 0 || nextIndex >= filtered.length) return;
           event.preventDefault();
-          setSelected(shown[nextIndex].path);
-          const options = event.currentTarget.closest('[role="listbox"]')?.querySelectorAll<HTMLElement>('[role="option"]');
-          options?.[nextIndex]?.focus();
+          pendingKeyboardFocus.current = filtered[nextIndex].path;
+          setPage(Math.floor(nextIndex / PAGE_SIZE));
+          setSelected(filtered[nextIndex].path);
         }}>
           <span className="vault-bookmark-mark" aria-hidden="true">{host(entry?.sourceURL).slice(0, 1).toUpperCase()}</span>
           <span className="vault-bookmark-copy"><strong>{title}</strong><small>{host(entry?.sourceURL)}{itemRead ? " · Read" : ""}</small></span>{itemFavorite && <span className="vault-bookmark-favorite" aria-label="Favorite">★</span>}
