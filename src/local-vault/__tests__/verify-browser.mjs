@@ -1453,8 +1453,8 @@ try {
   await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
-    element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
-    const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, text.textContent.length);
+    element.focus(); const line = element.querySelector("[data-tt-ln]");
+    const range = document.createRange(); range.selectNodeContents(line);
     const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
     element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
@@ -1467,13 +1467,16 @@ try {
   await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
   await page.getByRole("form", { name: "Add story link" }).getByRole("textbox", { name: "Link address" }).fill("example.com/article");
   await page.getByRole("form", { name: "Add story link" }).getByRole("button", { name: "Add link" }).click();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Link](<https://example.com/article>)"));
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Link](<https://example.com/article>)")).catch(async error => {
+    console.error("Story link body:", await storyBody.textContent());
+    throw error;
+  });
   await storyBody.fill("Heading");
   await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
-    element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
-    const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, text.textContent.length);
+    element.focus(); const line = element.querySelector("[data-tt-ln]");
+    const range = document.createRange(); range.selectNodeContents(line);
     const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
     element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
@@ -1484,8 +1487,8 @@ try {
   await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
-    element.focus(); const text = element.querySelector("[data-tt-ln]")?.firstChild;
-    const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, text.textContent.length);
+    element.focus(); const line = element.querySelector("[data-tt-ln]");
+    const range = document.createRange(); range.selectNodeContents(line);
     const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
     element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
@@ -1703,7 +1706,8 @@ try {
   const titledPair = JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content;
   assert.equal(titledPair.title, "Two photographs");
   assert.deepEqual(titledPair.assets.map(asset => asset.title), [undefined, "Two color studies"]);
-  assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.fields.sourceUrl, "https://example.com/original");
+  assert.deepEqual(titledPair.assets.map(asset => asset.sourceUrl), [undefined, "https://example.com/original"]);
+  assert.equal(titledPair.fields.sourceUrl ?? null, null);
   await lightbox.getByRole("button", { name: "Edit image summary" }).click();
   await lightbox.getByRole("textbox", { name: "Image summary" }).fill("A study in blue and orange light.");
   await lightbox.getByRole("button", { name: "Save summary" }).click();
@@ -1711,13 +1715,14 @@ try {
   assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets.map(asset => asset.summary), [undefined, "A study in blue and orange light."]);
   await lightbox.getByRole("button", { name: "Previous image" }).click();
   assert.equal(await lightbox.getByText("A study in blue and orange light.").count(), 0);
+  assert.equal(await lightbox.getByRole("link", { name: "example.com" }).count(), 0);
   await lightbox.getByRole("button", { name: "Next image" }).click();
   await lightbox.getByText("A study in blue and orange light.").waitFor();
   await lightbox.getByRole("button", { name: "Add image tag" }).click();
   await lightbox.getByRole("textbox", { name: "New image tag" }).fill("reference");
   await lightbox.getByRole("button", { name: "Add", exact: true }).click();
   await lightbox.getByRole("button", { name: "Remove reference tag" }).waitFor();
-  assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.tags, ["reference"]);
+  assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets.map(asset => asset.tags), [undefined, ["reference"]]);
   const commentReadsBeforeOpening = commentReads;
   const galleryComments = lightbox.getByRole("complementary", { name: "Item comments" });
   await lightbox.getByRole("button", { name: "View comments" }).click();
@@ -1755,6 +1760,7 @@ try {
   await page.locator(".vault-app.sidebar-collapsed").waitFor();
   await page.getByRole("textbox", { name: "Image title" }).waitFor();
   assert.equal(await page.getByRole("textbox", { name: "Image 2 title" }).inputValue(), "Two color studies");
+  assert.equal(await page.getByRole("textbox", { name: "Image 2 source" }).inputValue(), "https://example.com/original");
   assert.equal(await page.getByRole("textbox", { name: "Image 2 summary" }).inputValue(), "A study in blue and orange light.");
   await page.screenshot({ path: "/tmp/texttext-gallery-narrow-editor-light-reference.png" });
   await page.getByRole("textbox", { name: "Image 2 summary" }).scrollIntoViewIfNeeded();
@@ -1767,7 +1773,9 @@ try {
   await page.getByRole("textbox", { name: "Image source" }).fill("https://example.com/photos");
   assert.equal(await page.getByRole("button", { name: "Read article" }).count(), 0);
   await page.getByRole("textbox", { name: "Add image tag" }).fill("color study");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("textbox", { name: "Add image tag" }).press("Enter");
+  await page.getByRole("textbox", { name: "Add tag to image 1" }).fill("warm");
+  await page.getByRole("textbox", { name: "Add tag to image 1" }).press("Enter");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const editedGallery = JSON.parse(files.get("Gallery/Pair.textpack").documentJSON);
   assert.equal(editedGallery.content.title, "Collected photographs");
@@ -1776,11 +1784,17 @@ try {
   assert.deepEqual(editedGallery.content.assets.map(asset => asset.summary), ["A quiet study of warm light.", "A study in blue and orange light."]);
   assert.equal(editedGallery.content.fields.sourceUrl, "https://example.com/photos");
   assert.deepEqual(editedGallery.content.tags, ["color study"]);
+  assert.deepEqual(editedGallery.content.assets.map(asset => asset.tags), [["color study", "warm"], []]);
   await page.screenshot({ path: "/tmp/texttext-gallery-editor-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-editor-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await chooseFolder("Gallery");
+  await page.getByRole("button", { name: "Open Two color studies" }).waitFor();
+  await page.getByRole("combobox", { name: "Filter image tags" }).selectOption("warm");
+  await page.getByRole("button", { name: "Open Collected photographs image 1" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Open Two color studies" }).count(), 0);
+  await page.getByRole("combobox", { name: "Filter image tags" }).selectOption("");
   await page.getByRole("button", { name: "Open Two color studies" }).waitFor();
   await page.getByRole("button", { name: "Open Collected photographs image 1" }).click();
   const collected = page.getByRole("region", { name: "First photograph" });

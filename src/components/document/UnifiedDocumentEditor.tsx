@@ -567,6 +567,7 @@ export function UnifiedDocumentEditor({
     ));
   const [document, setDocument] = useState(initialDocument);
   const [tagDraft, setTagDraft] = useState("");
+  const [galleryTagDrafts, setGalleryTagDrafts] = useState<Record<string, string>>({});
   const [articleSelection, setArticleSelection] = useState<{ start: number; end: number; text: string; x: number; y: number } | null>(null);
   const [articleLinkTarget, setArticleLinkTarget] = useState<typeof articleSelection>(null);
   const [articleLinkURL, setArticleLinkURL] = useState("");
@@ -2191,7 +2192,20 @@ export function UnifiedDocumentEditor({
         }} rows={3} placeholder="Add a caption" /></label><label>Summary<textarea aria-label={galleryImages.length === 1 ? "Image summary" : `Image ${index + 1} summary`} value={asset.summary ?? ""} onChange={(event) => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map((entry) => entry.id === asset.id ? { ...entry, summary: event.target.value } : entry) } });
-        }} rows={3} maxLength={4000} placeholder="Add a summary" /></label></div>)}
+        }} rows={3} maxLength={4000} placeholder="Add a summary" /></label>{galleryImages.length > 1 && <><label>Source<input aria-label={`Image ${index + 1} source`} type="url" placeholder="https://" value={asset.sourceUrl ?? (typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : "")} onChange={(event) => {
+          const current = currentLocalDocument();
+          updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map((entry) => entry.id === asset.id ? { ...entry, sourceUrl: event.target.value } : entry) } });
+        }} /></label><div className="tt-gallery-edit-tags"><h4>Tags</h4><div>{(asset.tags ?? document.content.tags).map(tag => <span key={tag}>{tag}<button type="button" aria-label={`Remove ${tag} from image ${index + 1}`} onClick={() => {
+          const current = currentLocalDocument();
+          updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map(entry => entry.id === asset.id ? { ...entry, tags: (entry.tags ?? current.content.tags).filter(value => value !== tag) } : entry) } });
+        }}>×</button></span>)}</div><form onSubmit={event => {
+          event.preventDefault();
+          const tag = (galleryTagDrafts[asset.id] ?? "").trim().replace(/^#/, "").slice(0, 120);
+          if (!tag || (asset.tags ?? document.content.tags).some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
+          const current = currentLocalDocument();
+          updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map(entry => entry.id === asset.id ? { ...entry, tags: [...(entry.tags ?? current.content.tags), tag] } : entry) } });
+          setGalleryTagDrafts(drafts => ({ ...drafts, [asset.id]: "" }));
+        }}><input aria-label={`Add tag to image ${index + 1}`} placeholder="Add a tag" value={galleryTagDrafts[asset.id] ?? ""} onChange={event => setGalleryTagDrafts(drafts => ({ ...drafts, [asset.id]: event.target.value }))} maxLength={121} /><button type="submit" disabled={!(galleryTagDrafts[asset.id] ?? "").trim()}>Add</button></form></div></>}</div>)}
         {document.content.body.trim() && galleryImages.length > 1 && <label>Collection note<textarea aria-label="Collection note" value={document.content.body} onChange={(event) => updateText("body", event.target.value)} rows={3} /></label>}
         <label>Source<input aria-label="Image source" type="url" placeholder="https://" value={typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : ""} onChange={(event) => {
           const current = currentLocalDocument();

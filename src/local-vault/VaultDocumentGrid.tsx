@@ -157,7 +157,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
             .filter(field => typeof preview.document?.content.fields[field] === "string")
             .map(field => [field, preview.document!.content.fields[field]])) : {};
           const compact: FolderPreview = { title: preview.title, excerpt: preview.excerpt, sourceURL: preview.sourceURL, publishedAt: preview.publishedAt, document: { ...preview.document,
-            content: { ...preview.document.content, body: "", fields: storyFields, assets: [] } } };
+            content: { ...preview.document.content, body: "", fields: storyFields, assets: galleryFolder ? preview.document.content.assets.filter(asset => asset.kind === "image") : [] } } };
           totalBytes += new TextEncoder().encode(JSON.stringify(compact)).byteLength;
           if (totalBytes > 8 * 1024 * 1024) { if (active) setCollectionSearchIndex({ key: collectionSearchKey, listing, previews: {}, error: "Item details exceed the 8 MiB search limit." }); return; }
           found[item.path] = compact;
@@ -171,7 +171,11 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   }, [busy, collectionSearchKey, listing]);
   const collectionSearchReady = (galleryFolder || folder === "Blog") && collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.listing === listing && !collectionSearchIndex.error;
   const galleryQuery = gallerySearch.trim().toLocaleLowerCase();
-  const galleryTags = galleryFolder && collectionSearchReady ? [...new Set(items.flatMap(item => collectionSearchIndex.previews[item.path]?.document?.content.tags ?? []))].sort((left, right) => left.localeCompare(right)) : [];
+  const galleryTags = galleryFolder && collectionSearchReady ? [...new Set(items.flatMap(item => {
+    const content = collectionSearchIndex.previews[item.path]?.document?.content;
+    const images = content?.assets.filter(asset => asset.kind === "image") ?? [];
+    return images.length ? images.flatMap(asset => asset.tags ?? content?.tags ?? []) : content?.tags ?? [];
+  }))].sort((left, right) => left.localeCompare(right)) : [];
   const [storySearch, setStorySearch] = useState("");
   const [storyStatus, setStoryStatus] = useState<"all" | "drafts" | "published">("all");
   const storyQuery = storySearch.trim().toLocaleLowerCase();
@@ -319,7 +323,10 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery) || noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && noteContentSearch.paths.has(item.path));
   }).sort((left, right) => noteSort === "title" ? indexedNoteTitle(left).localeCompare(indexedNoteTitle(right)) : 0) : collectionSearchReady && (galleryFolder ? galleryQuery || galleryTag : storyQuery) ? items.filter(item => {
     const preview = collectionSearchIndex.previews[item.path];
-    return (!galleryFolder || !galleryTag || preview?.document?.content.tags.includes(galleryTag)) && `${preview?.title || fallbackTitle(item)} ${galleryFolder ? (preview?.document?.content.assets.filter(asset => asset.kind === "image").map(asset => [asset.title, asset.alt, asset.caption, asset.summary].filter(Boolean).join(" ")).join(" ") || "") : ""} ${preview?.document?.content.subtitle || ""} ${preview?.document?.content.fields.texttextPreviewTitle || ""} ${preview?.document?.content.fields.texttextPreviewSubtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
+    const imageAssets = galleryFolder ? preview?.document?.content.assets.filter(asset => asset.kind === "image") ?? [] : [];
+    const content = preview?.document?.content;
+    const matchedTags = imageAssets.length ? imageAssets.some(asset => (asset.tags ?? content?.tags ?? []).includes(galleryTag)) : content?.tags.includes(galleryTag);
+    return (!galleryFolder || !galleryTag || matchedTags) && `${preview?.title || fallbackTitle(item)} ${imageAssets.map(asset => [asset.title, asset.alt, asset.caption, asset.summary, asset.sourceUrl, ...(asset.tags ?? content?.tags ?? [])].filter(Boolean).join(" ")).join(" ")} ${content?.subtitle || ""} ${content?.fields.texttextPreviewTitle || ""} ${content?.fields.texttextPreviewSubtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${galleryFolder ? "" : (content?.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
   }) : items;
   const displayedItems = folder === "Blog" && collectionSearchReady && storyStatus !== "all"
     ? searchMatchedItems.filter(item => storyStatus === "published" ? Boolean(collectionSearchIndex.previews[item.path]?.publishedAt) : !collectionSearchIndex.previews[item.path]?.publishedAt)
@@ -392,15 +399,26 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const blogFolder = folder === "Blog";
   const feedsFolder = folder === "Feeds";
   const referenceFolder = photoFolder || bookmarkFolder || notesFolder || blogFolder || feedsFolder;
+  const galleryPhotoMatches = (item: typeof visible[number], index: number) => {
+    if (!galleryTag && !galleryQuery) return true;
+    const preview = collectionSearchIndex.previews[item.path];
+    const content = preview?.document?.content;
+    const asset = content?.assets.filter(entry => entry.kind === "image")[index];
+    if (galleryTag && !(asset?.tags ?? content?.tags ?? []).includes(galleryTag)) return false;
+    if (!galleryQuery) return true;
+    const collectionText = [preview?.title, content?.subtitle, preview?.excerpt, preview?.sourceURL].filter(Boolean).join(" ").toLocaleLowerCase();
+    const photoText = [asset?.title, asset?.alt, asset?.caption, asset?.summary, asset?.sourceUrl, ...(asset?.tags ?? content?.tags ?? [])].filter(Boolean).join(" ").toLocaleLowerCase();
+    return collectionText.includes(galleryQuery) || photoText.includes(galleryQuery);
+  };
   const galleryEntries = photoFolder ? visible.flatMap(item => {
     const count = previews[item.path]?.images?.length || 1;
-    return Array.from({ length: count }, (_, index) => ({ path: item.path, index }));
+    return Array.from({ length: count }, (_, index) => ({ path: item.path, index })).filter(entry => galleryPhotoMatches(item, entry.index));
   }) : [];
   const galleryTiles = photoFolder ? visible.flatMap(item => {
     const preview = previews[item.path];
     const images = preview?.images?.length ? preview.images : [preview?.image];
     const imageAssets = preview?.document?.content.assets.filter(asset => asset.kind === "image") || [];
-    return images.map((image, index) => ({ item, preview, image, index, key: `${item.path}:${index}`, title: imageAssets[index]?.title || `${preview?.title || fallbackTitle(item)}${images.length > 1 ? ` image ${index + 1}` : ""}` }));
+    return images.map((image, index) => ({ item, preview, image, index, key: `${item.path}:${index}`, title: imageAssets[index]?.title || `${preview?.title || fallbackTitle(item)}${images.length > 1 ? ` image ${index + 1}` : ""}` })).filter(tile => galleryPhotoMatches(item, tile.index));
   }) : [];
   const galleryRows: { tiles: typeof galleryTiles; height: number; widths: number[] }[] = [];
   const rowGap = 12;
