@@ -293,7 +293,7 @@ function DefaultMetadata({ metadata }: { metadata: DocumentRenderMetadata }) {
 // remounted on any re-render of the reader - visible as all images blinking
 // (and nudging layout while they re-decoded) on every click in the workspace.
 
-type AssetImageMetadata = ReadonlyMap<string, { width?: number; height?: number; caption?: string }>;
+type AssetImageMetadata = ReadonlyMap<string, { width?: number; height?: number; caption?: string; alt?: string }>;
 
 function markdownImageFor(metadata: AssetImageMetadata | null) {
   return function MarkdownImage({ src, alt }: { src?: unknown; alt?: string }) {
@@ -305,7 +305,7 @@ function markdownImageFor(metadata: AssetImageMetadata | null) {
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={safe}
-        alt={alt ?? ""}
+        alt={details?.alt ?? alt ?? ""}
         loading="lazy"
         decoding="async"
         width={details?.width}
@@ -386,10 +386,10 @@ const Markdown = memo(function Markdown({
   );
   const dimensions = useMemo(() => {
     if (!assets?.length) return null;
-    const map = new Map<string, { width?: number; height?: number; caption?: string }>();
+    const map = new Map<string, { width?: number; height?: number; caption?: string; alt?: string }>();
     for (const asset of assets) {
-      if ((asset.width && asset.height) || asset.caption) {
-        map.set(asset.src, { width: asset.width, height: asset.height, caption: asset.caption });
+      if ((asset.width && asset.height) || asset.caption || asset.alt !== undefined) {
+        map.set(asset.src, { width: asset.width, height: asset.height, caption: asset.caption, alt: asset.alt });
       }
     }
     return map.size > 0 ? map : null;

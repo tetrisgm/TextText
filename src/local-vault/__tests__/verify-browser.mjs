@@ -1452,6 +1452,11 @@ try {
   await page.getByLabel("Choose story images").setInputFiles({ name: "story.png", mimeType: "image/png", buffer: Buffer.from(pixel, "base64") });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/story.png"));
   await page.locator('[aria-label="Document body"] .tt-md-image-preview').waitFor();
+  await page.getByRole("button", { name: "Edit image alt text" }).click();
+  const storyAlt = page.getByRole("textbox", { name: "Image alt text" });
+  await storyAlt.fill("A quiet blue square on a dark background");
+  await storyAlt.press("Tab");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"] .tt-md-image-preview')?.alt === "A quiet blue square on a dark background");
   const storyCaption = page.getByRole("textbox", { name: "Image caption" });
   await storyCaption.fill("A short caption below the image");
   await storyCaption.press("Tab");
@@ -1467,6 +1472,7 @@ try {
   assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /---/);
   assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /!\[[^\]]*\]\(assets\/story\.png\)/);
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.assets.find((asset) => asset.src === "assets/story.png")?.caption, "A short caption below the image");
+  assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.assets.find((asset) => asset.src === "assets/story.png")?.alt, "A quiet blue square on a dark background");
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.subtitle, "A short line beneath the title");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
   await page.getByRole("button", { name: "Add images", exact: true }).click();

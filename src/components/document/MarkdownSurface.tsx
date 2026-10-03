@@ -383,7 +383,9 @@ export function MarkdownSurface({
   concealImageLines = false,
   imageSources,
   imageCaptions,
+  imageAltTexts,
   onImageCaptionChange,
+  onImageAltChange,
   renderDividers = false,
   disabled = false,
 }: {
@@ -401,7 +403,9 @@ export function MarkdownSurface({
   /** Resolved URLs keyed by the image paths stored in Markdown. */
   imageSources?: Readonly<Record<string, string>>;
   imageCaptions?: Readonly<Record<string, string>>;
+  imageAltTexts?: Readonly<Record<string, string>>;
   onImageCaptionChange?: (path: string, caption: string) => void;
+  onImageAltChange?: (path: string, alt: string) => void;
   renderDividers?: boolean;
   disabled?: boolean;
 }) {
@@ -796,10 +800,42 @@ export function MarkdownSurface({
       const preview = document.createElement("img");
       preview.className = "tt-md-image-preview";
       preview.src = imageSource;
-      preview.alt = image[1] || "Story image";
+      preview.alt = imageAltTexts?.[image[2]] ?? image[1] ?? "";
       preview.contentEditable = "false";
       preview.draggable = false;
       wrapper.appendChild(preview);
+      if (onImageAltChange) {
+        const button = document.createElement("button");
+        button.className = "tt-md-image-alt-button";
+        button.type = "button";
+        button.contentEditable = "false";
+        button.setAttribute("aria-label", "Edit image alt text");
+        const alt = document.createElement("input");
+        alt.className = "tt-md-image-alt";
+        alt.type = "text";
+        alt.placeholder = "Describe this image for screen readers";
+        alt.setAttribute("aria-label", "Image alt text");
+        alt.maxLength = 1000;
+        alt.value = imageAltTexts?.[image[2]] ?? image[1] ?? "";
+        alt.contentEditable = "false";
+        alt.hidden = true;
+        for (const control of [button, alt]) {
+          for (const name of ["beforeinput", "input", "keydown", "paste", "pointerdown", "click"]) {
+            control.addEventListener(name, (event) => event.stopPropagation());
+          }
+        }
+        button.addEventListener("click", () => { alt.hidden = false; alt.focus(); });
+        alt.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") { alt.value = imageAltTexts?.[image[2]] ?? image[1] ?? ""; alt.hidden = true; button.focus(); }
+          if (event.key === "Enter") alt.blur();
+        });
+        alt.addEventListener("blur", () => {
+          if (alt.hidden) return;
+          if (alt.value !== (imageAltTexts?.[image[2]] ?? image[1] ?? "")) onImageAltChange(image[2], alt.value);
+          alt.hidden = true;
+        });
+        wrapper.append(button, alt);
+      }
       if (onImageCaptionChange) {
         const caption = document.createElement("input");
         caption.className = "tt-md-image-caption";
@@ -862,7 +898,7 @@ export function MarkdownSurface({
     .map((s) => `${s.clientId}:${s.from}:${s.to}:${s.color}:${s.userName}`)
     .join("|");
   const imagesSignature = imageSources
-    ? JSON.stringify([renderDividers, Object.entries(imageSources), Object.entries(imageCaptions ?? {})])
+    ? JSON.stringify([renderDividers, Object.entries(imageSources), Object.entries(imageCaptions ?? {}), Object.entries(imageAltTexts ?? {})])
     : String(renderDividers);
   const builtValueRef = useRef<string | null>(null);
   /** Native edits since the last reconcile; cleared once the DOM is trusted. */

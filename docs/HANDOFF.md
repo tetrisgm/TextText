@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog images now have an Alt text control between the image and caption while editing. It saves to the image's existing TextPack `asset.alt`, leaves the Markdown body and caption separate, and takes precedence in the reader image's accessible name. TypeScript, renderer tests, and local/web browser flows pass; `/tmp/texttext-blog-inline-image-light-reference.png` shows the checked editor. Medium's placement controls and broader composition parity remain open; no release was run.
+
 Bookmarks now shows capture failure in the reader and offers Retry capture alongside the reader actions. Retry uses the existing revision-aware enrichment path, keeps authored body text, and reloads the saved TextPack; a browser fixture proves that case. An open Details panel no longer carries to a different bookmark. TypeScript and local/web browser checks pass. Real extractor failures still need Mac/web verification. No release was run.
 
 Bookmarks' saved Summary card now expands and collapses in the reader. Pointer and keyboard checks confirm the TextPack subtitle is unchanged by toggling; switching bookmarks resets it open. TypeScript and the local/web browser flows pass. Automatic enrichment and broader Shiori parity remain open; no release was run.

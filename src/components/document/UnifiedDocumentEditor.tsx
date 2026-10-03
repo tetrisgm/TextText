@@ -1675,6 +1675,9 @@ export function UnifiedDocumentEditor({
   const bodyImageCaptions = useMemo(() => Object.fromEntries(
     document.content.assets.filter((asset) => asset.kind === "image").map((asset) => [asset.src, asset.caption ?? ""]),
   ), [document.content.assets]);
+  const bodyImageAltTexts = useMemo(() => Object.fromEntries(
+    document.content.assets.filter((asset) => asset.kind === "image" && asset.alt !== undefined).map((asset) => [asset.src, asset.alt!]),
+  ), [document.content.assets]);
   const galleryImages = useMemo(() => document.content.assets.filter((asset) => asset.kind === "image"), [document.content.assets]);
   const updateImageCaption = useCallback((path: string, value: string) => {
     const current = currentLocalDocument();
@@ -1687,6 +1690,13 @@ export function UnifiedDocumentEditor({
         assets: current.content.assets.map((asset) => asset.src === path ? { ...asset, caption: caption || undefined } : asset),
       },
     });
+  }, [currentLocalDocument, updateDocumentSnapshot]);
+  const updateImageAlt = useCallback((path: string, value: string) => {
+    const current = currentLocalDocument();
+    if (!current.content.assets.some((asset) => asset.src === path)) return;
+    updateDocumentSnapshot({ ...current, content: { ...current.content,
+      assets: current.content.assets.map((asset) => asset.src === path ? { ...asset, alt: value.trim() } : asset),
+    } });
   }, [currentLocalDocument, updateDocumentSnapshot]);
   const slots = useMemo(
     () => ({
@@ -1789,7 +1799,9 @@ export function UnifiedDocumentEditor({
               onSlash={experience === "note" ? (insertLiteral) => { noteSlashLiteral.current = insertLiteral; setNoteInsertOpen(true); } : undefined}
               imageSources={experience === "article" ? bodyImageSources : undefined}
               imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
+              imageAltTexts={experience === "article" ? bodyImageAltTexts : undefined}
               onImageCaptionChange={experience === "article" ? updateImageCaption : undefined}
+              onImageAltChange={experience === "article" ? updateImageAlt : undefined}
               renderDividers={experience === "article"}
               disabled={imagePastePending}
             />
@@ -2322,6 +2334,11 @@ export function UnifiedDocumentEditor({
         .tt-md-surface .tt-md-image-caption{display:block;box-sizing:border-box;width:100%;margin:-.5rem 0 1.5rem;padding:.35rem .5rem;border:0;border-radius:0;background:transparent;color:var(--muted,#6e6e73);font:400 .82rem/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:center;outline:none}
         .tt-md-surface .tt-md-image-caption::placeholder{color:color-mix(in srgb,var(--muted,#6e6e73) 60%,transparent)}
         .tt-md-surface .tt-md-image-caption:focus{box-shadow:0 1px 0 var(--tt-accent,#0071e3)}
+        .tt-md-surface .tt-md-image-alt-button{display:block;margin:-.75rem auto .5rem;padding:3px 8px;border:0;border-radius:4px;background:transparent;color:var(--muted,#6e6e73);font:500 .72rem/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-md-surface .tt-md-image-alt-button::before{content:"Alt text"}
+        .tt-md-surface .tt-md-image-alt-button:focus-visible{outline:2px solid var(--tt-accent,#0071e3);outline-offset:2px}
+        .tt-md-surface .tt-md-image-alt{display:block;box-sizing:border-box;width:100%;margin:0 auto .75rem;padding:7px 9px;border:1px solid var(--line,#ddd);border-radius:5px;background:var(--surface,#fff);color:var(--ink,#222);font:400 .8rem/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
+        .tt-md-surface .tt-md-image-alt[hidden]{display:none!important}
         .tt-md-surface .tt-md-divider{display:grid;place-items:center;height:2.5rem;color:color-mix(in srgb,currentColor 55%,transparent);pointer-events:none;user-select:none}
         .tt-md-surface .tt-md-divider::before{content:"• • •";font:400 .75rem/1 Georgia,Charter,serif;letter-spacing:.2rem}
         .tt-md-nl{font-size:0;line-height:0}
