@@ -3,7 +3,8 @@ import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import type { NormalizedEntry } from "@/lib/reading/feed-parse";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
-import { vaultRequest } from "./bridge";
+import { vaultRequest, type VaultFile } from "./bridge";
+import { readDocument, writePayload } from "./model";
 import { createFeedSubscriptionPack, createKeptFeedEntryPack, feedEntryHash } from "@/lib/vault/rss";
 import { encodeBase64 } from "./image-import";
 import type { FolderPreview } from "./folder-collection";
@@ -89,6 +90,8 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const [keptHashes, setKeptHashes] = useState<Set<string> | null>(null);
   const [keptEntries, setKeptEntries] = useState<KeptEntry[]>([]);
   const [keptError, setKeptError] = useState("");
+  const [readStateBusy, setReadStateBusy] = useState("");
+  const [readStateError, setReadStateError] = useState("");
   const [sourceLimit, setSourceLimit] = useState(8);
   const cachedSources = useRef(new Map<string, FeedStory[]>());
   const feedKey = useMemo(() => JSON.stringify(sources.map(source => {
@@ -183,6 +186,22 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       if (activeKey === key) setStoryError(message); else setError(message);
     } finally { setSaving(null); }
   };
+  const toggleKeptRead = async (entry: KeptEntry) => {
+    if (!canAdd || readStateBusy) return;
+    setReadStateBusy(entry.hash); setReadStateError("");
+    try {
+      const file = await vaultRequest<VaultFile>("read", { path: entry.path });
+      const document = readDocument(file);
+      if (!file.path.startsWith("Bookmarks/") || document.content.fields.texttextFeedEntry !== "v1" || document.content.fields.feedEntryHash !== entry.hash) {
+        throw new Error("This saved story changed. Reopen Feeds and try again.");
+      }
+      const fields = { ...document.content.fields, texttextBookmarkReadAt: entry.readAt ? null : new Date().toISOString() };
+      await vaultRequest<VaultFile>("write", writePayload(file, { ...document, content: { ...document.content, fields } }));
+      setKeptEntries(previous => previous.map(savedEntry => savedEntry.hash === entry.hash ? { ...savedEntry, readAt: typeof fields.texttextBookmarkReadAt === "string" ? fields.texttextBookmarkReadAt : undefined } : savedEntry));
+      window.dispatchEvent(new Event("texttext:vault-changed"));
+    } catch (reason) { setReadStateError(reason instanceof Error ? reason.message : "The read state could not be saved."); }
+    finally { setReadStateBusy(""); }
+  };
   const readLaterAction = (story: FeedStory) => {
     const key = `${story.feedURL}\n${story.externalKey}`;
     const kept = saved.has(key);
@@ -273,7 +292,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     <nav className="vault-feed-topics" aria-label="News topics"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}</nav>
     <nav className="vault-feed-sections" aria-label="Feed sections"><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button><button aria-pressed={tab === "Latest"} onClick={() => setTab("Latest")}>Latest</button>{canReadLater && <button aria-pressed={tab === "Read Later"} onClick={() => setTab("Read Later")}>Read Later</button>}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
     {sourceRows.length > 8 && !["Sources", "Read Later"].includes(tab) && <div className="vault-feed-source-window"><span>Reading {Math.min(sourceLimit, sourceRows.length)} of {sourceRows.length} sources</span>{sourceLimit < sourceRows.length && <button type="button" disabled={loading} onClick={() => setSourceLimit(limit => limit + 8)}>Load more sources</button>}</div>}
-    {tab === "Read Later" ? <><h2 className="vault-feed-headlines-title">Read Later</h2>{!keptHashes && !keptError && <p role="status">Reading saved stories…</p>}{keptHashes && !visibleKept.length && <p>{query ? "No saved stories match this search." : "Stories saved from Feeds appear here and in Bookmarks."}</p>}<ol className="vault-feed-saved-list">{visibleKept.map(entry => <li key={entry.hash}><button type="button" disabled={!canOpenBookmark} onClick={() => onOpenBookmark(entry.path)}><span className="vault-feed-publisher"><span aria-hidden="true">{(entry.source || "S").slice(0, 1).toUpperCase()}</span>{entry.source || "Saved story"}{entry.keptAt && <time dateTime={entry.keptAt}>{storyDate(entry.keptAt)}</time>}</span><strong>{entry.title}</strong>{entry.readAt && <small className="vault-feed-read-state">✓ Read</small>}</button></li>)}</ol></> : tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !visibleCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{visibleCoverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
+    {tab === "Read Later" ? <><h2 className="vault-feed-headlines-title">Read Later</h2>{!keptHashes && !keptError && <p role="status">Reading saved stories…</p>}{readStateError && <p role="alert">{readStateError}</p>}{keptHashes && !visibleKept.length && <p>{query ? "No saved stories match this search." : "Stories saved from Feeds appear here and in Bookmarks."}</p>}<ol className="vault-feed-saved-list">{visibleKept.map(entry => <li key={entry.hash}><button type="button" disabled={!canOpenBookmark} onClick={() => onOpenBookmark(entry.path)}><span className="vault-feed-publisher"><span aria-hidden="true">{(entry.source || "S").slice(0, 1).toUpperCase()}</span>{entry.source || "Saved story"}{entry.keptAt && <time dateTime={entry.keptAt}>{storyDate(entry.keptAt)}</time>}</span><strong>{entry.title}</strong>{entry.readAt && <small className="vault-feed-read-state">✓ Read</small>}</button><button type="button" className="vault-feed-read-toggle" disabled={!canAdd || Boolean(readStateBusy)} aria-label={`Mark ${entry.title} ${entry.readAt ? "unread" : "read"}`} onClick={() => void toggleKeptRead(entry)}>{readStateBusy === entry.hash ? "Saving…" : entry.readAt ? "Mark unread" : "Mark read"}</button></li>)}</ol></> : tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !visibleCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{visibleCoverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
       {loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}
       {!loading && !visibleRankedCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
       <ol>{visibleRankedCoverage.map((group, index) => {
