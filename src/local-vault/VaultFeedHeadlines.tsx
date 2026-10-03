@@ -9,6 +9,7 @@ import { createFeedSubscriptionPack, createKeptFeedEntryPack, createReadFeedEntr
 import { encodeBase64 } from "./image-import";
 import type { FolderPreview } from "./folder-collection";
 import { clusterFeedStories, rankFeedClusters, type FeedStory, type FeedCluster } from "./feed-clusters";
+import { readingActivity } from "./reading-activity";
 
 type Headline = { externalKey: string; title: string; permalink: string | null; publishedAt: string | null; excerpt: string | null; imageUrl: string | null };
 type FeedPage = { entries: Headline[] };
@@ -373,9 +374,10 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       .map(entry => ({ ...entry, kind: "read" as const })),
   ].sort((a, b) => Date.parse(b.readAt!) - Date.parse(a.readAt!));
   const readHistory = [...keptEntries.filter(entry => entry.readAt), ...readEntries.filter(entry => !keptEntries.some(kept => kept.hash === entry.hash && kept.readAt))];
+  const activity = readingActivity(readHistory.flatMap(entry => entry.readAt ? [entry.readAt] : []));
   const topPublishers = [...readHistory.reduce((counts, entry) => counts.set(entry.source || "Unknown source", (counts.get(entry.source || "Unknown source") ?? 0) + 1), new Map<string, number>())]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).slice(0, 5);
-  const profile = <div className="vault-feed-profile"><h2>Profile</h2><div className="vault-feed-profile-count"><strong>{readHistory.length}</strong><span>{readHistory.length === 1 ? "story read" : "stories read"}</span></div>
+  const profile = <div className="vault-feed-profile"><h2>Profile</h2><div className="vault-feed-profile-summary"><div className="vault-feed-profile-ring" role="img" aria-label={`${activity.daysThisWeek} of 7 days read in the past week`}><svg viewBox="0 0 100 100" aria-hidden="true"><circle className="vault-feed-profile-ring-track" cx="50" cy="50" r="42" pathLength="100" /><circle className="vault-feed-profile-ring-fill" cx="50" cy="50" r="42" pathLength="100" strokeDasharray={`${activity.daysThisWeek * 100 / 7} 100`} /></svg><strong>{activity.daysThisWeek}</strong><span>of 7 days</span></div><div className="vault-feed-profile-count"><strong>{readHistory.length}</strong><span>{readHistory.length === 1 ? "story read" : "stories read"}</span><small>{activity.streak ? `${activity.streak}-day reading streak` : "No current reading streak"}</small></div></div>
     <nav aria-label="Reading library"><button type="button" onClick={() => { setSearch(""); setTab("Read Later"); }}>Read Later <span>{keptEntries.length}</span></button><button type="button" onClick={() => { setSearch(""); setTab("History"); }}>Reading history <span>{readHistory.length}</span></button><button type="button" onClick={() => { setSearch(""); setTab("Sources"); }}>Subscriptions <span>{sourceRows.length}</span></button></nav>
     {topPublishers.length > 0 && <section aria-label="Most read publishers"><h3>Most read publishers</h3><ol>{topPublishers.map(([source, count]) => <li key={source}><span>{source}</span><span>{count}</span></li>)}</ol></section>}
   </div>;

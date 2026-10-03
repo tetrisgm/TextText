@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds Profile now shows distinct days read in the past seven days and a current reading streak based only on completed History/Read Later entries. The ring is a real activity measure, not an invented points score. TypeScript, three focused calendar tests, and local/web browser flows pass; `/tmp/texttext-feeds-profile-light-reference.png` shows the light profile. The two Artifact image folders named in the old plan are absent on this Mac, and the repository contains no originals; a public [Artifact profile screenshot](https://goldsguide.com/artifact-review-instagram-cofounders/) informed this change. Partial reading progress and broader Artifact parity remain open; no release was run.
+
 Notes now opens its card insert menu with `/` at a body word boundary. Arrow keys choose Tag or Image; Escape and Space insert a literal slash. A source guard prevents stale slash insertion from replacing newer collaborative text. TypeScript and local/web browser flows passed, including keyboard selection and a dark capture at `/tmp/texttext-note-slash-menu-reference.png`. The full Supernotes coupler and visual parity remain open; no release was run.
 
 Notes now puts its supported insert actions in a card-top plus menu. Tag focuses the card's tag input; Image opens the existing TextPack asset picker. The redundant footer image button is gone. TypeScript and local/web browser flows passed; the local flow exercises both actions and captures light/dark at `/tmp/texttext-note-editor-light-reference.png` and `/tmp/texttext-note-editor-reference.png`. Supernotes' broader coupler and slash shortcut remain open; no release was run.

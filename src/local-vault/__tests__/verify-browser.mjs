@@ -1841,6 +1841,8 @@ try {
   await page.getByRole("heading", { name: "Profile", exact: true }).waitFor();
   assert.equal(await page.locator(".vault-feed-profile-count strong").textContent(), "2");
   await page.getByText("stories read", { exact: true }).waitFor();
+  await page.getByRole("img", { name: "1 of 7 days read in the past week" }).waitFor();
+  await page.getByText("1-day reading streak", { exact: true }).waitFor();
   await page.getByRole("region", { name: "Most read publishers" }).getByText("Design feed").waitFor();
   await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Subscriptions 25" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-profile-reference.png" });
