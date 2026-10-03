@@ -2581,6 +2581,21 @@ try {
   const linkedCard = [...files.values()].find(file => JSON.parse(file.documentJSON).content.title === "Linked idea");
   assert.equal(JSON.parse(linkedCard.documentJSON).content.body, "[Related reading](https://example.com/related)");
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  const selectedLinkDraft = page.getByRole("form", { name: "New card draft" });
+  await selectedLinkDraft.getByRole("textbox", { name: "New card title" }).fill("Selected link idea");
+  await selectedLinkDraft.getByRole("textbox", { name: "New card body" }).fill("Read the related card today.");
+  await selectedLinkDraft.getByRole("textbox", { name: "New card body" }).evaluate(element => {
+    element.focus();
+    element.setSelectionRange(9, 21);
+  });
+  await selectedLinkDraft.getByRole("button", { name: "Add to new card" }).click();
+  await selectedLinkDraft.getByRole("menuitem", { name: /Link/ }).click();
+  assert.equal(await selectedLinkDraft.getByRole("textbox", { name: "New card link text" }).inputValue(), "related card");
+  await selectedLinkDraft.getByRole("textbox", { name: "New card link address" }).fill("https://example.com/card");
+  await selectedLinkDraft.getByRole("button", { name: "Insert link" }).click();
+  assert.equal(await selectedLinkDraft.getByRole("textbox", { name: "New card body" }).inputValue(), "Read the [related card](https://example.com/card) today.");
+  await selectedLinkDraft.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   await page.getByRole("textbox", { name: "New card title" }).fill("Discard this draft");
   await page.getByRole("form", { name: "New card draft" }).getByRole("button", { name: "Cancel" }).click();
   assert.equal([...files.values()].some(file => JSON.parse(file.documentJSON).content.title === "Discard this draft"), false);
