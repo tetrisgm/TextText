@@ -521,6 +521,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const restoredLocationRoot = useRef("");
   const [locationReadyRoot, setLocationReadyRoot] = useState("");
   const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; root: string; itemId: string; origin: HTMLElement | null; focusPending: boolean; focusTitle?: boolean; awaitSharedMode: boolean } | null>(null);
+  const noteDraftActive = useRef(false);
   const [noteEditPath, setNoteEditPath] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -802,7 +803,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     });
   };
   const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => setTemplatePicker(true)); };
-  const createForFolder = (folder: string, templateName: string, initialTitle = "", builtinTemplate?: TemplateDefinition, initialBody = "") => operate(async () => {
+  const createForFolder = (folder: string, templateName: string, initialTitle = "", builtinTemplate?: TemplateDefinition, initialBody = "", stayInList = false, onCreated?: () => void) => operate(async () => {
     const sourcePath = `Templates/${templateName}.textpack`;
     const source = listing?.items.some(item => item.path === sourcePath) ? await vaultRequest<VaultFile>("read", { path: sourcePath }) : null;
     const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, ...(source ? { sourcePath, sourceHash: source.hash } : {}) });
@@ -811,8 +812,12 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle, subtitle: "", body: initialBody, fields: {}, tags: [], assets: [] },
       presentation: fallback ? { ...example.presentation, template: { id: fallback.id, version: fallback.version } } : example.presentation };
     const created = await vaultRequest<VaultFile>("write", writePayload(cloned, blank, fallback ? { template: fallback } : undefined));
-    setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: folder === "Blog" || folder === "Notes" && !initialBody, awaitSharedMode: allowFolderPicker });
-    setSelected(created); setDestinationFolder(folder); refresh();
+    if (stayInList) onCreated?.();
+    else {
+      setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: folder === "Blog" || folder === "Notes" && !initialBody, awaitSharedMode: allowFolderPicker });
+      setSelected(created); setDestinationFolder(folder);
+    }
+    refresh();
   });
   const currentFolder = destinationFolder.trim();
   const primaryLabel = currentFolder === "Bookmarks" ? "Save bookmark" : currentFolder === "Gallery" ? "Add images" : currentFolder === "Feeds" ? "Add source" : currentFolder === "Blog" ? "Write a story" : "New note";
@@ -1006,6 +1011,16 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     if (id === "open-folder") { openWorkspaceFolder(); return; }
   };
   useEffect(() => {
+    if (destinationFolder.trim() !== "Notes" || selected) noteDraftActive.current = false;
+  }, [destinationFolder, selected]);
+  useEffect(() => {
+    const startDraft = () => { noteDraftActive.current = true; };
+    const endDraft = () => { noteDraftActive.current = false; };
+    window.addEventListener("texttext:note-draft-started", startDraft);
+    window.addEventListener("texttext:note-draft-ended", endDraft);
+    return () => { window.removeEventListener("texttext:note-draft-started", startDraft); window.removeEventListener("texttext:note-draft-ended", endDraft); };
+  }, []);
+  useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.repeat) return;
       const dialogOpen = Boolean(document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]'));
@@ -1017,9 +1032,15 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       if (dialogOpen || event.metaKey || event.ctrlKey || event.altKey || busy) return;
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return;
-      if (!selected && destinationFolder.trim() === "Notes" && canCreate && event.key.length === 1 && /\S/u.test(event.key) && event.key !== "/" && event.key.toLowerCase() !== "n") {
+      if (!selected && destinationFolder.trim() === "Notes" && noteDraftActive.current && event.key === "Backspace") {
         event.preventDefault();
-        void createNote(focusedControl(), event.key);
+        window.dispatchEvent(new CustomEvent("texttext:note-type", { detail: "\b" }));
+        return;
+      }
+      if (!selected && destinationFolder.trim() === "Notes" && canCreate && event.key.length === 1 && (noteDraftActive.current || /\S/u.test(event.key) && event.key !== "/" && event.key.toLowerCase() !== "n")) {
+        event.preventDefault();
+        noteDraftActive.current = true;
+        window.dispatchEvent(new CustomEvent("texttext:note-type", { detail: event.key }));
         return;
       }
       if (event.shiftKey) return;
@@ -1279,6 +1300,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath} galleryCommentsAccess={galleryCommentsAccess}
+        onCreateCard={(title, body, onCreated) => { void createForFolder("Notes", "Note", title, undefined, body, true, onCreated); }}
         onEditNote={canCreate ? (path) => void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true) : undefined}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}

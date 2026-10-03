@@ -63,11 +63,12 @@ function GalleryTile({ source, title, disabled, onOpen, onMeasured, width, heigh
     }} /> : <span>{title}</span>}
   </button>;
 }
-export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, onRevealBookmark, onCreateNote, onQuickSaveBookmark, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath, galleryCommentsAccess }: {
+export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, onRevealBookmark, onCreateNote, onCreateCard, onQuickSaveBookmark, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath, galleryCommentsAccess }: {
   listing: VaultListing; folder: string; busy: boolean; onOpen: (path: string) => void;
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
   onCreateNote?: (pastedText?: string) => void; canUsePersonalBookmarks?: boolean;
+  onCreateCard?: (title: string, body: string, onCreated: () => void) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
 }) {
@@ -173,6 +174,34 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const [storyStatus, setStoryStatus] = useState<"all" | "drafts" | "published">("all");
   const storyQuery = storySearch.trim().toLocaleLowerCase();
   const notesFolder = folder === "Notes";
+  const [cardDraft, setCardDraft] = useState<{ title: string; body: string } | null>(null);
+  const cardDraftRef = useRef<{ title: string; body: string } | null>(null);
+  const draftTitleRef = useRef<HTMLTextAreaElement>(null);
+  const draftBodyRef = useRef<HTMLTextAreaElement>(null);
+  const showCardDraft = (initial = "") => {
+    if (cardDraftRef.current && !initial) { draftTitleRef.current?.focus(); return; }
+    const next = { title: initial, body: "" };
+    cardDraftRef.current = next;
+    setCardDraft(next);
+    window.dispatchEvent(new Event("texttext:note-draft-started"));
+    requestAnimationFrame(() => draftTitleRef.current?.focus());
+  };
+  useEffect(() => {
+    if (!notesFolder || !onCreateCard || previewOnly) return;
+    const type = (event: Event) => {
+      const key = (event as CustomEvent<string>).detail;
+      if (typeof key !== "string" || key.length !== 1) return;
+      const current = cardDraftRef.current;
+      if (!current) { showCardDraft(key); return; }
+      const next = { ...current, title: key === "\b" ? [...current.title].slice(0, -1).join("") : current.title + key };
+      cardDraftRef.current = next;
+      setCardDraft(next);
+      if (draftTitleRef.current) draftTitleRef.current.value = next.title;
+    };
+    window.addEventListener("texttext:note-type", type);
+    return () => window.removeEventListener("texttext:note-type", type);
+    // The listener reads the draft ref; reattaching during rapid typing can drop keys.
+  }, [notesFolder, onCreateCard, previewOnly]);
   const [noteSearch, setNoteSearch] = useState("");
   const [noteContentSearch, setNoteContentSearch] = useState<{ query: string; listing?: VaultListing; paths: Set<string>; truncated: boolean; error: string }>({ query: "", paths: new Set(), truncated: false, error: "" });
   const [noteTag, setNoteTag] = useState("");
@@ -339,13 +368,17 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     {queryMessage && <p role="status">{queryMessage}</p>}
     {folder === "Feeds" && feedIndex.key === feedIndexKey && feedIndex.error && <p role="alert">{feedIndex.error}</p>}
     {photoFolder ? <><div className="vault-gallery-tools">{galleryTags.length > 0 && <select aria-label="Filter image tags" value={galleryTag} onChange={event => { setGalleryTag(event.target.value); setPage(0); }}><option value="">All images</option>{galleryTags.map(tag => <option key={tag} value={tag}>#{tag}</option>)}</select>}{gallerySearchOpen ? <label className="vault-gallery-search"><span className="ac-sr-only">Find images</span><input autoFocus type="search" aria-label="Find images" value={gallerySearch} onChange={event => { setGallerySearch(event.target.value); setPage(0); }} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setGallerySearch(""); setGallerySearchOpen(false); setPage(0); } }} disabled={!collectionSearchReady} placeholder={collectionSearchReady ? "Find images" : "Reading image details…"} /></label> : <button type="button" className="vault-gallery-search-button" aria-label="Search images" title="Search images" onClick={() => setGallerySearchOpen(true)}><svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4.5 4.5"/></svg></button>}{gallerySearchOpen && <button type="button" className="vault-gallery-search-close" aria-label="Close image search" onClick={() => { setGallerySearch(""); setGallerySearchOpen(false); setPage(0); }}>Done</button>}</div>{collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.error && <p role="status">{collectionSearchIndex.error}</p>}{collectionSearchReady && (galleryQuery || galleryTag) && !displayedItems.length && <p role="status">No images match.</p>}<div className="vault-photo-grid" ref={galleryGrid}>{galleryRows.map((row, rowIndex) => <div className="vault-photo-row" key={`${rowIndex}:${row.tiles[0].key}`}>{row.tiles.map((tile, index) => <PreviewImage key={tile.key} preview={tile.preview ? { ...tile.preview, image: tile.image } : undefined}>{source => <GalleryTile source={source} title={tile.title} disabled={busy || previewOnly} width={row.widths[index]} height={row.height} onMeasured={ratio => setGalleryRatios(current => current[tile.key] === ratio ? current : { ...current, [tile.key]: ratio })} onOpen={() => setGalleryState({ entries: galleryEntries, selection: galleryEntries.findIndex(entry => entry.path === tile.item.path && entry.index === tile.index) })} />}</PreviewImage>)}</div>)}</div></> : bookmarkFolder ? <VaultBookmarkLibrary items={items} previews={previews} busy={busy} previewOnly={previewOnly} onOpen={onOpen} onQuickSave={onQuickSaveBookmark} preferredPath={preferredBookmarkPath} /> : notesFolder ? <>
-      {onCreateNote && !previewOnly && <button className="vault-note-start" aria-label="Start typing Make a new card" disabled={busy} onClick={() => onCreateNote()}>Start typing or paste to make a card</button>}
+      {onCreateCard && !previewOnly && <button className="vault-note-start" aria-label="Start typing Make a new card" disabled={busy} onClick={() => showCardDraft()}>Start typing or paste to make a card</button>}
       <div className="vault-note-tools"><label><span className="ac-sr-only">Find cards</span><input type="search" aria-label="Find cards" value={noteSearch} onChange={event => { setNoteSearch(event.target.value); setPage(0); }} disabled={!noteIndexReady} placeholder={noteIndexReady ? "Find cards" : "Reading cards…"} /></label><label><span className="ac-sr-only">Sort cards</span><select aria-label="Sort cards" value={noteSort} onChange={event => { setNoteSort(event.target.value as "folder" | "title"); setPage(0); }} disabled={!noteIndexReady}><option value="folder">Folder order</option><option value="title">Title A–Z</option></select></label></div>
       {noteIndex.key === noteIndexKey && noteIndex.listing === listing && noteIndex.error && <p role="status" className="vault-note-index-status">{noteIndex.error}</p>}
       {noteQuery && noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && (noteContentSearch.error || noteContentSearch.truncated) && <p role="status" className="vault-note-index-status">{noteContentSearch.error || "Some long cards were not searched. Results may be incomplete."}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
-      <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path} role="article" aria-label={`${title} card`} tabIndex={busy || previewOnly ? -1 : 0} onKeyDown={event => {
+      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" aria-label="New card draft" onSubmit={event => { event.preventDefault(); const draft = { title: draftTitleRef.current?.value ?? cardDraftRef.current?.title ?? "", body: draftBodyRef.current?.value ?? cardDraftRef.current?.body ?? "" }; if (!draft.title.trim() && !draft.body.trim()) { draftTitleRef.current?.focus(); return; } onCreateCard(draft.title.trim(), draft.body, () => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }); }}>
+        <textarea ref={draftTitleRef} aria-label="New card title" rows={1} placeholder="Title" defaultValue={cardDraft.title} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), title: event.currentTarget.value }; }} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); draftBodyRef.current?.focus(); } }} />
+        <textarea ref={draftBodyRef} aria-label="New card body" rows={4} placeholder="Write a card…" defaultValue={cardDraft.body} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), body: event.currentTarget.value }; }} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+        <div><button type="button" disabled={busy} onClick={() => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }}>Cancel</button><button type="submit" disabled={busy}>Finish</button></div>
+      </form>}{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path} role="article" aria-label={`${title} card`} tabIndex={busy || previewOnly ? -1 : 0} onKeyDown={event => {
         if (event.target !== event.currentTarget || busy || previewOnly) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault(); event.stopPropagation();

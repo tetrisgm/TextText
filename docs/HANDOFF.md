@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes creation now opens an inline card draft immediately from typing on the board or clicking Start typing. Rapid typing stays in the draft title, Tab moves to its body, Finish writes the note TextPack and returns to the grid, and Cancel leaves no file. The existing explicit New note command still opens the full editor. The local browser flow checks rapid typing, no pre-Finish file, Finish, Cancel, and dark/light/narrow rendering; TypeScript, local build, and local/web browser flows pass. The inline draft has plain Markdown editing and still needs the richer Supernotes Coupler and image tools; no release was run.
+
 Newly saved and read feed stories now carry their topic in the same TextPack as the story. Mac and web metadata readers expose it for Profile's reading-topic counts, so unfollowing a source no longer erases attribution for those new stories. Existing stories without a stored topic still fall back to a currently followed source. The RSS pack tests, web store tests, Swift import tests, TypeScript, local build, and local/web browser flows pass. No release was run.
 
 Feeds Profile now shows reading-topic counts from completed story history matched to currently followed source topics. The label makes that scope explicit, so a removed or untagged subscription is not silently assigned a topic. The local browser flow checks the count, both themes were captured, and TypeScript, local build, and local/web browser flows pass. Historic topic attribution remains open because older history TextPacks do not record a topic; no release was run.
