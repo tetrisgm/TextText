@@ -15,9 +15,9 @@ type Headline = { externalKey: string; title: string; permalink: string | null; 
 type FeedPage = { entries: Headline[] };
 type SourceRow = { path: string; source: string; feedURL: string; topic: string | null };
 type FullEntry = { feedURL: string; feedTitle: string; entry: NormalizedEntry };
-type KeptEntry = { hash: string; path: string; title: string; source: string; keptAt: string; readAt?: string; progress?: number | string };
+type KeptEntry = { hash: string; path: string; title: string; source: string; topic?: string; keptAt: string; readAt?: string; progress?: number | string };
 type KeptResponse = { hashes: string[]; entries: KeptEntry[] };
-type ReadEntry = { hash: string; path: string; revision: string; title: string; source: string; readAt: string };
+type ReadEntry = { hash: string; path: string; revision: string; title: string; source: string; topic?: string; readAt: string };
 type ReadResponse = { hashes: string[]; entries: ReadEntry[] };
 const storyTemplate = BUILTIN_TEMPLATES.find(template => template.id === "texttext.article");
 const progressValue = (value: number | string | undefined): number => {
@@ -207,10 +207,11 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       if (existing.hashes.includes(hash)) { setSaved(previous => new Set(previous).add(key)); return; }
       const entry = full?.key === key ? full.value : await vaultRequest<FullEntry>("feedEntry", { feedURL: story.feedURL, externalKey: story.externalKey });
       if (entry.feedURL !== story.feedURL || entry.entry?.externalKey !== story.externalKey) throw new Error("This story no longer matches the selected feed entry. Refresh Feeds and try again.");
-      const pack = await createKeptFeedEntryPack(entry, "bookmark");
+      const topic = story.topic || sourceRows.find(row => row.feedURL === story.feedURL)?.topic || undefined;
+      const pack = await createKeptFeedEntryPack({ ...entry, topic }, "bookmark");
       const imported = await vaultRequest<{ path: string }>("importPack", { title: pack.title, folder: "Bookmarks", data: encodeBase64(pack.bytes) });
       setKeptHashes(previous => new Set([...(previous ?? []), hash]));
-      setKeptEntries(previous => [{ hash, path: imported.path, title: pack.title, source: entry.feedTitle, keptAt: new Date().toISOString() }, ...previous.filter(savedEntry => savedEntry.hash !== hash)]);
+      setKeptEntries(previous => [{ hash, path: imported.path, title: pack.title, source: entry.feedTitle, topic, keptAt: new Date().toISOString() }, ...previous.filter(savedEntry => savedEntry.hash !== hash)]);
       setSaved(previous => new Set(previous).add(key));
       window.dispatchEvent(new Event("texttext:vault-changed"));
     } catch (reason) {
@@ -255,10 +256,11 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       if (existing.hashes.includes(hash)) { setReaderNotice("Already in reading history."); return; }
       const entry = full?.key === key ? full.value : await vaultRequest<FullEntry>("feedEntry", { feedURL: story.feedURL, externalKey: story.externalKey });
       if (entry.feedURL !== story.feedURL || entry.entry?.externalKey !== story.externalKey) throw new Error("This story changed. Refresh Feeds and try again.");
-      const pack = await createReadFeedEntryPack(entry);
+      const topic = story.topic || sourceRows.find(row => row.feedURL === story.feedURL)?.topic || undefined;
+      const pack = await createReadFeedEntryPack({ ...entry, topic });
       const imported = await vaultRequest<VaultFile>("importPack", { title: pack.title, folder: "Feeds/History", data: encodeBase64(pack.bytes) });
       setReadHashes(previous => new Set([...(previous ?? []), hash]));
-      setReadEntries(previous => [{ hash, path: imported.path, revision: imported.hash, title: pack.title, source: entry.feedTitle, readAt: new Date().toISOString() }, ...previous.filter(record => record.hash !== hash)]);
+      setReadEntries(previous => [{ hash, path: imported.path, revision: imported.hash, title: pack.title, source: entry.feedTitle, topic, readAt: new Date().toISOString() }, ...previous.filter(record => record.hash !== hash)]);
       setReaderNotice("Added to reading history.");
       window.dispatchEvent(new Event("texttext:vault-changed"));
     } catch (reason) { setStoryError(reason instanceof Error ? reason.message : "This story could not be marked read."); }
@@ -438,14 +440,14 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).slice(0, 5);
   const topicsBySource = new Map(sourceRows.filter(row => row.topic).map(row => [row.source, row.topic!]));
   const topReadingTopics = [...readHistory.reduce((counts, entry) => {
-    const topic = topicsBySource.get(entry.source);
+    const topic = entry.topic || topicsBySource.get(entry.source);
     if (topic) counts.set(topic, (counts.get(topic) ?? 0) + 1);
     return counts;
   }, new Map<string, number>())].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).slice(0, 5);
   const profile = <div className="vault-feed-profile"><h2>Profile</h2><div className="vault-feed-profile-summary"><div className="vault-feed-profile-ring" role="img" aria-label={`${activity.daysThisWeek} of 7 days read in the past week`}><svg viewBox="0 0 100 100" aria-hidden="true"><circle className="vault-feed-profile-ring-track" cx="50" cy="50" r="42" pathLength="100" /><circle className="vault-feed-profile-ring-fill" cx="50" cy="50" r="42" pathLength="100" strokeDasharray={`${activity.daysThisWeek * 100 / 7} 100`} /></svg><strong>{activity.daysThisWeek}</strong><span>of 7 days</span></div><div className="vault-feed-profile-count"><strong>{readHistory.length}</strong><span>{readHistory.length === 1 ? "story read" : "stories read"}</span><small>{activity.streak ? `${activity.streak}-day reading streak` : "No current reading streak"}</small></div></div>
     <nav aria-label="Reading library"><button type="button" onClick={() => { setSearch(""); setTab("Read Later"); }}>Read Later <span>{keptEntries.length}</span></button><button type="button" onClick={() => { setSearch(""); setTab("History"); }}>Reading history <span>{readHistory.length}</span></button><button type="button" onClick={() => { setSearch(""); setTab("Sources"); }}>Subscriptions <span>{sourceRows.length}</span></button><button type="button" onClick={() => { setInterests(new Set()); setExploringInterests(true); }}>Explore interests <span>{topics.length}</span></button></nav>
     {topPublishers.length > 0 && <section aria-label="Most read publishers"><h3>Most read publishers</h3><ol>{topPublishers.map(([source, count]) => <li key={source}><span>{source}</span><span>{count}</span></li>)}</ol></section>}
-    {topReadingTopics.length > 0 && <section aria-label="Reading topics from followed sources"><h3>Reading topics</h3><p>From sources you follow now</p><ol>{topReadingTopics.map(([topic, count]) => <li key={topic}><span>{topic}</span><span>{count}</span></li>)}</ol></section>}
+    {topReadingTopics.length > 0 && <section aria-label="Reading topics"><h3>Reading topics</h3><ol>{topReadingTopics.map(([topic, count]) => <li key={topic}><span>{topic}</span><span>{count}</span></li>)}</ol></section>}
   </div>;
   const matchesStory = (story: FeedStory) => !query || [story.title, story.source, story.excerpt, story.topic].some(value => value?.toLocaleLowerCase().includes(query));
   const visibleStories = (tab === "Latest" ? stories : stories.filter(story => story.topic === tab)).filter(matchesStory);

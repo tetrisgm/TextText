@@ -72,7 +72,7 @@ try {
       const entries = [...files.values()].filter(file => file.path.startsWith("Bookmarks/")).flatMap(file => {
         const content = JSON.parse(file.documentJSON).content;
         const fields = content.fields || {};
-        return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", keptAt: fields.keptAt || "", ...(fields.texttextBookmarkReadAt ? { readAt: fields.texttextBookmarkReadAt } : {}), ...(typeof fields.texttextFeedReadingProgress === "number" ? { progress: fields.texttextFeedReadingProgress } : {}) }] : [];
+        return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", ...(fields.feedTopic ? { topic: fields.feedTopic } : {}), keptAt: fields.keptAt || "", ...(fields.texttextBookmarkReadAt ? { readAt: fields.texttextBookmarkReadAt } : {}), ...(typeof fields.texttextFeedReadingProgress === "number" ? { progress: fields.texttextFeedReadingProgress } : {}) }] : [];
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
@@ -80,7 +80,7 @@ try {
       const entries = [...files.values()].filter(file => file.path.startsWith("Feeds/History/")).flatMap(file => {
         const content = JSON.parse(file.documentJSON).content;
         const fields = content.fields || {};
-        return fields.texttextFeedHistoryEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, revision: file.hash, title: content.title, source: fields.feedTitle || "", readAt: fields.readAt || "" }] : [];
+        return fields.texttextFeedHistoryEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, revision: file.hash, title: content.title, source: fields.feedTitle || "", ...(fields.feedTopic ? { topic: fields.feedTopic } : {}), readAt: fields.readAt || "" }] : [];
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
@@ -1899,6 +1899,8 @@ try {
   if (!await page.getByLabel("More actions: Design headline 2").first().evaluate(summary => summary.parentElement.open)) await page.getByLabel("More actions: Design headline 2").first().click();
   assert.match(await page.getByLabel("More actions: Design headline 2").first().locator("..").locator(".vault-feed-read-later").textContent(), /Saved/);
   assert.equal([...files.values()].filter(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash).length, keptBeforeScan + 1);
+  const designBookmark = [...files.values()].find(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.title === "Design headline 2");
+  assert.equal(JSON.parse(designBookmark.documentJSON).content.fields.feedTopic, "Design");
   await page.getByRole("button", { name: "A considered design headline" }).first().click();
   const feedReader = page.getByRole("region", { name: "Feed story" });
   await feedReader.getByText("A full in-app reading view for this story.").waitFor();
@@ -1923,6 +1925,7 @@ try {
   await feedReader.getByText("Added to reading history.").waitFor({ timeout: 12_000 });
   const readFeedPack = [...files.values()].find(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.fields.texttextFeedHistoryEntry === "v1");
   assert.ok(readFeedPack);
+  assert.equal(JSON.parse(readFeedPack.documentJSON).content.fields.feedTopic, "Design");
   assert.equal(JSON.parse(readFeedPack.documentJSON).content.fields.texttextFeedEntry, undefined);
   await page.getByRole("button", { name: "Back to Feeds" }).click();
   await page.getByRole("button", { name: "History", exact: true }).click();
@@ -1946,6 +1949,7 @@ try {
   await feedReader.getByRole("button", { name: "Saved: A considered design headline" }).waitFor();
   const keptFeedBookmark = [...files.values()].find(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash);
   assert.equal(JSON.parse(keptFeedBookmark.documentJSON).presentation.template.id, "texttext.bookmark");
+  assert.equal(JSON.parse(keptFeedBookmark.documentJSON).content.fields.feedTopic, "Design");
   await page.getByRole("button", { name: "Back to Feeds" }).click();
   await page.getByRole("button", { name: "Design headline 6" }).first().click();
   await feedReader.getByText("Paragraph 45 of the long reading test.").waitFor();
@@ -2028,7 +2032,7 @@ try {
   await page.getByRole("img", { name: "1 of 7 days read in the past week" }).waitFor();
   await page.getByText("1-day reading streak", { exact: true }).waitFor();
   await page.getByRole("region", { name: "Most read publishers" }).getByText("Design feed").waitFor();
-  const readingTopics = page.getByRole("region", { name: "Reading topics from followed sources" });
+  const readingTopics = page.getByRole("region", { name: "Reading topics" });
   await readingTopics.getByText("Design", { exact: true }).waitFor();
   assert.equal(await readingTopics.locator("li").first().textContent(), "Design2");
   await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Subscriptions 25" }).waitFor();

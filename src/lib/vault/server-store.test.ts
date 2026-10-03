@@ -116,13 +116,13 @@ describe("directory TextPack store", () => {
   it("returns only marked Bookmark TextPacks for web Read Later", async () => {
     const document = emptyDocumentSnapshot();
     document.content.title = "Saved headline";
-    document.content.fields = { texttextFeedEntry: "v1", feedEntryHash: "a".repeat(64), feedTitle: "Publisher", keptAt: "2026-10-02T10:00:00Z", texttextBookmarkReadAt: "2026-10-02T11:00:00Z", texttextFeedReadingProgress: 43 };
+    document.content.fields = { texttextFeedEntry: "v1", feedEntryHash: "a".repeat(64), feedTitle: "Publisher", feedTopic: "Science", keptAt: "2026-10-02T10:00:00Z", texttextBookmarkReadAt: "2026-10-02T11:00:00Z", texttextFeedReadingProgress: 43 };
     const saved = buildTextpack("Saved headline", { document, markdown: '---\ntextTextId: "saved-feed"\n---\nSaved story' });
     await writeVaultTextpack({ root, workspaceId, itemId: "saved-feed", relativePath: "Bookmarks/Saved.textpack", operationId: "saved-feed", bytes: saved, baseRevision: null });
     await writeVaultTextpack({ root, workspaceId, itemId: "not-bookmark", relativePath: "Notes/Other.textpack", operationId: "not-bookmark", bytes: pack("ordinary", "not-bookmark"), baseRevision: null });
     const items = (await listVaultTextpacks({ root, workspaceId })).items;
     expect(await listVaultKeptFeedEntries({ root, workspaceId, items })).toEqual([{
-      itemId: "saved-feed", hash: "a".repeat(64), path: "Bookmarks/Saved.textpack", title: "Saved headline", source: "Publisher",
+      itemId: "saved-feed", hash: "a".repeat(64), path: "Bookmarks/Saved.textpack", title: "Saved headline", source: "Publisher", topic: "Science",
       keptAt: "2026-10-02T10:00:00Z", readAt: "2026-10-02T11:00:00Z", progress: 43,
     }]);
   });
@@ -130,13 +130,13 @@ describe("directory TextPack store", () => {
   it("lists explicit unsaved reads from Feeds/History without adding them to Read Later", async () => {
     const document = emptyDocumentSnapshot();
     document.content.title = "Read headline";
-    document.content.fields = { texttextFeedHistoryEntry: "v1", feedEntryHash: "b".repeat(64), feedTitle: "Publisher", readAt: "2026-10-02T11:00:00Z" };
+    document.content.fields = { texttextFeedHistoryEntry: "v1", feedEntryHash: "b".repeat(64), feedTitle: "Publisher", feedTopic: "Science", readAt: "2026-10-02T11:00:00Z" };
     const bytes = buildTextpack("Read headline", { document, markdown: '---\ntextTextId: "read-feed"\n---\nRead story' });
     await writeVaultTextpack({ root, workspaceId, itemId: "read-feed", relativePath: "Feeds/History/Read.textpack", operationId: "read-feed", bytes, baseRevision: null });
     const items = (await listVaultTextpacks({ root, workspaceId })).items;
     expect(await listVaultReadFeedEntries({ root, workspaceId, items })).toEqual([{
       itemId: "read-feed", hash: "b".repeat(64), path: "Feeds/History/Read.textpack", revision: hash(bytes),
-      title: "Read headline", source: "Publisher", readAt: "2026-10-02T11:00:00Z",
+      title: "Read headline", source: "Publisher", topic: "Science", readAt: "2026-10-02T11:00:00Z",
     }]);
     expect(await listVaultKeptFeedEntries({ root, workspaceId, items })).toEqual([]);
   });

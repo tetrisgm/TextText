@@ -253,7 +253,6 @@
 .vault-app .vault-feed-profile nav button span,.vault-app .vault-feed-profile li span:last-child { color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-profile h3 { margin:0 0 4px; font-size:17px; }
 .vault-app .vault-feed-profile section + section { margin-top:26px; }
-.vault-app .vault-feed-profile section > p { margin:0 0 4px; color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-profile ol { margin:0; padding:0; list-style:none; }
 .vault-app .vault-feed-saved-list strong { display:block; margin-top:8px; font-size:17px; line-height:1.35; font-weight:650; }
 .vault-app .vault-feed-coverage { max-width:720px; margin:0 auto; padding:24px 0 80px; }

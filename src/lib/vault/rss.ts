@@ -116,7 +116,7 @@ export async function feedEntryHash(feedURL: string, externalKey: string): Promi
  * caller imports it through the normal create-only vault operation. A later
  * feed refresh cannot alter this snapshot. */
 async function createFeedEntryPack(input: {
-  feedURL: string; feedTitle: string; entry: NormalizedEntry; keptAt?: string; readAt?: string;
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; topic?: string; keptAt?: string; readAt?: string;
 }, destination: "article" | "bookmark", kind: "kept" | "read"): Promise<{ title: string; bytes: Uint8Array }> {
   const feedURL = publicFeedURL(input.feedURL);
   const entry = input.entry;
@@ -127,6 +127,7 @@ async function createFeedEntryPack(input: {
   const sourceURL = optionalPublicURL(entry.permalink) ?? optionalPublicURL(entry.externalUrl);
   const title = String(entry.title || "").trim().slice(0, 1000) || sourceURL || "Untitled article";
   const feedTitle = input.feedTitle.trim().slice(0, 1000) || new URL(feedURL).hostname;
+  const topic = input.topic?.trim().slice(0, 100);
   const selected = template(destination === "bookmark" ? "texttext.bookmark" : "texttext.article");
   const document = emptyDocumentSnapshot({ id: selected.id, version: selected.version });
   document.content.title = title;
@@ -137,6 +138,7 @@ async function createFeedEntryPack(input: {
   document.content.fields = {
     [kind === "read" ? READ_FEED_ENTRY_FIELD : KEPT_FEED_ENTRY_FIELD]: MARKER_VERSION,
     feedUrl: feedURL, feedTitle, feedEntryHash: entryHash,
+    ...(topic ? { feedTopic: topic } : {}),
     ...(kind === "read" ? { readAt: recordedAt } : { keptAt: recordedAt }),
     feedAvailability: ["full", "excerpt", "metadata"].includes(entry.availability) ? entry.availability : "metadata",
     ...(sourceURL ? { sourceUrl: sourceURL } : {}),
@@ -157,7 +159,7 @@ async function createFeedEntryPack(input: {
 }
 
 export function createKeptFeedEntryPack(input: {
-  feedURL: string; feedTitle: string; entry: NormalizedEntry; keptAt?: string;
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; topic?: string; keptAt?: string;
 }, destination: "article" | "bookmark" = "article") {
   return createFeedEntryPack(input, destination, "kept");
 }
@@ -165,7 +167,7 @@ export function createKeptFeedEntryPack(input: {
 /** A deliberate Mark read snapshots an unsaved story in Feeds/History.
  * This never places it in Bookmarks or turns a feed refresh into a write. */
 export function createReadFeedEntryPack(input: {
-  feedURL: string; feedTitle: string; entry: NormalizedEntry; readAt?: string;
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; topic?: string; readAt?: string;
 }) {
   return createFeedEntryPack(input, "article", "read");
 }

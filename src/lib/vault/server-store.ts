@@ -1320,7 +1320,7 @@ async function listVaultFeedEntries(input: VaultLocation & { items: readonly { i
   const dateField = kind === "kept" ? "keptAt" : "readAt";
   const candidates = input.items.filter(item => item.relativePath.startsWith(prefix) && item.relativePath.endsWith(".textpack"));
   if (candidates.length > 2048) throw new Error("Feed record discovery exceeds limits");
-  const entries: { itemId: string; hash: string; path: string; revision: string; title: string; source: string; recordedAt: string; bookmarkReadAt?: string; progress?: number }[] = [];
+  const entries: { itemId: string; hash: string; path: string; revision: string; title: string; source: string; topic?: string; recordedAt: string; bookmarkReadAt?: string; progress?: number }[] = [];
   let scanned = 0, expanded = 0;
   for (const candidate of candidates) {
     const pack = await readVaultTextpack({ ...input, itemId: candidate.itemId });
@@ -1342,6 +1342,7 @@ async function listVaultFeedEntries(input: VaultLocation & { items: readonly { i
       itemId: candidate.itemId, hash: fields.feedEntryHash, path: candidate.relativePath, revision: pack.revision,
       title: String(document.content?.title ?? "Saved story").slice(0, 300),
       source: String(fields.feedTitle ?? "").slice(0, 160),
+      ...(typeof fields.feedTopic === "string" && fields.feedTopic.trim() ? { topic: fields.feedTopic.trim().slice(0, 100) } : {}),
       recordedAt: fields[dateField].slice(0, 32),
       ...(kind === "kept" && typeof fields.texttextBookmarkReadAt === "string" && fields.texttextBookmarkReadAt ? { bookmarkReadAt: fields.texttextBookmarkReadAt.slice(0, 32) } : {}),
       ...(kind === "kept" && typeof fields.texttextFeedReadingProgress === "number" && Number.isInteger(fields.texttextFeedReadingProgress) && fields.texttextFeedReadingProgress >= 0 && fields.texttextFeedReadingProgress <= 100 ? { progress: fields.texttextFeedReadingProgress } : {}),
@@ -1358,15 +1359,15 @@ async function listVaultFeedEntries(input: VaultLocation & { items: readonly { i
 
 /** One bounded metadata request serves the web's Read Later list. */
 export async function listVaultKeptFeedEntries(input: VaultLocation & { items: readonly { itemId: string; relativePath: string }[] }) {
-  return (await listVaultFeedEntries(input, "kept")).map(({ itemId, hash, path, title, source, recordedAt, bookmarkReadAt, progress }) => ({
-    itemId, hash, path, title, source, keptAt: recordedAt, ...(bookmarkReadAt ? { readAt: bookmarkReadAt } : {}), ...(progress !== undefined ? { progress } : {}),
+  return (await listVaultFeedEntries(input, "kept")).map(({ itemId, hash, path, title, source, topic, recordedAt, bookmarkReadAt, progress }) => ({
+    itemId, hash, path, title, source, ...(topic ? { topic } : {}), keptAt: recordedAt, ...(bookmarkReadAt ? { readAt: bookmarkReadAt } : {}), ...(progress !== undefined ? { progress } : {}),
   }));
 }
 
 /** Unsaved stories live in Feeds/History and remain regular article TextPacks. */
 export async function listVaultReadFeedEntries(input: VaultLocation & { items: readonly { itemId: string; relativePath: string }[] }) {
-  return (await listVaultFeedEntries(input, "read")).map(({ itemId, hash, path, revision, title, source, recordedAt }) => ({
-    itemId, hash, path, revision, title, source, readAt: recordedAt,
+  return (await listVaultFeedEntries(input, "read")).map(({ itemId, hash, path, revision, title, source, topic, recordedAt }) => ({
+    itemId, hash, path, revision, title, source, ...(topic ? { topic } : {}), readAt: recordedAt,
   }));
 }
 

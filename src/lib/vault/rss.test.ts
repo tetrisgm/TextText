@@ -50,22 +50,22 @@ describe("file-vault feeds", () => {
   });
 
   it("saves a feed story as a bookmark TextPack for the reading library", async () => {
-    const kept = await createKeptFeedEntryPack({ feedURL: "https://publisher.example/feed.xml", feedTitle: "Publisher", entry }, "bookmark");
+    const kept = await createKeptFeedEntryPack({ feedURL: "https://publisher.example/feed.xml", feedTitle: "Publisher", topic: "Science", entry }, "bookmark");
     const pack = openPack(kept.bytes, "Bookmarks/A careful article.textpack", "new");
     const document = readDocument(pack.file);
     expect(document.presentation.template.id).toBe("texttext.bookmark");
     expect(document.content.body).toBe(entry.bodyMarkdown);
-    expect(document.content.fields).toMatchObject({ sourceUrl: entry.permalink, texttextFeedEntry: "v1" });
+    expect(document.content.fields).toMatchObject({ sourceUrl: entry.permalink, texttextFeedEntry: "v1", feedTopic: "Science" });
     expect(document.content.fields.feedEntryHash).toBe(await feedEntryHash("https://publisher.example/feed.xml", entry.externalKey));
     expect(pack.entries[pack.prefix + "feed-entry.json"]).toBeTruthy();
   });
 
   it("records an unsaved read as an article TextPack without a keep marker", async () => {
-    const read = await createReadFeedEntryPack({ feedURL: "https://publisher.example/feed.xml", feedTitle: "Publisher", entry, readAt: "2026-10-02T12:00:00Z" });
+    const read = await createReadFeedEntryPack({ feedURL: "https://publisher.example/feed.xml", feedTitle: "Publisher", topic: "Science", entry, readAt: "2026-10-02T12:00:00Z" });
     const file = openPack(read.bytes, "Feeds/History/A careful article.textpack", "new");
     const document = readDocument(file.file);
     expect(document.presentation.template.id).toBe("texttext.article");
-    expect(document.content.fields).toMatchObject({ texttextFeedHistoryEntry: "v1", feedEntryHash: await feedEntryHash("https://publisher.example/feed.xml", entry.externalKey), readAt: "2026-10-02T12:00:00.000Z" });
+    expect(document.content.fields).toMatchObject({ texttextFeedHistoryEntry: "v1", feedEntryHash: await feedEntryHash("https://publisher.example/feed.xml", entry.externalKey), feedTopic: "Science", readAt: "2026-10-02T12:00:00.000Z" });
     expect(document.content.fields.texttextFeedEntry).toBeUndefined();
     expect(document.content.fields.keptAt).toBeUndefined();
   });

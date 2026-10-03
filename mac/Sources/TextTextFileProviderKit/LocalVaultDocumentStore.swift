@@ -170,6 +170,9 @@ public struct LocalVaultDocumentStore: Sendable {
                     let source = String((fields["feedTitle"] as? String ?? "").prefix(160))
                     let keptAt = String((fields["keptAt"] as? String ?? "").prefix(32))
                     var saved = ["hash": hash, "path": path, "title": title, "source": source, "keptAt": keptAt]
+                    if let topic = fields["feedTopic"] as? String, !topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        saved["topic"] = String(topic.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
+                    }
                     if let readAt = fields["texttextBookmarkReadAt"] as? String, !readAt.isEmpty {
                         saved["readAt"] = String(readAt.prefix(32))
                     }
@@ -216,10 +219,13 @@ public struct LocalVaultDocumentStore: Sendable {
                   let hash = fields["feedEntryHash"] as? String,
                   hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
                   let readAt = fields["readAt"] as? String, !readAt.isEmpty else { continue }
-            let entry = ["hash": hash, "path": path, "revision": file.hash,
+            var entry = ["hash": hash, "path": path, "revision": file.hash,
                 "title": String((content["title"] as? String ?? "Read story").prefix(300)),
                 "source": String((fields["feedTitle"] as? String ?? "").prefix(160)),
                 "readAt": String(readAt.prefix(32))]
+            if let topic = fields["feedTopic"] as? String, !topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                entry["topic"] = String(topic.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
+            }
             if records[hash] == nil || (entry["readAt"] ?? "") > (records[hash]?["readAt"] ?? "") {
                 records[hash] = entry
             }
