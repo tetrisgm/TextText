@@ -1210,6 +1210,9 @@ try {
   await page.locator(".vault-story-list").getByText("A considered subtitle").waitFor();
   await page.locator(".vault-story-list").getByText("Mira Chen").waitFor();
   await page.locator(".vault-story-list").getByText("An opening paragraph.").waitFor();
+  assert.equal(await page.locator(".vault-story-list .vault-story-list-excerpt").filter({ hasText: "![Blue]" }).count(), 0);
+  await page.locator(".vault-story-list img").first().waitFor();
+  await page.locator(".vault-story-list img").first().evaluate(image => image.decode());
   const storySearch = page.getByRole("searchbox", { name: "Find stories" });
   await page.waitForFunction(() => !document.querySelector('input[aria-label="Find stories"]')?.disabled);
   const storyStatus = page.getByRole("group", { name: "Story status" });
@@ -1226,6 +1229,8 @@ try {
   await page.getByRole("status").filter({ hasText: "No stories match." }).waitFor();
   await storySearch.fill("");
   await page.getByRole("button", { name: "Open An essay title" }).waitFor();
+  await page.locator(".vault-story-list img").first().waitFor();
+  await page.locator(".vault-story-list img").first().evaluate(image => image.decode());
   await page.screenshot({ path: "/tmp/texttext-blog-reference.png" });
   await page.getByRole("button", { name: "Open An essay title" }).click();
   const storyReader = page.getByRole("region", { name: "Story reader" });

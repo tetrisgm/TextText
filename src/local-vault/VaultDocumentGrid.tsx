@@ -12,6 +12,13 @@ import { VaultBookmarkLibrary } from "./VaultBookmarkLibrary";
 import { VaultGalleryLightbox } from "./VaultGalleryLightbox";
 
 const PAGE_SIZE = 24;
+function storyExcerpt(markdown: string): string {
+  return markdown.replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/(?:^|\n)\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+)/g, " ")
+    .replace(/[*_`~]/g, "")
+    .replace(/\s+/g, " ").trim().slice(0, 300);
+}
 const noteTemplate = BUILTIN_TEMPLATES.find(template => template.id === "texttext.note");
 function noteCardTemplate(preview?: FolderPreview): TemplateDefinition | undefined {
   const reference = preview?.document?.presentation.template;
@@ -31,20 +38,22 @@ function requestPreview(path: string, active: () => boolean, metadataOnly = fals
   return request;
 }
 function PreviewImage({ preview, children }: { preview?: FolderPreview; children: (url?: string) => React.ReactNode }) {
-  const [source, setSource] = useState<{ image: FolderPreview["image"]; url: string }>();
+  const [source, setSource] = useState<{ data: string; contentType: string; url: string }>();
   const image = preview?.image;
+  const data = image?.data;
+  const contentType = image?.contentType;
   useEffect(() => {
-    if (!image || !["image/png", "image/jpeg"].includes(image.contentType) || image.data.length > 700_000) return;
+    if (!data || !contentType || !["image/png", "image/jpeg"].includes(contentType) || data.length > 700_000) return;
     let url: string;
     try {
-      const bytes = Uint8Array.from(atob(image.data), (character) => character.charCodeAt(0));
-      url = URL.createObjectURL(new Blob([bytes], { type: image.contentType }));
+      const bytes = Uint8Array.from(atob(data), (character) => character.charCodeAt(0));
+      url = URL.createObjectURL(new Blob([bytes], { type: contentType }));
     } catch { return; }
-    const handle = { image, url };
+    const handle = { data, contentType, url };
     void Promise.resolve().then(() => setSource(handle));
     return () => URL.revokeObjectURL(url);
-  }, [image]);
-  return children(source?.image === image ? source?.url : undefined);
+  }, [data, contentType]);
+  return children(source?.data === data && source?.contentType === contentType ? source?.url : undefined);
 }
 function GalleryTile({ source, title, disabled, onOpen, onMeasured, width, height }: { source?: string; title: string; disabled: boolean; onOpen: () => void; onMeasured: (ratio: number) => void; width: number; height: number }) {
   return <button disabled={disabled} onClick={onOpen} aria-label={`Open ${title}`} style={{ width, height }}>
@@ -358,13 +367,13 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       const author = typeof authorValue === "string" ? authorValue.trim() : "";
       const customSubtitle = preview?.document?.content.fields.texttextPreviewSubtitle;
       const subtitle = typeof customSubtitle === "string" ? customSubtitle.trim() : preview?.document?.content.subtitle?.trim() || "";
-      const excerpt = preview?.excerpt && preview.excerpt !== subtitle ? preview.excerpt : "";
+      const excerpt = preview?.excerpt ? storyExcerpt(preview.excerpt) : "";
       return <PreviewImage key={item.path} preview={preview}>{source => <button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={"Open " + title}>
         <span className="vault-story-copy">
           <small className="vault-story-list-byline">{author && <span className="vault-story-list-avatar" aria-hidden="true">{author.slice(0, 1).toUpperCase()}</span>}{author || "Story"}{preview && <span className="vault-story-list-status">· {preview.publishedAt ? "Published" : "Draft"}</span>}</small>
           <strong>{title}</strong>
           {subtitle && <span className="vault-story-list-subtitle">{subtitle}</span>}
-          {excerpt && <span className="vault-story-list-excerpt">{excerpt}</span>}
+          {excerpt && excerpt !== subtitle && <span className="vault-story-list-excerpt">{excerpt}</span>}
         </span>
         {source && /* eslint-disable-next-line @next/next/no-img-element */ <img src={source} alt="" loading="lazy" />}
       </button>}</PreviewImage>;

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog list previews now strip Markdown image syntax and show the actual embedded image. The image lifecycle no longer revokes a thumbnail when refreshed preview metadata contains identical image bytes in a new object. The local browser flow waits for decoding and captures `/tmp/texttext-blog-reference.png`; TypeScript, local bundle, and local/web browser flows pass. Medium editing parity remains open; no release was run.
+
 Feeds For You now shows individually ranked articles, with each publisher, title, excerpt, image, direct reader action, and story menu. Related coverage remains in Headlines. The current dark capture is `/tmp/texttext-feeds-reference.png`; TypeScript, local bundle, and local/web browser flows pass, including opening an article directly from For You. The Artifact originals named by the historical plan are absent from this Mac; remaining parity gaps are tracked in the audit. No release was run.
 
 Bookmarks now keeps its inbox quiet: Add link reveals the URL field only while saving. Pasting, Enter-to-save, clipboard save, validation, and Escape/Cancel remain available; a successful save returns to the list. The current light capture is `/tmp/texttext-bookmark-reference.png`. TypeScript, the local bundle, and local/web browser flows pass (the first local run hit an unrelated Blog formatting timeout, then passed on rerun). Shiori parity remains open; no release was run.
