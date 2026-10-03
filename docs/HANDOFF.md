@@ -2,6 +2,8 @@
 
 ## Current work
 
+The Gallery browser fixture now matches both preview services: it converts source images, including GIFs, into bounded first-frame JPEG stills. Drop and paste use photographic GIFs in the dense-library capture; the separate transparent one-pixel import check remains. The local browser flow asserts both GIF items render images, and `/tmp/texttext-gallery-dense-light-reference.png` now shows an all-photo grid. This corrects a misleading visual fixture; Resurf parity still needs product work and real-content comparison. No release was run.
+
 Gallery viewer blob URLs are now created only after a committed view and revoked when its image or viewer closes. This avoids retaining URLs from an interrupted React render while browsing large libraries. The browser flow opens and navigates multiple images, then confirms the viewed blob URL cannot be fetched after closing; TypeScript, local bundle, and local/web browser flows pass. Resurf visual and creation parity remain open; no release was run.
 
 The Blog writing canvas no longer places a Story topics form below the article. Medium's writing flow keeps topics in the Publish review, and TextText's existing Publish dialog still edits and saves them in the article TextPack. The local browser flow checks the editor has no Story topics region and that the Publish dialog edits topics; TypeScript, local bundle, and local/web browser flows pass. Full Medium parity remains open; no release was run.

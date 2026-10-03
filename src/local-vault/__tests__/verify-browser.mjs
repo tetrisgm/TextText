@@ -126,8 +126,16 @@ try {
       else {
         const document = JSON.parse(file.documentJSON);
         const poster = file.assets?.find((asset) => asset.filename === "preview.png") || file.assets?.find((asset) => asset.contentType.startsWith("image/"));
-        const images = (file.assets ?? []).filter((asset) => asset.contentType.startsWith("image/")).slice(0, 8).map((asset) => ({ data: asset.data, contentType: asset.contentType }));
-        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(file.publishedAt ? { publishedAt: file.publishedAt } : {}), ...(!request.params.metadataOnly ? { ...(poster ? { image: { data: poster.data, contentType: poster.contentType } } : {}), ...(images.length ? { images } : {}) } : {}) };
+        const still = async (asset) => {
+          try {
+            const bytes = await sharp(Buffer.from(asset.data, "base64"), { pages: 1, limitInputPixels: 16_000_000 })
+              .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
+            return { data: bytes.toString("base64"), contentType: "image/jpeg" };
+          } catch { return null; }
+        };
+        const image = !request.params.metadataOnly && poster ? await still(poster) : null;
+        const images = !request.params.metadataOnly ? (await Promise.all((file.assets ?? []).filter((asset) => asset.contentType.startsWith("image/")).slice(0, 8).map(still))).filter(Boolean) : [];
+        result = { document, sourceURL: document.content.fields.sourceUrl, title: document.content.title, excerpt: document.content.body.slice(0, 400), ...(file.publishedAt ? { publishedAt: file.publishedAt } : {}), ...(!request.params.metadataOnly ? { ...(image ? { image } : {}), ...(images.length ? { images } : {}) } : {}) };
       }
     }
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
@@ -774,13 +782,17 @@ try {
   assert.equal(JSON.parse(visual.documentJSON).presentation.template.id, "texttext.gallery");
   assert.deepEqual(failures, []);
   await page.getByRole("button", { name: "TextText", exact: true }).click();
+  const gestureGIFs = {
+    drop: (await sharp("public/covers/cover-016.jpg").resize(120, 160, { fit: "cover" }).gif().toBuffer()).toString("base64"),
+    paste: (await sharp("public/covers/cover-162.jpg").resize(120, 160, { fit: "cover" }).gif().toBuffer()).toString("base64"),
+  };
   for (const gesture of ["drop", "paste"]) {
     await page.evaluate(({ gesture, data }) => {
       const transfer = new DataTransfer();
       transfer.items.add(new File([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], `${gesture}.gif`, { type: "image/gif" }));
       const event = gesture === "drop" ? new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }) : new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer });
       document.querySelector(".vault-app").dispatchEvent(event);
-    }, { gesture, data: gif.toString("base64") });
+    }, { gesture, data: gestureGIFs[gesture] });
     const imported = page.getByRole("region", { name: gesture });
     await imported.waitFor();
     await imported.getByRole("img", { name: gesture }).waitFor();
@@ -994,7 +1006,7 @@ try {
     { id: "third", kind: "image", src: "assets/third.png", alt: "Third photograph" },
   ]);
   singlePhoto.documentJSON = JSON.stringify({ ...JSON.parse(singlePhoto.documentJSON), content: { ...JSON.parse(singlePhoto.documentJSON).content, tags: ["fieldwork"] } });
-  files.set("Gallery/Single.textpack", { ...singlePhoto, assets: [{ filename: "third.png", contentType: "image/png", data: pixel }] });
+  files.set("Gallery/Single.textpack", { ...singlePhoto, assets: [{ filename: "third.png", contentType: "image/png", data: (await sharp("public/covers/cover-200.jpg").resize(240, 160, { fit: "cover" }).png().toBuffer()).toString("base64") }] });
   for (const [path, title, feedUrl] of [["Feeds/Design.textpack", "Design feed", "https://example.com/feed.xml"], ["Feeds/Design second.textpack", "Second design feed", "https://example.org/feed.xml"]]) {
     const source = sample(path, "bookmark", title, "", { texttextFeedSubscription: "v1", feedUrl });
     const document = JSON.parse(source.documentJSON);
@@ -1615,6 +1627,11 @@ try {
     const images = [...document.querySelectorAll('.vault-photo-grid button[aria-label^="Open Photo study"] img')];
     return images.length === 12 && images.every(image => image.complete && image.naturalWidth > 0);
   });
+  await page.waitForFunction(() => ["drop image 1", "paste image 1"].every(title => {
+    const tile = [...document.querySelectorAll('.vault-photo-grid button')].find(button => button.getAttribute('aria-label')?.toLowerCase().includes(title));
+    const image = tile?.querySelector('img');
+    return image && image.complete && image.naturalWidth > 0;
+  }));
   await page.screenshot({ path: "/tmp/texttext-gallery-dense-dark-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-dense-light-reference.png" });
