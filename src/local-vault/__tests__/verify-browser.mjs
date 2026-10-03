@@ -2055,7 +2055,8 @@ try {
   await page.keyboard.press("Backspace");
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.endsWith("idea. "));
   await page.getByRole("button", { name: "Add to note" }).click();
-  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Tag" }).click();
+  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Tag" }).focus();
+  await page.keyboard.press("#");
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Add note tag");
   await page.getByRole("textbox", { name: "Add note tag" }).fill("#Ideas");
   await page.getByRole("region", { name: "Note tags" }).getByRole("button", { name: "Add", exact: true }).click();
@@ -2079,7 +2080,7 @@ try {
   await page.keyboard.press("ArrowDown");
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Image");
   await page.screenshot({ path: "/tmp/texttext-note-slash-menu-reference.png" });
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("!");
   await page.getByLabel("Choose note images").setInputFiles({ name: "Thought photo.png", mimeType: "image/png", buffer: firstStoryImage });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/Thought-photo.png"));
   await page.getByRole("textbox", { name: "Title", exact: true }).focus();

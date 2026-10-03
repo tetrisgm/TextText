@@ -1727,6 +1727,12 @@ export function UnifiedDocumentEditor({
           /><div ref={noteInsertRef} className="tt-note-insert">
             <button type="button" aria-label="Add to note" aria-expanded={noteInsertOpen} title="Add to card" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen((open) => !open); }}>+</button>
             {noteInsertOpen && <div className="tt-note-insert-menu" role="menu" aria-label="Add to note" onKeyDown={(event) => {
+              if (event.key === "#" || event.key === "!") {
+                const choice = event.key === "#" ? "Tag" : "Image";
+                const item = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(button => button.textContent === choice && !button.disabled);
+                if (item) { event.preventDefault(); item.click(); }
+                return;
+              }
               if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
               const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
               if (!items.length) return;
