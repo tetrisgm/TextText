@@ -578,6 +578,21 @@ export function UnifiedDocumentEditor({
   const articleBodyOffset = useRef(0);
   const noteImageInput = useRef<HTMLInputElement>(null);
   const noteImageSelection = useRef({ from: 0, to: 0 });
+  const [noteInsertOpen, setNoteInsertOpen] = useState(false);
+  const noteInsertRef = useRef<HTMLDivElement>(null);
+  const noteTagInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!noteInsertOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !noteInsertRef.current?.contains(event.target)) setNoteInsertOpen(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setNoteInsertOpen(false); bodySurfaceRef.current?.focus(); }
+    };
+    window.document.addEventListener("pointerdown", dismiss);
+    window.document.addEventListener("keydown", escape, true);
+    return () => { window.document.removeEventListener("pointerdown", dismiss); window.document.removeEventListener("keydown", escape, true); };
+  }, [noteInsertOpen]);
   useEffect(() => {
     if (!articleInsertOpen) return;
     const dismiss = (event: PointerEvent) => {
@@ -1663,7 +1678,24 @@ export function UnifiedDocumentEditor({
   const slots = useMemo(
     () => ({
       bindings: {
-        "content.title": (
+        "content.title": (experience === "note" ? <div className="tt-note-title-row"><CollaborativeTextarea
+            field="title"
+            label="Title"
+            placeholder="Untitled"
+            value={document.content.title}
+            selections={remoteSelections.title}
+            onChange={(value) => updateText("title", value)}
+            onSelection={updateSelection}
+            inputRef={titleRef}
+            onAdvance={() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); }}
+            grow
+          /><div ref={noteInsertRef} className="tt-note-insert">
+            <button type="button" aria-label="Add to note" aria-expanded={noteInsertOpen} title="Add to card" onClick={() => setNoteInsertOpen((open) => !open)}>+</button>
+            {noteInsertOpen && <div className="tt-note-insert-menu" role="menu" aria-label="Add to note">
+              {document.content.tags.length < 500 && <button type="button" role="menuitem" onClick={() => { setNoteInsertOpen(false); noteTagInput.current?.focus(); }}>Tag</button>}
+              {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
+            </div>}
+          </div></div> :
           <CollaborativeTextarea
             field="title"
             label="Title"
@@ -1673,13 +1705,9 @@ export function UnifiedDocumentEditor({
             onChange={(value) => updateText("title", value)}
             onSelection={updateSelection}
             inputRef={titleRef}
-            onAdvance={experience === "article" || experience === "note" ? () => {
-              if (experience === "article") subtitleRef.current?.focus();
-              else { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); }
-            } : undefined}
+            onAdvance={experience === "article" ? () => subtitleRef.current?.focus() : undefined}
             grow
-          />
-        ),
+          />),
         ...(experience === "article" || showSubtitle || document.content.subtitle?.trim()
           ? {
               "content.subtitle": (
@@ -1746,7 +1774,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2123,8 +2151,7 @@ export function UnifiedDocumentEditor({
           if (current.content.tags.some((tag) => tag.toLocaleLowerCase() === topic.toLocaleLowerCase())) return;
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, 500) } });
           setTagDraft("");
-        }}><input aria-label="Add note tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
-        {onPasteImages && <button type="button" className="tt-note-add-image" aria-label="Add image to note" disabled={imagePastePending} onClick={() => noteImageInput.current?.click()}>Add image</button>}
+        }}><input ref={noteTagInput} aria-label="Add note tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
         <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>
       </section>}
       {onPasteImages && experience === "note" && <input ref={noteImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose note images" onChange={(event) => {
@@ -2208,12 +2235,18 @@ export function UnifiedDocumentEditor({
         .tt-article-topics form{display:flex;gap:8px}.tt-article-topics input{min-width:0;padding:7px 8px;border:1px solid color-mix(in srgb,var(--ink,#1d1d1f) 20%,transparent);border-radius:4px;background:var(--paper,#fff);color:var(--ink,#1d1d1f)}
         .tt-article-topics form button{border:0;background:transparent;color:var(--tt-accent,#0071e3);cursor:pointer}.tt-article-topics form button:disabled{opacity:.5}
         .tt-note-tags{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:520px;margin:-1px auto 40px;padding:12px 24px 20px;border:1px solid var(--line,#ddd);border-top:0;border-radius:0 0 10px 10px;background:var(--paper,#fff)}
+        .tt-note-title-row{display:flex;align-items:flex-start;gap:10px;min-width:0}
+        .tt-note-title-row> :first-child{flex:1;min-width:0}
+        .tt-note-insert{position:relative;flex:none;z-index:5}
+        .tt-note-insert>button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--muted,#666);font:400 22px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-note-insert>button:hover,.tt-note-insert>button:focus-visible{background:var(--selection,#eee);color:var(--ink,#222);outline:2px solid var(--tt-accent,#2762ac);outline-offset:1px}
+        .tt-note-insert-menu{position:absolute;right:0;top:32px;display:grid;min-width:130px;padding:4px;border:1px solid var(--line,#ddd);border-radius:6px;background:var(--paper,#fff);box-shadow:0 8px 24px #0003}
+        .tt-note-insert-menu button{border:0;border-radius:4px;padding:8px 10px;background:transparent;color:var(--ink,#222);font:500 13px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;cursor:pointer}
+        .tt-note-insert-menu button:hover,.tt-note-insert-menu button:focus-visible{background:var(--selection,#eee);outline:0}
         .tt-note-tags h3{font-size:11px;color:var(--muted,#666)}
         .tt-note-tags .tt-article-topic-list{margin-bottom:8px}
         .tt-note-tags .tt-note-finish{flex:none;margin-left:auto;padding:6px 12px;border:0;border-radius:5px;background:var(--tt-accent,#2762ac);color:#fff;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
         .tt-note-tags .tt-note-finish:hover{filter:brightness(1.08)}
-        .tt-note-tags .tt-note-add-image{flex:none;padding:6px 9px;border:0;border-radius:5px;background:transparent;color:var(--muted,#666);font:500 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
-        .tt-note-tags .tt-note-add-image:hover{background:var(--selection,#eee);color:var(--ink,#222)}
         .tt-note-tags .tt-note-finish:focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:3px}
         .tt-gallery-edit-layout{display:grid;grid-template-columns:minmax(0,1fr) 240px;align-items:start;gap:24px;max-width:1300px;margin:24px auto;padding:0 24px}
         .tt-gallery-edit-layout .tt-document-editor{min-width:0;max-width:none;margin:0;padding:0}
