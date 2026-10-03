@@ -17,4 +17,10 @@ describe("vault search actions", () => {
     expect(filterVaultSearchActions(actions, "bookmark").map((action) => action.id)).toEqual(["capture"]);
     expect(filterVaultSearchActions(actions, "projects looks").map((action) => action.id)).toEqual(["customize"]);
   });
+
+  it("finds commands from short, one-letter typos", () => {
+    const open: VaultSearchAction = { id: "open", label: "Open folder", description: "Choose a workspace folder" };
+    expect(filterVaultSearchActions([open, ...actions], "opn").map(action => action.id)).toContain("open");
+    expect(filterVaultSearchActions([open, ...actions], "oepn").map(action => action.id)).toContain("open");
+  });
 });

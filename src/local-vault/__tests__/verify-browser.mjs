@@ -357,6 +357,8 @@ try {
   await page.getByRole("option", { name: "Save bookmark", exact: true }).waitFor();
   await page.getByRole("combobox", { name: "Search workspace" }).fill("oepn");
   await page.getByRole("option", { name: "Open another folder", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("opn");
+  await page.getByRole("option", { name: "Open another folder", exact: true }).waitFor();
   await page.getByRole("combobox", { name: "Search workspace" }).fill("");
   await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowDown");
   assert.equal(await page.getByRole("combobox", { name: "Search workspace" }).getAttribute("aria-activedescendant"), "action:write-story");

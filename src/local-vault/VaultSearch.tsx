@@ -7,7 +7,7 @@ type SearchPage = { items: { path: string; title: string; snippet: string }[]; t
 export type VaultSearchAction = { id: string; label: string; description: string; shortcut?: string; keywords?: readonly string[]; aliases?: readonly string[]; searchOnly?: boolean };
 
 function oneEditAway(query: string, candidate: string): boolean {
-  if (query.length < 4 || Math.abs(query.length - candidate.length) > 1) return false;
+  if (query.length < 3 || Math.abs(query.length - candidate.length) > 1) return false;
   if (query.length === candidate.length) {
     const first = [...query].findIndex((character, index) => character !== candidate[index]);
     if (first >= 0 && first + 1 < query.length && query[first] === candidate[first + 1] && query[first + 1] === candidate[first] && query.slice(first + 2) === candidate.slice(first + 2)) return true;
