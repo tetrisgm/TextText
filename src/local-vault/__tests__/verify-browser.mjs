@@ -1460,6 +1460,10 @@ try {
   const galleryRatios = await page.locator(".vault-photo-grid").evaluate(grid => [...grid.querySelectorAll("button img")].map(image => ({ display: image.clientWidth / image.clientHeight, natural: image.naturalWidth / image.naturalHeight })));
   const uncroppedGallery = galleryRatios.every(({ display, natural }) => Math.abs(display - natural) < .03);
   assert.ok(uncroppedGallery);
+  assert.ok(await page.locator('.vault-photo-grid').evaluate(grid => {
+    const header = document.querySelector('.vault-context-header');
+    return header && grid.getBoundingClientRect().top - header.getBoundingClientRect().bottom < 55;
+  }), 'the Gallery grid should start close to its header');
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-light-reference.png" });

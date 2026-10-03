@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery now uses folder-specific spacing so its justified image grid starts immediately below the compact search/tag toolbar and fills more of the window. The browser flow bounds the header-to-grid gap and still verifies desktop, narrow, light, and dark layouts; `/tmp/texttext-gallery-dense-light-reference.png` is the current capture. TypeScript and local/web browser flows pass. Resurf detail and creation parity remain open; no release was run.
+
 Feeds now records a short story in History after it stays fully visible for eight seconds; leaving or hiding the reader cancels the timer. Long-story scroll completion still uses its existing one-time TextPack write, and neither path writes on intermediate scroll. The local browser flow verifies the short-story History pack and the long-story scroll path; TypeScript and local/web browser flows pass. Partial progress is still transient; no release was run.
 
 Pasting a web address on the Bookmark inbox now saves it directly through the existing TextPack capture and enrichment path. Paste into an input remains normal; invalid text is ignored. The local browser flow checks the saved URL and reader selection, and TypeScript plus local/web browser flows pass. Shiori parity remains open; no release was run.

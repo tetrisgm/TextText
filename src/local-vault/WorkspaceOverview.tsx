@@ -12,7 +12,7 @@ export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sha
   onCustomize?: (path: string) => void;
   onCloseDesign?: () => void;
 }) {
-  return <div className="vault-overview">
+  return <div className={`vault-overview${folder === "Gallery" ? " vault-gallery-overview" : ""}`}>
     {sharedView ? <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy} onOpen={onOpen} onEditNote={onEditNote} canUsePersonalBookmarks={false} onCreateNote={canCreate ? onCreateNote : undefined} onQuickSaveBookmark={canCreate ? onQuickSaveBookmark : undefined} preferredBookmarkPath={preferredBookmarkPath} emptyMessage="No shared files in this folder." /> :
       <FolderPresentation key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy} editable={canCreate}
         designOpen={designOpen} onOpen={onOpen} onEditNote={onEditNote} onRevealBookmark={onRevealBookmark} onCreateNote={canCreate ? onCreateNote : undefined} onQuickSaveBookmark={canCreate ? onQuickSaveBookmark : undefined} onCustomize={onCustomize} onCloseDesign={onCloseDesign} preferredBookmarkPath={preferredBookmarkPath} />}
