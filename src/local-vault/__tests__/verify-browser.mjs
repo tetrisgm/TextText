@@ -1701,6 +1701,18 @@ try {
   const towardsPair = single < pairSecond ? "ArrowRight" : "ArrowLeft";
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsSingle);
   await page.getByRole("region", { name: "One photograph" }).getByRole("img", { name: "Third photograph" }).waitFor();
+  await lightbox.getByRole("button", { name: "Edit image source" }).click();
+  await lightbox.getByRole("textbox", { name: "Image source" }).fill("https://example.com/third");
+  await lightbox.getByRole("button", { name: "Save source" }).click();
+  await lightbox.getByRole("link", { name: "example.com" }).waitFor();
+  await lightbox.getByRole("button", { name: "Add image tag" }).click();
+  await lightbox.getByRole("textbox", { name: "New image tag" }).fill("single");
+  await lightbox.getByRole("button", { name: "Add", exact: true }).click();
+  const singlePhotoDetails = JSON.parse(files.get("Gallery/Single.textpack").documentJSON).content;
+  assert.equal(singlePhotoDetails.assets[0].sourceUrl, "https://example.com/third");
+  assert.deepEqual(singlePhotoDetails.assets[0].tags, ["fieldwork", "single"]);
+  assert.equal(singlePhotoDetails.fields.sourceUrl, undefined);
+  assert.deepEqual(singlePhotoDetails.tags, ["fieldwork"]);
   await page.waitForFunction(previous => {
     const color = document.querySelector('.vault-gallery-colors button')?.getAttribute('aria-label');
     return color && color !== previous;
