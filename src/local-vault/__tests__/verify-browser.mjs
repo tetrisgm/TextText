@@ -2296,7 +2296,7 @@ try {
   await page.getByRole("region", { name: "Hidden publishers" }).waitFor({ state: "hidden" });
   assert.equal(JSON.parse(files.get(hiddenSubscription.path).documentJSON).content.fields.texttextFeedMuted, false);
   await chooseFolder("Notes");
-  await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).waitFor();
   const richNoteCard = page.locator(".vault-note-card").filter({ hasText: "Field observations" });
   await richNoteCard.waitFor();
   await page.waitForFunction(() => {
@@ -2397,7 +2397,7 @@ try {
   await chooseFolder("Notes");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator(".vault-app.sidebar-collapsed").waitFor();
-  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "New card title");
   await page.keyboard.insertText("Thought for later");
   await page.keyboard.press("Tab");
@@ -2563,7 +2563,7 @@ try {
   assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
   assert.deepEqual(JSON.parse(newCard.documentJSON).content.tags, ["ideas"]);
   await page.getByRole("button", { name: "Back to Notes" }).click();
-  await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).waitFor();
   await page.locator(".vault-note-card").filter({ hasText: "Thought for later" }).waitFor();
   await page.keyboard.type("Rapid thought");
   const quickDraft = page.getByRole("form", { name: "New card draft" });
@@ -2603,7 +2603,7 @@ try {
   const rapidCard = [...files.values()].find(file => JSON.parse(file.documentJSON).content.title === "Rapid thought again");
   assert.equal(JSON.parse(rapidCard.documentJSON).content.body, "Written before the file exists.\n- [ ] ");
   assert.deepEqual(JSON.parse(rapidCard.documentJSON).content.tags, ["ideas", "pending"]);
-  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).click();
   const imageDraft = page.getByRole("form", { name: "New card draft" });
   await imageDraft.getByRole("textbox", { name: "New card title" }).fill("Image note");
   await imageDraft.getByRole("button", { name: "Add to new card" }).click();
@@ -2618,7 +2618,7 @@ try {
   assert.equal(JSON.parse(imageCard.documentJSON).content.assets.length, 1);
   assert.match(JSON.parse(imageCard.documentJSON).content.body, /!\[.*\]\(assets\//);
   assert.equal(imageCard.assets.length, 1);
-  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).click();
   const linkDraft = page.getByRole("form", { name: "New card draft" });
   await linkDraft.getByRole("textbox", { name: "New card title" }).fill("Linked idea");
   await linkDraft.getByRole("textbox", { name: "New card body" }).focus();
@@ -2631,7 +2631,7 @@ try {
   await linkDraft.getByRole("button", { name: "Finish" }).click();
   const linkedCard = [...files.values()].find(file => JSON.parse(file.documentJSON).content.title === "Linked idea");
   assert.equal(JSON.parse(linkedCard.documentJSON).content.body, "[Related reading](https://example.com/related)");
-  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).click();
   const cardLinkDraft = page.getByRole("form", { name: "New card draft" });
   await cardLinkDraft.getByRole("textbox", { name: "New card title" }).fill("Card reference");
   await cardLinkDraft.getByRole("textbox", { name: "New card body" }).fill("See Rapid thought again.");
@@ -2654,7 +2654,7 @@ try {
   await page.locator(".vault-card-backlink-list").getByRole("button", { name: /Card reference/ }).click();
   await page.getByRole("region", { name: "Note card" }).getByText("Card reference").waitFor();
   await chooseFolder("Notes");
-  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).click();
   const selectedLinkDraft = page.getByRole("form", { name: "New card draft" });
   await selectedLinkDraft.getByRole("textbox", { name: "New card title" }).fill("Selected link idea");
   await selectedLinkDraft.getByRole("textbox", { name: "New card body" }).fill("Read the related card today.");
@@ -2669,7 +2669,7 @@ try {
   await selectedLinkDraft.getByRole("button", { name: "Insert link" }).click();
   assert.equal(await selectedLinkDraft.getByRole("textbox", { name: "New card body" }).inputValue(), "Read the [related card](https://example.com/card) today.");
   await selectedLinkDraft.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Start typing Make a new card" }).click();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).click();
   await page.getByRole("textbox", { name: "New card title" }).fill("Discard this draft");
   await page.getByRole("form", { name: "New card draft" }).getByRole("button", { name: "Cancel" }).click();
   assert.equal([...files.values()].some(file => JSON.parse(file.documentJSON).content.title === "Discard this draft"), false);
@@ -2685,7 +2685,7 @@ try {
   assert.equal(JSON.parse(shortcutNote.documentJSON).content.title, "note from keyboard");
   assert.equal(JSON.parse(shortcutNote.documentJSON).content.body, "");
   await page.getByRole("button", { name: "Back to Notes" }).click();
-  await page.getByRole("button", { name: "Start typing Make a new card" }).evaluate(button => {
+  await page.getByRole("button", { name: "Start typing to create a new card" }).evaluate(button => {
     const clipboard = new DataTransfer();
     clipboard.setData("text/plain", "Pasted card title\n\n- First idea\n- Second idea");
     button.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: clipboard }));

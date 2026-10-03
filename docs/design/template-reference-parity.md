@@ -19,6 +19,8 @@ The Gallery viewer now places previous/next controls beside the back control in 
 
 The Artifact team's published feed screen confirms a lead image followed by compact story rows. TextText already has that mixed layout; the lead image and compact thumbnails now open their story on click, matching the affordance of the visual cards. The browser fixture checks both image paths. Ranking and the full Artifact navigation remain unproven.
 
+The [Supernotes noteboard preview](https://supernotes.app/) places a quiet start-typing line immediately above the cards. Notes now uses that entry treatment in dark and light themes while retaining its inline draft, paste, and keyboard creation paths. The [Supernotes Universal Coupler](https://help.supernotes.app/en/articles/6048930-universal-coupler) still has Parent, Icon, Template, Emoji, and Color actions that TextText does not provide in the note editor. Its parent hierarchy needs a stable TextPack identity design that preserves the user's folder-based files.
+
 1. Compare Feeds against the recovered public Artifact screens linked above, then implement missing reading categories and reader actions using actual activity. Do not invent history from feed items merely loaded into memory. The missing local originals in the historical plan are no longer the only available reference.
 2. Build realistic, reusable reference fixtures for each content type: a long article with images, mixed bookmarks, a photographic Gallery, and rich notecards. Capture both themes and narrow/desktop widths.
 3. Compare each creation, edit, and read path side by side against the reference, record specific mismatches, and fix them in priority order. Keep the same TextPack primitives and conflict behavior underneath.
