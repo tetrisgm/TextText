@@ -315,6 +315,11 @@
 .vault-app .vault-feed-story>div { flex:1; min-width:0; }
 .vault-app .vault-feed-thumb { flex:none; width:72px; height:72px; border-radius:8px; object-fit:cover; }
 .vault-app .vault-feed-lead { display:block; width:100%; aspect-ratio:16/9; margin-bottom:12px; border-radius:8px; object-fit:cover; }
+.vault-app .vault-feed-image-action { display:block; flex:none; width:72px; height:72px; padding:0; border:0; border-radius:8px; background:transparent; cursor:pointer; overflow:hidden; }
+.vault-app .vault-feed-image-action .vault-feed-thumb { display:block; width:100%; height:100%; }
+.vault-app .vault-feed-featured>.vault-feed-image-action { width:100%; height:auto; margin-bottom:12px; }
+.vault-app .vault-feed-image-action .vault-feed-lead { margin-bottom:0; }
+.vault-app .vault-feed-image-action:focus-visible { outline:2px solid var(--tt-accent); outline-offset:3px; }
 .vault-app .vault-feed-featured .vault-feed-story { display:block; }
 .vault-app .vault-feed-home .vault-feed-featured .vault-feed-story :is(a,strong) { font-size:19px; }
 .vault-app .vault-feed-publisher { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; }

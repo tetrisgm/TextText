@@ -604,11 +604,11 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       <ol>{visibleRankedStories.map((story, index) => {
         const featured = Boolean(story.imageUrl && rankedLeadIndex >= 0 && (index === rankedLeadIndex || (index > rankedLeadIndex && (index - rankedLeadIndex) % 5 === 0)));
         return <li className={featured ? "vault-feed-featured" : ""} key={`${story.feedURL}:${story.externalKey}`}>
-          {featured && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={story.imageUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = "none"; }} />}
+          {featured && <button type="button" className="vault-feed-image-action" aria-label={`Read ${story.title}`} onClick={() => setActive(story)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img className="vault-feed-lead" src={story.imageUrl!} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.parentElement!.style.display = "none"; }} /></button>}
           <div className="vault-feed-story"><div><span className="vault-feed-publisher"><span aria-hidden="true">{story.source.slice(0, 1).toUpperCase()}</span><span className="vault-feed-source-name">{story.source}</span>{story.publishedAt && <time dateTime={story.publishedAt}>{age(story.publishedAt)}</time>}</span>
             <button type="button" className="vault-feed-headline" onClick={() => setActive(story)}>{story.title}</button>
             {story.excerpt && <p>{story.excerpt}</p>}</div>
-            {story.imageUrl && !featured && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = "none"; }} />}
+            {story.imageUrl && !featured && <button type="button" className="vault-feed-image-action" aria-label={`Read ${story.title}`} onClick={() => setActive(story)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.parentElement!.style.display = "none"; }} /></button>}
           </div>
           <div className="vault-feed-row-actions">{storyMenu(story)}</div>
         </li>;
@@ -622,14 +622,14 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
         <strong>{group.headline}</strong><small>{group.members.length} articles · {group.sources.length} sources</small>
       </button>)}</div></section>}
       <ol>{visibleStories.map((story, index) => <li className={story.imageUrl && latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0)) ? "vault-feed-featured" : ""} key={`${story.feedURL}:${story.externalKey}`}>
-        {story.imageUrl && latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0)) && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-lead" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+        {story.imageUrl && latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0)) && <button type="button" className="vault-feed-image-action" aria-label={`Read ${story.title}`} onClick={() => setActive(story)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img className="vault-feed-lead" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.parentElement!.style.display = "none"; }} /></button>}
         <div className="vault-feed-story">
         <div>
         <span className="vault-feed-publisher"><span aria-hidden="true">{story.source.slice(0, 1).toUpperCase()}</span>{story.source}{story.publishedAt && <time dateTime={story.publishedAt}>{age(story.publishedAt)}</time>}</span>
         <button type="button" className="vault-feed-headline" onClick={() => setActive(story)}>{story.title}</button>
         {story.excerpt && <p>{story.excerpt}</p>}
         </div>
-        {story.imageUrl && !(latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0))) && /* eslint-disable-next-line @next/next/no-img-element */ <img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+        {story.imageUrl && !(latestLeadIndex >= 0 && (index === latestLeadIndex || (index > latestLeadIndex && (index - latestLeadIndex) % 5 === 0))) && <button type="button" className="vault-feed-image-action" aria-label={`Read ${story.title}`} onClick={() => setActive(story)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img className="vault-feed-thumb" src={story.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.parentElement!.style.display = "none"; }} /></button>}
         </div>
         <div className="vault-feed-row-actions">{storyMenu(story)}</div>
       </li>)}</ol>

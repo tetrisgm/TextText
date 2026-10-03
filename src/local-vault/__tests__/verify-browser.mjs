@@ -1981,6 +1981,16 @@ try {
   await page.getByText("Reading 8 of 25 sources").waitFor();
   assert.equal(feedReadURLs.length, 8);
   await page.screenshot({ path: "/tmp/texttext-feeds-reference.png" });
+  const leadImageAction = page.locator(".vault-feed-featured > .vault-feed-image-action").first();
+  const leadTitle = (await leadImageAction.getAttribute("aria-label")).replace(/^Read /, "");
+  await leadImageAction.click();
+  await page.getByRole("region", { name: "Feed story" }).getByRole("heading", { name: leadTitle }).waitFor();
+  await page.getByRole("button", { name: "Back to feed", exact: true }).click();
+  const thumbImageAction = page.locator(".vault-feed-story > .vault-feed-image-action").first();
+  const thumbTitle = (await thumbImageAction.getAttribute("aria-label")).replace(/^Read /, "");
+  await thumbImageAction.click();
+  await page.getByRole("region", { name: "Feed story" }).getByRole("heading", { name: thumbTitle }).waitFor();
+  await page.getByRole("button", { name: "Back to feed", exact: true }).click();
   await page.locator(".vault-app>main").evaluate(element => { element.scrollTop = 400; });
   assert.equal(await feedSections.evaluate(element => {
     const bounds = element.getBoundingClientRect();
@@ -1994,15 +2004,15 @@ try {
   await page.screenshot({ path: "/tmp/texttext-feed-coverage-reference.png" });
   await page.locator(".vault-feed-coverage > header button").click();
   await openFeedHome();
-  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 8);
+  assert.equal(await page.getByRole("button", { name: "A considered design headline", exact: true }).count(), 8);
   await page.getByRole("button", { name: "A considered design headline" }).first().click();
   await page.getByRole("region", { name: "Feed story" }).getByText("A considered design headline").waitFor();
   await page.getByRole("button", { name: "Back to feed", exact: true }).click();
   await page.screenshot({ path: "/tmp/texttext-feeds-ranked-reference.png" });
   const feedSearch = page.getByRole("searchbox", { name: "Search loaded stories" });
   await feedSearch.fill("A considered");
-  assert.equal(await page.getByRole("button", { name: "A considered design headline" }).count(), 8);
-  assert.equal(await page.getByRole("button", { name: "Design headline 5" }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "A considered design headline", exact: true }).count(), 8);
+  assert.equal(await page.getByRole("button", { name: "Design headline 5", exact: true }).count(), 0);
   await feedSearch.fill("no matching headline");
   await page.getByText("No loaded stories match this search.").waitFor();
   await feedSearch.fill("");
