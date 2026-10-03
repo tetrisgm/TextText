@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog reader now uses a centered, distraction-free story view, with a visible Back to Blog control. Local and web browser flows and TypeScript passed in dark and light mode; screenshot: `/tmp/texttext-blog-reader-reference.png`. This is source work only; no app release was run. Full reference-service parity remains open.
+
 Command K now aborts a superseded file search before accepting the next query. A deliberately delayed search in the local browser fixture no longer holds the next result hostage; debounce, action filtering, close-on-backdrop, Cmd-K toggle, and focus restoration still pass. TypeScript and web browser flow pass. This improves the responsiveness described in Superhuman's [command palette guide](https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/) without claiming exact visual or command parity. No app release was run.
 
 Oracle folder previews now return ordered, bounded stills for multi-image TextPacks, so the web Gallery can show each image as the Mac Gallery already does. The preview decodes only embedded first frames, caps source bytes and response size, and never fetches remote images. Focused preview tests cover image order, proportions, metadata-only reads, and byte bounds; TypeScript passed. This closes a web/Mac Gallery mismatch but does not prove full Resurf parity. No app release was run.

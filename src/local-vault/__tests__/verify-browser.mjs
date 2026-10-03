@@ -1193,6 +1193,8 @@ try {
   const storyReader = page.getByRole("region", { name: "Story reader" });
   await storyReader.getByText("An opening paragraph.").waitFor();
   await storyReader.getByText("1 min read").waitFor();
+  await page.getByRole("button", { name: "Back to Blog" }).waitFor({ state: "visible" });
+  assert.equal(await page.locator(".vault-sidebar").evaluate((element) => getComputedStyle(element).display), "none");
   await page.screenshot({ path: "/tmp/texttext-blog-reader-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.waitForFunction(() => {

@@ -1037,7 +1037,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     try { label = readDocument(selected).content.title || label; } catch { /* The file label remains usable. */ }
     setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label });
   };
-  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
+  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${selectedStory ? " has-story" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && (event.dataTransfer.types.includes("Files") || currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list"))) event.preventDefault(); }}
     onDrop={(event) => { if (selected) return; if (event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } else if (currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list")) { event.preventDefault(); if (canCreate) saveDroppedBookmark(event.dataTransfer.getData("text/uri-list").split("\n").find(line => line.trim() && !line.startsWith("#")) || ""); } }}
     onPaste={(event) => {
