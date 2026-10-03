@@ -22,6 +22,13 @@ function oneEditAway(query: string, candidate: string): boolean {
   return edits + Number(left < query.length || right < candidate.length) <= 1;
 }
 
+function compactMatch(query: string, candidate: string): boolean {
+  if (query.length < 3 || candidate.length > query.length * 2 || query[0] !== candidate[0]) return false;
+  let matched = 0;
+  for (const character of candidate) if (character === query[matched]) matched++;
+  return matched === query.length;
+}
+
 function wordScore(word: string, text: string): number {
   const lower = text.toLocaleLowerCase();
   if (lower === word) return 8;
@@ -29,6 +36,8 @@ function wordScore(word: string, text: string): number {
   const tokens = lower.match(/[\p{L}\p{N}]+/gu) ?? [];
   if (tokens.some(token => token.startsWith(word))) return 4;
   if (tokens.some(token => oneEditAway(word, token))) return 2;
+  if (tokens.length > 1 && tokens.map(token => token[0]).join("").startsWith(word)) return 2;
+  if (tokens.some(token => compactMatch(word, token))) return 1;
   return 0;
 }
 

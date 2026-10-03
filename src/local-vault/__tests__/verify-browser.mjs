@@ -360,6 +360,10 @@ try {
   await page.getByRole("option", { name: "Open another folder", exact: true }).waitFor();
   await page.getByRole("combobox", { name: "Search workspace" }).fill("opn");
   await page.getByRole("option", { name: "Open another folder", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("nft");
+  await page.getByRole("option", { name: "New from template", exact: true }).waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("bkmrk");
+  await page.getByRole("option", { name: "Save bookmark", exact: true }).waitFor();
   await page.getByRole("combobox", { name: "Search workspace" }).fill("");
   await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowDown");
   assert.equal(await page.getByRole("combobox", { name: "Search workspace" }).getAttribute("aria-activedescendant"), "action:write-story");
