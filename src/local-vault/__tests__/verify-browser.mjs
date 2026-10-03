@@ -177,7 +177,7 @@ try {
       const current = files.get(request.params.path);
       if (!current) error = { code: "not_found", message: "File not found" };
       else if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
-      else { result = { ...current, ...request.params, hash: current.path === "Blog/Story.textpack" ? (++revision).toString(16).padStart(64, "0") : String(++revision) }; files.set(result.path, result); writePaths.push(result.path); }
+      else { result = { ...current, ...request.params, assets: [...(current.assets || []), ...(request.params.addedAssets || [])], hash: current.path === "Blog/Story.textpack" ? (++revision).toString(16).padStart(64, "0") : String(++revision) }; files.set(result.path, result); writePaths.push(result.path); }
     } else if (request.method === "rename" || request.method === "delete") {
       const current = files.get(request.params.path);
       if (!current) error = { code: "not_found", message: "File not found" };
@@ -1793,6 +1793,16 @@ try {
   await page.screenshot({ path: "/tmp/texttext-note-rich-dark-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-note-rich-light-reference.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".vault-app.sidebar-collapsed").waitFor();
+  await richNoteCard.evaluate(card => card.scrollIntoView({ block: "center" }));
+  await page.screenshot({ path: "/tmp/texttext-note-rich-narrow-light-reference.png" });
+  assert.ok(await richNoteCard.evaluate(card => {
+    const image = card.querySelector(".vault-note-card-image");
+    const box = card.getBoundingClientRect();
+    return image && box.left >= 0 && box.right <= innerWidth + 1 && image.getBoundingClientRect().right <= box.right;
+  }));
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
   const keyboardCard = page.locator(".vault-note-card").filter({ hasText: "A concise card" });
@@ -1867,6 +1877,8 @@ try {
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   await chooseFolder("Notes");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".vault-app.sidebar-collapsed").waitFor();
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
   await page.keyboard.insertText("Thought for later");
@@ -1877,6 +1889,10 @@ try {
   await page.getByRole("textbox", { name: "Add note tag" }).fill("#Ideas");
   await page.getByRole("region", { name: "Note tags" }).getByRole("button", { name: "Add", exact: true }).click();
   await page.getByRole("region", { name: "Note tags" }).getByText("#Ideas").waitFor();
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-note-create-narrow-light-reference.png" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ colorScheme: "dark" });
   assert.ok(await page.evaluate(() => {
     const card = document.querySelector('.tt-document-editor[data-template-id="texttext.note"]');
     const tags = document.querySelector('.tt-note-tags');
@@ -1885,6 +1901,12 @@ try {
       finish.getBoundingClientRect().right <= tags.getBoundingClientRect().right &&
       tags.getBoundingClientRect().bottom - card.getBoundingClientRect().top < 300);
   }), "a short note should keep Finish inside its compact card footer");
+  await page.getByRole("button", { name: "Add image to note" }).click();
+  await page.getByLabel("Choose note images").setInputFiles({ name: "Thought photo.png", mimeType: "image/png", buffer: firstStoryImage });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/Thought-photo.png"));
+  await page.getByRole("img", { name: "Thought photo" }).waitFor();
+  const thoughtImageFile = [...files.values()].find(file => JSON.parse(file.documentJSON).content.body.includes("Thought-photo.png"));
+  assert.ok(thoughtImageFile?.assets?.some(asset => asset.filename === "Thought-photo.png"));
   assert.equal(await page.getByRole("button", { name: "Finish", exact: true }).count(), 1);
   await page.screenshot({ path: "/tmp/texttext-note-editor-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
@@ -1893,7 +1915,11 @@ try {
   await page.getByRole("textbox", { name: "Document body" }).focus();
   await page.keyboard.press("Meta+Enter");
   await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").waitFor();
-  await page.getByRole("region", { name: "Note card" }).getByText("#Ideas").waitFor();
+  await page.getByRole("region", { name: "Note card" }).getByText(/#ideas/i).waitFor();
+  await page.waitForFunction(() => {
+    const image = document.querySelector('.vault-note-display img');
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+  });
   await page.screenshot({ path: "/tmp/texttext-note-card-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.waitForFunction(() => {
@@ -1915,9 +1941,10 @@ try {
   await page.getByRole("button", { name: "Finish", exact: true }).click();
   await page.getByRole("button", { name: "Edit card" }).click();
   await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
-  const newCard = [...files.values()].at(-1);
+  const newCard = [...files.values()].find(file => JSON.parse(file.documentJSON).content.title === "Thought for later");
+  assert.ok(newCard);
   assert.equal(JSON.parse(newCard.documentJSON).presentation.template.id, "texttext.note");
-  assert.deepEqual(JSON.parse(newCard.documentJSON).content.tags, ["Ideas"]);
+  assert.deepEqual(JSON.parse(newCard.documentJSON).content.tags, ["ideas"]);
   await page.getByRole("button", { name: "Back to Notes" }).click();
   await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
   await page.locator(".vault-note-card").filter({ hasText: "Thought for later" }).waitFor();

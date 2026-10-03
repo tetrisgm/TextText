@@ -191,8 +191,8 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     try {
       if (conflict.current) throw new Error("Resolve the file conflict before pasting an image.");
       if (!await flush()) throw new Error("Save the current text before pasting an image.");
-      const sourceDocument = request.document;
-      if (!equal(sourceDocument, current.current)) throw new Error("The document changed. Paste the image again.");
+      const sourceDocument = current.current;
+      if (sourceDocument.content.body !== request.document.content.body) throw new Error("The document changed. Paste the image again.");
       const edit = await prepareEditorImagePaste({
         document: sourceDocument,
         selection: request.selection,

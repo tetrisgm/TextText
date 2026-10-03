@@ -574,6 +574,8 @@ export function UnifiedDocumentEditor({
   const [articleCaret, setArticleCaret] = useState<{ offset: number; x: number; y: number } | null>(null);
   const articleImageInput = useRef<HTMLInputElement>(null);
   const articleBodyOffset = useRef(0);
+  const noteImageInput = useRef<HTMLInputElement>(null);
+  const noteImageSelection = useRef({ from: 0, to: 0 });
   useEffect(() => {
     if (!articleSelection) return;
     const dismiss = () => setArticleSelection(null);
@@ -1428,6 +1430,9 @@ export function UnifiedDocumentEditor({
 
   const updateSelection = useCallback(
     (field: EditableField, anchor: number, head: number) => {
+      if (experience === "note" && field === "body" && anchor >= 0 && head >= 0) {
+        noteImageSelection.current = { from: Math.min(anchor, head), to: Math.max(anchor, head) };
+      }
       if (experience === "article" && field === "body" && anchor >= 0 && head >= 0) {
         articleBodyOffset.current = head;
         const selection = window.getSelection();
@@ -2048,6 +2053,11 @@ export function UnifiedDocumentEditor({
           setTagDraft("");
         }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
       </aside></div> : documentSurface}
+      {experience === "note" && <div className="tt-note-image-previews" aria-label="Note images">{document.content.assets.slice(0, 4).map((asset, index) => {
+        const source = displayDocument.content.assets[index]?.src;
+        return asset.kind === "image" && document.content.body.includes(asset.src) && source && source !== asset.src && /^(blob:|data:image\/)/.test(source)
+          ? /* eslint-disable-next-line @next/next/no-img-element */ <img key={asset.id} src={source} alt={asset.alt || "Note image"} /> : null;
+      })}</div>}
       {(experience === "article" || experience === "note") && <section className={experience === "note" ? "tt-article-topics tt-note-tags" : "tt-article-topics"} aria-label={experience === "note" ? "Note tags" : "Story topics"}>
         <h3>{experience === "note" ? "Tags" : "Topics"}</h3>
         <div className="tt-article-topic-list">{document.content.tags.slice(0, experience === "note" ? 500 : 5).map((topic) => <span key={topic}>{experience === "note" ? `#${topic}` : topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
@@ -2063,8 +2073,14 @@ export function UnifiedDocumentEditor({
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, experience === "note" ? 500 : 5) } });
           setTagDraft("");
         }}><input aria-label={experience === "note" ? "Add note tag" : "Add story topic"} placeholder={experience === "note" ? "Add a tag" : "Add a topic"} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
+        {experience === "note" && onPasteImages && <button type="button" className="tt-note-add-image" aria-label="Add image to note" disabled={imagePastePending} onClick={() => noteImageInput.current?.click()}>Add image</button>}
         {experience === "note" && <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>}
       </section>}
+      {onPasteImages && experience === "note" && <input ref={noteImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose note images" onChange={(event) => {
+        const files = Array.from(event.currentTarget.files ?? []);
+        event.currentTarget.value = "";
+        if (files.length) pasteImages(files, noteImageSelection.current);
+      }} />}
       {onPasteImages && articleCaret && experience === "article" && <div className="tt-article-insert" style={{ left: articleCaret.x, top: articleCaret.y }}>
         <button type="button" aria-label="Add image to story" title="Add image" onMouseDown={(event) => event.preventDefault()} onClick={() => articleImageInput.current?.click()}>+</button>
       </div>}
@@ -2141,6 +2157,11 @@ export function UnifiedDocumentEditor({
         .tt-note-tags .tt-article-topic-list{margin-bottom:8px}
         .tt-note-tags .tt-note-finish{flex:none;margin-left:auto;padding:6px 12px;border:0;border-radius:5px;background:var(--tt-accent,#2762ac);color:#fff;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
         .tt-note-tags .tt-note-finish:hover{filter:brightness(1.08)}
+        .tt-note-tags .tt-note-add-image{flex:none;padding:6px 9px;border:0;border-radius:5px;background:transparent;color:var(--muted,#666);font:500 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-note-tags .tt-note-add-image:hover{background:var(--selection,#eee);color:var(--ink,#222)}
+        .tt-note-image-previews{display:grid;box-sizing:border-box;gap:10px;max-width:520px;margin:0 auto;padding:0 24px 14px;border-right:1px solid var(--line,#ddd);border-left:1px solid var(--line,#ddd);background:var(--paper,#fff)}
+        .tt-note-image-previews:empty{display:none}
+        .tt-note-image-previews img{display:block;width:100%;max-height:220px;object-fit:cover;border-radius:6px}
         .tt-note-tags .tt-note-finish:focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:3px}
         .tt-gallery-edit-layout{display:grid;grid-template-columns:minmax(0,1fr) 240px;align-items:start;gap:24px;max-width:1300px;margin:24px auto;padding:0 24px}
         .tt-gallery-edit-layout .tt-document-editor{min-width:0;max-width:none;margin:0;padding:0}

@@ -91,16 +91,20 @@ export async function prepareEditorImagePaste(input: {
     markdown.push(`![${markdownAlt(alt)}](${src})`);
   }
   const inserted = markdown.join("\n\n");
+  const before = body.slice(0, from);
+  const after = body.slice(to);
+  const leading = before && !before.endsWith("\n\n") ? before.endsWith("\n") ? "\n" : "\n\n" : "";
+  const trailing = after && !after.startsWith("\n\n") ? after.startsWith("\n") ? "\n" : "\n\n" : "";
   return {
     document: validateDocumentSnapshot({
       ...input.document,
       content: {
         ...input.document.content,
-        body: body.slice(0, from) + inserted + body.slice(to),
+        body: before + leading + inserted + trailing + after,
         assets: documentAssets,
       },
     }),
     addedAssets: additions,
-    caret: from + inserted.length,
+    caret: from + leading.length + inserted.length,
   };
 }
