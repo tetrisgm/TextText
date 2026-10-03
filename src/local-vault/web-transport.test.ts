@@ -100,6 +100,16 @@ describe("web file vault transport", () => {
     expect(urls).toEqual(["/api/vault/workspace/items?keptFeedEntries=1"]);
     transport.destroy();
   });
+  it("loads unsaved read history through its bounded vault request", async () => {
+    const urls: string[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async url => {
+      urls.push(String(url));
+      return Response.json({ hashes: [], entries: [] });
+    });
+    expect(await transport.request("readFeedEntries", {})).toEqual({ hashes: [], entries: [] });
+    expect(urls).toEqual(["/api/vault/workspace/items?readFeedEntries=1"]);
+    transport.destroy();
+  });
   it("reuses a parsed pack only after a fresh matching collaboration read, including a permission downgrade", async () => {
     const { id, path, live, calls, transport } = cachedOpenFixture();
     const first = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;

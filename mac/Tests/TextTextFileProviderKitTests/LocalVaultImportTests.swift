@@ -52,6 +52,25 @@ final class LocalVaultImportTests: XCTestCase {
         }
     }
 
+    func testUnsavedFeedReadLivesInHistoryFolder() throws {
+        try fixture { root, store in
+            let hash = String(repeating: "b", count: 64)
+            let metadata = """
+                {"schemaVersion":1,"content":{"title":"Read story","body":"A story","fields":{"texttextFeedHistoryEntry":"v1","feedEntryHash":"\(hash)","feedTitle":"Example News","readAt":"2026-10-02T11:00:00Z"},"tags":[],"assets":[]},"presentation":{"template":{"id":"texttext.article","version":1},"theme":{}}}
+                """
+            let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "A story", assets: [], sourceURL: nil, in: root)
+            try Data(metadata.utf8).write(to: package.url.appendingPathComponent("document.json"))
+            let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)
+            let imported = try store.importFile(from: packed, newPath: "Feeds/History/Read story.textpack")
+            let reopened = LocalVaultDocumentStore(root: store.root)
+            XCTAssertEqual(try reopened.readFeedEntries(), [[
+                "hash": hash, "path": imported.path, "revision": imported.hash, "title": "Read story",
+                "source": "Example News", "readAt": "2026-10-02T11:00:00Z",
+            ]])
+            XCTAssertTrue(try reopened.keptFeedEntries().isEmpty)
+        }
+    }
+
     func testPackImportPreservesOpaqueEntriesAssetsSourceAndAllocatesIdentity() throws {
         try fixture { root, store in
             let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: original\n---\n\nHello ![](assets/photo.png)",

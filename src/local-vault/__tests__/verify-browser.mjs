@@ -11,6 +11,7 @@ const files = new Map();
 const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
+const writePaths = [];
 const feedReadURLs = [];
 const searchQueries = [];
 let revision = 1;
@@ -69,6 +70,14 @@ try {
         const content = JSON.parse(file.documentJSON).content;
         const fields = content.fields || {};
         return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", keptAt: fields.keptAt || "", ...(fields.texttextBookmarkReadAt ? { readAt: fields.texttextBookmarkReadAt } : {}) }] : [];
+      });
+      result = { hashes: entries.map(entry => entry.hash), entries };
+    }
+    else if (request.method === "readFeedEntries") {
+      const entries = [...files.values()].filter(file => file.path.startsWith("Feeds/History/")).flatMap(file => {
+        const content = JSON.parse(file.documentJSON).content;
+        const fields = content.fields || {};
+        return fields.texttextFeedHistoryEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, revision: file.hash, title: content.title, source: fields.feedTitle || "", readAt: fields.readAt || "" }] : [];
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
@@ -167,7 +176,7 @@ try {
       const current = files.get(request.params.path);
       if (!current) error = { code: "not_found", message: "File not found" };
       else if (current.hash !== request.params.hash) error = { code: "conflict", message: "File changed", current };
-      else { result = { ...current, ...request.params, hash: current.path === "Blog/Story.textpack" ? (++revision).toString(16).padStart(64, "0") : String(++revision) }; files.set(result.path, result); }
+      else { result = { ...current, ...request.params, hash: current.path === "Blog/Story.textpack" ? (++revision).toString(16).padStart(64, "0") : String(++revision) }; files.set(result.path, result); writePaths.push(result.path); }
     } else if (request.method === "rename" || request.method === "delete") {
       const current = files.get(request.params.path);
       if (!current) error = { code: "not_found", message: "File not found" };
@@ -1054,11 +1063,14 @@ try {
   });
   await bookmarkReader.getByRole('button', { name: 'Highlight selection' }).click();
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-reader details.vault-highlights')?.open === true);
+  for (let attempt = 0; attempt < 250 && !JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights?.length; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  const writesBeforeHighlightNote = writePaths.filter(path => path === 'Bookmarks/Reading.textpack').length;
   await bookmarkReader.getByRole('textbox', { name: 'Note about this highlight' }).pressSequentially('Keep this.');
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-reader .vault-highlights textarea')?.value === 'Keep this.');
   for (let attempt = 0; attempt < 250 && JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights?.[0]?.note !== 'Keep this.'; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights[0].quote, 'complete saved reading');
   assert.equal(JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights[0].note, 'Keep this.');
+  assert.equal(writePaths.filter(path => path === 'Bookmarks/Reading.textpack').length - writesBeforeHighlightNote, 1);
   await bookmarkReader.getByRole("button", { name: "Next bookmark" }).click();
   await bookmarkReader.getByRole("button", { name: "Previous bookmark" }).click();
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
@@ -1605,6 +1617,26 @@ try {
   await feedReader.getByRole("button", { name: "Share story" }).click();
   await feedReader.getByText("Story link copied.").waitFor();
   assert.equal(await page.evaluate(() => window.__copiedFeedLink), "https://example.com/story/1");
+  await feedReader.getByLabel("More story actions").click();
+  await feedReader.getByRole("button", { name: "Mark read" }).click();
+  await feedReader.getByText("Added to reading history.").waitFor();
+  const readFeedPack = [...files.values()].find(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.fields.texttextFeedHistoryEntry === "v1");
+  assert.ok(readFeedPack);
+  assert.equal(JSON.parse(readFeedPack.documentJSON).content.fields.texttextFeedEntry, undefined);
+  await page.getByRole("button", { name: "Back to Feeds" }).click();
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "A considered design headline" }).getByText("✓ Read").waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feeds-unsaved-history-reference.png" });
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "A considered design headline" }).getByRole("button").first().click();
+  await page.getByText("A full in-app reading view for this story.").waitFor();
+  await chooseFolder("Feeds");
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: "Remove A considered design headline from history" }).click();
+  await page.getByText("No stories in reading history yet.").waitFor();
+  assert.equal(files.has(readFeedPack.path), false);
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
+  await page.getByRole("button", { name: "A considered design headline" }).first().click();
+  await feedReader.getByText("A full in-app reading view for this story.").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feed-reader-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-feed-reader-light-reference.png" });
@@ -1644,7 +1676,7 @@ try {
   await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 2" }).getByText("✓ Read").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-history-reference.png" });
   await page.getByRole("button", { name: "Mark Design headline 2 unread" }).click();
-  await page.getByText("No saved stories marked read yet.").waitFor();
+  await page.getByText("No stories in reading history yet.").waitFor();
   await page.getByRole("button", { name: "Read Later", exact: true }).click();
   await page.getByRole("button", { name: "Mark Design headline 2 read" }).waitFor();
   await savedDesignStory.click();

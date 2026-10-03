@@ -37,11 +37,17 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
 }) {
   const [selected, setSelected] = useState(preferredPath || "");
   const pendingPreferred = useRef(preferredPath || "");
-  useEffect(() => { if (preferredPath) { pendingPreferred.current = preferredPath; setSelected(preferredPath); setFilter("inbox"); setSearch(""); setTagFilter(""); } }, [preferredPath]);
   const [filter, setFilter] = useState<BookmarkFilter>("inbox");
   const [search, setSearch] = useState("");
   const [contentSearch, setContentSearch] = useState<{ query: string; paths: Set<string>; searching: boolean; truncated: boolean; error: string }>({ query: "", paths: new Set(), searching: false, truncated: false, error: "" });
   const [tagFilter, setTagFilter] = useState("");
+  useEffect(() => {
+    if (!preferredPath) return;
+    let live = true;
+    pendingPreferred.current = preferredPath;
+    queueMicrotask(() => { if (live) { setSelected(preferredPath); setFilter("inbox"); setSearch(""); setTagFilter(""); } });
+    return () => { live = false; };
+  }, [preferredPath]);
   const [tagDraft, setTagDraft] = useState("");
   const [quickLink, setQuickLink] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
@@ -149,6 +155,9 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const readerFiles = useRef(new Map<string, VaultFile>());
   const readerWrites = useRef<Promise<void>>(Promise.resolve());
   const readerPending = useRef(0);
+  const readerDraft = useRef<{ path: string; file: VaultFile; transform: (snapshot: DocumentSnapshot) => DocumentSnapshot } | null>(null);
+  const readerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushReaderDraftRef = useRef<() => void>(() => {});
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
   const [editingNotePath, setEditingNotePath] = useState("");
@@ -218,24 +227,42 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The detail could not be saved."); }
     finally { setUpdating(false); }
   };
-  const updateReader = (transform: (snapshot: DocumentSnapshot) => DocumentSnapshot) => {
-    if (!opened || opened.path !== current?.path || busy || previewOnly) return;
-    const path = opened.path;
-    setOpened(previous => previous?.path === path ? { ...previous, document: transform(previous.document) } : previous);
-    readerPending.current += 1;
-    setUpdating(true); setError("");
+  const queueReaderWrite = (path: string, file: VaultFile, transform: (snapshot: DocumentSnapshot) => DocumentSnapshot) => {
+    readerPending.current += 1; setUpdating(true); setError("");
     readerWrites.current = readerWrites.current.catch(() => {}).then(async () => {
       try {
-        const file = readerFiles.current.get(path) ?? opened.file;
-        const canonical = readDocument(file);
-        const updated = await vaultRequest<VaultFile>("write", writePayload(file, transform(canonical)));
+        const latest = readerFiles.current.get(path) ?? file;
+        const canonical = readDocument(latest);
+        const updated = await vaultRequest<VaultFile>("write", writePayload(latest, transform(canonical)));
         readerFiles.current.set(path, updated);
         setOpened(previous => previous?.path === path ? { ...previous, file: updated } : previous);
         window.dispatchEvent(new Event("texttext:vault-changed"));
       } catch (reason) { setError(reason instanceof Error ? reason.message : "The highlight could not be saved."); }
-      finally { readerPending.current -= 1; if (!readerPending.current) { readerFiles.current.clear(); setUpdating(false); } }
+      finally { readerPending.current -= 1; if (!readerPending.current) setUpdating(false); }
     });
   };
+  const flushReaderDraft = () => {
+    if (readerTimer.current) clearTimeout(readerTimer.current);
+    readerTimer.current = null;
+    const draft = readerDraft.current;
+    readerDraft.current = null;
+    if (draft) queueReaderWrite(draft.path, draft.file, draft.transform);
+  };
+  const updateReader = (transform: (snapshot: DocumentSnapshot) => DocumentSnapshot, mode?: "debounced") => {
+    if (!opened || opened.path !== current?.path || busy || previewOnly) return;
+    const path = opened.path;
+    setOpened(previous => previous?.path === path ? { ...previous, document: transform(previous.document) } : previous);
+    if (mode === "debounced") {
+      readerDraft.current = { path, file: opened.file, transform };
+      if (readerTimer.current) clearTimeout(readerTimer.current);
+      readerTimer.current = setTimeout(flushReaderDraft, 350);
+    } else {
+      flushReaderDraft();
+      queueReaderWrite(path, opened.file, transform);
+    }
+  };
+  useEffect(() => { flushReaderDraftRef.current = flushReaderDraft; });
+  useEffect(() => () => { flushReaderDraftRef.current(); }, [current?.path]);
   const saveNote = async () => {
     if (!opened || opened.path !== current?.path || updating || busy || previewOnly) return;
     setUpdating(true); setError("");
@@ -317,7 +344,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       })}</section>}
       </div></details></header>}
       {error && <p role="alert" className="vault-bookmark-error">{error}</p>}
-      {document && template ? <ArticleReader document={document} template={template} update={previewOnly || busy ? undefined : updateReader} compact /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
+      {document && template ? <ArticleReader document={document} template={template} update={previewOnly || busy ? undefined : updateReader} flushUpdate={flushReaderDraft} compact /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
     </article>
   </div>;
 }

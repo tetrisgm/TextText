@@ -195,6 +195,38 @@ public struct LocalVaultDocumentStore: Sendable {
         try keptFeedEntries().compactMap { $0["hash"] }.sorted()
     }
 
+    /// Read only metadata for deliberate, unsaved story reads. These packs are
+    /// ordinary articles in Feeds/History, separate from saved Bookmarks.
+    public func readFeedEntries() throws -> [[String: String]] {
+        let paths = try list().filter { $0.hasPrefix("Feeds/History/") && $0.hasSuffix(".textpack") }
+        guard paths.count <= 2048 else { throw Failure.tooLarge }
+        var records: [String: [String: String]] = [:], inspected = 0
+        for path in paths {
+            let file = try readMetadata(path: path)
+            inspected += file.contents.logicalSize
+            guard inspected <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+            guard let raw = file.contents.documentJSON,
+                  let document = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                  let content = document["content"] as? [String: Any],
+                  let fields = content["fields"] as? [String: Any],
+                  fields["texttextFeedHistoryEntry"] as? String == "v1",
+                  let hash = fields["feedEntryHash"] as? String,
+                  hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+                  let readAt = fields["readAt"] as? String, !readAt.isEmpty else { continue }
+            let entry = ["hash": hash, "path": path, "revision": file.hash,
+                "title": String((content["title"] as? String ?? "Read story").prefix(300)),
+                "source": String((fields["feedTitle"] as? String ?? "").prefix(160)),
+                "readAt": String(readAt.prefix(32))]
+            if records[hash] == nil || (entry["readAt"] ?? "") > (records[hash]?["readAt"] ?? "") {
+                records[hash] = entry
+            }
+        }
+        return records.values.sorted {
+            if $0["readAt"] != $1["readAt"] { return ($0["readAt"] ?? "") > ($1["readAt"] ?? "") }
+            return ($0["path"] ?? "") < ($1["path"] ?? "")
+        }
+    }
+
     /// Extract only definition metadata; image entries are never inflated.
     public func folderViews(folder: String) throws -> [[String: String]] {
         let sentinel = try url(for: (folder.isEmpty ? "" : folder + "/") + "Folder view.textpack")

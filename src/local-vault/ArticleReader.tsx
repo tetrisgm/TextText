@@ -4,9 +4,10 @@ import type { DocumentSnapshot } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { addReaderHighlight, locateHighlight, readerHighlights, type ReaderHighlight } from "@/lib/vault/reader-highlights";
 
-export function ArticleReader({ document, template, update, compact = false }: {
+export function ArticleReader({ document, template, update, flushUpdate, compact = false }: {
   document: DocumentSnapshot; template: TemplateDefinition;
-  update?: (transform: (document: DocumentSnapshot) => DocumentSnapshot) => void;
+  update?: (transform: (document: DocumentSnapshot) => DocumentSnapshot, mode?: "debounced") => void;
+  flushUpdate?: () => void;
   compact?: boolean;
 }) {
   const content = useRef<HTMLDivElement>(null);
@@ -72,8 +73,8 @@ export function ArticleReader({ document, template, update, compact = false }: {
     {!!highlights.length && <details className="vault-highlights" open={highlightsOpen} onToggle={(event) => setHighlightsOpen(event.currentTarget.open)}><summary>Highlights ({highlights.length})</summary>{highlights.map((highlight) => <div key={highlight.id}>
       <blockquote>{highlight.quote}</blockquote><label>Note about this highlight<textarea readOnly={!update} maxLength={20_000} value={highlight.note} onChange={(event) => {
         const note = event.target.value;
-        update?.((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).map((row) => row.id === highlight.id ? { ...row, note } : row) } } }));
-      }} /></label>{update && <button onClick={() => update((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).filter((row) => row.id !== highlight.id) } } }))}>Remove highlight</button>}
+        update?.((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).map((row) => row.id === highlight.id ? { ...row, note } : row) } } }), flushUpdate ? "debounced" : undefined);
+      }} onBlur={flushUpdate} /></label>{update && <button onClick={() => update((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, readerHighlights: readerHighlights(current).filter((row) => row.id !== highlight.id) } } }))}>Remove highlight</button>}
     </div>)}</details>}
   </section>;
 }

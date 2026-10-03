@@ -8,6 +8,7 @@ import type { VaultFile } from "@/local-vault/bridge";
 
 export const FEED_SUBSCRIPTION_FIELD = "texttextFeedSubscription";
 export const KEPT_FEED_ENTRY_FIELD = "texttextFeedEntry";
+export const READ_FEED_ENTRY_FIELD = "texttextFeedHistoryEntry";
 const MARKER_VERSION = "v1";
 const SECRET_QUERY = /^(token|key|api_?key|auth|secret|sig|signature|access_?token|pass(word)?|pw)$/i;
 
@@ -114,15 +115,15 @@ export async function feedEntryHash(feedURL: string, externalKey: string): Promi
 /** Explicit Keep snapshots the selected entry into a new, portable pack. The
  * caller imports it through the normal create-only vault operation. A later
  * feed refresh cannot alter this snapshot. */
-export async function createKeptFeedEntryPack(input: {
-  feedURL: string; feedTitle: string; entry: NormalizedEntry; keptAt?: string;
-}, destination: "article" | "bookmark" = "article"): Promise<{ title: string; bytes: Uint8Array }> {
+async function createFeedEntryPack(input: {
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; keptAt?: string; readAt?: string;
+}, destination: "article" | "bookmark", kind: "kept" | "read"): Promise<{ title: string; bytes: Uint8Array }> {
   const feedURL = publicFeedURL(input.feedURL);
   const entry = input.entry;
   if (!entry || typeof entry.externalKey !== "string" || !entry.externalKey || entry.externalKey.length > 8 * 1024 * 1024 ||
       typeof entry.bodyMarkdown !== "string" || entry.bodyMarkdown.length > 2_000_000) throw new Error("This feed entry cannot be kept.");
-  const keptAt = validDate(input.keptAt ?? new Date().toISOString());
-  if (!keptAt) throw new Error("The saved date is invalid.");
+  const recordedAt = validDate((kind === "read" ? input.readAt : input.keptAt) ?? new Date().toISOString());
+  if (!recordedAt) throw new Error("The saved date is invalid.");
   const sourceURL = optionalPublicURL(entry.permalink) ?? optionalPublicURL(entry.externalUrl);
   const title = String(entry.title || "").trim().slice(0, 1000) || sourceURL || "Untitled article";
   const feedTitle = input.feedTitle.trim().slice(0, 1000) || new URL(feedURL).hostname;
@@ -134,8 +135,9 @@ export async function createKeptFeedEntryPack(input: {
   const authors = (Array.isArray(entry.authors) ? entry.authors : []).filter((author): author is string => typeof author === "string").slice(0, 20).map(cleanAuthor).filter(Boolean);
   const publishedAt = validDate(entry.publishedAt), updatedAt = validDate(entry.updatedAt);
   document.content.fields = {
-    [KEPT_FEED_ENTRY_FIELD]: MARKER_VERSION,
-    feedUrl: feedURL, feedTitle, feedEntryHash: entryHash, keptAt,
+    [kind === "read" ? READ_FEED_ENTRY_FIELD : KEPT_FEED_ENTRY_FIELD]: MARKER_VERSION,
+    feedUrl: feedURL, feedTitle, feedEntryHash: entryHash,
+    ...(kind === "read" ? { readAt: recordedAt } : { keptAt: recordedAt }),
     feedAvailability: ["full", "excerpt", "metadata"].includes(entry.availability) ? entry.availability : "metadata",
     ...(sourceURL ? { sourceUrl: sourceURL } : {}),
     ...(authors.length ? { authors } : {}),
@@ -151,5 +153,19 @@ export async function createKeptFeedEntryPack(input: {
       return url ? [{ url, mimeType: typeof attachment.mimeType === "string" ? attachment.mimeType.slice(0, 200) : null }] : [];
     }),
   };
-  return { title, bytes: packDocument(document, "Kept feed article", { "feed-entry.json": strToU8(JSON.stringify(sourceRecord)) }) };
+  return { title, bytes: packDocument(document, kind === "read" ? "Read feed article" : "Kept feed article", { "feed-entry.json": strToU8(JSON.stringify(sourceRecord)) }) };
+}
+
+export function createKeptFeedEntryPack(input: {
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; keptAt?: string;
+}, destination: "article" | "bookmark" = "article") {
+  return createFeedEntryPack(input, destination, "kept");
+}
+
+/** A deliberate Mark read snapshots an unsaved story in Feeds/History.
+ * This never places it in Bookmarks or turns a feed refresh into a write. */
+export function createReadFeedEntryPack(input: {
+  feedURL: string; feedTitle: string; entry: NormalizedEntry; readAt?: string;
+}) {
+  return createFeedEntryPack(input, "article", "read");
 }

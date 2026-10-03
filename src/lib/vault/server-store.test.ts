@@ -8,7 +8,7 @@ import { unzipSync, zipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { readVaultTextpack, readVaultTextpackPath, readVaultTextpackIdentity, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
-import { listVaultFolderViews, listVaultKeptFeedEntries, listVaultRecovery, readVaultRecovery } from "./server-store";
+import { listVaultFolderViews, listVaultKeptFeedEntries, listVaultReadFeedEntries, listVaultRecovery, readVaultRecovery } from "./server-store";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 function pack(body: string, itemId = "item-1") {
@@ -125,6 +125,20 @@ describe("directory TextPack store", () => {
       itemId: "saved-feed", hash: "a".repeat(64), path: "Bookmarks/Saved.textpack", title: "Saved headline", source: "Publisher",
       keptAt: "2026-10-02T10:00:00Z", readAt: "2026-10-02T11:00:00Z",
     }]);
+  });
+
+  it("lists explicit unsaved reads from Feeds/History without adding them to Read Later", async () => {
+    const document = emptyDocumentSnapshot();
+    document.content.title = "Read headline";
+    document.content.fields = { texttextFeedHistoryEntry: "v1", feedEntryHash: "b".repeat(64), feedTitle: "Publisher", readAt: "2026-10-02T11:00:00Z" };
+    const bytes = buildTextpack("Read headline", { document, markdown: '---\ntextTextId: "read-feed"\n---\nRead story' });
+    await writeVaultTextpack({ root, workspaceId, itemId: "read-feed", relativePath: "Feeds/History/Read.textpack", operationId: "read-feed", bytes, baseRevision: null });
+    const items = (await listVaultTextpacks({ root, workspaceId })).items;
+    expect(await listVaultReadFeedEntries({ root, workspaceId, items })).toEqual([{
+      itemId: "read-feed", hash: "b".repeat(64), path: "Feeds/History/Read.textpack", revision: hash(bytes),
+      title: "Read headline", source: "Publisher", readAt: "2026-10-02T11:00:00Z",
+    }]);
+    expect(await listVaultKeptFeedEntries({ root, workspaceId, items })).toEqual([]);
   });
 
   it("stores the complete original pack in a normal folder and reads file edits directly", async () => {

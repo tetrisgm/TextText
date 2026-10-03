@@ -330,6 +330,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case "keptFeedEntries":
                     let entries = try store.keptFeedEntries()
                     return ["hashes": entries.compactMap { $0["hash"] }.sorted(), "entries": entries]
+                case "readFeedEntries":
+                    let entries = try store.readFeedEntries()
+                    return ["hashes": entries.compactMap { $0["hash"] }.sorted(), "entries": entries]
                 case "folderViews": return ["files": try store.folderViews(folder: Self.string(params, "folder"))]
                 case "search":
                     let folder = params["folder"] as? String
