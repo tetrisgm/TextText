@@ -39,6 +39,7 @@ const actionIcons: Record<string, string> = {
   "trash-recovery": "↺", "open-folder": "▱",
   "go-home": "⌂", "edit-current": "✎",
   "share-current": "↗", "show-comments": "☷", "publish-current": "◎", "version-history": "◷",
+  "rename-current": "✎", "delete-current": "⌫",
 };
 
 export function filterVaultSearchActions(actions: readonly VaultSearchAction[], query: string): VaultSearchAction[] {

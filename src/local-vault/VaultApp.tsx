@@ -942,6 +942,10 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   if (canOpenComments) contextualActions.push({ id: "show-comments", label: "Show comments", description: "Discuss the open item.", keywords: ["discussion", "replies"] });
   if (selected && canPublish) contextualActions.push({ id: "publish-current", label: "Publish this item", description: "Review public access before publishing.", keywords: ["public", "website"] });
   if (selected && canOpenRecovery) contextualActions.push({ id: "version-history", label: "Version history", description: "Inspect saved versions of this item.", aliases: ["Restore version"], keywords: ["restore", "revisions"] });
+  if (selected && canManageFiles) contextualActions.push(
+    { id: "rename-current", label: "Rename or move this item", description: "Change the file path of the open item.", aliases: ["Move this item"], keywords: ["file", "folder", "path"] },
+    { id: "delete-current", label: "Delete this item", description: "Move the open item to Trash after confirmation.", aliases: ["Trash this item"], keywords: ["remove", "file"] },
+  );
   commandActions.unshift(...contextualActions);
   if (selected || commandFolder) commandActions.push({ id: "go-home", label: "Go home", description: "Show all files in this workspace.", shortcut: "H", aliases: ["All files"], keywords: ["workspace", "home"] });
   if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
@@ -971,6 +975,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     if (id === "show-comments") { setCommentsOpen(true); return; }
     if (id === "publish-current") { openPublish(); return; }
     if (id === "version-history" && selected) { openRecovery(selected.path); return; }
+    if (id === "rename-current" && selected) { setNewPath(selected.path); setFileAction("rename"); return; }
+    if (id === "delete-current" && selected) { setFileAction("delete"); return; }
     if (id === "trash-recovery") { openRecovery(); return; }
     if (id === "open-folder") { openWorkspaceFolder(); return; }
   };
