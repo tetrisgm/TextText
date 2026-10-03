@@ -145,8 +145,20 @@
 .vault-app .vault-note-start { display:block; width:100%; min-height:40px; margin:0 0 14px; padding:9px 14px; border:0; border-bottom:1px solid var(--line); border-radius:0; background:transparent; color:var(--muted); font-size:13px; text-align:left; cursor:text; }
 .vault-app .vault-note-start:hover { background:var(--selection); color:var(--ink); }
 .vault-app .vault-note-start:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
-.vault-app .vault-note-start:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
 .vault-app .vault-note-draft { display:inline-flex; flex-direction:column; width:100%; margin:0 0 16px; padding:16px; break-inside:avoid; border:1px solid var(--tt-accent); border-radius:10px; background:var(--sidebar); box-sizing:border-box; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color=blue] { --note-tint:#5b94d5; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color=green] { --note-tint:#60ad81; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color=orange] { --note-tint:#d99054; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color=pink] { --note-tint:#d978a2; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color=purple] { --note-tint:#a07bd1; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color=red] { --note-tint:#d66b69; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color=yellow] { --note-tint:#d1ad49; }
+.vault-app :is(.vault-note-card,.vault-note-draft,.vault-note-display)[data-note-color]:not([data-note-color=default]) { background:color-mix(in srgb,var(--note-tint) 16%,var(--surface)); border-color:color-mix(in srgb,var(--note-tint) 38%,var(--line)); }
+.vault-app .vault-note-draft-colors { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin:8px 0 10px; }
+.vault-app .vault-note-draft-colors span { flex-basis:100%; color:var(--muted); font-size:12px; }
+.vault-app .vault-note-draft-colors button { padding:5px 7px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font-size:11px; text-transform:capitalize; }
+.vault-app .vault-note-draft-colors button[aria-pressed=true] { border-color:var(--tt-accent); outline:1px solid var(--tt-accent); }
+.vault-app .vault-note-draft-colors button:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
 .vault-app .vault-note-draft textarea { width:100%; min-height:0; padding:4px 0; border:0; background:transparent; color:var(--ink); resize:vertical; font:inherit; box-sizing:border-box; }
 .vault-app .vault-note-draft textarea:first-child { font-size:17px; font-weight:650; resize:none; }
 .vault-app .vault-note-draft textarea:focus { outline:0; }

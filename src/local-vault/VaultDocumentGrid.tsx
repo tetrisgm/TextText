@@ -3,6 +3,7 @@ import { DocumentCollectionRenderer } from "@/components/document/DocumentRender
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { selectCollectionView } from "@/lib/presentation/collection-views";
 import { BUILTIN_TEMPLATES, getBuiltinTemplate } from "@/lib/presentation/templates";
+import { NOTE_COLORS, noteColor, type NoteColor } from "@/lib/note-colors";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { vaultRequest, type VaultListing } from "./bridge";
 import { folderForItem } from "./folders";
@@ -72,7 +73,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
   onCreateNote?: (pastedText?: string) => void; canUsePersonalBookmarks?: boolean;
-  onCreateCard?: (title: string, body: string, tags: string[], images: File[], onCreated: () => void) => void;
+  onCreateCard?: (title: string, body: string, tags: string[], images: File[], color: NoteColor, onCreated: () => void) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   onAskBookmarkAgent?: (path: string, question: string) => void;
   folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
@@ -183,8 +184,9 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const [storyStatus, setStoryStatus] = useState<"all" | "drafts" | "published">("all");
   const storyQuery = storySearch.trim().toLocaleLowerCase();
   const notesFolder = folder === "Notes";
-  const [cardDraft, setCardDraft] = useState<{ title: string; body: string; tags: string[] } | null>(null);
-  const cardDraftRef = useRef<{ title: string; body: string; tags: string[] } | null>(null);
+  const [cardDraft, setCardDraft] = useState<{ title: string; body: string; tags: string[]; color: NoteColor } | null>(null);
+  const cardDraftRef = useRef<{ title: string; body: string; tags: string[]; color: NoteColor } | null>(null);
+  const [draftColorOpen, setDraftColorOpen] = useState(false);
   const [draftTagOpen, setDraftTagOpen] = useState(false);
   const [draftInsertOpen, setDraftInsertOpen] = useState(false);
   const [draftLinkOpen, setDraftLinkOpen] = useState(false);
@@ -206,7 +208,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     if (!body) return;
     const at = draftCaretRef.current ?? body.selectionStart;
     body.setRangeText(text, replace?.from ?? at, replace?.to ?? at, "end");
-    cardDraftRef.current = { ...(cardDraftRef.current ?? { title: "", body: "", tags: [] }), body: body.value };
+    cardDraftRef.current = { ...(cardDraftRef.current ?? { title: "", body: "", tags: [], color: "default" }), body: body.value };
     draftCaretRef.current = null;
     body.focus();
   };
@@ -237,8 +239,9 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   };
   const openDraftLink = (card: boolean) => {
     const body = draftBodyRef.current;
-    const from = body?.selectionStart ?? draftCaretRef.current ?? 0;
-    const to = body?.selectionEnd ?? from;
+    const selection = draftLinkSelectionRef.current;
+    const from = selection?.from ?? body?.selectionStart ?? draftCaretRef.current ?? 0;
+    const to = selection?.to ?? body?.selectionEnd ?? from;
     draftLinkSelectionRef.current = { from, to };
     draftCardLinkLabelRef.current = body?.value.slice(from, to) ?? "";
     setDraftInsertOpen(false);
@@ -248,11 +251,12 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   };
   const showCardDraft = (initial = "") => {
     if (cardDraftRef.current && !initial) { draftTitleRef.current?.focus(); return; }
-    const next = { title: initial, body: "", tags: [] as string[] };
+    const next = { title: initial, body: "", tags: [] as string[], color: "default" as NoteColor };
     cardDraftRef.current = next;
     setCardDraft(next);
     setDraftTagOpen(false);
     setDraftInsertOpen(false);
+    setDraftColorOpen(false);
     setDraftLinkOpen(false);
     setDraftCardLinkOpen(false);
     setDraftImageError("");
@@ -283,6 +287,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     setDraftImages(draftImagesRef.current);
     setDraftImageError("");
     setDraftInsertOpen(false);
+    setDraftColorOpen(false);
   };
   const clearDraftImages = () => {
     for (const image of draftImagesRef.current) URL.revokeObjectURL(image.url);
@@ -296,9 +301,11 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     setCardDraft(null);
     clearDraftImages();
     setDraftInsertOpen(false);
+    setDraftColorOpen(false);
     setDraftTagOpen(false);
     setDraftLinkOpen(false);
     draftCaretRef.current = null;
+    draftLinkSelectionRef.current = null;
     window.dispatchEvent(new Event("texttext:note-draft-ended"));
   };
   const finishCardDraft = (event: FormEvent<HTMLFormElement>) => {
@@ -310,7 +317,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     const savedTags = cardDraftRef.current?.tags ?? [];
     const pendingTag = draftTagRef.current?.value.trim().replace(/^#/, "").slice(0, 40) ?? "";
     const tags = pendingTag && savedTags.length < 500 && !savedTags.some(tag => tag.toLocaleLowerCase() === pendingTag.toLocaleLowerCase()) ? [...savedTags, pendingTag] : savedTags;
-    onCreateCard(title.trim(), body, tags, draftImagesRef.current.map(image => image.file), resetCardDraft);
+    onCreateCard(title.trim(), body, tags, draftImagesRef.current.map(image => image.file), cardDraftRef.current?.color ?? "default", resetCardDraft);
   };
   useEffect(() => {
     if (!notesFolder || !onCreateCard || previewOnly) return;
@@ -519,16 +526,17 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       {noteQuery && noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && (noteContentSearch.error || noteContentSearch.truncated) && <p role="status" className="vault-note-index-status">{noteContentSearch.error || "Some long cards were not searched. Results may be incomplete."}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
-      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" aria-label="New card draft" onSubmit={finishCardDraft} onPaste={event => { const files = [...event.clipboardData.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); addDraftImages(files); } }} onDragOver={event => { if ([...event.dataTransfer.items].some(item => item.kind === "file")) event.preventDefault(); }} onDrop={event => { const files = [...event.dataTransfer.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); event.stopPropagation(); addDraftImages(files); } }}>
-        <div className="vault-note-draft-tools"><button type="button" aria-label="Add to new card" aria-expanded={draftInsertOpen} disabled={busy} onClick={() => { draftCaretRef.current = draftBodyRef.current?.selectionStart ?? null; setDraftInsertOpen(open => !open); }}>+</button>{draftInsertOpen && <div className="vault-note-draft-insert" role="menu" aria-label="Add to new card" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setDraftInsertOpen(false); draftBodyRef.current?.focus(); return; } const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']")]; const shortcut = event.key === "#" ? 0 : event.key === "^" ? 1 : event.key === "!" ? 2 : -1; if (shortcut >= 0) { event.preventDefault(); options[shortcut]?.click(); } else if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); const index = options.indexOf(document.activeElement as HTMLButtonElement); options[(index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length]?.focus(); } }}><button type="button" role="menuitem" disabled={cardDraft.tags.length >= 500} onClick={() => { setDraftInsertOpen(false); setDraftTagOpen(true); requestAnimationFrame(() => draftTagRef.current?.focus()); }}>Tag <kbd>#</kbd></button><button type="button" role="menuitem" onClick={() => openDraftLink(true)}>Link <kbd>^</kbd></button><button type="button" role="menuitem" onClick={() => openDraftLink(false)}>Web link</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); draftImageInputRef.current?.click(); }}>Image <kbd>!</kbd></button><button type="button" role="menuitem" onClick={insertDraftChecklist}>Checklist</button></div>}<input ref={draftImageInputRef} type="file" accept={IMAGE_ACCEPT} multiple aria-label="Choose new card images" hidden onChange={event => { addDraftImages(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} /></div>
+      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" data-note-color={cardDraft.color} aria-label="New card draft" onSubmit={finishCardDraft} onPaste={event => { const files = [...event.clipboardData.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); addDraftImages(files); } }} onDragOver={event => { if ([...event.dataTransfer.items].some(item => item.kind === "file")) event.preventDefault(); }} onDrop={event => { const files = [...event.dataTransfer.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); event.stopPropagation(); addDraftImages(files); } }}>
+        <div className="vault-note-draft-tools"><button type="button" aria-label="Add to new card" aria-expanded={draftInsertOpen} disabled={busy} onClick={() => { draftCaretRef.current = draftBodyRef.current?.selectionStart ?? null; draftLinkSelectionRef.current = draftBodyRef.current ? { from: draftBodyRef.current.selectionStart, to: draftBodyRef.current.selectionEnd } : null; setDraftInsertOpen(open => !open); }}>+</button>{draftInsertOpen && <div className="vault-note-draft-insert" role="menu" aria-label="Add to new card" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setDraftInsertOpen(false); draftBodyRef.current?.focus(); return; } const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']")]; const shortcut = event.key === "#" ? 0 : event.key === "^" ? 1 : event.key === "!" ? 3 : event.key === "*" ? options.length - 1 : -1; if (shortcut >= 0) { event.preventDefault(); options[shortcut]?.click(); } else if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); const index = options.indexOf(document.activeElement as HTMLButtonElement); options[(index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length]?.focus(); } }}><button type="button" role="menuitem" disabled={cardDraft.tags.length >= 500} onClick={() => { setDraftInsertOpen(false); setDraftTagOpen(true); requestAnimationFrame(() => draftTagRef.current?.focus()); }}>Tag <kbd>#</kbd></button><button type="button" role="menuitem" onClick={() => openDraftLink(true)}>Link <kbd>^</kbd></button><button type="button" role="menuitem" onClick={() => openDraftLink(false)}>Web link</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); draftImageInputRef.current?.click(); }}>Image <kbd>!</kbd></button><button type="button" role="menuitem" onClick={insertDraftChecklist}>Checklist</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftColorOpen(true); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.vault-note-draft-colors button')?.focus()); }}>Color <kbd>*</kbd></button></div>}<input ref={draftImageInputRef} type="file" accept={IMAGE_ACCEPT} multiple aria-label="Choose new card images" hidden onChange={event => { addDraftImages(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} /></div>
+        {draftColorOpen && <div className="vault-note-draft-colors" role="group" aria-label="New card color" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setDraftColorOpen(false); draftBodyRef.current?.focus(); } }}><span>Card color</span>{NOTE_COLORS.map(color => <button key={color} type="button" data-color={color} aria-label={color === "default" ? "Default card color" : `${color} card color`} aria-pressed={cardDraft.color === color} onClick={() => { const next = { ...(cardDraftRef.current ?? cardDraft), color }; cardDraftRef.current = next; setCardDraft(next); setDraftColorOpen(false); draftBodyRef.current?.focus(); }}>{color}</button>)}</div>}
         <textarea ref={draftTitleRef} aria-label="New card title" rows={1} placeholder="Title" defaultValue={cardDraft.title} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), title: event.currentTarget.value }; }} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); draftBodyRef.current?.focus(); } }} />
-        <textarea ref={draftBodyRef} aria-label="New card body" rows={4} placeholder="Write a card…" defaultValue={cardDraft.body} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), body: event.currentTarget.value }; }} onKeyDown={event => { if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && (event.currentTarget.selectionStart === 0 || /\s/.test(event.currentTarget.value[event.currentTarget.selectionStart - 1] ?? ""))) { event.preventDefault(); draftCaretRef.current = event.currentTarget.selectionStart; setDraftInsertOpen(true); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.vault-note-draft-insert [role="menuitem"]')?.focus()); } else if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+        <textarea ref={draftBodyRef} aria-label="New card body" rows={4} placeholder="Write a card…" defaultValue={cardDraft.body} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), body: event.currentTarget.value }; }} onSelect={event => { draftLinkSelectionRef.current = { from: event.currentTarget.selectionStart, to: event.currentTarget.selectionEnd }; }} onKeyDown={event => { if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && (event.currentTarget.selectionStart === 0 || /\s/.test(event.currentTarget.value[event.currentTarget.selectionStart - 1] ?? ""))) { event.preventDefault(); draftCaretRef.current = event.currentTarget.selectionStart; setDraftInsertOpen(true); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.vault-note-draft-insert [role="menuitem"]')?.focus()); } else if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
         {draftImages.length > 0 && <div className="vault-note-draft-images">{draftImages.map(image => <div key={image.id} className="vault-note-draft-image">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.file.name} /><button type="button" aria-label={`Remove ${image.file.name} from new card`} onClick={() => { URL.revokeObjectURL(image.url); draftImagesRef.current = draftImagesRef.current.filter(item => item.id !== image.id); setDraftImages(draftImagesRef.current); }}>×</button></div>)}</div>}
         {draftImageError && <p role="alert" className="vault-note-draft-error">{draftImageError}</p>}
         {cardDraft.tags.length > 0 && <div className="vault-note-draft-tags">{cardDraft.tags.map(tag => <span key={tag}>#{tag}<button type="button" aria-label={`Remove ${tag} from new card`} onClick={() => { const current = cardDraftRef.current; if (!current) return; const next = { ...current, tags: current.tags.filter(value => value !== tag) }; cardDraftRef.current = next; setCardDraft(next); }}>×</button></span>)}</div>}
         {draftCardLinkOpen && <VaultCardLinkPicker onPick={addDraftCardLink} onCancel={() => { setDraftCardLinkOpen(false); draftBodyRef.current?.focus(); }} />}{draftLinkOpen && <div className="vault-note-draft-link-entry"><input ref={draftLinkURLRef} aria-label="New card link address" type="url" placeholder="https://example.com" onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDraftLink(); } else if (event.key === "Escape") { event.preventDefault(); setDraftLinkOpen(false); draftBodyRef.current?.focus(); } }} /><input ref={draftLinkTextRef} aria-label="New card link text" defaultValue={draftCardLinkLabelRef.current} placeholder="Link text (optional)" onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDraftLink(); } }} /><button type="button" onClick={addDraftLink}>Insert link</button><button type="button" onClick={() => { setDraftLinkOpen(false); draftBodyRef.current?.focus(); }}>Cancel link</button></div>}{draftTagOpen && <div className="vault-note-draft-tag-entry"><input ref={draftTagRef} aria-label="New card tag" maxLength={41} placeholder="Add a tag" onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDraftTag(); } else if (event.key === "Escape") { event.preventDefault(); setDraftTagOpen(false); draftBodyRef.current?.focus(); } }} /><button type="button" onClick={addDraftTag}>Add</button></div>}
         <div className="vault-note-draft-actions"><button type="button" disabled={busy} onClick={resetCardDraft}>Cancel</button><button type="submit" disabled={busy}>Finish</button></div>
-      </form>}{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path} role="article" aria-label={`${title} card`} tabIndex={busy || previewOnly ? -1 : 0} onKeyDown={event => {
+      </form>}{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" data-note-color={noteColor(preview?.document?.content.fields.texttextNoteColor)} key={item.path} role="article" aria-label={`${title} card`} tabIndex={busy || previewOnly ? -1 : 0} onKeyDown={event => {
         if (event.target !== event.currentTarget || busy || previewOnly) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault(); event.stopPropagation();

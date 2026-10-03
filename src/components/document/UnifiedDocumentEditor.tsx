@@ -2,6 +2,7 @@
 
 import { DocumentUndoManager, replaceSharedText } from "@/lib/collab/text-transactions";
 import { templateExperience } from "@/lib/presentation/templates";
+import { NOTE_COLORS, noteColor } from "@/lib/note-colors";
 
 import { dismissOpenDetails } from "@/components/accessibility/keyboard";
 import { DocumentHistoryDialog } from "@/components/workspace/DocumentHistoryDialog";
@@ -583,6 +584,7 @@ export function UnifiedDocumentEditor({
   const noteImageInput = useRef<HTMLInputElement>(null);
   const noteImageSelection = useRef({ from: 0, to: 0 });
   const [noteInsertOpen, setNoteInsertOpen] = useState(false);
+  const [noteColorOpen, setNoteColorOpen] = useState(false);
   const [noteLink, setNoteLink] = useState<{ from: number; to: number; body: string; label: string; url: string; error: string } | null>(null);
   const [noteCardLink, setNoteCardLink] = useState<{ from: number; to: number; body: string; label: string; error: string } | null>(null);
   const noteInsertRef = useRef<HTMLDivElement>(null);
@@ -1826,8 +1828,8 @@ export function UnifiedDocumentEditor({
           /><div ref={noteInsertRef} className="tt-note-insert">
             <button type="button" aria-label="Add to note" aria-expanded={noteInsertOpen} title="Add to card" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen((open) => !open); }}>+</button>
             {noteInsertOpen && <div className="tt-note-insert-menu" role="menu" aria-label="Add to note" onKeyDown={(event) => {
-              if (event.key === "#" || event.key === "^" || event.key === "!") {
-                const choice = event.key === "#" ? "Tag" : event.key === "^" ? "Link" : "Image";
+              if (event.key === "#" || event.key === "^" || event.key === "!" || event.key === "*") {
+                const choice = event.key === "#" ? "Tag" : event.key === "^" ? "Link" : event.key === "!" ? "Image" : "Color";
                 const item = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(button => button.textContent === choice && !button.disabled);
                 if (item) { event.preventDefault(); item.click(); }
                 return;
@@ -1846,6 +1848,7 @@ export function UnifiedDocumentEditor({
               {renderNoteCardLinkPicker && <button type="button" role="menuitem" onClick={openNoteLink}>Web link</button>}
               {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
               <button type="button" role="menuitem" onClick={insertNoteChecklist}>Checklist</button>
+              <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); setNoteColorOpen(true); }}>Color</button>
             </div>}
           </div></div> :
           <CollaborativeTextarea
@@ -2029,7 +2032,7 @@ export function UnifiedDocumentEditor({
     className="tt-document-editor"
   />;
   return (
-    <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} onKeyDown={handleKeyboard}>
+    <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} data-note-color={experience === "note" ? noteColor(document.content.fields.texttextNoteColor) : undefined} onKeyDown={handleKeyboard}>
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
         // eslint-disable-next-line react-hooks/refs -- The injected library receives event handlers; it does not invoke them during render.
         renderTemplateLibrary ? renderTemplateLibrary({
@@ -2327,6 +2330,7 @@ export function UnifiedDocumentEditor({
         {noteLink.error && <p role="alert">{noteLink.error}</p>}
       </form>}
       {experience === "note" && noteCardLink && renderNoteCardLinkPicker && <div className="tt-note-link" aria-label="Add card link">{renderNoteCardLinkPicker({ onPick: insertNoteCardLink, onCancel: () => { setNoteCardLink(null); bodySurfaceRef.current?.focus(); } })}{noteCardLink.error && <p role="alert">{noteCardLink.error}</p>}</div>}
+      {experience === "note" && noteColorOpen && <div className="tt-note-colors" role="group" aria-label="Card color" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setNoteColorOpen(false); bodySurfaceRef.current?.focus(); } }}><span>Card color</span>{NOTE_COLORS.map(color => <button key={color} type="button" data-color={color} aria-label={color === "default" ? "Default card color" : `${color} card color`} aria-pressed={noteColor(document.content.fields.texttextNoteColor) === color} onClick={() => { updateField("texttextNoteColor", color); setNoteColorOpen(false); bodySurfaceRef.current?.focus(); }}>{color}</button>)}</div>}
         <h3>Tags</h3>
         <div className="tt-article-topic-list">{document.content.tags.slice(0, 500).map((topic) => <span key={topic}>#{topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
           const current = currentLocalDocument();
@@ -2440,6 +2444,13 @@ export function UnifiedDocumentEditor({
         .tt-note-insert-menu{position:absolute;right:0;top:32px;display:grid;min-width:130px;padding:4px;border:1px solid var(--line,#ddd);border-radius:6px;background:var(--paper,#fff);box-shadow:0 8px 24px #0003}
         .tt-note-insert-menu button{border:0;border-radius:4px;padding:8px 10px;background:transparent;color:var(--ink,#222);font:500 13px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;cursor:pointer}
         .tt-note-insert-menu button:hover,.tt-note-insert-menu button:focus-visible{background:var(--selection,#eee);outline:0}
+        .tt-unified-editor[data-note-color=blue]{--note-tint:#5b94d5}.tt-unified-editor[data-note-color=green]{--note-tint:#60ad81}.tt-unified-editor[data-note-color=orange]{--note-tint:#d99054}.tt-unified-editor[data-note-color=pink]{--note-tint:#d978a2}.tt-unified-editor[data-note-color=purple]{--note-tint:#a07bd1}.tt-unified-editor[data-note-color=red]{--note-tint:#d66b69}.tt-unified-editor[data-note-color=yellow]{--note-tint:#d1ad49}
+        .tt-unified-editor[data-note-color]:not([data-note-color=default]) .tt-document-editor{background:color-mix(in srgb,var(--note-tint) 15%,var(--paper,#fff));border-color:color-mix(in srgb,var(--note-tint) 38%,var(--line,#ddd))}
+        .tt-note-colors{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0;padding:10px;border:1px solid var(--line,#ddd);border-radius:8px;background:var(--paper,#fff)}
+        .tt-note-colors span{flex-basis:100%;color:var(--muted,#666);font-size:12px}
+        .tt-note-colors button{padding:6px 8px;border:1px solid var(--line,#ddd);border-radius:6px;background:transparent;color:var(--ink,#222);font-size:12px;text-transform:capitalize;cursor:pointer}
+        .tt-note-colors button[aria-pressed=true]{border-color:var(--tt-accent,#0071e3);outline:1px solid var(--tt-accent,#0071e3)}
+        .tt-note-colors button:focus-visible{outline:2px solid var(--tt-accent,#0071e3);outline-offset:2px}
         .tt-note-tags h3{font-size:11px;color:var(--muted,#666)}
         .tt-note-tags .tt-article-topic-list{margin-bottom:8px}
         .tt-note-tags .tt-note-finish{flex:none;margin-left:auto;padding:6px 12px;border:0;border-radius:5px;background:var(--tt-accent,#2762ac);color:#fff;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}

@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { noteCardIdFromHref } from "@/lib/note-card-links";
+import { noteColor } from "@/lib/note-colors";
 import { VaultCardBacklinks } from "./VaultCardBacklinks";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
@@ -49,7 +50,7 @@ export function VaultNoteDisplay({ document, template, sourceBody = document.con
     if (!item || !cardRef.current?.contains(item)) return -1;
     return Array.from(cardRef.current.querySelectorAll('.tt-prose[data-tt-bind="content.body"] li.task-list-item')).indexOf(item);
   };
-  return <section ref={cardRef} className="vault-note-display" aria-label="Note card" tabIndex={onEdit ? 0 : undefined}
+  return <section ref={cardRef} className="vault-note-display" data-note-color={noteColor(document.content.fields.texttextNoteColor)} aria-label="Note card" tabIndex={onEdit ? 0 : undefined}
     onClickCapture={onOpenCardId ? event => {
       const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
       const id = anchor && cardRef.current?.contains(anchor) ? noteCardIdFromHref(anchor.getAttribute("href") ?? "") : null;

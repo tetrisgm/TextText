@@ -1,6 +1,7 @@
 import { FolderPresentation } from "./FolderPresentation";
 import type { VaultListing } from "./bridge";
 import { VaultDocumentGrid } from "./VaultDocumentGrid";
+import type { NoteColor } from "@/lib/note-colors";
 import type { GalleryCommentsAccess } from "./VaultGalleryLightbox";
 export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sharedView = false, designOpen = false, onOpen, onEditNote, onRevealBookmark, onCreateNote, onCreateCard, onQuickSaveBookmark, onAskBookmarkAgent, onCustomize, onCloseDesign, preferredBookmarkPath, galleryCommentsAccess }: {
   listing: VaultListing; folder: string; busy: boolean; canCreate?: boolean; sharedView?: boolean;
@@ -9,7 +10,7 @@ export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sha
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
   onCreateNote?: (pastedText?: string) => void;
-  onCreateCard?: (title: string, body: string, tags: string[], images: File[], onCreated: () => void) => void;
+  onCreateCard?: (title: string, body: string, tags: string[], images: File[], color: NoteColor, onCreated: () => void) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   onAskBookmarkAgent?: (path: string, question: string) => void;
   onCustomize?: (path: string) => void;
