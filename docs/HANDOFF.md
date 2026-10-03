@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now follows Superhuman's editor exception for a selected story passage: the first Cmd K opens the link form, and a second Cmd K opens TextText Command. The Notes list's displayed N shortcut now creates a blank note; other printable keys still start a titled card. The local browser flow covers both key paths. TypeScript and local/web browser flows pass; broader command ordering and exact visual parity remain open. No release was run.
+
 Gallery image detail now offers an editable Summary for the selected image and calls item tags Keywords. The summary is validated on the image asset in the same TextPack, so multi-image items keep separate descriptions. The local browser flow checks saving and switching images; TypeScript and local/web browser flows pass. Automatic opt-in keyword and summary generation, comments, and broader Resurf comparison remain open; no release was run.
 
 Blog Publish now saves changed preview title, subtitle, featured image, and topics before publishing in the same action, with the saved TextPack revision checked before public access changes. The local browser fixture publishes a story with unsaved preview edits and verifies both the saved fields and public state; TypeScript, local build, and local/web browser flows pass. Medium composition and real Mac/web publication checks remain open; no release was run.

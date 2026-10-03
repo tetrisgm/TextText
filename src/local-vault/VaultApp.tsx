@@ -1003,7 +1003,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
       if (dialogOpen || event.metaKey || event.ctrlKey || event.altKey || busy) return;
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return;
-      if (!selected && destinationFolder.trim() === "Notes" && canCreate && event.key.length === 1 && /\S/u.test(event.key) && event.key !== "/") {
+      if (!selected && destinationFolder.trim() === "Notes" && canCreate && event.key.length === 1 && /\S/u.test(event.key) && event.key !== "/" && event.key.toLowerCase() !== "n") {
         event.preventDefault();
         void createNote(focusedControl(), event.key);
         return;

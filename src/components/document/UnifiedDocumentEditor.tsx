@@ -1626,6 +1626,15 @@ export function UnifiedDocumentEditor({
   const handleKeyboard = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
       if (event.defaultPrevented || dismissOpenDetails(event.target, event)) return;
+      if (experience === "article" && articleSelection && !articleLinkTarget &&
+          (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        event.stopPropagation();
+        setArticleLinkTarget(articleSelection);
+        setArticleLinkURL("");
+        setArticleLinkError("");
+        return;
+      }
       // Folder workspaces do not mount the cloud workspace command dispatcher.
       // Handle history at the editor so browser undo cannot change only the DOM.
       if (transport === "local" && (event.metaKey || event.ctrlKey) && !event.altKey) {
@@ -1653,7 +1662,7 @@ export function UnifiedDocumentEditor({
         void flushMaterialization();
       }
     },
-    [flushMaterialization, stopEditing, transport],
+    [articleLinkTarget, articleSelection, experience, flushMaterialization, stopEditing, transport],
   );
 
   // When this was written. A look that declares a metadata node is asking for

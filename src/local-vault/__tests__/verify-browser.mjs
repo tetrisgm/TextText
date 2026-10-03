@@ -1430,7 +1430,12 @@ try {
     document.dispatchEvent(new Event("selectionchange"));
     element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   });
-  await page.getByRole("toolbar", { name: "Format selected story text" }).getByRole("button", { name: "Link" }).click();
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("form", { name: "Add story link" }).waitFor();
+  await page.keyboard.press("Meta+k");
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor({ state: "hidden" });
   await page.getByRole("form", { name: "Add story link" }).getByRole("textbox", { name: "Link address" }).fill("example.com/article");
   await page.getByRole("form", { name: "Add story link" }).getByRole("button", { name: "Add link" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Link](<https://example.com/article>)"));
@@ -2193,8 +2198,8 @@ try {
   await page.getByRole("button", { name: "New note", exact: true }).waitFor();
   await page.keyboard.press("n");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Title");
-  assert.equal(await page.getByRole("textbox", { name: "Title", exact: true }).inputValue(), "n");
-  await page.keyboard.type("ote from keyboard");
+  assert.equal(await page.getByRole("textbox", { name: "Title", exact: true }).inputValue(), "");
+  await page.keyboard.type("note from keyboard");
   await page.getByRole("button", { name: "Finish", exact: true }).click();
   const shortcutNote = [...files.values()].at(-1);
   assert.ok(shortcutNote.path.startsWith("Notes/"));
