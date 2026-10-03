@@ -28,7 +28,8 @@ import { currentVaultWindowActive } from "./window-activity";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
-export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>, saveTopics: (topics: string[]) => Promise<string | false>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
+export type StoryDetails = { title: string; subtitle: string; topics: string[] };
+export type VaultEditorProps = { initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>, saveStoryDetails: (details: StoryDetails) => Promise<string | false>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
   if (typeof value === "string") {
     let text = value as string;
@@ -244,12 +245,12 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
     if (!shared) throw new Error("The shared document is still opening.");
     shared.mutate(doc => applyDocumentSnapshot(doc, transform(documentSnapshotFromYDoc(doc)), "file-article-edit"));
   }, []);
-  const saveTopics = useCallback(async (topics: string[]) => {
+  const saveStoryDetails = useCallback(async ({ title, subtitle, topics }: StoryDetails) => {
     if (!await publishFlush()) return false;
-    updateArticle(document => ({ ...document, content: { ...document.content, tags: topics } }));
+    updateArticle(document => ({ ...document, content: { ...document.content, title, subtitle, tags: topics } }));
     return publishFlush();
   }, [publishFlush, updateArticle]);
-  useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveTopics); }, [flush, publishFlush, registerFlush, saveTopics]);
+  useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails); }, [flush, publishFlush, registerFlush, saveStoryDetails]);
   const reset = useCallback(async (recovered = false, waitForSync = false) => {
     const shared = clientRef.current;
     try {
