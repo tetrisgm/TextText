@@ -82,20 +82,27 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
     if (items.length > 2048) { queueMicrotask(() => { if (active) setMetadataState("unavailable"); }); return () => { active = false; }; }
     void (async () => {
       const found: Record<string, FolderPreview> = {};
-      for (const item of items) {
-        if (!active) return;
-        try {
-          const entry = await vaultRequest<FolderPreview>("preview", { path: item.path, metadataOnly: true });
-          const incomplete = entry.incompleteFields || [];
-          if (!entry.document || incomplete.some(field => ["*", "title", "tags", "content.fields.sourceUrl", "content.fields.texttextBookmarkFavorite", "content.fields.texttextBookmarkReadAt", "content.fields.texttextBookmarkArchivedAt"].includes(field))) {
-            if (active) setMetadataState("unavailable");
-            return;
-          }
-          found[item.path] = entry;
+      let cursor = 0;
+      let failed = false;
+      const readNext = async () => {
+        while (active && !failed && cursor < items.length) {
+          const item = items[cursor++];
+          try {
+            const entry = await vaultRequest<FolderPreview>("preview", { path: item.path, metadataOnly: true });
+            if (!active || failed) return;
+            const incomplete = entry.incompleteFields || [];
+            if (!entry.document || incomplete.some(field => ["*", "title", "tags", "content.fields.sourceUrl", "content.fields.texttextBookmarkFavorite", "content.fields.texttextBookmarkReadAt", "content.fields.texttextBookmarkArchivedAt"].includes(field))) {
+              failed = true;
+              return;
+            }
+            found[item.path] = entry;
+          } catch { failed = true; return; }
         }
-        catch { if (active) setMetadataState("unavailable"); return; }
-      }
-      if (active) { setMetadata(found); setIndexedKey(itemKey); setMetadataState("ready"); }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, items.length) }, readNext));
+      if (!active) return;
+      if (failed) setMetadataState("unavailable");
+      else { setMetadata(found); setIndexedKey(itemKey); setMetadataState("ready"); }
     })();
     return () => { active = false; };
     // itemKey represents the folder listing without re-reading on preview updates.
@@ -128,11 +135,11 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   }).sort((left, right) => savedTime(metadata[right.path]) - savedTime(metadata[left.path])) : items;
   const preferredIndex = preferredPath ? filtered.findIndex(item => item.path === preferredPath) : -1;
   useEffect(() => {
-    if (pendingPreferred.current === preferredPath && filter === "inbox" && !search && !tagFilter && preferredIndex >= 0) {
+    if ((canFilter || metadataState === "unavailable") && pendingPreferred.current === preferredPath && filter === "inbox" && !search && !tagFilter && preferredIndex >= 0) {
       setPage(Math.floor(preferredIndex / PAGE_SIZE));
       pendingPreferred.current = "";
     }
-  }, [filter, preferredIndex, preferredPath, search, tagFilter]);
+  }, [canFilter, filter, metadataState, preferredIndex, preferredPath, search, tagFilter]);
   const lastPage = Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1);
   const currentPage = Math.min(page, lastPage);
   const shown = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);

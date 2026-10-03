@@ -855,7 +855,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     setPreferredBookmarkPath(created.path);
     setDestinationFolder("Bookmarks");
     setSelected(null);
-    refresh();
+    await refresh();
   });
   const openFeedSubscribe = (returnFocus: HTMLElement | null) => {
     feedSubscribeReturnFocus.current = returnFocus;

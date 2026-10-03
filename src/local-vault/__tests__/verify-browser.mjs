@@ -1230,17 +1230,17 @@ try {
   assert.equal(await saveBookmark.getByRole("textbox", { name: "Web address" }).inputValue(), "example.com/fresh-reading");
   await saveBookmark.getByRole("button", { name: "Save bookmark" }).click();
   await page.getByRole("option", { name: /example.com/ }).filter({ hasText: "example.com" }).first().waitFor();
-  await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.com"));
+  await bookmarkReader.locator("..").getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { selected: true }).filter({ hasText: "example.com" }).first().waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/fresh-reading"), true);
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.body === "https://example.com/fresh-reading"), true);
   assert.equal(await page.getByRole("article", { name: "Bookmark reader" }).count(), 1);
   assert.equal(await page.getByRole("main", { name: "Edit item" }).count(), 0);
-  await page.locator(".vault-bookmark-library").evaluate(element => {
+  await bookmarkReader.locator("..").evaluate(element => {
     const transfer = new DataTransfer();
     transfer.setData("text/uri-list", "https://example.org/dropped-reading");
     element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
   });
-  await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.org"));
+  await bookmarkReader.locator("..").getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { selected: true }).filter({ hasText: "example.org" }).first().waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/dropped-reading"), true);
   await page.getByRole("button", { name: "+ Add link" }).click();
   const quickLink = page.getByRole("textbox", { name: "Web address to save" });
@@ -1256,14 +1256,14 @@ try {
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "example.org/copied-reading" } }));
   await page.getByRole("button", { name: "+ Add link" }).click();
   await page.locator(".vault-bookmark-quick-save").getByRole("button", { name: "Save copied link" }).click();
-  await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.org"));
+  await bookmarkReader.locator("..").getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { selected: true }).filter({ hasText: "example.org" }).first().waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/copied-reading"), true);
-  await page.locator('.vault-bookmark-library').filter({ has: page.getByRole('button', { name: '+ Add link' }) }).locator('.vault-bookmark-list [role="option"][aria-selected="true"]').first().evaluate(element => {
+  await bookmarkReader.locator("..").getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { selected: true }).first().evaluate(element => {
     const data = new DataTransfer();
     data.setData("text/plain", "https://example.org/pasted-reading");
     element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
   });
-  await page.locator('.vault-bookmark-reader a[href="https://example.org/pasted-reading"]').first().waitFor();
+  await bookmarkReader.locator('a[href="https://example.org/pasted-reading"]').first().waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/pasted-reading"), true);
   await bookmarkSearch.fill("Another saved link");
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /Another saved link/ }).first().click();

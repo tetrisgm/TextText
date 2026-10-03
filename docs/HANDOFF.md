@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now reads saved-link metadata with at most six concurrent local preview calls instead of one at a time, keeping the full-list filter gate and the existing 2,048-item bound. A newly saved link waits for the refreshed folder listing and selects its final sorted page only after the metadata index is ready. The browser fixture now scopes bookmark checks to the visible library rather than a hidden preview. TypeScript, local build, and the local browser fixture passed. This is source work only, with no Mac release.
+
 The inline Notes draft now accepts images through its plus menu, file picker, paste, and drop. It previews images before Finish, then uses the guarded editor asset path to write the image and Markdown reference into one TextPack; Cancel leaves no file. The local browser flow checks that no file exists before Finish and verifies the saved asset. TypeScript, local build, and local browser checks pass. This has not shipped; the richer Supernotes Coupler and live-product visual comparison remain open.
 
 The inline Notes draft now adds and removes tags before Finish, using the same normalized TextPack tags as the full editor. It rejects duplicate tags without changing case, and Finish also includes a tag still typed in the tag field. The local browser flow verifies both saved tags and dark/light/narrow draft renders; TypeScript, local build, and local/web browser flows pass. Personal-only tags and the full Supernotes Coupler are still absent; no release was run.
