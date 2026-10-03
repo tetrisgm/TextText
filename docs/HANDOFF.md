@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now presents the saved Summary as a full-width neutral card beneath the source, matching the placement and surface in [Shiori's dashboard preview](https://www.shiori.sh/). The same TextPack subtitle remains editable through Bookmark details. Local browser checks cover width and light/dark colors; `/tmp/texttext-bookmark-summary-light-reference.png` is the light capture. The web browser flow passes. Shiori's expandable summary and automatic enrichment remain open; no release was run.
+
 Feeds Profile now opens an interest explorer after onboarding. Existing topics show Following; selecting a new topic imports the corresponding recommended source as an ordinary TextPack and returns to Profile. The local browser flow verifies a NASA source file for Space and captures `/tmp/texttext-feeds-interests-reference.png`; TypeScript and local/web browser flows pass. The picker adds topics; source removal remains in Sources. Broader Artifact parity is open; no release was run.
 
 Feeds Profile now shows distinct days read in the past seven days and a current reading streak based only on completed History/Read Later entries. The ring is a real activity measure, not an invented points score. TypeScript, three focused calendar tests, and local/web browser flows pass; `/tmp/texttext-feeds-profile-light-reference.png` shows the light profile. The two Artifact image folders named in the old plan are absent on this Mac, and the repository contains no originals; a public [Artifact profile screenshot](https://goldsguide.com/artifact-review-instagram-cofounders/) informed this change. Partial reading progress and broader Artifact parity remain open; no release was run.
