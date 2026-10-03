@@ -1301,11 +1301,23 @@ try {
   await page.getByRole("button", { name: "Open One photograph" }).waitFor();
   const portraitTile = await page.getByRole("button", { name: "Open Two photographs image 1" }).boundingBox();
   const landscapeTile = await page.getByRole("button", { name: "Open Two photographs image 2" }).boundingBox();
-  assert.ok(portraitTile && landscapeTile && Math.abs(portraitTile.width - landscapeTile.width) < 2 && portraitTile.height > landscapeTile.height);
-  const uncroppedGallery = await page.locator(".vault-photo-grid").evaluate(grid => [...grid.querySelectorAll("button img")].every(image =>
+  assert.ok(portraitTile && landscapeTile && portraitTile.width < landscapeTile.width && Math.abs(portraitTile.height - landscapeTile.height) < 2);
+  await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid button img")].every(image =>
     Math.abs(image.clientWidth / image.clientHeight - image.naturalWidth / image.naturalHeight) < .03));
+  const galleryRatios = await page.locator(".vault-photo-grid").evaluate(grid => [...grid.querySelectorAll("button img")].map(image => ({ display: image.clientWidth / image.clientHeight, natural: image.naturalWidth / image.naturalHeight })));
+  const uncroppedGallery = galleryRatios.every(({ display, natural }) => Math.abs(display - natural) < .03);
   assert.ok(uncroppedGallery);
   await page.screenshot({ path: "/tmp/texttext-gallery-grid-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-gallery-grid-light-reference.png" });
+  await page.setViewportSize({ width: 700, height: 800 });
+  await page.waitForFunction(() => {
+    const grid = document.querySelector(".vault-photo-grid");
+    return grid && grid.clientWidth > 0 && grid.scrollWidth <= grid.clientWidth + 1 && [...grid.querySelectorAll("img")].every(image =>
+      Math.abs(image.clientWidth / image.clientHeight - image.naturalWidth / image.naturalHeight) < .03);
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Open Two photographs image 1" }).click();
   const lightbox = page.locator(".vault-gallery-lightbox");
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
