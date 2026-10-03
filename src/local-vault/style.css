@@ -150,7 +150,14 @@
 .vault-app .vault-note-draft textarea:first-child { font-size:17px; font-weight:650; resize:none; }
 .vault-app .vault-note-draft textarea:focus { outline:0; }
 .vault-app .vault-note-draft textarea::placeholder { color:var(--muted); }
-.vault-app .vault-note-draft > div { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.vault-app .vault-note-draft-tools { display:flex; justify-content:flex-end; }
+.vault-app .vault-note-draft-tools button { width:25px; height:25px; padding:0; border:1px solid var(--line); border-radius:50%; color:var(--muted); font-size:17px; line-height:1; }
+.vault-app .vault-note-draft-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.vault-app .vault-note-draft-tags span { display:inline-flex; align-items:center; gap:4px; padding:3px 7px; border-radius:5px; background:var(--selection); color:var(--muted); font-size:12px; }
+.vault-app .vault-note-draft-tags button { padding:0; border:0; background:transparent; color:inherit; }
+.vault-app .vault-note-draft-tag-entry { display:flex; gap:6px; margin-top:8px; }
+.vault-app .vault-note-draft-tag-entry input { min-width:0; flex:1; padding:6px 8px; border:1px solid var(--line); border-radius:5px; background:var(--sidebar); color:var(--ink); }
+.vault-app .vault-note-draft-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
 .vault-app .vault-note-draft button { padding:7px 11px; border-radius:6px; }
 .vault-app .vault-note-draft button[type="submit"] { background:var(--tt-accent); color:#fff; }
 .vault-app .vault-note-tools { display:flex; gap:10px; margin:0 0 12px; }

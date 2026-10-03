@@ -68,7 +68,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
   onCreateNote?: (pastedText?: string) => void; canUsePersonalBookmarks?: boolean;
-  onCreateCard?: (title: string, body: string, onCreated: () => void) => void;
+  onCreateCard?: (title: string, body: string, tags: string[], onCreated: () => void) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
 }) {
@@ -174,17 +174,31 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const [storyStatus, setStoryStatus] = useState<"all" | "drafts" | "published">("all");
   const storyQuery = storySearch.trim().toLocaleLowerCase();
   const notesFolder = folder === "Notes";
-  const [cardDraft, setCardDraft] = useState<{ title: string; body: string } | null>(null);
-  const cardDraftRef = useRef<{ title: string; body: string } | null>(null);
+  const [cardDraft, setCardDraft] = useState<{ title: string; body: string; tags: string[] } | null>(null);
+  const cardDraftRef = useRef<{ title: string; body: string; tags: string[] } | null>(null);
+  const [draftTagOpen, setDraftTagOpen] = useState(false);
+  const draftTagRef = useRef<HTMLInputElement>(null);
   const draftTitleRef = useRef<HTMLTextAreaElement>(null);
   const draftBodyRef = useRef<HTMLTextAreaElement>(null);
   const showCardDraft = (initial = "") => {
     if (cardDraftRef.current && !initial) { draftTitleRef.current?.focus(); return; }
-    const next = { title: initial, body: "" };
+    const next = { title: initial, body: "", tags: [] as string[] };
     cardDraftRef.current = next;
     setCardDraft(next);
+    setDraftTagOpen(false);
     window.dispatchEvent(new Event("texttext:note-draft-started"));
     requestAnimationFrame(() => draftTitleRef.current?.focus());
+  };
+  const addDraftTag = () => {
+    const current = cardDraftRef.current;
+    const tag = draftTagRef.current?.value.trim().replace(/^#/, "").slice(0, 40) ?? "";
+    if (!current || !tag || current.tags.length >= 500) return;
+    if (current.tags.some(value => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) { if (draftTagRef.current) draftTagRef.current.value = ""; return; }
+    const next = { ...current, tags: [...current.tags, tag] };
+    cardDraftRef.current = next;
+    setCardDraft(next);
+    if (draftTagRef.current) draftTagRef.current.value = "";
+    draftTagRef.current?.focus();
   };
   useEffect(() => {
     if (!notesFolder || !onCreateCard || previewOnly) return;
@@ -374,10 +388,13 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       {noteQuery && noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && (noteContentSearch.error || noteContentSearch.truncated) && <p role="status" className="vault-note-index-status">{noteContentSearch.error || "Some long cards were not searched. Results may be incomplete."}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
-      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" aria-label="New card draft" onSubmit={event => { event.preventDefault(); const draft = { title: draftTitleRef.current?.value ?? cardDraftRef.current?.title ?? "", body: draftBodyRef.current?.value ?? cardDraftRef.current?.body ?? "" }; if (!draft.title.trim() && !draft.body.trim()) { draftTitleRef.current?.focus(); return; } onCreateCard(draft.title.trim(), draft.body, () => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }); }}>
+      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" aria-label="New card draft" onSubmit={event => { event.preventDefault(); const draft = { title: draftTitleRef.current?.value ?? cardDraftRef.current?.title ?? "", body: draftBodyRef.current?.value ?? cardDraftRef.current?.body ?? "", tags: cardDraftRef.current?.tags ?? [] }; if (!draft.title.trim() && !draft.body.trim()) { draftTitleRef.current?.focus(); return; } const pendingTag = draftTagRef.current?.value.trim().replace(/^#/, "").slice(0, 40) ?? ""; const tags = pendingTag && draft.tags.length < 500 && !draft.tags.some(tag => tag.toLocaleLowerCase() === pendingTag.toLocaleLowerCase()) ? [...draft.tags, pendingTag] : draft.tags; onCreateCard(draft.title.trim(), draft.body, tags, () => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }); }}>
+        <div className="vault-note-draft-tools"><button type="button" aria-label="Add tag to new card" disabled={busy || cardDraft.tags.length >= 500} onClick={() => { setDraftTagOpen(true); requestAnimationFrame(() => draftTagRef.current?.focus()); }}>+</button></div>
         <textarea ref={draftTitleRef} aria-label="New card title" rows={1} placeholder="Title" defaultValue={cardDraft.title} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), title: event.currentTarget.value }; }} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); draftBodyRef.current?.focus(); } }} />
         <textarea ref={draftBodyRef} aria-label="New card body" rows={4} placeholder="Write a card…" defaultValue={cardDraft.body} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), body: event.currentTarget.value }; }} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
-        <div><button type="button" disabled={busy} onClick={() => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }}>Cancel</button><button type="submit" disabled={busy}>Finish</button></div>
+        {cardDraft.tags.length > 0 && <div className="vault-note-draft-tags">{cardDraft.tags.map(tag => <span key={tag}>#{tag}<button type="button" aria-label={`Remove ${tag} from new card`} onClick={() => { const current = cardDraftRef.current; if (!current) return; const next = { ...current, tags: current.tags.filter(value => value !== tag) }; cardDraftRef.current = next; setCardDraft(next); }}>×</button></span>)}</div>}
+        {draftTagOpen && <div className="vault-note-draft-tag-entry"><input ref={draftTagRef} aria-label="New card tag" maxLength={41} placeholder="Add a tag" onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDraftTag(); } else if (event.key === "Escape") { event.preventDefault(); setDraftTagOpen(false); draftBodyRef.current?.focus(); } }} /><button type="button" onClick={addDraftTag}>Add</button></div>}
+        <div className="vault-note-draft-actions"><button type="button" disabled={busy} onClick={() => { cardDraftRef.current = null; setCardDraft(null); window.dispatchEvent(new Event("texttext:note-draft-ended")); }}>Cancel</button><button type="submit" disabled={busy}>Finish</button></div>
       </form>}{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path} role="article" aria-label={`${title} card`} tabIndex={busy || previewOnly ? -1 : 0} onKeyDown={event => {
         if (event.target !== event.currentTarget || busy || previewOnly) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {

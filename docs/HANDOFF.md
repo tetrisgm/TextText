@@ -2,6 +2,8 @@
 
 ## Current work
 
+The inline Notes draft now adds and removes tags before Finish, using the same normalized TextPack tags as the full editor. It rejects duplicate tags without changing case, and Finish also includes a tag still typed in the tag field. The local browser flow verifies both saved tags and dark/light/narrow draft renders; TypeScript, local build, and local/web browser flows pass. Personal-only tags and the full Supernotes Coupler are still absent; no release was run.
+
 Notes creation now opens an inline card draft immediately from typing on the board or clicking Start typing. Rapid typing stays in the draft title, Tab moves to its body, Finish writes the note TextPack and returns to the grid, and Cancel leaves no file. The existing explicit New note command still opens the full editor. The local browser flow checks rapid typing, no pre-Finish file, Finish, Cancel, and dark/light/narrow rendering; TypeScript, local build, and local/web browser flows pass. The inline draft has plain Markdown editing and still needs the richer Supernotes Coupler and image tools; no release was run.
 
 Newly saved and read feed stories now carry their topic in the same TextPack as the story. Mac and web metadata readers expose it for Profile's reading-topic counts, so unfollowing a source no longer erases attribution for those new stories. Existing stories without a stored topic still fall back to a currently followed source. The RSS pack tests, web store tests, Swift import tests, TypeScript, local build, and local/web browser flows pass. No release was run.
