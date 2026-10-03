@@ -2,6 +2,8 @@
 
 ## Current work
 
+The Blog writing canvas no longer places a Story topics form below the article. Medium's writing flow keeps topics in the Publish review, and TextText's existing Publish dialog still edits and saves them in the article TextPack. The local browser flow checks the editor has no Story topics region and that the Publish dialog edits topics; TypeScript, local bundle, and local/web browser flows pass. Full Medium parity remains open; no release was run.
+
 Blog list previews now strip Markdown image syntax and show the actual embedded image. The image lifecycle no longer revokes a thumbnail when refreshed preview metadata contains identical image bytes in a new object. The local browser flow waits for decoding and captures `/tmp/texttext-blog-reference.png`; TypeScript, local bundle, and local/web browser flows pass. Medium editing parity remains open; no release was run.
 
 Feeds For You now shows individually ranked articles, with each publisher, title, excerpt, image, direct reader action, and story menu. Related coverage remains in Headlines. The current dark capture is `/tmp/texttext-feeds-reference.png`; TypeScript, local bundle, and local/web browser flows pass, including opening an article directly from For You. The Artifact originals named by the historical plan are absent from this Mac; remaining parity gaps are tracked in the audit. No release was run.

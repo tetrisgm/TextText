@@ -1212,7 +1212,7 @@ try {
   await page.locator(".vault-story-list").getByText("An opening paragraph.").waitFor();
   assert.equal(await page.locator(".vault-story-list .vault-story-list-excerpt").filter({ hasText: "![Blue]" }).count(), 0);
   await page.locator(".vault-story-list img").first().waitFor();
-  await page.locator(".vault-story-list img").first().evaluate(image => image.decode());
+  await page.waitForFunction(() => [...document.querySelectorAll('.vault-story-list img')].some(image => image.complete && image.naturalWidth > 0));
   const storySearch = page.getByRole("searchbox", { name: "Find stories" });
   await page.waitForFunction(() => !document.querySelector('input[aria-label="Find stories"]')?.disabled);
   const storyStatus = page.getByRole("group", { name: "Story status" });
@@ -1230,7 +1230,7 @@ try {
   await storySearch.fill("");
   await page.getByRole("button", { name: "Open An essay title" }).waitFor();
   await page.locator(".vault-story-list img").first().waitFor();
-  await page.locator(".vault-story-list img").first().evaluate(image => image.decode());
+  await page.waitForFunction(() => [...document.querySelectorAll('.vault-story-list img')].some(image => image.complete && image.naturalWidth > 0));
   await page.screenshot({ path: "/tmp/texttext-blog-reference.png" });
   await page.getByRole("button", { name: "Open An essay title" }).click();
   const storyReader = page.getByRole("region", { name: "Story reader" });
@@ -1316,6 +1316,7 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Title", exact: true }).getAttribute("placeholder"), "Title");
   assert.equal(await page.locator(".vault-context-location h2").textContent(), "New story");
   assert.equal(await page.locator(".tt-look-button").count(), 0);
+  assert.equal(await page.getByRole("region", { name: "Story topics" }).count(), 0);
   await page.locator(".tt-editor-more").getByLabel("More actions", { exact: true }).click();
   await page.getByRole("button", { name: "Change look" }).waitFor();
   await page.locator(".tt-editor-more").getByLabel("More actions", { exact: true }).click();

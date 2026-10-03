@@ -2058,23 +2058,23 @@ export function UnifiedDocumentEditor({
         return asset.kind === "image" && document.content.body.includes(asset.src) && source && source !== asset.src && /^(blob:|data:image\/)/.test(source)
           ? /* eslint-disable-next-line @next/next/no-img-element */ <img key={asset.id} src={source} alt={asset.alt || "Note image"} /> : null;
       })}</div>}
-      {(experience === "article" || experience === "note") && <section className={experience === "note" ? "tt-article-topics tt-note-tags" : "tt-article-topics"} aria-label={experience === "note" ? "Note tags" : "Story topics"}>
-        <h3>{experience === "note" ? "Tags" : "Topics"}</h3>
-        <div className="tt-article-topic-list">{document.content.tags.slice(0, experience === "note" ? 500 : 5).map((topic) => <span key={topic}>{experience === "note" ? `#${topic}` : topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
+      {experience === "note" && <section className="tt-article-topics tt-note-tags" aria-label="Note tags">
+        <h3>Tags</h3>
+        <div className="tt-article-topic-list">{document.content.tags.slice(0, 500).map((topic) => <span key={topic}>#{topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: current.content.tags.filter((tag) => tag !== topic) } });
         }}>×</button></span>)}</div>
-        {document.content.tags.length < (experience === "note" ? 500 : 5) && <form onSubmit={(event) => {
+        {document.content.tags.length < 500 && <form onSubmit={(event) => {
           event.preventDefault();
           const topic = tagDraft.trim().replace(/^#/, "").slice(0, 40);
           if (!topic) return;
           const current = currentLocalDocument();
           if (current.content.tags.some((tag) => tag.toLocaleLowerCase() === topic.toLocaleLowerCase())) return;
-          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, experience === "note" ? 500 : 5) } });
+          updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, 500) } });
           setTagDraft("");
-        }}><input aria-label={experience === "note" ? "Add note tag" : "Add story topic"} placeholder={experience === "note" ? "Add a tag" : "Add a topic"} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
-        {experience === "note" && onPasteImages && <button type="button" className="tt-note-add-image" aria-label="Add image to note" disabled={imagePastePending} onClick={() => noteImageInput.current?.click()}>Add image</button>}
-        {experience === "note" && <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>}
+        }}><input aria-label="Add note tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
+        {onPasteImages && <button type="button" className="tt-note-add-image" aria-label="Add image to note" disabled={imagePastePending} onClick={() => noteImageInput.current?.click()}>Add image</button>}
+        <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>
       </section>}
       {onPasteImages && experience === "note" && <input ref={noteImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose note images" onChange={(event) => {
         const files = Array.from(event.currentTarget.files ?? []);
