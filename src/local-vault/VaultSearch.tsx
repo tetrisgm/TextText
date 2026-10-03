@@ -80,7 +80,6 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
   const shortcutsBack = useRef<HTMLButtonElement>(null);
   const results = useRef<HTMLDivElement>(null);
   const shortcutList = useRef<HTMLDivElement>(null);
-  const inFlight = useRef<Promise<unknown> | null>(null);
   useEscapeLayer(true, "search", onClose);
   useDialogFocus(dialog, true);
   useEffect(() => {
@@ -88,13 +87,11 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     let active = true;
     const controller = new AbortController();
     const timer = setTimeout(() => { void (async () => {
-      if (inFlight.current) await inFlight.current;
       if (!active) return;
       const requested = query.trim();
       if (!requested) { setResult({ items: [] }); setBusy(false); return; }
       setBusy(true); setError("");
       const request = vaultRequest<SearchPage>("search", { query: requested }, controller.signal);
-      inFlight.current = request.catch(() => {});
       try { const next = await request; if (active && latest.current === requested) setResult(next); }
       catch (error) { if (active && !(error instanceof DOMException && error.name === "AbortError")) setError(error instanceof Error ? error.message : "Search could not finish."); }
       finally { if (active) setBusy(false); }

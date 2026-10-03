@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now starts the newest file search after its debounce without waiting for a cancelled search to settle. The browser flow verifies a new query returns while an earlier two-second request is still pending; TypeScript, local bundle, and browser flow pass. Superhuman command and visual parity remain open; no release was run.
+
 Feeds History now includes deliberately marked unsaved stories as article TextPacks in `Feeds/History`, separate from Bookmark Read Later. The reader offers Mark read; History can reopen or remove the saved article. Mac and Oracle web metadata scans are bounded and recheck access; public feed responses are cached in memory for five minutes across folder navigation, with no timer. Bookmark highlight notes now debounce typing and flush on blur/navigation, fixing a dropped final character in the browser flow. TypeScript, 65 focused Vitest tests, 9 Swift import tests, and local/web browser flows pass. Artifact progress percentages and profile remain open. No release was run.
 
 Web Feeds now supports the same Read Later/History metadata request as the Mac. One bounded Oracle-side scan reads marked Bookmark TextPacks, filters scoped access before and after the scan, and avoids one browser request per saved story. Store, route, transport, TypeScript, and web browser checks passed; no release was run.
