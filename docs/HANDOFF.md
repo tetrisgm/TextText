@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes cards now take keyboard focus: Up/Down move between visible cards, Space opens the reader, and Enter opens the card editor. Existing links, tag filters, and explicit Open/Edit buttons retain their actions. The local browser contract verifies navigation, reader, and editor; TypeScript and web browser flow pass. This follows Supernotes' documented card keyboard model (<https://help.supernotes.app/en/articles/3068805-keyboard-shortcuts>) but does not establish full interaction or visual parity. No app release was run.
+
 Feeds story rows now have an Artifact-style More menu for Read later, Share, Open original, and Copy link. The persistent save still creates a Bookmark TextPack; the row stays visually quiet until the menu opens. TypeScript, local and web browser flows passed, including save after reopening Feeds. Checked dark/light menu captures: `/tmp/texttext-feed-story-actions-dark-reference.png` and `/tmp/texttext-feed-story-actions-light-reference.png`. Durable reading history and broader Artifact parity remain open; no app release was run.
 
 Published Blog links now use the story's saved preview title, subtitle, and selected embedded image in page metadata. The public page and metadata share one request-scoped TextPack read; unpublished items produce no preview metadata. The publication test covers private-field exclusion and unpublish behavior, and TypeScript passes. This is source work only; no app release was run. Medium parity remains open.

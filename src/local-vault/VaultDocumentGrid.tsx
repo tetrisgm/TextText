@@ -333,7 +333,17 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       {noteQuery && noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && (noteContentSearch.error || noteContentSearch.truncated) && <p role="status" className="vault-note-index-status">{noteContentSearch.error || "Some long cards were not searched. Results may be incomplete."}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
-      <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path} onClick={event => {
+      <div className="vault-note-cards">{visible.map(item => { const preview = previews[item.path]; const title = preview?.title || fallbackTitle(item); const look = noteCardTemplate(preview); return <div className="vault-note-card" key={item.path} role="article" aria-label={`${title} card`} tabIndex={busy || previewOnly ? -1 : 0} onKeyDown={event => {
+        if (event.target !== event.currentTarget || busy || previewOnly) return;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault(); event.stopPropagation();
+          const cards = [...event.currentTarget.parentElement!.querySelectorAll<HTMLElement>(".vault-note-card")];
+          cards[Math.max(0, Math.min(cards.length - 1, cards.indexOf(event.currentTarget) + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
+        } else if (event.key === " " || event.key === "Enter") {
+          event.preventDefault(); event.stopPropagation();
+          if (event.key === "Enter" && onEditNote) onEditNote(item.path); else onOpen(item.path);
+        }
+      }} onClick={event => {
         if (busy || previewOnly || event.target instanceof Element && event.target.closest("a, button, input, textarea, select") || window.getSelection()?.toString().trim()) return;
         onOpen(item.path);
       }}>{look ? <DocumentCollectionRenderer document={noteCardDocument(preview, title)} template={look} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <div className="vault-note-card-tags">{preview.document.content.tags.slice(0, 3).map(tag => <button key={tag} type="button" disabled={busy || previewOnly} onClick={() => { setNoteTag(tag); setPage(0); }} aria-label={`Filter cards by ${tag}`}>#{tag}</button>)}</div> : null}<button className="vault-note-open" disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} title="Open card"><span aria-hidden="true">↗</span></button>{onEditNote && !previewOnly && <button className="vault-note-card-edit" disabled={busy} onClick={() => onEditNote(item.path)} aria-label={`Edit ${title}`} title="Edit card"><svg aria-hidden="true" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m4 13 8.9-8.9a2 2 0 0 1 2.8 2.8L6.8 15.8 3 17z"/><path d="m11.4 5.6 3 3"/></svg></button>}</div>; })}</div>
