@@ -193,19 +193,20 @@
 .vault-app .vault-note-draft-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
 .vault-app .vault-note-draft button { padding:7px 11px; border-radius:6px; }
 .vault-app .vault-note-draft button[type="submit"] { background:var(--tt-accent); color:#fff; }
-.vault-app .vault-note-tools { display:flex; gap:10px; margin:0 0 12px; }
-.vault-app .vault-note-tools label:first-child { flex:1; }
+.vault-app .vault-note-tools { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 12px; }
+.vault-app .vault-note-tools label:first-child { flex:1 1 180px; min-width:0; }
+.vault-app .vault-note-tools label:not(:first-child) { flex:0 1 130px; }
 .vault-app .vault-note-tools :is(input,select) { box-sizing:border-box; width:100%; min-height:35px; padding:7px 10px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--ink); font:inherit; font-size:13px; }
 .vault-app .vault-note-tools input:disabled { color:var(--muted); }
 .vault-app .vault-note-tag-filters { display:flex; gap:5px; align-items:center; overflow-x:auto; white-space:nowrap; margin:0 0 15px; padding-bottom:3px; }
 .vault-app .vault-note-tag-filters button { flex:none; padding:5px 9px; border-radius:6px; color:var(--muted); font-size:12px; }
 .vault-app .vault-note-tag-filters button[aria-pressed=true] { background:var(--selection); color:var(--ink); }
 .vault-app .vault-note-tag-filters span,.vault-app .vault-note-index-status { color:var(--muted); font-size:12px; }
-.vault-app .vault-note-card { position:relative; break-inside:avoid; width:100%; min-height:112px; margin:0 0 14px; padding:16px 17px; border:1px solid var(--line); border-radius:9px; background:var(--surface); box-shadow:0 2px 10px #0000000d; overflow:hidden; }
+.vault-app .vault-note-card { --note-ink:#202020; position:relative; break-inside:avoid; width:100%; min-height:112px; margin:0 0 14px; padding:16px 17px; border:1px solid var(--line); border-radius:9px; background:var(--surface); box-shadow:0 2px 10px #0000000d; overflow:hidden; }
+@media(prefers-color-scheme:dark){.vault-app .vault-note-card{--note-ink:#f5f5f7}}
 .vault-app .vault-note-card:hover { border-color:var(--tt-accent); }
 .vault-app .vault-note-card>strong { position:relative; z-index:1; }
-.vault-app .vault-note-card .tt-document { position:relative; z-index:1; --ink:#202020; margin:0; padding:0; border:0; background-color:transparent !important; color:var(--ink); box-shadow:none; font-size:13px; line-height:1.48; }
-@media(prefers-color-scheme:dark){.vault-app .vault-note-card .tt-document{--ink:#eee}}
+.vault-app .vault-note-card .tt-document { position:relative; z-index:1; --ink:var(--note-ink) !important; margin:0; padding:0; border:0; background-color:transparent !important; color:var(--ink); box-shadow:none; font-size:13px; line-height:1.48; }
 .vault-app .vault-note-card .tt-document :is(.tt-text-heading,.tt-text-title,.tt-prose,.tt-prose strong) { color:var(--ink) !important; }
 .vault-app .vault-note-card .tt-document :is(h1,h2,h3) { margin:0 0 8px; font-size:16px; line-height:1.35; font-weight:650; }
 .vault-app .vault-note-card .tt-document p { margin:0 0 7px; }
