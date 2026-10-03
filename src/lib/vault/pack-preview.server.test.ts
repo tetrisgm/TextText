@@ -53,6 +53,24 @@ describe("TextPack folder previews", () => {
     const fallback = await previewTextpack(zipSync({ ...entries, "document.json": strToU8(JSON.stringify(document)) }));
     expect(fallback.image?.data).not.toBe(selected.image?.data);
   });
+  it("returns bounded, ordered stills for a multi-image Gallery TextPack", async () => {
+    const document = emptyDocumentSnapshot({ id: "texttext.gallery", version: 1 });
+    document.content.assets = [
+      { id: "portrait", kind: "image", src: "assets/portrait.png" },
+      { id: "landscape", kind: "image", src: "assets/landscape.png" },
+    ];
+    const portrait = await sharp({ create: { width: 80, height: 160, channels: 3, background: "#c53432" } }).png().toBuffer();
+    const landscape = await sharp({ create: { width: 160, height: 80, channels: 3, background: "#2448bc" } }).png().toBuffer();
+    const bytes = zipSync({ "document.json": strToU8(JSON.stringify(document)),
+      "assets/portrait.png": portrait, "assets/landscape.png": landscape });
+    expect((await previewTextpack(bytes, true)).images).toBeUndefined();
+    const preview = await previewTextpack(bytes);
+    expect(preview.images).toHaveLength(2);
+    expect(await sharp(Buffer.from(preview.images![0].data, "base64")).metadata()).toMatchObject({ width: 80, height: 160 });
+    expect(await sharp(Buffer.from(preview.images![1].data, "base64")).metadata()).toMatchObject({ width: 160, height: 80 });
+    expect(preview.images?.every(image => image.contentType === "image/jpeg")).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(preview))).toBeLessThanOrEqual(512 * 1024);
+  });
   it("keeps formatted card text in full previews while metadata scans stay compact", async () => {
     const document = emptyDocumentSnapshot();
     document.content.body = `${"Opening sentence. ".repeat(28)}\n\n- First point\n- Second point`;

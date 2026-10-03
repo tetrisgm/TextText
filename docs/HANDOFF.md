@@ -2,6 +2,8 @@
 
 ## Current work
 
+Oracle folder previews now return ordered, bounded stills for multi-image TextPacks, so the web Gallery can show each image as the Mac Gallery already does. The preview decodes only embedded first frames, caps source bytes and response size, and never fetches remote images. Focused preview tests cover image order, proportions, metadata-only reads, and byte bounds; TypeScript passed. This closes a web/Mac Gallery mismatch but does not prove full Resurf parity. No app release was run.
+
 Notes cards now take keyboard focus: Up/Down move between visible cards, Space opens the reader, and Enter opens the card editor. Existing links, tag filters, and explicit Open/Edit buttons retain their actions. The local browser contract verifies navigation, reader, and editor; TypeScript and web browser flow pass. This follows Supernotes' documented card keyboard model (<https://help.supernotes.app/en/articles/3068805-keyboard-shortcuts>) but does not establish full interaction or visual parity. No app release was run.
 
 Feeds story rows now have an Artifact-style More menu for Read later, Share, Open original, and Copy link. The persistent save still creates a Bookmark TextPack; the row stays visually quiet until the menu opens. TypeScript, local and web browser flows passed, including save after reopening Feeds. Checked dark/light menu captures: `/tmp/texttext-feed-story-actions-dark-reference.png` and `/tmp/texttext-feed-story-actions-light-reference.png`. Durable reading history and broader Artifact parity remain open; no app release was run.

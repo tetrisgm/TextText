@@ -4,9 +4,10 @@ import { emptyDocumentSnapshot, validateDocumentSnapshot, type DocumentSnapshot 
 import { parsePostMarkdownFile } from "@/lib/markdown-files";
 import { readVaultPublicationFromPack } from "./publication";
 
-export type VaultPreview = { metadataTruncated?: boolean; incompleteFields: string[]; document: DocumentSnapshot; title: string; excerpt: string; publishedAt?: string; cardBody?: string; sourceURL?: string; image?: { data: string; contentType: string } };
+type PreviewImage = { data: string; contentType: string };
+export type VaultPreview = { metadataTruncated?: boolean; incompleteFields: string[]; document: DocumentSnapshot; title: string; excerpt: string; publishedAt?: string; cardBody?: string; sourceURL?: string; image?: PreviewImage; images?: PreviewImage[] };
 
-/** No remote fetches or full asset transfer. Decode one local image, one frame. */
+/** No remote fetches or full asset transfer. Decode bounded local first-frame stills. */
 export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): Promise<VaultPreview> {
   if (bytes.length > 64 * 1024 * 1024) throw new Error("TextPack exceeds preview limit");
   let expanded = 0;
@@ -54,28 +55,52 @@ export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): 
   }
   if (metadataOnly) return result;
   result.cardBody = (parsed?.body ?? document.content.body).slice(0, 1200);
+  const imageAssets = document.content.assets.filter(asset => asset.kind === "image");
   const featured = document.content.fields.texttextFeaturedImage;
-  const asset = document.content.assets.find((asset) => asset.kind === "image" && asset.src === featured &&
+  const asset = imageAssets.find(asset => asset.src === featured &&
     ((parsed?.body ?? document.content.body).includes(asset.src) || document.content.fields.cover === asset.src))
-    ?? document.content.assets.find((asset) => asset.kind === "image");
-  const reference = asset?.poster || asset?.src;
-  if (!reference || !/^assets\/[A-Za-z0-9 _./-]+$/.test(reference) || reference.split("/").includes("..")) return result;
+    ?? imageAssets[0];
+  const reference = (entry: typeof asset) => entry?.poster || entry?.src;
+  const safe = (value: string | undefined): value is string => Boolean(value && /^assets\/[A-Za-z0-9 _./-]+$/.test(value) && !value.split("/").includes(".."));
+  const selected = [reference(asset), ...imageAssets.slice(0, 8).map(reference)].filter(safe);
+  if (!selected.length) return result;
   try {
-    const selected = prefix + reference;
+    const names = new Set(selected.map(value => prefix + value));
+    let expandedImages = 0;
     const files = unzipSync(bytes, { filter(entry) {
-      if (entry.name !== selected) return false;
-      if (entry.originalSize > 20 * 1024 * 1024) throw new Error("Image exceeds preview limit");
+      if (!names.has(entry.name) || entry.originalSize > 20 * 1024 * 1024 || expandedImages + entry.originalSize > 40 * 1024 * 1024) return false;
+      expandedImages += entry.originalSize;
       return true;
     } });
-    if (!files[selected]) return result;
-    const data = files[selected];
-    const ascii = (offset: number, length: number) => String.fromCharCode(...data.subarray(offset, offset + length));
-    const raster = data[0] === 137 && ascii(1, 3) === "PNG" || data[0] === 255 && data[1] === 216 ||
-      ["GIF87a", "GIF89a"].includes(ascii(0, 6)) || ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP";
-    if (!raster) return result;
-    const thumbnail = await sharp(files[selected], { limitInputPixels: 16_000_000, pages: 1, autoOrient: true })
-      .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
-    if (thumbnail.length <= 512 * 1024) result.image = { data: thumbnail.toString("base64"), contentType: "image/jpeg" };
+    const thumbnail = async (value: string | undefined, maxSize: number): Promise<PreviewImage | undefined> => {
+      if (!safe(value)) return undefined;
+      const data = files[prefix + value];
+      if (!data) return undefined;
+      const ascii = (offset: number, length: number) => String.fromCharCode(...data.subarray(offset, offset + length));
+      const raster = data[0] === 137 && ascii(1, 3) === "PNG" || data[0] === 255 && data[1] === 216 ||
+        ["GIF87a", "GIF89a"].includes(ascii(0, 6)) || ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP";
+      if (!raster) return undefined;
+      try {
+        const encoded = await sharp(data, { limitInputPixels: 16_000_000, pages: 1, autoOrient: true })
+          .resize({ width: maxSize, height: maxSize, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
+        return encoded.length <= 300 * 1024 ? { data: encoded.toString("base64"), contentType: "image/jpeg" } : undefined;
+      } catch { return undefined; }
+    };
+    result.image = await thumbnail(reference(asset), 480);
+    if (imageAssets.length > 1) {
+      const images: PreviewImage[] = [];
+      for (const entry of imageAssets.slice(0, 8)) {
+        const preview = await thumbnail(reference(entry), 280);
+        if (!preview) break;
+        images.push(preview);
+      }
+      if (images.length > 1) result.images = images;
+    }
+    while (result.images?.length && Buffer.byteLength(JSON.stringify(result)) > 512 * 1024) {
+      if (result.images.length <= 2) delete result.images;
+      else result.images.pop();
+    }
+    if (Buffer.byteLength(JSON.stringify(result)) > 512 * 1024) delete result.image;
   } catch { /* A bad image must not hide the readable note or original file. */ }
   return result;
 }
