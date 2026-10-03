@@ -169,7 +169,11 @@ public struct LocalVaultDocumentStore: Sendable {
                     let title = String((content["title"] as? String ?? "Saved story").prefix(300))
                     let source = String((fields["feedTitle"] as? String ?? "").prefix(160))
                     let keptAt = String((fields["keptAt"] as? String ?? "").prefix(32))
-                    return ["hash": hash, "path": path, "title": title, "source": source, "keptAt": keptAt]
+                    var saved = ["hash": hash, "path": path, "title": title, "source": source, "keptAt": keptAt]
+                    if let readAt = fields["texttextBookmarkReadAt"] as? String, !readAt.isEmpty {
+                        saved["readAt"] = String(readAt.prefix(32))
+                    }
+                    return saved
                 }
             }
             if let coordinationError { throw coordinationError }

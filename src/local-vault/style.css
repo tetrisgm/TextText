@@ -222,6 +222,7 @@
 .vault-app .vault-feed-coverage-list small { color:var(--muted); font-size:12px; }
 .vault-app .vault-feed-coverage-list img { flex:none; width:72px; height:72px; border-radius:8px; object-fit:cover; }
 .vault-app .vault-feed-saved-list li>button { display:block; width:100%; padding:0; border:0; border-radius:0; background:transparent; color:var(--ink); text-align:left; }
+.vault-app .vault-feed-saved-list .vault-feed-read-state { display:block; margin-top:6px; color:var(--tt-accent); font-size:12px; font-weight:650; }
 .vault-app .vault-feed-saved-list li>button:hover { background:transparent; }
 .vault-app .vault-feed-saved-list li>button:hover strong { text-decoration:underline; }
 .vault-app .vault-feed-saved-list strong { display:block; margin-top:8px; font-size:17px; line-height:1.35; font-weight:650; }

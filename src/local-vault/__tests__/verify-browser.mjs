@@ -67,7 +67,7 @@ try {
       const entries = [...files.values()].filter(file => file.path.startsWith("Bookmarks/")).flatMap(file => {
         const content = JSON.parse(file.documentJSON).content;
         const fields = content.fields || {};
-        return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", keptAt: fields.keptAt || "" }] : [];
+        return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", keptAt: fields.keptAt || "", ...(fields.texttextBookmarkReadAt ? { readAt: fields.texttextBookmarkReadAt } : {}) }] : [];
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
@@ -1566,7 +1566,10 @@ try {
   await page.screenshot({ path: "/tmp/texttext-feeds-read-later-reference.png" });
   await page.locator(".vault-feed-saved-list").getByRole("button", { name: /Design headline 2/ }).click();
   await page.getByRole("article", { name: "Bookmark reader" }).waitFor();
+  await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Mark read" }).click();
   await chooseFolder("Feeds");
+  await page.getByRole("button", { name: "Read Later", exact: true }).click();
+  await page.locator(".vault-feed-saved-list").getByRole("button", { name: /Design headline 2/ }).getByText("✓ Read").waitFor();
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByRole("navigation", { name: "File pages" }).getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Open Extra feed 23" }).waitFor();

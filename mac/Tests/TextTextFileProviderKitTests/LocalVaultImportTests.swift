@@ -36,7 +36,7 @@ final class LocalVaultImportTests: XCTestCase {
         try fixture { root, store in
             let hash = String(repeating: "a", count: 64)
             let metadata = """
-                {"schemaVersion":1,"content":{"title":"Saved story","body":"A story","fields":{"texttextFeedEntry":"v1","feedEntryHash":"\(hash)","feedTitle":"Example News","keptAt":"2026-10-02T09:00:00Z"},"tags":[],"assets":[]},"presentation":{"template":{"id":"texttext.bookmark","version":1},"theme":{}}}
+                {"schemaVersion":1,"content":{"title":"Saved story","body":"A story","fields":{"texttextFeedEntry":"v1","feedEntryHash":"\(hash)","feedTitle":"Example News","keptAt":"2026-10-02T09:00:00Z","texttextBookmarkReadAt":"2026-10-02T10:00:00Z"},"tags":[],"assets":[]},"presentation":{"template":{"id":"texttext.bookmark","version":1},"theme":{}}}
                 """
             let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "A story", documentJSON: metadata,
                 assets: [], sourceURL: nil, in: root)
@@ -47,7 +47,7 @@ final class LocalVaultImportTests: XCTestCase {
             XCTAssertEqual(try reopened.keptFeedEntryHashes(), [hash])
             XCTAssertEqual(try reopened.keptFeedEntries(), [[
                 "hash": hash, "path": "Bookmarks/Saved story.textpack", "title": "Saved story",
-                "source": "Example News", "keptAt": "2026-10-02T09:00:00Z",
+                "source": "Example News", "keptAt": "2026-10-02T09:00:00Z", "readAt": "2026-10-02T10:00:00Z",
             ]])
         }
     }
