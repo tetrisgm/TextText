@@ -2,6 +2,8 @@
 
 ## Current work
 
+Web Feeds now supports the same Read Later/History metadata request as the Mac. One bounded Oracle-side scan reads marked Bookmark TextPacks, filters scoped access before and after the scan, and avoids one browser request per saved story. Store, route, transport, TypeScript, and web browser checks passed; no release was run.
+
 Feeds now shows a History tab of saved Bookmark TextPacks explicitly marked read, sorted by their persisted read time. Mark unread removes a row; marking it read in Bookmarks appears again after reopening Feeds. The local and web browser flows and TypeScript pass; `/tmp/texttext-feeds-history-reference.png` shows the dark view. Unsaved-story read sessions, progress, and profile remain open in the [parity audit](design/template-reference-parity.md). No release was run.
 
 Blog Publish now keeps its action footer outside the scrollable story review, so the footer cannot cover review content. TypeScript, local vault build, and local/web browser flows pass; `/tmp/texttext-blog-publish-reference.png` shows the current dialog. The six reference experiences remain incomplete per [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). No release was run.

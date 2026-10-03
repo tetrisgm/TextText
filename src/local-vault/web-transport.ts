@@ -175,6 +175,11 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   };
   const transport: VaultTransport = async (method, params, signal) => {
     if (destroyed) throw new Error("This workspace has closed.");
+    if (method === "keptFeedEntries") {
+      const response = await request(`${base}?keptFeedEntries=1`, { credentials: "same-origin", cache: "no-store", signal });
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }
     if (method === "feedDiscover" || method === "feedRead" || method === "feedEntry") {
       const field = method === "feedDiscover" ? "address" : "feedURL";
       const address = params[field];

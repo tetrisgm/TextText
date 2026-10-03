@@ -1312,6 +1312,45 @@ export async function listVaultFolderViews(input: VaultLocation & { folder: stri
   return { files };
 }
 
+/** A single bounded metadata scan for Read Later and its read history. Never
+ * expand assets or return a bookmark that lacks the feed-entry marker. */
+export async function listVaultKeptFeedEntries(input: VaultLocation & { items: readonly { itemId: string; relativePath: string }[] }) {
+  const candidates = input.items.filter(item => item.relativePath.startsWith("Bookmarks/") && item.relativePath.endsWith(".textpack"));
+  if (candidates.length > 2048) throw new Error("Saved feed discovery exceeds limits");
+  const entries: { itemId: string; hash: string; path: string; title: string; source: string; keptAt: string; readAt?: string }[] = [];
+  let scanned = 0, expanded = 0;
+  for (const candidate of candidates) {
+    const pack = await readVaultTextpack({ ...input, itemId: candidate.itemId });
+    if (!pack || pack.relativePath !== candidate.relativePath) continue;
+    if ((scanned += pack.bytes.length) > 256 * 1024 * 1024) throw new Error("Saved feed discovery exceeds limits");
+    const files = unzipSync(pack.bytes, { filter(entry) {
+      if (!/(?:^|\/)document\.json$/.test(entry.name)) return false;
+      if (entry.originalSize > 4 * 1024 * 1024 || (expanded += entry.originalSize) > 64 * 1024 * 1024) throw new Error("Saved feed metadata exceeds limits");
+      return true;
+    } });
+    const documents = Object.keys(files).filter(name => /(?:^|\/)document\.json$/.test(name));
+    if (documents.length !== 1) continue;
+    let document: { content?: { title?: unknown; fields?: Record<string, unknown> } };
+    try { document = JSON.parse(strFromU8(files[documents[0]])); } catch { continue; }
+    const fields = document.content?.fields;
+    if (fields?.texttextFeedEntry !== "v1" || typeof fields.feedEntryHash !== "string" || !/^[0-9a-f]{64}$/.test(fields.feedEntryHash)) continue;
+    const entry = {
+      itemId: candidate.itemId, hash: fields.feedEntryHash, path: candidate.relativePath,
+      title: String(document.content?.title ?? "Saved story").slice(0, 300),
+      source: String(fields.feedTitle ?? "").slice(0, 160),
+      keptAt: String(fields.keptAt ?? "").slice(0, 32),
+      ...(typeof fields.texttextBookmarkReadAt === "string" && fields.texttextBookmarkReadAt ? { readAt: fields.texttextBookmarkReadAt.slice(0, 32) } : {}),
+    };
+    entries.push(entry);
+  }
+  const byHash = new Map<string, (typeof entries)[number]>();
+  for (const entry of entries) {
+    const previous = byHash.get(entry.hash);
+    if (!previous || entry.keptAt > previous.keptAt) byHash.set(entry.hash, entry);
+  }
+  return [...byHash.values()].sort((a, b) => b.keptAt.localeCompare(a.keptAt) || a.path.localeCompare(b.path));
+}
+
 export async function readVaultTemplate(input: VaultLocation & { itemId: string }): Promise<{
   path: string; hash: string; templateJSON?: string; templateAuthoringSourceJSON?: string;
 } | null> {

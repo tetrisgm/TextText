@@ -89,6 +89,17 @@ function cachedOpenFixture() {
 }
 
 describe("web file vault transport", () => {
+  it("loads saved feed metadata with one bounded server request", async () => {
+    const urls: string[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async url => {
+      urls.push(String(url));
+      return Response.json({ hashes: ["a".repeat(64)], entries: [{ hash: "a".repeat(64), path: "Bookmarks/Story.textpack", title: "Story", source: "News", keptAt: "2026-10-02T10:00:00Z" }] });
+    });
+    const result = await transport.request("keptFeedEntries", {});
+    expect(result).toMatchObject({ hashes: ["a".repeat(64)] });
+    expect(urls).toEqual(["/api/vault/workspace/items?keptFeedEntries=1"]);
+    transport.destroy();
+  });
   it("reuses a parsed pack only after a fresh matching collaboration read, including a permission downgrade", async () => {
     const { id, path, live, calls, transport } = cachedOpenFixture();
     const first = await transport.request("read", { path, prefetchCollaboration: true }) as VaultFile;

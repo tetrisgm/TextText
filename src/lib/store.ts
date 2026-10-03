@@ -19,6 +19,7 @@ import {
   listVaultRecovery as listDirectoryRecovery,
   readVaultRecovery as readDirectoryRecovery,
   listVaultFolderViews as listDirectoryFolderViews,
+  listVaultKeptFeedEntries as listDirectoryKeptFeedEntries,
   listVaultTextpacks as listDirectoryTextpacks,
   waitVaultTextpacks as waitDirectoryTextpacks,
   moveVaultTextpack as moveDirectoryTextpack,
@@ -210,6 +211,11 @@ export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> &
 export function listVaultFolderViews(input: Omit<VaultLocation, "onReceipt"> & { folder: string }) {
   if (!db) throw new Error(NO_DATABASE);
   return listDirectoryFolderViews({ ...input, onReceipt: recordVaultReceipt });
+}
+
+export function listVaultKeptFeedEntries(input: Omit<VaultLocation, "onReceipt"> & { items: readonly { itemId: string; relativePath: string }[] }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return listDirectoryKeptFeedEntries({ ...input, onReceipt: recordVaultReceipt });
 }
 
 export function readVaultTemplate(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {

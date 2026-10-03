@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { authorizeVaultWorkspaceOrScoped, canSeeVaultFolder, canSeeVaultItem } from "@/app/api/vault/scoped-auth";
-import { listVaultTextpacks, listVaultFolderViews, waitVaultTextpacks, VaultBusyError } from "@/lib/store";
+import { listVaultTextpacks, listVaultFolderViews, listVaultKeptFeedEntries, waitVaultTextpacks, VaultBusyError } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +10,20 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
   const authorized = await authorizeVaultWorkspaceOrScoped(request, workspaceId);
   if (authorized instanceof Response) return authorized;
   try {
+    if (new URL(request.url).searchParams.has("keptFeedEntries")) {
+      const manifest = await listVaultTextpacks(authorized);
+      const permitted = manifest.items.filter(item => authorized.fullAccess || canSeeVaultItem(authorized.grants, item.itemId, item.relativePath));
+      const entries = await listVaultKeptFeedEntries({ ...authorized, items: permitted });
+      const current = await authorizeVaultWorkspaceOrScoped(request, workspaceId);
+      if (current instanceof Response) return current;
+      if (request.signal.aborted) return new Response(null, { status: 204 });
+      const currentItems = new Map((await listVaultTextpacks(current)).items.map(item => [item.itemId, item.relativePath]));
+      const visible = entries.filter(entry => currentItems.get(entry.itemId) === entry.path &&
+          (current.fullAccess || canSeeVaultItem(current.grants, entry.itemId, entry.path)))
+        .map(entry => ({ hash: entry.hash, path: entry.path, title: entry.title, source: entry.source,
+          keptAt: entry.keptAt, ...(entry.readAt ? { readAt: entry.readAt } : {}) }));
+      return Response.json({ hashes: visible.map(entry => entry.hash).sort(), entries: visible }, { headers: { "Cache-Control": "no-store" } });
+    }
     const folder = new URL(request.url).searchParams.get("folderViews");
     if (folder !== null) {
       if (!authorized.fullAccess && !canSeeVaultFolder(authorized.grants, folder)) {

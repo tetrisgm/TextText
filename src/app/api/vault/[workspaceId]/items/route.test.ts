@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), list: vi.fn(), wait: vi.fn(), views: vi.fn(), visible: vi.fn(), folder: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), list: vi.fn(), wait: vi.fn(), views: vi.fn(), kept: vi.fn(), visible: vi.fn(), folder: vi.fn() }));
 vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultWorkspaceOrScoped: mocks.auth,
   canSeeVaultFolder: mocks.folder, canSeeVaultItem: mocks.visible }));
-vi.mock("@/lib/store", () => ({ listVaultTextpacks: mocks.list, waitVaultTextpacks: mocks.wait, listVaultFolderViews: mocks.views, VaultBusyError: class extends Error {} }));
+vi.mock("@/lib/store", () => ({ listVaultTextpacks: mocks.list, waitVaultTextpacks: mocks.wait, listVaultFolderViews: mocks.views, listVaultKeptFeedEntries: mocks.kept, VaultBusyError: class extends Error {} }));
 import { GET } from "./route";
 const context = { params: Promise.resolve({ workspaceId: "shared-workspace" }) };
 const identity = { root: "/vault", workspaceId: "shared-workspace", actorUserId: "viewer", actorType: "human", fullAccess: true, grants: [] };
 const manifest = { revision: "a".repeat(64), items: [] };
 describe("shared workspace manifests", () => {
-  beforeEach(() => { vi.resetAllMocks(); mocks.auth.mockResolvedValue(identity); mocks.list.mockResolvedValue(manifest); mocks.wait.mockResolvedValue(manifest); mocks.views.mockResolvedValue({ files: [] });
+  beforeEach(() => { vi.resetAllMocks(); mocks.auth.mockResolvedValue(identity); mocks.list.mockResolvedValue(manifest); mocks.wait.mockResolvedValue(manifest); mocks.views.mockResolvedValue({ files: [] }); mocks.kept.mockResolvedValue([]);
     mocks.visible.mockReturnValue(true); mocks.folder.mockReturnValue(true); });
   it("allows a named workspace viewer to read its manifest and folder views", async () => {
     expect(await (await GET(new Request("https://texttext.test/items"), context)).json()).toEqual(manifest);
@@ -39,5 +39,21 @@ describe("shared workspace manifests", () => {
     expect(result.items).toEqual([{ itemId: "shared", relativePath: "Reading/Shared.textpack", revision: "b".repeat(64) }]);
     expect(result.tombstones).toEqual([]); expect(result.problems).toEqual([]);
     expect(result.revision).not.toBe("a".repeat(64));
+  });
+  it("scans only authorized saved stories and rechecks access before returning them", async () => {
+    const scoped = { ...identity, fullAccess: false, grants: [{ id: "grant", role: "viewer" }] };
+    mocks.auth.mockResolvedValue(scoped);
+    mocks.visible.mockImplementation((_grants, itemId) => itemId === "shared");
+    mocks.list.mockResolvedValue({ ...manifest, items: [
+      { itemId: "shared", relativePath: "Bookmarks/Shared.textpack" },
+      { itemId: "secret", relativePath: "Bookmarks/Secret.textpack" },
+    ] });
+    mocks.kept.mockResolvedValue([{ itemId: "shared", hash: "b".repeat(64), path: "Bookmarks/Shared.textpack", title: "Shared", source: "News", keptAt: "2026-10-02T10:00:00Z" }]);
+    const result = await (await GET(new Request("https://texttext.test/items?keptFeedEntries=1"), context)).json();
+    expect(mocks.kept.mock.calls[0][0].items).toEqual([{ itemId: "shared", relativePath: "Bookmarks/Shared.textpack" }]);
+    expect(result).toEqual({ hashes: ["b".repeat(64)], entries: [{ hash: "b".repeat(64), path: "Bookmarks/Shared.textpack", title: "Shared", source: "News", keptAt: "2026-10-02T10:00:00Z" }] });
+    mocks.auth.mockResolvedValueOnce(scoped).mockResolvedValueOnce({ ...scoped, grants: [] });
+    mocks.visible.mockReturnValueOnce(true).mockReturnValue(false);
+    expect(await (await GET(new Request("https://texttext.test/items?keptFeedEntries=1"), context)).json()).toEqual({ hashes: [], entries: [] });
   });
 });

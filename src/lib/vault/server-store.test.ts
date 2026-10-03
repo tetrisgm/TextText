@@ -8,7 +8,7 @@ import { unzipSync, zipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { readVaultTextpack, readVaultTextpackPath, readVaultTextpackIdentity, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
-import { listVaultFolderViews, listVaultRecovery, readVaultRecovery } from "./server-store";
+import { listVaultFolderViews, listVaultKeptFeedEntries, listVaultRecovery, readVaultRecovery } from "./server-store";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 function pack(body: string, itemId = "item-1") {
@@ -111,6 +111,20 @@ describe("directory TextPack store", () => {
     expect(Object.keys(result.files[0]).sort()).toEqual(["documentJSON", "hash", "path"]);
     expect((await listVaultFolderViews({ root, workspaceId, folder: "" })).files).toEqual([]);
     await expect(listVaultFolderViews({ root, workspaceId, folder: "../outside" })).rejects.toThrow("Invalid folder");
+  });
+
+  it("returns only marked Bookmark TextPacks for web Read Later", async () => {
+    const document = emptyDocumentSnapshot();
+    document.content.title = "Saved headline";
+    document.content.fields = { texttextFeedEntry: "v1", feedEntryHash: "a".repeat(64), feedTitle: "Publisher", keptAt: "2026-10-02T10:00:00Z", texttextBookmarkReadAt: "2026-10-02T11:00:00Z" };
+    const saved = buildTextpack("Saved headline", { document, markdown: '---\ntextTextId: "saved-feed"\n---\nSaved story' });
+    await writeVaultTextpack({ root, workspaceId, itemId: "saved-feed", relativePath: "Bookmarks/Saved.textpack", operationId: "saved-feed", bytes: saved, baseRevision: null });
+    await writeVaultTextpack({ root, workspaceId, itemId: "not-bookmark", relativePath: "Notes/Other.textpack", operationId: "not-bookmark", bytes: pack("ordinary", "not-bookmark"), baseRevision: null });
+    const items = (await listVaultTextpacks({ root, workspaceId })).items;
+    expect(await listVaultKeptFeedEntries({ root, workspaceId, items })).toEqual([{
+      itemId: "saved-feed", hash: "a".repeat(64), path: "Bookmarks/Saved.textpack", title: "Saved headline", source: "Publisher",
+      keptAt: "2026-10-02T10:00:00Z", readAt: "2026-10-02T11:00:00Z",
+    }]);
   });
 
   it("stores the complete original pack in a normal folder and reads file edits directly", async () => {
