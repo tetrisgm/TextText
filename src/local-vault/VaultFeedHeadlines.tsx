@@ -55,6 +55,7 @@ const INTEREST_GROUPS = [
   { title: "Culture and society", topics: ["Entertainment", "Culture", "Music", "U.S.", "Politics", "Environment"] },
 ] as const;
 const MIN_INTERESTS = 10;
+const SHORT_READ_DWELL_MS = 8_000;
 const SOURCE_CACHE_TTL_MS = 5 * 60_000;
 const sourceCache = new Map<string, { stories: FeedStory[]; savedAt: number }>();
 
@@ -262,6 +263,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     const key = activeKey;
     const startTop = scroller.scrollTop;
     let lastProgress = -1;
+    let shortReadTimer: ReturnType<typeof setTimeout> | null = null;
     const update = () => {
       const viewport = scroller.getBoundingClientRect();
       const bounds = content.getBoundingClientRect();
@@ -272,10 +274,24 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
         autoReadAttempted.current = key;
         void markReadRef.current(active);
       }
+      const shortStoryVisible = bounds.height <= viewport.height + 80 && bounds.top >= viewport.top - 80 && bounds.bottom <= viewport.bottom + 80;
+      if (shortStoryVisible && document.visibilityState === "visible" && autoReadAttempted.current !== key) {
+        shortReadTimer ??= setTimeout(() => {
+          shortReadTimer = null;
+          if (document.visibilityState !== "visible" || autoReadAttempted.current === key) return;
+          const currentViewport = scroller.getBoundingClientRect();
+          const currentBounds = content.getBoundingClientRect();
+          if (currentBounds.top >= currentViewport.top - 80 && currentBounds.bottom <= currentViewport.bottom + 80) {
+            autoReadAttempted.current = key;
+            void markReadRef.current(active);
+          }
+        }, SHORT_READ_DWELL_MS);
+      } else if (shortReadTimer) { clearTimeout(shortReadTimer); shortReadTimer = null; }
     };
     update();
     scroller.addEventListener("scroll", update, { passive: true });
-    return () => scroller.removeEventListener("scroll", update);
+    document.addEventListener("visibilitychange", update);
+    return () => { scroller.removeEventListener("scroll", update); document.removeEventListener("visibilitychange", update); if (shortReadTimer) clearTimeout(shortReadTimer); };
   }, [activeKey, full, active]);
   const removeReadEntry = async (entry: ReadEntry) => {
     if (!canAdd || readStateBusy) return;

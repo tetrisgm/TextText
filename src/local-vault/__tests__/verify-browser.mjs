@@ -1722,8 +1722,8 @@ try {
   await feedReader.getByText("Story link copied.").waitFor();
   assert.equal(await page.evaluate(() => window.__copiedFeedLink), "https://example.com/story/1");
   await feedReader.getByLabel("More story actions").click();
-  await feedReader.getByRole("button", { name: "Mark read" }).click();
-  await feedReader.getByText("Added to reading history.").waitFor();
+  assert.equal([...files.values()].some(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.title === "A considered design headline"), false);
+  await feedReader.getByText("Added to reading history.").waitFor({ timeout: 12_000 });
   const readFeedPack = [...files.values()].find(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.fields.texttextFeedHistoryEntry === "v1");
   assert.ok(readFeedPack);
   assert.equal(JSON.parse(readFeedPack.documentJSON).content.fields.texttextFeedEntry, undefined);

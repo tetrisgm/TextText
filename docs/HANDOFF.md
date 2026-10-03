@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds now records a short story in History after it stays fully visible for eight seconds; leaving or hiding the reader cancels the timer. Long-story scroll completion still uses its existing one-time TextPack write, and neither path writes on intermediate scroll. The local browser flow verifies the short-story History pack and the long-story scroll path; TypeScript and local/web browser flows pass. Partial progress is still transient; no release was run.
+
 Pasting a web address on the Bookmark inbox now saves it directly through the existing TextPack capture and enrichment path. Paste into an input remains normal; invalid text is ignored. The local browser flow checks the saved URL and reader selection, and TypeScript plus local/web browser flows pass. Shiori parity remains open; no release was run.
 
 Notes now conceals a standalone local image Markdown line while its caret is elsewhere, leaving the source bytes intact for editing and collaboration. The browser flow asserts both the hidden syntax and saved asset; the light editor capture is `/tmp/texttext-note-editor-light-reference.png`. TypeScript, Markdown offset tests, and local/web browser flows pass. Supernotes parity remains open; no release was run.
