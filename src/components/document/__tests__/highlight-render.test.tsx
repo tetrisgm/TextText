@@ -96,3 +96,20 @@ describe("a highlight in a document body", () => {
     }
   });
 });
+
+it("renders a story image caption from its TextPack asset without changing the Markdown body", () => {
+  const article = getBuiltinTemplate("texttext.article")!;
+  const source = "https://example.com/photo.png";
+  const document = {
+    schemaVersion: 1,
+    content: {
+      title: "Story", subtitle: "", body: `![A bridge](${source})`, fields: {}, tags: [],
+      assets: [{ id: "photo", kind: "image", src: source, alt: "A bridge", caption: "At dusk" }],
+    },
+    presentation: { template: { id: article.id, version: article.version }, theme: {} },
+  } as unknown as DocumentSnapshot;
+  const html = renderToStaticMarkup(React.createElement(DocumentRenderer, { document, template: article }));
+  expect(html).toContain('class="tt-markdown-image-caption">At dusk</span>');
+  expect(html).toContain('alt="A bridge"');
+  expect(document.content.body).toBe(`![A bridge](${source})`);
+});

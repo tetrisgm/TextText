@@ -1644,6 +1644,21 @@ export function UnifiedDocumentEditor({
       return asset.kind === "image" && source ? [[asset.src, source]] : [];
     }),
   ), [document.content.assets, displayDocument.content.assets]);
+  const bodyImageCaptions = useMemo(() => Object.fromEntries(
+    document.content.assets.filter((asset) => asset.kind === "image").map((asset) => [asset.src, asset.caption ?? ""]),
+  ), [document.content.assets]);
+  const updateImageCaption = useCallback((path: string, value: string) => {
+    const current = currentLocalDocument();
+    if (!current.content.assets.some((asset) => asset.src === path)) return;
+    const caption = value.trim();
+    updateDocumentSnapshot({
+      ...current,
+      content: {
+        ...current.content,
+        assets: current.content.assets.map((asset) => asset.src === path ? { ...asset, caption: caption || undefined } : asset),
+      },
+    });
+  }, [currentLocalDocument, updateDocumentSnapshot]);
   const slots = useMemo(
     () => ({
       bindings: {
@@ -1722,13 +1737,15 @@ export function UnifiedDocumentEditor({
               onPasteImages={onPasteImages ? pasteImages : undefined}
               concealImageLines={experience === "note"}
               imageSources={experience === "article" ? bodyImageSources : undefined}
+              imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
+              onImageCaptionChange={experience === "article" ? updateImageCaption : undefined}
               disabled={imagePastePending}
             />
           </div>
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2249,6 +2266,9 @@ export function UnifiedDocumentEditor({
            but renders zero-height, because the block break already shows it. */
         .tt-md-surface>[data-tt-ln]{display:block}
         .tt-md-surface .tt-md-image-preview{display:block;width:100%;max-height:480px;margin:1rem 0;object-fit:contain;pointer-events:none;user-select:none}
+        .tt-md-surface .tt-md-image-caption{display:block;box-sizing:border-box;width:100%;margin:-.5rem 0 1.5rem;padding:.35rem .5rem;border:0;border-radius:0;background:transparent;color:var(--muted,#6e6e73);font:400 .82rem/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:center;outline:none}
+        .tt-md-surface .tt-md-image-caption::placeholder{color:color-mix(in srgb,var(--muted,#6e6e73) 60%,transparent)}
+        .tt-md-surface .tt-md-image-caption:focus{box-shadow:0 1px 0 var(--tt-accent,#0071e3)}
         .tt-md-nl{font-size:0;line-height:0}
         .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
         /* Syntax the styling already speaks for shows only on the line you are

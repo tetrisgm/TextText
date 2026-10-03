@@ -378,6 +378,8 @@ export function MarkdownSurface({
   onPasteImages,
   concealImageLines = false,
   imageSources,
+  imageCaptions,
+  onImageCaptionChange,
   disabled = false,
 }: {
   value: string;
@@ -392,6 +394,8 @@ export function MarkdownSurface({
   concealImageLines?: boolean;
   /** Resolved URLs keyed by the image paths stored in Markdown. */
   imageSources?: Readonly<Record<string, string>>;
+  imageCaptions?: Readonly<Record<string, string>>;
+  onImageCaptionChange?: (path: string, caption: string) => void;
   disabled?: boolean;
 }) {
   const localRef = useRef<HTMLDivElement>(null);
@@ -782,6 +786,25 @@ export function MarkdownSurface({
       preview.contentEditable = "false";
       preview.draggable = false;
       wrapper.appendChild(preview);
+      if (onImageCaptionChange) {
+        const caption = document.createElement("input");
+        caption.className = "tt-md-image-caption";
+        caption.type = "text";
+        caption.placeholder = "Write a caption";
+        caption.setAttribute("aria-label", "Image caption");
+        caption.maxLength = 4000;
+        caption.value = imageCaptions?.[image[2]] ?? "";
+        caption.contentEditable = "false";
+        for (const name of ["beforeinput", "input", "keydown", "paste", "pointerdown", "click"]) {
+          caption.addEventListener(name, (event) => event.stopPropagation());
+        }
+        caption.addEventListener("blur", () => {
+          if (caption.value !== (imageCaptions?.[image[2]] ?? "")) {
+            onImageCaptionChange(image[2], caption.value);
+          }
+        });
+        wrapper.appendChild(caption);
+      }
     }
     if (line.length === 0) {
       // A block row with only the zero-height newline collapses; the <br>
@@ -825,7 +848,7 @@ export function MarkdownSurface({
     .map((s) => `${s.clientId}:${s.from}:${s.to}:${s.color}:${s.userName}`)
     .join("|");
   const imagesSignature = imageSources
-    ? JSON.stringify(Object.entries(imageSources))
+    ? JSON.stringify([Object.entries(imageSources), Object.entries(imageCaptions ?? {})])
     : "";
   const builtValueRef = useRef<string | null>(null);
   /** Native edits since the last reconcile; cleared once the DOM is trusted. */

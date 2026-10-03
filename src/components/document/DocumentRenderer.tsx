@@ -293,25 +293,28 @@ function DefaultMetadata({ metadata }: { metadata: DocumentRenderMetadata }) {
 // remounted on any re-render of the reader - visible as all images blinking
 // (and nudging layout while they re-decoded) on every click in the workspace.
 
-type AssetDimensions = ReadonlyMap<string, { width: number; height: number }>;
+type AssetImageMetadata = ReadonlyMap<string, { width?: number; height?: number; caption?: string }>;
 
-function markdownImageFor(dimensions: AssetDimensions | null) {
+function markdownImageFor(metadata: AssetImageMetadata | null) {
   return function MarkdownImage({ src, alt }: { src?: unknown; alt?: string }) {
     const safe = safeMediaSource(typeof src === "string" ? src : "");
     if (!safe) return null;
     if (isVideoFile(safe)) return <video src={safe} controls playsInline preload="metadata" />;
-    const size = dimensions?.get(safe);
-    return (
+    const details = metadata?.get(safe);
+    const image = (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={safe}
         alt={alt ?? ""}
         loading="lazy"
         decoding="async"
-        width={size?.width}
-        height={size?.height}
+        width={details?.width}
+        height={details?.height}
       />
     );
+    return details?.caption
+      ? <span className="tt-markdown-image">{image}<span className="tt-markdown-image-caption">{details.caption}</span></span>
+      : image;
   };
 }
 
@@ -347,7 +350,7 @@ const markdownComponents: Components = {
 // a server-safe stand-in for context, which shared RSC modules cannot use.
 const componentsByDimensions = new WeakMap<object, Components>();
 
-function markdownComponentsFor(dimensions: AssetDimensions | null): Components {
+function markdownComponentsFor(dimensions: AssetImageMetadata | null): Components {
   if (!dimensions) return markdownComponents;
   let cached = componentsByDimensions.get(dimensions);
   if (!cached) {
@@ -383,10 +386,10 @@ const Markdown = memo(function Markdown({
   );
   const dimensions = useMemo(() => {
     if (!assets?.length) return null;
-    const map = new Map<string, { width: number; height: number }>();
+    const map = new Map<string, { width?: number; height?: number; caption?: string }>();
     for (const asset of assets) {
-      if (asset.width && asset.height) {
-        map.set(asset.src, { width: asset.width, height: asset.height });
+      if ((asset.width && asset.height) || asset.caption) {
+        map.set(asset.src, { width: asset.width, height: asset.height, caption: asset.caption });
       }
     }
     return map.size > 0 ? map : null;
