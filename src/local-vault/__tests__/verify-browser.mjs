@@ -930,7 +930,7 @@ try {
   storyItemId = publishedStory.markdown.match(/textTextId: "([^"]+)"/)?.[1];
   files.set("Blog/Story.textpack", publishedStory);
   files.set("Blog/Published.textpack", { ...sample("Blog/Published.textpack", "article", "A published story", "A finished article."), publishedAt: "2026-10-01T10:00:00.000Z" });
-  const formattedCard = sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point");
+  const formattedCard = sample("Notes/Formatted.textpack", "note", "A concise card", "**A useful idea**\n\n- First point\n- Second point\n\n[Related card](https://example.com/related)");
   formattedCard.documentJSON = JSON.stringify({ ...JSON.parse(formattedCard.documentJSON), content: { ...JSON.parse(formattedCard.documentJSON).content, tags: ["ideas"] } });
   files.set("Notes/Formatted.textpack", formattedCard);
   for (let index = 0; index < 25; index++) {
@@ -1526,6 +1526,18 @@ try {
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).waitFor();
   await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").waitFor();
+  const cardLink = page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("a[href='https://example.com/related']");
+  assert.equal(await cardLink.getAttribute("target"), "_blank");
+  await cardLink.evaluate(link => link.scrollIntoView({ block: "center" }));
+  assert.ok(await cardLink.evaluate(link => {
+    const box = link.getBoundingClientRect();
+    return link.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  }), "links in a note card should receive pointer input");
+  await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByRole("button", { name: "Filter cards by ideas" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".vault-note-card").length === 1);
+  assert.equal(await page.locator(".vault-note-card").count(), 1);
+  await page.getByRole("group", { name: "Filter card tags" }).getByRole("button", { name: "All" }).click();
+  await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).waitFor();
   assert.equal(await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).locator("strong").filter({ hasText: "A useful idea" }).count(), 1);
   await page.getByRole("searchbox", { name: "Find cards" }).waitFor();
   await page.getByRole("searchbox", { name: "Find cards" }).fill("copper telescopes");
@@ -1557,6 +1569,9 @@ try {
     return title && body && emphasis && [title, body, emphasis].every(node => getComputedStyle(node).color === "rgb(32, 32, 32)");
   }), "note card text should remain readable in light mode");
   await page.emulateMedia({ colorScheme: "dark" });
+  await page.locator(".vault-note-card").filter({ hasText: "A concise card" }).getByText("A useful idea").click();
+  await page.getByRole("region", { name: "Note card" }).getByText("A concise card").waitFor();
+  await page.getByRole("button", { name: "Back to Notes" }).click();
   await page.getByRole("button", { name: "Edit A concise card" }).click();
   await page.getByRole("textbox", { name: "Title", exact: true }).waitFor();
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");

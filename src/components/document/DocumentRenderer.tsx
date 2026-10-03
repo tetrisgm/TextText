@@ -325,8 +325,9 @@ function MarkdownLink({
   className?: string;
 }) {
   const safe = typeof href === "string" && isSafeLinkHref(href) ? href : "";
+  const external = /^https?:\/\//i.test(safe);
   return safe ? (
-    <a href={safe} className={className}>
+    <a href={safe} className={className} target={external ? "_blank" : undefined} rel={external ? "noopener noreferrer" : undefined}>
       {children}
     </a>
   ) : (
