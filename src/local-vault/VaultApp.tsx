@@ -829,8 +829,15 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   });
   const currentFolder = destinationFolder.trim();
   const primaryLabel = currentFolder === "Bookmarks" ? "Save bookmark" : currentFolder === "Gallery" ? "Add images" : currentFolder === "Feeds" ? "Add source" : currentFolder === "Blog" ? "Write a story" : "New note";
+  const focusBookmarkSave = () => {
+    const input = document.querySelector<HTMLInputElement>('.vault-bookmark-quick-save input[aria-label="Web address to save"]');
+    if (input) { input.focus(); return true; }
+    const addLink = document.querySelector<HTMLButtonElement>(".vault-bookmark-add-link");
+    if (addLink) { addLink.click(); return true; }
+    return false;
+  };
   const primaryAction = () => {
-    if (currentFolder === "Bookmarks") { openCapture(); return; }
+    if (currentFolder === "Bookmarks") { if (!focusBookmarkSave()) openCapture(); return; }
     if (currentFolder === "Gallery") { setImageCaptureOpen(true); return; }
     if (currentFolder === "Feeds") { openFeedSubscribe(focusedControl()); return; }
     if (currentFolder === "Blog") { void createForFolder("Blog", "Blog post"); return; }
@@ -1011,7 +1018,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     }, true);
     if (id === "new-note") return createForFolder("Notes", "Note");
     if (id === "write-story") return createForFolder("Blog", "Blog post");
-    if (id === "save-bookmark") { openCapture("bookmark"); return; }
+    if (id === "save-bookmark") { if (currentFolder !== "Bookmarks" || !focusBookmarkSave()) openCapture("bookmark"); return; }
     if (id === "capture") { openCapture("mixed"); return; }
     if (id === "new-from-template") { openTemplateLibrary(); return; }
     if (id === "subscribe-feed") { setDestinationFolder("Feeds"); openFeedSubscribe(searchButton.current); return; }
