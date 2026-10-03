@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds now shows a History tab of saved Bookmark TextPacks explicitly marked read, sorted by their persisted read time. Mark unread removes a row; marking it read in Bookmarks appears again after reopening Feeds. The local and web browser flows and TypeScript pass; `/tmp/texttext-feeds-history-reference.png` shows the dark view. Unsaved-story read sessions, progress, and profile remain open in the [parity audit](design/template-reference-parity.md). No release was run.
+
 Blog Publish now keeps its action footer outside the scrollable story review, so the footer cannot cover review content. TypeScript, local vault build, and local/web browser flows pass; `/tmp/texttext-blog-publish-reference.png` shows the current dialog. The six reference experiences remain incomplete per [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). No release was run.
 
 The local browser's Blog preview and Gallery now render the repository's photographic fixtures in place of flat color blocks. Captures at `/tmp/texttext-blog-publish-reference.png`, `/tmp/texttext-gallery-grid-light-reference.png`, and `/tmp/texttext-gallery-import-detail-light-reference.png` show actual image cropping, aspect ratios, and color extraction. The local browser flow passes. This strengthens visual review but does not establish reference parity; no release was run.

@@ -229,6 +229,7 @@
 .vault-app .vault-feed-saved-list .vault-feed-read-state { display:block; margin-top:6px; color:var(--tt-accent); font-size:12px; font-weight:650; }
 .vault-app .vault-feed-saved-list li>button:hover { background:transparent; }
 .vault-app .vault-feed-saved-list li>button:hover strong { text-decoration:underline; }
+.vault-app .vault-feed-history-intro { margin:0 0 24px; color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-saved-list strong { display:block; margin-top:8px; font-size:17px; line-height:1.35; font-weight:650; }
 .vault-app .vault-feed-coverage { max-width:720px; margin:0 auto; padding:24px 0 80px; }
 .vault-app .vault-feed-coverage>header button { padding:0; color:var(--tt-accent); }
