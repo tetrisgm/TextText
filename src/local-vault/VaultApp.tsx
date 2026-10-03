@@ -31,7 +31,8 @@ import { queueArticleEnrichment } from "./article-enrichment";
 import { CaptureDialog, captureInput } from "./CaptureDialog";
 import { FeedSubscribeDialog, FeedSubscriptionReader } from "./VaultFeeds";
 import { RecoveryDialog } from "./RecoveryDialog";
-import { CollaborativeVaultEditor, type StoryDetails, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
+import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
+import { applyStoryDetails, type StoryDetails } from "./story-details";
 import { packIdentity } from "./pack";
 import { prepareSharedNote } from "./new-note-promotion";
 import { readFolderView, resolveFolderView, type FolderViewMetadata } from "./folder-view";
@@ -230,10 +231,9 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     const saved = await vaultRequest<{ revision: string }>("publicationRead", { itemId });
     return saved.revision === file.current.hash ? saved.revision : false;
   }, [flush]);
-  const saveStoryDetails = useCallback(async ({ title, subtitle, topics, featuredImage }: StoryDetails) => {
+  const saveStoryDetails = useCallback(async (details: StoryDetails) => {
     if (!await publishFlush()) return false;
-    updateArticle(document => ({ ...document, content: { ...document.content, title, subtitle, tags: topics,
-      fields: featuredImage ? { ...document.content.fields, texttextFeaturedImage: featuredImage } : document.content.fields } }));
+    updateArticle(document => applyStoryDetails(document, details));
     return publishFlush();
   }, [publishFlush, updateArticle]);
   useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails); }, [flush, publishFlush, registerFlush, saveStoryDetails]);

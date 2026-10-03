@@ -141,8 +141,11 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
             if (active) setCollectionSearchIndex({ key: collectionSearchKey, listing, previews: {}, error: "Search is unavailable because some item details could not be read." });
             return;
           }
+          const storyFields = folder === "Blog" ? Object.fromEntries(["texttextPreviewTitle", "texttextPreviewSubtitle"]
+            .filter(field => typeof preview.document?.content.fields[field] === "string")
+            .map(field => [field, preview.document!.content.fields[field]])) : {};
           const compact: FolderPreview = { title: preview.title, excerpt: preview.excerpt, sourceURL: preview.sourceURL, publishedAt: preview.publishedAt, document: { ...preview.document,
-            content: { ...preview.document.content, body: "", fields: {}, assets: [] } } };
+            content: { ...preview.document.content, body: "", fields: storyFields, assets: [] } } };
           totalBytes += new TextEncoder().encode(JSON.stringify(compact)).byteLength;
           if (totalBytes > 8 * 1024 * 1024) { if (active) setCollectionSearchIndex({ key: collectionSearchKey, listing, previews: {}, error: "Item details exceed the 8 MiB search limit." }); return; }
           found[item.path] = compact;
@@ -215,7 +218,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery) || noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && noteContentSearch.paths.has(item.path));
   }).sort((left, right) => noteSort === "title" ? indexedNoteTitle(left).localeCompare(indexedNoteTitle(right)) : 0) : collectionSearchReady && (galleryFolder ? galleryQuery || galleryTag : storyQuery) ? items.filter(item => {
     const preview = collectionSearchIndex.previews[item.path];
-    return (!galleryFolder || !galleryTag || preview?.document?.content.tags.includes(galleryTag)) && `${preview?.title || fallbackTitle(item)} ${preview?.document?.content.subtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
+    return (!galleryFolder || !galleryTag || preview?.document?.content.tags.includes(galleryTag)) && `${preview?.title || fallbackTitle(item)} ${preview?.document?.content.subtitle || ""} ${preview?.document?.content.fields.texttextPreviewTitle || ""} ${preview?.document?.content.fields.texttextPreviewSubtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
   }) : items;
   const displayedItems = folder === "Blog" && collectionSearchReady && storyStatus !== "all"
     ? searchMatchedItems.filter(item => storyStatus === "published" ? Boolean(collectionSearchIndex.previews[item.path]?.publishedAt) : !collectionSearchIndex.previews[item.path]?.publishedAt)
@@ -336,10 +339,12 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       }}>{look ? <DocumentCollectionRenderer document={noteCardDocument(preview, title)} template={look} documentId={`note-${item.path}`} /> : <strong>{title}</strong>}{preview?.document?.content.tags.length ? <div className="vault-note-card-tags">{preview.document.content.tags.slice(0, 3).map(tag => <button key={tag} type="button" disabled={busy || previewOnly} onClick={() => { setNoteTag(tag); setPage(0); }} aria-label={`Filter cards by ${tag}`}>#{tag}</button>)}</div> : null}<button className="vault-note-open" disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${title}`} title="Open card"><span aria-hidden="true">↗</span></button>{onEditNote && !previewOnly && <button className="vault-note-card-edit" disabled={busy} onClick={() => onEditNote(item.path)} aria-label={`Edit ${title}`} title="Edit card"><svg aria-hidden="true" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m4 13 8.9-8.9a2 2 0 0 1 2.8 2.8L6.8 15.8 3 17z"/><path d="m11.4 5.6 3 3"/></svg></button>}</div>; })}</div>
     </> : blogFolder ? <><div className="vault-story-tools"><div className="vault-story-status" role="group" aria-label="Story status">{(["all", "drafts", "published"] as const).map(status => <button key={status} type="button" aria-pressed={storyStatus === status} disabled={!collectionSearchReady} onClick={() => { setStoryStatus(status); setPage(0); }}>{status === "all" ? "All stories" : status === "drafts" ? "Drafts" : "Published"}</button>)}</div><label className="vault-story-search"><span className="ac-sr-only">Find stories</span><input type="search" aria-label="Find stories" value={storySearch} onChange={event => { setStorySearch(event.target.value); setPage(0); }} disabled={!collectionSearchReady} placeholder={collectionSearchReady ? "Find stories" : "Reading story details…"} /></label></div>{collectionSearchIndex.key === collectionSearchKey && collectionSearchIndex.error && <p role="status">{collectionSearchIndex.error}</p>}{collectionSearchReady && (storyQuery || storyStatus !== "all") && !displayedItems.length && <p role="status">No {storyStatus === "all" ? "stories" : storyStatus === "drafts" ? "drafts" : "published stories"} match.</p>}<div className="vault-story-list">{visible.map(item => {
       const preview = previews[item.path] || collectionSearchIndex.previews[item.path];
-      const title = preview?.document && !preview.document.content.title.trim() ? "New story" : preview?.title || fallbackTitle(item);
+      const customTitle = preview?.document?.content.fields.texttextPreviewTitle;
+      const title = preview?.document && !preview.document.content.title.trim() ? "New story" : typeof customTitle === "string" && customTitle.trim() ? customTitle.trim() : preview?.title || fallbackTitle(item);
       const authorValue = preview?.document?.content.fields.author;
       const author = typeof authorValue === "string" ? authorValue.trim() : "";
-      const subtitle = preview?.document?.content.subtitle?.trim() || "";
+      const customSubtitle = preview?.document?.content.fields.texttextPreviewSubtitle;
+      const subtitle = typeof customSubtitle === "string" ? customSubtitle.trim() : preview?.document?.content.subtitle?.trim() || "";
       const excerpt = preview?.excerpt && preview.excerpt !== subtitle ? preview.excerpt : "";
       return <PreviewImage key={item.path} preview={preview}>{source => <button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={"Open " + title}>
         <span className="vault-story-copy">
