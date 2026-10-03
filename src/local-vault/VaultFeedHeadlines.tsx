@@ -634,6 +634,6 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
         <div className="vault-feed-row-actions">{storyMenu(story)}</div>
       </li>)}</ol>
     </>}
-    <nav className="vault-feed-bottom-nav" aria-label="Feed sections"><button type="button" aria-pressed={homeTab} onClick={() => { setSearch(""); setTab("For You"); }}>Home</button><button type="button" aria-pressed={tab === "Headlines"} onClick={() => { setSearch(""); setTab("Headlines"); }}>Headlines</button>{canReadLater ? <button type="button" aria-pressed={!homeTab && tab !== "Headlines"} onClick={() => { setSearch(""); setTab("Profile"); }}>Profile</button> : <button type="button" aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button>}</nav>
+    <nav className="vault-feed-bottom-nav" aria-label="Feed sections"><button type="button" aria-pressed={homeTab} onClick={() => { setSearch(""); setTab("For You"); }}>Home</button><button type="button" aria-pressed={tab === "Headlines"} onClick={() => { setSearch(""); setTab("Headlines"); }}>Headlines</button>{canReadLater ? <button type="button" aria-pressed={!homeTab && tab !== "Headlines"} onClick={() => { setSearch(""); setProfileDetail(null); setTab("Profile"); }}>Profile</button> : <button type="button" aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button>}</nav>
   </section>;
 }

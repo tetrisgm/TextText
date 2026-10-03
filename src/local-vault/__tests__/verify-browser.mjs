@@ -2208,6 +2208,11 @@ try {
   await page.getByRole("button", { name: "Back to profile" }).click();
   await page.getByRole("region", { name: "Most read publishers" }).getByRole("button", { name: /Design feed\s*2/ }).click();
   assert.equal(await page.locator(".vault-feed-profile-detail .vault-feed-saved-list li").count(), 2);
+  await openFeedHome();
+  await openFeedProfile();
+  await page.getByRole("heading", { name: "Profile", exact: true }).waitFor();
+  assert.equal(await page.locator(".vault-feed-profile-detail").count(), 0);
+  await page.getByRole("region", { name: "Most read publishers" }).getByRole("button", { name: /Design feed\s*2/ }).click();
   await page.getByRole("button", { name: "Back to profile" }).click();
   await page.getByRole("navigation", { name: "Reading library" }).getByRole("button", { name: "Subscriptions 25" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-profile-reference.png" });
