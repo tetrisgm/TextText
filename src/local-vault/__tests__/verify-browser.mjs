@@ -2326,6 +2326,8 @@ try {
   await page.getByRole("menu", { name: "Add to note" }).waitFor();
   await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem" && document.activeElement?.textContent === "Tag");
   await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Link");
+  await page.keyboard.press("ArrowDown");
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Image");
   await page.screenshot({ path: "/tmp/texttext-note-slash-menu-reference.png" });
   await page.keyboard.press("!");
@@ -2336,6 +2338,23 @@ try {
   assert.equal(await page.locator('.tt-note-image-previews').count(), 0);
   const thoughtImageFile = [...files.values()].find(file => JSON.parse(file.documentJSON).content.body.includes("Thought-photo.png"));
   assert.ok(thoughtImageFile?.assets?.some(asset => asset.filename === "Thought-photo.png"));
+  await page.getByRole("textbox", { name: "Document body" }).focus();
+  await page.keyboard.press("Slash");
+  await page.getByRole("menu", { name: "Add to note" }).waitFor();
+  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Tag" }).focus();
+  await page.keyboard.type("^");
+  const noteLinkForm = page.getByRole("form", { name: "Add note link" });
+  await noteLinkForm.waitFor();
+  await page.screenshot({ path: "/tmp/texttext-note-link-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-note-link-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await noteLinkForm.getByRole("textbox", { name: "Note link address" }).fill("https://example.com/thought");
+  await noteLinkForm.getByRole("textbox", { name: "Note link text" }).fill("Related thought");
+  await noteLinkForm.getByRole("button", { name: "Insert link" }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("[Related thought](<https://example.com/thought>)"));
+  for (let attempt = 0; attempt < 100 && ![...files.values()].some(file => JSON.parse(file.documentJSON).content.body.includes("[Related thought](<https://example.com/thought>)")); attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok([...files.values()].some(file => JSON.parse(file.documentJSON).content.body.includes("[Related thought](<https://example.com/thought>)")));
   const galleryCountBeforeNoteDrop = [...files.keys()].filter(path => path.startsWith("Gallery/")).length;
   await page.getByRole("textbox", { name: "Document body" }).evaluate((body, bytes) => {
     const image = new File([new Uint8Array(bytes)], "Dropped photo.png", { type: "image/png" });
@@ -2458,7 +2477,7 @@ try {
   await linkDraft.getByRole("textbox", { name: "New card title" }).fill("Linked idea");
   await linkDraft.getByRole("textbox", { name: "New card body" }).focus();
   await page.keyboard.press("/");
-  await linkDraft.getByRole("menu", { name: "Add to new card" }).waitFor();
+  await linkDraft.getByRole("menu", { name: "Add to new card" }).getByRole("menuitem", { name: /Tag/ }).focus();
   await page.keyboard.type("^");
   await linkDraft.getByRole("textbox", { name: "New card link address" }).fill("https://example.com/related");
   await linkDraft.getByRole("textbox", { name: "New card link text" }).fill("Related reading");

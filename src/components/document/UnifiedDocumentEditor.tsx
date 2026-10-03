@@ -580,6 +580,7 @@ export function UnifiedDocumentEditor({
   const noteImageInput = useRef<HTMLInputElement>(null);
   const noteImageSelection = useRef({ from: 0, to: 0 });
   const [noteInsertOpen, setNoteInsertOpen] = useState(false);
+  const [noteLink, setNoteLink] = useState<{ from: number; to: number; body: string; label: string; url: string; error: string } | null>(null);
   const noteInsertRef = useRef<HTMLDivElement>(null);
   const noteTagInput = useRef<HTMLInputElement>(null);
   const noteSlashLiteral = useRef<((text: string) => void) | null>(null);
@@ -1605,6 +1606,32 @@ export function UnifiedDocumentEditor({
     window.requestAnimationFrame(() => requestDocumentCaret(start, start + markdown.length));
   }, [experience, articleLinkTarget, articleLinkURL, currentLocalDocument, updateText]);
 
+  const openNoteLink = useCallback(() => {
+    const body = currentLocalDocument().content.body;
+    const { from, to } = noteImageSelection.current;
+    const start = Math.max(0, Math.min(from, body.length));
+    const end = Math.max(start, Math.min(to, body.length));
+    noteSlashLiteral.current = null;
+    setNoteInsertOpen(false);
+    setNoteLink({ from: start, to: end, body, label: body.slice(start, end), url: "", error: "" });
+  }, [currentLocalDocument]);
+
+  const insertNoteLink = useCallback(() => {
+    if (!noteLink) return;
+    let url: URL;
+    try {
+      const raw = noteLink.url.trim();
+      url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+      if (!(["https:", "http:"].includes(url.protocol) && url.hostname)) throw new Error("Invalid URL");
+    } catch { setNoteLink(current => current && { ...current, error: "Enter a valid web address." }); return; }
+    if (!noteLink.label.trim()) { setNoteLink(current => current && { ...current, error: "Add link text." }); return; }
+    if (currentLocalDocument().content.body !== noteLink.body) { setNoteLink(current => current && { ...current, error: "The note changed. Close this link and select the text again." }); return; }
+    const markdown = `[${noteLink.label.trim().replaceAll("[", "\\[").replaceAll("]", "\\]")}](<${url.href}>)`;
+    updateText("body", `${noteLink.body.slice(0, noteLink.from)}${markdown}${noteLink.body.slice(noteLink.to)}`);
+    setNoteLink(null);
+    window.requestAnimationFrame(() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(noteLink.from + markdown.length, noteLink.from + markdown.length); });
+  }, [noteLink, currentLocalDocument, updateText]);
+
 
   const remoteSelections = useMemo(
     () => {
@@ -1737,8 +1764,8 @@ export function UnifiedDocumentEditor({
           /><div ref={noteInsertRef} className="tt-note-insert">
             <button type="button" aria-label="Add to note" aria-expanded={noteInsertOpen} title="Add to card" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen((open) => !open); }}>+</button>
             {noteInsertOpen && <div className="tt-note-insert-menu" role="menu" aria-label="Add to note" onKeyDown={(event) => {
-              if (event.key === "#" || event.key === "!") {
-                const choice = event.key === "#" ? "Tag" : "Image";
+              if (event.key === "#" || event.key === "^" || event.key === "!") {
+                const choice = event.key === "#" ? "Tag" : event.key === "^" ? "Link" : "Image";
                 const item = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(button => button.textContent === choice && !button.disabled);
                 if (item) { event.preventDefault(); item.click(); }
                 return;
@@ -1753,6 +1780,7 @@ export function UnifiedDocumentEditor({
               items[next]?.focus();
             }}>
               {document.content.tags.length < 500 && <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteTagInput.current?.focus(); }}>Tag</button>}
+              <button type="button" role="menuitem" onClick={openNoteLink}>Link</button>
               {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
             </div>}
           </div></div> :
@@ -1845,7 +1873,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, openNoteLink, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2228,6 +2256,12 @@ export function UnifiedDocumentEditor({
         }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
       </aside></div> : documentSurface}
       {experience === "note" && <section className="tt-article-topics tt-note-tags" aria-label="Note tags">
+      {experience === "note" && noteLink && <form className="tt-note-link" aria-label="Add note link" onSubmit={event => { event.preventDefault(); insertNoteLink(); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setNoteLink(null); bodySurfaceRef.current?.focus(); } }}>
+        <input autoFocus aria-label="Note link address" type="url" placeholder="https://example.com" value={noteLink.url} onChange={event => setNoteLink(current => current && { ...current, url: event.target.value, error: "" })} />
+        <input aria-label="Note link text" placeholder="Link text" value={noteLink.label} onChange={event => setNoteLink(current => current && { ...current, label: event.target.value, error: "" })} />
+        <button type="submit">Insert link</button><button type="button" onClick={() => { setNoteLink(null); bodySurfaceRef.current?.focus(); }}>Cancel</button>
+        {noteLink.error && <p role="alert">{noteLink.error}</p>}
+      </form>}
         <h3>Tags</h3>
         <div className="tt-article-topic-list">{document.content.tags.slice(0, 500).map((topic) => <span key={topic}>#{topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
           const current = currentLocalDocument();
@@ -2338,6 +2372,11 @@ export function UnifiedDocumentEditor({
         .tt-note-tags .tt-note-finish{flex:none;margin-left:auto;padding:6px 12px;border:0;border-radius:5px;background:var(--tt-accent,#2762ac);color:#fff;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
         .tt-note-tags .tt-note-finish:hover{filter:brightness(1.08)}
         .tt-note-tags .tt-note-finish:focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:3px}
+        .tt-note-link{display:flex;flex:1 0 100%;flex-wrap:wrap;gap:8px;margin:0 0 8px;padding:0 0 12px;border:0;border-bottom:1px solid var(--line,#ddd);background:transparent}
+        .tt-note-link input{flex:1 1 180px;min-width:0;padding:8px;border:1px solid var(--line,#ddd);border-radius:5px;background:var(--surface,#fff);color:var(--ink,#222);font:inherit}
+        .tt-note-link button{padding:8px 11px;border:1px solid var(--line,#ddd);border-radius:5px;background:var(--surface,#fff);color:var(--ink,#222);font:inherit;cursor:pointer}
+        .tt-note-link button[type=submit]{background:var(--tt-accent,#2762ac);color:#fff}
+        .tt-note-link [role=alert]{flex-basis:100%;margin:0;color:#b42318;font-size:12px}
         .tt-gallery-edit-layout{display:grid;grid-template-columns:minmax(0,1fr) 240px;align-items:start;gap:24px;max-width:1300px;margin:24px auto;padding:0 24px}
         .tt-gallery-edit-layout .tt-document-editor{min-width:0;max-width:none;margin:0;padding:0}
         .tt-gallery-edit-details{position:sticky;top:24px;padding:4px 0;color:var(--ink,#1d1d1f)}
