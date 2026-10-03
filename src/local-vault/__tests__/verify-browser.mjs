@@ -18,6 +18,7 @@ let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
 let storyItemId = null;
+let storyPublished = false;
 const agentAccountEmail = "writer@example.test";
 const workspaceId = "7a32c401-f041-4bc1-bbfd-f60317797873";
 const initial = { path: "Notes/Offline.textpack", hash: String(revision), markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Offline note"\n---\n\nFirst line\nSecond line', documentJSON: JSON.stringify(makeDocument("First line\nSecond line")) };
@@ -150,10 +151,15 @@ try {
     }
     else if (request.method === "publicationRead") {
       const story = files.get("Blog/Story.textpack");
-      if (request.params.itemId === storyItemId && story) result = { itemId: storyItemId, revision: story.hash, published: false, publishedAt: null,
+      if (request.params.itemId === storyItemId && story) result = { itemId: storyItemId, revision: story.hash, published: storyPublished, publishedAt: storyPublished ? "2026-10-03T00:00:00.000Z" : null,
         publicPath: `/v/${workspaceId}/${storyItemId}`, canPublish: true };
       else result = { itemId: request.params.itemId, revision: "0".repeat(64), published: false, publishedAt: null,
         publicPath: `/v/${workspaceId}/${request.params.itemId}`, canPublish: false };
+    }
+    else if (request.method === "publicationSet") {
+      const story = files.get("Blog/Story.textpack");
+      if (request.params.itemId !== storyItemId || !story || request.params.baseRevision !== story.hash) error = { code: "409", message: "Story changed" };
+      else { storyPublished = request.params.published; result = { itemId: storyItemId, revision: story.hash, published: storyPublished, publishedAt: storyPublished ? "2026-10-03T00:00:00.000Z" : null, publicPath: `/v/${workspaceId}/${storyItemId}`, canPublish: true }; }
     }
     else if (request.method === "agentStatus") result = { state: agentState, ...(agentState === "ready" ? { accountEmail: agentAccountEmail } : {}) };
     else if (request.method === "agentConnect") { agentState = "ready"; result = { state: agentState, accountEmail: agentAccountEmail }; }
@@ -1313,10 +1319,10 @@ try {
   const publishing = page.getByRole("dialog", { name: /^Publish / });
   await publishing.getByText("Story preview").waitFor();
   await publishing.getByText("An opening paragraph.").waitFor();
-  await publishing.getByRole("button", { name: "Publish story" }).waitFor();
+  await publishing.getByRole("button", { name: "Publish now" }).waitFor();
   const publishLayout = await publishing.evaluate(dialog => {
     const review = dialog.children[1];
-    const action = [...dialog.querySelectorAll("button")].find(button => button.textContent.trim() === "Publish story")?.parentElement;
+    const action = [...dialog.querySelectorAll("button")].find(button => button.textContent.trim() === "Publish now")?.parentElement;
     if (!review || !action) throw new Error("Publishing review or action is missing");
     return { reviewBottom: review.getBoundingClientRect().bottom, actionTop: action.getBoundingClientRect().top };
   });
@@ -1329,11 +1335,12 @@ try {
   const topicInput = publishing.getByRole("textbox", { name: "Add story topic" });
   await topicInput.fill("Design");
   await publishing.getByRole("button", { name: "Add", exact: true }).click();
-  assert.equal(await publishing.getByRole("button", { name: "Publish story" }).isDisabled(), true);
-  await publishing.getByRole("button", { name: "Save story details" }).click();
+  assert.equal(await publishing.getByRole("button", { name: "Publish now" }).isDisabled(), false);
+  await publishing.getByRole("button", { name: "Publish now" }).click();
+  await publishing.getByText("This file is public.").waitFor();
+  assert.equal(storyPublished, true);
   await publishing.getByRole("heading", { name: "Publish An essay title" }).waitFor();
-  await publishing.getByRole("button", { name: "Publish story" }).waitFor({ state: "visible" });
-  assert.equal(await publishing.getByRole("button", { name: "Publish story" }).isDisabled(), false);
+  await publishing.getByRole("button", { name: "Unpublish" }).waitFor({ state: "visible" });
   await page.screenshot({ path: "/tmp/texttext-blog-publish-topics-dark-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-blog-publish-topics-light-reference.png" });

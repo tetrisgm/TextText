@@ -121,9 +121,9 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
     if (busy) return;
     setBusy(true); setError(""); setCopied(false);
     try {
-      const observedRevision = await beforeChange();
+      const observedRevision = detailsChanged ? await persistStoryDetails() : await beforeChange();
       if (!observedRevision) throw new Error("Save or resolve this file before changing its public access.");
-      if (readStoryFile && (!story || story.revision !== observedRevision)) throw new Error("This story changed since its preview. Close and reopen Publish to review it.");
+      if (readStoryFile && (!story || (story.revision !== observedRevision && !detailsChanged))) throw new Error("This story changed since its preview. Close and reopen Publish to review it.");
       const latest = await reload();
       if (latest.revision !== observedRevision) throw new Error("This file changed while you were publishing. Review it, then try again.");
       if (latest.canPublish === false) throw new Error("Only the workspace owner can change public access.");
@@ -149,25 +149,29 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
     if (!topic || topics.length >= 5 || topics.some(value => value.toLocaleLowerCase() === topic.toLocaleLowerCase())) return;
     setTopics(previous => [...previous, topic]); setTopicInput("");
   };
+  const persistStoryDetails = async (): Promise<string> => {
+    if (!story || !readStoryFile || !onSaveStoryDetails || !title.trim()) throw new Error("Add a preview title before publishing.");
+    const observed = await beforeChange();
+    if (!observed || observed !== story.revision) throw new Error("This story changed since its preview. Close and reopen Publish to review it.");
+    const revision = await onSaveStoryDetails({
+      topics,
+      ...(title.trim() !== story.previewTitle ? { previewTitle: title.trim() === story.title ? null : title.trim() } : {}),
+      ...(subtitle.trim() !== story.previewSubtitle ? { previewSubtitle: subtitle.trim() === story.subtitle ? null : subtitle.trim() } : {}),
+      ...(featuredImage !== story.featuredImage ? { featuredImage } : {}),
+    });
+    if (!revision) throw new Error("Story details could not be saved. Your changes are still shown here.");
+    const file = await readStoryFile();
+    const next = await reload();
+    if (file.hash !== revision || next.revision !== revision) throw new Error("The story changed while saving details. Close and reopen Publish to review it.");
+    const preview = storyPreviewFromFile(file);
+    setStory(preview); setTitle(preview.previewTitle); setSubtitle(preview.previewSubtitle); setTopics(preview.topics); setFeaturedImage(preview.featuredImage);
+    return revision;
+  };
   const saveStoryDetails = async () => {
-    if (!story || !readStoryFile || !onSaveStoryDetails || !detailsChanged || busy || !title.trim()) return;
+    if (!detailsChanged || busy) return;
     setBusy(true); setError("");
-    try {
-      const observed = await beforeChange();
-      if (!observed || observed !== story.revision) throw new Error("This story changed since its preview. Close and reopen Publish to review it.");
-      const revision = await onSaveStoryDetails({
-        topics,
-        ...(title.trim() !== story.previewTitle ? { previewTitle: title.trim() === story.title ? null : title.trim() } : {}),
-        ...(subtitle.trim() !== story.previewSubtitle ? { previewSubtitle: subtitle.trim() === story.subtitle ? null : subtitle.trim() } : {}),
-        ...(featuredImage !== story.featuredImage ? { featuredImage } : {}),
-      });
-      if (!revision) throw new Error("Story details could not be saved. Your changes are still shown here.");
-      const file = await readStoryFile();
-      const next = await reload();
-      if (file.hash !== revision || next.revision !== revision) throw new Error("The story changed while saving details. Close and reopen Publish to review it.");
-      const preview = storyPreviewFromFile(file);
-      setStory(preview); setTitle(preview.previewTitle); setSubtitle(preview.previewSubtitle); setTopics(preview.topics); setFeaturedImage(preview.featuredImage);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Story details could not be saved."); }
+    try { await persistStoryDetails(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Story details could not be saved."); }
     finally { setBusy(false); }
   };
   const link = state?.published ? publicLink(state, workspaceId) : "";
@@ -198,8 +202,8 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
       </> : null}
       {error && <p role="alert" className="vault-sharing-error">{error} {!state && <button onClick={() => void reload().then(() => setError("")).catch(() => {})}>Retry</button>}</p>}
       </div>
-      {state && state.canPublish !== false && <div className={styles.actions}><button type="button" disabled={busy || detailsChanged || (Boolean(readStoryFile) && (!story || (!state.published && !story.ready)))} onClick={() => void change(!state.published)}>
-        {busy ? "Saving…" : state.published ? "Unpublish" : story ? "Publish story" : "Publish file"}
+      {state && state.canPublish !== false && <div className={styles.actions}><button type="button" disabled={busy || (Boolean(readStoryFile) && (!story || !title.trim() || (!state.published && !story.ready)))} onClick={() => void change(!state.published)}>
+        {busy ? "Saving…" : state.published ? "Unpublish" : story ? "Publish now" : "Publish file"}
       </button></div>}
     </section>
   </div>;
