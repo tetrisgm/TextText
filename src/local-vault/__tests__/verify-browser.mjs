@@ -2627,6 +2627,10 @@ try {
   files.set("Notes/Moved thought.textpack", { ...rapidCard, path: "Notes/Moved thought.textpack" });
   await page.getByRole("region", { name: "Note card" }).getByRole("link", { name: "Rapid thought again" }).click();
   await page.getByRole("region", { name: "Note card" }).getByText("Rapid thought again").waitFor();
+  await page.getByRole("region", { name: "Note card" }).getByRole("button", { name: "Linked from" }).click();
+  await page.locator(".vault-card-backlink-list").getByRole("button", { name: /Card reference/ }).waitFor();
+  await page.locator(".vault-card-backlink-list").getByRole("button", { name: /Card reference/ }).click();
+  await page.getByRole("region", { name: "Note card" }).getByText("Card reference").waitFor();
   await chooseFolder("Notes");
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   const selectedLinkDraft = page.getByRole("form", { name: "New card draft" });

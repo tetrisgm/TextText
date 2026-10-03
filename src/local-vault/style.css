@@ -623,6 +623,14 @@
 .vault-app .vault-note-display .tt-prose li.task-list-item[role="checkbox"]:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
 .vault-app .vault-note-display-tags { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:9px; margin-top:20px; }
 .vault-app .vault-note-display-tags span { color:var(--muted); font-size:12px; }
+.vault-app .vault-card-backlinks { margin-top:16px; border-top:1px solid var(--line); padding-top:10px; }
+.vault-app .vault-card-backlinks > button { border:0; background:transparent; color:var(--muted); font:inherit; font-size:12px; cursor:pointer; padding:3px 0; }
+.vault-app .vault-card-backlinks > button:hover { color:var(--ink); }
+.vault-app .vault-card-backlinks button:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
+.vault-app .vault-card-backlink-list { display:grid; gap:5px; margin-top:6px; }
+.vault-app .vault-card-backlink-list > button { display:grid; gap:3px; text-align:left; border:0; background:var(--selection); color:var(--ink); padding:8px 10px; cursor:pointer; }
+.vault-app .vault-card-backlink-list strong { font-size:12px; }
+.vault-app .vault-card-backlink-list span,.vault-app .vault-card-backlink-list p { color:var(--muted); font-size:12px; margin:0; }
 .vault-app .vault-story-display { max-width:800px; margin:0 auto; padding:18px 28px 72px; }
 .vault-app .vault-story-display-actions { display:flex; justify-content:flex-end; margin-bottom:12px; }
 .vault-app .vault-story-display-actions button { border:0; background:none; color:var(--tt-accent); font:inherit; font-size:13px; cursor:pointer; }
