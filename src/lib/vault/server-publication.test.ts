@@ -94,6 +94,36 @@ describe("file-backed vault publication", () => {
     }
   });
 
+  it("uses saved story preview details for public metadata without exposing unbound fields", () => {
+    const document = emptyDocumentSnapshot();
+    document.content.title = "Article heading";
+    document.content.subtitle = "Article subtitle";
+    document.content.body = "Story body\n\n![Featured](assets/picture.png)";
+    document.content.fields.texttextPreviewTitle = "Shared headline";
+    document.content.fields.texttextPreviewSubtitle = "Shared description";
+    document.content.fields.texttextFeaturedImage = "assets/picture.png";
+    document.content.fields.secret = "Private field";
+    document.content.assets = [{ id: "picture", kind: "image", src: "assets/picture.png" }];
+    const bytes = buildTextpack("Article heading", { document,
+      template: requireBuiltinTemplate("texttext.article"),
+      markdown: `---\ntextTextId: ${itemId}\n---\n\n${document.content.body}`,
+      files: { "assets/picture.png": png } });
+    expect(publishedVaultView(bytes, workspaceId, itemId)).toBeNull();
+    const marker = strToU8(JSON.stringify({ schemaVersion: 1, status: "public",
+      publishedAt: new Date().toISOString(), operationId: randomUUID() }));
+    const published = buildTextpack("Article heading", { document,
+      template: requireBuiltinTemplate("texttext.article"),
+      markdown: `---\ntextTextId: ${itemId}\n---\n\n${document.content.body}`,
+      files: { "assets/picture.png": png, "publication.json": marker } });
+    const view = publishedVaultView(published, workspaceId, itemId)!;
+    expect(view.preview).toEqual({ title: "Shared headline", subtitle: "Shared description",
+      imageUrl: `/api/public/vault/${workspaceId}/${itemId}/assets/picture.png` });
+    expect(view.document.content.title).toBe("Article heading");
+    expect(view.document.content.fields).not.toHaveProperty("texttextPreviewTitle");
+    expect(view.document.content.fields).not.toHaveProperty("secret");
+    expect(JSON.stringify(view)).not.toContain("Private field");
+  });
+
   it("rejects marker injection/removal through ordinary writes, while stale document edits merge around a publish", async () => {
     const original = (await readVaultTextpack(location()))!;
     const forged = pack("First version\n\n![Picture](assets/picture.png)", strToU8(JSON.stringify({ schemaVersion: 1, status: "public",

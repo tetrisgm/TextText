@@ -135,6 +135,7 @@ function assetUrl(workspaceId: string, itemId: string, value: string): string {
 
 export function publishedVaultView(bytes: Uint8Array, workspaceId: string, itemId: string): {
   document: DocumentSnapshot; template: TemplateDefinition; publication: VaultPublication; assetPaths: Set<string>;
+  preview: { title: string; subtitle: string; imageUrl?: string };
 } | null {
   const publication = readVaultPublicationFromPack(bytes);
   if (!publication) return null;
@@ -159,6 +160,20 @@ export function publishedVaultView(bytes: Uint8Array, workspaceId: string, itemI
     visibleText.includes(asset.src) || Boolean(asset.poster && visibleText.includes(asset.poster)));
   const projected = validateDocumentSnapshot({ ...document, content: { ...document.content, fields, tags, assets } });
   const assetPaths = referencedAssets(projected);
+  const customTitle = document.content.fields.texttextPreviewTitle;
+  const customSubtitle = document.content.fields.texttextPreviewSubtitle;
+  const featured = document.content.fields.texttextFeaturedImage;
+  const image = document.content.assets.find(asset => asset.kind === "image" && asset.src === featured &&
+    (document.content.body.includes(asset.src) || document.content.fields.cover === asset.src))
+    ?? document.content.assets.find(asset => asset.kind === "image" &&
+      (document.content.body.includes(asset.src) || document.content.fields.cover === asset.src));
+  const previewImage = image && assetPaths.has(image.src) && /\.(?:png|jpe?g|gif|webp)$/i.test(image.src)
+    ? assetUrl(workspaceId, itemId, image.src) : undefined;
+  const preview = {
+    title: typeof customTitle === "string" && customTitle.trim() ? customTitle.trim() : document.content.title.trim(),
+    subtitle: typeof customSubtitle === "string" ? customSubtitle.trim() : document.content.subtitle?.trim() || "",
+    ...(previewImage ? { imageUrl: previewImage } : {}),
+  };
   const substitutions = [...assetPaths].sort((a, b) => b.length - a.length)
     .map(value => [value, assetUrl(workspaceId, itemId, value)] as const);
   const replace = (value: unknown): unknown => {
@@ -175,7 +190,7 @@ export function publishedVaultView(bytes: Uint8Array, workspaceId: string, itemI
       .map(field => ({ ...field, help: undefined })),
     collection: { layout: "list", columns: 1, gap: "md", sort: [], filters: [], views: [],
       item: { type: "text", bind: "content.title", role: "title" } } };
-  return { document: validateDocumentSnapshot(replace(projected)), template: publicTemplate, publication, assetPaths };
+  return { document: validateDocumentSnapshot(replace(projected)), template: publicTemplate, publication, assetPaths, preview };
 }
 
 export function publishedVaultAsset(bytes: Uint8Array, workspaceId: string, itemId: string, assetPath: string) {

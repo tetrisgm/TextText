@@ -2,6 +2,8 @@
 
 ## Current work
 
+Published Blog links now use the story's saved preview title, subtitle, and selected embedded image in page metadata. The public page and metadata share one request-scoped TextPack read; unpublished items produce no preview metadata. The publication test covers private-field exclusion and unpublish behavior, and TypeScript passes. This is source work only; no app release was run. Medium parity remains open.
+
 Blog Publish can now choose a preview image already embedded in the story. The choice is saved as `texttextFeaturedImage` in its TextPack, separate from the article cover, and Mac and Oracle folder previews select that image. The publish action stays visible at the bottom of the scrollable dialog. Local browser, shared web browser, TypeScript, focused Mac, and server preview tests passed; light/dark dialog screenshots are `/tmp/texttext-blog-publish-topics-light-reference.png` and `/tmp/texttext-blog-publish-reference.png`. Medium's publish help is the reference: <https://help.medium.com/hc/en-us/articles/225168768-Writing-and-publishing-your-first-story>. Full Medium parity remains open; no app release was run.
 
 Blog's Publish preview now saves separate preview title and subtitle fields, as Medium does, without rewriting the article title or subtitle. The Blog list displays and searches those preview fields; returning them to the article text removes the override. Topics and preview text use the same revision-checked TextPack save in local and shared editors. The focused transform tests, TypeScript, and local/web browser flows passed. Full Medium parity remains open; no app release was run.
