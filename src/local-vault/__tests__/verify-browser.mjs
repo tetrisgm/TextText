@@ -1109,6 +1109,8 @@ try {
   const bookmarkDetails = bookmarkReader.locator("details.vault-bookmark-inspector");
   const toggleBookmarkDetails = bookmarkDetails.locator("summary");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
+  assert.equal(await bookmarkReader.locator(".vault-bookmark-reader-current-title").innerText(), "A saved article");
+  assert.equal(await bookmarkReader.locator("header").first().evaluate(element => element.scrollWidth <= element.clientWidth + 1), true);
   const sendsBeforeBookmarkAsk = agentSendCount;
   const bookmarkQuestion = bookmarkReader.getByRole("textbox", { name: "Question about this link" });
   await bookmarkQuestion.fill("What evidence supports the main point of this saved link?");
