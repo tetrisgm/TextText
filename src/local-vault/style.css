@@ -98,7 +98,7 @@
 .vault-app .vault-search>input { height:94px; margin:0; padding:20px 42px; border:0; border-radius:0; outline:0; background:#70737b; color:#fff; font-size:21px; }
 .vault-app .vault-search>input:focus-visible { outline:0; }
 .vault-app .vault-search>p,.vault-app .vault-search [role=listbox]>p { margin:10px 18px; color:#e4e5e8; }
-.vault-app .vault-search [role=listbox] { overflow:auto; max-height:min(355px,calc(100vh - 198px)); padding:0; }
+.vault-app .vault-search [role=listbox] { overflow:auto; max-height:min(326px,calc(100vh - 198px)); padding:0; }
 .vault-app .vault-search [role=listbox] h3 { margin:10px 10px 5px; color:#d5d7dc; font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.08em; }
 .vault-app .vault-search [role=option] { display:grid; grid-template-columns:28px minmax(0,1fr) auto; gap:2px 18px; align-items:center; width:100%; min-height:70px; margin:0; padding:12px 42px; border-radius:0; color:#fff; text-align:left; }
 .vault-app .vault-search .vault-command-icon { display:grid; grid-column:1; grid-row:1; place-items:center; width:27px; height:27px; border:1px solid #c1c3c9; border-radius:50%; color:#f0f1f4; font-size:16px; font-style:normal; line-height:1; }
@@ -109,7 +109,7 @@
 .vault-app .vault-search .vault-command-file strong { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .vault-app .vault-search .vault-command-file small { grid-column:3; grid-row:1; max-width:180px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:right; }
 .vault-app .vault-search [role=option]:hover,.vault-app .vault-search [role=option][aria-selected=true] { background:#858891; }
-@media(max-width:550px){.vault-app .vault-search header{padding:12px 18px;min-height:54px}.vault-app .vault-search>input{height:70px;padding:14px 18px}.vault-app .vault-search [role=option]{min-height:56px;padding:9px 18px;gap:2px 10px}.vault-app .vault-search .vault-command-file small{max-width:85px}}
+@media(max-width:550px){.vault-app .vault-search header{padding:12px 18px;min-height:54px}.vault-app .vault-search>input{height:70px;padding:14px 18px}.vault-app .vault-search [role=listbox]{max-height:min(250px,calc(100vh - 158px))}.vault-app .vault-search [role=option]{min-height:56px;padding:9px 18px;gap:2px 10px}.vault-app .vault-search .vault-command-file small{max-width:85px}}
 .vault-app .vault-photo-grid { display:grid; gap:12px; min-width:0; }
 .vault-app .vault-photo-row { display:flex; gap:12px; min-width:0; }
 .vault-app .vault-gallery-overview { padding:4px 12px 60px; }

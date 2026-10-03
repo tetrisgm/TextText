@@ -293,11 +293,18 @@ try {
   await page.locator(".vault-search-trigger kbd").waitFor({ state: "visible" });
   await searchTrigger.click();
   await page.getByRole("dialog", { name: "Search and actions", exact: true }).waitFor();
+  assert.equal(await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option").first().getAttribute("id"), "action:new-note");
   assert.equal(await page.getByRole("option", { name: "New note", exact: true }).locator("kbd").textContent(), "N");
   assert.equal(await page.getByRole("option", { name: "Write a story", exact: true }).locator("kbd").textContent(), "C");
   assert.equal(await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("kbd").textContent(), "B");
   await page.getByRole("option", { name: "Go to Notes", exact: true }).waitFor();
   assert.equal(await page.locator("#vault-command-results").evaluate(list => list.scrollHeight > list.clientHeight), true, "command list should reveal more actions below the first view");
+  assert.equal(await page.locator("#vault-command-results").evaluate(list => {
+    const fifth = list.querySelectorAll('[role="option"]')[4];
+    if (!fifth) return false;
+    const viewport = list.getBoundingClientRect(), row = fifth.getBoundingClientRect();
+    return row.top < viewport.bottom && row.bottom > viewport.bottom;
+  }), true, "the last visible command should be clipped to invite scrolling");
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
   await page.getByRole("option", { name: "Keyboard shortcuts", exact: true }).click();
   await page.getByLabel("Available keyboard shortcuts").getByText("Write a story").waitFor();
@@ -1754,6 +1761,7 @@ try {
   await page.keyboard.press("Meta+k");
   const galleryCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
   await galleryCommands.waitFor();
+  assert.equal(await galleryCommands.getByRole("option").first().getAttribute("id"), "action:import-images");
   assert.equal(await galleryCommands.evaluate(dialog => document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('[role="dialog"]') === dialog), true);
   await page.keyboard.press("Escape");
   await galleryCommands.waitFor({ state: "hidden" });

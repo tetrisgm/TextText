@@ -957,7 +957,16 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     { id: "rename-current", label: "Rename or move this item", description: "Change the file path of the open item.", aliases: ["Move this item"], keywords: ["file", "folder", "path"] },
     { id: "delete-current", label: "Delete this item", description: "Move the open item to Trash after confirmation.", aliases: ["Trash this item"], keywords: ["remove", "file"] },
   );
-  commandActions.unshift(...contextualActions);
+  if (selected) commandActions.unshift(...contextualActions);
+  else {
+    const primaryByFolder: Record<string, string> = {
+      Notes: "new-note", Blog: "write-story", Bookmarks: "save-bookmark",
+      Gallery: "import-images", Feeds: "subscribe-feed",
+    };
+    const primaryIndex = commandActions.findIndex(action => action.id === primaryByFolder[commandFolder]);
+    if (primaryIndex > 0) commandActions.unshift(...commandActions.splice(primaryIndex, 1));
+    commandActions.splice(1, 0, ...contextualActions);
+  }
   if (selected || commandFolder) commandActions.push({ id: "go-home", label: "Go home", description: "Show all files in this workspace.", shortcut: "H", aliases: ["All files"], keywords: ["workspace", "home"] });
   if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
