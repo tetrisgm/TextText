@@ -1188,6 +1188,7 @@ try {
   });
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.org"));
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/dropped-reading"), true);
+  await page.getByRole("button", { name: "+ Add link" }).click();
   const quickLink = page.getByRole("textbox", { name: "Web address to save" });
   const bookmarkCount = [...files].filter(([path]) => path.startsWith("Bookmarks/")).length;
   await quickLink.fill("not a link");
@@ -1196,9 +1197,10 @@ try {
   assert.equal([...files].filter(([path]) => path.startsWith("Bookmarks/")).length, bookmarkCount);
   await quickLink.fill("example.net/quick-save");
   await page.locator(".vault-bookmark-quick-save").getByRole("button", { name: "Save" }).click();
-  await page.waitForFunction(() => document.querySelector('.vault-bookmark-quick-save input')?.value === "");
+  await page.getByRole("button", { name: "+ Add link" }).waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.net/quick-save"), true);
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "example.org/copied-reading" } }));
+  await page.getByRole("button", { name: "+ Add link" }).click();
   await page.locator(".vault-bookmark-quick-save").getByRole("button", { name: "Save copied link" }).click();
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-list [aria-selected="true"]')?.textContent?.includes("example.org"));
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/copied-reading"), true);

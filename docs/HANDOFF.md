@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now keeps its inbox quiet: Add link reveals the URL field only while saving. Pasting, Enter-to-save, clipboard save, validation, and Escape/Cancel remain available; a successful save returns to the list. The current light capture is `/tmp/texttext-bookmark-reference.png`. TypeScript, the local bundle, and local/web browser flows pass (the first local run hit an unrelated Blog formatting timeout, then passed on rerun). Shiori parity remains open; no release was run.
+
 Command K now uses the wider, centered Superhuman-style panel, a blank focused input, and five tall command rows with no visible Actions heading. The browser capture at `/tmp/texttext-command-reference.png` and TypeScript, local bundle, and local/web browser flows passed. Search and keyboard behavior are unchanged; exact visual and command parity remain open. No release was run.
 
 The Notes editor now offers Add image next to tags. It writes the original asset and Markdown into the same guarded TextPack, previews the attached image inside the card while editing, and shows it after Finish. Image insertion now adds paragraph boundaries, so the Markdown image does not run into adjacent text. The guarded write uses the latest saved title/tags if only metadata changed while the image picker was open, and still rejects changed body text. Local browser flows verify a real create/tag/image/Finish/reopen sequence, including asset bytes, and a 390px new-note capture at `/tmp/texttext-note-create-narrow-light-reference.png`. Full Supernotes editing parity remains open; no release was run.
