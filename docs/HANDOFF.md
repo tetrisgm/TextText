@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now shows capture failure in the reader and offers Retry capture alongside the reader actions. Retry uses the existing revision-aware enrichment path, keeps authored body text, and reloads the saved TextPack; a browser fixture proves that case. An open Details panel no longer carries to a different bookmark. TypeScript and local/web browser checks pass. Real extractor failures still need Mac/web verification. No release was run.
+
 Bookmarks' saved Summary card now expands and collapses in the reader. Pointer and keyboard checks confirm the TextPack subtitle is unchanged by toggling; switching bookmarks resets it open. TypeScript and the local/web browser flows pass. Automatic enrichment and broader Shiori parity remain open; no release was run.
 
 Feeds Profile now opens an interest explorer after onboarding. Existing topics show Following; selecting a new topic imports the corresponding recommended source as an ordinary TextPack and returns to Profile. The local browser flow verifies a NASA source file for Space and captures `/tmp/texttext-feeds-interests-reference.png`; TypeScript and local/web browser flows pass. The picker adds topics; source removal remains in Sources. Broader Artifact parity is open; no release was run.

@@ -964,7 +964,7 @@ try {
     return { path, hash: `sample-${path}`, markdown: `---\ntextTextId: "${crypto.randomUUID()}"\ntitle: ${JSON.stringify(title)}\n---\n\n${body}`, documentJSON: JSON.stringify(document) };
   };
   files.set("Bookmarks/Reading.textpack", sample("Bookmarks/Reading.textpack", "bookmark", "A saved article", "The complete saved reading text.", { sourceUrl: "https://example.com/article", texttextBookmarkSavedAt: new Date().toISOString() }));
-  files.set("Bookmarks/Another.textpack", sample("Bookmarks/Another.textpack", "bookmark", "Another saved link", "A second reading item.", { sourceUrl: "https://example.org/another" }));
+  files.set("Bookmarks/Another.textpack", sample("Bookmarks/Another.textpack", "bookmark", "Another saved link", "A second reading item.", { sourceUrl: "https://example.org/another", captureStatus: "failed" }));
   files.set("Bookmarks/Deep.textpack", sample("Bookmarks/Deep.textpack", "bookmark", "Deep article", `${"Opening text. ".repeat(40)}\nThe distinctive late paragraph matters.`, { sourceUrl: "https://example.net/deep" }));
   for (let index = 0; index < 25; index++) {
     const name = `Z filler ${String(index).padStart(2, "0")}`;
@@ -1236,6 +1236,16 @@ try {
   });
   await page.locator('.vault-bookmark-reader a[href="https://example.org/pasted-reading"]').first().waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/pasted-reading"), true);
+  await bookmarkSearch.fill("Another saved link");
+  await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /Another saved link/ }).first().click();
+  await bookmarkReader.getByText("The page could not be captured. Your link is still saved.").waitFor();
+  if (await bookmarkDetails.evaluate(element => element.open)) await toggleBookmarkDetails.click();
+  await bookmarkReader.getByRole("button", { name: "Retry capture" }).click();
+  await page.waitForFunction(() => !document.querySelector('.vault-bookmark-capture-status'));
+  const retriedBookmark = JSON.parse(files.get("Bookmarks/Another.textpack").documentJSON);
+  assert.equal(retriedBookmark.content.body, "A second reading item.", "retry must keep authored body text");
+  assert.equal(retriedBookmark.content.fields.captureStatus, "complete");
+  assert.match(retriedBookmark.content.fields.capturedSourceBody, /Captured reading/);
   await chooseFolder("Blog");
   await page.getByRole("button", { name: "Write a story", exact: true }).waitFor();
   await page.locator(".vault-story-list").getByText("An essay title").waitFor();
