@@ -41,4 +41,11 @@ describe("feed coverage groups", () => {
     const diverse = rankFeedClusters(clusterFeedStories([...many, other]), now);
     expect(diverse.findIndex(group => group.members[0].source === "Two")).toBeLessThan(4);
   });
+  it("demotes a topic without removing its stories", () => {
+    const now = Date.parse("2026-10-02T15:00:00Z");
+    const design = story({ externalKey: "design", title: "A new design story", topic: "Design", permalink: "https://one.example/design" });
+    const world = story({ externalKey: "world", title: "A new world story", source: "Two", feedURL: "https://two.example/feed", permalink: "https://two.example/world" });
+    const groups = clusterFeedStories([design, world]);
+    expect(rankFeedClusters(groups, now, new Set(["design"])).map(group => group.members[0].topic)).toEqual(["World", "Design"]);
+  });
 });
