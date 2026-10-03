@@ -379,6 +379,7 @@ export function MarkdownSurface({
   surfaceRef,
   resolveSelection,
   onPasteImages,
+  onSlash,
   concealImageLines = false,
   imageSources,
   imageCaptions,
@@ -395,6 +396,7 @@ export function MarkdownSurface({
   surfaceRef?: React.RefObject<HTMLDivElement | null>;
   resolveSelection?: () => { anchor: number; head: number } | null;
   onPasteImages?: (files: File[], selection: { from: number; to: number }) => void;
+  onSlash?: (insertLiteral: (text: string) => void) => void;
   concealImageLines?: boolean;
   /** Resolved URLs keyed by the image paths stored in Markdown. */
   imageSources?: Readonly<Record<string, string>>;
@@ -1588,6 +1590,19 @@ export function MarkdownSurface({
         replaceRange(Math.min(at.anchor, at.head), Math.max(at.anchor, at.head), "");
       }}
       onKeyDown={(event) => {
+        if (onSlash && event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.nativeEvent.isComposing && !composingRef.current) {
+          const at = selectionOffsets();
+          if (at && at.anchor === at.head && (at.anchor === 0 || /\s/.test(value[at.anchor - 1] ?? ""))) {
+            event.preventDefault();
+            const source = value;
+            onSlash((text) => {
+              // A remote edit can arrive while the menu is open. Never apply a
+              // stale whole-body replacement over that newer source.
+              if (valueRef.current === source) replaceRange(at.anchor, at.head, text);
+            });
+            return;
+          }
+        }
         if (!windowedRef.current) return;
         const meta = event.metaKey || event.ctrlKey;
         if (meta && (event.key === "a" || event.key === "A")) {

@@ -1973,6 +1973,20 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   await page.keyboard.insertText("A short card about an idea.");
   await page.locator(".vault-context-header h2").getByText("Thought for later", { exact: true }).waitFor();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Slash");
+  await page.getByRole("menu", { name: "Add to note" }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.endsWith(" /"));
+  await page.keyboard.press("Backspace");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.endsWith("idea. "));
+  await page.keyboard.press("Slash");
+  await page.getByRole("menu", { name: "Add to note" }).waitFor();
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.endsWith("idea. / "));
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Backspace");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.endsWith("idea. "));
   await page.getByRole("button", { name: "Add to note" }).click();
   await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Tag" }).click();
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Add note tag");
@@ -1991,8 +2005,14 @@ try {
       finish.getBoundingClientRect().right <= tags.getBoundingClientRect().right &&
       tags.getBoundingClientRect().bottom - card.getBoundingClientRect().top < 300);
   }), "a short note should keep Finish inside its compact card footer");
-  await page.getByRole("button", { name: "Add to note" }).click();
-  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Image" }).click();
+  await page.getByRole("textbox", { name: "Document body" }).focus();
+  await page.keyboard.press("Slash");
+  await page.getByRole("menu", { name: "Add to note" }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem" && document.activeElement?.textContent === "Tag");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Image");
+  await page.screenshot({ path: "/tmp/texttext-note-slash-menu-reference.png" });
+  await page.keyboard.press("Enter");
   await page.getByLabel("Choose note images").setInputFiles({ name: "Thought photo.png", mimeType: "image/png", buffer: firstStoryImage });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/Thought-photo.png"));
   await page.getByRole("textbox", { name: "Title", exact: true }).focus();

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes now opens its card insert menu with `/` at a body word boundary. Arrow keys choose Tag or Image; Escape and Space insert a literal slash. A source guard prevents stale slash insertion from replacing newer collaborative text. TypeScript and local/web browser flows passed, including keyboard selection and a dark capture at `/tmp/texttext-note-slash-menu-reference.png`. The full Supernotes coupler and visual parity remain open; no release was run.
+
 Notes now puts its supported insert actions in a card-top plus menu. Tag focuses the card's tag input; Image opens the existing TextPack asset picker. The redundant footer image button is gone. TypeScript and local/web browser flows passed; the local flow exercises both actions and captures light/dark at `/tmp/texttext-note-editor-light-reference.png` and `/tmp/texttext-note-editor-reference.png`. Supernotes' broader coupler and slash shortcut remain open; no release was run.
 
 Notes now shows the image Markdown path while the card is being edited, matching Supernotes' documented WYSIWYM behavior; the finished card still renders the image. The separate editor preview outside the card was removed. TypeScript and local/web browser flows pass; the light capture is `/tmp/texttext-note-editor-light-reference.png`. Card creation controls and overall Supernotes parity remain open; no release was run.

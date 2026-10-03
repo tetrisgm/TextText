@@ -581,17 +581,30 @@ export function UnifiedDocumentEditor({
   const [noteInsertOpen, setNoteInsertOpen] = useState(false);
   const noteInsertRef = useRef<HTMLDivElement>(null);
   const noteTagInput = useRef<HTMLInputElement>(null);
+  const noteSlashLiteral = useRef<((text: string) => void) | null>(null);
   useEffect(() => {
     if (!noteInsertOpen) return;
     const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !noteInsertRef.current?.contains(event.target)) setNoteInsertOpen(false);
+      if (event.target instanceof Node && !noteInsertRef.current?.contains(event.target)) {
+        noteSlashLiteral.current?.("/");
+        noteSlashLiteral.current = null;
+        setNoteInsertOpen(false);
+      }
     };
     const escape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); setNoteInsertOpen(false); bodySurfaceRef.current?.focus(); }
+      if (event.key === "Escape" || (event.key === " " && noteSlashLiteral.current)) {
+        event.preventDefault();
+        event.stopPropagation();
+        noteSlashLiteral.current?.(event.key === " " ? "/ " : "/");
+        noteSlashLiteral.current = null;
+        setNoteInsertOpen(false);
+        bodySurfaceRef.current?.focus();
+      }
     };
     window.document.addEventListener("pointerdown", dismiss);
     window.document.addEventListener("keydown", escape, true);
-    return () => { window.document.removeEventListener("pointerdown", dismiss); window.document.removeEventListener("keydown", escape, true); };
+    const frame = window.requestAnimationFrame(() => noteInsertRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus());
+    return () => { window.cancelAnimationFrame(frame); window.document.removeEventListener("pointerdown", dismiss); window.document.removeEventListener("keydown", escape, true); };
   }, [noteInsertOpen]);
   useEffect(() => {
     if (!articleInsertOpen) return;
@@ -1690,10 +1703,19 @@ export function UnifiedDocumentEditor({
             onAdvance={() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(0, 0); }}
             grow
           /><div ref={noteInsertRef} className="tt-note-insert">
-            <button type="button" aria-label="Add to note" aria-expanded={noteInsertOpen} title="Add to card" onClick={() => setNoteInsertOpen((open) => !open)}>+</button>
-            {noteInsertOpen && <div className="tt-note-insert-menu" role="menu" aria-label="Add to note">
-              {document.content.tags.length < 500 && <button type="button" role="menuitem" onClick={() => { setNoteInsertOpen(false); noteTagInput.current?.focus(); }}>Tag</button>}
-              {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
+            <button type="button" aria-label="Add to note" aria-expanded={noteInsertOpen} title="Add to card" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen((open) => !open); }}>+</button>
+            {noteInsertOpen && <div className="tt-note-insert-menu" role="menu" aria-label="Add to note" onKeyDown={(event) => {
+              if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+              const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
+              if (!items.length) return;
+              event.preventDefault();
+              const current = items.indexOf(window.document.activeElement as HTMLButtonElement);
+              const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 :
+                (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+              items[next]?.focus();
+            }}>
+              {document.content.tags.length < 500 && <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteTagInput.current?.focus(); }}>Tag</button>}
+              {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
             </div>}
           </div></div> :
           <CollaborativeTextarea
@@ -1764,6 +1786,7 @@ export function UnifiedDocumentEditor({
               surfaceRef={bodySurfaceRef}
               resolveSelection={resolveBodySelection}
               onPasteImages={onPasteImages ? pasteImages : undefined}
+              onSlash={experience === "note" ? (insertLiteral) => { noteSlashLiteral.current = insertLiteral; setNoteInsertOpen(true); } : undefined}
               imageSources={experience === "article" ? bodyImageSources : undefined}
               imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
               onImageCaptionChange={experience === "article" ? updateImageCaption : undefined}
