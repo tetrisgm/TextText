@@ -258,22 +258,25 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     void Promise.resolve().then(async () => {
       if (!active) return;
       setPreviews({});
-      for (const item of visible) {
-        if (!active) return;
-        try {
-          let preview = await requestPreview(item.path, () => active);
-          const reference = preview?.document?.presentation.template;
-          if (active && preview && folder === "Notes" && reference && !getBuiltinTemplate(reference.id, reference.version)) {
-            try {
-              const source = await vaultRequest<{ templateJSON?: string }>("template", { path: item.path });
-              if (source.templateJSON?.length && source.templateJSON.length <= 256 * 1024) {
-                const candidate = validateTemplateDefinition(JSON.parse(source.templateJSON));
-                if (candidate.id === reference.id && candidate.version === reference.version) preview = { ...preview, templateJSON: source.templateJSON };
-              }
-            } catch { /* Keep the card readable with the standard look. */ }
-          }
-          if (active && preview) setPreviews((previous) => ({ ...previous, [item.path]: preview }));
-        } catch { /* The original stays accessible when its preview cannot be read. */ }
+      const batchSize = folder === "Gallery" ? 4 : 1;
+      for (let start = 0; start < visible.length && active; start += batchSize) {
+        await Promise.all(visible.slice(start, start + batchSize).map(async item => {
+          if (!active) return;
+          try {
+            let preview = await requestPreview(item.path, () => active);
+            const reference = preview?.document?.presentation.template;
+            if (active && preview && folder === "Notes" && reference && !getBuiltinTemplate(reference.id, reference.version)) {
+              try {
+                const source = await vaultRequest<{ templateJSON?: string }>("template", { path: item.path });
+                if (source.templateJSON?.length && source.templateJSON.length <= 256 * 1024) {
+                  const candidate = validateTemplateDefinition(JSON.parse(source.templateJSON));
+                  if (candidate.id === reference.id && candidate.version === reference.version) preview = { ...preview, templateJSON: source.templateJSON };
+                }
+              } catch { /* Keep the card readable with the standard look. */ }
+            }
+            if (active && preview) setPreviews((previous) => ({ ...previous, [item.path]: preview }));
+          } catch { /* The original stays accessible when its preview cannot be read. */ }
+        }));
       }
     });
     return () => { active = false; };

@@ -1555,6 +1555,26 @@ try {
   const measured = [...files.values()].find(file => file.path.startsWith("Gallery/Measured-"));
   assert.deepEqual(JSON.parse(measured.documentJSON).content.assets.map(asset => [asset.width, asset.height]), [[120, 240]]);
   assert.equal(JSON.parse(measured.documentJSON).content.body, "A measured portrait.");
+  const denseGalleryPaths = [];
+  for (const [index, cover] of [16, 162, 200, 176, 214, 229, 17, 149, 188, 202, 215, 39].entries()) {
+    const galleryPath = `Gallery/Photo study ${String(index + 1).padStart(2, "0")}.textpack`;
+    const dimensions = [[260, 180], [160, 260], [220, 220], [360, 200]][index % 4];
+    const data = (await sharp(`public/covers/cover-${String(cover).padStart(3, "0")}.jpg`).resize(...dimensions, { fit: "cover" }).jpeg({ quality: 78 }).toBuffer()).toString("base64");
+    files.set(galleryPath, { ...sample(galleryPath, "gallery", `Photo study ${index + 1}`, "", {}, [{ id: "photo", kind: "image", src: "assets/photo.jpg", alt: `Photo study ${index + 1}` }]), assets: [{ filename: "photo.jpg", contentType: "image/jpeg", data }] });
+    denseGalleryPaths.push(galleryPath);
+  }
+  await page.getByRole("button", { name: "Close image" }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await page.getByRole("button", { name: "Open Photo study 12" }).waitFor();
+  await page.waitForFunction(() => {
+    const images = [...document.querySelectorAll('.vault-photo-grid button[aria-label^="Open Photo study"] img')];
+    return images.length === 12 && images.every(image => image.complete && image.naturalWidth > 0);
+  });
+  await page.screenshot({ path: "/tmp/texttext-gallery-dense-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-gallery-dense-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  for (const galleryPath of denseGalleryPaths) files.delete(galleryPath);
   await chooseFolder("Feeds");
   await page.getByRole("button", { name: "Add source", exact: true }).waitFor();
   const newsTopics = page.getByRole("navigation", { name: "News topics" });
