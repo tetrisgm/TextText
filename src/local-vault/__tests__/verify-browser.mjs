@@ -273,6 +273,7 @@ try {
   assert.equal(await page.getByRole("option", { name: "Write a story", exact: true }).locator("kbd").textContent(), "C");
   assert.equal(await page.getByRole("option", { name: "Save bookmark", exact: true }).locator("kbd").textContent(), "B");
   await page.getByRole("option", { name: "Go to Notes", exact: true }).waitFor();
+  assert.equal(await page.locator("#vault-command-results").evaluate(list => list.scrollHeight > list.clientHeight), true, "command list should reveal more actions below the first view");
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
   await page.getByRole("option", { name: "Keyboard shortcuts", exact: true }).click();
   await page.getByLabel("Available keyboard shortcuts").getByText("Write a story").waitFor();

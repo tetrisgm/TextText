@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now frames five complete commands with the next row peeking below, following [Superhuman's command-palette design note](https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/). The local browser flow confirms overflow and keyboard scrolling to later commands; screenshot: `/tmp/texttext-command-reference.png`. Exact command parity remains open. No release was run.
+
 Gallery image detail now gives the photo a neutral stage and keeps empty Source, Caption, and Tags controls compact. Editing remains available beside the image. Compared against the public [Resurf image-detail tour](https://resurf.so/); TypeScript, local and web browser flows pass, with dark/light captures at `/tmp/texttext-gallery-import-detail-{dark,light}-reference.png`. A real photographic-library comparison remains open. No release was run.
 
 The six requested reference experiences are not proven complete. The current evidence and missing creation/edit/read proof are mapped in [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). The Artifact originals named in the old plan are absent on this Mac. No release was run.
