@@ -104,12 +104,13 @@ it("renders a story image caption from its TextPack asset without changing the M
     schemaVersion: 1,
     content: {
       title: "Story", subtitle: "", body: `![A bridge](${source})`, fields: {}, tags: [],
-      assets: [{ id: "photo", kind: "image", src: source, alt: "A stone bridge at dusk", caption: "At dusk" }],
+      assets: [{ id: "photo", kind: "image", src: source, alt: "A stone bridge at dusk", caption: "At dusk", placement: "wide" }],
     },
     presentation: { template: { id: article.id, version: article.version }, theme: {} },
   } as unknown as DocumentSnapshot;
   const html = renderToStaticMarkup(React.createElement(DocumentRenderer, { document, template: article }));
   expect(html).toContain('class="tt-markdown-image-caption">At dusk</span>');
+  expect(html).toContain('data-placement="wide"');
   expect(html).toContain('alt="A stone bridge at dusk"');
   expect(document.content.body).toBe(`![A bridge](${source})`);
 });

@@ -293,7 +293,7 @@ function DefaultMetadata({ metadata }: { metadata: DocumentRenderMetadata }) {
 // remounted on any re-render of the reader - visible as all images blinking
 // (and nudging layout while they re-decoded) on every click in the workspace.
 
-type AssetImageMetadata = ReadonlyMap<string, { width?: number; height?: number; caption?: string; alt?: string }>;
+type AssetImageMetadata = ReadonlyMap<string, { width?: number; height?: number; caption?: string; alt?: string; placement?: "inline" | "wide" | "full" }>;
 
 function markdownImageFor(metadata: AssetImageMetadata | null) {
   return function MarkdownImage({ src, alt }: { src?: unknown; alt?: string }) {
@@ -312,8 +312,8 @@ function markdownImageFor(metadata: AssetImageMetadata | null) {
         height={details?.height}
       />
     );
-    return details?.caption
-      ? <span className="tt-markdown-image">{image}<span className="tt-markdown-image-caption">{details.caption}</span></span>
+    return details?.caption || details?.placement && details.placement !== "inline"
+      ? <span className="tt-markdown-image" data-placement={details?.placement ?? "inline"}>{image}{details?.caption && <span className="tt-markdown-image-caption">{details.caption}</span>}</span>
       : image;
   };
 }
@@ -386,10 +386,10 @@ const Markdown = memo(function Markdown({
   );
   const dimensions = useMemo(() => {
     if (!assets?.length) return null;
-    const map = new Map<string, { width?: number; height?: number; caption?: string; alt?: string }>();
+    const map = new Map<string, { width?: number; height?: number; caption?: string; alt?: string; placement?: "inline" | "wide" | "full" }>();
     for (const asset of assets) {
-      if ((asset.width && asset.height) || asset.caption || asset.alt !== undefined) {
-        map.set(asset.src, { width: asset.width, height: asset.height, caption: asset.caption, alt: asset.alt });
+      if ((asset.width && asset.height) || asset.caption || asset.alt !== undefined || asset.placement) {
+        map.set(asset.src, { width: asset.width, height: asset.height, caption: asset.caption, alt: asset.alt, placement: asset.placement });
       }
     }
     return map.size > 0 ? map : null;

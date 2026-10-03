@@ -1452,6 +1452,8 @@ try {
   await page.getByLabel("Choose story images").setInputFiles({ name: "story.png", mimeType: "image/png", buffer: Buffer.from(pixel, "base64") });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/story.png"));
   await page.locator('[aria-label="Document body"] .tt-md-image-preview').waitFor();
+  await page.getByRole("button", { name: "Select story image" }).click();
+  await page.locator('[aria-label="Document body"] .tt-md-image-selected').waitFor();
   await page.getByRole("button", { name: "Edit image alt text" }).click();
   const storyAlt = page.getByRole("textbox", { name: "Image alt text" });
   await storyAlt.fill("A quiet blue square on a dark background");
@@ -1461,6 +1463,12 @@ try {
   await storyCaption.fill("A short caption below the image");
   await storyCaption.press("Tab");
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"] .tt-md-image-caption')?.value === "A short caption below the image");
+  await page.getByRole("button", { name: "Select story image" }).click();
+  await page.getByRole("group", { name: "Image placement" }).getByRole("button", { name: "Image wide" }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"] .tt-md-image-preview')?.dataset.placement === "wide");
+  assert.equal(await page.getByRole("group", { name: "Image placement" }).isVisible(), true);
+  assert.ok(await page.locator('[aria-label="Document body"] .tt-md-image-preview').evaluate((image) => image.getBoundingClientRect().width > image.closest('[aria-label="Document body"]').getBoundingClientRect().width), "wide placement should exceed the writing measure");
+  await page.waitForFunction(() => { const image = document.querySelector('[aria-label="Document body"] .tt-md-image-preview'); return image?.complete && image.naturalWidth > 0; });
   assert.equal(await page.locator('[aria-label="Document body"] .tt-md-image-preview').evaluate((image) => image.complete && image.naturalWidth > 0), true);
   assert.match(await storyBody.textContent(), /!\[[^\]]*\]\(assets\/story\.png\)/);
   assert.equal(await page.locator('[aria-label="Document body"] [data-tt-ln]:has(.tt-md-image-preview) .tt-md-syntax').evaluate((marker) => getComputedStyle(marker).display), "none");
@@ -1473,6 +1481,7 @@ try {
   assert.match(JSON.parse(files.get(newStory.path).documentJSON).content.body, /!\[[^\]]*\]\(assets\/story\.png\)/);
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.assets.find((asset) => asset.src === "assets/story.png")?.caption, "A short caption below the image");
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.assets.find((asset) => asset.src === "assets/story.png")?.alt, "A quiet blue square on a dark background");
+  assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.assets.find((asset) => asset.src === "assets/story.png")?.placement, "wide");
   assert.equal(JSON.parse(files.get(newStory.path).documentJSON).content.subtitle, "A short line beneath the title");
   await page.getByRole("button", { name: "Add images", exact: true }).waitFor();
   await page.getByRole("button", { name: "Add images", exact: true }).click();

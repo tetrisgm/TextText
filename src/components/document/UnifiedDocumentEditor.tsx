@@ -1678,6 +1678,11 @@ export function UnifiedDocumentEditor({
   const bodyImageAltTexts = useMemo(() => Object.fromEntries(
     document.content.assets.filter((asset) => asset.kind === "image" && asset.alt !== undefined).map((asset) => [asset.src, asset.alt!]),
   ), [document.content.assets]);
+  const bodyImagePlacements = useMemo(() => Object.fromEntries(
+    document.content.assets.filter((asset) => asset.kind === "image").map((asset) => [asset.src, asset.placement ?? "inline"]),
+  ), [document.content.assets]);
+  const [selectedBodyImage, setSelectedBodyImage] = useState<string | null>(null);
+  const [editingBodyImageAlt, setEditingBodyImageAlt] = useState<string | null>(null);
   const galleryImages = useMemo(() => document.content.assets.filter((asset) => asset.kind === "image"), [document.content.assets]);
   const updateImageCaption = useCallback((path: string, value: string) => {
     const current = currentLocalDocument();
@@ -1696,6 +1701,13 @@ export function UnifiedDocumentEditor({
     if (!current.content.assets.some((asset) => asset.src === path)) return;
     updateDocumentSnapshot({ ...current, content: { ...current.content,
       assets: current.content.assets.map((asset) => asset.src === path ? { ...asset, alt: value.trim() } : asset),
+    } });
+  }, [currentLocalDocument, updateDocumentSnapshot]);
+  const updateImagePlacement = useCallback((path: string, placement: "inline" | "wide" | "full") => {
+    const current = currentLocalDocument();
+    if (!current.content.assets.some((asset) => asset.src === path)) return;
+    updateDocumentSnapshot({ ...current, content: { ...current.content,
+      assets: current.content.assets.map((asset) => asset.src === path ? { ...asset, placement } : asset),
     } });
   }, [currentLocalDocument, updateDocumentSnapshot]);
   const slots = useMemo(
@@ -1800,8 +1812,15 @@ export function UnifiedDocumentEditor({
               imageSources={experience === "article" ? bodyImageSources : undefined}
               imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
               imageAltTexts={experience === "article" ? bodyImageAltTexts : undefined}
+              imagePlacements={experience === "article" ? bodyImagePlacements : undefined}
+              selectedImagePath={experience === "article" ? selectedBodyImage : undefined}
+              onImageSelect={experience === "article" ? setSelectedBodyImage : undefined}
+              editingAltPath={experience === "article" ? editingBodyImageAlt : undefined}
+              onImageAltOpen={experience === "article" ? setEditingBodyImageAlt : undefined}
+              onImageAltClose={experience === "article" ? () => setEditingBodyImageAlt(null) : undefined}
               onImageCaptionChange={experience === "article" ? updateImageCaption : undefined}
               onImageAltChange={experience === "article" ? updateImageAlt : undefined}
+              onImagePlacementChange={experience === "article" ? updateImagePlacement : undefined}
               renderDividers={experience === "article"}
               disabled={imagePastePending}
             />
@@ -2330,11 +2349,24 @@ export function UnifiedDocumentEditor({
            newline character stays in the text (every offset depends on it)
            but renders zero-height, because the block break already shows it. */
         .tt-md-surface>[data-tt-ln]{display:block}
-        .tt-md-surface .tt-md-image-preview{display:block;width:100%;max-height:480px;margin:1rem 0;object-fit:contain;pointer-events:none;user-select:none}
+        .tt-md-surface .tt-md-image-preview{display:block;width:100%;max-height:480px;margin:1rem 0;object-fit:contain;user-select:none}
+        .tt-md-surface .tt-md-image-preview[role=button]{cursor:pointer}
+        .tt-md-surface .tt-md-image-selected .tt-md-image-preview{outline:2px solid var(--tt-accent,#0071e3);outline-offset:3px}
+        .tt-md-surface .tt-md-image-preview[data-placement=wide]{position:relative;left:50%;width:min(56rem,calc(100vw - 4rem));max-width:none;transform:translateX(-50%)}
+        .tt-md-surface .tt-md-image-preview[data-placement=full]{position:relative;left:50%;width:min(72rem,calc(100vw - 2rem));max-width:none;transform:translateX(-50%)}
+        .tt-md-surface .tt-md-image-placement{display:none;justify-content:center;gap:4px;margin:-.7rem auto .6rem}
+        .tt-md-surface .tt-md-image-selected .tt-md-image-placement{display:flex}
+        .tt-md-surface .tt-md-image-placement[data-active=true]{display:flex}
+        .tt-md-surface .tt-md-image-placement button{padding:4px 8px;border:1px solid var(--line,#ddd);border-radius:4px;background:var(--surface,#fff);color:var(--muted,#6e6e73);font:500 .72rem/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-md-surface .tt-md-image-placement button::before{content:attr(data-label)}
+        .tt-md-surface .tt-md-image-placement button[aria-pressed=true]{border-color:var(--tt-accent,#0071e3);color:var(--ink,#222)}
+        .tt-md-surface .tt-md-image-placement button:focus-visible{outline:2px solid var(--tt-accent,#0071e3);outline-offset:2px}
         .tt-md-surface .tt-md-image-caption{display:block;box-sizing:border-box;width:100%;margin:-.5rem 0 1.5rem;padding:.35rem .5rem;border:0;border-radius:0;background:transparent;color:var(--muted,#6e6e73);font:400 .82rem/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:center;outline:none}
         .tt-md-surface .tt-md-image-caption::placeholder{color:color-mix(in srgb,var(--muted,#6e6e73) 60%,transparent)}
         .tt-md-surface .tt-md-image-caption:focus{box-shadow:0 1px 0 var(--tt-accent,#0071e3)}
-        .tt-md-surface .tt-md-image-alt-button{display:block;margin:-.75rem auto .5rem;padding:3px 8px;border:0;border-radius:4px;background:transparent;color:var(--muted,#6e6e73);font:500 .72rem/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-md-surface .tt-md-image-alt-button{display:none;margin:-.75rem auto .5rem;padding:3px 8px;border:0;border-radius:4px;background:transparent;color:var(--muted,#6e6e73);font:500 .72rem/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
+        .tt-md-surface .tt-md-image-selected .tt-md-image-alt-button{display:block}
+        .tt-md-surface .tt-md-image-alt-button[data-active=true]{display:block}
         .tt-md-surface .tt-md-image-alt-button::before{content:"Alt text"}
         .tt-md-surface .tt-md-image-alt-button:focus-visible{outline:2px solid var(--tt-accent,#0071e3);outline-offset:2px}
         .tt-md-surface .tt-md-image-alt{display:block;box-sizing:border-box;width:100%;margin:0 auto .75rem;padding:7px 9px;border:1px solid var(--line,#ddd);border-radius:5px;background:var(--surface,#fff);color:var(--ink,#222);font:400 .8rem/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}

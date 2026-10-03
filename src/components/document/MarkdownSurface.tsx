@@ -384,8 +384,15 @@ export function MarkdownSurface({
   imageSources,
   imageCaptions,
   imageAltTexts,
+  imagePlacements,
+  selectedImagePath,
+  onImageSelect,
+  editingAltPath,
+  onImageAltOpen,
+  onImageAltClose,
   onImageCaptionChange,
   onImageAltChange,
+  onImagePlacementChange,
   renderDividers = false,
   disabled = false,
 }: {
@@ -404,8 +411,15 @@ export function MarkdownSurface({
   imageSources?: Readonly<Record<string, string>>;
   imageCaptions?: Readonly<Record<string, string>>;
   imageAltTexts?: Readonly<Record<string, string>>;
+  imagePlacements?: Readonly<Record<string, "inline" | "wide" | "full">>;
+  selectedImagePath?: string | null;
+  onImageSelect?: (path: string) => void;
+  editingAltPath?: string | null;
+  onImageAltOpen?: (path: string) => void;
+  onImageAltClose?: () => void;
   onImageCaptionChange?: (path: string, caption: string) => void;
   onImageAltChange?: (path: string, alt: string) => void;
+  onImagePlacementChange?: (path: string, placement: "inline" | "wide" | "full") => void;
   renderDividers?: boolean;
   disabled?: boolean;
 }) {
@@ -414,6 +428,9 @@ export function MarkdownSurface({
   const composingRef = useRef(false);
   const draggingRef = useRef(false);
   const rangeRef = useRef<{ anchor: number; head: number } | null>(null);
+  useEffect(() => {
+    if (editingAltPath) ref.current?.querySelector<HTMLInputElement>(".tt-md-image-alt:not([hidden])")?.focus();
+  }, [editingAltPath, ref]);
 
   // The reconciled model: ALL lines and their absolute starts, one wrapper
   // element per MATERIALIZED line in document order, and the overlay
@@ -784,6 +801,7 @@ export function MarkdownSurface({
     };
     const image = /^!\[([^\]]*)\]\((assets\/[^)]+|blob:[^)]+)\)$/.exec(line.trim());
     const imageSource = image && imageSources?.[image[2]];
+    if (image && selectedImagePath === image[2]) wrapper.classList.add("tt-md-image-selected");
     for (const segment of segmentsForLine(line, concealImageLines || !!imageSource, renderDividers)) {
       emitSegment(segment.text, segment.className);
     }
@@ -803,13 +821,48 @@ export function MarkdownSurface({
       preview.alt = imageAltTexts?.[image[2]] ?? image[1] ?? "";
       preview.contentEditable = "false";
       preview.draggable = false;
+      if (onImagePlacementChange) {
+        preview.setAttribute("role", "button");
+        preview.setAttribute("aria-label", "Select story image");
+        preview.tabIndex = 0;
+        preview.dataset.placement = imagePlacements?.[image[2]] ?? "inline";
+        const selectImage = () => {
+          onImageSelect?.(image[2]);
+          ref.current?.querySelectorAll(".tt-md-image-selected").forEach((node) => node.classList.remove("tt-md-image-selected"));
+          wrapper.classList.add("tt-md-image-selected");
+        };
+        preview.addEventListener("click", (event) => { event.stopPropagation(); selectImage(); });
+        preview.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); selectImage(); }
+        });
+      }
       wrapper.appendChild(preview);
+      if (onImagePlacementChange) {
+        const placement = document.createElement("div");
+        placement.className = "tt-md-image-placement";
+        placement.dataset.active = String((imagePlacements?.[image[2]] ?? "inline") !== "inline");
+        placement.contentEditable = "false";
+        placement.setAttribute("role", "group");
+        placement.setAttribute("aria-label", "Image placement");
+        for (const [value, label] of [["inline", "Inline"], ["wide", "Wide"], ["full", "Full width"]] as const) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.label = label;
+          button.setAttribute("aria-label", `Image ${label.toLowerCase()}`);
+          button.setAttribute("aria-pressed", String((imagePlacements?.[image[2]] ?? "inline") === value));
+          button.addEventListener("click", (event) => { event.stopPropagation(); onImagePlacementChange(image[2], value); });
+          placement.appendChild(button);
+        }
+        wrapper.appendChild(placement);
+      }
       if (onImageAltChange) {
         const button = document.createElement("button");
         button.className = "tt-md-image-alt-button";
+        button.dataset.active = String((imagePlacements?.[image[2]] ?? "inline") !== "inline");
         button.type = "button";
         button.contentEditable = "false";
         button.setAttribute("aria-label", "Edit image alt text");
+        button.setAttribute("aria-expanded", String(editingAltPath === image[2]));
         const alt = document.createElement("input");
         alt.className = "tt-md-image-alt";
         alt.type = "text";
@@ -818,21 +871,22 @@ export function MarkdownSurface({
         alt.maxLength = 1000;
         alt.value = imageAltTexts?.[image[2]] ?? image[1] ?? "";
         alt.contentEditable = "false";
-        alt.hidden = true;
+        alt.hidden = editingAltPath !== image[2];
         for (const control of [button, alt]) {
           for (const name of ["beforeinput", "input", "keydown", "paste", "pointerdown", "click"]) {
             control.addEventListener(name, (event) => event.stopPropagation());
           }
         }
-        button.addEventListener("click", () => { alt.hidden = false; alt.focus(); });
+        button.addEventListener("pointerdown", (event) => { event.preventDefault(); alt.hidden = false; alt.focus(); onImageAltOpen?.(image[2]); });
+        button.addEventListener("click", () => { onImageAltOpen?.(image[2]); });
         alt.addEventListener("keydown", (event) => {
-          if (event.key === "Escape") { alt.value = imageAltTexts?.[image[2]] ?? image[1] ?? ""; alt.hidden = true; button.focus(); }
+          if (event.key === "Escape") { alt.value = imageAltTexts?.[image[2]] ?? image[1] ?? ""; onImageAltClose?.(); button.focus(); }
           if (event.key === "Enter") alt.blur();
         });
         alt.addEventListener("blur", () => {
           if (alt.hidden) return;
           if (alt.value !== (imageAltTexts?.[image[2]] ?? image[1] ?? "")) onImageAltChange(image[2], alt.value);
-          alt.hidden = true;
+          onImageAltClose?.();
         });
         wrapper.append(button, alt);
       }
@@ -898,7 +952,7 @@ export function MarkdownSurface({
     .map((s) => `${s.clientId}:${s.from}:${s.to}:${s.color}:${s.userName}`)
     .join("|");
   const imagesSignature = imageSources
-    ? JSON.stringify([renderDividers, Object.entries(imageSources), Object.entries(imageCaptions ?? {}), Object.entries(imageAltTexts ?? {})])
+    ? JSON.stringify([renderDividers, Object.entries(imageSources), Object.entries(imageCaptions ?? {}), Object.entries(imageAltTexts ?? {}), Object.entries(imagePlacements ?? {}), selectedImagePath, editingAltPath])
     : String(renderDividers);
   const builtValueRef = useRef<string | null>(null);
   /** Native edits since the last reconcile; cleared once the DOM is trusted. */
