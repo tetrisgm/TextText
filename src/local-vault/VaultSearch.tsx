@@ -75,6 +75,8 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
   const [activeIndex, setActiveIndex] = useState(0);
   const latest = useRef("");
   const dialog = useRef<HTMLElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const shortcutsBack = useRef<HTMLButtonElement>(null);
   const results = useRef<HTMLDivElement>(null);
   const shortcutList = useRef<HTMLDivElement>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
@@ -100,6 +102,9 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
   const shortcutAction: VaultSearchAction = { id: "show-shortcuts", label: "Keyboard shortcuts", description: "Learn the keys for available actions.", keywords: ["shortcuts", "keys", "help"] };
   const visibleActions = showShortcuts ? [] : filterVaultSearchActions([...actions, shortcutAction], query);
   useEffect(() => { if (showShortcuts && shortcutList.current) shortcutList.current.scrollTop = 0; }, [showShortcuts]);
+  useEffect(() => {
+    (showShortcuts ? shortcutsBack.current : searchInput.current)?.focus({ preventScroll: true });
+  }, [showShortcuts]);
   const choices = [
     ...visibleActions.map(action => ({ id: `action:${action.id}`, run: () => runAction(action) })),
     ...result.items.map(item => ({ id: `file:${item.path}`, run: () => { void onOpen(item.path).then(onClose).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not open that file.")); } })),
@@ -124,8 +129,8 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     }).finally(() => setActing(false));
   };
   return <div className="vault-search-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} className="vault-template-dialog vault-search" role="dialog" aria-modal="true" aria-label="Search and actions">
-    <header><span className="vault-command-mark" aria-hidden="true">⌘</span><h2>{showShortcuts ? "Keyboard shortcuts" : "TextText Command"}</h2>{showShortcuts && <button className="vault-command-back" onClick={() => setShowShortcuts(false)} aria-label="Back to commands">Back</button>}<button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
-    {!showShortcuts && <input autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder={namesOnly ? "Search filenames, folders, and actions" : "Search files and actions"} value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setActiveIndex(0); }} onKeyDown={(event) => {
+    <header><span className="vault-command-mark" aria-hidden="true">⌘</span><h2>{showShortcuts ? "Keyboard shortcuts" : "TextText Command"}</h2>{showShortcuts && <button ref={shortcutsBack} className="vault-command-back" onClick={() => setShowShortcuts(false)} aria-label="Back to commands">Back</button>}<button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
+    {!showShortcuts && <input ref={searchInput} autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder={namesOnly ? "Search filenames, folders, and actions" : "Search files and actions"} value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setActiveIndex(0); }} onKeyDown={(event) => {
       if (event.key === "ArrowDown" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + 1) % choices.length); }
       if (event.key === "ArrowUp" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + choices.length - 1) % choices.length); }
       if (event.key === "Enter" && choices.length) { event.preventDefault(); choices[selectedIndex].run(); }

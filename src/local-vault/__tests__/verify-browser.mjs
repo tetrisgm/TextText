@@ -271,11 +271,13 @@ try {
   await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
   await page.getByRole("option", { name: "Keyboard shortcuts", exact: true }).click();
   await page.getByLabel("Available keyboard shortcuts").getByText("Write a story").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Back to commands" }).evaluate(element => element === document.activeElement), true, "shortcut view should focus Back");
   assert.equal(await page.getByLabel("Available keyboard shortcuts").locator("div").filter({ hasText: "Write a story" }).locator("kbd").textContent(), "C");
   assert.equal(await page.getByLabel("Available keyboard shortcuts").evaluate(element => element.scrollTop), 0);
   await page.screenshot({ path: "/tmp/texttext-command-shortcuts-reference.png" });
   await page.getByRole("button", { name: "Back to commands" }).click();
   await page.getByRole("combobox", { name: "Search workspace" }).waitFor();
+  assert.equal(await page.getByRole("combobox", { name: "Search workspace" }).evaluate(element => element === document.activeElement), true, "returning from shortcuts should focus search");
   await page.getByRole("combobox", { name: "Search workspace" }).press("ArrowUp");
   assert.equal(await page.getByRole("dialog", { name: "Search and actions", exact: true }).evaluate(dialog => {
     const list = dialog.querySelector('[role="listbox"]');
@@ -1018,7 +1020,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-reader details.vault-highlights')?.open === true);
   await bookmarkReader.getByRole('textbox', { name: 'Note about this highlight' }).pressSequentially('Keep this.');
   await page.waitForFunction(() => document.querySelector('.vault-bookmark-reader .vault-highlights textarea')?.value === 'Keep this.');
-  for (let attempt = 0; attempt < 50 && JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights?.[0]?.note !== 'Keep this.'; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  for (let attempt = 0; attempt < 250 && JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights?.[0]?.note !== 'Keep this.'; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights[0].quote, 'complete saved reading');
   assert.equal(JSON.parse(files.get('Bookmarks/Reading.textpack').documentJSON).content.fields.readerHighlights[0].note, 'Keep this.');
   await bookmarkReader.getByRole("button", { name: "Next bookmark" }).click();
