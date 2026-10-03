@@ -436,10 +436,10 @@
 .vault-app .vault-gallery-zoom button { padding:2px 7px; font-size:15px; line-height:1.2; text-align:center; }
 .vault-app .vault-gallery-zoom span { min-width:42px; font-size:12px; text-align:center; }
 @media(prefers-reduced-motion:reduce){.vault-app .vault-gallery-stage img{transition:none}}
-.vault-app .vault-gallery-detail aside { padding:18px 16px; overflow:auto; border-left:1px solid var(--line); background:var(--surface); }
+.vault-app .vault-gallery-detail aside { padding:18px 16px; overflow:auto; border-left:1px solid var(--line); background:var(--sidebar); }
 .vault-app .vault-gallery-detail h2 { margin:0 0 10px; color:var(--muted); font-size:12px; font-weight:500; }
 .vault-app .vault-gallery-detail p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; color:var(--muted); }
-.vault-app .vault-gallery-inspector-section { margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
+.vault-app .vault-gallery-inspector-section { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
 .vault-app .vault-gallery-inspector-section:not(:has(p,form)) { margin-top:12px; padding-top:12px; }
 .vault-app .vault-gallery-inspector-heading { display:flex; justify-content:space-between; align-items:start; gap:8px; }
 .vault-app .vault-gallery-inspector-heading button { padding:0; color:var(--tt-accent); font-size:12px; }
@@ -451,8 +451,10 @@
 .vault-app .vault-gallery-inspector-section form button { padding:5px 8px; border:1px solid var(--line); border-radius:5px; }
 .vault-app .vault-gallery-inspector-section form.vault-gallery-tag-form { display:flex; align-items:center; }
 .vault-app .vault-gallery-inspector-section form.vault-gallery-tag-form input { flex:1; min-width:0; }
-.vault-app .vault-gallery-source { overflow-wrap:anywhere; }
-.vault-app .vault-gallery-source a { color:var(--tt-accent); }
+.vault-app .vault-gallery-source-section .vault-gallery-inspector-heading { align-items:center; }
+.vault-app .vault-gallery-source-section h2 { margin:0 auto 0 0; }
+.vault-app .vault-gallery-source { min-width:0; max-width:112px; overflow:hidden; color:var(--ink); font-size:12px; text-decoration:none; text-overflow:ellipsis; white-space:nowrap; }
+.vault-app .vault-gallery-source:hover { text-decoration:underline; }
 .vault-app .vault-gallery-tags { display:flex; flex-wrap:wrap; gap:5px; }
 .vault-app .vault-gallery-tags button { padding:4px 7px; border-radius:4px; background:var(--sidebar); font-size:12px; }
 .vault-app .vault-gallery-extra-field { margin-top:15px; }

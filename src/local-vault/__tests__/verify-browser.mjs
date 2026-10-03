@@ -1542,7 +1542,13 @@ try {
   await lightbox.getByRole("button", { name: "Edit image source" }).click();
   await lightbox.getByRole("textbox", { name: "Image source" }).fill("https://example.com/original");
   await lightbox.getByRole("button", { name: "Save source" }).click();
-  await lightbox.getByRole("link", { name: "https://example.com/original" }).waitFor();
+  await lightbox.getByRole("link", { name: "example.com" }).waitFor();
+  assert.equal(await lightbox.getByRole("link", { name: "example.com" }).getAttribute("href"), "https://example.com/original");
+  assert.ok(await lightbox.evaluate(view => {
+    const inspector = view.querySelector(".vault-gallery-detail aside");
+    const stage = view.querySelector(".vault-gallery-stage");
+    return inspector && stage && getComputedStyle(inspector).backgroundColor !== getComputedStyle(stage).backgroundColor;
+  }));
   assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.title, "Two color studies");
   assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.fields.sourceUrl, "https://example.com/original");
   await lightbox.getByRole("button", { name: "Add image tag" }).click();
@@ -1584,7 +1590,8 @@ try {
   await page.getByRole("button", { name: "Open Collected photographs image 1" }).click();
   const collected = page.getByRole("region", { name: "Collected photographs" });
   await collected.waitFor();
-  await collected.getByRole("link", { name: "https://example.com/photos" }).waitFor();
+  await collected.getByRole("link", { name: "example.com" }).waitFor();
+  assert.equal(await collected.getByRole("link", { name: "example.com" }).getAttribute("href"), "https://example.com/photos");
   await collected.getByText("color study").waitFor();
   await chooseFolder("Notes");
   assert.equal(await page.locator(".vault-gallery-view").count(), 0);
