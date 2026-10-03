@@ -224,7 +224,7 @@
 .vault-app .vault-feed-sources>button>span:nth-child(2) { display:flex; flex:1; min-width:0; flex-direction:column; gap:5px; }
 .vault-app .vault-feed-sources strong { font-size:16px; }
 .vault-app .vault-feed-sources small { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.vault-app .vault-feed-home { display:flex; flex-direction:column; width:100%; max-width:660px; margin-inline:auto; }
+.vault-app .vault-feed-home { display:flex; flex-direction:column; width:100%; max-width:660px; min-height:calc(100dvh - 120px); margin-inline:auto; }
 .vault-app .vault-feed-search { display:flex; align-items:center; gap:8px; height:40px; margin:0 0 14px; padding:0 14px; border-radius:20px; background:var(--sidebar); color:var(--muted); }
 .vault-app .vault-feed-search svg { flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
 .vault-app .vault-feed-search input { flex:1; min-width:0; padding:0; border:0; outline:0; background:transparent; color:var(--ink); font-size:14px; }
@@ -237,6 +237,9 @@
 .vault-app .vault-feed-home>.vault-feed-topics button { padding:7px 0 10px; font-size:15px; font-weight:600; }
 .vault-app .vault-feed-home>.vault-feed-sections { gap:18px; margin-bottom:10px; border-bottom:1px solid var(--line); }
 .vault-app .vault-feed-home>.vault-feed-sections button { padding:5px 0 11px; font-size:12px; font-weight:550; }
+.vault-app .vault-feed-home>.vault-feed-bottom-nav { position:sticky; z-index:4; bottom:0; justify-content:space-around; flex:none; gap:12px; min-height:55px; margin-top:auto; padding:7px 12px max(7px,env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--surface); }
+.vault-app .vault-feed-home>.vault-feed-bottom-nav button { flex:1; padding:7px 10px; border-radius:6px; font-size:13px; text-align:center; }
+.vault-app .vault-feed-home>.vault-feed-bottom-nav button[aria-pressed=true] { color:var(--tt-accent); }
 .vault-app .vault-feed-rank-note { margin:16px 0 4px; color:var(--muted); font-size:12px; line-height:1.45; }
 .vault-app .vault-feed-headlines-title { margin:22px 0 8px; color:var(--ink); font-size:26px; }
 .vault-app .vault-feed-topic-headlines { margin:16px 0 6px; }
