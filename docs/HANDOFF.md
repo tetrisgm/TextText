@@ -2,6 +2,8 @@
 
 ## Current work
 
+Blog Publish can now choose a preview image already embedded in the story. The choice is saved as `texttextFeaturedImage` in its TextPack, separate from the article cover, and Mac and Oracle folder previews select that image. The publish action stays visible at the bottom of the scrollable dialog. Local browser, shared web browser, TypeScript, focused Mac, and server preview tests passed; light/dark dialog screenshots are `/tmp/texttext-blog-publish-topics-light-reference.png` and `/tmp/texttext-blog-publish-reference.png`. Medium's publish help is the reference: <https://help.medium.com/hc/en-us/articles/225168768-Writing-and-publishing-your-first-story>. Full Medium parity remains open; no app release was run.
+
 Blog's Publish preview now edits title, subtitle, and topics together through the same revision-checked TextPack save used by both local and shared editors. The preview reflects unsaved changes and keeps Publish disabled until they are saved. The local browser flow checks the saved fields and revised heading; TypeScript and local/web browser flows passed. Full Medium parity remains open; no app release was run.
 
 Bookmarks now uses `/` to focus Search saved links while the library is open, matching Shiori's visible search shortcut. Escape clears a query, then leaves the field; outside Bookmarks `/` still opens Command K. The local browser flow checks focus, filtering, clear, and blur; TypeScript and local/web browser flows passed. Shiori capture integrations and full parity remain open; no app release was run.

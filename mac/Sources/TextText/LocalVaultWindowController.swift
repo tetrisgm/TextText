@@ -600,7 +600,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             result["sourceURL"] = raw
         }
         if let assets = content?["assets"] as? [[String: Any]],
-           let first = assets.first(where: { ($0["kind"] as? String) == "image" }) {
+           let first = assets.first(where: {
+               ($0["kind"] as? String) == "image" &&
+               ($0["src"] as? String) == (originalFields["texttextFeaturedImage"] as? String) &&
+               ((($0["src"] as? String).map { markdown.body.contains($0) } ?? false) ||
+                ($0["src"] as? String) == (originalFields["cover"] as? String))
+           }) ?? assets.first(where: { ($0["kind"] as? String) == "image" }) {
             func embedded(_ reference: String?) -> TextTextTextBundleAsset? {
                 guard let reference else { return nil }
                 return contents.assets.first {

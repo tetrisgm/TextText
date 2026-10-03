@@ -18,13 +18,19 @@ type Publication = {
   publicURL?: string;
   canPublish?: boolean;
 };
-type StoryPreview = { revision: string; title: string; subtitle: string; excerpt: string; topics: string[]; ready: boolean; cover?: { data: string; contentType: string } };
+type PreviewImage = { src: string; data: string; contentType: string };
+type StoryPreview = { revision: string; title: string; subtitle: string; excerpt: string; topics: string[]; ready: boolean; featuredImage: string; images: PreviewImage[] };
 
 export function storyPreviewFromFile(file: VaultFile): StoryPreview {
   const document = readDocument(file);
-  const firstImage = document.content.assets.find(asset => asset.kind === "image");
-  const source = firstImage?.src;
-  const cover = file.assets?.find(asset => source === `assets/${asset.filename}` || source === asset.remoteURL);
+  const images = document.content.assets.filter(asset => asset.kind === "image" &&
+    (document.content.body.includes(asset.src) || document.content.fields.cover === asset.src)).slice(0, 12).flatMap(asset => {
+    const saved = file.assets?.find(candidate => asset.src === `assets/${candidate.filename}` || asset.src === candidate.remoteURL);
+    return saved && ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(saved.contentType) && saved.data.length <= 8 * 1024 * 1024
+      ? [{ src: asset.src, data: saved.data, contentType: saved.contentType }] : [];
+  });
+  const selected = document.content.fields.texttextFeaturedImage;
+  const featuredImage = typeof selected === "string" && images.some(image => image.src === selected) ? selected : images[0]?.src ?? "";
   return {
     revision: file.hash,
     title: document.content.title.trim(),
@@ -32,8 +38,7 @@ export function storyPreviewFromFile(file: VaultFile): StoryPreview {
     excerpt: stripMarkdown(document.content.body).trim().slice(0, 240),
     topics: document.content.tags,
     ready: Boolean(document.content.title.trim() && stripMarkdown(document.content.body).trim()),
-    ...(cover && ["image/jpeg", "image/png", "image/webp"].includes(cover.contentType) && cover.data.length <= 8 * 1024 * 1024
-      ? { cover: { data: cover.data, contentType: cover.contentType } } : {}),
+    featuredImage, images,
   };
 }
 
@@ -64,6 +69,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [topics, setTopics] = useState<string[]>([]);
+  const [featuredImage, setFeaturedImage] = useState("");
   const [topicInput, setTopicInput] = useState("");
   const [coverURL, setCoverURL] = useState("");
   const initialStoryReader = useRef(readStoryFile);
@@ -84,22 +90,23 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
         const preview = initialStoryReader.current ? storyPreviewFromFile(await initialStoryReader.current()) : null;
         const publication = await reload();
         if (preview && preview.revision !== publication.revision) throw new Error("This story changed before its preview loaded. Close and reopen Publish to review it.");
-        if (live) { setStory(preview); setTitle(preview?.title ?? ""); setSubtitle(preview?.subtitle ?? ""); setTopics(preview?.topics ?? []); }
+        if (live) { setStory(preview); setTitle(preview?.title ?? ""); setSubtitle(preview?.subtitle ?? ""); setTopics(preview?.topics ?? []); setFeaturedImage(preview?.featuredImage ?? ""); }
       })().catch(cause => { if (live) setError(cause instanceof Error ? cause.message : "Could not load publication status."); })
         .finally(() => { if (live) setLoading(false); });
     });
     return () => { live = false; };
   }, [reload]);
   useEffect(() => {
-    if (!story?.cover) return;
+    const selected = story?.images.find(image => image.src === featuredImage);
+    if (!selected) { queueMicrotask(() => setCoverURL("")); return; }
     let live = true;
     try {
-      const bytes = Uint8Array.from(atob(story.cover.data), character => character.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: story.cover.contentType }));
+      const bytes = Uint8Array.from(atob(selected.data), character => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: selected.contentType }));
       queueMicrotask(() => { if (live) setCoverURL(url); });
       return () => { live = false; URL.revokeObjectURL(url); };
     } catch { return; }
-  }, [story?.cover]);
+  }, [story, featuredImage]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); onClose(); } };
     document.addEventListener("keydown", escape);
@@ -131,7 +138,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
       } else setError(cause instanceof Error ? cause.message : "Publication could not be changed.");
     } finally { setBusy(false); }
   };
-  const detailsChanged = Boolean(story && (title.trim() !== story.title || subtitle.trim() !== story.subtitle || JSON.stringify(topics) !== JSON.stringify(story.topics)));
+  const detailsChanged = Boolean(story && (title.trim() !== story.title || subtitle.trim() !== story.subtitle || featuredImage !== story.featuredImage || JSON.stringify(topics) !== JSON.stringify(story.topics)));
   const addTopic = () => {
     const topic = topicInput.trim().replace(/^#/, "").slice(0, 40);
     if (!topic || topics.length >= 5 || topics.some(value => value.toLocaleLowerCase() === topic.toLocaleLowerCase())) return;
@@ -143,13 +150,13 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
     try {
       const observed = await beforeChange();
       if (!observed || observed !== story.revision) throw new Error("This story changed since its preview. Close and reopen Publish to review it.");
-      const revision = await onSaveStoryDetails({ title: title.trim(), subtitle: subtitle.trim(), topics });
+      const revision = await onSaveStoryDetails({ title: title.trim(), subtitle: subtitle.trim(), topics, ...(featuredImage !== story.featuredImage ? { featuredImage } : {}) });
       if (!revision) throw new Error("Story details could not be saved. Your changes are still shown here.");
       const file = await readStoryFile();
       const next = await reload();
       if (file.hash !== revision || next.revision !== revision) throw new Error("The story changed while saving details. Close and reopen Publish to review it.");
       const preview = storyPreviewFromFile(file);
-      setStory(preview); setTitle(preview.title); setSubtitle(preview.subtitle); setTopics(preview.topics);
+      setStory(preview); setTitle(preview.title); setSubtitle(preview.subtitle); setTopics(preview.topics); setFeaturedImage(preview.featuredImage);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Story details could not be saved."); }
     finally { setBusy(false); }
   };
@@ -166,7 +173,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
         {story && <div className={styles.storyReview}><div className={styles.storyCard}>
           {coverURL && /* eslint-disable-next-line @next/next/no-img-element */ <img src={coverURL} alt="" />}
           <div><small>Story preview</small><h3>{title.trim() || "Untitled story"}</h3>{subtitle.trim() && <p>{subtitle.trim()}</p>}{story.excerpt && <p>{story.excerpt}</p>}</div>
-        </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review how your story will appear. These details are saved in its TextPack.</p>{onSaveStoryDetails && <div className={styles.storyFields}><label>Title<input aria-label="Story title for publishing" value={title} maxLength={200} disabled={busy} onChange={event => setTitle(event.target.value)} /></label><label>Subtitle<input aria-label="Story subtitle for publishing" value={subtitle} maxLength={300} disabled={busy} onChange={event => setSubtitle(event.target.value)} /></label></div>}<h4>Topics</h4>{topics.length ? <div className={styles.topics}>{topics.map(topic => <span key={topic}>{topic}{onSaveStoryDetails && <button type="button" aria-label={`Remove ${topic} topic`} disabled={busy} onClick={() => setTopics(values => values.filter(value => value !== topic))}>×</button>}</span>)}</div> : <p>No topics yet.</p>}{onSaveStoryDetails && <><form className={styles.topicForm} onSubmit={event => { event.preventDefault(); addTopic(); }}><input aria-label="Add story topic" placeholder={topics.length >= 5 ? "Five topics maximum" : "Add a topic"} value={topicInput} maxLength={41} disabled={busy || topics.length >= 5} onChange={event => setTopicInput(event.target.value)} /><button type="submit" disabled={busy || topics.length >= 5 || !topicInput.trim()}>Add</button></form>{detailsChanged && <button type="button" className={styles.saveTopics} disabled={busy || !title.trim()} onClick={() => void saveStoryDetails()}>{busy ? "Saving…" : "Save story details"}</button>}</>}</div></div>}
+        </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review how your story will appear. These details are saved in its TextPack.</p>{onSaveStoryDetails && <div className={styles.storyFields}><label>Title<input aria-label="Story title for publishing" value={title} maxLength={200} disabled={busy} onChange={event => setTitle(event.target.value)} /></label><label>Subtitle<input aria-label="Story subtitle for publishing" value={subtitle} maxLength={300} disabled={busy} onChange={event => setSubtitle(event.target.value)} /></label></div>}{story.images.length > 1 && <fieldset className={styles.imageChoices} disabled={busy || !onSaveStoryDetails}><legend>Preview image</legend>{story.images.map((image, index) => <label key={image.src}><input type="radio" name="story-preview-image" aria-label={`Use image ${index + 1} for story preview`} checked={featuredImage === image.src} onChange={() => setFeaturedImage(image.src)} />{image.data.length <= 400_000 && /* eslint-disable-next-line @next/next/no-img-element */ <img src={`data:${image.contentType};base64,${image.data}`} alt="" />}<span>Image {index + 1}</span></label>)}</fieldset>}<h4>Topics</h4>{topics.length ? <div className={styles.topics}>{topics.map(topic => <span key={topic}>{topic}{onSaveStoryDetails && <button type="button" aria-label={`Remove ${topic} topic`} disabled={busy} onClick={() => setTopics(values => values.filter(value => value !== topic))}>×</button>}</span>)}</div> : <p>No topics yet.</p>}{onSaveStoryDetails && <><form className={styles.topicForm} onSubmit={event => { event.preventDefault(); addTopic(); }}><input aria-label="Add story topic" placeholder={topics.length >= 5 ? "Five topics maximum" : "Add a topic"} value={topicInput} maxLength={41} disabled={busy || topics.length >= 5} onChange={event => setTopicInput(event.target.value)} /><button type="submit" disabled={busy || topics.length >= 5 || !topicInput.trim()}>Add</button></form>{detailsChanged && <button type="button" className={styles.saveTopics} disabled={busy || !title.trim()} onClick={() => void saveStoryDetails()}>{busy ? "Saving…" : "Save story details"}</button>}</>}</div></div>}
         {story && !story.ready && !state.published && <p role="status" className={styles.draftNotice}>Add a title and some story text before publishing. Your draft is saved in Blog.</p>}
         <p className={styles.status}>{state.published ? "This file is public." : "This file is private."}</p>
         <p className="vault-sharing-intro">Anyone with the link can read the current saved file. Changes you save later appear on the same page. Comments and workspace access stay private.</p>

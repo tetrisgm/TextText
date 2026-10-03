@@ -230,9 +230,10 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     const saved = await vaultRequest<{ revision: string }>("publicationRead", { itemId });
     return saved.revision === file.current.hash ? saved.revision : false;
   }, [flush]);
-  const saveStoryDetails = useCallback(async ({ title, subtitle, topics }: StoryDetails) => {
+  const saveStoryDetails = useCallback(async ({ title, subtitle, topics, featuredImage }: StoryDetails) => {
     if (!await publishFlush()) return false;
-    updateArticle(document => ({ ...document, content: { ...document.content, title, subtitle, tags: topics } }));
+    updateArticle(document => ({ ...document, content: { ...document.content, title, subtitle, tags: topics,
+      fields: featuredImage ? { ...document.content.fields, texttextFeaturedImage: featuredImage } : document.content.fields } }));
     return publishFlush();
   }, [publishFlush, updateArticle]);
   useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails); }, [flush, publishFlush, registerFlush, saveStoryDetails]);

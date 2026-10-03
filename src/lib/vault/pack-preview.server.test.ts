@@ -34,6 +34,25 @@ describe("TextPack folder previews", () => {
     const metadata = await sharp(Buffer.from(preview.image!.data, "base64")).metadata();
     expect(metadata.width).toBe(480); expect(metadata.height).toBe(320);
   });
+  it("uses the selected story preview image without adding an article cover", async () => {
+    const document = emptyDocumentSnapshot({ id: "texttext.article", version: 1 });
+    document.content.assets = [
+      { id: "first", kind: "image", src: "assets/first.png" },
+      { id: "second", kind: "image", src: "assets/second.png" },
+    ];
+    document.content.body = "![First](assets/first.png)\n\n![Second](assets/second.png)";
+    document.content.fields.texttextFeaturedImage = "assets/second.png";
+    const first = await sharp({ create: { width: 20, height: 20, channels: 3, background: "#356e9d" } }).png().toBuffer();
+    const second = await sharp({ create: { width: 20, height: 20, channels: 3, background: "#ba7740" } }).png().toBuffer();
+    const entries = { "document.json": strToU8(JSON.stringify(document)), "assets/first.png": first, "assets/second.png": second };
+    const selected = await previewTextpack(zipSync(entries));
+    expect(selected.document.content.fields.cover).toBeUndefined();
+    const pixel = await sharp(Buffer.from(selected.image!.data, "base64")).raw().toBuffer();
+    expect(pixel[0]).toBeGreaterThan(pixel[2]);
+    delete document.content.fields.texttextFeaturedImage;
+    const fallback = await previewTextpack(zipSync({ ...entries, "document.json": strToU8(JSON.stringify(document)) }));
+    expect(fallback.image?.data).not.toBe(selected.image?.data);
+  });
   it("keeps formatted card text in full previews while metadata scans stay compact", async () => {
     const document = emptyDocumentSnapshot();
     document.content.body = `${"Opening sentence. ".repeat(28)}\n\n- First point\n- Second point`;

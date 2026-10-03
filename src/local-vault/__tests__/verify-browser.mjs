@@ -935,8 +935,16 @@ try {
     const name = `Z filler ${String(index).padStart(2, "0")}`;
     files.set(`Bookmarks/${name}.textpack`, sample(`Bookmarks/${name}.textpack`, "bookmark", name, "A saved reference.", { sourceUrl: `https://example.net/${index}` }));
   }
-  const publishedStory = { ...sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph."), hash: "a".repeat(64) };
-  publishedStory.documentJSON = JSON.stringify({ ...JSON.parse(publishedStory.documentJSON), content: { ...JSON.parse(publishedStory.documentJSON).content, subtitle: "A considered subtitle", fields: { author: "Mira Chen" } } });
+  const publishedStory = { ...sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph.\n\n![Blue](assets/first.png)\n\n![Orange](assets/second.png)"), hash: "a".repeat(64) };
+  const firstStoryImage = await sharp({ create: { width: 32, height: 20, channels: 3, background: "#356e9d" } }).png().toBuffer();
+  const secondStoryImage = await sharp({ create: { width: 32, height: 20, channels: 3, background: "#ba7740" } }).png().toBuffer();
+  publishedStory.assets = [{ filename: "first.png", contentType: "image/png", data: firstStoryImage.toString("base64") },
+    { filename: "second.png", contentType: "image/png", data: secondStoryImage.toString("base64") }];
+  publishedStory.documentJSON = JSON.stringify({ ...JSON.parse(publishedStory.documentJSON), content: { ...JSON.parse(publishedStory.documentJSON).content,
+    subtitle: "A considered subtitle", fields: { author: "Mira Chen" }, assets: [
+      { id: "first", kind: "image", src: "assets/first.png", contentType: "image/png" },
+      { id: "second", kind: "image", src: "assets/second.png", contentType: "image/png" },
+    ] } });
   storyItemId = publishedStory.markdown.match(/textTextId: "([^"]+)"/)?.[1];
   files.set("Blog/Story.textpack", publishedStory);
   files.set("Blog/Published.textpack", { ...sample("Blog/Published.textpack", "article", "A published story", "A finished article."), publishedAt: "2026-10-01T10:00:00.000Z" });
@@ -1193,6 +1201,7 @@ try {
   await publishing.getByRole("textbox", { name: "Story title for publishing" }).fill("A revised essay title");
   await publishing.getByRole("textbox", { name: "Story subtitle for publishing" }).fill("A short introduction");
   await publishing.getByRole("heading", { name: "A revised essay title" }).waitFor();
+  await publishing.getByRole("radio", { name: "Use image 2 for story preview" }).check();
   const topicInput = publishing.getByRole("textbox", { name: "Add story topic" });
   await topicInput.fill("Design");
   await publishing.getByRole("button", { name: "Add", exact: true }).click();
@@ -1209,6 +1218,8 @@ try {
   await storyReader.getByRole("button", { name: "Edit story" }).waitFor();
   assert.equal(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.title, "A revised essay title");
   assert.equal(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.subtitle, "A short introduction");
+  assert.equal(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.fields.texttextFeaturedImage, "assets/second.png");
+  assert.equal(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.fields.cover, undefined);
   assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["Design"]);
   await storyReader.getByRole("button", { name: "Edit story" }).click();
   await page.getByRole("textbox", { name: "Subtitle" }).waitFor();

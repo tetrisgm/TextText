@@ -24,6 +24,52 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertEqual(try LocalVaultWindowController.preview(store.read(path: "Story.textpack"))["publishedAt"] as? String, publishedAt)
     }
 
+    func testStoryPreviewUsesSelectedFeaturedImageWithoutChangingStoryCover() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try run("create_file", arguments: ["title": "Story", "body": "A story with two images.\n\n![First](assets/first.png)\n\n![Second](assets/second.png)"], root: root)
+        let store = LocalVaultDocumentStore(root: root)
+        let initial = try store.read(path: "Story.textpack")
+        var snapshot = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(initial.contents.documentJSON).utf8)) as? [String: Any])
+        var content = try XCTUnwrap(snapshot["content"] as? [String: Any])
+        content["assets"] = [
+            ["id": "first", "kind": "image", "src": "assets/first.png", "contentType": "image/png"],
+            ["id": "second", "kind": "image", "src": "assets/second.png", "contentType": "image/png"],
+        ]
+        var fields = content["fields"] as? [String: Any] ?? [:]
+        fields["texttextFeaturedImage"] = "assets/second.png"
+        content["fields"] = fields
+        snapshot["content"] = content
+        let updated = try store.write(path: initial.path, expectedHash: initial.hash, markdown: initial.contents.markdown,
+            documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self),
+            templateJSON: initial.contents.templateJSON, templateAuthoringSourceJSON: initial.contents.templateAuthoringSourceJSON)
+        let images = [
+            ("first.png", "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWMwzZsLRwzEcQAB0hQBRMWh9wAAAABJRU5ErkJggg=="),
+            ("second.png", "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEElEQVQImWPYVe4ARwzEcQBfkhcRwMvKgQAAAABJRU5ErkJggg=="),
+        ]
+        let archive = try Archive(url: root.appendingPathComponent(updated.path), accessMode: .update)
+        let document = try XCTUnwrap(archive.first { $0.path == "document.json" || $0.path.hasSuffix("/document.json") })
+        let prefix = String(document.path.dropLast("document.json".count))
+        for (name, encoded) in images {
+            let file = root.appendingPathComponent(name)
+            try XCTUnwrap(Data(base64Encoded: encoded)).write(to: file)
+            try archive.addEntry(with: prefix + "assets/" + name, fileURL: file, compressionMethod: .deflate)
+        }
+        let chosen = try LocalVaultWindowController.preview(store.read(path: updated.path))
+        let chosenImage = try XCTUnwrap((chosen["image"] as? [String: String])?["data"])
+        fields.removeValue(forKey: "texttextFeaturedImage")
+        content["fields"] = fields
+        snapshot["content"] = content
+        let withDefault = try store.read(path: updated.path)
+        let defaultFile = try store.write(path: withDefault.path, expectedHash: withDefault.hash, markdown: withDefault.contents.markdown,
+            documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self),
+            templateJSON: withDefault.contents.templateJSON, templateAuthoringSourceJSON: withDefault.contents.templateAuthoringSourceJSON)
+        let firstImage = try XCTUnwrap((LocalVaultWindowController.preview(defaultFile)["image"] as? [String: String])?["data"])
+        XCTAssertNotEqual(chosenImage, firstImage)
+        XCTAssertNil((chosen["document"] as? [String: Any]).flatMap { $0["content"] as? [String: Any] }.flatMap { $0["fields"] as? [String: Any] }?["cover"])
+    }
+
     func testOversizedGalleryPreviewKeepsPrimaryImageAndFittingTiles() throws {
         let thumbnail = ["contentType": "image/jpeg", "data": String(repeating: "A", count: 160_000)]
         var preview: [String: Any] = ["title": "Visual collection", "image": thumbnail,

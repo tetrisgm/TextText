@@ -5,7 +5,7 @@
 .link input { width: 100%; min-width: 0; padding: 9px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
 .link div { display: flex; align-items: center; gap: 16px; }
 .link a { color: var(--tt-accent); }
-.actions { display: flex; justify-content: flex-end; margin-top: 28px; }
+.actions { position:sticky; bottom:-24px; z-index:1; display:flex; justify-content:flex-end; margin-top:28px; padding:12px 0 0; background:var(--surface); border-top:1px solid var(--line); }
 .storyDialog:global(.vault-sharing-dialog) { width:min(850px,100%); }
 .actions button:global([type="button"]) { background: var(--tt-accent); color: white; padding:10px 16px; text-align:center; border-radius:5px; }
 .storyReview { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(180px,.9fr); gap:24px; margin-top:20px; padding-top:20px; border-top:1px solid var(--line); }
@@ -21,6 +21,13 @@
 .storyFields { display:grid; gap:12px; margin-top:18px; }
 .storyFields label { display:grid; gap:6px; color:var(--ink); font-size:12px; font-weight:650; }
 .storyFields input { width:100%; min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); font:inherit; font-size:14px; font-weight:400; }
+.imageChoices { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 0; padding:0; border:0; }
+.imageChoices legend { margin-bottom:8px; color:var(--ink); font-size:12px; font-weight:650; }
+.imageChoices label { display:grid; align-content:start; gap:4px; width:84px; min-height:64px; padding:5px; border:1px solid var(--line); border-radius:5px; color:var(--muted); font-size:11px; cursor:pointer; }
+.imageChoices label:has(input:checked) { border-color:var(--tt-accent); color:var(--ink); }
+.imageChoices input { position:absolute; opacity:0; }
+.imageChoices label:has(input:focus-visible) { outline:2px solid var(--tt-accent); outline-offset:2px; }
+.imageChoices img { width:72px; height:46px; object-fit:cover; }
 .topics { display:flex; flex-wrap:wrap; gap:6px; }
 .topics span { padding:5px 10px; border:1px solid var(--line); border-radius:99px; font-size:12px; }
 .topics span button { margin-left:6px; color:var(--muted); font-size:15px; line-height:1; }

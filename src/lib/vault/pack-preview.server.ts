@@ -54,7 +54,10 @@ export async function previewTextpack(bytes: Uint8Array, metadataOnly = false): 
   }
   if (metadataOnly) return result;
   result.cardBody = (parsed?.body ?? document.content.body).slice(0, 1200);
-  const asset = document.content.assets.find((asset) => asset.kind === "image");
+  const featured = document.content.fields.texttextFeaturedImage;
+  const asset = document.content.assets.find((asset) => asset.kind === "image" && asset.src === featured &&
+    ((parsed?.body ?? document.content.body).includes(asset.src) || document.content.fields.cover === asset.src))
+    ?? document.content.assets.find((asset) => asset.kind === "image");
   const reference = asset?.poster || asset?.src;
   if (!reference || !/^assets\/[A-Za-z0-9 _./-]+$/.test(reference) || reference.split("/").includes("..")) return result;
   try {
