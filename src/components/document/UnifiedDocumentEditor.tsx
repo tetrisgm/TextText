@@ -1736,7 +1736,6 @@ export function UnifiedDocumentEditor({
               surfaceRef={bodySurfaceRef}
               resolveSelection={resolveBodySelection}
               onPasteImages={onPasteImages ? pasteImages : undefined}
-              concealImageLines={experience === "note"}
               imageSources={experience === "article" ? bodyImageSources : undefined}
               imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
               onImageCaptionChange={experience === "article" ? updateImageCaption : undefined}
@@ -2110,11 +2109,6 @@ export function UnifiedDocumentEditor({
           setTagDraft("");
         }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
       </aside></div> : documentSurface}
-      {experience === "note" && <div className="tt-note-image-previews" aria-label="Note images">{document.content.assets.slice(0, 4).map((asset, index) => {
-        const source = displayDocument.content.assets[index]?.src;
-        return asset.kind === "image" && document.content.body.includes(asset.src) && source && source !== asset.src && /^(blob:|data:image\/)/.test(source)
-          ? /* eslint-disable-next-line @next/next/no-img-element */ <img key={asset.id} src={source} alt={asset.alt || "Note image"} /> : null;
-      })}</div>}
       {experience === "note" && <section className="tt-article-topics tt-note-tags" aria-label="Note tags">
         <h3>Tags</h3>
         <div className="tt-article-topic-list">{document.content.tags.slice(0, 500).map((topic) => <span key={topic}>#{topic}<button type="button" aria-label={`Remove ${topic}`} onClick={() => {
@@ -2220,9 +2214,6 @@ export function UnifiedDocumentEditor({
         .tt-note-tags .tt-note-finish:hover{filter:brightness(1.08)}
         .tt-note-tags .tt-note-add-image{flex:none;padding:6px 9px;border:0;border-radius:5px;background:transparent;color:var(--muted,#666);font:500 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}
         .tt-note-tags .tt-note-add-image:hover{background:var(--selection,#eee);color:var(--ink,#222)}
-        .tt-note-image-previews{display:grid;box-sizing:border-box;gap:10px;max-width:520px;margin:0 auto;padding:0 24px 14px;border-right:1px solid var(--line,#ddd);border-left:1px solid var(--line,#ddd);background:var(--paper,#fff)}
-        .tt-note-image-previews:empty{display:none}
-        .tt-note-image-previews img{display:block;width:100%;max-height:220px;object-fit:cover;border-radius:6px}
         .tt-note-tags .tt-note-finish:focus-visible{outline:2px solid var(--tt-accent,#2762ac);outline-offset:3px}
         .tt-gallery-edit-layout{display:grid;grid-template-columns:minmax(0,1fr) 240px;align-items:start;gap:24px;max-width:1300px;margin:24px auto;padding:0 24px}
         .tt-gallery-edit-layout .tt-document-editor{min-width:0;max-width:none;margin:0;padding:0}

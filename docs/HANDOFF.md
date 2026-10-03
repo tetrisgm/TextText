@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes now shows the image Markdown path while the card is being edited, matching Supernotes' documented WYSIWYM behavior; the finished card still renders the image. The separate editor preview outside the card was removed. TypeScript and local/web browser flows pass; the light capture is `/tmp/texttext-note-editor-light-reference.png`. Card creation controls and overall Supernotes parity remain open; no release was run.
+
 Gallery now saves captions on each image asset instead of writing a shared document body. The inspector switches captions with the selected image, and the full editor shows separate caption inputs for multi-image TextPacks. Existing single-image body captions still display until edited; older collection notes remain intact. The local browser flow checks per-image isolation, the TextPack asset values, and the editor capture at `/tmp/texttext-gallery-editor-light-reference.png`; TypeScript and local/web browser flows pass. Resurf parity remains open; no release was run.
 
 Blog's inserted Markdown divider now appears as a three-dot separator in the editor and reader while `---` remains the TextPack source. The local browser flow checks the visible divider and hidden idle syntax; the light composition capture is `/tmp/texttext-blog-inline-image-light-reference.png`. TypeScript, offset tests, and local/web browser flows pass. Full Medium composition parity remains open; no release was run.

@@ -1991,9 +1991,9 @@ try {
   await page.getByRole("button", { name: "Add image to note" }).click();
   await page.getByLabel("Choose note images").setInputFiles({ name: "Thought photo.png", mimeType: "image/png", buffer: firstStoryImage });
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("assets/Thought-photo.png"));
-  await page.getByRole("img", { name: "Thought photo" }).waitFor();
   await page.getByRole("textbox", { name: "Title", exact: true }).focus();
-  assert.equal(await page.locator('.tt-md-surface .tt-md-syntax').filter({ hasText: '![Thought photo](assets/Thought-photo.png)' }).evaluate(node => getComputedStyle(node).display), 'none');
+  assert.equal(await page.getByRole("textbox", { name: "Document body" }).textContent().then(text => text?.includes('![Thought photo](assets/Thought-photo.png)')), true);
+  assert.equal(await page.locator('.tt-note-image-previews').count(), 0);
   const thoughtImageFile = [...files.values()].find(file => JSON.parse(file.documentJSON).content.body.includes("Thought-photo.png"));
   assert.ok(thoughtImageFile?.assets?.some(asset => asset.filename === "Thought-photo.png"));
   assert.equal(await page.getByRole("button", { name: "Finish", exact: true }).count(), 1);
