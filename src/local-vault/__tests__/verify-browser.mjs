@@ -1096,6 +1096,15 @@ try {
   assert.deepEqual(bookmarkColors, { title: 'rgb(32, 32, 32)', body: 'rgb(32, 32, 32)' });
   await page.screenshot({ path: "/tmp/texttext-bookmark-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  const bookmarkPages = page.getByRole("navigation", { name: "Bookmark pages" });
+  await bookmarkPages.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option").first().click();
+  await bookmarkReader.getByRole("button", { name: "Previous bookmark" }).click();
+  assert.match(await bookmarkPages.textContent(), /1 \/ 2/, "reader navigation should cross to the previous page");
+  await bookmarkReader.getByRole("button", { name: "Next bookmark" }).click();
+  assert.match(await bookmarkPages.textContent(), /2 \/ 2/, "reader navigation should cross to the next page");
+  await bookmarkPages.getByRole("button", { name: "Previous" }).click();
+  await bookmarkReader.getByText("The complete saved reading text.").waitFor();
   await page.getByRole("button", { name: "Save bookmark", exact: true }).click();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("textbox", { name: "Web address" }).waitFor();
   await page.getByRole("dialog", { name: "Save bookmark" }).getByRole("button", { name: "Cancel" }).click();
