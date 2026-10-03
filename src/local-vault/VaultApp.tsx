@@ -475,7 +475,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     const frame = requestAnimationFrame(() => {
       try {
         const saved = localStorage.getItem("texttext:vault-sidebar-open");
-        setSidebarOpen(saved === null ? !window.matchMedia("(max-width: 700px)").matches : saved === "true");
+        setSidebarOpen(!window.matchMedia("(max-width: 700px)").matches && saved !== "false");
       } catch { setSidebarOpen(!window.matchMedia("(max-width: 700px)").matches); }
       setSidebarReady(true);
     });
@@ -485,6 +485,16 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     setSidebarOpen(open);
     try { localStorage.setItem("texttext:vault-sidebar-open", String(open)); } catch { /* Local storage can be disabled. */ }
     if (!open && restoreFocus) requestAnimationFrame(() => sidebarReopenButton.current?.focus());
+  }, []);
+  useEffect(() => {
+    const narrow = window.matchMedia("(max-width: 700px)");
+    const syncForWidth = (event: MediaQueryListEvent) => {
+      if (event.matches) { setSidebarOpen(false); return; }
+      try { setSidebarOpen(localStorage.getItem("texttext:vault-sidebar-open") !== "false"); }
+      catch { setSidebarOpen(true); }
+    };
+    narrow.addEventListener("change", syncForWidth);
+    return () => narrow.removeEventListener("change", syncForWidth);
   }, []);
   useEffect(() => {
     if (!sidebarOpen) return;

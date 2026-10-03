@@ -2,6 +2,8 @@
 
 ## Current work
 
+The folder drawer now starts closed at narrow widths, even if it was open on desktop, and closes when an existing window narrows; returning to desktop restores the saved desktop preference. This prevents it from obscuring Gallery's image editor and Add images dialog. The local browser flow captures both 390px screens at `/tmp/texttext-gallery-narrow-{editor,import}-light-reference.png` and checks the drawer is closed before interacting. TypeScript and the local browser flow pass; no release was run.
+
 Gallery's narrow detail view now overlays navigation controls on the photograph instead of shrinking it between buttons. The 390px browser capture at `/tmp/texttext-gallery-narrow-light-reference.png` shows the image using nearly the full width; the browser contract checks width, inspector placement, and next/previous controls. Resurf detail and broader Gallery parity remain open. No release was run.
 
 Gallery previews now load in bounded groups of four so a populated photo library fills without serial blank tiles. A 12-photo TextPack browser fixture checks that every grid image loads, then captures dark/light references at `/tmp/texttext-gallery-dense-{dark,light}-reference.png`. TypeScript, local bundle, local browser, and web browser flows pass; the first local browser run hit an unrelated story-selection timing error and passed on rerun. Resurf detail, multi-image, GIF, and narrow-window parity remain open. No release was run.

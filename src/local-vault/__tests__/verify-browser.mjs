@@ -905,6 +905,8 @@ try {
   const closeAssistant = page.getByRole("button", { name: "Close assistant" });
   if (await closeAssistant.isVisible()) await closeAssistant.click();
   await page.setViewportSize({ width: 390, height: 780 });
+  await page.locator(".vault-app.sidebar-collapsed").waitFor();
+  await page.getByRole("button", { name: "Show folders" }).click();
   await page.getByRole("button", { name: "Hide folders" }).click();
   await page.getByRole("button", { name: "Show folders" }).waitFor();
   assert.equal(await page.locator(".vault-sidebar").isVisible(), false);
@@ -1440,8 +1442,7 @@ try {
   await page.getByRole("button", { name: "Open Two photographs image 1" }).click();
   const lightbox = page.locator(".vault-gallery-lightbox");
   await lightbox.getByRole("img", { name: "First photograph" }).waitFor();
-  assert.ok(await page.getByRole("button", { name: "TextText", exact: true }).isVisible());
-  assert.ok((await lightbox.boundingBox()).x >= 239);
+  assert.ok((await lightbox.boundingBox()).x >= 0);
   await lightbox.getByRole("button", { name: "Next image" }).click();
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
   await lightbox.getByText("240 × 120").waitFor();
@@ -1520,6 +1521,13 @@ try {
   await lightbox.getByRole("button", { name: "Remove reference tag" }).click();
   await lightbox.getByRole("button", { name: "Remove reference tag" }).waitFor({ state: "hidden" });
   await lightbox.getByRole("button", { name: "Edit item" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.locator(".vault-app.sidebar-collapsed").waitFor();
+  await page.getByRole("textbox", { name: "Image title" }).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-gallery-narrow-editor-light-reference.png" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("textbox", { name: "Image title" }).fill("Collected photographs");
   await page.getByRole("textbox", { name: "Image caption" }).fill("Two color studies kept together.");
   await page.getByRole("textbox", { name: "Image source" }).fill("https://example.com/photos");
@@ -1547,6 +1555,13 @@ try {
   await chooseFolder("Gallery");
   await page.getByRole("button", { name: "Add images", exact: true }).click();
   await page.getByRole("dialog", { name: "Add images" }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.locator(".vault-app.sidebar-collapsed").waitFor();
+  assert.equal(await page.getByRole("dialog", { name: "Add images" }).isVisible(), true);
+  await page.screenshot({ path: "/tmp/texttext-gallery-narrow-import-light-reference.png" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Measured.png", mimeType: "image/png", buffer: Buffer.from(portrait, "base64") });
   await page.getByRole("dialog", { name: "Add images" }).waitFor({ state: "hidden" });
   const importedImage = page.getByRole("region", { name: "Measured" });
