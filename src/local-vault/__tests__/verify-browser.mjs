@@ -137,7 +137,8 @@ try {
     }
     else if (request.method === "feedEntry") {
       const number = Number(request.params.externalKey?.replace(/^story-/, "")) || 1;
-      result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: number === 1 ? "A considered design headline" : `Design headline ${number}`, permalink: `https://example.com/story/${number}`, externalUrl: null, authors: ["Editor"], publishedAt: `2026-10-0${number}T00:00:00Z`, updatedAt: null, availability: "full", bodyMarkdown: "A full in-app reading view for this story.", bodyText: "A full in-app reading view for this story.", excerpt: "A brief account of the story.", language: "en", attachments: [] } };
+      const body = number === 5 ? Array.from({ length: 45 }, (_, index) => `Paragraph ${index + 1} of the long reading test.`).join("\n\n") : "A full in-app reading view for this story.";
+      result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: number === 1 ? "A considered design headline" : `Design headline ${number}`, permalink: `https://example.com/story/${number}`, externalUrl: null, authors: ["Editor"], publishedAt: `2026-10-0${number}T00:00:00Z`, updatedAt: null, availability: "full", bodyMarkdown: body, bodyText: body, excerpt: "A brief account of the story.", language: "en", attachments: [] } };
     }
     else if (request.method === "publicationRead") {
       const story = files.get("Blog/Story.textpack");
@@ -1646,6 +1647,15 @@ try {
   const keptFeedBookmark = [...files.values()].find(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash);
   assert.equal(JSON.parse(keptFeedBookmark.documentJSON).presentation.template.id, "texttext.bookmark");
   await page.getByRole("button", { name: "Back to Feeds" }).click();
+  await page.getByRole("button", { name: "Design headline 5" }).first().click();
+  await feedReader.getByText("Paragraph 45 of the long reading test.").waitFor();
+  assert.equal(await feedReader.getByRole("progressbar", { name: "Reading progress" }).getAttribute("aria-valuenow") !== "100", true);
+  assert.equal([...files.values()].some(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash && JSON.parse(file.documentJSON).content.title === "Design headline 5"), false);
+  await page.locator(".vault-app>main").evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await feedReader.getByRole("progressbar", { name: "Reading progress" }).getAttribute("aria-valuenow").then(value => assert.equal(value, "100"));
+  for (let attempt = 0; attempt < 100 && ![...files.values()].some(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.title === "Design headline 5"); attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal([...files.values()].some(file => file.path.startsWith("Feeds/History/") && JSON.parse(file.documentJSON).content.title === "Design headline 5"), true);
+  await feedReader.getByRole("button", { name: "Back to feed", exact: true }).click();
   await page.getByRole("button", { name: "Load more sources" }).click();
   await page.getByText("Reading 16 of 25 sources").waitFor();
   await page.getByRole("button", { name: "Load more sources" }).click();
@@ -1676,7 +1686,8 @@ try {
   await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 2" }).getByText("✓ Read").waitFor();
   await page.screenshot({ path: "/tmp/texttext-feeds-history-reference.png" });
   await page.getByRole("button", { name: "Mark Design headline 2 unread" }).click();
-  await page.getByText("No stories in reading history yet.").waitFor();
+  await page.getByRole("button", { name: "Mark Design headline 2 unread" }).waitFor({ state: "hidden" });
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 5" }).getByText("✓ Read").waitFor();
   await page.getByRole("button", { name: "Read Later", exact: true }).click();
   await page.getByRole("button", { name: "Mark Design headline 2 read" }).waitFor();
   await savedDesignStory.click();

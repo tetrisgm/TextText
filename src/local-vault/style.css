@@ -258,6 +258,9 @@
 .vault-app .vault-feed-home .vault-feed-featured .vault-feed-headline { font-size:19px; }
 .vault-app .vault-feed-home .vault-feed-headline:hover { background:transparent; text-decoration:underline; }
 .vault-app .vault-feed-reader { max-width:720px; margin:0 auto; padding:24px 0 80px; }
+.vault-app .vault-feed-reading-progress { position:sticky; z-index:3; top:0; width:100%; height:3px; background:var(--line); }
+.vault-app .vault-feed-reading-progress>span { display:block; height:100%; background:var(--tt-accent); transition:width 120ms linear; }
+@media(prefers-reduced-motion:reduce){.vault-app .vault-feed-reading-progress>span{transition:none}}
 .vault-app .vault-feed-reader>header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding-bottom:18px; border-bottom:1px solid var(--line); color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-reader>header button { padding:0; color:var(--tt-accent); }
 .vault-app .vault-feed-reader-text-menu { position:relative; margin-left:auto; }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import type { NormalizedEntry } from "@/lib/reading/feed-parse";
@@ -100,6 +100,10 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   const [historyError, setHistoryError] = useState("");
   const [readStateBusy, setReadStateBusy] = useState("");
   const [readStateError, setReadStateError] = useState("");
+  const [readingProgress, setReadingProgress] = useState(0);
+  const autoReadAttempted = useRef("");
+  const readInFlight = useRef("");
+  const markReadRef = useRef<(story: FeedStory) => Promise<void>>(async () => {});
   const [sourceLimit, setSourceLimit] = useState(8);
   const feedKey = useMemo(() => JSON.stringify(sources.map(source => {
     const fields = source.document?.content.fields;
@@ -224,8 +228,9 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     finally { setReadStateBusy(""); }
   };
   const markFeedRead = async (story: FeedStory) => {
-    if (!canAdd || readStateBusy) return;
     const key = `${story.feedURL}\n${story.externalKey}`;
+    if (!canAdd || readStateBusy || readInFlight.current === key) return;
+    readInFlight.current = key;
     setReaderNotice(""); setStoryError("");
     try {
       const hash = await feedEntryHash(story.feedURL, story.externalKey);
@@ -250,8 +255,32 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
       setReaderNotice("Added to reading history.");
       window.dispatchEvent(new Event("texttext:vault-changed"));
     } catch (reason) { setStoryError(reason instanceof Error ? reason.message : "This story could not be marked read."); }
-    finally { setReadStateBusy(""); }
+    finally { readInFlight.current = ""; setReadStateBusy(""); }
   };
+  markReadRef.current = markFeedRead;
+  useEffect(() => {
+    if (!active || full?.key !== activeKey) return;
+    const scroller = document.querySelector<HTMLElement>(".vault-app>main");
+    const content = document.querySelector<HTMLElement>(".vault-feed-reader-content");
+    if (!scroller || !content) return;
+    const key = activeKey;
+    const startTop = scroller.scrollTop;
+    let lastProgress = -1;
+    const update = () => {
+      const viewport = scroller.getBoundingClientRect();
+      const bounds = content.getBoundingClientRect();
+      const available = Math.max(1, bounds.height - viewport.height);
+      const progress = Math.max(0, Math.min(100, Math.round(((viewport.bottom - bounds.top) / Math.max(bounds.height, viewport.height)) * 100)));
+      if (progress !== lastProgress) { lastProgress = progress; setReadingProgress(progress); }
+      if (available > 80 && scroller.scrollTop - startTop >= 80 && progress >= 90 && autoReadAttempted.current !== key) {
+        autoReadAttempted.current = key;
+        void markReadRef.current(active);
+      }
+    };
+    update();
+    scroller.addEventListener("scroll", update, { passive: true });
+    return () => scroller.removeEventListener("scroll", update);
+  }, [activeKey, full, active]);
   const removeReadEntry = async (entry: ReadEntry) => {
     if (!canAdd || readStateBusy) return;
     setReadStateBusy(entry.hash); setReadStateError("");
@@ -353,6 +382,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
   if (!ready) return <section className="vault-feed-home" aria-label="Latest stories"><p role="status">Reading feed subscriptions…</p></section>;
   if (!hasFeeds && !keptEntries.length && !readEntries.length) return <section className="vault-feed-home vault-feed-onboarding" aria-label="News interests">{recommendations}</section>;
   if (active) return <section className="vault-feed-reader" aria-label="Feed story">
+    <div className="vault-feed-reading-progress" role="progressbar" aria-label="Reading progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={readingProgress}><span style={{ width: `${readingProgress}%` }} /></div>
     <header><button type="button" onClick={() => { setActive(null); setReaderNotice(""); }}>‹ Back to {activeGroup ? "coverage" : "Feeds"}</button><span>{active.source}</span><details className="vault-feed-reader-text-menu"><summary aria-label="Reading appearance">Aa</summary><div><button type="button" disabled={readerTextSize <= 80} onClick={() => setReaderTextSize(size => Math.max(80, size - 10))}>Smaller text</button><button type="button" disabled={readerTextSize >= 150} onClick={() => setReaderTextSize(size => Math.min(150, size + 10))}>Larger text</button></div></details></header>
     {storyError && <p role="alert">{storyError}</p>}
     {!activeFull && !storyError && <p role="status">Opening story…</p>}
@@ -377,7 +407,7 @@ export function VaultFeedHeadlines({ sources, ready, sourceList, canAdd, canRead
     <nav className="vault-feed-topics" aria-label="News topics"><button aria-pressed={tab === "For You"} onClick={() => setTab("For You")}>For You</button>{topics.map(topic => <button key={topic} aria-pressed={tab === topic} onClick={() => setTab(topic)}>{topic.slice(0, 1).toUpperCase() + topic.slice(1)}</button>)}</nav>
     <nav className="vault-feed-sections" aria-label="Feed sections"><button aria-pressed={tab === "Headlines"} onClick={() => setTab("Headlines")}>Headlines</button><button aria-pressed={tab === "Latest"} onClick={() => setTab("Latest")}>Latest</button>{canReadLater && <><button aria-pressed={tab === "Read Later"} onClick={() => setTab("Read Later")}>Read Later</button><button aria-pressed={tab === "History"} onClick={() => setTab("History")}>History</button></>}<button aria-pressed={tab === "Sources"} onClick={() => setTab("Sources")}>Sources</button></nav>
     {sourceRows.length > 8 && !["Sources", "Read Later", "History"].includes(tab) && <div className="vault-feed-source-window"><span>Reading {Math.min(sourceLimit, sourceRows.length)} of {sourceRows.length} sources</span>{sourceLimit < sourceRows.length && <button type="button" disabled={loading} onClick={() => setSourceLimit(limit => limit + 8)}>Load more sources</button>}</div>}
-    {tab === "Read Later" ? <><h2 className="vault-feed-headlines-title">Read Later</h2>{!keptHashes && !keptError && <p role="status">Reading saved stories…</p>}{readStateError && <p role="alert">{readStateError}</p>}{keptHashes && !visibleKept.length && <p>{query ? "No saved stories match this search." : "Stories saved from Feeds appear here and in Bookmarks."}</p>}<ol className="vault-feed-saved-list">{visibleKept.map(entry => <li key={entry.hash}><button type="button" disabled={!canOpenBookmark} onClick={() => onOpenBookmark(entry.path)}><span className="vault-feed-publisher"><span aria-hidden="true">{(entry.source || "S").slice(0, 1).toUpperCase()}</span>{entry.source || "Saved story"}{entry.keptAt && <time dateTime={entry.keptAt}>{storyDate(entry.keptAt)}</time>}</span><strong>{entry.title}</strong>{entry.readAt && <small className="vault-feed-read-state">✓ Read</small>}</button><button type="button" className="vault-feed-read-toggle" disabled={!canAdd || Boolean(readStateBusy)} aria-label={`Mark ${entry.title} ${entry.readAt ? "unread" : "read"}`} onClick={() => void toggleKeptRead(entry)}>{readStateBusy === entry.hash ? "Saving…" : entry.readAt ? "Mark unread" : "Mark read"}</button></li>)}</ol></> : tab === "History" ? <><h2 className="vault-feed-headlines-title">Reading history</h2><p className="vault-feed-history-intro">Stories marked read appear here, including ones you did not save.</p>{(!keptHashes || !readHashes) && !keptError && !historyError && <p role="status">Reading history…</p>}{readStateError && <p role="alert">{readStateError}</p>}{historyError && <p role="alert">{historyError}</p>}{keptHashes && readHashes && !visibleHistory.length && <p>{query ? "No read stories match this search." : "No stories in reading history yet."}</p>}<ol className="vault-feed-saved-list">{visibleHistory.map(entry => <li key={entry.hash}><button type="button" disabled={!canOpenBookmark} onClick={() => entry.kind === "kept" ? onOpenBookmark(entry.path) : onOpenHistory(entry.path)}><span className="vault-feed-publisher"><span aria-hidden="true">{(entry.source || "S").slice(0, 1).toUpperCase()}</span>{entry.source || "Read story"}{entry.readAt && <time dateTime={entry.readAt}>{storyDate(entry.readAt)}</time>}</span><strong>{entry.title}</strong><small className="vault-feed-read-state">✓ Read</small></button><button type="button" className="vault-feed-read-toggle" disabled={!canAdd || Boolean(readStateBusy)} aria-label={entry.kind === "kept" ? `Mark ${entry.title} unread` : `Remove ${entry.title} from history`} onClick={() => void (entry.kind === "kept" ? toggleKeptRead(entry) : removeReadEntry(entry))}>{readStateBusy === entry.hash ? "Saving…" : entry.kind === "kept" ? "Mark unread" : "Remove"}</button></li>)}</ol></> : tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !visibleCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{visibleCoverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
+    {tab === "Read Later" ? <><h2 className="vault-feed-headlines-title">Read Later</h2>{!keptHashes && !keptError && <p role="status">Reading saved stories…</p>}{readStateError && <p role="alert">{readStateError}</p>}{keptHashes && !visibleKept.length && <p>{query ? "No saved stories match this search." : "Stories saved from Feeds appear here and in Bookmarks."}</p>}<ol className="vault-feed-saved-list">{visibleKept.map(entry => <li key={entry.hash}><button type="button" disabled={!canOpenBookmark} onClick={() => onOpenBookmark(entry.path)}><span className="vault-feed-publisher"><span aria-hidden="true">{(entry.source || "S").slice(0, 1).toUpperCase()}</span>{entry.source || "Saved story"}{entry.keptAt && <time dateTime={entry.keptAt}>{storyDate(entry.keptAt)}</time>}</span><strong>{entry.title}</strong>{entry.readAt && <small className="vault-feed-read-state">✓ Read</small>}</button><button type="button" className="vault-feed-read-toggle" disabled={!canAdd || Boolean(readStateBusy)} aria-label={`Mark ${entry.title} ${entry.readAt ? "unread" : "read"}`} onClick={() => void toggleKeptRead(entry)}>{readStateBusy === entry.hash ? "Saving…" : entry.readAt ? "Mark unread" : "Mark read"}</button></li>)}</ol></> : tab === "History" ? <><h2 className="vault-feed-headlines-title">Reading history</h2><p className="vault-feed-history-intro">Stories you finish or mark read appear here, including ones you did not save.</p>{(!keptHashes || !readHashes) && !keptError && !historyError && <p role="status">Reading history…</p>}{readStateError && <p role="alert">{readStateError}</p>}{historyError && <p role="alert">{historyError}</p>}{keptHashes && readHashes && !visibleHistory.length && <p>{query ? "No read stories match this search." : "No stories in reading history yet."}</p>}<ol className="vault-feed-saved-list">{visibleHistory.map(entry => <li key={entry.hash}><button type="button" disabled={!canOpenBookmark} onClick={() => entry.kind === "kept" ? onOpenBookmark(entry.path) : onOpenHistory(entry.path)}><span className="vault-feed-publisher"><span aria-hidden="true">{(entry.source || "S").slice(0, 1).toUpperCase()}</span>{entry.source || "Read story"}{entry.readAt && <time dateTime={entry.readAt}>{storyDate(entry.readAt)}</time>}</span><strong>{entry.title}</strong><small className="vault-feed-read-state">✓ Read</small></button><button type="button" className="vault-feed-read-toggle" disabled={!canAdd || Boolean(readStateBusy)} aria-label={entry.kind === "kept" ? `Mark ${entry.title} unread` : `Remove ${entry.title} from history`} onClick={() => void (entry.kind === "kept" ? toggleKeptRead(entry) : removeReadEntry(entry))}>{readStateBusy === entry.hash ? "Saving…" : entry.kind === "kept" ? "Mark unread" : "Remove"}</button></li>)}</ol></> : tab === "Headlines" ? <><h2 className="vault-feed-headlines-title">Headlines</h2>{loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}{!loading && !visibleCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no headlines to show yet.</p>)}<ol className="vault-feed-coverage-list">{visibleCoverage.map(group => <li key={group.id}><button type="button" onClick={() => setActiveGroupId(group.id)}><span><strong>{group.headline}</strong><small>{group.members.length} {group.members.length === 1 ? "article" : "articles"} · {group.sources.join(", ")}</small></span>{group.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={group.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />}</button></li>)}</ol></> : tab === "Sources" ? <>{sourceList}{ready && !hasFeeds && recommendations}</> : tab === "For You" ? <>
       {loading && <p role="status">Reading your sources…</p>}{error && <p role="status">{error}</p>}
       {!loading && !visibleRankedCoverage.length && (query ? <p>No loaded stories match this search.</p> : ready && !hasFeeds ? recommendations : <p>Your sources have no stories to show yet.</p>)}
       <ol>{visibleRankedCoverage.map((group, index) => {

@@ -2,6 +2,8 @@
 
 ## Current work
 
+Long Feeds stories now display scroll-based reading progress and enter History when the reader scrolls through them. The history write happens once per story; loading a feed or opening a story alone does not create a TextPack. A long-story browser fixture verifies this path, and TypeScript, the local bundle, local browser flow, and web browser flow pass. Progress is still transient, short stories require Mark read, and Artifact reference parity remains open. No release was run.
+
 Command K now starts the newest file search after its debounce without waiting for a cancelled search to settle. The browser flow verifies a new query returns while an earlier two-second request is still pending; TypeScript, local bundle, and browser flow pass. Superhuman command and visual parity remain open; no release was run.
 
 Feeds History now includes deliberately marked unsaved stories as article TextPacks in `Feeds/History`, separate from Bookmark Read Later. The reader offers Mark read; History can reopen or remove the saved article. Mac and Oracle web metadata scans are bounded and recheck access; public feed responses are cached in memory for five minutes across folder navigation, with no timer. Bookmark highlight notes now debounce typing and flush on blur/navigation, fixing a dropped final character in the browser flow. TypeScript, 65 focused Vitest tests, 9 Swift import tests, and local/web browser flows pass. Artifact progress percentages and profile remain open. No release was run.
