@@ -13,6 +13,8 @@ Checked October 2, 2026 against the current source, the local browser fixture, a
 
 ## Next implementation sequence
 
+The Bookmarks reader now keeps Favorite beside Reader/Original and puts read state, Archive, Edit, and capture retry in its details menu at desktop and narrow widths. The local and web browser fixtures pass, and the 390px header has no horizontal overflow. The public Shiori dashboard preview uses the same compact control hierarchy; this does not establish parity for capture types, content extraction, or physical Mac interaction.
+
 1. Compare Feeds against the recovered public Artifact screens linked above, then implement missing reading categories and reader actions using actual activity. Do not invent history from feed items merely loaded into memory. The missing local originals in the historical plan are no longer the only available reference.
 2. Build realistic, reusable reference fixtures for each content type: a long article with images, mixed bookmarks, a photographic Gallery, and rich notecards. Capture both themes and narrow/desktop widths.
 3. Compare each creation, edit, and read path side by side against the reference, record specific mismatches, and fix them in priority order. Keep the same TextPack primitives and conflict behavior underneath.

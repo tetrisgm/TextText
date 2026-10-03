@@ -730,6 +730,7 @@ try {
   await page.getByRole("button", { name: "Save to folder", exact: true }).click();
   await page.getByRole("dialog", { name: "Save a link or note" }).waitFor({ state: "hidden" });
   await page.getByRole("group", { name: "Bookmark filters" }).waitFor();
+  await page.getByRole("article", { name: "Bookmark reader" }).getByLabel("Bookmark details").click();
   await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Edit" }).waitFor();
   await page.screenshot({ path: "/tmp/texttext-after-capture-reference.png" });
   await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Edit" }).click();
@@ -1153,7 +1154,9 @@ try {
   await bookmarkReader.getByRole("button", { name: "Next bookmark" }).click();
   await bookmarkReader.getByRole("button", { name: "Previous bookmark" }).click();
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
-  await bookmarkReader.getByRole("button", { name: /Favorite/ }).click();
+  assert.equal(await bookmarkReader.getByRole("button", { name: "Mark read" }).isVisible(), false);
+  await bookmarkReader.getByRole("button", { name: "Add to favorites" }).click();
+  await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("button", { name: "Mark read" }).click();
   assert.ok(await bookmarkReader.evaluate((reader) => {
     const title = reader.querySelector('.tt-text-title');
@@ -1203,11 +1206,13 @@ try {
   await page.getByRole("option", { name: /Another saved link/ }).waitFor();
   await page.getByRole("option", { name: /A saved article/ }).waitFor({ state: "hidden" });
   await page.getByRole("group", { name: "Bookmark filters" }).getByRole("button", { name: "Inbox" }).click();
+  if (!(await bookmarkDetails.evaluate(element => element.open))) await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("button", { name: "Archive", exact: true }).click();
   assert.equal(typeof JSON.parse(files.get("Bookmarks/Reading.textpack").documentJSON).content.fields.texttextBookmarkArchivedAt, "string");
   await page.getByRole("option", { name: /A saved article/ }).waitFor({ state: "hidden" });
   await page.getByRole("group", { name: "Bookmark filters" }).getByRole("button", { name: "Archive" }).click();
   await page.getByRole("option", { name: /A saved article/ }).click();
+  if (!(await bookmarkDetails.evaluate(element => element.open))) await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("button", { name: "Move to inbox" }).click();
   await page.getByRole("group", { name: "Bookmark filters" }).getByRole("button", { name: "Inbox" }).click();
   await page.getByRole("searchbox", { name: "Search saved links" }).fill("example.org");
@@ -1217,9 +1222,8 @@ try {
   await page.getByRole("option", { name: /Z filler 24/ }).waitFor();
   await page.getByRole("searchbox", { name: "Search saved links" }).fill("");
   await bookmarkReader.getByText("The complete saved reading text.").waitFor();
-  if (await bookmarkDetails.evaluate(element => element.open)) await toggleBookmarkDetails.click();
+  if (!(await bookmarkDetails.evaluate(element => element.open))) await toggleBookmarkDetails.click();
   await page.screenshot({ path: "/tmp/texttext-bookmark-reference.png" });
-  await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("button", { name: "Add note" }).click();
   await bookmarkReader.getByRole("textbox", { name: "Personal note text" }).fill("Remember this argument for the reading list.");
   await bookmarkReader.getByRole("button", { name: "Save note" }).click();
@@ -1299,7 +1303,7 @@ try {
   await bookmarkSearch.fill("Another saved link");
   await page.getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { name: /Another saved link/ }).first().click();
   await bookmarkReader.getByText("The page could not be captured. Your link is still saved.").waitFor();
-  if (await bookmarkDetails.evaluate(element => element.open)) await toggleBookmarkDetails.click();
+  if (!(await bookmarkDetails.evaluate(element => element.open))) await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("button", { name: "Retry capture" }).click();
   await page.waitForFunction(() => !document.querySelector('.vault-bookmark-capture-status'));
   const retriedBookmark = JSON.parse(files.get("Bookmarks/Another.textpack").documentJSON);
@@ -1319,7 +1323,7 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-bookmark-narrow-reader-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
-  await bookmarkReader.getByLabel("Bookmark details").click();
+  if (!(await bookmarkDetails.evaluate(element => element.open))) await toggleBookmarkDetails.click();
   await bookmarkReader.getByRole("button", { name: "Mark read" }).waitFor();
   await bookmarkReader.getByRole("button", { name: "Edit", exact: true }).waitFor();
   await compactBack.click();
@@ -2206,6 +2210,7 @@ try {
   await page.getByRole("button", { name: "Mark Design headline 2 read" }).waitFor();
   await savedDesignStory.click();
   await page.getByRole("article", { name: "Bookmark reader" }).waitFor();
+  await page.getByRole("article", { name: "Bookmark reader" }).getByLabel("Bookmark details").click();
   await page.getByRole("article", { name: "Bookmark reader" }).getByRole("button", { name: "Mark read" }).click();
   await chooseFolder("Feeds");
   await openFeedReadLater();
