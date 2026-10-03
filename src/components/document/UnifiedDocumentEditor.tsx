@@ -1639,6 +1639,18 @@ export function UnifiedDocumentEditor({
     setNoteLink({ from: start, to: end, body, label: body.slice(start, end), url: "", error: "" });
   }, [currentLocalDocument]);
 
+  const insertNoteChecklist = useCallback(() => {
+    if (experience !== "note") return;
+    const body = currentLocalDocument().content.body;
+    const at = Math.max(0, Math.min(noteImageSelection.current.from, body.length));
+    const prefix = at > 0 && body[at - 1] !== "\n" ? "\n" : "";
+    const insertion = `${prefix}- [ ] `;
+    updateText("body", `${body.slice(0, at)}${insertion}${body.slice(at)}`);
+    noteSlashLiteral.current = null;
+    setNoteInsertOpen(false);
+    window.requestAnimationFrame(() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(at + insertion.length, at + insertion.length); });
+  }, [experience, currentLocalDocument, updateText]);
+
   const insertNoteLink = useCallback(() => {
     if (!noteLink) return;
     let url: URL;
@@ -1805,6 +1817,7 @@ export function UnifiedDocumentEditor({
               {document.content.tags.length < 500 && <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteTagInput.current?.focus(); }}>Tag</button>}
               <button type="button" role="menuitem" onClick={openNoteLink}>Link</button>
               {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
+              <button type="button" role="menuitem" onClick={insertNoteChecklist}>Checklist</button>
             </div>}
           </div></div> :
           <CollaborativeTextarea
@@ -1896,7 +1909,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, openNoteLink, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, openNoteLink, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.

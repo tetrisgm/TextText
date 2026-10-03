@@ -1515,7 +1515,7 @@ try {
   const storyImageAction = storyInsertMenu.getByRole("menuitem", { name: "Image" });
   await storyImageAction.waitFor();
   await storyImageAction.press("ArrowDown");
-  assert.equal(await storyInsertMenu.getByRole("menuitem", { name: "Quote" }).evaluate(element => document.activeElement === element), true);
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem" && document.activeElement?.textContent === "Quote");
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("menu", { name: "Insert story content" }).count(), 0);
   await insertStory.click();
@@ -2364,6 +2364,9 @@ try {
   await page.keyboard.insertText("A next step");
   assert.ok((await page.getByRole("textbox", { name: "Document body" }).textContent())?.includes("- [ ] A next step"));
   await page.getByRole("button", { name: "Add to note" }).click();
+  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Checklist" }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("- [ ] A next step\n- [ ] "));
+  await page.getByRole("button", { name: "Add to note" }).click();
   await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Tag" }).focus();
   await page.keyboard.press("#");
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Add note tag");
@@ -2445,6 +2448,7 @@ try {
   const savedNoteBody = () => [...files.values()].map(file => JSON.parse(file.documentJSON).content).find(content => content.title === "Thought for later")?.body ?? "";
   for (let attempt = 0; attempt < 30 && !savedNoteBody().includes("- [x] A next step"); attempt++) await page.waitForTimeout(50);
   assert.ok(savedNoteBody().includes("- [x] A next step"));
+  assert.match(savedNoteBody(), /- \[x\] A next step\n- \[ \] /);
   await noteTask.focus();
   await page.keyboard.press("Space");
   await page.waitForFunction(() => document.querySelector('.vault-note-display li.task-list-item[role="checkbox"]')?.getAttribute("aria-checked") === "false");
@@ -2492,6 +2496,9 @@ try {
   assert.equal(await quickDraft.getByRole("textbox", { name: "New card title" }).inputValue(), "Rapid thought again");
   await quickDraft.getByRole("textbox", { name: "New card body" }).fill("Written before the file exists.");
   await quickDraft.getByRole("button", { name: "Add to new card" }).click();
+  await quickDraft.getByRole("menuitem", { name: "Checklist" }).click();
+  assert.equal(await quickDraft.getByRole("textbox", { name: "New card body" }).inputValue(), "Written before the file exists.\n- [ ] ");
+  await quickDraft.getByRole("button", { name: "Add to new card" }).click();
   await quickDraft.getByRole("menuitem", { name: "Tag" }).click();
   await quickDraft.getByRole("textbox", { name: "New card tag" }).fill("#ideas");
   await quickDraft.getByRole("textbox", { name: "New card tag" }).press("Enter");
@@ -2516,7 +2523,7 @@ try {
   await page.locator(".vault-note-card").filter({ hasText: "Rapid thought again" }).waitFor();
   await page.locator(".vault-note-card").filter({ hasText: "Rapid thought again" }).getByRole("button", { name: "Filter cards by ideas" }).waitFor();
   const rapidCard = [...files.values()].find(file => JSON.parse(file.documentJSON).content.title === "Rapid thought again");
-  assert.equal(JSON.parse(rapidCard.documentJSON).content.body, "Written before the file exists.");
+  assert.equal(JSON.parse(rapidCard.documentJSON).content.body, "Written before the file exists.\n- [ ] ");
   assert.deepEqual(JSON.parse(rapidCard.documentJSON).content.tags, ["ideas", "pending"]);
   await page.getByRole("button", { name: "Start typing Make a new card" }).click();
   const imageDraft = page.getByRole("form", { name: "New card draft" });
