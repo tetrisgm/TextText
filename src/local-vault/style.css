@@ -380,6 +380,7 @@
 .vault-app .vault-bookmark-reader>header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 14px; margin:0; padding:9px 18px; border-bottom:1px solid var(--line); font-size:12px; }
 .vault-app .vault-bookmark-reader>header>div { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
 .vault-app .vault-bookmark-reader-navigation { margin-right:auto; }
+.vault-app .vault-bookmark-reader-close { display:none; }
 .vault-app .vault-bookmark-reader-navigation button { padding:2px 8px; font-size:20px; line-height:1; }
 .vault-app .vault-bookmark-reader-tabs { padding:3px; border:1px solid var(--line); border-radius:7px; background:var(--sidebar); }
 .vault-app .vault-bookmark-reader-tabs :is(span,a) { display:block; padding:5px 8px; border-radius:5px; color:var(--muted); text-decoration:none; }
@@ -391,6 +392,7 @@
 .vault-app .vault-bookmark-inspector summary::-webkit-details-marker { display:none; }
 .vault-app .vault-bookmark-inspector summary:hover,.vault-app .vault-bookmark-inspector[open] summary { background:var(--selection); color:var(--ink); }
 .vault-app .vault-bookmark-inspector-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:5; width:min(360px,calc(100vw - 36px)); max-height:min(70vh,600px); overflow-y:auto; padding:5px 0; border:1px solid var(--line); border-radius:9px; background:var(--surface); box-shadow:0 16px 44px #0003; }
+.vault-app .vault-bookmark-inspector-actions { display:none; }
 .vault-app .vault-bookmark-inspector-panel .vault-bookmark-tags { padding:10px 14px; }
 .vault-app .vault-bookmark-inspector-panel .vault-bookmark-summary-editor { padding:12px 14px; border-top:1px solid var(--line); }
 .vault-app .vault-bookmark-summary-editor>div:first-child,.vault-app .vault-bookmark-summary-editor form>div { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -440,7 +442,7 @@
 .vault-app .vault-bookmark-reader .tt-document .tt-source-link-action { display:none; }
 .vault-app .vault-bookmark-reader .tt-document .tt-prose { width:min(var(--tt-measure),100%); margin-inline:auto; font-family:inherit; font-size:16px; line-height:1.7; }
 @media(prefers-color-scheme:dark){.vault-app .vault-bookmark-reader .tt-document{--paper:#232323;--ink:#eee;--muted:#aaa}}
-@media(max-width:760px){.vault-app .vault-bookmark-library{grid-template-columns:1fr;margin:0}.vault-app .vault-bookmark-list{border-right:0;border-bottom:1px solid var(--line);max-height:220px;overflow:auto}}
+@media(max-width:760px){.vault-app .vault-bookmark-library{grid-template-columns:1fr;margin:0}.vault-app .vault-bookmark-list{min-height:calc(100vh - 210px);border-right:0;overflow:auto}.vault-app .vault-bookmark-library[data-compact-reader="list"] .vault-bookmark-reader{display:none}.vault-app .vault-bookmark-library[data-compact-reader="open"] .vault-bookmark-list{display:none}.vault-app .vault-bookmark-reader-close{display:inline-flex;align-items:center;gap:4px;margin-right:4px;color:var(--tt-accent);font-size:13px!important}.vault-app .vault-bookmark-reader-close span{font-size:13px}.vault-app .vault-bookmark-reader-actions{display:none!important}.vault-app .vault-bookmark-inspector-actions{display:grid;gap:2px;padding:7px;border-bottom:1px solid var(--line)}.vault-app .vault-bookmark-inspector-actions button{text-align:left;padding:9px 10px;border-radius:5px;color:var(--ink)}.vault-app .vault-bookmark-inspector-actions button:hover,.vault-app .vault-bookmark-inspector-actions button:focus-visible{background:var(--selection)}.vault-app .vault-bookmark-reader>header{flex-wrap:nowrap;gap:6px;padding:9px 8px}.vault-app .vault-bookmark-reader>header>.vault-bookmark-reader-navigation,.vault-app .vault-bookmark-reader>header>.vault-bookmark-reader-tabs{flex:none;flex-wrap:nowrap;margin-right:0;white-space:nowrap}.vault-app .vault-bookmark-inspector{flex:none;margin-left:auto}}
 .vault-app .vault-gallery-view { position:fixed; inset:0 0 0 240px; z-index:230; background:var(--surface); }
 .vault-app.sidebar-collapsed .vault-gallery-view { left:0; }
 .vault-app .vault-gallery-lightbox { width:100%; height:100%; overflow:hidden; display:flex; flex-direction:column; background:var(--surface); color:var(--ink); }

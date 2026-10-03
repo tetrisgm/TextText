@@ -2,6 +2,8 @@
 
 ## Current work
 
+Bookmarks now switches between inbox and reader under 760 px, with Back to bookmarks returning focus to the selected link. Reader actions move into the details menu at that width, leaving one compact toolbar row. The full local vault browser flow checks the switch, action availability, and overflow; light and dark 390 px captures were visually checked. TypeScript and the web browser flow pass. Shiori's automatic summaries and broader content capture remain open; no release was run.
+
 Feeds' interest picker now lets a person unfollow a topic. It confirms the number of subscription TextPacks, validates each subscription before moving it to Trash through the revision-aware file API, and refreshes Feeds afterward. The local browser flow checks cancel and unfollow of a NASA source; TypeScript and the web browser flow pass. Original Artifact screenshots remain absent from this Mac and repository, so broader parity remains open; no release was run.
 
 Notes' insert menu now accepts Supernotes-style quick keys for its supported actions: `#` focuses Tag and `!` opens Image. Both work after the top-right plus or slash invocation and retain the existing TextPack writes. TypeScript and the full local vault browser flow pass. Other Coupler actions and reference fidelity remain open; no release was run.
