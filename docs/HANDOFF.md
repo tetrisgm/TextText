@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds Profile now lets a reader open a most-read publisher or reading topic to see the completed stories behind that count. The list uses saved and history TextPacks and opens each through its existing reader path. The local browser flow checks both drill-downs, the topic count and dark, light, and narrow renders; TypeScript, local build, and local/web browser checks pass. No Mac release was run. Artifact navigation and visual parity still need real-product comparison.
+
 Bookmarks now reads saved-link metadata with at most six concurrent local preview calls instead of one at a time, keeping the full-list filter gate and the existing 2,048-item bound. A newly saved link waits for the refreshed folder listing and selects its final sorted page only after the metadata index is ready. The browser fixture now scopes bookmark checks to the visible library rather than a hidden preview. TypeScript, local build, and the local browser fixture passed. This is source work only, with no Mac release.
 
 The inline Notes draft now accepts images through its plus menu, file picker, paste, and drop. It previews images before Finish, then uses the guarded editor asset path to write the image and Markdown reference into one TextPack; Cancel leaves no file. The local browser flow checks that no file exists before Finish and verifies the saved asset. TypeScript, local build, and local browser checks pass. This has not shipped; the richer Supernotes Coupler and live-product visual comparison remain open.

@@ -273,6 +273,13 @@
 .vault-app .vault-feed-profile-count small { margin-top:10px; color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-profile nav { margin:10px 0 28px; }
 .vault-app .vault-feed-profile nav button,.vault-app .vault-feed-profile li { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:15px 0; border-bottom:1px solid var(--line); border-radius:0; font-size:15px; }
+.vault-app .vault-feed-profile section li { padding:0; }
+.vault-app .vault-feed-profile section li button { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:15px 0; border:0; border-radius:0; background:transparent; color:var(--ink); font:inherit; text-align:left; }
+.vault-app .vault-feed-profile section li button:hover span:first-child,.vault-app .vault-feed-profile section li button:focus-visible span:first-child { text-decoration:underline; }
+.vault-app .vault-feed-profile-detail .vault-feed-profile-back { padding:12px 0 0; border:0; background:transparent; color:var(--tt-accent); font-size:13px; }
+.vault-app .vault-feed-profile-detail>p { margin:-8px 0 16px; color:var(--muted); font-size:13px; }
+.vault-app .vault-feed-profile-detail .vault-feed-saved-list li { padding:0; }
+.vault-app .vault-feed-profile-detail .vault-feed-saved-list li>button { padding:14px 0; }
 .vault-app .vault-feed-profile nav button span,.vault-app .vault-feed-profile li span:last-child { color:var(--muted); font-size:13px; }
 .vault-app .vault-feed-profile h3 { margin:0 0 4px; font-size:17px; }
 .vault-app .vault-feed-profile section + section { margin-top:26px; }
