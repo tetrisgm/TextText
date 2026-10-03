@@ -2128,6 +2128,14 @@ try {
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-feeds-partial-history-light-reference.png" });
   await page.emulateMedia({ colorScheme: "dark" });
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 5" }).getByRole("button").first().click();
+  const resumeHistory = page.getByRole("button", { name: `Continue at ${partialHistoryFields.texttextFeedReadingProgress}%` });
+  await resumeHistory.waitFor();
+  const beforeHistoryResume = await page.locator(".vault-app>main").evaluate(element => element.scrollTop);
+  await resumeHistory.click();
+  assert.ok(await page.locator(".vault-app>main").evaluate(element => element.scrollTop) > beforeHistoryResume + 80);
+  assert.equal(await page.locator(".vault-reading .tt-prose :focus").count(), 1);
+  await chooseFolder("Feeds");
   await openFeedLatest();
   await page.getByRole("button", { name: "Design headline 5" }).first().click();
   await feedReader.getByText("Paragraph 45 of the long reading test.").waitFor();

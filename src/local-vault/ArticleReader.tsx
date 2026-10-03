@@ -16,6 +16,21 @@ export function ArticleReader({ document, template, update, flushUpdate, compact
   const [error, setError] = useState("");
   const [highlightsOpen, setHighlightsOpen] = useState(!compact);
   const [summaryOpen, setSummaryOpen] = useState(true);
+  const savedProgress = document.content.fields.texttextFeedReadingProgress;
+  const resumeProgress = document.content.fields.texttextFeedHistoryEntry === "v1" && !document.content.fields.readAt &&
+    typeof savedProgress === "number" && Number.isInteger(savedProgress) && savedProgress >= 15 && savedProgress < 90 ? savedProgress : 0;
+  const resumeReading = () => {
+    const scroller = content.current?.closest<HTMLElement>(".vault-app>main");
+    const article = content.current?.querySelector<HTMLElement>(".tt-document");
+    if (!scroller || !article || !resumeProgress) return;
+    const viewport = scroller.getBoundingClientRect();
+    const bounds = article.getBoundingClientRect();
+    const targetTop = scroller.scrollTop + bounds.top - viewport.bottom + Math.max(bounds.height, viewport.height) * resumeProgress / 100;
+    scroller.scrollTop = Math.max(0, Math.min(targetTop, scroller.scrollHeight - scroller.clientHeight));
+    const blocks = article.querySelectorAll<HTMLElement>(".tt-prose p,.tt-prose h2,.tt-prose h3,.tt-prose li,.tt-prose blockquote");
+    const visible = [...blocks].find(block => block.getBoundingClientRect().bottom > viewport.top + 32);
+    if (visible) { visible.tabIndex = -1; visible.focus({ preventScroll: true }); }
+  };
   const highlights = readerHighlights(document);
   const summary = compact && template.id === "texttext.bookmark" && document.content.subtitle
     ? <details className="vault-bookmark-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>Summary</summary><p>{document.content.subtitle}</p></details>
@@ -66,6 +81,7 @@ export function ArticleReader({ document, template, update, flushUpdate, compact
   return <section className="vault-reading" aria-label="Article reader">
     {/* Next's CSS transform rejects this standard named-highlight selector in imported CSS. */}
     <style>{"::highlight(texttext-reader){background:#eabf4670;color:inherit}"}</style>
+    {resumeProgress > 0 && <button type="button" className="vault-reading-resume" onClick={resumeReading}>Continue at {resumeProgress}%</button>}
     {update && (!compact || selectionAvailable) && <div className="vault-reader-tools"><button disabled={!selectionAvailable} onMouseDown={(event) => event.preventDefault()} onClick={() => {
       if (!selected.current) return;
       const highlight = selected.current;
