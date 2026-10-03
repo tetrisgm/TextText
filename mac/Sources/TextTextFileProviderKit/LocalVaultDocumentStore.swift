@@ -173,6 +173,9 @@ public struct LocalVaultDocumentStore: Sendable {
                     if let readAt = fields["texttextBookmarkReadAt"] as? String, !readAt.isEmpty {
                         saved["readAt"] = String(readAt.prefix(32))
                     }
+                    if let progress = fields["texttextFeedReadingProgress"] as? Int, (0...100).contains(progress) {
+                        saved["progress"] = String(progress)
+                    }
                     return saved
                 }
             }

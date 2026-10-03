@@ -70,7 +70,7 @@ try {
       const entries = [...files.values()].filter(file => file.path.startsWith("Bookmarks/")).flatMap(file => {
         const content = JSON.parse(file.documentJSON).content;
         const fields = content.fields || {};
-        return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", keptAt: fields.keptAt || "", ...(fields.texttextBookmarkReadAt ? { readAt: fields.texttextBookmarkReadAt } : {}) }] : [];
+        return fields.texttextFeedEntry === "v1" && fields.feedEntryHash ? [{ hash: fields.feedEntryHash, path: file.path, title: content.title, source: fields.feedTitle || "", keptAt: fields.keptAt || "", ...(fields.texttextBookmarkReadAt ? { readAt: fields.texttextBookmarkReadAt } : {}), ...(typeof fields.texttextFeedReadingProgress === "number" ? { progress: fields.texttextFeedReadingProgress } : {}) }] : [];
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
@@ -142,11 +142,11 @@ try {
     else if (request.method === "extractArticle") result = { sourceURL: request.params.sourceURL, markdown: "# Captured reading\n\nThe readable article is saved in this same file.", capturedAt: "2026-09-30T12:00:00Z" };
     else if (request.method === "feedDiscover") result = { pageTitle: "Design Journal", detail: null, candidates: [{ url: "https://journal.example/feed.xml", title: "Design Journal", format: "rss", entryCount: 12, siteUrl: "https://journal.example", sampleTitles: [] }] };
     else if (request.method === "feedRead") { feedReadURLs.push(request.params.feedURL); result = { feedURL: request.params.feedURL, title: "Design feed", fetchedAt: "2026-10-02T00:00:00Z", availableCount: 5, truncated: false,
-      entries: Array.from({ length: 5 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
+      entries: Array.from({ length: 6 }, (_, index) => ({ externalKey: `story-${index + 1}`, title: index ? `Design headline ${index + 1}` : "A considered design headline", permalink: `https://example.com/story/${index + 1}`, authors: ["Editor"], publishedAt: `2026-10-0${index + 1}T00:00:00Z`, availability: "excerpt", excerpt: "A brief account of the story.", bodyPreview: "A brief account of the story.", imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#5d7890"/><circle cx="235" cy="130" r="78" fill="#eac183"/></svg>')}` })) };
     }
     else if (request.method === "feedEntry") {
       const number = Number(request.params.externalKey?.replace(/^story-/, "")) || 1;
-      const body = number === 5 ? Array.from({ length: 45 }, (_, index) => `Paragraph ${index + 1} of the long reading test.`).join("\n\n") : "A full in-app reading view for this story.";
+      const body = number === 5 || number === 6 ? Array.from({ length: 45 }, (_, index) => `Paragraph ${index + 1} of the long reading test.`).join("\n\n") : "A full in-app reading view for this story.";
       result = { feedURL: request.params.feedURL, feedTitle: "Design feed", entry: { externalKey: request.params.externalKey, declaredId: null, title: number === 1 ? "A considered design headline" : `Design headline ${number}`, permalink: `https://example.com/story/${number}`, externalUrl: null, authors: ["Editor"], publishedAt: `2026-10-0${number}T00:00:00Z`, updatedAt: null, availability: "full", bodyMarkdown: body, bodyText: body, excerpt: "A brief account of the story.", language: "en", attachments: [] } };
     }
     else if (request.method === "publicationRead") {
@@ -1898,6 +1898,26 @@ try {
   const keptFeedBookmark = [...files.values()].find(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.feedEntryHash);
   assert.equal(JSON.parse(keptFeedBookmark.documentJSON).presentation.template.id, "texttext.bookmark");
   await page.getByRole("button", { name: "Back to Feeds" }).click();
+  await page.getByRole("button", { name: "Design headline 6" }).first().click();
+  await feedReader.getByText("Paragraph 45 of the long reading test.").waitFor();
+  await feedReader.getByRole("button", { name: "Read later: Design headline 6" }).click();
+  await feedReader.getByRole("button", { name: "Saved: Design headline 6" }).waitFor();
+  await page.locator(".vault-app>main").evaluate(element => { element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.45); });
+  await page.waitForFunction(() => { const value = Number(document.querySelector('.vault-feed-reading-progress')?.getAttribute('aria-valuenow')); return value >= 15 && value < 90; });
+  await feedReader.getByRole("button", { name: "Back to feed", exact: true }).click();
+  const partialBookmark = [...files.values()].find(file => file.path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.title === "Design headline 6");
+  assert.ok(partialBookmark);
+  for (let attempt = 0; attempt < 100 && !JSON.parse(files.get(partialBookmark.path).documentJSON).content.fields.texttextFeedReadingProgress; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  const savedProgress = JSON.parse(files.get(partialBookmark.path).documentJSON).content.fields.texttextFeedReadingProgress;
+  assert.ok(savedProgress >= 15 && savedProgress < 90);
+  await page.getByRole("button", { name: "Read Later", exact: true }).click();
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 6" }).getByText(`${savedProgress}% read`).waitFor();
+  await chooseFolder("Notes");
+  await chooseFolder("Feeds");
+  await page.getByRole("button", { name: "Read Later", exact: true }).click();
+  await page.locator(".vault-feed-saved-list li").filter({ hasText: "Design headline 6" }).getByText(`${savedProgress}% read`).waitFor();
+  await page.screenshot({ path: "/tmp/texttext-feeds-reading-progress-reference.png" });
+  await page.getByRole("button", { name: "Latest", exact: true }).click();
   await page.getByRole("button", { name: "Design headline 5" }).first().click();
   await feedReader.getByText("Paragraph 45 of the long reading test.").waitFor();
   assert.equal(await feedReader.getByRole("progressbar", { name: "Reading progress" }).getAttribute("aria-valuenow") !== "100", true);

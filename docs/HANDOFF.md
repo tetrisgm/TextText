@@ -2,6 +2,8 @@
 
 ## Current work
 
+Feeds now saves partial progress for a saved story to its Bookmark TextPack when the reader closes after meaningful scrolling. It writes at most once per close and only after at least ten percentage points of advancement; opening or scrolling alone makes no write. Read Later shows the saved percentage, and Mac/web metadata scans return it after reopening Feeds. TypeScript, web store, Swift metadata, and local/web browser checks pass. Unsaved-story progress and resuming at the saved position remain open; no release was run.
+
 Gallery's full editor now exposes the same per-image Summary as the inspector, beside each image's caption. For a multi-image TextPack, edits to one summary leave the others intact. The full editor also calls TextPack tags Keywords to match the inspector. The local browser flow verifies the saved values and a narrow editor capture; TypeScript and local/web browser flows pass. Broader Resurf creation and visual parity remain open; no release was run.
 
 Command K now follows Superhuman's editor exception for a selected story passage: the first Cmd K opens the link form, and a second Cmd K opens TextText Command. The Notes list's displayed N shortcut now creates a blank note; other printable keys still start a titled card. The local browser flow covers both key paths. TypeScript and local/web browser flows pass; broader command ordering and exact visual parity remain open. No release was run.
