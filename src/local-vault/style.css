@@ -170,6 +170,14 @@
 .vault-app .vault-note-draft-insert button { display:flex; align-items:center; justify-content:space-between; gap:24px; }
 .vault-app .vault-note-draft-insert button:hover, .vault-app .vault-note-draft-insert button:focus-visible { background:var(--selection); }
 .vault-app .vault-note-draft-insert kbd { color:var(--muted); font:inherit; }
+.vault-app .tt-note-emoji-picker { display:grid; grid-template-columns:minmax(0,1fr); gap:9px; min-width:0; box-sizing:border-box; margin:8px 0 10px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); }
+.vault-app .tt-note-emoji-choices { display:grid; grid-template-columns:repeat(4,34px); gap:5px; }
+.vault-app .tt-note-emoji-choices button { width:34px; height:34px; border:0; border-radius:6px; background:transparent; font-size:22px; cursor:pointer; }
+.vault-app .tt-note-emoji-choices button:hover, .vault-app .tt-note-emoji-choices button:focus-visible { background:var(--selection); }
+.vault-app .tt-note-emoji-custom { display:flex; min-width:0; gap:6px; }
+.vault-app .tt-note-emoji-custom input { min-width:0; flex:1; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font-size:13px; }
+.vault-app .tt-note-emoji-custom button { padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font-size:13px; cursor:pointer; }
+.vault-app .tt-note-emoji-picker [role=alert] { color:var(--tt-destructive,#d70015); font-size:12px; }
 .vault-app .vault-note-draft-images { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
 .vault-app .vault-note-draft-image { position:relative; width:100px; height:100px; overflow:hidden; border-radius:7px; background:var(--surface); }
 .vault-app .vault-note-draft-image img { width:100%; height:100%; object-fit:cover; }

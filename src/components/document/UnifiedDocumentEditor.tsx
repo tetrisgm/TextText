@@ -8,6 +8,7 @@ import { dismissOpenDetails } from "@/components/accessibility/keyboard";
 import { DocumentHistoryDialog } from "@/components/workspace/DocumentHistoryDialog";
 import { StatusAnnouncement } from "@/components/accessibility/StatusAnnouncement";
 import { EditorSaveNotice, editorSaveLabel } from "./EditorSaveNotice";
+import { NoteEmojiPicker } from "./NoteEmojiPicker";
 
 import {
   useCallback,
@@ -585,6 +586,7 @@ export function UnifiedDocumentEditor({
   const noteImageSelection = useRef({ from: 0, to: 0 });
   const [noteInsertOpen, setNoteInsertOpen] = useState(false);
   const [noteColorOpen, setNoteColorOpen] = useState(false);
+  const [noteEmojiOpen, setNoteEmojiOpen] = useState(false);
   const [noteLink, setNoteLink] = useState<{ from: number; to: number; body: string; label: string; url: string; error: string } | null>(null);
   const [noteCardLink, setNoteCardLink] = useState<{ from: number; to: number; body: string; label: string; error: string } | null>(null);
   const noteInsertRef = useRef<HTMLDivElement>(null);
@@ -1680,6 +1682,15 @@ export function UnifiedDocumentEditor({
     window.requestAnimationFrame(() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(at + insertion.length, at + insertion.length); });
   }, [experience, currentLocalDocument, updateText]);
 
+  const insertNoteEmoji = useCallback((emoji: string) => {
+    const body = currentLocalDocument().content.body;
+    const from = Math.max(0, Math.min(noteImageSelection.current.from, body.length));
+    const to = Math.max(from, Math.min(noteImageSelection.current.to, body.length));
+    updateText("body", `${body.slice(0, from)}${emoji}${body.slice(to)}`);
+    setNoteEmojiOpen(false);
+    window.requestAnimationFrame(() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(from + emoji.length, from + emoji.length); });
+  }, [currentLocalDocument, updateText]);
+
   const insertNoteLink = useCallback(() => {
     if (!noteLink) return;
     let url: URL;
@@ -1848,8 +1859,10 @@ export function UnifiedDocumentEditor({
               {renderNoteCardLinkPicker && <button type="button" role="menuitem" onClick={openNoteLink}>Web link</button>}
               {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
               <button type="button" role="menuitem" onClick={insertNoteChecklist}>Checklist</button>
+              <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); setNoteEmojiOpen(true); }}>Emoji</button>
               <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); setNoteColorOpen(true); }}>Color</button>
             </div>}
+            {noteEmojiOpen && <NoteEmojiPicker onPick={insertNoteEmoji} onCancel={() => { setNoteEmojiOpen(false); bodySurfaceRef.current?.focus(); }} />}
           </div></div> :
           <CollaborativeTextarea
             field="title"
@@ -1940,7 +1953,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, onPasteImages, openNoteLink, openNoteCardLink, renderNoteCardLinkPicker, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, noteEmojiOpen, insertNoteEmoji, onPasteImages, openNoteLink, openNoteCardLink, renderNoteCardLinkPicker, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2451,6 +2464,12 @@ export function UnifiedDocumentEditor({
         .tt-note-colors button{padding:6px 8px;border:1px solid var(--line,#ddd);border-radius:6px;background:transparent;color:var(--ink,#222);font-size:12px;text-transform:capitalize;cursor:pointer}
         .tt-note-colors button[aria-pressed=true]{border-color:var(--tt-accent,#0071e3);outline:1px solid var(--tt-accent,#0071e3)}
         .tt-note-colors button:focus-visible{outline:2px solid var(--tt-accent,#0071e3);outline-offset:2px}
+        .tt-note-emoji-picker{display:grid;grid-template-columns:minmax(0,1fr);gap:9px;min-width:0;box-sizing:border-box;margin:12px 0;padding:10px;border:1px solid var(--line,#ddd);border-radius:8px;background:var(--paper,#fff);color:var(--ink,#222)}
+        .tt-note-insert>.tt-note-emoji-picker{position:absolute;right:0;top:32px;width:min(220px,calc(100vw - 32px));margin:0;box-shadow:0 8px 24px #0003}
+        .tt-note-emoji-choices{display:grid;grid-template-columns:repeat(4,34px);gap:5px}
+        .tt-note-emoji-choices button{width:34px;height:34px;border:0;border-radius:6px;background:transparent;font-size:22px;cursor:pointer}
+        .tt-note-emoji-choices button:hover,.tt-note-emoji-choices button:focus-visible{background:color-mix(in srgb,currentColor 10%,transparent)}
+        .tt-note-emoji-custom{display:flex;min-width:0;gap:6px}.tt-note-emoji-custom input{min-width:0;flex:1;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px;background:transparent;color:inherit;font:13px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}.tt-note-emoji-custom button{border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;background:transparent;color:inherit;font:13px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}.tt-note-emoji-picker [role=alert]{color:var(--tt-destructive,#d70015);font-size:12px}
         .tt-note-tags h3{font-size:11px;color:var(--muted,#666)}
         .tt-note-tags .tt-article-topic-list{margin-bottom:8px}
         .tt-note-tags .tt-note-finish{flex:none;margin-left:auto;padding:6px 12px;border:0;border-radius:5px;background:var(--tt-accent,#2762ac);color:#fff;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;cursor:pointer}

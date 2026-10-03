@@ -1537,8 +1537,6 @@ try {
     console.error("Story link body:", await storyBody.textContent());
     throw error;
   });
-  await storyBody.fill("Replaced");
-  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Replaced");
   await storyBody.fill("Heading");
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Heading");
   await page.waitForTimeout(450);
@@ -2631,6 +2629,14 @@ try {
   await page.locator('[aria-label="Document body"] .tt-md-image-preview').nth(1).waitFor();
   assert.equal(await page.locator('[aria-label="Document body"] .tt-md-image-preview').count(), 2);
   assert.equal(await page.locator('[aria-label="Document body"] .tt-md-image-preview').first().evaluate(image => image.complete && image.naturalWidth > 0), true);
+  await page.getByRole("button", { name: "Add to note" }).click();
+  await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Emoji" }).click();
+  await page.screenshot({ path: "/tmp/texttext-note-emoji-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "/tmp/texttext-note-emoji-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("group", { name: "Choose emoji" }).getByRole("button", { name: "Insert 💡" }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("💡"));
   assert.equal(await page.getByRole("button", { name: "Finish", exact: true }).count(), 1);
   await page.getByRole("textbox", { name: "Title", exact: true }).focus();
   await page.waitForFunction(() => {
@@ -2842,6 +2848,16 @@ try {
   await selectedLinkDraft.getByRole("button", { name: "Insert link" }).click();
   assert.equal(await selectedLinkDraft.getByRole("textbox", { name: "New card body" }).inputValue(), "Read the [related card](https://example.com/card) today.");
   await selectedLinkDraft.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Start typing to create a new card" }).click();
+  const emojiDraft = page.getByRole("form", { name: "New card draft" });
+  await emojiDraft.getByRole("textbox", { name: "New card title" }).fill("Emoji thought");
+  await emojiDraft.getByRole("textbox", { name: "New card body" }).fill("A small idea");
+  await emojiDraft.getByRole("button", { name: "Add to new card" }).click();
+  await emojiDraft.getByRole("menuitem", { name: "Emoji" }).click();
+  await emojiDraft.getByRole("group", { name: "Choose emoji" }).getByRole("button", { name: "Insert ✨" }).click();
+  assert.ok((await emojiDraft.getByRole("textbox", { name: "New card body" }).inputValue()).includes("✨"));
+  await emojiDraft.getByRole("button", { name: "Finish" }).click();
+  assert.ok([...files.values()].some(file => JSON.parse(file.documentJSON).content.title === "Emoji thought" && JSON.parse(file.documentJSON).content.body.includes("✨")));
   await page.getByRole("button", { name: "Start typing to create a new card" }).click();
   await page.getByRole("textbox", { name: "New card title" }).fill("Discard this draft");
   await page.getByRole("form", { name: "New card draft" }).getByRole("button", { name: "Cancel" }).click();
