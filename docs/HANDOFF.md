@@ -2,6 +2,8 @@
 
 ## Current work
 
+The local browser's Blog preview and Gallery now render the repository's photographic fixtures in place of flat color blocks. Captures at `/tmp/texttext-blog-publish-reference.png`, `/tmp/texttext-gallery-grid-light-reference.png`, and `/tmp/texttext-gallery-import-detail-light-reference.png` show actual image cropping, aspect ratios, and color extraction. The local browser flow passes. This strengthens visual review but does not establish reference parity; no release was run.
+
 Command K now frames five complete commands with the next row peeking below, following [Superhuman's command-palette design note](https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/). The local browser flow confirms overflow and keyboard scrolling to later commands; screenshot: `/tmp/texttext-command-reference.png`. Exact command parity remains open. No release was run.
 
 Gallery image detail now gives the photo a neutral stage and keeps empty Source, Caption, and Tags controls compact. Editing remains available beside the image. Compared against the public [Resurf image-detail tour](https://resurf.so/); TypeScript, local and web browser flows pass, with dark/light captures at `/tmp/texttext-gallery-import-detail-{dark,light}-reference.png`. A real photographic-library comparison remains open. No release was run.

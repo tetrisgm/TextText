@@ -947,8 +947,8 @@ try {
     files.set(`Bookmarks/${name}.textpack`, sample(`Bookmarks/${name}.textpack`, "bookmark", name, "A saved reference.", { sourceUrl: `https://example.net/${index}` }));
   }
   const publishedStory = { ...sample("Blog/Story.textpack", "article", "An essay title", "An opening paragraph.\n\n![Blue](assets/first.png)\n\n![Orange](assets/second.png)"), hash: "a".repeat(64) };
-  const firstStoryImage = await sharp({ create: { width: 32, height: 20, channels: 3, background: "#356e9d" } }).png().toBuffer();
-  const secondStoryImage = await sharp({ create: { width: 32, height: 20, channels: 3, background: "#ba7740" } }).png().toBuffer();
+  const firstStoryImage = await sharp("public/fixtures/content-first/square.jpg").resize(320, 200, { fit: "cover" }).png().toBuffer();
+  const secondStoryImage = await sharp("public/fixtures/content-first/portrait.jpg").resize(320, 200, { fit: "cover" }).png().toBuffer();
   publishedStory.assets = [{ filename: "first.png", contentType: "image/png", data: firstStoryImage.toString("base64") },
     { filename: "second.png", contentType: "image/png", data: secondStoryImage.toString("base64") }];
   publishedStory.documentJSON = JSON.stringify({ ...JSON.parse(publishedStory.documentJSON), content: { ...JSON.parse(publishedStory.documentJSON).content,
@@ -968,8 +968,8 @@ try {
   }
   files.set("Notes/Deep.textpack", sample("Notes/Deep.textpack", "note", "Long card", `${"First paragraph of this card. ".repeat(22)}A distant sentence about copper telescopes.`));
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==";
-  const portrait = (await sharp({ create: { width: 120, height: 240, channels: 4, background: "#bd806c" } }).png().toBuffer()).toString("base64");
-  const landscape = (await sharp({ create: { width: 240, height: 120, channels: 4, background: "#6c93bd" } }).png().toBuffer()).toString("base64");
+  const portrait = (await sharp("public/fixtures/content-first/portrait.jpg").resize(120, 240, { fit: "cover" }).png().toBuffer()).toString("base64");
+  const landscape = (await sharp("public/fixtures/content-first/square.jpg").resize(240, 120, { fit: "cover" }).png().toBuffer()).toString("base64");
   files.set("Gallery/Pair.textpack", { ...sample("Gallery/Pair.textpack", "gallery", "Two photographs", "A visual pair.", {}, [
     { id: "one", kind: "image", src: "assets/one.png", alt: "First photograph" }, { id: "two", kind: "image", src: "assets/two.png", alt: "Second photograph" },
   ]), assets: [{ filename: "one.png", contentType: "image/png", data: portrait }, { filename: "two.png", contentType: "image/png", data: landscape }] });
