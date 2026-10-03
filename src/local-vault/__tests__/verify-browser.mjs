@@ -1421,6 +1421,8 @@ try {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("menu", { name: "Insert story content" }).getByRole("menuitem", { name: "Divider" }).click();
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("---"));
+  await page.locator('[aria-label="Document body"] .tt-md-divider').waitFor();
+  assert.equal(await page.locator('[aria-label="Document body"] [data-tt-ln]:has(.tt-md-divider) .tt-md-syntax').evaluate((marker) => getComputedStyle(marker).display), "none");
   await storyBody.click();
   await insertStory.click();
   await page.getByRole("menu", { name: "Insert story content" }).getByRole("menuitem", { name: "Image" }).click();

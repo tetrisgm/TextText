@@ -101,7 +101,10 @@ function headingClass(hashes: number): string {
 }
 
 /** Styled segments for one line, in source order. Purely presentational. */
-function segmentsForLine(line: string, concealImageLine = false): Segment[] {
+function segmentsForLine(line: string, concealImageLine = false, renderDivider = false): Segment[] {
+  if (renderDivider && /^\s*(?:---|\*\*\*)\s*$/.test(line)) {
+    return [{ text: line, className: `${MARKER} ${SYNTAX}` }];
+  }
   if (concealImageLine && /^!\[[^\]]*\]\((?:assets\/[^)]+|blob:[^)]+)\)$/.test(line.trim())) {
     return [{ text: line, className: `${MARKER} ${SYNTAX}` }];
   }
@@ -380,6 +383,7 @@ export function MarkdownSurface({
   imageSources,
   imageCaptions,
   onImageCaptionChange,
+  renderDividers = false,
   disabled = false,
 }: {
   value: string;
@@ -396,6 +400,7 @@ export function MarkdownSurface({
   imageSources?: Readonly<Record<string, string>>;
   imageCaptions?: Readonly<Record<string, string>>;
   onImageCaptionChange?: (path: string, caption: string) => void;
+  renderDividers?: boolean;
   disabled?: boolean;
 }) {
   const localRef = useRef<HTMLDivElement>(null);
@@ -773,8 +778,15 @@ export function MarkdownSurface({
     };
     const image = /^!\[([^\]]*)\]\((assets\/[^)]+|blob:[^)]+)\)$/.exec(line.trim());
     const imageSource = image && imageSources?.[image[2]];
-    for (const segment of segmentsForLine(line, concealImageLines || !!imageSource)) {
+    for (const segment of segmentsForLine(line, concealImageLines || !!imageSource, renderDividers)) {
       emitSegment(segment.text, segment.className);
+    }
+    if (renderDividers && /^\s*(?:---|\*\*\*)\s*$/.test(line)) {
+      const divider = document.createElement("span");
+      divider.className = "tt-md-divider";
+      divider.contentEditable = "false";
+      divider.setAttribute("role", "separator");
+      wrapper.appendChild(divider);
     }
     if (imageSource) {
       // The image contributes no text nodes. Its Markdown remains the exact
@@ -848,8 +860,8 @@ export function MarkdownSurface({
     .map((s) => `${s.clientId}:${s.from}:${s.to}:${s.color}:${s.userName}`)
     .join("|");
   const imagesSignature = imageSources
-    ? JSON.stringify([Object.entries(imageSources), Object.entries(imageCaptions ?? {})])
-    : "";
+    ? JSON.stringify([renderDividers, Object.entries(imageSources), Object.entries(imageCaptions ?? {})])
+    : String(renderDividers);
   const builtValueRef = useRef<string | null>(null);
   /** Native edits since the last reconcile; cleared once the DOM is trusted. */
   const domDirtyRef = useRef(false);

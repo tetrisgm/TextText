@@ -1739,6 +1739,7 @@ export function UnifiedDocumentEditor({
               imageSources={experience === "article" ? bodyImageSources : undefined}
               imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
               onImageCaptionChange={experience === "article" ? updateImageCaption : undefined}
+              renderDividers={experience === "article"}
               disabled={imagePastePending}
             />
           </div>
@@ -2269,6 +2270,8 @@ export function UnifiedDocumentEditor({
         .tt-md-surface .tt-md-image-caption{display:block;box-sizing:border-box;width:100%;margin:-.5rem 0 1.5rem;padding:.35rem .5rem;border:0;border-radius:0;background:transparent;color:var(--muted,#6e6e73);font:400 .82rem/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:center;outline:none}
         .tt-md-surface .tt-md-image-caption::placeholder{color:color-mix(in srgb,var(--muted,#6e6e73) 60%,transparent)}
         .tt-md-surface .tt-md-image-caption:focus{box-shadow:0 1px 0 var(--tt-accent,#0071e3)}
+        .tt-md-surface .tt-md-divider{display:grid;place-items:center;height:2.5rem;color:color-mix(in srgb,currentColor 55%,transparent);pointer-events:none;user-select:none}
+        .tt-md-surface .tt-md-divider::before{content:"• • •";font:400 .75rem/1 Georgia,Charter,serif;letter-spacing:.2rem}
         .tt-md-nl{font-size:0;line-height:0}
         .tt-md-surface[data-empty="true"]::before{content:attr(data-placeholder);color:var(--muted,#6e6e73);pointer-events:none}
         /* Syntax the styling already speaks for shows only on the line you are
