@@ -2,6 +2,8 @@
 
 ## Current work
 
+Story image placement now checks the source image's decoded width. Wide and Full width appear for images at least 1192 px across; smaller images show Inline with a short explanation, while a previously saved wider placement remains available to undo. The browser flow checks a 1600 px image and a 1 px image in the same TextPack. TypeScript and local/web browser flows pass. Native Safari and broader Medium composition fidelity remain open; no release was run.
+
 Blog images now expose Inline, Wide, and Full width choices after selection in the story editor. The choice is a validated `placement` on the existing TextPack image asset; the reader renders the chosen width and old images stay inline. The local browser flow verifies selection, Wide layout beyond the writing measure, and persistence; the checked light capture is `/tmp/texttext-blog-inline-image-light-reference.png`. TypeScript, renderer tests, and local/web browser flows pass. Intrinsic-width gating and a full Medium composition comparison remain open; no release was run.
 
 Blog images now have an Alt text control between the image and caption while editing. It saves to the image's existing TextPack `asset.alt`, leaves the Markdown body and caption separate, and takes precedence in the reader image's accessible name. TypeScript, renderer tests, and local/web browser flows pass; `/tmp/texttext-blog-inline-image-light-reference.png` shows the checked editor. Medium's placement controls and broader composition parity remain open; no release was run.

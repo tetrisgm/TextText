@@ -2361,6 +2361,8 @@ export function UnifiedDocumentEditor({
         .tt-md-surface .tt-md-image-placement button::before{content:attr(data-label)}
         .tt-md-surface .tt-md-image-placement button[aria-pressed=true]{border-color:var(--tt-accent,#0071e3);color:var(--ink,#222)}
         .tt-md-surface .tt-md-image-placement button:focus-visible{outline:2px solid var(--tt-accent,#0071e3);outline-offset:2px}
+        .tt-md-surface .tt-md-image-placement button[hidden]{display:none!important}
+        .tt-md-surface .tt-md-image-placement[data-hint]::after{content:attr(data-hint);align-self:center;color:var(--muted,#6e6e73);font:400 .69rem/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
         .tt-md-surface .tt-md-image-caption{display:block;box-sizing:border-box;width:100%;margin:-.5rem 0 1.5rem;padding:.35rem .5rem;border:0;border-radius:0;background:transparent;color:var(--muted,#6e6e73);font:400 .82rem/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:center;outline:none}
         .tt-md-surface .tt-md-image-caption::placeholder{color:color-mix(in srgb,var(--muted,#6e6e73) 60%,transparent)}
         .tt-md-surface .tt-md-image-caption:focus{box-shadow:0 1px 0 var(--tt-accent,#0071e3)}

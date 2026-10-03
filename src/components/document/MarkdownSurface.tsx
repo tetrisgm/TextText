@@ -838,12 +838,14 @@ export function MarkdownSurface({
       }
       wrapper.appendChild(preview);
       if (onImagePlacementChange) {
+        const currentPlacement = imagePlacements?.[image[2]] ?? "inline";
         const placement = document.createElement("div");
         placement.className = "tt-md-image-placement";
-        placement.dataset.active = String((imagePlacements?.[image[2]] ?? "inline") !== "inline");
+        placement.dataset.active = String(currentPlacement !== "inline");
         placement.contentEditable = "false";
         placement.setAttribute("role", "group");
         placement.setAttribute("aria-label", "Image placement");
+        const choices: { value: "inline" | "wide" | "full"; button: HTMLButtonElement }[] = [];
         for (const [value, label] of [["inline", "Inline"], ["wide", "Wide"], ["full", "Full width"]] as const) {
           const button = document.createElement("button");
           button.type = "button";
@@ -852,7 +854,19 @@ export function MarkdownSurface({
           button.setAttribute("aria-pressed", String((imagePlacements?.[image[2]] ?? "inline") === value));
           button.addEventListener("click", (event) => { event.stopPropagation(); onImagePlacementChange(image[2], value); });
           placement.appendChild(button);
+          choices.push({ value, button });
         }
+        const updateChoices = () => {
+          const canExpand = preview.naturalWidth >= 1192;
+          for (const choice of choices) choice.button.hidden = !canExpand && choice.value !== "inline" && choice.value !== currentPlacement;
+          if (!canExpand) {
+            placement.dataset.hint = "Wider layouts need an image at least 1192 px wide.";
+            placement.setAttribute("aria-description", placement.dataset.hint);
+          } else { delete placement.dataset.hint; placement.removeAttribute("aria-description"); }
+        };
+        preview.addEventListener("load", updateChoices);
+        preview.addEventListener("error", updateChoices);
+        if (preview.complete) updateChoices();
         wrapper.appendChild(placement);
       }
       if (onImageAltChange) {
