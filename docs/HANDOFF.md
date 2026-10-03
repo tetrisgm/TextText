@@ -2,6 +2,10 @@
 
 ## Current work
 
+Command K now uses the near-black command surface and darker selected row visible in Superhuman’s published palette screenshot, in both TextText themes. Its file search enters Searching immediately and begins after 100 ms, retaining stale-result cancellation; the browser check covers that transition and the palette’s clipped fifth row. TypeScript and local/web browser fixtures pass; light and dark captures were inspected. No Mac release was run. Broader command coverage and physical Mac comparison remain open.
+
+Command K now enters Searching immediately when a file query changes, instead of briefly claiming no matches during its debounce. Its local query delay is 100 ms and the existing abort/stale-result guard remains. The browser fixture checks the pending state; TypeScript, local build, and local/web browser checks pass. This is source work only, with no Mac release. Full live Superhuman comparison and broader command coverage remain open.
+
 Feeds Profile now lets a reader open a most-read publisher or reading topic to see the completed stories behind that count. The list uses saved and history TextPacks and opens each through its existing reader path. The local browser flow checks both drill-downs, the topic count and dark, light, and narrow renders; TypeScript, local build, and local/web browser checks pass. No Mac release was run. Artifact navigation and visual parity still need real-product comparison.
 
 Bookmarks now reads saved-link metadata with at most six concurrent local preview calls instead of one at a time, keeping the full-list filter gate and the existing 2,048-item bound. A newly saved link waits for the refreshed folder listing and selects its final sorted page only after the metadata index is ready. The browser fixture now scopes bookmark checks to the visible library rather than a hidden preview. TypeScript, local build, and the local browser fixture passed. This is source work only, with no Mac release.

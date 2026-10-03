@@ -95,7 +95,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
       try { const next = await request; if (active && latest.current === requested) setResult(next); }
       catch (error) { if (active && !(error instanceof DOMException && error.name === "AbortError")) setError(error instanceof Error ? error.message : "Search could not finish."); }
       finally { if (active) setBusy(false); }
-    })(); }, 250);
+    })(); }, 100);
     return () => { active = false; clearTimeout(timer); controller.abort(); };
   }, [query]);
   const shortcutAction: VaultSearchAction = { id: "show-shortcuts", label: "Keyboard shortcuts", description: "Learn the keys for available actions.", keywords: ["shortcuts", "keys", "help"] };
@@ -129,7 +129,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
   };
   return <div className="vault-search-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} className="vault-template-dialog vault-search" role="dialog" aria-modal="true" aria-label="Search and actions">
     <header><span className="vault-command-mark" aria-hidden="true">⌘</span><h2>{showShortcuts ? "Keyboard shortcuts" : "TextText Command"}</h2>{showShortcuts && <button ref={shortcutsBack} className="vault-command-back" onClick={() => setShowShortcuts(false)} aria-label="Back to commands">Back</button>}<button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
-    {!showShortcuts && <input ref={searchInput} autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder="" value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setActiveIndex(0); }} onKeyDown={(event) => {
+    {!showShortcuts && <input ref={searchInput} autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder="" value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setBusy(Boolean(event.target.value.trim())); setError(""); setActiveIndex(0); }} onKeyDown={(event) => {
       if (event.key === "ArrowDown" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + 1) % choices.length); }
       if (event.key === "ArrowUp" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + choices.length - 1) % choices.length); }
       if (event.key === "Enter" && choices.length) { event.preventDefault(); choices[selectedIndex].run(); }

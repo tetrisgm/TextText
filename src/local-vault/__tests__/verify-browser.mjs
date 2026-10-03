@@ -321,7 +321,10 @@ try {
     const viewport = list.getBoundingClientRect(), row = fifth.getBoundingClientRect();
     return row.top < viewport.bottom && row.bottom > viewport.bottom;
   }), true, "the last visible command should be clipped to invite scrolling");
-  await page.screenshot({ path: "/tmp/texttext-command-reference.png" });
+  await page.screenshot({ path: "/tmp/texttext-command-light-reference.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-command-dark-reference.png" });
+  await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("option", { name: "Keyboard shortcuts", exact: true }).click();
   await page.getByLabel("Available keyboard shortcuts").getByText("Write a story").waitFor();
   assert.equal(await page.getByRole("button", { name: "Back to commands" }).evaluate(element => element === document.activeElement), true, "shortcut view should focus Back");
@@ -365,6 +368,8 @@ try {
   await page.getByRole("combobox", { name: "Search workspace" }).fill("Offline");
   await page.locator('#vault-command-results [id^="file:"]').first().waitFor();
   await page.getByRole("combobox", { name: "Search workspace" }).fill("slowquery");
+  await page.getByRole("dialog", { name: "Search and actions" }).getByText("Searching…", { exact: true }).waitFor();
+  assert.equal(await page.getByText("No matching files or actions.").count(), 0);
   for (let attempt = 0; attempt < 100 && !searchQueries.includes("slowquery"); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.ok(searchQueries.includes("slowquery"));
   await page.getByRole("combobox", { name: "Search workspace" }).fill("Offline");
@@ -1256,7 +1261,8 @@ try {
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "example.org/copied-reading" } }));
   await page.getByRole("button", { name: "+ Add link" }).click();
   await page.locator(".vault-bookmark-quick-save").getByRole("button", { name: "Save copied link" }).click();
-  await bookmarkReader.locator("..").getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { selected: true }).filter({ hasText: "example.org" }).first().waitFor();
+  await bookmarkReader.locator('a[href="https://example.org/copied-reading"]').first().waitFor();
+  await bookmarkReader.locator("..").getByRole("button", { name: "+ Add link" }).waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.org/copied-reading"), true);
   await bookmarkReader.locator("..").getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { selected: true }).first().evaluate(element => {
     const data = new DataTransfer();
