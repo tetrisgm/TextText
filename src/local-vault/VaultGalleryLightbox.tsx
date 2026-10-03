@@ -106,7 +106,7 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();
-    setError("");
+    queueMicrotask(() => { if (!controller.signal.aborted) setError(""); });
     void vaultRequest<VaultFile>("read", { path }, controller.signal)
       .then(setFile).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "The image could not be opened."); });
     return () => controller.abort();
@@ -163,7 +163,14 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   let commentItemId: string | null = null;
   try { if (file?.path === path) commentItemId = packIdentity(file.markdown); } catch { /* A pack without an identity cannot have hosted comments. */ }
   const commentAccess = commentItemId && commentsAccess?.(commentItemId, path);
-  useEffect(() => { setEditingCaption(false); setEditingSummary(false); setEditingTitle(false); setEditingSource(false); setEditingTags(false); setEditingField(""); setTagDraft(""); }, [path, index]);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setEditingCaption(false); setEditingSummary(false); setEditingTitle(false); setEditingSource(false); setEditingTags(false); setEditingField(""); setTagDraft("");
+    });
+    return () => { active = false; };
+  }, [path, index]);
   const updateContent = async (change: (content: ReturnType<typeof readDocument>["content"]) => ReturnType<typeof readDocument>["content"]) => {
     if (!file || file.path !== path || updating) return false;
     setUpdating(true); setError("");
@@ -198,7 +205,11 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
     if (Array.isArray(value)) return value.every(item => typeof item === "string") ? value.join(", ") : `${value.length} entries`;
     return String(value);
   };
-  useEffect(() => setZoom(1), [image?.url]);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) setZoom(1); });
+    return () => { active = false; };
+  }, [image?.url]);
   const asset = image && file?.assets?.find(entry => local.get(`assets/${entry.filename}`) === image.url || (entry.remoteURL && local.get(entry.remoteURL) === image.url));
   if (asset) size = Math.floor(asset.data.length * 3 / 4) - (asset.data.endsWith("==") ? 2 : asset.data.endsWith("=") ? 1 : 0);
   useEffect(() => {
@@ -223,14 +234,12 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
   if (!shell) return null;
   return createPortal(<section className="vault-gallery-view">
     <div ref={viewer} className="vault-gallery-lightbox" role="region" aria-label={imageTitle}>
-      <header><button onClick={onClose} aria-label="Close image">‹ <span>Gallery</span></button><div className="vault-gallery-title">{editingTitle ? <form onSubmit={event => { event.preventDefault(); const next = titleDraft.trim(); if (!next) return; void updateContent(content => imageAssetCount > 1 && image ? ({ ...content, assets: content.assets.map(asset => asset.id === image.id ? { ...asset, title: next } : asset) }) : ({ ...content, title: next })).then(saved => { if (saved) setEditingTitle(false); }); }}><input autoFocus aria-label="Image title" value={titleDraft} onChange={event => setTitleDraft(event.target.value)} maxLength={240} disabled={updating} /><button type="button" onClick={() => setEditingTitle(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating || !titleDraft.trim()}>Save title</button></form> : <button className="vault-gallery-title-button" aria-label="Edit image title" title="Edit image title" disabled={updating || !file} onClick={() => { setTitleDraft(imageTitle); setEditingTitle(true); }}>{imageTitle}</button>}</div><button aria-label="Edit item" onClick={() => onEdit(path)} disabled={!file}>Edit</button></header>
+      <header><div className="vault-gallery-navigation"><button onClick={onClose} aria-label="Close image">‹ <span>Gallery</span></button>{entries.length > 1 && <><button aria-label="Previous image" disabled={selection === 0} onClick={previous}>‹</button><button aria-label="Next image" disabled={selection >= entries.length - 1} onClick={next}>›</button></>}</div><div className="vault-gallery-title">{editingTitle ? <form onSubmit={event => { event.preventDefault(); const next = titleDraft.trim(); if (!next) return; void updateContent(content => imageAssetCount > 1 && image ? ({ ...content, assets: content.assets.map(asset => asset.id === image.id ? { ...asset, title: next } : asset) }) : ({ ...content, title: next })).then(saved => { if (saved) setEditingTitle(false); }); }}><input autoFocus aria-label="Image title" value={titleDraft} onChange={event => setTitleDraft(event.target.value)} maxLength={240} disabled={updating} /><button type="button" onClick={() => setEditingTitle(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating || !titleDraft.trim()}>Save title</button></form> : <button className="vault-gallery-title-button" aria-label="Edit image title" title="Edit image title" disabled={updating || !file} onClick={() => { setTitleDraft(imageTitle); setEditingTitle(true); }}>{imageTitle}</button>}</div><button aria-label="Edit item" onClick={() => onEdit(path)} disabled={!file}>Edit</button></header>
       {error && <p role="alert">{error}</p>}
       {file?.path !== path && !error && <p role="status">Opening image…</p>}
       {file?.path === path && !images.length && <p role="status">This item has no embedded image to display. Open the item to inspect its contents.</p>}
       {image && <div className={`vault-gallery-detail${commentsOpen ? " has-comments" : ""}`}><div className="vault-gallery-stage">
-        {entries.length > 1 && <button aria-label="Previous image" disabled={selection === 0} onClick={previous}>‹</button>}
         {/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.alt} style={{ transform: `scale(${zoom})` }} />
-        {entries.length > 1 && <button aria-label="Next image" disabled={selection >= entries.length - 1} onClick={next}>›</button>}
         <div className="vault-gallery-zoom" role="group" aria-label="Image zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, Math.round((value - .25) * 100) / 100))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, Math.round((value + .25) * 100) / 100))}>+</button><button aria-label="Fit image" disabled={zoom === 1} onClick={() => setZoom(1)}>Fit</button></div>
       </div><aside><dl>{(image.width || details.width) && (image.height || details.height) && <><dt>Dimensions</dt><dd>{image.width || details.width} × {image.height || details.height}</dd></>}{size > 0 && <><dt>Size</dt><dd>{size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`}</dd></>}{entries.length > 1 && <><dt>Library image</dt><dd>{selection + 1} of {entries.length}</dd></>}</dl>
         <div className="vault-gallery-inspector-section vault-gallery-source-section"><div className="vault-gallery-inspector-heading"><h2>Source</h2>{sourceHref && !editingSource && <a className="vault-gallery-source" href={sourceHref} target="_blank" rel="noopener noreferrer" title={source}>{new URL(sourceHref).hostname.replace(/^www\./, "")}</a>}{!editingSource && <button aria-label="Edit image source" disabled={updating} onClick={() => { setSourceDraft(source); setEditingSource(true); }}>{source ? "Edit" : "Add source URL"}</button>}</div>{editingSource ? <form onSubmit={event => { event.preventDefault(); const next = sourceDraft.trim(); if (next && !sourceLink(next)) { setError("Enter a web address beginning with http or https, without a username or password."); return; } void updateContent(content => image ? ({ ...content, assets: content.assets.map(asset => asset.id === image.id ? { ...asset, sourceUrl: next } : asset) }) : ({ ...content, fields: { ...content.fields, sourceUrl: next || null, sourceLabel: next || null, links: next ? [{ href: next, label: next }] : [] } })).then(saved => { if (saved) setEditingSource(false); }); }}><input autoFocus aria-label="Image source" type="url" value={sourceDraft} onChange={event => setSourceDraft(event.target.value)} placeholder="https://example.com" maxLength={4096} disabled={updating} /><div><button type="button" onClick={() => setEditingSource(false)} disabled={updating}>Cancel</button><button type="submit" disabled={updating}>Save source</button></div></form> : !sourceHref && source ? <p>{source}</p> : null}</div>

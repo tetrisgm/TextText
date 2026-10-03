@@ -15,6 +15,8 @@ Checked October 2, 2026 against the current source, the local browser fixture, a
 
 The Bookmarks reader now keeps Favorite beside Reader/Original and puts read state, Archive, Edit, and capture retry in its details menu at desktop and narrow widths. The local and web browser fixtures pass, and the 390px header has no horizontal overflow. The public Shiori dashboard preview uses the same compact control hierarchy; this does not establish parity for capture types, content extraction, or physical Mac interaction.
 
+The Gallery viewer now places previous/next controls beside the back control in its header, as in Resurf's public image-detail screenshot, leaving the photo stage free of navigation arrows. Desktop and 390px light captures were inspected. The local browser fixture verifies the controls, image navigation, and the remaining inspector flow; Resurf's richer file metadata and per-image discussion remain open.
+
 1. Compare Feeds against the recovered public Artifact screens linked above, then implement missing reading categories and reader actions using actual activity. Do not invent history from feed items merely loaded into memory. The missing local originals in the historical plan are no longer the only available reference.
 2. Build realistic, reusable reference fixtures for each content type: a long article with images, mixed bookmarks, a photographic Gallery, and rich notecards. Capture both themes and narrow/desktop widths.
 3. Compare each creation, edit, and read path side by side against the reference, record specific mismatches, and fix them in priority order. Keep the same TextPack primitives and conflict behavior underneath.

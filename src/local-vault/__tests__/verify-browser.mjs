@@ -1728,6 +1728,8 @@ try {
   }, pairColor);
   for (let step = 0; step < Math.abs(single - pairSecond); step++) await page.keyboard.press(towardsPair);
   await page.getByRole("region", { name: "Second photograph" }).getByRole("img", { name: "Second photograph" }).waitFor();
+  assert.equal(await lightbox.locator("header .vault-gallery-navigation").getByRole("button", { name: "Previous image" }).count(), 1);
+  assert.equal(await lightbox.locator(".vault-gallery-stage").getByRole("button", { name: "Previous image" }).count(), 0);
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
   await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
   await lightbox.getByRole("button", { name: "Zoom in" }).click();
