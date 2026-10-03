@@ -2145,6 +2145,13 @@ try {
   await page.keyboard.press("Backspace");
   await page.keyboard.press("Backspace");
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.endsWith("idea. "));
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("[]");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.endsWith("[]"));
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("- [ ] "));
+  await page.keyboard.insertText("A next step");
+  assert.ok((await page.getByRole("textbox", { name: "Document body" }).textContent())?.includes("- [ ] A next step"));
   await page.getByRole("button", { name: "Add to note" }).click();
   await page.getByRole("menu", { name: "Add to note" }).getByRole("menuitem", { name: "Tag" }).focus();
   await page.keyboard.press("#");
@@ -2201,6 +2208,9 @@ try {
   await page.getByRole("textbox", { name: "Document body" }).focus();
   await page.keyboard.press("Meta+Enter");
   await page.getByRole("region", { name: "Note card" }).getByText("Thought for later").waitFor();
+  await page.getByRole("region", { name: "Note card" }).getByRole("checkbox").waitFor();
+  assert.ok([...files.values()].some(file => JSON.parse(file.documentJSON).content.title === "Thought for later" &&
+    JSON.parse(file.documentJSON).content.body.includes("- [ ] A next step")));
   await page.getByRole("region", { name: "Note card" }).getByText(/#ideas/i).waitFor();
   await page.waitForFunction(() => {
     const image = document.querySelector('.vault-note-display img');

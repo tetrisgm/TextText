@@ -1824,6 +1824,7 @@ export function UnifiedDocumentEditor({
               resolveSelection={resolveBodySelection}
               onPasteImages={onPasteImages ? pasteImages : undefined}
               onSlash={experience === "note" ? (insertLiteral) => { noteSlashLiteral.current = insertLiteral; setNoteInsertOpen(true); } : undefined}
+              checklistShortcut={experience === "note"}
               imageSources={experience === "article" ? bodyImageSources : undefined}
               imageCaptions={experience === "article" ? bodyImageCaptions : undefined}
               imageAltTexts={experience === "article" ? bodyImageAltTexts : undefined}

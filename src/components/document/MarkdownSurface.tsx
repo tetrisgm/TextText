@@ -380,6 +380,7 @@ export function MarkdownSurface({
   resolveSelection,
   onPasteImages,
   onSlash,
+  checklistShortcut = false,
   concealImageLines = false,
   imageSources,
   imageCaptions,
@@ -406,6 +407,7 @@ export function MarkdownSurface({
   resolveSelection?: () => { anchor: number; head: number } | null;
   onPasteImages?: (files: File[], selection: { from: number; to: number }) => void;
   onSlash?: (insertLiteral: (text: string) => void) => void;
+  checklistShortcut?: boolean;
   concealImageLines?: boolean;
   /** Resolved URLs keyed by the image paths stored in Markdown. */
   imageSources?: Readonly<Record<string, string>>;
@@ -1718,6 +1720,15 @@ export function MarkdownSurface({
         replaceRange(Math.min(at.anchor, at.head), Math.max(at.anchor, at.head), "");
       }}
       onKeyDown={(event) => {
+        if (checklistShortcut && event.key === " " && !event.metaKey && !event.ctrlKey && !event.altKey && !event.nativeEvent.isComposing && !composingRef.current) {
+          const at = selectionOffsets();
+          if (at && at.anchor === at.head && value.slice(at.anchor - 2, at.anchor) === "[]" &&
+            /^\s*$/.test(value.slice(value.lastIndexOf("\n", at.anchor - 1) + 1, at.anchor - 2))) {
+            event.preventDefault();
+            replaceRange(at.anchor - 2, at.anchor, "- [ ] ");
+            return;
+          }
+        }
         if (onSlash && event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.nativeEvent.isComposing && !composingRef.current) {
           const at = selectionOffsets();
           if (at && at.anchor === at.head && (at.anchor === 0 || /\s/.test(value[at.anchor - 1] ?? ""))) {

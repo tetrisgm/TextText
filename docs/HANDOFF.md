@@ -2,6 +2,8 @@
 
 ## Current work
 
+Notes now turns `[]` followed by Space at the start of a body line into a Markdown checklist item, matching Supernotes' shorthand while keeping the item in its TextPack body. The local browser flow checks both the edit and rendered checkbox. TypeScript and the local browser flow pass. Other Coupler actions and visual parity remain open; no release was run.
+
 Saved feed stories now offer an explicit Continue at N% button when opened in the Bookmark reader. It uses the progress stored in that TextPack, scrolls to the corresponding part of the captured article, and moves keyboard focus into the visible prose; ordinary opening stays at the top. The local browser flow checks the return from Feeds through Read Later into Bookmarks, scroll, and focus. TypeScript and local/web browser flows pass. Unsaved-story resume and real Mac/web checks remain open; no release was run.
 
 Feeds now saves partial progress for a saved story to its Bookmark TextPack when the reader closes after meaningful scrolling. It writes at most once per close and only after at least ten percentage points of advancement; opening or scrolling alone makes no write. Read Later shows the saved percentage, and Mac/web metadata scans return it after reopening Feeds. TypeScript, web store, Swift metadata, and local/web browser checks pass. Unsaved-story progress remains open; no release was run.
