@@ -1647,6 +1647,7 @@ export function UnifiedDocumentEditor({
   const bodyImageCaptions = useMemo(() => Object.fromEntries(
     document.content.assets.filter((asset) => asset.kind === "image").map((asset) => [asset.src, asset.caption ?? ""]),
   ), [document.content.assets]);
+  const galleryImages = useMemo(() => document.content.assets.filter((asset) => asset.kind === "image"), [document.content.assets]);
   const updateImageCaption = useCallback((path: string, value: string) => {
     const current = currentLocalDocument();
     if (!current.content.assets.some((asset) => asset.src === path)) return;
@@ -2084,7 +2085,11 @@ export function UnifiedDocumentEditor({
       {activeTemplate.id === "texttext.gallery" ? <div className="tt-gallery-edit-layout">{documentSurface}<aside className="tt-gallery-edit-details" aria-label="Image details">
         <h2>Details</h2>
         <label>Title<input aria-label="Image title" value={document.content.title} onChange={(event) => updateText("title", event.target.value)} maxLength={240} /></label>
-        <label>Caption<textarea aria-label="Image caption" value={document.content.body} onChange={(event) => updateText("body", event.target.value)} rows={5} placeholder="Add a caption" /></label>
+        {galleryImages.map((asset, index) => <label key={asset.id}>{galleryImages.length === 1 ? "Caption" : `Image ${index + 1} caption`}<textarea aria-label={galleryImages.length === 1 ? "Image caption" : `Image ${index + 1} caption`} value={asset.caption ?? (galleryImages.length === 1 ? document.content.body : "")} onChange={(event) => {
+          const current = currentLocalDocument();
+          updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map((entry) => entry.id === asset.id ? { ...entry, caption: event.target.value } : entry) } });
+        }} rows={3} placeholder="Add a caption" /></label>)}
+        {document.content.body.trim() && galleryImages.length > 1 && <label>Collection note<textarea aria-label="Collection note" value={document.content.body} onChange={(event) => updateText("body", event.target.value)} rows={3} /></label>}
         <label>Source<input aria-label="Image source" type="url" placeholder="https://" value={typeof document.content.fields.sourceUrl === "string" ? document.content.fields.sourceUrl : ""} onChange={(event) => {
           const current = currentLocalDocument();
           const source = event.target.value;

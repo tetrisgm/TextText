@@ -1558,7 +1558,12 @@ try {
   await lightbox.getByRole("textbox", { name: "Image caption" }).fill("Edited beside the image.");
   await lightbox.getByRole("button", { name: "Save caption" }).click();
   await lightbox.getByText("Edited beside the image.").waitFor();
-  assert.equal(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.body, "Edited beside the image.");
+  const pairCaptions = JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets.map(asset => asset.caption);
+  assert.deepEqual(pairCaptions, [undefined, "Edited beside the image."]);
+  await lightbox.getByRole("button", { name: "Previous image" }).click();
+  assert.equal(await lightbox.getByText("Edited beside the image.").count(), 0);
+  await lightbox.getByRole("button", { name: "Next image" }).click();
+  await lightbox.getByText("Edited beside the image.").waitFor();
   assert.ok(await lightbox.evaluate(view => {
     const title = view.querySelector(".vault-gallery-title-button");
     const header = view.querySelector(":scope > header");
@@ -1601,7 +1606,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("textbox", { name: "Image title" }).fill("Collected photographs");
-  await page.getByRole("textbox", { name: "Image caption" }).fill("Two color studies kept together.");
+  await page.getByRole("textbox", { name: "Image 2 caption" }).fill("Two color studies kept together.");
   await page.getByRole("textbox", { name: "Image source" }).fill("https://example.com/photos");
   assert.equal(await page.getByRole("button", { name: "Read article" }).count(), 0);
   await page.getByRole("textbox", { name: "Add image tag" }).fill("color study");
@@ -1609,7 +1614,8 @@ try {
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const editedGallery = JSON.parse(files.get("Gallery/Pair.textpack").documentJSON);
   assert.equal(editedGallery.content.title, "Collected photographs");
-  assert.equal(editedGallery.content.body, "Two color studies kept together.");
+  assert.equal(editedGallery.content.body, "A visual pair.");
+  assert.deepEqual(editedGallery.content.assets.map(asset => asset.caption), [undefined, "Two color studies kept together."]);
   assert.equal(editedGallery.content.fields.sourceUrl, "https://example.com/photos");
   assert.deepEqual(editedGallery.content.tags, ["color study"]);
   await page.screenshot({ path: "/tmp/texttext-gallery-editor-reference.png" });
@@ -1656,7 +1662,7 @@ try {
   await importedImage.getByRole("button", { name: "Save caption" }).click();
   const measured = [...files.values()].find(file => file.path.startsWith("Gallery/Measured-"));
   assert.deepEqual(JSON.parse(measured.documentJSON).content.assets.map(asset => [asset.width, asset.height]), [[120, 240]]);
-  assert.equal(JSON.parse(measured.documentJSON).content.body, "A measured portrait.");
+  assert.equal(JSON.parse(measured.documentJSON).content.assets[0].caption, "A measured portrait.");
   const denseGalleryPaths = [];
   for (const [index, cover] of [16, 162, 200, 176, 214, 229, 17, 149, 188, 202, 215, 39].entries()) {
     const galleryPath = `Gallery/Photo study ${String(index + 1).padStart(2, "0")}.textpack`;

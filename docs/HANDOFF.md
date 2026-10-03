@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery now saves captions on each image asset instead of writing a shared document body. The inspector switches captions with the selected image, and the full editor shows separate caption inputs for multi-image TextPacks. Existing single-image body captions still display until edited; older collection notes remain intact. The local browser flow checks per-image isolation, the TextPack asset values, and the editor capture at `/tmp/texttext-gallery-editor-light-reference.png`; TypeScript and local/web browser flows pass. Resurf parity remains open; no release was run.
+
 Blog's inserted Markdown divider now appears as a three-dot separator in the editor and reader while `---` remains the TextPack source. The local browser flow checks the visible divider and hidden idle syntax; the light composition capture is `/tmp/texttext-blog-inline-image-light-reference.png`. TypeScript, offset tests, and local/web browser flows pass. Full Medium composition parity remains open; no release was run.
 
 Blog images now have an inline caption field while editing. The field updates the existing TextPack asset caption on blur, and the shared Markdown reader displays that caption beneath its image; the body image syntax stays unchanged. The local browser flow verifies the edit, saved asset, and light screenshot at `/tmp/texttext-blog-inline-image-light-reference.png`; renderer tests cover reader output. Full Medium image controls and composition parity remain open; no release was run.
