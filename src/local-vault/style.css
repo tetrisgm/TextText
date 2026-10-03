@@ -377,6 +377,8 @@
 .vault-app .vault-bookmark-list .vault-bookmark-copy small { font-size:11px; }
 .vault-app .vault-bookmark-favorite { margin-left:auto; color:#c69a3d; font-size:14px; }
 .vault-app .vault-bookmark-reader { min-width:0; }
+.vault-app .vault-bookmark-resume { display:block; margin:16px auto 0; padding:8px 13px; border:1px solid var(--line); border-radius:6px; color:var(--tt-accent); background:var(--surface); font-size:13px; font-weight:650; }
+.vault-app .vault-bookmark-resume:hover,.vault-app .vault-bookmark-resume:focus-visible { background:var(--selection); }
 .vault-app .vault-bookmark-reader>header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 14px; margin:0; padding:9px 18px; border-bottom:1px solid var(--line); font-size:12px; }
 .vault-app .vault-bookmark-reader>header>div { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
 .vault-app .vault-bookmark-reader-navigation { margin-right:auto; }

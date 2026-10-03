@@ -209,6 +209,21 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const archivedAt = typeof document?.content.fields.texttextBookmarkArchivedAt === "string" ? document.content.fields.texttextBookmarkArchivedAt : null;
   const personalNote = typeof document?.content.fields.texttextBookmarkNote === "string" ? document.content.fields.texttextBookmarkNote : "";
   const summary = document?.content.subtitle ?? "";
+  const savedProgress = document?.content.fields.texttextFeedReadingProgress;
+  const resumeProgress = document?.content.fields.texttextFeedEntry === "v1" && !readAt &&
+    typeof savedProgress === "number" && Number.isInteger(savedProgress) && savedProgress >= 15 && savedProgress < 90 ? savedProgress : 0;
+  const resumeReading = () => {
+    const scroller = window.document.querySelector<HTMLElement>(".vault-app>main");
+    const content = scroller?.querySelector<HTMLElement>(".vault-bookmark-reader .tt-document");
+    if (!scroller || !content || !resumeProgress) return;
+    const viewport = scroller.getBoundingClientRect();
+    const bounds = content.getBoundingClientRect();
+    const targetTop = scroller.scrollTop + bounds.top - viewport.bottom + Math.max(bounds.height, viewport.height) * resumeProgress / 100;
+    scroller.scrollTop = Math.max(0, Math.min(targetTop, scroller.scrollHeight - scroller.clientHeight));
+    const blocks = content.querySelectorAll<HTMLElement>(".tt-prose p,.tt-prose h2,.tt-prose h3,.tt-prose li,.tt-prose blockquote");
+    const visible = [...blocks].find(block => block.getBoundingClientRect().bottom > viewport.top + 32);
+    if (visible) { visible.tabIndex = -1; visible.focus({ preventScroll: true }); }
+  };
   const captureStatus = document?.content.fields.captureStatus;
   const captureFailed = captureStatus === "failed" || document?.content.fields.captureMediaStatus === "failed";
   const linkPlaceholder = document && articleSource(document) && isLinkPlaceholder(document.content.body, articleSource(document)!);
@@ -412,6 +427,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
       </div></details></header>}
       {error && <p role="alert" className="vault-bookmark-error">{error}</p>}
       {document && (captureFailed || linkPlaceholder) && <div className="vault-bookmark-capture-status" role="status"><p>{captureFailed ? "The page could not be captured. Your link is still saved." : "The link is saved. A readable copy is being prepared."}</p></div>}
+      {document && resumeProgress > 0 && <button type="button" className="vault-bookmark-resume" onClick={resumeReading}>Continue at {resumeProgress}%</button>}
       {document && template ? <ArticleReader key={current?.path} document={document} template={template} update={previewOnly || busy ? undefined : updateReader} flushUpdate={flushReaderDraft} compact /> : <p>{current ? "Reading saved page…" : "Save a link to start reading."}</p>}
     </article>
   </div>;
