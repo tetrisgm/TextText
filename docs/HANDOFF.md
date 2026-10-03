@@ -2,6 +2,8 @@
 
 ## Current work
 
+Gallery image detail now offers an editable Summary for the selected image and calls item tags Keywords. The summary is validated on the image asset in the same TextPack, so multi-image items keep separate descriptions. The local browser flow checks saving and switching images; TypeScript and local/web browser flows pass. Automatic opt-in keyword and summary generation, comments, and broader Resurf comparison remain open; no release was run.
+
 Blog Publish now saves changed preview title, subtitle, featured image, and topics before publishing in the same action, with the saved TextPack revision checked before public access changes. The local browser fixture publishes a story with unsaved preview edits and verifies both the saved fields and public state; TypeScript, local build, and local/web browser flows pass. Medium composition and real Mac/web publication checks remain open; no release was run.
 
 Bookmarks now switches between inbox and reader under 760 px, with Back to bookmarks returning focus to the selected link. Reader actions move into the details menu at that width, leaving one compact toolbar row. The full local vault browser flow checks the switch, action availability, and overflow; light and dark 390 px captures were visually checked. TypeScript and the web browser flow pass. Shiori's automatic summaries and broader content capture remain open; no release was run.

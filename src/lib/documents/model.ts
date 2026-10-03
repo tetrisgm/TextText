@@ -10,6 +10,7 @@ export const documentAssetSchema = z
     src: z.string().trim().min(1).max(4096),
     alt: z.string().max(1000).optional(),
     caption: z.string().max(4000).optional(),
+    summary: z.string().max(4000).optional(),
     placement: z.enum(["inline", "wide", "full"]).optional(),
     contentType: z.string().trim().max(200).optional(),
     /** A still preview for animated images or video. Both the editor and
