@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now aborts a superseded file search before accepting the next query. A deliberately delayed search in the local browser fixture no longer holds the next result hostage; debounce, action filtering, close-on-backdrop, Cmd-K toggle, and focus restoration still pass. TypeScript and web browser flow pass. This improves the responsiveness described in Superhuman's [command palette guide](https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/) without claiming exact visual or command parity. No app release was run.
+
 Oracle folder previews now return ordered, bounded stills for multi-image TextPacks, so the web Gallery can show each image as the Mac Gallery already does. The preview decodes only embedded first frames, caps source bytes and response size, and never fetches remote images. Focused preview tests cover image order, proportions, metadata-only reads, and byte bounds; TypeScript passed. This closes a web/Mac Gallery mismatch but does not prove full Resurf parity. No app release was run.
 
 Notes cards now take keyboard focus: Up/Down move between visible cards, Space opens the reader, and Enter opens the card editor. Existing links, tag filters, and explicit Open/Edit buttons retain their actions. The local browser contract verifies navigation, reader, and editor; TypeScript and web browser flow pass. This follows Supernotes' documented card keyboard model (<https://help.supernotes.app/en/articles/3068805-keyboard-shortcuts>) but does not establish full interaction or visual parity. No app release was run.

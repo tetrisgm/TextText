@@ -12,6 +12,7 @@ const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
 const feedReadURLs = [];
+const searchQueries = [];
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
@@ -76,7 +77,11 @@ try {
       if (request.method === "connect") connected = true;
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace", workspaceId } : {}) };
     } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
-    else if (request.method === "search") result = { items: [...files.values()].filter((file) => (!request.params.folder || file.path.startsWith(`${request.params.folder}/`)) && file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
+    else if (request.method === "search") {
+      searchQueries.push(request.params.query);
+      if (request.params.query === "slowquery") await new Promise(resolve => setTimeout(resolve, 2000));
+      result = { items: [...files.values()].filter((file) => (!request.params.folder || file.path.startsWith(`${request.params.folder}/`)) && file.markdown.toLowerCase().includes(request.params.query.toLowerCase())).map((file) => ({ path: file.path, title: file.path, snippet: "Matched in file" })), truncated: false };
+    }
     else if (request.method === "read" || request.method === "template") {
       const removal = delayedRemoval;
       if (request.method === "read" && removal?.path === request.params.path && !files.has(request.params.path)) {
@@ -311,6 +316,11 @@ try {
   await searchTrigger.click();
   await page.getByRole("combobox", { name: "Search workspace" }).fill("Offline");
   await page.locator('#vault-command-results [id^="file:"]').first().waitFor();
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("slowquery");
+  for (let attempt = 0; attempt < 100 && !searchQueries.includes("slowquery"); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.ok(searchQueries.includes("slowquery"));
+  await page.getByRole("combobox", { name: "Search workspace" }).fill("Offline");
+  await page.locator('#vault-command-results [id^="file:"]').first().waitFor({ timeout: 1300 });
   await page.getByRole("combobox", { name: "Search workspace" }).fill("no-matching-file-987654");
   assert.equal(await page.locator('#vault-command-results [id^="file:"]').count(), 0);
   await page.locator(".vault-search-backdrop").click({ position: { x: 4, y: 4 } });
