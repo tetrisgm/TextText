@@ -1688,6 +1688,7 @@ export function UnifiedDocumentEditor({
               surfaceRef={bodySurfaceRef}
               resolveSelection={resolveBodySelection}
               onPasteImages={onPasteImages ? pasteImages : undefined}
+              concealImageLines={experience === "note"}
               disabled={imagePastePending}
             />
           </div>

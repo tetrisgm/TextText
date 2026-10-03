@@ -101,7 +101,10 @@ function headingClass(hashes: number): string {
 }
 
 /** Styled segments for one line, in source order. Purely presentational. */
-function segmentsForLine(line: string): Segment[] {
+function segmentsForLine(line: string, concealImageLine = false): Segment[] {
+  if (concealImageLine && /^!\[[^\]]*\]\((?:assets\/[^)]+|blob:[^)]+)\)$/.test(line.trim())) {
+    return [{ text: line, className: `${MARKER} ${SYNTAX}` }];
+  }
   const heading = /^(\s*)(#{1,6})(\s+)(.*)$/.exec(line);
   if (heading) {
     const cls = headingClass(heading[2].length);
@@ -373,6 +376,7 @@ export function MarkdownSurface({
   surfaceRef,
   resolveSelection,
   onPasteImages,
+  concealImageLines = false,
   disabled = false,
 }: {
   value: string;
@@ -384,6 +388,7 @@ export function MarkdownSurface({
   surfaceRef?: React.RefObject<HTMLDivElement | null>;
   resolveSelection?: () => { anchor: number; head: number } | null;
   onPasteImages?: (files: File[], selection: { from: number; to: number }) => void;
+  concealImageLines?: boolean;
   disabled?: boolean;
 }) {
   const localRef = useRef<HTMLDivElement>(null);
@@ -758,7 +763,7 @@ export function MarkdownSurface({
       pushText(text.slice(cut - segStart), cut, className);
       at = segEnd;
     };
-    for (const segment of segmentsForLine(line)) {
+    for (const segment of segmentsForLine(line, concealImageLines)) {
       emitSegment(segment.text, segment.className);
     }
     if (line.length === 0) {
