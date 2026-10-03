@@ -2,6 +2,8 @@
 
 ## Current work
 
+Command K now uses the wider, centered Superhuman-style panel, a blank focused input, and five tall command rows with no visible Actions heading. The browser capture at `/tmp/texttext-command-reference.png` and TypeScript, local bundle, and local/web browser flows passed. Search and keyboard behavior are unchanged; exact visual and command parity remain open. No release was run.
+
 The Notes editor now offers Add image next to tags. It writes the original asset and Markdown into the same guarded TextPack, previews the attached image inside the card while editing, and shows it after Finish. Image insertion now adds paragraph boundaries, so the Markdown image does not run into adjacent text. The guarded write uses the latest saved title/tags if only metadata changed while the image picker was open, and still rejects changed body text. Local browser flows verify a real create/tag/image/Finish/reopen sequence, including asset bytes, and a 390px new-note capture at `/tmp/texttext-note-create-narrow-light-reference.png`. Full Supernotes editing parity remains open; no release was run.
 
 Notes cards now show a bounded local image thumbnail alongside rich Markdown text and up to five visible tags. Card projection removes inline image Markdown so embedded assets do not render twice or as broken relative URLs; the original TextPack body stays intact. A realistic checklist/photo/four-tag fixture is captured in light and dark at `/tmp/texttext-note-rich-{light,dark}-reference.png`, and the local browser flow checks one loaded image and the fourth tag. Full Supernotes composition and hierarchy parity remain open. No release was run.

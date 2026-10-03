@@ -84,10 +84,10 @@
 .vault-app .vault-search-trigger kbd { opacity: 0; font: inherit; font-size: 11px; white-space: nowrap; }
 .vault-app .vault-search-trigger:hover kbd,.vault-app .vault-search-trigger:focus-visible kbd { opacity: 1; }
 .vault-app .vault-search-backdrop { position: fixed; inset: 0; z-index: 240; display:flex; align-items:center; justify-content:center; padding:20px; background: #0009; }
-.vault-app .vault-search-backdrop .vault-search { position:relative; inset:auto; transform:none; width:min(640px,100%); max-height:min(470px,calc(100vh - 40px)); padding:0; overflow:hidden; background:#555861; color:#fff; border:1px solid #737680; border-radius:10px; box-shadow:0 28px 90px #0008; }
-.vault-app .vault-search header { justify-content:flex-start; padding:13px 20px; margin:0; border-bottom:1px solid #7d8088; }
+.vault-app .vault-search-backdrop .vault-search { position:relative; inset:auto; transform:none; width:min(900px,100%); max-height:min(530px,calc(100vh - 40px)); padding:0; overflow:hidden; background:#70737b; color:#fff; border:1px solid #8b8e96; border-radius:7px; box-shadow:0 28px 90px #0008; }
+.vault-app .vault-search header { justify-content:flex-start; min-height:64px; padding:15px 42px; margin:0; border-bottom:1px solid #8b8e96; }
 .vault-app .vault-search .vault-command-mark { display:grid; place-items:center; width:25px; height:25px; margin:0 5px 0 0; border:1px solid #c8cad0; border-radius:50%; color:#edf0f5; font-size:15px; line-height:1; }
-.vault-app .vault-search header h2 { margin:0; font-size:13px; font-weight:550; letter-spacing:.02em; color:#e8e9ec; }
+.vault-app .vault-search header h2 { margin:0; font-size:16px; font-weight:500; letter-spacing:0; color:#e8e9ec; }
 .vault-app .vault-search header button { width:auto; margin-left:auto; padding:4px 8px; border:1px solid #9b9da4; border-radius:4px; color:#e8e9ec; font-size:11px; }
 .vault-app .vault-search header .vault-command-back { margin-left:auto; border:0; font-size:12px; }
 .vault-app .vault-search header .vault-command-back+button { margin-left:0; }
@@ -95,20 +95,21 @@
 .vault-app .vault-shortcuts-list>div { display:flex; align-items:center; justify-content:space-between; gap:18px; min-height:36px; padding:7px 8px; border-bottom:1px solid #737680; color:#f5f5f6; font-size:13px; }
 .vault-app .vault-shortcuts-list kbd { min-width:24px; padding:3px 6px; border:1px solid #a6a8b0; border-radius:4px; color:#f0f1f4; font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-align:center; }
 .vault-app .vault-search :is(header h2, input, [role=option] strong, [role=option] kbd) { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
-.vault-app .vault-search>input { margin:0; padding:18px 20px; border:0; border-radius:0; outline:0; background:#555861; color:#fff; font-size:19px; }
+.vault-app .vault-search>input { height:94px; margin:0; padding:20px 42px; border:0; border-radius:0; outline:0; background:#70737b; color:#fff; font-size:21px; }
 .vault-app .vault-search>input:focus-visible { outline:0; }
 .vault-app .vault-search>p,.vault-app .vault-search [role=listbox]>p { margin:10px 18px; color:#e4e5e8; }
-.vault-app .vault-search [role=listbox] { overflow:auto; max-height:min(288px,calc(100vh - 165px)); padding:8px; }
+.vault-app .vault-search [role=listbox] { overflow:auto; max-height:min(355px,calc(100vh - 198px)); padding:0; }
 .vault-app .vault-search [role=listbox] h3 { margin:10px 10px 5px; color:#d5d7dc; font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.08em; }
-.vault-app .vault-search [role=option] { display:grid; grid-template-columns:28px minmax(0,1fr) auto; gap:2px 12px; align-items:center; width:100%; margin:0; padding:10px 12px; border-radius:5px; color:#fff; text-align:left; }
+.vault-app .vault-search [role=option] { display:grid; grid-template-columns:28px minmax(0,1fr) auto; gap:2px 18px; align-items:center; width:100%; min-height:70px; margin:0; padding:12px 42px; border-radius:0; color:#fff; text-align:left; }
 .vault-app .vault-search .vault-command-icon { display:grid; grid-column:1; grid-row:1; place-items:center; width:27px; height:27px; border:1px solid #c1c3c9; border-radius:50%; color:#f0f1f4; font-size:16px; font-style:normal; line-height:1; }
-.vault-app .vault-search [role=option] strong { grid-column:2; font-size:14px; font-weight:560; }
+.vault-app .vault-search [role=option] strong { grid-column:2; font-size:16px; font-weight:500; }
 .vault-app .vault-search [role=option] strong em { color:#aeb4be; font-size:12px; font-style:normal; font-weight:400; }
 .vault-app .vault-search [role=option] span,.vault-app .vault-search [role=option] small { grid-column:2; margin:0; color:#aeb4be; font-size:12px; }
 .vault-app .vault-search [role=option] kbd { grid-column:3; grid-row:1; padding:3px 6px; color:#f0f1f4; border:1px solid #a6a8b0; border-radius:4px; font-size:11px; }
 .vault-app .vault-search .vault-command-file strong { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .vault-app .vault-search .vault-command-file small { grid-column:3; grid-row:1; max-width:180px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-align:right; }
-.vault-app .vault-search [role=option]:hover,.vault-app .vault-search [role=option][aria-selected=true] { background:#7d808a; }
+.vault-app .vault-search [role=option]:hover,.vault-app .vault-search [role=option][aria-selected=true] { background:#858891; }
+@media(max-width:550px){.vault-app .vault-search header{padding:12px 18px;min-height:54px}.vault-app .vault-search>input{height:70px;padding:14px 18px}.vault-app .vault-search [role=option]{min-height:56px;padding:9px 18px;gap:2px 10px}.vault-app .vault-search .vault-command-file small{max-width:85px}}
 .vault-app .vault-photo-grid { display:grid; gap:12px; min-width:0; }
 .vault-app .vault-photo-row { display:flex; gap:12px; min-width:0; }
 .vault-app .vault-gallery-tools { display:flex; align-items:center; justify-content:flex-end; gap:8px; min-height:32px; margin:0 0 10px; }
