@@ -529,6 +529,9 @@
 .vault-app .vault-gallery-inspector-section:not(:has(p,form)) { margin-top:12px; padding-top:12px; }
 .vault-app .vault-gallery-inspector-heading { display:flex; justify-content:space-between; align-items:start; gap:8px; }
 .vault-app .vault-gallery-inspector-heading button { padding:0; color:var(--tt-accent); font-size:12px; }
+.vault-app .vault-gallery-comment-prompt { box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; min-height:42px; padding:9px 11px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--muted); font-size:12px; text-align:left; cursor:text; }
+.vault-app .vault-gallery-comment-prompt:hover { border-color:var(--muted); }
+.vault-app .vault-gallery-comment-prompt:focus-visible { outline:2px solid var(--tt-accent); outline-offset:2px; }
 .vault-app .vault-gallery-inspector-section form { display:grid; gap:8px; margin-top:8px; }
 .vault-app .vault-gallery-inspector-section form textarea,.vault-app .vault-gallery-inspector-section form input { box-sizing:border-box; width:100%; padding:8px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); font:inherit; }
 .vault-app .vault-gallery-inspector-section form select { box-sizing:border-box; width:100%; padding:8px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); font:inherit; }

@@ -1784,7 +1784,7 @@ try {
   assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets.map(asset => asset.tags), [undefined, ["reference"]]);
   const commentReadsBeforeOpening = commentReads;
   const galleryComments = lightbox.getByRole("complementary", { name: "Item comments" });
-  await lightbox.getByRole("button", { name: "View comments" }).click();
+  await lightbox.getByRole("button", { name: "Add a comment to this item" }).click();
   await galleryComments.getByText("No open comments on this file.").waitFor();
   assert.ok(commentReads > commentReadsBeforeOpening, "gallery comments should load only when opened");
   await galleryComments.getByRole("textbox", { name: "Add a comment" }).fill("A note beside this visual reference.");
@@ -1803,7 +1803,7 @@ try {
   await page.keyboard.press("Escape");
   await galleryComments.waitFor({ state: "hidden" });
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
-  await lightbox.getByRole("button", { name: "View comments" }).click();
+  await lightbox.getByRole("button", { name: "Add a comment to this item" }).click();
   await galleryComments.getByRole("region", { name: "Thread by Test writer" }).waitFor();
   await lightbox.getByRole("button", { name: "Hide", exact: true }).click();
   await galleryComments.waitFor({ state: "hidden" });
