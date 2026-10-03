@@ -2182,7 +2182,10 @@ export function UnifiedDocumentEditor({
       {activeTemplate.id === "texttext.gallery" ? <div className="tt-gallery-edit-layout">{documentSurface}<aside className="tt-gallery-edit-details" aria-label="Image details">
         <h2>Details</h2>
         <label>Title<input aria-label="Image title" value={document.content.title} onChange={(event) => updateText("title", event.target.value)} maxLength={240} /></label>
-        {galleryImages.map((asset, index) => <div key={asset.id} className="tt-gallery-image-fields">{galleryImages.length > 1 && <h3>Image {index + 1}</h3>}<label>Caption<textarea aria-label={galleryImages.length === 1 ? "Image caption" : `Image ${index + 1} caption`} value={asset.caption ?? (galleryImages.length === 1 ? document.content.body : "")} onChange={(event) => {
+        {galleryImages.map((asset, index) => <div key={asset.id} className="tt-gallery-image-fields">{galleryImages.length > 1 && <><h3>Image {index + 1}</h3><label>Photo title<input aria-label={`Image ${index + 1} title`} value={asset.title ?? ""} onChange={(event) => {
+          const current = currentLocalDocument();
+          updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map((entry) => entry.id === asset.id ? { ...entry, title: event.target.value } : entry) } });
+        }} maxLength={240} placeholder={asset.alt || `Image ${index + 1}`} /></label></>}<label>Caption<textarea aria-label={galleryImages.length === 1 ? "Image caption" : `Image ${index + 1} caption`} value={asset.caption ?? (galleryImages.length === 1 ? document.content.body : "")} onChange={(event) => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, assets: current.content.assets.map((entry) => entry.id === asset.id ? { ...entry, caption: event.target.value } : entry) } });
         }} rows={3} placeholder="Add a caption" /></label><label>Summary<textarea aria-label={galleryImages.length === 1 ? "Image summary" : `Image ${index + 1} summary`} value={asset.summary ?? ""} onChange={(event) => {
@@ -2197,7 +2200,7 @@ export function UnifiedDocumentEditor({
             sourceUrl: source || null, sourceLabel: source || null, links: source ? [{ href: source, label: source }] : [],
           } } });
         }} /></label>
-        <div className="tt-gallery-edit-tags"><h3>Keywords</h3><div>{document.content.tags.map((tag) => <span key={tag}>{tag}<button type="button" aria-label={`Remove ${tag}`} onClick={() => {
+        <div className="tt-gallery-edit-tags"><h3>Tags</h3><div>{document.content.tags.map((tag) => <span key={tag}>{tag}<button type="button" aria-label={`Remove ${tag}`} onClick={() => {
           const current = currentLocalDocument();
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: current.content.tags.filter((value) => value !== tag) } });
         }}>×</button></span>)}</div>{document.content.tags.length < 500 && <form onSubmit={(event) => {
@@ -2208,7 +2211,7 @@ export function UnifiedDocumentEditor({
           if (current.content.tags.some((value) => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) return;
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, tag] } });
           setTagDraft("");
-        }}><input aria-label="Add image keyword" placeholder="Add a keyword" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
+        }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div>
       </aside></div> : documentSurface}
       {experience === "note" && <section className="tt-article-topics tt-note-tags" aria-label="Note tags">
         <h3>Tags</h3>

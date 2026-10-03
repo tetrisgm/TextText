@@ -319,7 +319,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     return (!noteTag || tags.includes(noteTag)) && (!noteQuery || `${indexedNoteTitle(item)} ${preview?.excerpt ?? ""} ${tags.join(" ")}`.toLocaleLowerCase().includes(noteQuery) || noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && noteContentSearch.paths.has(item.path));
   }).sort((left, right) => noteSort === "title" ? indexedNoteTitle(left).localeCompare(indexedNoteTitle(right)) : 0) : collectionSearchReady && (galleryFolder ? galleryQuery || galleryTag : storyQuery) ? items.filter(item => {
     const preview = collectionSearchIndex.previews[item.path];
-    return (!galleryFolder || !galleryTag || preview?.document?.content.tags.includes(galleryTag)) && `${preview?.title || fallbackTitle(item)} ${preview?.document?.content.subtitle || ""} ${preview?.document?.content.fields.texttextPreviewTitle || ""} ${preview?.document?.content.fields.texttextPreviewSubtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
+    return (!galleryFolder || !galleryTag || preview?.document?.content.tags.includes(galleryTag)) && `${preview?.title || fallbackTitle(item)} ${galleryFolder ? (preview?.document?.content.assets.filter(asset => asset.kind === "image").map(asset => [asset.title, asset.alt, asset.caption, asset.summary].filter(Boolean).join(" ")).join(" ") || "") : ""} ${preview?.document?.content.subtitle || ""} ${preview?.document?.content.fields.texttextPreviewTitle || ""} ${preview?.document?.content.fields.texttextPreviewSubtitle || ""} ${preview?.excerpt || ""} ${preview?.sourceURL || ""} ${(preview?.document?.content.tags || []).join(" ")}`.toLocaleLowerCase().includes(galleryFolder ? galleryQuery : storyQuery);
   }) : items;
   const displayedItems = folder === "Blog" && collectionSearchReady && storyStatus !== "all"
     ? searchMatchedItems.filter(item => storyStatus === "published" ? Boolean(collectionSearchIndex.previews[item.path]?.publishedAt) : !collectionSearchIndex.previews[item.path]?.publishedAt)
@@ -399,7 +399,8 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const galleryTiles = photoFolder ? visible.flatMap(item => {
     const preview = previews[item.path];
     const images = preview?.images?.length ? preview.images : [preview?.image];
-    return images.map((image, index) => ({ item, preview, image, index, key: `${item.path}:${index}`, title: `${preview?.title || fallbackTitle(item)}${images.length > 1 ? ` image ${index + 1}` : ""}` }));
+    const imageAssets = preview?.document?.content.assets.filter(asset => asset.kind === "image") || [];
+    return images.map((image, index) => ({ item, preview, image, index, key: `${item.path}:${index}`, title: imageAssets[index]?.title || `${preview?.title || fallbackTitle(item)}${images.length > 1 ? ` image ${index + 1}` : ""}` }));
   }) : [];
   const galleryRows: { tiles: typeof galleryTiles; height: number; widths: number[] }[] = [];
   const rowGap = 12;
