@@ -28,6 +28,7 @@ final class TextBundlePackageTests: XCTestCase {
         let decoded = try TextTextTextBundlePackage.read(from: package.url, in: root)
         XCTAssertEqual(decoded.markdown, "# Hello\n\n![Photo](\(remoteURL))\n")
         XCTAssertEqual(decoded.assets.map(\.filename), ["photo.png"])
+        XCTAssertEqual(decoded.assets.first?.contentType, "image/png")
         XCTAssertEqual(decoded.assets.first?.remoteURL, remoteURL)
         XCTAssertGreaterThan(decoded.logicalSize, 4)
     }
@@ -62,6 +63,33 @@ final class TextBundlePackageTests: XCTestCase {
             with: Data(documentJSON.utf8))
         XCTAssertEqual(decodedObject as? NSDictionary, sourceObject as? NSDictionary)
         XCTAssertEqual(decoded.markdown, "# Hello\n\n![Cover](\(remoteURL))\n")
+    }
+
+    func testReadInfersImageContentTypeForLegacyAssetsWithoutMappings() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: "# Legacy gallery\n",
+            assets: [
+                .init(filename: "cover.JPG", data: Data([0xff, 0xd8, 0xff, 0xd9]), remoteURL: "assets/cover.JPG"),
+                .init(filename: "diagram.svg", data: Data("<svg/>".utf8), remoteURL: "assets/diagram.svg"),
+                .init(filename: "capture.HEIF", data: Data([1, 2, 3]), remoteURL: "assets/capture.HEIF"),
+                .init(filename: "opaque.bin", data: Data([1, 2, 3]), remoteURL: "assets/opaque.bin"),
+            ], sourceURL: nil, in: root)
+        let infoURL = package.url.appendingPathComponent("info.json")
+        let rawInfo = try JSONSerialization.jsonObject(with: Data(contentsOf: infoURL))
+        var info = try XCTUnwrap(rawInfo as? [String: Any])
+        info.removeValue(forKey: "net.texttext.assets")
+        try JSONSerialization.data(withJSONObject: info).write(to: infoURL)
+
+        let decoded = try TextTextTextBundlePackage.read(from: package.url, in: root)
+
+        XCTAssertEqual(decoded.assets.first(where: { $0.filename == "cover.JPG" })?.contentType, "image/jpeg")
+        XCTAssertEqual(decoded.assets.first(where: { $0.filename == "diagram.svg" })?.contentType, "image/svg+xml")
+        XCTAssertEqual(decoded.assets.first(where: { $0.filename == "capture.HEIF" })?.contentType, "image/heic")
+        XCTAssertNil(decoded.assets.first(where: { $0.filename == "opaque.bin" })?.contentType)
     }
 
     /// The point of the whole exercise: a textpack handed to someone else has

@@ -1,8 +1,17 @@
 import { build } from "esbuild";
+import { realpathSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
+export function isBuildLocalVaultEntrypoint(invokedPath, moduleURL) {
+  if (!invokedPath) return false;
+  try {
+    return realpathSync(invokedPath) === realpathSync(fileURLToPath(moduleURL));
+  } catch {
+    return false;
+  }
+}
 export async function buildLocalVault({ entry = "src/local-vault/main.tsx", output = path.join(root, "mac/build/LocalVault") } = {}) {
 await mkdir(output, { recursive: true });
 await build({
@@ -36,4 +45,4 @@ await writeFile(path.join(output, "index.html"), `<!doctype html>
 console.log(`Local vault UI bundled at ${output}`);
 
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await buildLocalVault();
+if (isBuildLocalVaultEntrypoint(process.argv[1], import.meta.url)) await buildLocalVault();
