@@ -130,7 +130,7 @@ describe("/api/ai/item-type", () => {
     );
     const { prompt } = mocks.generateText.mock.calls[0][0];
     expect(prompt).toContain("Item types that already exist here");
-    expect(prompt).toContain("Example: Tasks");
+    expect(prompt).toContain("Example: Task list");
     expect(prompt).toContain("Fields:");
   });
 

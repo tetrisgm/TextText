@@ -127,11 +127,16 @@ describe("style families", () => {
     expect(styleFamilyFor("recipes-a1b2c3")).toBeUndefined();
   });
 
-  it("stopped keying Article's rules on Article's id", () => {
-    // The rules that used to say [data-template="texttext.article"] now say
-    // [data-style-family="article"], which both looks carry.
-    expect(DOCUMENT_ENGINE_CSS).not.toContain('data-template="texttext.article"');
-    expect(DOCUMENT_ENGINE_CSS).toContain('data-style-family="article"');
+  it("keys shared Article styling to its family and keeps Article-only adjustments", () => {
+    // Timeline shares Article's typography and prose. Article's masthead
+    // alignment remains a per-template layout adjustment.
+    expect(DOCUMENT_ENGINE_CSS).toContain('[data-style-family="article"] .tt-text-title{');
+    expect(DOCUMENT_ENGINE_CSS).toContain('[data-style-family="article"] .tt-prose{');
+    expect(DOCUMENT_ENGINE_CSS).not.toContain('[data-template="texttext.article"] .tt-text-title');
+    expect(DOCUMENT_ENGINE_CSS).not.toContain('[data-template="texttext.article"] .tt-prose');
+    expect(DOCUMENT_ENGINE_CSS).toContain('[data-template="texttext.article"] .tt-masthead{text-align:left');
+    expect(DOCUMENT_ENGINE_CSS).toContain('[data-template="texttext.article"] .tt-masthead>.tt-text{width:100%}');
+    expect(DOCUMENT_ENGINE_CSS).toContain('[data-template="texttext.article"] .tt-masthead::after{display:none}');
   });
 
   it("every built-in either has its own rules or a family that does", () => {

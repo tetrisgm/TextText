@@ -29,9 +29,10 @@ describe("item type examples", () => {
     expect(ranked[0]?.template.id).toBe("texttext.todo");
   });
 
-  it("puts Project first for a project request", () => {
-    const ranked = rankItemTypeExamples("a project page with status and dates");
-    expect(ranked[0]?.template.id).toBe("texttext.project");
+  it("does not offer a retired project look to the model", () => {
+    const request = "a project page with status and dates";
+    expect(rankItemTypeExamples(request)).toEqual([]);
+    expect(itemTypeExamplesFor(request)).toBe("");
   });
 
   it("puts Gallery first when the pictures lead", () => {
@@ -58,18 +59,18 @@ describe("item type examples", () => {
   });
 
   it("hands over at most the limit, with fields and a real document", () => {
-    const block = itemTypeExamplesFor(
-      "Make this a to-do list like Todoist: each task has a checkbox, a due date and a priority.",
-      2,
-    );
+    const request = "notes bookmarks gallery presentation task list";
+    expect(rankItemTypeExamples(request).length).toBeGreaterThan(2);
+    const block = itemTypeExamplesFor(request, 2);
     expect(block.match(/^Example: /gm)?.length).toBe(2);
     expect(block).toContain("Fields:");
     expect(block).toContain("Folder view:");
     expect(block).toContain("A real one reads:");
   });
 
-  it("names enum options, the choice models most often leave vague", () => {
-    const block = itemTypeExamplesFor("a project with a status and some tasks", 2);
-    expect(block).toMatch(/\(enum: [a-z]/);
+  it("describes the concrete fields in the active task-list example", () => {
+    const block = itemTypeExamplesFor("a task list with several tasks", 2);
+    expect(block).toContain("items (rows of task, done)");
+    expect(block).not.toContain("Example: Project");
   });
 });
