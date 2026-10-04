@@ -58,6 +58,26 @@ describe("durable file collaboration", () => {
     expect(await canceled).toEqual(current);
   });
 
+  it("ignores unrelated workspace notifications until the collaboration cursor changes", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const abort = new AbortController();
+    const waiting = waitVaultCollaboration({ ...location(), epoch: initial.epoch, seq: initial.seq, waitMs: 2_000, signal: abort.signal });
+    try {
+      await new Promise(resolve => setTimeout(resolve, 25));
+      await fs.writeFile(path.join(root, workspaceId, "unrelated.txt"), "not a checkpoint");
+      const early = await Promise.race([
+        waiting.then(() => "woke" as const),
+        new Promise<"still-waiting">(resolve => setTimeout(() => resolve("still-waiting"), 50)),
+      ]);
+      expect(early).toBe("still-waiting");
+
+      await push("wake-after-commit", initial, edit(initial, " committed"));
+      expect((await waiting)?.seq).toBe(initial.seq + 1);
+    } finally {
+      abort.abort();
+    }
+  });
+
   it.each(["revoke", "abort"])("rejects a queued writer after %s while waiting on the workspace lock", async (reason) => {
     const initial = (await readVaultCollaboration(location()))!;
     let entered!: () => void, release!: () => void;
