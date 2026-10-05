@@ -194,12 +194,31 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         panel.begin { [weak self] response in
             guard let self else { return }
             guard response == .OK, let selected = panel.url else {
+                _ = try? LocalVaultConfiguration.openSelection(root: nil)
                 completion?(.failure(CocoaError(.userCancelled))); return
             }
             if let requestID { self.startNativeOperation(requestID) }
             do {
                 let bookmark = try selected.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
-                _ = try LocalVaultConfiguration.open(root: selected, bookmarkData: bookmark)
+                do {
+                    _ = try LocalVaultConfiguration.openSelection(root: selected, bookmarkData: bookmark)
+                } catch let error as LocalVaultConfigurationError {
+                    guard case .recoveryRequired(let configURL, let reason) = error else { throw error }
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "TextText needs to recover its folder settings"
+                    alert.informativeText = "The saved settings at \(configURL.path) cannot be read safely (\(reason)). TextText can keep a recovery copy and save the folder you selected. Your notes stay in their folder."
+                    alert.addButton(withTitle: "Keep Backup and Continue")
+                    alert.addButton(withTitle: "Cancel")
+                    guard alert.runModal() == .alertFirstButtonReturn else {
+                        completion?(.failure(CocoaError(.userCancelled))); return
+                    }
+                    _ = try LocalVaultConfiguration.openSelection(
+                        root: selected,
+                        bookmarkData: bookmark,
+                        replacingUnreadableConfiguration: true
+                    )
+                }
                 try self.selectRoot(selected)
                 self.onSelectedFolder?()
                 self.io.async {
