@@ -13,7 +13,9 @@ async function main() {
   if (process.argv[2] === "--print-base") { console.log(config.base); return; }
   const version = process.argv[2];
   if (!version || !/^[0-9]+(\.[0-9]+)+$/.test(version)) throw new Error("usage: node scripts/publish-mac-release.mjs <version>");
-  const zipFile = path.join(root, `mac/dist/TextText-${version}.zip`), appcastFile = path.join(root, "mac/dist/appcast.xml");
+  const distributionDirectory = path.join(root, "mac", "dist");
+  const zipFile = path.join(distributionDirectory, `TextText-${version}.zip`);
+  const appcastFile = path.join(distributionDirectory, "appcast.xml");
   if ((await stat(appcastFile)).size > 1024 * 1024) throw new Error("Appcast exceeds its size limit.");
   const zip = await inspectReleaseFile(zipFile), appcast = await inspectReleaseFile(appcastFile);
   const zipKey = `downloads/TextText-${version}.zip`, appcastKey = `downloads/appcast-${version}.xml`;

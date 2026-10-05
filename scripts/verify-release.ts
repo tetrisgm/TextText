@@ -122,7 +122,7 @@ async function verifyRelease() {
     {
       id: "web.unit",
       timeoutSeconds: 1_800,
-      command: ["npx", "vitest", "run"],
+      command: ["npm", "test"],
     },
     {
       // The durability tests are the ones that answer "can this lose my
