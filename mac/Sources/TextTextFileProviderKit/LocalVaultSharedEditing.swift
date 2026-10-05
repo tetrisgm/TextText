@@ -50,8 +50,8 @@ struct LocalVaultSharedEditingStore: Sendable {
     private func itemDirectory(_ itemId: String, create: Bool = false) throws -> URL {
         guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) == itemId.startIndex..<itemId.endIndex else { throw LocalVaultSharedFailure.invalid }
         let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
-        var directory = canonical
-        for component in [".texttext", "shared-editing", itemId] {
+        var directory = LocalVaultDeviceState.directory(root: canonical)
+        for component in ["shared-editing", itemId] {
             directory.appendPathComponent(component, isDirectory: true)
             guard directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
             if create {

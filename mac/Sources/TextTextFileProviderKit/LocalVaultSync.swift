@@ -80,8 +80,10 @@ public actor LocalVaultSync {
     private var sharedStore: LocalVaultSharedEditingStore { LocalVaultSharedEditingStore(root: root) }
 
     public init(root: URL, binding: LocalVaultSyncBinding, transport: any LocalVaultSyncTransport) throws {
-        self.root = root.standardizedFileURL.resolvingSymlinksInPath()
-        self.directory = self.root.appendingPathComponent(".texttext/sync", isDirectory: true)
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        try LocalVaultDeviceState.migrate(root: canonicalRoot)
+        self.root = canonicalRoot
+        self.directory = LocalVaultDeviceState.directory(root: canonicalRoot).appendingPathComponent("sync", isDirectory: true)
         self.transport = transport
         self.editOrigins = LocalVaultEditOriginJournal(root: self.root)
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
@@ -251,7 +253,8 @@ public actor LocalVaultSync {
 
     public static func binding(root: URL) throws -> LocalVaultSyncBinding? {
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
-        let url = canonicalRoot.appendingPathComponent(".texttext/sync/state.json")
+        try LocalVaultDeviceState.migrate(root: canonicalRoot)
+        let url = LocalVaultDeviceState.directory(root: canonicalRoot).appendingPathComponent("sync/state.json")
         guard url.resolvingSymlinksInPath().path == url.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return try JSONDecoder().decode(State.self, from: Data(contentsOf: url)).binding
@@ -260,7 +263,8 @@ public actor LocalVaultSync {
     /// Collaboration may take over only after these exact local bytes have an acknowledged remote baseline.
     public static func collaborationReady(root: URL, path: String, itemId: String, localHash: String) throws -> Bool {
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
-        let url = canonicalRoot.appendingPathComponent(".texttext/sync/state.json")
+        try LocalVaultDeviceState.migrate(root: canonicalRoot)
+        let url = LocalVaultDeviceState.directory(root: canonicalRoot).appendingPathComponent("sync/state.json")
         guard url.resolvingSymlinksInPath().path == url.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
         guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16 * 1024 * 1024 else { throw LocalVaultDocumentStore.Failure.tooLarge }

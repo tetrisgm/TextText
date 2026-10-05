@@ -191,6 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         if terminateIfAnotherInstanceIsAlreadyRunning() { return }
 
+        LocalVaultDeviceState.configure(base: store.baseDir)
+
         WebAppWindowController.configureURLCacheForStartup()
 
         // The first network request is the launch's critical path; everything

@@ -12,7 +12,7 @@ public struct LocalVaultEditOriginJournal: Sendable {
 
     public init(root: URL) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
-        directory = self.root.appendingPathComponent(".texttext/sync", isDirectory: true)
+        directory = LocalVaultDeviceState.directory(root: self.root).appendingPathComponent("sync", isDirectory: true)
         file = directory.appendingPathComponent("native-edits.json")
     }
 
@@ -72,6 +72,7 @@ public struct LocalVaultEditOriginJournal: Sendable {
     }
 
     private func read() throws -> [String: String] {
+        try LocalVaultDeviceState.migrate(root: root)
         guard directory.resolvingSymlinksInPath().path == directory.path,
               file.resolvingSymlinksInPath().path == file.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         guard FileManager.default.fileExists(atPath: file.path) else { return [:] }
@@ -81,6 +82,7 @@ public struct LocalVaultEditOriginJournal: Sendable {
     }
 
     private func write(_ entries: [String: String]) throws {
+        try LocalVaultDeviceState.migrate(root: root)
         guard entries.count <= 20_000,
               directory.resolvingSymlinksInPath().path == directory.path,
               file.resolvingSymlinksInPath().path == file.path else { throw LocalVaultSyncFailure.invalidResponse }
