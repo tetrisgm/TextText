@@ -133,6 +133,24 @@ describe("durable file collaboration", () => {
       .rejects.toBeInstanceOf(VaultCollaborationEpochError);
   });
 
+  it("projects a raw Markdown-only file edit observed through the cached listing", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const pendingHuman = edit(initial, " human");
+    const structured = emptyDocumentSnapshot(); structured.content.body = "Hello";
+    await fs.writeFile(path.join(root, workspaceId, relativePath), buildTextpack("Note", {
+      document: structured, markdown: "---\ntextTextId: item-1\n---\n\nHello agent",
+    }));
+    await listVaultTextpacks(location());
+    const projected = (await readVaultCollaboration(location()))!;
+    expect(projected.epoch).toBe(initial.epoch);
+    expect(projected.seq).toBe(initial.seq + 1);
+    expect(body(projected)).toBe("Hello agent");
+    await push("human-after-raw-file", initial, pendingHuman);
+    const merged = (await readVaultCollaboration(location()))!;
+    expect(body(merged)).toContain("agent");
+    expect(body(merged)).toContain("human");
+  });
+
   it("fences raw file changes and ordinary writes even after original bytes are restored", async () => {
     const initial = (await readVaultCollaboration(location()))!, pending = edit(initial, " pending");
     const original = (await readVaultTextpack(location()))!.bytes;

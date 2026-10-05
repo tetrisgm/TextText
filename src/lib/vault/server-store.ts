@@ -4,6 +4,7 @@ import { watch, constants } from "node:fs";
 import path from "node:path";
 import { hostname } from "node:os";
 import { unzipSync, strFromU8 } from "fflate";
+import { openPack } from "@/local-vault/pack";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
 import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, type VaultCollaborationState } from "./collaboration";
@@ -632,12 +633,40 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
 export class VaultCollaborationEpochError extends Error {
   constructor(readonly epoch: number) { super("The file changed outside this collaboration session. Reopen and recover pending edits."); }
 }
-async function observeCollaborationRevision(layout: Layout, itemId: string, revision: string | null) {
+async function projectObservedMarkdown(layout: Layout, itemId: string, state: VaultCollaborationState,
+  currentBytes: Uint8Array): Promise<VaultCollaborationState | null> {
+  if (!/^[a-f0-9]{64}$/.test(state.revision)) return null;
+  const previous = await maybeRead(path.join(layout.history, segment(itemId), `${state.revision}.textpack`));
+  if (!previous || hash(previous) !== state.revision) return null;
+  try {
+    const before = openPack(previous, "Document.textpack", state.revision, itemId);
+    const after = openPack(currentBytes, "Document.textpack", hash(currentBytes), itemId);
+    // document.json is the file edit's base witness. If it changed, a raw
+    // replacement might have come from an older copy and must start a new epoch.
+    if (before.file.documentJSON !== after.file.documentJSON) return null;
+    return projectVaultFileEdit(state, previous, currentBytes, itemId);
+  } catch { return null; }
+}
+
+async function observeCollaborationRevision(layout: Layout, itemId: string, revision: string | null,
+  rawFileObservation = false) {
   const file = path.join(layout.collaboration, `${segment(itemId)}.json`);
   const raw = await maybeRead(file);
   if (!raw) return;
   const state = JSON.parse(raw.toString()) as VaultCollaborationState;
-  if (state.revision && state.revision !== revision) await atomicWrite(file, json({ ...state, revision: "" }));
+  if (!state.revision || state.revision === revision) return;
+  if (rawFileObservation && revision) {
+    const item = await collaborationItem(layout, itemId);
+    if (item && item.revision === revision) {
+      const projected = await projectObservedMarkdown(layout, itemId, state, item.bytes);
+      if (projected) {
+        await atomicWrite(path.join(await directory(layout.history, itemId), `${revision}.textpack`), item.bytes);
+        await atomicWrite(file, json(projected));
+        return;
+      }
+    }
+  }
+  await atomicWrite(file, json({ ...state, revision: "" }));
 }
 async function collaborationItem(layout: Layout, itemId: string) {
   const metadataPath = path.join(layout.items, `${segment(itemId)}.json`);
@@ -669,7 +698,19 @@ async function collaborationCheckpoint(layout: Layout, itemId: string, item: Non
     applyVaultCollaboration(saved, item.bytes, ["AAA="]);
     return saved;
   }
+  if (saved) {
+    const projected = await projectObservedMarkdown(layout, itemId, saved, item.bytes);
+    if (projected) {
+      await atomicWrite(path.join(await directory(layout.history, itemId), `${item.revision}.textpack`), item.bytes);
+      await atomicWrite(file, json(projected));
+      return projected;
+    }
+  }
   const state = seedVaultCollaboration(item.bytes, itemId, saved ? saved.epoch + 1 : 1);
+  const historyPath = path.join(await directory(layout.history, itemId), `${item.revision}.textpack`);
+  const history = await maybeRead(historyPath);
+  if (history && hash(history) !== item.revision) throw new Error("Collaboration history is corrupt");
+  if (!history) await atomicWrite(historyPath, item.bytes);
   await atomicWrite(file, json(state));
   return state;
 }
@@ -1223,7 +1264,7 @@ export async function readVaultTextpack(input: VaultLocation & { itemId: string 
     const item = JSON.parse(raw.toString()) as { relativePath: string; deleted?: boolean };
     if (item.deleted) return null;
     const bytes = await maybeRead(await targetPath(layout, item.relativePath));
-    await observeCollaborationRevision(layout, input.itemId, bytes ? hash(bytes) : null);
+    await observeCollaborationRevision(layout, input.itemId, bytes ? hash(bytes) : null, true);
     return bytes ? { itemId: input.itemId, relativePath: item.relativePath, revision: hash(bytes), bytes } : null;
   });
 }
@@ -1284,7 +1325,7 @@ export async function readVaultTextpackIdentity(input: VaultLocation & { itemId:
     if (!bytes) return null;
     validatePack(bytes, input.itemId);
     const revision = hash(bytes);
-    await observeCollaborationRevision(layout, input.itemId, revision);
+    await observeCollaborationRevision(layout, input.itemId, revision, true);
     const history = await directory(layout.history, input.itemId);
     await atomicWrite(path.join(history, `${revision}.textpack`), bytes);
     await atomicWrite(metadataPath, json({ ...item, itemId: input.itemId, revision, fingerprint: signature }));
@@ -1453,7 +1494,7 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
         if (!bytes) continue;
         validatePack(bytes, item.itemId);
         revision = hash(bytes);
-        await observeCollaborationRevision(layout, item.itemId, revision);
+        await observeCollaborationRevision(layout, item.itemId, revision, true);
         const history = await directory(layout.history, item.itemId);
         await atomicWrite(path.join(history, `${revision}.textpack`), bytes);
         // Derived index only. Idle change waits need stat calls, never repeated
