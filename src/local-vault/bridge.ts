@@ -9,16 +9,45 @@ export type VaultFile = {
 export class VaultError extends Error {
   constructor(message: string, public code?: string, public current?: VaultFile) { super(message); }
 }
-const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; cleanup: () => void }>();
+type PendingRequest = {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  onTimeout: () => void;
+  timer?: ReturnType<typeof setTimeout>;
+  cleanup: () => void;
+};
+const pending = new Map<string, PendingRequest>();
+function startTimeout(id: string, request: PendingRequest) {
+  if (request.timer || pending.get(id) !== request) return;
+  request.timer = setTimeout(() => {
+    if (!pending.delete(id)) return;
+    request.timer = undefined;
+    request.cleanup(); request.onTimeout();
+    request.reject(new Error("The file operation did not finish. Your text is still in the editor."));
+  }, 120_000);
+}
 if (typeof window !== "undefined") window.addEventListener("texttext:vault-reply", ((event: CustomEvent) => {
   const { id, result, error } = event.detail;
   const request = pending.get(id);
   if (!request) return;
   pending.delete(id);
-  clearTimeout(request.timer);
+  if (request.timer) clearTimeout(request.timer);
+  request.timer = undefined;
   request.cleanup();
   if (error) request.reject(new VaultError(typeof error === "string" ? error : error.message, error.code, error.current));
   else request.resolve(result);
+}) as EventListener);
+if (typeof window !== "undefined") window.addEventListener("texttext:vault-picker-open", ((event: CustomEvent) => {
+  const { id } = event.detail;
+  const request = pending.get(id);
+  if (!request) return;
+  if (request.timer) clearTimeout(request.timer);
+  request.timer = undefined;
+}) as EventListener);
+if (typeof window !== "undefined") window.addEventListener("texttext:vault-operation-start", ((event: CustomEvent) => {
+  const { id } = event.detail;
+  const request = pending.get(id);
+  if (request) startTimeout(id, request);
 }) as EventListener);
 export type VaultTransport = (method: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>;
 let fallbackTransport: VaultTransport | null = null;
@@ -42,14 +71,22 @@ export function vaultRequest<T>(method: string, params: Record<string, unknown> 
     };
     const abort = () => {
       if (!pending.delete(id)) return;
-      clearTimeout(timer); cleanup(); cancelNative();
+      if (request.timer) clearTimeout(request.timer);
+      request.timer = undefined;
+      cleanup(); cancelNative();
       reject(new DOMException("Request canceled", "AbortError"));
     };
     const cleanup = () => signal?.removeEventListener("abort", abort);
-    const timer = setTimeout(() => { pending.delete(id); cleanup(); cancelNative(); reject(new Error("The file operation did not finish. Your text is still in the editor.")); }, 120_000);
-    pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer, cleanup });
+    const request: PendingRequest = {
+      resolve: resolve as (value: unknown) => void, reject, onTimeout: cancelNative, cleanup,
+    };
+    pending.set(id, request);
+    // Every native request starts with the ordinary timeout. Native open/import
+    // calls pause it only after the system picker opens and restart it after the
+    // person selects a file or folder.
+    startTimeout(id, request);
     signal?.addEventListener("abort", abort, { once: true });
     try { bridge.postMessage({ id, method, params }); }
-    catch (error) { clearTimeout(timer); pending.delete(id); cleanup(); reject(error); }
+    catch (error) { if (request.timer) clearTimeout(request.timer); pending.delete(id); cleanup(); reject(error); }
   });
 }
