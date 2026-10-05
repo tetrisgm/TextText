@@ -86,6 +86,50 @@ final class AppHealthReporterTests: XCTestCase {
             .pass)
     }
 
+    func testMissingAttestationWarnsOnlyForExplicitLocalBuild() throws {
+        let root = try temporaryDirectory(name: "workspace-local-build")
+        let state = try temporaryDirectory(name: "state-local-build")
+        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
+        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("TEXTTEXT_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("TEXTTEXT_STATE_DIR")
+            }
+        }
+
+        let release = try releaseBundle(includeAttestation: false)
+        let local = try releaseBundle(
+            localDevelopment: true, includeAttestation: false)
+        let reportForBundle: (Bundle) -> TextTextHealthReport = { bundle in
+            AppHealthReporter(
+                stateStore: StateStore(),
+                syncRootProvider: { root },
+                finderStatusProvider: { .healthyFixture },
+                bundle: bundle
+            ).run(trigger: .releaseVerification)
+        }
+        let releaseReport = reportForBundle(release)
+        let localReport = reportForBundle(local)
+
+        XCTAssertEqual(releaseReport.status, .fail)
+        XCTAssertEqual(localReport.status, .warning)
+        XCTAssertEqual(releaseReport.checks.first {
+            $0.id == "build.attestation"
+        }?.status, .fail)
+        XCTAssertEqual(localReport.checks.first {
+            $0.id == "build.attestation"
+        }?.status, .warning)
+        XCTAssertTrue(localReport.checks.filter {
+            TextTextWorkflowHealth.requiredCheckIDs.contains($0.id)
+        }.allSatisfy { $0.status == .warning })
+
+        let malformed = try releaseBundle(
+            localDevelopment: true, malformedAttestation: true)
+        XCTAssertEqual(reportForBundle(malformed).status, .fail)
+    }
+
     func testFinderHealthPassesAfterBoundedWorkingStateSettles() throws {
         let root = try temporaryDirectory(name: "workspace-settle")
         let state = try temporaryDirectory(name: "state-settle")
@@ -318,7 +362,10 @@ final class AppHealthReporterTests: XCTestCase {
     }
 
     private func releaseBundle(
-        workflowSuites: [String] = TextTextWorkflowHealth.requiredCheckIDs
+        workflowSuites: [String] = TextTextWorkflowHealth.requiredCheckIDs,
+        localDevelopment: Bool = false,
+        includeAttestation: Bool = true,
+        malformedAttestation: Bool = false
     ) throws -> Bundle {
         let parent = try temporaryDirectory(name: "release-bundle")
         let app = parent.appendingPathComponent("Release.app", isDirectory: true)
@@ -342,6 +389,9 @@ final class AppHealthReporterTests: XCTestCase {
             "CFBundleShortVersionString": "9.8",
             "CFBundleVersion": "76",
         ]
+        if localDevelopment {
+            info["TextTextLocalDevelopmentBuild"] = true
+        }
         #if !TEXTTEXT_STORE
         info["SUFeedURL"] = "https://texttext.example/appcast.xml"
         info["SUPublicEDKey"] = "a-real-shaped-test-key"
@@ -367,8 +417,11 @@ final class AppHealthReporterTests: XCTestCase {
         ]
         let attestationData = try JSONSerialization.data(
             withJSONObject: attestation, options: [.prettyPrinted, .sortedKeys])
-        try attestationData.write(to: resources.appendingPathComponent(
-            "AppHealthBuildAttestation.json"))
+        if includeAttestation {
+            let data = malformedAttestation ? Data("{".utf8) : attestationData
+            try data.write(to: resources.appendingPathComponent(
+                "AppHealthBuildAttestation.json"))
+        }
         return try XCTUnwrap(Bundle(url: app))
     }
 }

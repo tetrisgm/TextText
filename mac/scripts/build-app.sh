@@ -43,6 +43,17 @@ require_release_env TEXTTEXT_PRODUCT_ORIGIN
 if [ "${TEXTTEXT_STORE:-0}" != "1" ]; then
   require_release_env TEXTTEXT_SPARKLE_PUBLIC_KEY
 fi
+LOCAL_DEVELOPMENT_BUILD="${TEXTTEXT_LOCAL_DEVELOPMENT_BUILD:-0}"
+if [ "$LOCAL_DEVELOPMENT_BUILD" != "0" ] && [ "$LOCAL_DEVELOPMENT_BUILD" != "1" ]; then
+  echo "TEXTTEXT_LOCAL_DEVELOPMENT_BUILD must be 0 or 1." >&2
+  exit 1
+fi
+if [ "$LOCAL_DEVELOPMENT_BUILD" = "1" ]; then
+  if [ "$STORE" = "1" ] || [ -n "${TEXTTEXT_BUILD_ATTESTATION:-}" ]; then
+    echo "A local development build cannot be a Store or attested release build." >&2
+    exit 1
+  fi
+fi
 
 # Stable signing keeps macOS trust anchored across rebuilds. Prefer an
 # explicit TEXTTEXT_SIGN_ID, else auto-detect a local Developer ID Application
@@ -216,6 +227,9 @@ rm -f "$CONSTVALS"
 
 STAGED="$APP/Contents/Info.plist"
 "$PB" -c "Set :CFBundleIdentifier $TEXTTEXT_BUNDLE_ID" "$STAGED"
+if [ "$LOCAL_DEVELOPMENT_BUILD" = "1" ]; then
+  "$PB" -c 'Add :TextTextLocalDevelopmentBuild bool true' "$STAGED"
+fi
 if [ -n "$EMBEDDED_CODEX" ]; then
   EMBEDDED_CODEX_VERSION="$("$EMBEDDED_CODEX" --version)"
   "$PB" -c 'Add :TextTextEmbeddedAgentRuntime bool true' "$STAGED" 2>/dev/null \

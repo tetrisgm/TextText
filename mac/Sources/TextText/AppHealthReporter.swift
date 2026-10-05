@@ -508,9 +508,7 @@ final class AppHealthReporter {
 
     private func checkBuildAttestation() -> (TextTextHealthStatus, [String: Double]) {
         guard let attestation = buildAttestation() else {
-            let status: TextTextHealthStatus = bundle.bundleURL.pathExtension == "app"
-                ? .fail : .warning
-            return (status, [
+            return (missingAttestationStatus, [
                 "present": 0,
                 "valid": 0,
                 "version_match": 0,
@@ -571,9 +569,7 @@ final class AppHealthReporter {
         id: String
     ) -> (TextTextHealthStatus, [String: Double]) {
         guard let attestation = buildAttestation() else {
-            let status: TextTextHealthStatus = bundle.bundleURL.pathExtension == "app"
-                ? .fail : .warning
-            return (status, [
+            return (missingAttestationStatus, [
                 "receipt_present": 0,
                 "receipt_passed": 0,
                 "receipt_unique": 0,
@@ -598,11 +594,24 @@ final class AppHealthReporter {
     }
 
     private func buildAttestation() -> TextTextBuildAttestation? {
-        guard let url = bundle.url(
-            forResource: "AppHealthBuildAttestation", withExtension: "json"),
+        guard let url = attestationURL,
               let data = try? Data(contentsOf: url)
         else { return nil }
         return try? JSONDecoder().decode(TextTextBuildAttestation.self, from: data)
+    }
+
+    private var attestationURL: URL? {
+        bundle.url(forResource: "AppHealthBuildAttestation", withExtension: "json")
+    }
+
+    private var missingAttestationStatus: TextTextHealthStatus {
+        // A local, explicitly marked build may be installed without running
+        // the release gates. A release bundle still fails, and a malformed
+        // attestation file is never treated as merely absent.
+        if bundle.bundleURL.pathExtension != "app" { return .warning }
+        let localBuild = bundle.object(
+            forInfoDictionaryKey: "TextTextLocalDevelopmentBuild") as? Bool == true
+        return localBuild && attestationURL == nil ? .warning : .fail
     }
 
     private func checkMarkdownIdentity() -> (TextTextHealthStatus, [String: Double]) {
