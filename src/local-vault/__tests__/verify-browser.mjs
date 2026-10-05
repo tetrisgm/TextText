@@ -20,6 +20,7 @@ let commentReads = 0;
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
+let failNextReadPath = null;
 let storyItemId = null;
 let storyPublished = false;
 const agentAccountEmail = "writer@example.test";
@@ -108,6 +109,10 @@ try {
         removal.confirming = true;
       }
       result = files.get(request.params.path);
+      if (request.method === "read" && failNextReadPath === request.params.path) {
+        failNextReadPath = null;
+        error = { message: "The file operation did not finish. Your text is still in the editor.", code: "timeout" };
+      }
       if (result && request.method === "template") {
         const content = JSON.parse(result.documentJSON).content;
         result = { path: result.path, hash: result.hash, templateJSON: result.templateJSON,
@@ -428,6 +433,13 @@ try {
   await body.fill("Local first line\nSecond line");
   await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
   assert.match(files.get(initial.path).markdown, /Local first line/);
+  // An earlier read timeout can leave a warning after the editor has saved.
+  // Retry must check the pack and then clear the stale warning.
+  failNextReadPath = initial.path;
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await page.getByRole("button", { name: "Retry save", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Retry save", exact: true }).click();
+  await page.getByRole("button", { name: "Retry save", exact: true }).waitFor({ state: "hidden" });
   // Direct agent write must become visible without a reload or a server.
   const current = files.get(initial.path);
   files.set(initial.path, { ...current, hash: String(++revision), markdown: current.markdown.replace("Second line", "Agent second line") });
