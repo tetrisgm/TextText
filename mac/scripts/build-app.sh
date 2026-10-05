@@ -381,66 +381,48 @@ if [ "$STORE" = "1" ] && [ "$SIGN_ID" != "-" ]; then
   fi
 fi
 MAIN_ENT="$(mktemp -t texttext-main-ent)"
-if [ -f "$APP_PROFILE" ] && [ "$SIGN_ID" != "-" ] && [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
+APP_PROFILE_AVAILABLE=no
+if [ -f "$APP_PROFILE" ]; then
+  APP_PROFILE_AVAILABLE=yes
+fi
+CAPABILITY_HELPER="$MAC/scripts/prepare-app-capabilities.py"
+CAPABILITY_MODE="$(python3 "$CAPABILITY_HELPER" select \
+  --edition "$([ "$STORE" = "1" ] && printf store || printf standalone)" \
+  --profile-available "$APP_PROFILE_AVAILABLE" \
+  --signing-id "$SIGN_ID" \
+  --app-group "${TEXTTEXT_APP_GROUP:-}")"
+if [ "$CAPABILITY_MODE" = "provisioned" ]; then
   # Downloaded profiles can carry quarantine. App Store Connect rejects that
   # attribute anywhere in the uploaded bundle.
   cp -X "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
   /usr/bin/xattr -c "$APP/Contents/embedded.provisionprofile"
-  # codesign does NOT expand $(AppIdentifierPrefix); substitute the resolved
-  # team-prefixed keychain group (computed above) just like the app group.
-  /usr/bin/sed \
-    -e "s/TEXTTEXT_APP_GROUP/${TEXTTEXT_APP_GROUP}/g" \
-    -e "s/TEXTTEXT_KEYCHAIN_GROUP/${KC_GROUP:-}/g" \
-    "$ENT" > "$MAIN_ENT"
-  # TestFlight refuses a bundle whose signature omits the application
-  # identifier while its embedded profile carries one (error 90886): the two
-  # must agree. It cannot live in the checked-in entitlements because it is
-  # team-prefixed, so it is injected here from the resolved team, exactly like
-  # the app group and the keychain group above.
-  if [ "$STORE" = "1" ] && [ -n "${TEAM:-}" ]; then
-    "$PB" -c "Add :com.apple.application-identifier string $TEAM.$TEXTTEXT_BUNDLE_ID" "$MAIN_ENT" 2>/dev/null \
-      || "$PB" -c "Set :com.apple.application-identifier $TEAM.$TEXTTEXT_BUNDLE_ID" "$MAIN_ENT"
-    "$PB" -c "Add :com.apple.developer.team-identifier string $TEAM" "$MAIN_ENT" 2>/dev/null \
-      || "$PB" -c "Set :com.apple.developer.team-identifier $TEAM" "$MAIN_ENT"
-  fi
-  echo ">> main app: app-group + keychain entitlement + embedded profile"
-elif [ "$STORE" = "1" ]; then
-  # The Store edition must be sandboxed even when no profile is around, or a
-  # local test build silently proves nothing: the whole point of this edition
-  # is that it runs under the sandbox. The app group and keychain group ARE
-  # restricted and need a profile, so they are dropped rather than faked; the
-  # File Provider handoff simply cannot authenticate in that state.
-  cp "$ENT" "$MAIN_ENT"
-  "$PB" -c "Delete :com.apple.security.application-groups" "$MAIN_ENT" 2>/dev/null || true
-  "$PB" -c "Delete :keychain-access-groups" "$MAIN_ENT" 2>/dev/null || true
-  # Sign in with Apple is restricted too. Without an authorized provisioning
-  # profile, amfid rejects an ad-hoc signature carrying this entitlement at
-  # launch. Local sandbox builds do not provide that capability; keep the
-  # sandbox and ordinary network/file-picker grants intact.
-  "$PB" -c 'Delete :com.apple.developer.applesignin' "$MAIN_ENT" 2>/dev/null || true
-  for entitlement in \
-    com.apple.security.app-sandbox \
-    com.apple.security.network.client \
-    com.apple.security.network.server \
-    com.apple.security.files.user-selected.read-write; do
-    value="$("$PB" -c "Print :$entitlement" "$MAIN_ENT" 2>/dev/null || true)"
-    if [ "$value" != "true" ]; then
-      echo "Refusing: local sandbox build lost required entitlement $entitlement." >&2
-      exit 1
-    fi
-  done
-  if "$PB" -c 'Print :com.apple.developer.applesignin' "$MAIN_ENT" >/dev/null 2>&1; then
-    echo "Refusing: local build still has restricted Sign in with Apple entitlement." >&2
-    exit 1
-  fi
-  echo ">> main app: sandboxed; profile-gated sign-in, app-group, and keychain capabilities omitted"
-else
-  printf '%s\n' \
-    '<?xml version="1.0" encoding="UTF-8"?>' \
-    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
-    '<plist version="1.0"><dict/></plist>' > "$MAIN_ENT"
-  echo ">> main app: no app-group profile; signing without the app-group entitlement"
 fi
+PREPARED_MODE="$(python3 "$CAPABILITY_HELPER" prepare \
+  --edition "$([ "$STORE" = "1" ] && printf store || printf standalone)" \
+  --profile-available "$APP_PROFILE_AVAILABLE" \
+  --signing-id "$SIGN_ID" \
+  --source-entitlements "$ENT" \
+  --output-entitlements "$MAIN_ENT" \
+  --info-plist "$STAGED" \
+  --bundle-id "$TEXTTEXT_BUNDLE_ID" \
+  --team "${TEAM:-}" \
+  --app-group "${TEXTTEXT_APP_GROUP:-}" \
+  --keychain-group "${KC_GROUP:-}")"
+[ "$PREPARED_MODE" = "$CAPABILITY_MODE" ] || {
+  echo "Refusing: app capability selection changed during build." >&2
+  exit 1
+}
+case "$CAPABILITY_MODE" in
+  provisioned)
+    echo ">> main app: profile-authorized capabilities prepared"
+    ;;
+  local-store)
+    echo ">> main app: sandboxed local build; profile-gated capabilities omitted"
+    ;;
+  local-standalone)
+    echo ">> main app: no profile; signing without restricted entitlements"
+    ;;
+esac
 
 echo ">> codesigning inside-out ($SIGN_ID)"
 SPK="$APP/Contents/Frameworks/Sparkle.framework"
