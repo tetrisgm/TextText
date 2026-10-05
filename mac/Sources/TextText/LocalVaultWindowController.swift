@@ -34,11 +34,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
 
     init(entry: URL, root initialRoot: URL? = nil,
          starterTemplates: URL? = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil),
+         websiteDataStore: WKWebsiteDataStore = .default(),
          credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil }) {
         self.entry = entry
         self.starterTemplates = starterTemplates
         self.credentials = credentials
-        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760))
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = websiteDataStore
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: configuration)
         let window = NSWindow(contentRect: webView.frame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.contentView = webView
@@ -120,7 +123,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             }
         }
     }
-    private func importPanel(folder: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+    private func importPanel(requestID: String, folder: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
         guard let root else { completion(.failure(VaultBridgeError("Open a folder first."))); return }
         let panel = NSOpenPanel()
         panel.title = "Import into this folder"
@@ -130,6 +133,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         panel.begin { [weak self] response in
             guard let self else { completion(.failure(VaultBridgeError("The workspace window closed."))); return }
             guard response == .OK, let source = panel.url else { completion(.success([:])); return }
+            self.startNativeOperation(requestID)
             let scoped = source.startAccessingSecurityScopedResource()
             self.io.async {
                 defer { if scoped { source.stopAccessingSecurityScopedResource() } }
@@ -149,6 +153,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 DispatchQueue.main.async { completion(result); self.emit("texttext:vault-changed", value: [:]) }
             }
         }
+        beginNativePicker(requestID)
     }
     func newDocument() { emit("texttext:vault-new", value: [:]) }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -179,7 +184,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
     }
 
-    func chooseFolder(directory: URL? = nil, completion: ((Result<[String: Any], Error>) -> Void)? = nil) {
+    func chooseFolder(requestID: String? = nil, directory: URL? = nil, completion: ((Result<[String: Any], Error>) -> Void)? = nil) {
         let panel = NSOpenPanel()
         panel.title = "Open workspace folder"
         panel.directoryURL = directory
@@ -189,11 +194,31 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         panel.begin { [weak self] response in
             guard let self else { return }
             guard response == .OK, let selected = panel.url else {
+                _ = try? LocalVaultConfiguration.openSelection(root: nil)
                 completion?(.failure(CocoaError(.userCancelled))); return
             }
+            if let requestID { self.startNativeOperation(requestID) }
             do {
                 let bookmark = try selected.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
-                _ = try LocalVaultConfiguration.open(root: selected, bookmarkData: bookmark)
+                do {
+                    _ = try LocalVaultConfiguration.openSelection(root: selected, bookmarkData: bookmark)
+                } catch let error as LocalVaultConfigurationError {
+                    guard case .recoveryRequired(let configURL, let reason) = error else { throw error }
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "TextText needs to recover its folder settings"
+                    alert.informativeText = "The saved settings at \(configURL.path) cannot be read safely (\(reason)). TextText can keep a recovery copy and save the folder you selected. Your notes stay in their folder."
+                    alert.addButton(withTitle: "Keep Backup and Continue")
+                    alert.addButton(withTitle: "Cancel")
+                    guard alert.runModal() == .alertFirstButtonReturn else {
+                        completion?(.failure(CocoaError(.userCancelled))); return
+                    }
+                    _ = try LocalVaultConfiguration.openSelection(
+                        root: selected,
+                        bookmarkData: bookmark,
+                        replacingUnreadableConfiguration: true
+                    )
+                }
                 try self.selectRoot(selected)
                 self.onSelectedFolder?()
                 self.io.async {
@@ -202,6 +227,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 }
             } catch { completion?(.failure(error)) }
         }
+        if let requestID { beginNativePicker(requestID) }
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -236,10 +262,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             return
         }
         if method == "open" {
-            chooseFolder { [weak self] result in self?.reply(id, result: result) }; return
+            chooseFolder(requestID: id) { [weak self] result in self?.reply(id, result: result) }; return
         }
         if method == "import" {
-            importPanel(folder: params["folder"] as? String ?? "") { [weak self] result in self?.reply(id, result: result) }; return
+            importPanel(requestID: id, folder: params["folder"] as? String ?? "") { [weak self] result in self?.reply(id, result: result) }; return
         }
         if method.hasPrefix("agent") {
             guard let root else { reply(id, result: .failure(VaultBridgeError("Open a folder first."))); return }
@@ -677,6 +703,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if let current { detail["current"] = current }
             emit("texttext:vault-reply", value: ["id": id, "error": detail])
         }
+    }
+    private func startNativeOperation(_ id: String) {
+        emit("texttext:vault-operation-start", value: ["id": id])
+    }
+    private func beginNativePicker(_ id: String) {
+        emit("texttext:vault-picker-open", value: ["id": id])
     }
     private func emit(_ event: String, value: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: value), let json = String(data: data, encoding: .utf8) else { return }

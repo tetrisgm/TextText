@@ -118,3 +118,11 @@ verification notes were deleted recoverably. No real user documents were used.
 The final matching Next production build passed and replaced the local server
 with identity `texttext-vault-recovery-20260930`, using isolated output
 `.texttext/vault-recovery-build`. The same server vault root was retained.
+
+## One-time starter-workspace repair
+
+`scripts/refine-local-starter.py WORKSPACE_ROOT` is a manual repair for the
+original starter workspace only. It requires the old starter marker, archives
+each original TextPack under `.texttext/starter-before-refinement-2026-10-02`,
+then applies the known path/template updates. It is not part of app startup or
+release checks; use it only after identifying that specific older workspace.

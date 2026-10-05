@@ -28,6 +28,7 @@ extension DocumentStore {
         var results: [TextTextAgentSearchResult] = []
         var remainingBytes = min(256 * 1024 * 1024, max(0, byteLimit))
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let searchCache = LocalDocumentSearchCache.shared
         guard let enumerator = FileManager.default.enumerator(at: canonicalRoot,
             includingPropertiesForKeys: [.isSymbolicLinkKey], options: [.skipsHiddenFiles]) else {
             throw TextTextCLIError.workspaceNotFound
@@ -40,9 +41,9 @@ extension DocumentStore {
             if (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
                 enumerator.skipDescendants(); continue
             }
-            let canonical = file.standardizedFileURL.resolvingSymlinksInPath().path
-            guard canonical.hasPrefix(canonicalRoot.path + "/") else { continue }
-            let path = String(canonical.dropFirst(canonicalRoot.path.count + 1))
+            let standardizedPath = file.standardizedFileURL.path
+            guard standardizedPath.hasPrefix(canonicalRoot.path + "/") else { continue }
+            let path = String(standardizedPath.dropFirst(canonicalRoot.path.count + 1))
             if path == "Data" { enumerator.skipDescendants(); continue }
             if let folderPrefix, !path.hasPrefix(folderPrefix) { continue }
             guard ["textpack", "textbundle", "md", "txt"].contains(file.pathExtension.lowercased()) else { continue }
@@ -57,22 +58,59 @@ extension DocumentStore {
             if paths.count > scanLimit { truncated = true; break }
         }
         paths.sort()
+        var validatedParent: String?
+        var validatedParentIsSafe = false
         for path in paths.prefix(scanLimit) {
             let url = root.appendingPathComponent(path)
-            let textURL = url.pathExtension.lowercased() == "textbundle" ? url.appendingPathComponent("text.md") : url
-            guard textURL.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(canonicalRoot.path + "/"), let values = try? textURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                  values.isRegularFile == true, let size = values.fileSize else { skipped += 1; continue }
-            let maximum = url.pathExtension.lowercased() == "textpack" ? 64 * 1024 * 1024 : 2 * 1024 * 1024
+            let fileExtension = url.pathExtension.lowercased()
+            let isTextPack = fileExtension == "textpack"
+            let textURL = fileExtension == "textbundle" ? url.appendingPathComponent("text.md") : url
+            let cacheURL = canonicalRoot.appendingPathComponent(path)
+            let fingerprint: LocalDocumentSearchCache.Fingerprint?
+            let size: Int
+            if isTextPack {
+                let parentPath = (path as NSString).deletingLastPathComponent
+                if validatedParent != parentPath {
+                    validatedParent = parentPath
+                    let parentURL = parentPath.isEmpty ? canonicalRoot : canonicalRoot.appendingPathComponent(parentPath, isDirectory: true)
+                    let standardizedParent = parentURL.standardizedFileURL.path
+                    let resolvedParent = parentURL.standardizedFileURL.resolvingSymlinksInPath().path
+                    validatedParentIsSafe = resolvedParent == standardizedParent
+                        && (resolvedParent == canonicalRoot.path || resolvedParent.hasPrefix(canonicalRoot.path + "/"))
+                }
+                guard validatedParentIsSafe else { skipped += 1; continue }
+                guard let current = LocalDocumentSearchCache.Fingerprint.read(from: cacheURL),
+                      current.size >= 0, current.size <= Int64(Int.max) else { skipped += 1; continue }
+                fingerprint = current
+                size = Int(current.size)
+            } else {
+                guard textURL.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(canonicalRoot.path + "/") else { skipped += 1; continue }
+                guard let values = try? textURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                      values.isRegularFile == true, let currentSize = values.fileSize else { skipped += 1; continue }
+                fingerprint = nil
+                size = currentSize
+            }
+            let maximum = isTextPack ? 64 * 1024 * 1024 : 2 * 1024 * 1024
             guard size <= maximum else { skipped += 1; continue }
             guard remainingBytes >= size else { truncated = true; break }
             remainingBytes -= size
             scanned += 1
             let markdown: String
             let hash: String
-            if url.pathExtension.lowercased() == "textpack" {
-                guard let document = try? LocalVaultDocumentStore(root: root).searchText(path: path) else { skipped += 1; continue }
-                markdown = document.markdown
-                hash = document.hash
+            if isTextPack {
+                guard let fingerprint else { skipped += 1; continue }
+                let cacheKey = LocalDocumentSearchCache.Key(root: canonicalRoot.path, path: path)
+                if let cached = searchCache.content(for: cacheKey, matching: fingerprint) {
+                    markdown = cached.markdown
+                    hash = cached.hash
+                } else {
+                    guard let document = try? LocalVaultDocumentStore(root: root).searchText(path: path) else { skipped += 1; continue }
+                    markdown = document.markdown
+                    hash = document.hash
+                    if LocalDocumentSearchCache.Fingerprint.read(from: cacheURL) == fingerprint {
+                        searchCache.insert(.init(markdown: markdown, hash: hash), for: cacheKey, fingerprint: fingerprint)
+                    }
+                }
             } else {
                 guard let handle = try? FileHandle(forReadingFrom: textURL) else { skipped += 1; continue }
                 defer { try? handle.close() }

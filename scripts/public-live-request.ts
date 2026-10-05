@@ -4,7 +4,7 @@ export type PublicLiveResponse = Pick<Response, "ok" | "status" | "text"> & {
   headers: Pick<Headers, "get">;
 };
 
-/** Reach a public workspace URL without relying on wildcard-localhost DNS. */
+/** Reach a public workspace URL through the same loopback origin as the app. */
 export async function requestPublicLiveUrl(
   pageUrl: string,
   localOrigin: string,
@@ -18,7 +18,7 @@ export async function requestPublicLiveUrl(
   return new Promise((resolve, reject) => {
     const request = httpRequest(
       {
-        hostname: "127.0.0.1",
+        hostname: origin.hostname,
         port: origin.port,
         path: `${publicUrl.pathname}${publicUrl.search}`,
         headers: { host: publicUrl.host },

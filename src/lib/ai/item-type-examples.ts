@@ -8,8 +8,8 @@ import type { DocumentFieldDefinition, TemplateDefinition } from "@/lib/presenta
  * The model had none. It designed from a schema description alone, and the
  * results showed it: a request for a running log with a year grid produced a
  * type with no fields at all, and the same brief run twice produced different
- * field labels each time. Meanwhile 11 active built-in templates and 28
- * documents written to genre standard sat in the repo, read by the showcase
+ * field labels each time. Meanwhile eleven built-in TextPacks and 28 documents
+ * written to genre standard sat in the repo, read by the showcase
  * and the gallery and by nothing in the AI path.
  *
  * Closeness, not everything: handing over all eleven would swamp the request
@@ -73,12 +73,9 @@ const MIN_SCORE = 3;
 type ScoredExample = { template: TemplateDefinition; score: number };
 
 /**
- * Rank the ACTIVE built-ins by how much of the request's vocabulary they use.
- *
- * Active only, deliberately. Eighteen further templates exist in the file and
- * are kept resolvable so documents pinned to them still render, but they were
- * retired from the catalogue at the owner's request. Showing them to the model
- * would teach it to design like the things that were taken away.
+ * Rank the active catalogue by how much of the request's vocabulary it uses.
+ * Retired generated TextPacks and legacy templates stay resolvable so existing
+ * documents still render, but are not offered for new designs.
  */
 export function rankItemTypeExamples(request: string): ScoredExample[] {
   const wanted = new Set(tokens(request).map(stem));

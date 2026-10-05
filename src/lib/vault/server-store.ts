@@ -1600,20 +1600,38 @@ export async function waitVaultCollaboration(input: VaultLocation & {
   const layout = await setup(input);
   let wake!: () => void;
   const changed = new Promise<void>(resolve => { wake = resolve; });
-  const watcher = watch(layout.workspace, { recursive: true }, (_event, filename) => {
-    const name = filename?.toString().replace(/\\/g, "/");
-    if (!name || !name.startsWith(".texttext/") || name === `.texttext/collaboration/${input.itemId}.json` || name === `.texttext/items/${input.itemId}.json`) wake();
-  });
-  watcher.once("error", wake);
+  let checking = false;
+  const checkForChange = async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      const current = await readVaultCollaboration(input);
+      if (!current || current.epoch !== input.epoch || current.seq !== input.seq) wake();
+    } catch {
+      wake();
+    } finally {
+      checking = false;
+    }
+  };
+  // Watcher events can describe an early lock/temp-file change (and macOS may
+  // report only a basename). Re-read the collaboration cursor before waking so
+  // clients never receive the old checkpoint while a writer is still committing.
+  const watcher = watch(layout.workspace, { recursive: true }, () => { void checkForChange(); });
+  watcher.once("error", () => { void checkForChange(); });
   const timer = setTimeout(wake, Math.max(0, Math.min(input.waitMs, 25_000)));
   input.signal?.addEventListener("abort", wake, { once: true });
+  let interval: ReturnType<typeof setInterval> | undefined;
   try {
     const initial = await readVaultCollaboration(input);
     if (!initial || initial.epoch !== input.epoch || initial.seq !== input.seq || input.signal?.aborted) return initial;
+    // Some filesystem providers coalesce or omit a watch event. This scoped
+    // fallback checks only while one bounded long-poll request is waiting.
+    interval = setInterval(() => { void checkForChange(); }, 250);
     await changed;
     return input.signal?.aborted ? initial : await readVaultCollaboration(input);
   } finally {
     clearTimeout(timer);
+    if (interval) clearInterval(interval);
     watcher.close();
     input.signal?.removeEventListener("abort", wake);
   }

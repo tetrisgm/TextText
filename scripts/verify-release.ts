@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { tmpdir } from "node:os";
 import {
   formatDuration,
   readAndValidateReleaseReceipt,
@@ -23,6 +24,8 @@ async function verifyRelease() {
     return;
   }
 
+  const swiftScratchPath = `${tmpdir()}/texttext-release-swift-${process.pid}`;
+  const swiftModuleCachePath = `${tmpdir()}/texttext-release-clang-${process.pid}`;
   const checks: Array<{
     id: string;
     timeoutSeconds: number;
@@ -118,11 +121,15 @@ async function verifyRelease() {
       id: "workflow.live_clients",
       timeoutSeconds: 900,
       command: ["npm", "run", "eval:clients:live"],
+      environment: {
+        TEXTTEXT_ASSET_FIXTURE_URL: "https://texttext-asset-fixture.invalid/cover.png",
+        TEXTTEXT_LOCAL_ASSET_FIXTURE: "1",
+      },
     },
     {
       id: "web.unit",
       timeoutSeconds: 1_800,
-      command: ["npx", "vitest", "run"],
+      command: ["npm", "test"],
     },
     {
       // The durability tests are the ones that answer "can this lose my
@@ -143,7 +150,15 @@ async function verifyRelease() {
     {
       id: "native.unit",
       timeoutSeconds: 2_400,
-      command: ["swift", "test", "--package-path", "mac"],
+      command: [
+        "swift",
+        "test",
+        "--package-path",
+        "mac",
+        "--scratch-path",
+        swiftScratchPath,
+      ],
+      environment: { CLANG_MODULE_CACHE_PATH: swiftModuleCachePath },
     },
     {
       // The private promotion lane must never drift into a publishing command,
@@ -169,16 +184,21 @@ async function verifyRelease() {
   ];
 
   const commandReceipts: CommandReceipt[] = [];
-  for (const check of checks) {
-    commandReceipts.push(
-      await runMeasuredCommand({
-        root: repositoryRoot,
-        name: check.id,
-        command: check.command,
-        timeoutSeconds: check.timeoutSeconds,
-        environment: check.environment,
-      }),
-    );
+  try {
+    for (const check of checks) {
+      commandReceipts.push(
+        await runMeasuredCommand({
+          root: repositoryRoot,
+          name: check.id,
+          command: check.command,
+          timeoutSeconds: check.timeoutSeconds,
+          environment: check.environment,
+        }),
+      );
+    }
+  } finally {
+    rmSync(swiftScratchPath, { recursive: true, force: true });
+    rmSync(swiftModuleCachePath, { recursive: true, force: true });
   }
   const identity = sourceIdentity(repositoryRoot);
   if (

@@ -1,4 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const dnsLookupMock = vi.hoisted(() =>
+  vi.fn(async () => [{ address: "93.184.216.34", family: 4 as const }]),
+);
+
+vi.mock("node:dns/promises", () => ({
+  default: { lookup: dnsLookupMock },
+  lookup: dnsLookupMock,
+}));
+
 import {
   extractPageMeta,
   fetchPublicResource,
@@ -9,6 +19,8 @@ import {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  dnsLookupMock.mockReset();
+  dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
 });
 
 describe("isFetchableBookmarkUrl (SSRF floor)", () => {
@@ -82,7 +94,9 @@ describe("isPrivateIPv4 (the DNS-resolution gate's classifier)", () => {
 
 describe("fetchPublicResource", () => {
   it("pins every connection to the addresses it checked", async () => {
+    dnsLookupMock.mockClear();
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit & { dispatcher?: unknown }) => {
+      expect(String(_input)).toBe("https://example.com/");
       expect(init?.dispatcher).toBeDefined();
       return new Response("ok", { status: 200 });
     });
@@ -90,9 +104,11 @@ describe("fetchPublicResource", () => {
     const response = await fetchPublicResource("https://example.com/");
     expect(response?.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(dnsLookupMock).toHaveBeenCalledWith("example.com", { all: true });
   });
 
   it("returns a 304 Not Modified instead of treating it as a broken redirect", async () => {
+    dnsLookupMock.mockClear();
     const fetchMock = vi.fn(async () => new Response(null, { status: 304 }));
     vi.stubGlobal("fetch", fetchMock);
     const response = await fetchPublicResource("https://example.com/feed.xml", {
@@ -100,15 +116,39 @@ describe("fetchPublicResource", () => {
     });
     expect(response?.status).toBe(304);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(dnsLookupMock).toHaveBeenCalledWith("example.com", { all: true });
+  });
+
+  it("fails closed when DNS cannot resolve a public host", async () => {
+    dnsLookupMock.mockRejectedValueOnce(new Error("DNS unavailable"));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchPublicResource("https://example.com/")).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a hostname when any DNS answer is private", async () => {
+    dnsLookupMock.mockResolvedValueOnce([
+      { address: "93.184.216.34", family: 4 },
+      { address: "127.0.0.1", family: 4 },
+    ]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchPublicResource("https://example.com/")).resolves.toBeNull();
+    expect(dnsLookupMock).toHaveBeenCalledWith("example.com", { all: true });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("refuses a redirect from a public URL to a private address", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
-      new Response(null, {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe("https://93.184.216.34/image.jpg");
+      return new Response(null, {
         status: 302,
         headers: { Location: "http://169.254.169.254/latest/meta-data" },
-      }),
-    );
+      });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await fetchPublicResource("https://93.184.216.34/image.jpg");

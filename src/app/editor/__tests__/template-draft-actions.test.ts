@@ -76,12 +76,7 @@ describe("built-in example draft creation", () => {
     ["bookmark", "bookmark", "bookmarks"],
     ["gallery", "media_post", "blog"],
     ["talk", "video_post", "blog"],
-    ["timeline", "article", "blog"],
-    ["casestudy", "article", "blog"],
-    ["page", "article", "blog"],
     ["todo", "article", "blog"],
-    ["project", "article", "blog"],
-    ["brief", "article", "blog"],
   ])("creates the %s preview once as a %s in %s", async (slug, type, folderPath) => {
     const example = templateExample(slug)!;
     const generated = GENERATED_BUILTIN_PRESETS.find((preset) => preset.template.id === example.template.id)!;
@@ -107,6 +102,15 @@ describe("built-in example draft creation", () => {
     expect(mocks.savePost).not.toHaveBeenCalled();
     expect(mocks.recordAction).not.toHaveBeenCalled();
   });
+
+  it.each(["timeline", "casestudy", "page", "project", "brief"])(
+    "does not create a draft from the retired %s example",
+    async (slug) => {
+      expect(templateExample(slug)).toBeNull();
+      await expect(createTemplateDraftPath(slug, true)).resolves.toBe("/templates");
+      expect(mocks.createDraftInFolder).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps an unseeded draft blank while retaining its exact look and kind", async () => {
     const example = templateExample("gallery")!;

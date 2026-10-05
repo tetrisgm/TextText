@@ -318,7 +318,9 @@ public enum TextTextTextBundlePackage {
             assets.append(TextTextTextBundleAsset(
                 filename: assetURL.lastPathComponent,
                 data: data,
-                contentType: mapping?.contentType,
+                contentType: mapping?.contentType
+                    ?? TextTextDocumentAssets.inferredContentType(
+                        filename: assetURL.lastPathComponent),
                 remoteURL: matchesRemote ? mapping?.url : nil))
         }
         let canonicalMarkdown = TextTextDocumentAssets.canonicalMarkdown(

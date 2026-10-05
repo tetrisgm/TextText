@@ -17,11 +17,22 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 "$SCRIPT_DIR/verify-apple-silicon-app.sh" "$APP" --require-extensions
 
 ROOT="$(mktemp -d -t texttext-app-health)"
-trap 'rm -rf "$ROOT"' EXIT
-mkdir -p "$ROOT/state"
+CONTAINER_STATE=""
+cleanup() {
+  rm -rf "$ROOT"
+  if [ -n "$CONTAINER_STATE" ]; then rm -rf "$CONTAINER_STATE"; fi
+}
+trap cleanup EXIT
 REPORT="$ROOT/report.json"
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+# The app is sandboxed. Put all app-owned health state in this bundle's own
+# container, under a unique run directory; a host /tmp override is outside the
+# app's grants and can make health checks pass only by weakening the sandbox.
+CONTAINER_STATE="$HOME/Library/Containers/$BUNDLE_ID/Data/Library/Application Support/TextText/AppHealth/$EXPECTED_BUILD-$$"
+mkdir -p "$CONTAINER_STATE"
 
-TEXTTEXT_STATE_DIR="$ROOT/state" \
+TEXTTEXT_STATE_DIR="$CONTAINER_STATE/state" \
+TEXTTEXT_VAULT_CONFIG="$CONTAINER_STATE/vault.json" \
 TEXTTEXT_HEALTH_CHECK=1 \
   "$APP/Contents/MacOS/TextText" > "$REPORT"
 
