@@ -38,6 +38,16 @@ public enum LocalVaultStarter {
         }
     }
 
+    /// Opening an existing folder must not turn it into a starter workspace.
+    /// Resume only a setup that TextText already began; a new empty folder can
+    /// receive the starter collection on its first open.
+    public static func needsSeeding(root: URL) throws -> Bool {
+        let entries = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        if entries.allSatisfy({ $0 == ".DS_Store" || $0 == ".localized" }) { return true }
+        return FileManager.default.fileExists(atPath:
+            root.appendingPathComponent(".texttext/starter-v1.json").path)
+    }
+
     /// Includes empty folders, with the same visibility boundary as pack listing.
     public static func listFolders(root: URL) throws -> [String] {
         let root = root.standardizedFileURL.resolvingSymlinksInPath()

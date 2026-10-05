@@ -58,6 +58,21 @@ final class LocalVaultStarterTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Templates/Note.textpack").path))
         }
     }
+    func testOpeningExistingFolderDoesNotSeedStarterFiles() throws {
+        try fixture { root in
+            XCTAssertTrue(try LocalVaultStarter.needsSeeding(root: root))
+            try Data().write(to: root.appendingPathComponent(".DS_Store"))
+            XCTAssertTrue(try LocalVaultStarter.needsSeeding(root: root))
+            let existing = root.appendingPathComponent("My note.textpack")
+            try Data("user content".utf8).write(to: existing)
+            XCTAssertFalse(try LocalVaultStarter.needsSeeding(root: root))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".texttext").path))
+            XCTAssertEqual(try Data(contentsOf: existing), Data("user content".utf8))
+            try FileManager.default.removeItem(at: existing)
+            _ = try LocalVaultStarter.seed(root: root, presets: bundled)
+            XCTAssertTrue(try LocalVaultStarter.needsSeeding(root: root))
+        }
+    }
     func testInterruptedSeedPreservesProcessedDeletionAndOccupiedUserPath() throws {
         try fixture { root in
             let fm = FileManager.default
