@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { vaultRequest } from "./bridge";
+import { sharedFileHref, sharedFolderHref } from "./shared-vaults";
 
 export type VaultShareScope = {
   workspaceId: string;
@@ -32,6 +33,7 @@ export function VaultShareDialog({ scope, onClose }: { scope: VaultShareScope; o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   useDialogFocus(dialog, true);
   const reload = useCallback(async () => {
     setLoading(true);
@@ -56,10 +58,23 @@ export function VaultShareDialog({ scope, onClose }: { scope: VaultShareScope; o
     if (!email.trim() || busy) return;
     void mutate("POST", { email: email.trim(), role }).then((saved) => { if (saved) setEmail(""); });
   };
+  const copyLink = async () => {
+    const relative = scope.scopeType === "item"
+      ? sharedFileHref(scope.workspaceId, scope.scopeKey)
+      : sharedFolderHref(scope.workspaceId, scope.scopeKey);
+    try {
+      await navigator.clipboard.writeText(new URL(relative, window.location.origin).href);
+      setCopied(true);
+      setError("");
+    } catch {
+      setError("Could not copy the link. Check clipboard access and try again.");
+    }
+  };
   return <div className="vault-sharing-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section ref={dialog} className="vault-sharing-dialog" role="dialog" aria-modal="true" aria-label={`Share ${scope.label}`}>
       <header><div><p className="vault-eyebrow">{scope.scopeType === "folder" ? "Folder access" : "File access"}</p><h2>Share {scope.label}</h2></div><button type="button" aria-label="Close sharing" onClick={onClose}>Close</button></header>
       <p className="vault-sharing-intro">Add access by email. They can find this {scope.scopeType === "folder" ? "folder and its files" : "file"} in Shared with me after signing in. TextText does not send an invitation email.</p>
+      <div className="vault-sharing-link"><span>Only people with access can open this link.</span><button type="button" onClick={() => void copyLink()}>{copied ? "Copied" : "Copy link"}</button></div>
       <form onSubmit={invite} className="vault-sharing-invite">
         <label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" /></label>
         <label>Access<select value={role} onChange={(event) => setRole(event.target.value as Grant["role"])}><option value="viewer">Can view</option><option value="commenter">Can comment</option><option value="editor">Can edit</option></select></label>

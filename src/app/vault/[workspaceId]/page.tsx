@@ -8,11 +8,16 @@ import { WebVault } from "@/local-vault/WebVault";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workspace", robots: { index: false, follow: false } };
 
-export default async function VaultPage({ params }: { params: Promise<{ workspaceId: string }> }) {
+export default async function VaultPage({ params, searchParams }: {
+  params: Promise<{ workspaceId: string }>;
+  searchParams: Promise<{ item?: string | string[] }>;
+}) {
   const { workspaceId } = await params;
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workspaceId)) notFound();
+  const requestedItem = (await searchParams).item;
+  const item = typeof requestedItem === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(requestedItem) ? requestedItem : null;
   const user = await getCurrentUser();
-  if (!user) redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(`/vault/${workspaceId}`)}`);
+  if (!user) redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(`/vault/${workspaceId}${item ? `?item=${encodeURIComponent(item)}` : ""}`)}`);
   const blog = await getVaultWorkspaceIdentity(workspaceId);
   if (!blog) notFound();
   const access = await resolveWorkspaceAccess({ handle: blog.handle, user, fresh: true });

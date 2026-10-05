@@ -29,7 +29,7 @@ export function SharedVaults() {
         {!!workspace.folders.length && <ul aria-label={`Shared folders in ${workspace.name}`}>{workspace.folders.slice(0, 5).map(folder =>
           <li key={folder}><a href={sharedFolderHref(workspace.id, folder)}>{folder}/</a></li>)}</ul>}
         {!!workspace.items.length && <ul aria-label={`Shared files in ${workspace.name}`}>{workspace.items.slice(0, 8).map(item =>
-          <li key={item.itemId}><a href={sharedFileHref(workspace.id, item.relativePath)}>{item.relativePath}</a></li>)}</ul>}
+          <li key={item.itemId}><a href={sharedFileHref(workspace.id, item.itemId)}>{item.relativePath}</a></li>)}</ul>}
         {(workspace.items.length > 8 || workspace.folders.length > 5) && <p>Open this workspace to see all shared files.</p>}
       </li>)}</ul>}
   </section>;

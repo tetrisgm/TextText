@@ -19,6 +19,8 @@ const validPath = (value: unknown, textpack: boolean): value is string =>
   (!textpack || value.endsWith(".textpack")) &&
   value.split("/").every(segment => segment.length > 0 && segment !== "." && segment !== "..");
 
+const itemIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
 export function parseSharedVaults(value: unknown): SharedVaultWorkspace[] {
   const data = value as { workspaces?: unknown } | null;
   if (!data || !Array.isArray(data.workspaces) || data.workspaces.length > 100) throw new Error("The shared workspace list is invalid.");
@@ -27,7 +29,7 @@ export function parseSharedVaults(value: unknown): SharedVaultWorkspace[] {
     if (!row || typeof row.id !== "string" || !uuid.test(row.id) || typeof row.name !== "string" ||
         row.name.length > 200 || !Array.isArray(row.items) || !Array.isArray(row.folders) ||
         row.items.length > 100_000 || row.folders.length > 10_000 ||
-        row.items.some(item => !item || typeof item.itemId !== "string" || !validPath(item.relativePath, true)) ||
+        row.items.some(item => !item || typeof item.itemId !== "string" || !itemIdPattern.test(item.itemId) || !validPath(item.relativePath, true)) ||
         row.folders.some(folder => !validPath(folder, false))) {
       throw new Error("The shared workspace list is invalid.");
     }
@@ -66,9 +68,9 @@ export function sharedWorkspaceHref(id: string): string {
   return `/vault/${encodeURIComponent(id)}`;
 }
 
-export function sharedFileHref(workspaceId: string, relativePath: string): string {
-  if (!validPath(relativePath, true)) throw new Error("Invalid shared file path");
-  return `${sharedWorkspaceHref(workspaceId)}#file=${encodeURIComponent(relativePath)}`;
+export function sharedFileHref(workspaceId: string, itemId: string): string {
+  if (!itemIdPattern.test(itemId)) throw new Error("Invalid shared file identifier");
+  return `${sharedWorkspaceHref(workspaceId)}?item=${encodeURIComponent(itemId)}`;
 }
 
 export function sharedFolderHref(workspaceId: string, relativePath: string): string {
@@ -85,4 +87,18 @@ export function sharedVaultHashTarget(hash: string, files: readonly string[], fo
   const folder = params.get("folder");
   if (folder && folders.includes(folder)) return { type: "folder", path: folder };
   return null;
+}
+
+/** Resolve a stable item link only through the current permission-filtered listing. */
+export function sharedVaultLinkTarget(search: string, hash: string,
+  items: readonly { path: string; itemId?: string }[], folders: readonly string[]):
+  { type: "file" | "folder"; path: string } | null {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const itemId = params.get("item");
+  if (itemId !== null) {
+    if (!itemIdPattern.test(itemId)) return null;
+    const item = items.find(candidate => candidate.itemId === itemId);
+    return item ? { type: "file", path: item.path } : null;
+  }
+  return sharedVaultHashTarget(hash, items.map(item => item.path), folders);
 }

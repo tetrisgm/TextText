@@ -7,6 +7,7 @@ import {
   sharedFileHref,
   sharedFolderHref,
   sharedVaultHashTarget,
+  sharedVaultLinkTarget,
   sharedWorkspaceHref,
   type VaultAccess,
 } from "./shared-vaults";
@@ -61,16 +62,16 @@ describe("shared file-vault navigation data", () => {
     expect(canViewVaultFolder({ ...scopedAccess, fullAccess: true }, "Other")).toBe(true);
   });
 
-  it("builds direct links in the workspace with the file path confined to the fragment", () => {
+  it("builds stable item links without exposing a file path", () => {
     expect(sharedWorkspaceHref(workspaceId)).toBe(`/vault/${workspaceId}`);
-    expect(sharedFileHref(workspaceId, "Projects/Plan #1.textpack"))
-      .toBe(`/vault/${workspaceId}#file=Projects%2FPlan%20%231.textpack`);
+    expect(sharedFileHref(workspaceId, "plan-1"))
+      .toBe(`/vault/${workspaceId}?item=plan-1`);
     expect(sharedFolderHref(workspaceId, "Projects/Year #1"))
       .toBe(`/vault/${workspaceId}#folder=Projects%2FYear%20%231`);
     expect(() => sharedWorkspaceHref("../other")).toThrow();
-    expect(() => sharedFileHref(workspaceId, "Projects/Plan.txt")).toThrow();
+    expect(() => sharedFileHref(workspaceId, "Projects/Plan.textpack")).toThrow();
     expect(() => sharedFileHref(workspaceId, "")).toThrow();
-    expect(() => sharedFileHref(workspaceId, "Projects/../Private.textpack")).toThrow();
+    expect(() => sharedFileHref(workspaceId, "../Private")).toThrow();
     expect(() => sharedFolderHref(workspaceId, "Projects/../Private")).toThrow();
   });
 
@@ -85,5 +86,15 @@ describe("shared file-vault navigation data", () => {
       .toEqual({ type: "folder", path: "Projects" });
     expect(sharedVaultHashTarget("#file=Private%2FSecret.textpack", files, folders)).toBeNull();
     expect(sharedVaultHashTarget("#folder=Private", files, folders)).toBeNull();
+  });
+
+  it("resolves an item link after a rename only when the current listing includes that item", () => {
+    const current = [{ itemId: "plan-1", path: "Projects/Renamed.textpack" }];
+    expect(sharedVaultLinkTarget("?item=plan-1", "", current, ["Projects"]))
+      .toEqual({ type: "file", path: "Projects/Renamed.textpack" });
+    expect(sharedVaultLinkTarget("?item=private", "", current, ["Projects"])).toBeNull();
+    expect(sharedVaultLinkTarget("?item=../private", "", current, ["Projects"])).toBeNull();
+    expect(sharedVaultLinkTarget("", "#file=Projects%2FRenamed.textpack", current, ["Projects"]))
+      .toEqual({ type: "file", path: "Projects/Renamed.textpack" });
   });
 });

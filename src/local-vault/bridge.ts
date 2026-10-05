@@ -1,4 +1,4 @@
-export type VaultItem = { path: string; title?: string };
+export type VaultItem = { path: string; title?: string; itemId?: string };
 export type VaultListing = { root: string; name?: string; folders?: string[]; items: VaultItem[] };
 export type VaultFile = {
   path: string; hash: string; markdown: string;

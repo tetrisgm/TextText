@@ -42,7 +42,7 @@ import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
 import { VaultPublishDialog } from "./VaultPublishDialog";
 import { VaultComments } from "./VaultComments";
 import { vaultCommentCapabilities } from "./vault-comments";
-import { canCreateInVaultFolder, parseVaultAccess, sharedVaultHashTarget, type VaultAccess } from "./shared-vaults";
+import { canCreateInVaultFolder, parseVaultAccess, sharedVaultLinkTarget, type VaultAccess } from "./shared-vaults";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { readVaultLocation, resolveVaultLocation, writeVaultLocation } from "./vault-location";
@@ -589,7 +589,15 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     const root = visibleListing.root;
     restoredLocationRoot.current = root;
     void Promise.resolve().then(() => {
-      if (webWorkspaceId && sharedVaultHashTarget(window.location.hash, visibleListing.items.map(item => item.path), folders)) {
+      if (webWorkspaceId && new URLSearchParams(window.location.search).has("item")) {
+        if (!sharedVaultLinkTarget(window.location.search, window.location.hash, visibleListing.items, folders)) {
+          setSelected(null);
+          setError("This file is unavailable or you no longer have access.");
+        }
+        setLocationReadyRoot(root);
+        return;
+      }
+      if (webWorkspaceId && sharedVaultLinkTarget(window.location.search, window.location.hash, visibleListing.items, folders)) {
         setLocationReadyRoot(root);
         return;
       }
@@ -721,7 +729,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
   const openedLink = useRef("");
   useEffect(() => {
     if (!webWorkspaceId || !listing) return;
-    const target = sharedVaultHashTarget(window.location.hash, listing.items.map(item => item.path), folders);
+    const target = sharedVaultLinkTarget(window.location.search, window.location.hash, listing.items, folders);
     if (!target) { openedLink.current = ""; return; }
     const key = `${target.type}:${target.path}`;
     if (openedLink.current === key) return;

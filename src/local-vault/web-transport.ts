@@ -79,7 +79,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
         manifest = await response.json() as Manifest;
       }
       if (!manifest) throw new Error("The workspace listing was empty.");
-      return { root: `vault:${workspaceId}`, name, items: manifest.items.map((item) => ({ path: item.relativePath })) };
+      return { root: `vault:${workspaceId}`, name, items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId })) };
     })().finally(() => { listingRequest = null; });
     return listingRequest;
   };
