@@ -21,17 +21,26 @@ final class LocalVaultWindowTests: XCTestCase {
         let files = DocumentStore(root: root)
         let target = try files.create(title: "Integration", body: "Original body.")
         let controller = LocalVaultWindowController(entry: entry, root: root,
-            starterTemplates: repository.appendingPathComponent("presets/builtin"))
+            starterTemplates: repository.appendingPathComponent("presets/builtin"),
+            websiteDataStore: .nonPersistent(),
+            credentials: { nil })
         defer { controller.close() }
         let view = try XCTUnwrap(controller.window?.contentView as? WKWebView)
         controller.showWindow(nil)
         try await until(view: view) {
-            (try? await view.evaluateJavaScript("document.querySelector('button[aria-label=\"Integration Workspace Open →\"]') !== null") as? Bool) == true
+            (try? await view.evaluateJavaScript("document.querySelector('nav[aria-label=\"Folders\"]') !== null && document.querySelector('[aria-label=\"Web connection\"]')?.innerText.includes('Sign in to TextText to connect this folder.') === true") as? Bool) == true
         }
-        _ = try await view.evaluateJavaScript("document.querySelector('button[aria-label=\"Integration Workspace Open →\"]').click()")
+        XCTAssertTrue(controller.openFile(target), "The native bridge should open a file inside its selected local root.")
+        try await until(view: view) {
+            (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Note card\"]')?.innerText.includes('Original body.') === true && document.querySelector('button[aria-label=\"Edit card\"]') !== null") as? Bool) == true
+        }
+        _ = try await view.evaluateJavaScript("document.querySelector('button[aria-label=\"Edit card\"]').click()")
         try await until(view: view) {
             (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Document body\"]')?.textContent?.trim()") as? String) == "Original body."
         }
+        let signInPromptRemains = (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Web connection\"]')?.innerText.includes('Sign in to TextText to connect this folder.')") as? Bool) == true
+        XCTAssertTrue(signInPromptRemains,
+            "Local editing must remain available while web connection is unauthenticated.")
         _ = try await view.evaluateJavaScript("const body=document.querySelector('[aria-label=\"Document body\"]'); body.focus(); body.textContent='Human edited the real file.'; body.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));")
         try await until(view: view) { (try? files.readMarkdown(at: target).contains("Human edited the real file.")) == true }
         // Simulate an external editor atomically replacing text.md inside the
@@ -59,7 +68,9 @@ final class LocalVaultWindowTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         let rendered = (try? await view.evaluateJavaScript("document.body.innerText")) ?? "No page"
-        XCTFail("The native file editor did not reach the expected state: \(rendered)")
+        let buttons = (try? await view.evaluateJavaScript("Array.from(document.querySelectorAll('button[aria-label]')).map(button => button.getAttribute('aria-label'))")) ?? "No button labels"
+        let state = (try? await view.evaluateJavaScript("JSON.stringify({url: location.href, hash: location.hash, folders: !!document.querySelector('nav[aria-label=\\\"Folders\\\"]'), connection: document.querySelector('[aria-label=\\\"Web connection\\\"]')?.innerText, buttons: Array.from(document.querySelectorAll('button[aria-label]')).map(button => button.getAttribute('aria-label')), locations: Object.keys(localStorage).filter(key => key.startsWith('texttext:vault-location:')).map(key => [key, localStorage.getItem(key)])})")) ?? "No page state"
+        XCTFail("The native file editor did not reach the expected state: \(rendered)\nButtons: \(buttons)\nState: \(state)")
         throw CocoaError(.coderInvalidValue)
     }
 }

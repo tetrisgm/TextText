@@ -34,11 +34,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
 
     init(entry: URL, root initialRoot: URL? = nil,
          starterTemplates: URL? = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil),
+         websiteDataStore: WKWebsiteDataStore = .default(),
          credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil }) {
         self.entry = entry
         self.starterTemplates = starterTemplates
         self.credentials = credentials
-        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760))
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = websiteDataStore
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: configuration)
         let window = NSWindow(contentRect: webView.frame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.contentView = webView
