@@ -286,11 +286,13 @@ else
 fi
 # The app locates the share inbox by this group id. Sandboxed, it asks the
 # system and gets the one true container; unsandboxed, it tries the two paths
-# the group can live at. Empty leaves the TEXTTEXT_APP_GROUP placeholder, which
-# the resolver ignores.
+# the group can live at. If no group is configured, remove the source
+# placeholder from the built Info.plist rather than ship an unresolved identity.
 if [ -n "${TEXTTEXT_APP_GROUP:-}" ]; then
   "$PB" -c "Set :TextTextAppGroupIdentifier $TEXTTEXT_APP_GROUP" "$STAGED" 2>/dev/null \
     || "$PB" -c "Add :TextTextAppGroupIdentifier string $TEXTTEXT_APP_GROUP" "$STAGED"
+else
+  "$PB" -c 'Delete :TextTextAppGroupIdentifier' "$STAGED" 2>/dev/null || true
 fi
 # The app and the File Provider extension share a keychain access group to hand
 # the sync token across: the app cannot write the app-group container (that write
@@ -411,7 +413,27 @@ elif [ "$STORE" = "1" ]; then
   cp "$ENT" "$MAIN_ENT"
   "$PB" -c "Delete :com.apple.security.application-groups" "$MAIN_ENT" 2>/dev/null || true
   "$PB" -c "Delete :keychain-access-groups" "$MAIN_ENT" 2>/dev/null || true
-  echo ">> main app: sandboxed, no profile so no app-group or keychain group"
+  # Sign in with Apple is restricted too. Without an authorized provisioning
+  # profile, amfid rejects an ad-hoc signature carrying this entitlement at
+  # launch. Local sandbox builds do not provide that capability; keep the
+  # sandbox and ordinary network/file-picker grants intact.
+  "$PB" -c 'Delete :com.apple.developer.applesignin' "$MAIN_ENT" 2>/dev/null || true
+  for entitlement in \
+    com.apple.security.app-sandbox \
+    com.apple.security.network.client \
+    com.apple.security.network.server \
+    com.apple.security.files.user-selected.read-write; do
+    value="$("$PB" -c "Print :$entitlement" "$MAIN_ENT" 2>/dev/null || true)"
+    if [ "$value" != "true" ]; then
+      echo "Refusing: local sandbox build lost required entitlement $entitlement." >&2
+      exit 1
+    fi
+  done
+  if "$PB" -c 'Print :com.apple.developer.applesignin' "$MAIN_ENT" >/dev/null 2>&1; then
+    echo "Refusing: local build still has restricted Sign in with Apple entitlement." >&2
+    exit 1
+  fi
+  echo ">> main app: sandboxed; profile-gated sign-in, app-group, and keychain capabilities omitted"
 else
   printf '%s\n' \
     '<?xml version="1.0" encoding="UTF-8"?>' \
