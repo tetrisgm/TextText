@@ -282,6 +282,65 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertTrue(manifest.first?.isDeleted == true)
     }
 
+    func testCloudProviderAbsenceDoesNotDeleteRemoteItem() async throws {
+        let originalRoot = root!
+        root = originalRoot.appendingPathComponent("CloudStorage/Workspace")
+        defer { root = originalRoot }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        XCTAssertTrue(LocalVaultDeviceState.isCloudManaged(root: root))
+        try putLocal(pack("Initial"))
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        try FileManager.default.removeItem(at: root.appendingPathComponent(path))
+        let absent = try await sync.sync()
+        XCTAssertEqual(absent.uploaded, 0)
+        XCTAssertTrue(absent.errors.isEmpty)
+        let manifest = await transport.manifest()
+        XCTAssertEqual(manifest.first?.isDeleted, false)
+    }
+
+    func testTextTextTrashStillDeletesFromCloudWorkspace() async throws {
+        let originalRoot = root!
+        root = originalRoot.appendingPathComponent("CloudStorage/Workspace")
+        defer { root = originalRoot }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let bytes = try pack("Initial")
+        try putLocal(bytes)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        try LocalVaultDocumentStore(root: root).delete(path: path, expectedHash: TextTextStableDigest.sha256Hex(bytes))
+        XCTAssertTrue(try LocalVaultDeviceState.hasDeletion(root: root, itemId: itemId,
+                                                            path: path, hash: TextTextStableDigest.sha256Hex(bytes)))
+        let deleted = try await sync.sync()
+        XCTAssertEqual(deleted.uploaded, 1)
+        let manifest = await transport.manifest()
+        XCTAssertEqual(manifest.first?.isDeleted, true)
+        XCTAssertFalse(try LocalVaultDeviceState.hasDeletion(root: root, itemId: itemId,
+                                                             path: path, hash: TextTextStableDigest.sha256Hex(bytes)))
+    }
+
+    func testRestoredCloudFileCancelsDeletionIntent() async throws {
+        let originalRoot = root!
+        root = originalRoot.appendingPathComponent("CloudStorage/Workspace")
+        defer { root = originalRoot }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let bytes = try pack("Initial")
+        try putLocal(bytes)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        try LocalVaultDocumentStore(root: root).delete(path: path, expectedHash: TextTextStableDigest.sha256Hex(bytes))
+        try putLocal(bytes)
+        _ = try await sync.sync()
+        try FileManager.default.removeItem(at: root.appendingPathComponent(path))
+        let absent = try await sync.sync()
+        XCTAssertEqual(absent.uploaded, 0)
+        let manifest = await transport.manifest()
+        XCTAssertEqual(manifest.first?.isDeleted, false)
+    }
+
     func testRemoteRenameAndDeletionPreserveHistory() async throws {
         let bytes = try pack("Initial")
         try putLocal(bytes)

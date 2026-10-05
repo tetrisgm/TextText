@@ -393,6 +393,10 @@ public actor LocalVaultSync {
         do {
             if pending.action == "delete" {
                 guard let base = pending.baseRevision else { throw LocalVaultSyncFailure.invalidResponse }
+                // A cloud provider may restore a placeholder or the complete
+                // file while an outbox request is waiting for a retry.
+                let local = try LocalVaultDocumentStore(root: root).url(for: pending.path)
+                guard !FileManager.default.fileExists(atPath: local.path) else { throw LocalVaultSyncFailure.changed }
                 try await transport.delete(itemId: pending.itemId, path: pending.path, baseRevision: base, operationId: pending.operationId)
                 state.baselines.removeValue(forKey: pending.itemId)
             } else if pending.action == "rename" {
@@ -437,6 +441,7 @@ public actor LocalVaultSync {
         }
         state.outbox.removeValue(forKey: pending.itemId)
         try persist()
+        if pending.action == "delete" { try LocalVaultDeviceState.clearDeletion(root: root, itemId: pending.itemId) }
         try? FileManager.default.removeItem(at: payload(pending))
     }
 
@@ -534,6 +539,9 @@ public actor LocalVaultSync {
                     state.identities?.removeValue(forKey: document.path)
                     throw LocalVaultSyncFailure.changed
                 }
+                if let document, LocalVaultDeviceState.isCloudManaged(root: root) {
+                    try LocalVaultDeviceState.clearDeletionIfRestored(root: root, itemId: id, path: document.path)
+                }
                 if let conflict = state.conflicts[id],
                    conflict.localHash == (document?.hash ?? baseline?.localHash),
                    conflict.remoteRevision == remote?.revision,
@@ -564,6 +572,12 @@ public actor LocalVaultSync {
                     guard indexComplete else { report.hasMore = true; continue }
                     guard let remote else { continue }
                     if let baseline {
+                        // Missing cloud-provider files may be evicted or hidden
+                        // during account/provider outages. Only TextText's own
+                        // Trash move supplies a durable deletion intent.
+                        if LocalVaultDeviceState.isCloudManaged(root: root),
+                           try !LocalVaultDeviceState.hasDeletion(root: root, itemId: id,
+                               path: baseline.path, hash: baseline.localHash) { continue }
                         let history = root.appendingPathComponent(".texttext/history/\(baseline.localHash).textpack")
                         let pending = try stage(itemId: id, path: baseline.path, hash: baseline.localHash,
                             base: baseline.revision, bytes: try? Data(contentsOf: history), action: "delete")

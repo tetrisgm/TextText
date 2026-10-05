@@ -3,7 +3,7 @@ import Foundation
 /// Sync cursors, upload outbox and live-edit journals belong to this Mac, not
 /// to an iCloud/Dropbox/OneDrive-synchronized workspace folder.
 public enum LocalVaultDeviceState {
-    private static let lock = NSLock()
+    private static let lock = NSRecursiveLock()
     nonisolated(unsafe) private static var configuredBase: URL?
 
     public static func configure(base: URL) {
@@ -26,6 +26,70 @@ public enum LocalVaultDeviceState {
         return base.standardizedFileURL.resolvingSymlinksInPath()
             .appendingPathComponent("VaultDeviceState", isDirectory: true)
             .appendingPathComponent(digest, isDirectory: true)
+    }
+
+    /// A provider may hide a file while it is downloading or the account is
+    /// unavailable. Absence in these folders is not evidence of a user delete.
+    public static func isCloudManaged(root: URL) -> Bool {
+        let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
+        if (try? canonical.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true { return true }
+        let parts = canonical.pathComponents
+        return parts.contains("CloudStorage") || parts.contains("Mobile Documents")
+    }
+
+    private struct DeletionIntent: Codable {
+        let itemId: String
+        let path: String
+        let hash: String
+    }
+
+    private static func deletionURL(root: URL, itemId: String) throws -> URL {
+        guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil else {
+            throw LocalVaultDocumentStore.Failure.invalidPath
+        }
+        let folder = directory(root: root).appendingPathComponent("deletions", isDirectory: true)
+        let target = folder.appendingPathComponent(itemId + ".json")
+        guard folder.resolvingSymlinksInPath().path == folder.path,
+              target.resolvingSymlinksInPath().path == target.path else {
+            throw LocalVaultDocumentStore.Failure.invalidPath
+        }
+        return target
+    }
+
+    /// Called only after TextText has moved the exact pack into its Trash.
+    public static func recordDeletion(root: URL, itemId: String, path: String, hash: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let target = try deletionURL(root: root, itemId: itemId)
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let intent = DeletionIntent(itemId: itemId, path: path, hash: hash)
+        try JSONEncoder().encode(intent).write(to: target, options: .atomic)
+    }
+
+    public static func hasDeletion(root: URL, itemId: String, path: String, hash: String) throws -> Bool {
+        let target = try deletionURL(root: root, itemId: itemId)
+        guard FileManager.default.fileExists(atPath: target.path) else { return false }
+        let intent = try JSONDecoder().decode(DeletionIntent.self, from: Data(contentsOf: target))
+        return intent.itemId == itemId && intent.path == path && intent.hash == hash
+    }
+
+    public static func clearDeletion(root: URL, itemId: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let target = try deletionURL(root: root, itemId: itemId)
+        if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+    }
+
+    /// A restored file cancels the intent only while it is still present.
+    /// The lock also orders this check with a newer TextText Trash action.
+    public static func clearDeletionIfRestored(root: URL, itemId: String, path: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let file = try LocalVaultDocumentStore(root: root).url(for: path)
+        guard FileManager.default.fileExists(atPath: file.path) else { return }
+        let target = try deletionURL(root: root, itemId: itemId)
+        if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
     }
 
     public static func migrate(root: URL) throws {

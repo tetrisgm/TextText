@@ -331,6 +331,9 @@ public struct LocalVaultDocumentStore: Sendable {
                 guard current.hash == expectedHash else { throw Failure.changed }
                 try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
                 try FileManager.default.moveItem(at: source, to: trash.appendingPathComponent(UUID().uuidString + ".textpack"))
+                if let itemId = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId {
+                    try LocalVaultDeviceState.recordDeletion(root: root, itemId: itemId, path: path, hash: current.hash)
+                }
             }
         }
         if let coordinationError { throw coordinationError }
