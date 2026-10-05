@@ -153,6 +153,17 @@ describe("workspace vault API", () => {
     expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ actorType: "human" }));
   });
 
+  it("allows a verified local file sync to request live reconciliation", async () => {
+    const localHeaders = { ...headers, "If-None-Match": "", "If-Match": `"${"a".repeat(64)}"`, "X-TextText-Edit-Origin": "local-file" };
+    expect((await PUT(new Request("https://texttext.test", { method: "PUT", headers: localHeaders, body: "pack" }), context())).status).toBe(403);
+    mocks.auth.mockResolvedValue({ root: "/tmp/test-vault", workspaceId: "owner-workspace", actorUserId: "user-1",
+      actorType: "external_agent", canAttributeNativeEditor: true, fullAccess: true, relativePath: "Notes/A note.textpack" });
+    mocks.write.mockResolvedValue({ status: "written", revision: "b".repeat(64) });
+    expect((await PUT(new Request("https://texttext.test", { method: "PUT", headers: localHeaders, body: "pack" }), context())).status).toBe(200);
+    expect(mocks.write).toHaveBeenCalledWith(expect.objectContaining({ liveReconcile: true,
+      actorType: "external_agent", baseRevision: "a".repeat(64) }));
+  });
+
   it("rechecks the app token before committing a native editor upload", async () => {
     mocks.auth.mockResolvedValueOnce({ actorUserId: "user-1", actorType: "external_agent", canAttributeNativeEditor: true })
       .mockResolvedValueOnce({ actorUserId: "user-1", actorType: "external_agent", canAttributeNativeEditor: false });

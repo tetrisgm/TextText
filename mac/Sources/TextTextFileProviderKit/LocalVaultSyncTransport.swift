@@ -124,7 +124,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.setValue(path.addingPercentEncoding(withAllowedCharacters: .alphanumerics), forHTTPHeaderField: "X-TextText-Path")
         request.setValue(operationId, forHTTPHeaderField: "X-TextText-Operation-Id")
-        if nativeEditor { request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin") }
+        request.setValue(nativeEditor ? "native-editor" : "local-file", forHTTPHeaderField: "X-TextText-Edit-Origin")
         if let baseRevision { request.setValue("\"\(baseRevision)\"", forHTTPHeaderField: "If-Match") }
         else { request.setValue("*", forHTTPHeaderField: "If-None-Match") }
         struct Receipt: Decodable { let revision: String }

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
-import { encodeDocumentBaseline, documentSnapshotFromYDoc } from "@/lib/collab/document";
+import { applyDocumentSnapshot, encodeDocumentBaseline, documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -79,6 +79,35 @@ export function seedVaultCollaboration(bytes: Uint8Array, itemId: string, epoch:
   const update = encodeDocumentBaseline(snapshot, `vault:${itemId}:${epoch}:${revision}`);
   if (update.byteLength > MAX_VAULT_COLLABORATION_BYTES) fail();
   return { epoch, seq: 0, revision, update: Buffer.from(update).toString("base64") };
+}
+
+/** Project a causally based local file edit into the current Yjs epoch. Opaque
+ * archive changes still require reopening the pack, so callers fence those. */
+export function projectVaultFileEdit(state: VaultCollaborationState, currentBytes: Uint8Array,
+  nextBytes: Uint8Array, itemId: string): VaultCollaborationState | null {
+  if (state.revision !== hash(currentBytes) || !Number.isSafeInteger(state.seq) || state.seq >= Number.MAX_SAFE_INTEGER) return null;
+  const beforePack = openPack(currentBytes, "Document.textpack", state.revision, itemId);
+  const afterPack = openPack(nextBytes, "Document.textpack", hash(nextBytes), itemId);
+  if (beforePack.prefix !== afterPack.prefix) return null;
+  const contentNames = new Set([beforePack.prefix + "text.md", beforePack.prefix + "document.json"]);
+  const opaqueNames = new Set([...Object.keys(beforePack.entries), ...Object.keys(afterPack.entries)]);
+  for (const name of opaqueNames) {
+    if (contentNames.has(name)) continue;
+    const before = beforePack.entries[name], after = afterPack.entries[name];
+    if (!before || !after || before.length !== after.length || before.some((byte, index) => byte !== after[index])) return null;
+  }
+  const doc = new Y.Doc();
+  try {
+    doc.getMap("document");
+    Y.applyUpdate(doc, decode(state.update, Math.ceil(MAX_VAULT_COLLABORATION_BYTES / 3) * 4));
+    const before = checkedSnapshot(doc);
+    if (canonicalDocument(before) !== canonicalDocument(readDocument(beforePack.file))) return null;
+    const after = readDocument(afterPack.file, beforePack.file, before);
+    readTemplate(afterPack.file, after);
+    applyDocumentSnapshot(doc, after, "local-file-edit");
+    if (canonicalDocument(checkedSnapshot(doc)) !== canonicalDocument(after)) return null;
+    return { epoch: state.epoch, seq: state.seq + 1, revision: hash(nextBytes), update: boundedState(doc) };
+  } finally { doc.destroy(); }
 }
 
 export function applyVaultCollaboration(state: VaultCollaborationState, currentPackBytes: Uint8Array, updates: string[]): { state: VaultCollaborationState; bytes: Uint8Array } {

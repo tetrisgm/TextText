@@ -6,7 +6,7 @@ import { hostname } from "node:os";
 import { unzipSync, strFromU8 } from "fflate";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
-import { seedVaultCollaboration, applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
+import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, type VaultCollaborationState } from "./collaboration";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
 import { mutateVaultItemCommentsInPack, type VaultCommentActor, type VaultCommentMutation } from "./item-comments";
@@ -31,6 +31,8 @@ export interface VaultWrite extends VaultLocation {
   baseRevision: string | null;
   bytes: Uint8Array;
   audit?: { actorUserId: string; actorType: "human" | "external_agent" };
+  /** A verified local folder sync with an exact base revision. */
+  liveReconcile?: boolean;
 }
 export type VaultWriteResult =
   | { status: "written"; itemId: string; relativePath: string; revision: string }
@@ -549,7 +551,8 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
   if (input.baseRevision !== null && !/^[a-f0-9]{64}$/.test(input.baseRevision)) throw new Error("Invalid base revision");
   validatePack(input.bytes, input.itemId);
   const revision = hash(input.bytes);
-  const requestHash = hash(json([input.itemId, input.relativePath, input.baseRevision, revision, ...(input.audit ? [input.audit] : [])]));
+  const requestHash = hash(json([input.itemId, input.relativePath, input.baseRevision, revision,
+    ...(input.liveReconcile ? ["local-file"] : []), ...(input.audit ? [input.audit] : [])]));
   const layout = await setup(input);
   return locked(layout, async () => {
     await recover(layout);
@@ -607,6 +610,16 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
       relativePath: input.relativePath, baseRevision: committedBase, revision: hash(committedBytes), requestHash,
       workspaceId: input.workspaceId, ...(input.audit ? { audit: input.audit } : {}) };
+    if (input.liveReconcile && input.baseRevision !== null && current && committedBase === hash(current) &&
+        intent.revision !== committedBase) {
+      const checkpoint = await maybeRead(path.join(layout.collaboration, `${input.itemId}.json`));
+      if (checkpoint) {
+        try {
+          intent.collaboration = projectVaultFileEdit(JSON.parse(checkpoint.toString()) as VaultCollaborationState,
+            current, committedBytes, input.itemId) ?? undefined;
+        } catch { /* Unsupported or ambiguous file edits keep the epoch fence. */ }
+      }
+    }
     if (deletedRevision) intent.deletedRevision = deletedRevision;
     await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
     await syncDirectory(layout.pending);

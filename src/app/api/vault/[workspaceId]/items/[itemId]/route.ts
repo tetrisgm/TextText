@@ -116,7 +116,7 @@ export async function PUT(request: Request, context: Context) {
   const authorized = await authorizeVaultItemAtPath(request, workspaceId, itemId, relativePath, "edit");
   if (authorized instanceof Response) return authorized;
   const editOrigin = request.headers.get("X-TextText-Edit-Origin");
-  if (editOrigin !== null && editOrigin !== "native-editor") {
+  if (editOrigin !== null && editOrigin !== "native-editor" && editOrigin !== "local-file") {
     return Response.json({ error: "Invalid edit origin" }, { status: 400, headers: noCache });
   }
   if (editOrigin && !authorized.canAttributeNativeEditor) {
@@ -142,7 +142,8 @@ export async function PUT(request: Request, context: Context) {
     const current = authorized;
     if (request.signal.aborted) return new Response(null, { status: 204, headers: noCache });
     const result = await writeVaultTextpack({ ...current,
-      actorType: editOrigin ? "human" : current.actorType,
+      actorType: editOrigin === "native-editor" ? "human" : current.actorType,
+      liveReconcile: editOrigin === "local-file",
       ...commitGuard(request, context, current.actorUserId, false, editOrigin !== null), operationId, relativePath,
       baseRevision: match ? match.slice(1, -1) : null,
       bytes: Buffer.concat(chunks, size),

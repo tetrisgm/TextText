@@ -10,9 +10,9 @@ import { documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
 import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultCollaborationEpochError } from "./server-store";
 const hash = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
-function pack(body: string) {
+function pack(body: string, files?: Record<string, Uint8Array>) {
   const document = emptyDocumentSnapshot(); document.content.body = body;
-  return buildTextpack("Note", { document, markdown: `---\ntextTextId: item-1\n---\n\n${body}` });
+  return buildTextpack("Note", { document, markdown: `---\ntextTextId: item-1\n---\n\n${body}`, files });
 }
 function edit(state: VaultCollaborationState, text: string) {
   const doc = new Y.Doc();
@@ -98,6 +98,39 @@ describe("durable file collaboration", () => {
     expect(moved).toEqual({ ...merged, relativePath: "Moved.textpack" });
     await push("after-move", moved, edit(moved, " moved"));
     expect((await readVaultTextpack(location()))?.relativePath).toBe("Moved.textpack");
+  });
+
+  it("projects a verified local file edit into live Yjs without dropping a concurrent editor", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const pendingHuman = edit(initial, " human");
+    // A filesystem agent may rewrite text.md without touching document.json.
+    const structured = emptyDocumentSnapshot(); structured.content.body = "Hello";
+    const fileEdit = buildTextpack("Note", { document: structured,
+      markdown: "---\ntextTextId: item-1\n---\n\nHello agent" });
+    const written = await writeVaultTextpack({ ...location(), relativePath, operationId: "local-file-edit",
+      baseRevision: initial.revision, bytes: fileEdit, liveReconcile: true });
+    expect(written.status).toBe("written");
+    const projected = (await readVaultCollaboration(location()))!;
+    expect(projected.epoch).toBe(initial.epoch);
+    expect(projected.seq).toBe(initial.seq + 1);
+    expect(body(projected)).toBe("Hello agent");
+    await push("human-after-file", initial, pendingHuman);
+    const merged = (await readVaultCollaboration(location()))!;
+    expect(body(merged)).toContain("agent");
+    expect(body(merged)).toContain("human");
+    expect((await readVaultTextpack(location()))?.revision).toBe(merged.revision);
+  });
+
+  it("fences local pack edits that change opaque entries", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const changed = pack("Hello", { "assets/opaque.bin": new Uint8Array([1, 2, 3]) });
+    const written = await writeVaultTextpack({ ...location(), relativePath, operationId: "local-asset-edit",
+      baseRevision: initial.revision, bytes: changed, liveReconcile: true });
+    expect(written.status).toBe("written");
+    const reopened = (await readVaultCollaboration(location()))!;
+    expect(reopened.epoch).toBe(initial.epoch + 1);
+    await expect(push("stale-after-asset", initial, edit(initial, " stale")))
+      .rejects.toBeInstanceOf(VaultCollaborationEpochError);
   });
 
   it("fences raw file changes and ordinary writes even after original bytes are restored", async () => {
