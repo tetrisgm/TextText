@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -29,6 +30,7 @@ const evaluationDistDir = ".texttext/next-live-eval";
 const evaluationDistPath = join(process.cwd(), evaluationDistDir);
 const evaluationMediaPath = join(process.cwd(), ".texttext/media-live-eval");
 const commandTimeoutMilliseconds = 300_000;
+const localEvaluationEncryptionKey = randomBytes(32).toString("base64url");
 const suiteNames = new Set([
   "workflow",
   "sync",
@@ -91,6 +93,19 @@ const evaluationMediaEnvironment = {
   TEXTTEXT_MEDIA_ROOT: evaluationMediaPath,
   TEXTTEXT_STORAGE_MIN_FREE_BYTES: String(256 * 1024 ** 2),
 };
+const localAssetFixturePreload =
+  process.env.TEXTTEXT_LOCAL_ASSET_FIXTURE === "1"
+    ? join(process.cwd(), "scripts/live-eval-asset-fixture.cjs")
+    : null;
+if (
+  localAssetFixturePreload &&
+  process.env.TEXTTEXT_ASSET_FIXTURE_URL !==
+    "https://texttext-asset-fixture.invalid/cover.png"
+) {
+  throw new Error(
+    "The local asset fixture requires its reserved fixture URL.",
+  );
+}
 
 async function waitForServer() {
   const deadline = Date.now() + 120_000;
@@ -140,6 +155,7 @@ async function runBounded(
     env: {
       ...process.env,
       AUTH_DEV_LOGIN: "1",
+      AI_CONFIG_ENCRYPTION_KEY: localEvaluationEncryptionKey,
       NEXT_PUBLIC_ROOT_DOMAIN: rootDomain,
       NEXT_TELEMETRY_DISABLED: "1",
       TEXTTEXT_ORIGIN: origin,
@@ -180,7 +196,7 @@ async function main() {
       "node_modules/next/dist/bin/next",
       "dev",
       "--hostname",
-      "127.0.0.1",
+      "localhost",
       "--port",
       String(port),
     ],
@@ -190,10 +206,21 @@ async function main() {
       env: {
         ...process.env,
         AUTH_DEV_LOGIN: "1",
+        AI_CONFIG_ENCRYPTION_KEY: localEvaluationEncryptionKey,
         NEXT_PUBLIC_ROOT_DOMAIN: rootDomain,
         NEXT_TELEMETRY_DISABLED: "1",
         TEXTTEXT_NEXT_DIST_DIR: evaluationDistDir,
         TEXTTEXT_ORIGIN: origin,
+        ...(localAssetFixturePreload
+          ? {
+              NODE_OPTIONS: [
+                process.env.NODE_OPTIONS,
+                `--require=${localAssetFixturePreload}`,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            }
+          : {}),
         ...evaluationMediaEnvironment,
       },
       stdio: ["ignore", "pipe", "pipe"],
