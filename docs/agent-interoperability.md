@@ -133,11 +133,14 @@ promise cloud presence, server audit rows, or live collaboration.
 
 ## Remote agents over hosted MCP
 
-External clients connect to `https://texttext.app/api/mcp` with a manual `wsk_`
-workspace token from `/connect`. TextText does not implement an OAuth
-authorization server, consent page, refresh-token flow, or dynamic client
-registration. A compatible client must let the person provide a bearer
-credential. OAuth-only connectors cannot use this endpoint.
+External clients connect to `https://texttext.app/api/mcp`. Clients with a
+protected bearer field can use a manual `wsk_` workspace token from `/connect`.
+The source now also supports ChatGPT's fixed client metadata document with
+OAuth authorization code, PKCE, consent, and rotating refresh tokens. OAuth
+access tokens are bound to this MCP resource and cannot authenticate sync or
+app-session routes. The ChatGPT path requires a website deployment before it
+is available to users; that deployment has not been approved or performed.
+Other OAuth-only clients are not registered.
 
 Hosted MCP exposes the complete shared tool contract, including comments,
 guarded publishing, and collaborator management. Tool descriptions mark actions
@@ -215,9 +218,9 @@ VS Code user `mcp.json` can prompt once and keep the value in secure storage:
 ```
 
 Claude and Claude Desktop remote connectors currently accept authless or OAuth
-servers, not a manually supplied bearer token. TextText does not currently
-provide an OAuth authorization server, so that remote connector path is not
-compatible today. On this Mac, use the token-free Claude Code plugin instead.
+servers, not a manually supplied bearer token. TextText's OAuth client allowlist
+currently includes ChatGPT only. On this Mac, use the token-free Claude Code
+plugin instead.
 
 Every supported setup ends with the same proof: capture one private note with a
 stable idempotency key, report its authoritative receipt title, item id, and

@@ -164,12 +164,22 @@ const CLIENTS: Array<{
     },
   },
   {
+    id: "chatgpt",
+    name: "ChatGPT",
+    steps: [
+      "Add TextText as an MCP connector in ChatGPT using the endpoint below.",
+      "ChatGPT opens TextText sign-in and an access approval page. Review the requested scope and approve it.",
+      "Use the shared connection proof below, then manage or revoke the connection at Connect.",
+    ],
+    code: { label: "MCP endpoint", value: MCP_URL },
+  },
+  {
     id: "oauth-only",
     name: "Claude and Claude Desktop connectors",
     steps: [
       "Claude and Claude Desktop remote connectors currently accept authless or OAuth servers, not a manually supplied bearer token.",
-      "TextText does not currently provide an OAuth authorization server, so do not add the hosted endpoint there and expect it to authenticate.",
-      "On this Mac, use the token-free TextText plugin in Claude Code. Otherwise use Codex, Cursor, VS Code, or another client with protected bearer headers.",
+      "TextText currently recognizes ChatGPT's OAuth client metadata. Claude Desktop's OAuth client is not registered.",
+      "On this Mac, use the token-free TextText plugin in Claude Code. Otherwise use ChatGPT, Codex, Cursor, VS Code, or another supported client.",
     ],
   },
   {
@@ -179,7 +189,7 @@ const CLIENTS: Array<{
       "Create a revocable workspace token at Connect.",
       "Add the endpoint below only in a client that provides a protected bearer-credential or Authorization-header field.",
       "Save the token in that protected field, enable the server, and run the shared connection proof below.",
-      "If the client is OAuth-only, it is not compatible with this endpoint today.",
+      "OAuth-only clients other than ChatGPT need a separately supported client identity.",
     ],
     code: {
       label: "MCP endpoint",
@@ -199,7 +209,7 @@ export default function McpReferencePage() {
         <p className="connect-provider-kicker">Reference</p>
         <h1 className="connect-title">MCP</h1>
         <p className="connect-lede">
-          TextText speaks MCP in both directions. A bearer-authenticated client
+          TextText speaks MCP in both directions. An authorized client
           can work on your documents through the hosted server, and your own
           assistant can use tools from servers you connect to it.
         </p>
@@ -207,24 +217,23 @@ export default function McpReferencePage() {
         <section className="connect-section" id="endpoint">
           <h2 className="connect-section-title">The endpoint</h2>
           <p className="connect-body">
-            One address, Streamable HTTP, and a workspace token you create and
-            save in the client&apos;s protected bearer-credential field.
+            One address and Streamable HTTP. ChatGPT can request access through
+            TextText sign-in; other supported clients can use a workspace token.
           </p>
           <pre className="docs-code" aria-label="TextText MCP endpoint">
             <code>{MCP_URL}</code>
           </pre>
           <p className="connect-body">
-            Create a token at <Link href="/connect">Connect</Link>, and revoke
-            it there. The hosted endpoint does not currently provide the OAuth
-            authorization flow required by some connector galleries.
+            Manage ChatGPT authorizations and manually created tokens at{" "}
+            <Link href="/connect">Connect</Link>.
           </p>
         </section>
 
         <section className="connect-section" id="clients">
           <h2 className="connect-section-title">Connect a client</h2>
           <p className="connect-body">
-            Use the hosted endpoint only when the client accepts a bearer token.
-            For local Claude or Codex, the recommended path is the token-free
+            ChatGPT uses browser authorization. Other clients listed below use a
+            protected bearer token. For local Claude or Codex, use the token-free
             TextText plugin described in the{" "}
             <Link href="/docs/ai#external-agent">connection guide</Link>.
           </p>

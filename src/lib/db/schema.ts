@@ -574,6 +574,8 @@ export const apiTokens = pgTable(
     /** How this capability is used, so connection management can explain it. */
     kind: text("kind").notNull().default("manual"),
     tokenHash: text("token_hash").notNull(),
+    /** Bound connector audience. Null keeps older manually issued tokens working. */
+    audience: text("audience"),
     /** space-separated scopes; "sync" grants read/write on owned content */
     scopes: text("scopes").notNull().default("sync"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -590,6 +592,109 @@ export const apiTokens = pgTable(
     ),
   ],
 );
+
+// OAuth 2.1 authorization-code + PKCE grants for public connector clients.
+// The raw authorization code is shown only in the redirect response; only its
+// SHA-256 hash is stored here. Rows are single-use and short-lived.
+export const oauthAuthorizationCodes = pgTable(
+  "connector_oauth_authorization_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    scope: text("scope").notNull().default("sync"),
+    resource: text("resource").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+  },
+  (t) => [uniqueIndex("connector_oauth_authorization_codes_hash_idx").on(t.codeHash)],
+);
+
+export type OAuthAuthorizationCode =
+  typeof oauthAuthorizationCodes.$inferSelect;
+export type NewOAuthAuthorizationCode =
+  typeof oauthAuthorizationCodes.$inferInsert;
+
+// A refresh-token family is one OAuth authorization grant. Rotations retain the
+// original absolute deadline, slide the inactivity deadline, and revoke the
+// whole family if any consumed refresh token is presented again.
+export const oauthRefreshTokenFamilies = pgTable(
+  "connector_oauth_refresh_token_families",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull(),
+    scope: text("scope").notNull(),
+    resource: text("resource").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at").defaultNow().notNull(),
+    absoluteExpiresAt: timestamp("absolute_expires_at").notNull(),
+    inactivityExpiresAt: timestamp("inactivity_expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    replayDetectedAt: timestamp("replay_detected_at"),
+  },
+  (t) => [
+    index("connector_oauth_refresh_families_user_idx").on(t.userId),
+  ],
+);
+
+// OAuth access-token metadata is separate from api_tokens so existing manual
+// tokens preserve their current lifecycle. The api_tokens row remains the
+// single bearer identity; audience-bound connector tokens work only at MCP.
+export const oauthAccessTokens = pgTable(
+  "connector_oauth_access_tokens",
+  {
+    apiTokenId: uuid("api_token_id")
+      .primaryKey()
+      .references(() => apiTokens.id, { onDelete: "cascade" }),
+    refreshTokenFamilyId: uuid("refresh_token_family_id")
+      .notNull()
+      .references(() => oauthRefreshTokenFamilies.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("connector_oauth_access_tokens_family_idx").on(t.refreshTokenFamilyId),
+  ],
+);
+
+// Raw refresh tokens are returned once and never persisted. Only their SHA-256
+// hashes live here; consumed_at makes rotation/replay detection atomic.
+export const oauthRefreshTokens = pgTable(
+  "connector_oauth_refresh_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    refreshTokenFamilyId: uuid("refresh_token_family_id")
+      .notNull()
+      .references(() => oauthRefreshTokenFamilies.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    accessTokenId: uuid("access_token_id").references(() => apiTokens.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    consumedAt: timestamp("consumed_at"),
+  },
+  (t) => [
+    uniqueIndex("connector_oauth_refresh_tokens_hash_idx").on(t.tokenHash),
+    index("connector_oauth_refresh_tokens_family_idx").on(t.refreshTokenFamilyId),
+  ],
+);
+
+export type OAuthRefreshTokenFamily =
+  typeof oauthRefreshTokenFamilies.$inferSelect;
+export type NewOAuthRefreshTokenFamily =
+  typeof oauthRefreshTokenFamilies.$inferInsert;
+export type OAuthAccessToken = typeof oauthAccessTokens.$inferSelect;
+export type NewOAuthAccessToken = typeof oauthAccessTokens.$inferInsert;
+export type OAuthRefreshToken = typeof oauthRefreshTokens.$inferSelect;
+export type NewOAuthRefreshToken = typeof oauthRefreshTokens.$inferInsert;
 
 // A workspace (blogs row) holds folders; folders hold items (posts rows). The
 // folder's mode decides how its items are rendered and edited: "blog" today,

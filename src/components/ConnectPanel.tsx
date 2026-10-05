@@ -3,6 +3,7 @@
 import { useRef, useState, useSyncExternalStore } from "react";
 import {
   createApiTokenAction,
+  listApiTokensAction,
   revokeApiTokenAction,
 } from "@/app/editor/token-actions";
 import {
@@ -177,7 +178,13 @@ export function ConnectPanel({
     setError(null);
     try {
       await revokeApiTokenAction(id);
-      setTokens((previous) => previous.filter((token) => token.id !== id));
+      try {
+        // One OAuth connection can have several short-lived access tokens.
+        // Revoking any one of them removes the whole family on the server.
+        setTokens(await listApiTokensAction());
+      } catch {
+        setTokens((previous) => previous.filter((token) => token.id !== id));
+      }
       setFresh((previous) => (previous?.id === id ? null : previous));
     } catch (err) {
       setError(errorMessage(err, "The token could not be revoked."));
@@ -304,6 +311,23 @@ export function ConnectPanel({
           </div>
         </section>
       )}
+
+      <section className="connect-section" aria-labelledby="connect-chatgpt">
+        <h2 className="connect-section-title" id="connect-chatgpt">
+          Connect ChatGPT
+        </h2>
+        <p className="connect-body">
+          Add the TextText MCP address as a connector in ChatGPT. ChatGPT opens
+          TextText to sign in and approve the requested workspace access. The
+          connection appears below, where you can revoke it.
+        </p>
+        <CodeRecipe
+          copyKey="chatgpt-mcp"
+          value={remoteMcpUrl}
+          copiedKey={copiedKey}
+          onCopy={(value, key) => void copy(value, key)}
+        />
+      </section>
 
       <section className="connect-section" aria-labelledby="connect-in-app">
         <h2 className="connect-section-title" id="connect-in-app">

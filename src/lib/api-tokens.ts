@@ -6,10 +6,10 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
-import { auditInsertQuery, auditCteFrom, type AuditEntry } from "./audit";
+import { auditInsertQuery, type AuditEntry } from "./audit";
 import { sql } from "drizzle-orm";
 import { db, executeAtomicBatch } from "./db/client";
-import { apiTokens, users } from "./db/schema";
+import { apiTokens, oauthAccessTokens, oauthRefreshTokenFamilies, users } from "./db/schema";
 import {
   API_TOKEN_KINDS,
   type ApiTokenKind,
@@ -37,6 +37,7 @@ export type ApiTokenIdentity = {
   scopes: string;
   /** null for non-expiring manually-created tokens */
   expiresAt: Date | null;
+  audience: string | null;
 };
 
 export type ApiTokenSummary = {
@@ -93,6 +94,7 @@ export async function createApiToken(
   options: {
     kind?: ApiTokenKind;
     scopes?: string;
+    audience?: string;
     expiresAt?: Date;
     audit?: AuditEntry;
   } = {},
@@ -107,6 +109,7 @@ export async function createApiToken(
       kind: options.kind ?? "manual",
       tokenHash: hashApiToken(raw),
       scopes: options.scopes,
+      audience: options.audience,
       expiresAt: options.expiresAt,
     })
     .returning();
@@ -120,14 +123,22 @@ export async function createApiToken(
 export async function listApiTokens(userId: string): Promise<ApiTokenSummary[]> {
   if (!db) return [];
   const rows = await db
-    .select()
+    .select({ token: apiTokens, familyId: oauthAccessTokens.refreshTokenFamilyId })
     .from(apiTokens)
+    .leftJoin(oauthAccessTokens, eq(oauthAccessTokens.apiTokenId, apiTokens.id))
     .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)))
     .orderBy(desc(apiTokens.createdAt));
-  return rows.map(mapToken);
+  const families = new Set<string>();
+  return rows.flatMap(({ token, familyId }) => {
+    if (familyId) {
+      if (families.has(familyId)) return [];
+      families.add(familyId);
+    }
+    return [mapToken(token)];
+  });
 }
 
-/** Revoke one of the user's tokens. True when a live token was revoked. */
+/** Revoke one manual token or the complete OAuth grant it belongs to. */
 export async function revokeApiToken(
   userId: string,
   id: string,
@@ -136,13 +147,54 @@ export async function revokeApiToken(
   if (!db) throw new Error("revokeApiToken requires DATABASE_URL");
   const entry: AuditEntry = audit ?? { actorUserId: userId, actorType: "human" as const,
     actionName: "token.revoke", targetType: "workspace" as const, inputSummary: id };
-  const result = await db.execute(sql`WITH changed AS (
-    UPDATE ${apiTokens} SET revoked_at = now()
-    WHERE id = ${id}::uuid AND user_id = ${userId}::uuid AND revoked_at IS NULL
-    RETURNING id
-  ), audit AS (${auditCteFrom(entry, "changed", sql`${entry.targetId ?? id}::text`)})
-  SELECT id FROM changed`);
-  return result.rows.length > 0;
+  return db.transaction(async (transaction) => {
+    const family = await transaction.execute<{ family_id: string }>(sql`
+      SELECT access.refresh_token_family_id AS family_id
+      FROM ${oauthAccessTokens} AS access
+      INNER JOIN ${apiTokens} AS token ON token.id = access.api_token_id
+      WHERE access.api_token_id = ${id}::uuid AND token.user_id = ${userId}::uuid
+    `);
+    const familyId = family.rows[0]?.family_id;
+    let changed = false;
+    if (familyId) {
+      // Refresh rotation locks the family before touching access tokens. Lock
+      // in the same order, then revoke every token, including a rotation that
+      // completed while this transaction waited. An older token id still
+      // identifies the grant after rotation.
+      const locked = await transaction.execute(sql`
+        SELECT id FROM ${oauthRefreshTokenFamilies}
+        WHERE id = ${familyId}::uuid AND user_id = ${userId}::uuid
+        FOR UPDATE
+      `);
+      if (locked.rows.length === 0) return false;
+      const revokedFamily = await transaction.execute(sql`
+        UPDATE ${oauthRefreshTokenFamilies}
+        SET revoked_at = now()
+        WHERE id = ${familyId}::uuid AND user_id = ${userId}::uuid
+          AND revoked_at IS NULL
+        RETURNING id
+      `);
+      const revokedAccess = await transaction.execute(sql`
+        UPDATE ${apiTokens} SET revoked_at = now()
+        WHERE user_id = ${userId}::uuid AND revoked_at IS NULL
+          AND id IN (SELECT api_token_id FROM ${oauthAccessTokens}
+                     WHERE refresh_token_family_id = ${familyId}::uuid)
+        RETURNING id
+      `);
+      changed = revokedFamily.rows.length > 0 || revokedAccess.rows.length > 0;
+    } else {
+      const revokedManual = await transaction.execute(sql`
+        UPDATE ${apiTokens} SET revoked_at = now()
+        WHERE id = ${id}::uuid AND user_id = ${userId}::uuid
+          AND revoked_at IS NULL
+        RETURNING id
+      `);
+      changed = revokedManual.rows.length > 0;
+    }
+    if (!changed) return false;
+    await auditInsertQuery(entry, transaction);
+    return true;
+  });
 }
 
 /**
@@ -151,6 +203,7 @@ export async function revokeApiToken(
  */
 export async function resolveApiToken(
   header: string | null,
+  expectedAudience?: string,
 ): Promise<ApiTokenIdentity | null> {
   const token = parseBearerApiToken(header);
   if (!token || !db) return null;
@@ -163,6 +216,7 @@ export async function resolveApiToken(
       name: apiTokens.name,
       kind: apiTokens.kind,
       scopes: apiTokens.scopes,
+      audience: apiTokens.audience,
       expiresAt: apiTokens.expiresAt,
       lastUsedAt: apiTokens.lastUsedAt,
       sub: users.appleSub,
@@ -179,6 +233,9 @@ export async function resolveApiToken(
     .limit(1);
   const row = rows[0];
   if (!row || !row.sub) return null;
+  // Audience-bound OAuth credentials work only at their exact MCP resource.
+  // Null preserves the long-standing manual token behavior.
+  if (row.audience && row.audience !== expectedAudience) return null;
 
   if (
     !row.lastUsedAt ||
@@ -202,5 +259,6 @@ export async function resolveApiToken(
     sub: row.sub,
     scopes: row.scopes,
     expiresAt: row.expiresAt,
+    audience: row.audience,
   };
 }

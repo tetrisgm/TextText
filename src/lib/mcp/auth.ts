@@ -24,7 +24,10 @@ export async function verifyTextTextApiToken(
   request: Request,
   bearerToken?: string,
 ): Promise<AuthInfo | undefined> {
-  const identity = await resolveApiToken(request.headers.get("authorization"));
+  const identity = await resolveApiToken(
+    request.headers.get("authorization"),
+    `${publicOrigin(request)}/api/mcp`,
+  );
   if (!identity) return undefined;
   const scopes = [...new Set(identity.scopes.split(/\s+/).filter(Boolean))];
   const connectionName =

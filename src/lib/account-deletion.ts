@@ -32,8 +32,9 @@
  * authored elsewhere, capability links they minted there. The author becomes
  * null and the row survives with its author-name snapshot. That is other
  * people's workspaces, and deleting from them is not this operation's business.
- * There are no OAuth grants to revoke: agent access is a workspace token, and
- * api_tokens is revoked above (OAuth removed 2026-08-15).
+ * OAuth access tokens are also api_tokens. CLOSE revokes them and their
+ * authorization codes and refresh families; connector rows cascade when
+ * PURGE removes the user.
  */
 
 import { auditInsertQuery } from "@/lib/audit";
@@ -43,6 +44,8 @@ import {
   apiTokens,
   blogs,
   deletedAccounts,
+  oauthAuthorizationCodes,
+  oauthRefreshTokenFamilies,
 } from "@/lib/db/schema";
 import {
   anonymizeAuditActor,
@@ -118,7 +121,7 @@ export function accountDeletionPlan(): {
 }
 
 /**
- * CLOSE. One batch, five statements, every one unconditional and addressed by
+ * CLOSE. One batch, every statement unconditional and addressed by
  * id. The audit row is written HERE, while the users row still exists to
  * satisfy action_audit.actor_user_id; a moment later there would be nothing for
  * that foreign key to point at.
@@ -139,6 +142,19 @@ export async function closeAccount(
           isNull(blogs.deletedAt),
         ),
       ),
+    executor
+      .update(oauthAuthorizationCodes)
+      .set({ consumedAt: now })
+      .where(and(eq(oauthAuthorizationCodes.userId, summary.userId),
+        isNull(oauthAuthorizationCodes.consumedAt))),
+    executor
+      .update(oauthRefreshTokenFamilies)
+      .set({ revokedAt: now })
+      .where(and(eq(oauthRefreshTokenFamilies.userId, summary.userId),
+        isNull(oauthRefreshTokenFamilies.revokedAt))),
+    // Refresh rotation also locks the family before it touches api_tokens.
+    // Keep CLOSE in that order so the two transactions cannot deadlock and a
+    // rotation completed just before CLOSE has its new access token revoked.
     executor
       .update(apiTokens)
       .set({ revokedAt: now })

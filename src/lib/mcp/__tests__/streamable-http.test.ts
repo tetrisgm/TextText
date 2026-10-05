@@ -88,6 +88,10 @@ describe("verbs this revision removed", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("mcp-session-id")).toBeNull();
+    expect(resolveApiToken).toHaveBeenCalledWith(
+      "Bearer wsk_test",
+      "https://texttext.app/api/mcp",
+    );
   });
 });
 
@@ -98,11 +102,7 @@ describe("authorization", () => {
     expect(response.status).toBe(401);
     const challenge = response.headers.get("WWW-Authenticate") ?? "";
     expect(challenge).toContain('error="invalid_token"');
-    // Points at the docs rather than at authorization-server metadata: OAuth
-    // was removed 2026-08-15, and advertising a chain that dead-ends in a 404
-    // is worse than not advertising one.
-    expect(challenge).toContain("resource_documentation=");
-    expect(challenge).not.toContain("resource_metadata=");
+    expect(challenge).toContain("resource_metadata=");
   });
 });
 

@@ -251,10 +251,11 @@ Provider API billing is separate from ChatGPT and Claude consumer
 subscriptions.
 
 People can instead work from Claude, Codex, ChatGPT, Cursor, or another MCP
-host using that product's model account and the TextText workspace token. The
-client must support a manual bearer credential because TextText does not run an
-OAuth authorization server. Plan, role, and workspace policy can limit which
-custom MCP capabilities a host makes available.
+host using that product's model account. ChatGPT can use the OAuth consent flow
+after the new source is deployed; the current production website has not been
+updated. Other supported clients use a manual workspace token in a protected
+bearer field. Plan, role, and workspace policy can limit which custom MCP
+capabilities a host makes available.
 
 ## Free-text command
 

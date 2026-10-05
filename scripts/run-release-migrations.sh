@@ -60,6 +60,7 @@ migrations=(
   scripts/migrate-add-post-revisions.mjs
   scripts/migrate-add-reading-image-checked.mjs
   scripts/migrate-add-feed-channel.mjs
+  scripts/migrate-add-connector-oauth.mjs
 )
 
 missing=()

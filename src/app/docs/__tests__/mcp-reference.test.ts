@@ -60,7 +60,7 @@ describe("the MCP reference page", () => {
     expect(source).toContain("exact receipt with title, item id");
     expect(source).toContain("same idempotency key");
     expect(source).toContain("token-free");
-    expect(source).not.toContain('name: "ChatGPT"');
+    expect(source).toContain('name: "ChatGPT"');
     expect(source).toContain("connect a server to TextText");
     expect(source).toContain("figma__create_frame");
     expect(source).toContain("standalone Mac app");

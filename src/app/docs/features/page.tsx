@@ -58,7 +58,7 @@ const sections = [
       "The API-key in-app assistant uses the workspace-command surface for tools that need no confirmation. It can find and create items, rewrite text, organize documents, and change presentation.",
       "The standalone native assistant and hosted MCP use the broader guarded surface for comments, publishing, and collaborator management. They ask before actions that affect an audience or access.",
       "In the standalone Mac edition, Claude and Codex on this Mac use the installed TextText plugin and bundled CLI. They use your existing signed-in session, so local work needs no workspace token and no loopback server.",
-      "Remote MCP clients use the hosted endpoint with a revocable bearer token created at /connect. This path is for clients that expose a bearer-token field; OAuth-only clients are not compatible with it.",
+      "Remote MCP clients use the hosted endpoint. ChatGPT connects through TextText sign-in and consent; other supported clients use a revocable bearer token created at /connect.",
       "Hosted commands record the authenticated account and action in the audit log, stay inside that workspace, and make repeated create or append requests safe through idempotency keys. The local CLI route is documented separately and is not described here as a live cursor or sidebar proposal.",
     ],
   },

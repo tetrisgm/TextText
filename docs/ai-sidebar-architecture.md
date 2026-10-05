@@ -290,12 +290,11 @@ search.
    use the bundled `texttext` CLI. The model and billing stay with that client;
    the CLI reuses the signed-in device credential and authenticated server
    command route.
-4. **Hosted external agents over MCP: shipped.** A remote MCP client that
-   exposes a bearer-token field can connect to `/api/mcp` with a revocable
-   workspace token. OAuth-only clients are not compatible because TextText does
-   not run an OAuth authorization server. This is a remaining interoperability
-   gap, not an App Store requirement: an OAuth/PKCE broker and connector catalog
-   would make first-time setup as smooth as the best agent products.
+4. **Hosted external agents over MCP:** A remote MCP client that exposes a
+   bearer-token field can connect to `/api/mcp` with a revocable workspace
+   token. ChatGPT OAuth and PKCE authorization is implemented in source but
+   awaits website deployment and a live connection check. Other OAuth-only
+   clients still need explicit support.
 5. **Native agent plugins: shipped.** The repository is a Claude and Codex
    plugin marketplace. `plugins/texttext` packages reusable skills for
    conversation capture, project changelogs, publishing, and collaboration;
@@ -368,14 +367,14 @@ item cannot cross into a private-mode folder through the tool surface.
 ## External access
 
 The hosted MCP endpoint accepts a workspace bearer token created at `/connect`.
-Each token belongs to one workspace, carries `sync` access, has a descriptive
-agent name for presence and audit attribution, and remains revocable from the
-same page. TextText has no OAuth authorization server, consent page, refresh
-token family, or dynamic client registration endpoint.
+It also recognizes ChatGPT's fixed OAuth client metadata document. OAuth uses
+authorization code, PKCE, consent, and rotating refresh tokens; access tokens
+are bound to the MCP resource. Both kinds of connection appear at `/connect`
+for revocation. TextText does not offer dynamic client registration.
 
-The resource metadata and the MCP `401` response both direct a client to the
-token flow. A client must let the person provide a bearer credential. The app
-never asks for the person's Claude, ChatGPT, or Codex password.
+Protected-resource metadata and the MCP `401` response direct ChatGPT to the
+OAuth flow. Other supported clients can supply a manual bearer credential. The
+app never asks for the person's Claude, ChatGPT, or Codex password.
 
 Workspace Settings keeps these boundaries visible in one Connections overview:
 the workspace provider key, native Codex session when the runtime is
@@ -415,6 +414,5 @@ retry control.
 - Add or change a workspace tool in the shared registry first, then implement
   both execution adapters and their tests.
 - Keep privacy and auditing below the tool layer.
-- Hosted MCP agents authenticate with a workspace bearer token from `/connect`.
-  The local CLI instead reuses the signed-in app's device credential. TextText
-  runs no OAuth authorization server (owner ruling 2026-08-15).
+- Hosted MCP agents use a workspace bearer token from `/connect` or the
+  ChatGPT OAuth flow. The local CLI reuses the signed-in app's device credential.
