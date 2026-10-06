@@ -37,6 +37,7 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
         fileManager: FileManager = .default,
         applicationSupportDirectory: URL? = nil,
         legacyConfigurationURL: URL? = nil,
+        allowUnscopedRootFallback: Bool = false,
         readData: (URL) throws -> Data = { try Data(contentsOf: $0) },
         resolveBookmark: BookmarkResolver = defaultBookmarkResolver,
         makeBookmark: BookmarkMaker = defaultBookmarkMaker
@@ -52,7 +53,8 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
             let data = try readData(currentURL)
             let (configuration, refreshed) = try validatedConfiguration(
                 from: data, at: currentURL, fileManager: fileManager,
-                resolveBookmark: resolveBookmark, makeBookmark: makeBookmark
+                resolveBookmark: resolveBookmark, makeBookmark: makeBookmark,
+                allowUnscopedRootFallback: allowUnscopedRootFallback
             )
             if refreshed { try write(configuration, to: currentURL, fileManager: fileManager) }
             return configuration
@@ -79,7 +81,8 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
 
         let (configuration, _) = try validatedConfiguration(
             from: legacyData, at: legacyURL, fileManager: fileManager,
-            resolveBookmark: resolveBookmark, makeBookmark: makeBookmark
+            resolveBookmark: resolveBookmark, makeBookmark: makeBookmark,
+            allowUnscopedRootFallback: allowUnscopedRootFallback
         )
         try write(configuration, to: currentURL, fileManager: fileManager)
         return configuration
@@ -173,7 +176,8 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
         at url: URL,
         fileManager: FileManager,
         resolveBookmark: BookmarkResolver,
-        makeBookmark: BookmarkMaker
+        makeBookmark: BookmarkMaker,
+        allowUnscopedRootFallback: Bool
     ) throws -> (Self, Bool) {
         let original: Self
         do {
@@ -184,6 +188,7 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
 
         let resolved: URL
         var stale = false
+        var usedUnscopedRoot = false
         do {
             if let bookmarkData = original.bookmarkData {
                 resolved = try resolveBookmark(bookmarkData, &stale)
@@ -191,7 +196,16 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
                 resolved = original.root
             }
         } catch {
-            throw LocalVaultConfigurationError.folderUnavailable(original.root, error.localizedDescription)
+            // The unentitled CLI can read a user-selected folder even when it
+            // cannot resolve the app's security-scoped bookmark. Never use this
+            // fallback in the sandboxed app, and never rewrite its bookmark.
+            guard allowUnscopedRootFallback,
+                  fileManager.isReadableFile(atPath: original.root.path),
+                  (try? validate(original.root, fileManager: fileManager)) != nil else {
+                throw LocalVaultConfigurationError.folderUnavailable(original.root, error.localizedDescription)
+            }
+            resolved = original.root
+            usedUnscopedRoot = true
         }
 
         let scoped = resolved.startAccessingSecurityScopedResource()
@@ -202,6 +216,9 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
             throw LocalVaultConfigurationError.folderUnavailable(resolved, error.localizedDescription)
         }
 
+        if usedUnscopedRoot {
+            return (Self(rootPath: resolved.standardizedFileURL.path, bookmarkData: nil), false)
+        }
         guard stale else { return (original, false) }
         do {
             let refreshed = try makeBookmark(resolved)

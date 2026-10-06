@@ -24,6 +24,28 @@ final class LocalVaultTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: vault.appendingPathComponent("Offline.textpack").path))
     }
 
+    func testCLIUsesReadableSelectedFolderWhenAppBookmarkCannotResolve() throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let vault = temporary.appendingPathComponent("iCloud workspace")
+        try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+        let configurationURL = temporary.appendingPathComponent("vault.json")
+        let savedBytes = try JSONSerialization.data(withJSONObject: [
+            "rootPath": vault.path,
+            "bookmarkData": Data("unreadable-app-bookmark".utf8).base64EncodedString(),
+        ])
+        try savedBytes.write(to: configurationURL)
+        let environment = ["TEXTTEXT_VAULT_CONFIG": configurationURL.path]
+
+        guard case .local(let workspace) = try CLIWorkspace.locate(environment: environment) else {
+            return XCTFail("a readable selected folder must remain local")
+        }
+        XCTAssertEqual(workspace.root.standardizedFileURL, vault.standardizedFileURL)
+        XCTAssertEqual(try DocumentStore.locate(environment: environment).root.standardizedFileURL,
+                       vault.standardizedFileURL)
+        XCTAssertEqual(try Data(contentsOf: configurationURL), savedBytes)
+    }
+
     func testSearchFindsOfflineContentAndReturnsReadablePaths() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

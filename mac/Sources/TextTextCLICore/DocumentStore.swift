@@ -65,7 +65,8 @@ public struct DocumentStore: Sendable {
             return DocumentStore(root: URL(fileURLWithPath: override))
         }
         if let configuration = try LocalVaultConfiguration.load(
-            environment: environment, fileManager: fileManager) {
+            environment: environment, fileManager: fileManager,
+            allowUnscopedRootFallback: true) {
             return DocumentStore(root: try configuration.resolvingRoot())
         }
         throw TextTextCLIError.workspaceNotFound

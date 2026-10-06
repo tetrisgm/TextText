@@ -139,7 +139,8 @@ public enum CLIWorkspace: Sendable {
         }
 
         if let configuration = try LocalVaultConfiguration.load(
-            environment: environment, fileManager: fileManager) {
+            environment: environment, fileManager: fileManager,
+            allowUnscopedRootFallback: true) {
             return .local(DocumentStore(root: try configuration.resolvingRoot()))
         }
 

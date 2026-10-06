@@ -149,6 +149,31 @@ final class LocalVaultConfigurationTests: XCTestCase {
         XCTAssertEqual(saved, loaded)
     }
 
+    func testUnentitledCLIFallsBackToReadableRootWithoutChangingAppBookmark() throws {
+        let fixture = try Fixture()
+        let current = fixture.root.appendingPathComponent("settings/vault.json")
+        let selectedRoot = try fixture.directory("icloud-selected-folder")
+        let saved = LocalVaultConfiguration(rootPath: selectedRoot.path, bookmarkData: Data("app-bookmark".utf8))
+        try write(saved, to: current)
+        let originalBytes = try Data(contentsOf: current)
+        let environment = ["TEXTTEXT_VAULT_CONFIG": current.path]
+        let failedBookmark: LocalVaultConfiguration.BookmarkResolver = { _, _ in
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        XCTAssertThrowsError(try LocalVaultConfiguration.load(
+            environment: environment, resolveBookmark: failedBookmark
+        ))
+        let cli = try XCTUnwrap(LocalVaultConfiguration.load(
+            environment: environment,
+            allowUnscopedRootFallback: true,
+            resolveBookmark: failedBookmark
+        ))
+        XCTAssertEqual(try cli.resolvingRoot().standardizedFileURL, selectedRoot.standardizedFileURL)
+        XCTAssertNil(cli.bookmarkData)
+        XCTAssertEqual(try Data(contentsOf: current), originalBytes)
+    }
+
     func testCancelledFolderSelectionPreservesPriorConfigurationBytes() throws {
         let fixture = try Fixture()
         let current = fixture.root.appendingPathComponent("settings/vault.json")
