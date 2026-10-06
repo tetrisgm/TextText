@@ -28,8 +28,11 @@ final class LocalVaultConnectionController {
         self.root = root; self.credentials = credentials
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
-                guard let account = credentials(), Self.sameOrigin(existing.origin, account.origin) else {
-                    message = "Sign in to the account connected to this folder to resume synchronization."; return
+                guard let account = credentials() else {
+                    message = "Sign in to resume this folder's web connection."; return
+                }
+                guard Self.sameOrigin(existing.origin, account.origin) else {
+                    message = "This folder is linked to a different TextText server. Your files remain available here."; return
                 }
                 try configure(existing, token: account.token)
             }

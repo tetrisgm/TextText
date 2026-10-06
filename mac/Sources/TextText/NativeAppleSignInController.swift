@@ -122,6 +122,10 @@ final class NativeAppleSignInController: NSObject {
             DispatchQueue.main.async {
                 guard let self, self.generation == expected else { return }
                 self.store.saveCredentials(credentials)
+                guard self.store.loadCredentials()?.token == credentials.token else {
+                    self.fail("Apple sign-in succeeded, but TextText could not save the session on this Mac.", generation: expected)
+                    return
+                }
                 if let workspaceData { self.store.cacheWorkspace(workspaceData) }
                 self.authorizationController = nil
                 self.serverOrigin = nil

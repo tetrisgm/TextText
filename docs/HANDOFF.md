@@ -9,8 +9,15 @@ email must be linked from the existing account in Settings. Focused account
 route, adapter, and local PostgreSQL collision tests passed. A Store-shaped
 Apple Development build 0.204 (1160) is installed at `/Applications/TextText.app`.
 Its native sheet visibly offers “Continue with Touch ID”; the prior Developer ID
-build's website consent prompt is gone. The owner must complete Touch ID to
-verify account reconnection. Google exists in source but lacks Oracle OAuth
+build's website consent prompt is gone. The owner completed Touch ID, but the
+workspace panel still appeared unchanged: it conflated a saved account with a
+separate web sync binding to another server. The follow-up source separates
+those states and checks that the Apple credential is actually saved before
+reporting success. Build 1161 could not pass the required App Intents metadata
+step because this Mac's Xcode cannot load DVTCoreDeviceCore against its installed
+CoreDevice framework (CoreSimulator 1051.55.0 versus expected 1171.7.0).
+The installed app remains 1160; do not install the partial 1161 bundle.
+Google exists in source but lacks Oracle OAuth
 configuration. OpenAI has not issued a commercial Sign in with ChatGPT client
 ID; this identity flow is separate from hosted MCP connector authorization.
 No website deployment or public release was approved.
