@@ -3,14 +3,16 @@ import { NextRequest } from "next/server";
 
 const session = vi.hoisted(() => ({ user: null as null | { sub: string } }));
 const templateDraft = vi.hoisted(() => vi.fn(async (slug: string) => `/@writer/blog/${slug}`));
+const workspaceHome = vi.hoisted(() => vi.fn(async () => "/@writer"));
 vi.mock("@/lib/session", () => ({ getCurrentUser: async () => session.user }));
 vi.mock("@/app/editor/actions", () => ({
-  resolveWorkspaceHomePath: async () => "/@writer",
+  resolveWorkspaceHomePath: workspaceHome,
   createStarterDraftPath: async () => "/@writer/blog/first-draft",
   createTemplateDraftPath: templateDraft,
 }));
 
 const { GET } = await import("../route");
+const { AccountLinkRequiredError } = await import("@/lib/store");
 
 describe("/start", () => {
   beforeEach(() => {
@@ -49,6 +51,14 @@ describe("/start", () => {
     const seeded = await GET(new NextRequest("https://texttext.app/start?template=gallery&seed=1"));
     expect(seeded.headers.get("location")).toBe("https://texttext.app/@writer/blog/gallery");
     expect(templateDraft).toHaveBeenCalledWith("gallery", true);
+  });
+
+  it("routes a matching-email account to linking guidance", async () => {
+    session.user = { sub: "new-provider" };
+    workspaceHome.mockRejectedValueOnce(new AccountLinkRequiredError());
+    const response = await GET(new NextRequest("https://texttext.app/start?to=home"));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://texttext.app/signin?error=AccountLinkRequired");
   });
 
   it("rejects an invalid template query without creating a generic draft", async () => {

@@ -15,13 +15,18 @@ const mocks = vi.hoisted(() => ({
   resolveOwnedWorkspace: vi.fn(),
 }));
 
+class AccountLinkRequiredError extends Error {}
+
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/device-link", () => ({
   startDeviceLink: mocks.startDeviceLink,
   approveDeviceLink: mocks.approveDeviceLink,
   cleanAppName: mocks.cleanAppName,
 }));
-vi.mock("@/lib/store", () => ({ getUserIdBySub: mocks.getUserIdBySub }));
+vi.mock("@/lib/store", () => ({
+  AccountLinkRequiredError,
+  getUserIdBySub: mocks.getUserIdBySub,
+}));
 vi.mock("@/lib/audit", () => ({ recordAction: mocks.recordAction }));
 vi.mock("@/lib/workspace", () => ({
   resolveOwnedWorkspace: mocks.resolveOwnedWorkspace,
@@ -82,6 +87,14 @@ describe("native auth callback", () => {
     expect(location.startsWith("/signin?callbackUrl=")).toBe(true);
     expect(decodeURIComponent(location)).toContain("/connect/app/native");
     expect(decodeURIComponent(location)).toContain(STATE);
+    expect(mocks.startDeviceLink).not.toHaveBeenCalled();
+  });
+
+  it("asks a matching-email user to link from the existing account", async () => {
+    mocks.resolveOwnedWorkspace.mockRejectedValue(new AccountLinkRequiredError());
+    const response = await GET(get(`?state=${STATE}`));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toContain("error=AccountLinkRequired");
     expect(mocks.startDeviceLink).not.toHaveBeenCalled();
   });
 

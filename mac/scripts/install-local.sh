@@ -25,6 +25,27 @@ FAILED="$PARENT/.TextText.app.failed.$$"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 BUNDLE_ID="app.texttext.mac"
 
+[[ -d "$SOURCE" ]] || { echo "Missing built app: $SOURCE" >&2; exit 1; }
+
+entitlement_shape() {
+  codesign -d --entitlements :- "$1" 2>/dev/null | python3 -c '
+import plistlib, sys
+try:
+    entitlements = plistlib.loads(sys.stdin.buffer.read())
+except (ValueError, plistlib.InvalidFileException):
+    print("other")
+    sys.exit(0)
+if entitlements.get("com.apple.developer.applesignin") != ["Default"]:
+    print("other")
+elif entitlements.get("com.apple.security.app-sandbox") is True:
+    print("native-store")
+else:
+    print("native-other")
+' || true
+}
+
+SOURCE_ENTITLEMENT_SHAPE="$(entitlement_shape "$SOURCE")"
+
 if [[ "$APP" == "/Applications/TextText.app" ]]; then
   if [[ "$SKIP_BINARY_VERIFICATION" == "1" || "$SKIP_LAUNCH" == "1" ]]; then
     echo "Refusing test-only installer overrides for /Applications/TextText.app." >&2
@@ -36,8 +57,14 @@ if [[ "$APP" == "/Applications/TextText.app" ]]; then
     # only; the signed bundle, single running process, and UI still need proof.
     local_origin="$("$PB" -c 'Print :TextTextServerOrigin' "$SOURCE/Contents/Info.plist" 2>/dev/null || true)"
     signing_authorities="$(codesign -dv --verbose=4 "$SOURCE" 2>&1 || true)"
-    if [[ ! "$local_origin" =~ ^http://(localhost|127\.0\.0\.1):[0-9]+$ ]] || \
-       [[ "$signing_authorities" != *"Authority=Apple Development:"* ]]; then
+    local_store_native=0
+    if [[ "$local_origin" == "https://texttext.app" &&
+          "$SOURCE_ENTITLEMENT_SHAPE" == "native-store" ]]; then
+      local_store_native=1
+    fi
+    if [[ "$signing_authorities" != *"Authority=Apple Development:"* ]] || \
+       { [[ ! "$local_origin" =~ ^http://(localhost|127\.0\.0\.1):[0-9]+$ ]] && \
+         [[ "$local_store_native" != "1" ]]; }; then
       echo "Runtime health is required for non-local or non-development builds." >&2
       exit 1
     fi
@@ -61,7 +88,6 @@ bundle_id() { plist_value "$1" CFBundleIdentifier; }
 app_version() { plist_value "$1" CFBundleShortVersionString; }
 app_build() { plist_value "$1" CFBundleVersion; }
 
-[[ -d "$SOURCE" ]] || { echo "Missing built app: $SOURCE" >&2; exit 1; }
 [[ "$(bundle_id "$SOURCE")" == "$BUNDLE_ID" ]] || {
   echo "Refusing to install bundle id '$(bundle_id "$SOURCE")'; expected $BUNDLE_ID." >&2
   exit 1
@@ -127,6 +153,17 @@ for candidate in "${candidate_apps[@]-}"; do
   [[ "$candidate_id" == "$BUNDLE_ID" ]] || continue
   verified_apps+=("$candidate")
 done
+
+# A local standalone install must not silently replace an app whose Apple
+# sign-in uses the native system sheet. That downgrade caused the browser
+# consent prompt to return after the Store-shaped build had already worked.
+if [[ "$APP" == "/Applications/TextText.app" && -e "$APP" &&
+      "$(entitlement_shape "$APP")" == "native-store" &&
+      "$SOURCE_ENTITLEMENT_SHAPE" != "native-store" ]]; then
+  rm -rf "$STAGE"
+  echo "Refusing to replace native Apple sign-in with a browser-only build." >&2
+  exit 1
+fi
 
 app_pids() {
   local candidate executable

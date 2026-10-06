@@ -5,6 +5,7 @@ import {
   resolveWorkspaceHomePath,
 } from "@/app/editor/actions";
 import { getCurrentUser } from "@/lib/session";
+import { AccountLinkRequiredError } from "@/lib/store";
 import { requestPublicOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
@@ -35,21 +36,28 @@ export async function GET(request: NextRequest) {
     return go(`/signin?callbackUrl=${encodeURIComponent(target)}`, request);
   }
 
-  if (request.nextUrl.searchParams.get("to") === "home") {
-    return go(await resolveWorkspaceHomePath(), request);
-  }
-  const templateSlug = request.nextUrl.searchParams.get("template");
-  if (templateSlug !== null) {
-    if (!/^[a-z][a-z0-9-]{0,80}$/.test(templateSlug)) {
-      return go("/templates", request);
+  try {
+    if (request.nextUrl.searchParams.get("to") === "home") {
+      return go(await resolveWorkspaceHomePath(), request);
     }
-    return go(
-      await createTemplateDraftPath(
-        templateSlug,
-        request.nextUrl.searchParams.get("seed") === "1",
-      ),
-      request,
-    );
+    const templateSlug = request.nextUrl.searchParams.get("template");
+    if (templateSlug !== null) {
+      if (!/^[a-z][a-z0-9-]{0,80}$/.test(templateSlug)) {
+        return go("/templates", request);
+      }
+      return go(
+        await createTemplateDraftPath(
+          templateSlug,
+          request.nextUrl.searchParams.get("seed") === "1",
+        ),
+        request,
+      );
+    }
+    return go(await createStarterDraftPath(), request);
+  } catch (error) {
+    if (error instanceof AccountLinkRequiredError) {
+      return go("/signin?error=AccountLinkRequired", request);
+    }
+    throw error;
   }
-  return go(await createStarterDraftPath(), request);
 }

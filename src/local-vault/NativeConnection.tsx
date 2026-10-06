@@ -36,6 +36,8 @@ export function NativeConnection({ root }: { root: string }) {
       : connection && !connection.available
         ? <button disabled={busy} onClick={() => void perform("signIn")}>Sign in</button>
         : <button disabled={busy || !connection} onClick={() => void perform("connect")}>{busy ? "Connecting…" : "Connect to web"}</button>}
+    {connection && !connection.connected && connection.available &&
+      <button disabled={busy} onClick={() => void perform("signIn")}>Sign in again</button>}
     {!connection?.connected && connection && !connection.available && !message && <p>Sign in to TextText to connect this folder.</p>}
     {connection?.hasConflicts && <button disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
     {message && <div role="status"><p>{message}</p>{connection?.connected && <button disabled={busy} onClick={() => void perform("sync")}>Retry connection</button>}</div>}

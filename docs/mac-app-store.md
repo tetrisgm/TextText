@@ -45,6 +45,13 @@ the command must fail extension verification rather than presenting a partial
 bundle as a Store-shape proof. That local build is for isolated verification,
 not for upload.
 
+For a locally signed Store build pointed at `https://texttext.app`, the canonical
+`mac/scripts/install-local.sh` accepts `TEXTTEXT_REQUIRE_RUNTIME_HEALTH=0` only
+when the signature is Apple Development and the bundle has both the sandbox and
+native Apple sign-in entitlement. Its sandbox keeps the health report private,
+so verify the opened UI after installation. Once a native-capable build occupies
+`/Applications/TextText.app`, the installer refuses a browser-only replacement.
+
 ## Preparing a TestFlight package
 
 `release/prepare-testflight-build.sh` is the owner-invoked packaging boundary.

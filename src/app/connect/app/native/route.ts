@@ -31,7 +31,7 @@ import {
   cleanAppName,
   startDeviceLink,
 } from "@/lib/device-link";
-import { getUserIdBySub } from "@/lib/store";
+import { AccountLinkRequiredError, getUserIdBySub } from "@/lib/store";
 import { recordAction } from "@/lib/audit";
 import { resolveOwnedWorkspace } from "@/lib/workspace";
 
@@ -70,7 +70,16 @@ export async function GET(request: Request): Promise<Response> {
 
   // Same first-touch work the typed-code approval does: make sure the user
   // and a workspace exist, so the app's token lands on their workspace.
-  await resolveOwnedWorkspace(user);
+  try {
+    await resolveOwnedWorkspace(user);
+  } catch (error) {
+    if (!(error instanceof AccountLinkRequiredError)) throw error;
+    const back = selfPath(state, device);
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `/signin?callbackUrl=${encodeURIComponent(back)}&error=AccountLinkRequired` },
+    });
+  }
   const userId = await getUserIdBySub(user.sub);
   if (!userId) {
     return new Response("Could not complete sign-in", { status: 500 });

@@ -6,7 +6,9 @@ production environment variables are present:
 - `AUTH_GOOGLE_ID`
 - `AUTH_GOOGLE_SECRET`
 
-Never commit either value. Store them as encrypted Vercel Production variables.
+Never commit either value. Store them in Oracle's protected TextText runtime
+environment when the owner approves a website deployment. A source-only change
+does not activate the Google button on the running site.
 
 ## Current TextText registration
 
@@ -43,7 +45,8 @@ and select the `TextText` project.
 3. Under Clients, open the `TextText` web client.
 4. Register `https://TextText.app` as an authorized JavaScript origin.
 5. Register the exact Auth.js callback URL shown above.
-6. Store the client ID and client secret in Vercel Production.
+6. Store the client ID and client secret in the protected Oracle runtime
+   environment, then restart the web service as part of an approved deployment.
 
 Google no longer reveals an existing client secret after creation. If the
 secret is lost, add a new client secret, update `AUTH_GOOGLE_SECRET`, deploy,

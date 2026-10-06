@@ -26,11 +26,12 @@
 //   before the adapter existed.
 
 import { createTransport } from "nodemailer";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import type { Adapter, AdapterUser } from "next-auth/adapters";
 import type { NodemailerConfig } from "next-auth/providers/nodemailer";
 import { db } from "@/lib/db/client";
 import { users, verificationTokens } from "@/lib/db/schema";
+import { AccountLinkRequiredError } from "@/lib/account-link-required";
 
 const EMAIL_SUB_PREFIX = "email:";
 
@@ -198,10 +199,8 @@ export function createAuthAdapter(): Adapter | undefined {
       return rows[0] ?? null;
     },
 
-    // Scoped to magic-link users on purpose: an Apple/Google/dev user with
-    // the same address is a different identity in this app (one sub, one
-    // user, one blog), and must neither block nor be hijacked by an email
-    // sign-in for that address.
+    // A matching email is not sufficient to claim another provider's account.
+    // The existing owner must sign in and explicitly link the method.
     async getUserByEmail(email) {
       const sub = emailSub(email);
       const row = await userRowBySub(sub);
@@ -214,10 +213,19 @@ export function createAuthAdapter(): Adapter | undefined {
       const email = user.email?.trim().toLowerCase();
       if (!email) throw new Error("Email sign-in requires an email address.");
       const sub = emailSub(email);
-      await db!
-        .insert(users)
-        .values({ appleSub: sub, email, name: user.name ?? null })
-        .onConflictDoNothing({ target: users.appleSub });
+      await db!.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${email}))`);
+        const existing = (
+          await tx.select({ appleSub: users.appleSub }).from(users)
+            .where(sql`lower(${users.email}) = ${email}`).limit(1)
+        )[0];
+        if (existing && existing.appleSub !== sub) {
+          throw new AccountLinkRequiredError();
+        }
+        await tx.insert(users)
+          .values({ appleSub: sub, email, name: user.name ?? null })
+          .onConflictDoNothing({ target: users.appleSub });
+      });
       return {
         id: sub,
         email,

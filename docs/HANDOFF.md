@@ -2,6 +2,19 @@
 
 ## Current work
 
+Account sign-in is the current task. The signed-out Mac editor now shows a
+sign-in gate, and sign-out flushes the open document before closing that UI.
+The web editor routes through `/signin`; a second provider claiming an existing
+email must be linked from the existing account in Settings. Focused account
+route, adapter, and local PostgreSQL collision tests passed. A Store-shaped
+Apple Development build 0.204 (1160) is installed at `/Applications/TextText.app`.
+Its native sheet visibly offers “Continue with Touch ID”; the prior Developer ID
+build's website consent prompt is gone. The owner must complete Touch ID to
+verify account reconnection. Google exists in source but lacks Oracle OAuth
+configuration. OpenAI has not issued a commercial Sign in with ChatGPT client
+ID; this identity flow is separate from hosted MCP connector authorization.
+No website deployment or public release was approved.
+
 The owner wants one ordinary folder per workspace under a TextText parent folder. TextPacks remain editable directly by people and local agents; connected editors and agents share the same permissioned item identity, live document, audit, and conflict rules. The Mac folder may live in iCloud Drive or another folder provider. Preserve provider conflicts and local recovery data; never infer a remote deletion merely from a temporarily missing cloud file. The owner has not approved a website deployment or public release.
 
 On `main`, these source changes are pushed:
@@ -20,18 +33,18 @@ On `main`, these source changes are pushed:
 - `5cada55d`: explicitly marked local Mac builds report absent release
   attestation as a warning; ordinary release builds and malformed receipts
   still fail. This keeps the retired release gate out of the local install.
-- The installed 1157 build adds a CLI-only fallback for an unreadable app
-  security bookmark when the saved ordinary folder itself is readable.
+- The prior 1157 standalone build added a CLI-only fallback for an unreadable
+  app security bookmark when the saved ordinary folder itself is readable.
 
-The installed canonical `/Applications/TextText.app` is now local build **0.204 (1157)**, Developer ID signed with the bundled Codex runtime and all three registered extensions. It starts on `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`; the app and its bundled CLI both read that folder. The old `/Users/shokunin/Documents/TextText` workspace and temporary native-picker vault were permanently removed after a 421-file path/hash comparison and a second comparison of all 21 visible TextPacks. The superseded 1151 and 1156 app bundles were also removed after the installer placed them in Trash. The preinstall copy of the formerly open Blog pack remains at `/Users/shokunin/Library/Application Support/TextText/Recovery/2026-10-05-preinstall/How we decide what to build.textpack`. No website deployment or public release was made.
+The installed canonical `/Applications/TextText.app` is local **0.204 (1160)**, an Apple Development signed, sandboxed Store-shaped build with native Apple sign-in, the bundled Codex runtime, and three registered extensions. It opens `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`. The Store edition has no bundled `texttext` CLI; direct TextPack file editing remains available, while the bundled agent's live connection still needs verification. The prior 1158 bundle was moved to Trash by the installer. Earlier removed workspaces were compared before deletion; the preinstall Blog recovery copy remains at `/Users/shokunin/Library/Application Support/TextText/Recovery/2026-10-05-preinstall/How we decide what to build.textpack`. No website deployment or public release was made.
 
-The app picker writes a security-scoped bookmark that the unentitled CLI could not resolve. The CLI now falls back to the saved ordinary folder path only when that folder is readable; the app's bookmark remains unchanged. Focused `LocalVaultConfigurationTests` and `LocalVaultTests` pass. The installed 1157 CLI listed the iCloud Notes folder after restart. The local build's runtime health is `warning` only for intentionally absent release attestation/workflow receipts; it is not notarized or release-attested.
+The app picker writes a security-scoped bookmark. The earlier standalone CLI could read the saved ordinary folder path when its bookmark was unavailable. Focused `LocalVaultConfigurationTests` and `LocalVaultTests` passed for that change. Build 1160 is locally signed and has no release attestation; the Store sandbox keeps its runtime health report private from the installer. The installer verified the signature, extensions, and single running canonical app; UI verification covered the opened workspace, existing notes, search, and save/reopen. The installed app still reports “Connect to web”; account reconnection and web sync remain unverified.
 
 ## Verification and next steps
 
 For the new cloud deletion guard, 20 `LocalVaultSyncTests` pass, including provider disappearance, TextText Trash, and file restoration. After merging the recovered source, 55 focused web bridge/server-vault tests, TypeScript, 7 Swift configuration tests, and 4 search-cache tests pass. After `5ea73f3b`, TypeScript, 6 starter-folder tests, and the full local editor browser check pass; the browser check includes save retry, file save, raw agent refresh, and conflict copies. The Swift window integration suite skipped its test because its bundled local web editor was absent at the time; its earlier release gate receipt covers the recovered candidate. The separate 125-second native picker acceptance already passed and should not be repeated without a new reason.
 
-1. Local normal-use verification passed: the installed app opened an existing Blog note, searched it, saved and reopened an iCloud Note, reflected an external CLI append in the open note, indexed the new marker, and removed it from search after TextText Trash deletion. Its three extensions are signed and registered. The separate 125-second native picker acceptance already passed and should not be repeated without a new reason.
+1. Build 1160 opened the existing iCloud folder, listed its Notes, found the existing `Agent file edit verification 1144` note by body text, saved an added build-1160 verification line, reopened the note, and confirmed that line in the TextPack on disk. Its three extensions are signed and registered. Earlier external-edit/search-cache checks and the separate 125-second native picker acceptance passed; repeat them only after relevant changes.
 2. iCloud Drive accepted the complete local copy, but off-device upload completion was not independently verified; `brctl status` stalled. The owner explicitly requested permanent removal of the old workspace folders, which are now gone. The active iCloud folder is still present and readable on this Mac.
 3. Hosted MCP manual tokens and connected CLI/MCP/in-app agent presence already work. ChatGPT OAuth source passed focused OAuth, MCP, docs, and account-deletion tests; TypeScript, lint, migration order, local PostgreSQL schema/SQL checks, and the Next.js production build passed. A live ChatGPT connector check still needs an approved website deployment. A bare filesystem edit cannot authenticate its process and must be shown as a local file edit. Sign in with ChatGPT inside TextText is a separate inner login flow and may require OpenAI enablement. See [agent interoperability](agent-interoperability.md), [assistant architecture](ai-sidebar-architecture.md), and [official plugin authentication](https://developers.openai.com/plugins/build/auth).
 4. Template/reference parity remains discoverable in the [archived handoff](archive/HANDOFF-2026-10-05-pre-file-first.md) and is not verified complete. Do not deploy the website or publish a release without owner approval.

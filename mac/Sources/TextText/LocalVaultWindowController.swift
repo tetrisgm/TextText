@@ -100,6 +100,20 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
         emit("texttext:vault-sync-status", value: connection?.status ?? [:])
     }
+    func flushForSignOut(_ completion: @escaping (Bool) -> Void) {
+        guard loaded else { completion(true); return }
+        Task { @MainActor in
+            do {
+                let value = try await webView.callAsyncJavaScript(
+                    "return await window.texttextFlushForSignOut?.() ?? false",
+                    arguments: [:], in: nil, contentWorld: .page
+                )
+                completion(value as? Bool == true)
+            } catch {
+                completion(false)
+            }
+        }
+    }
     func editHistory(_ direction: String) {
         emit(direction == "redo" ? "texttext:document-redo" : "texttext:document-undo", value: [:])
     }

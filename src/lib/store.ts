@@ -400,6 +400,7 @@ import {
   AGENT_CONNECTION_CHECK_PROMPT,
 } from "./agent-integrations";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { AccountLinkRequiredError } from "./account-link-required";
 import { normalizeTag, normalizeTags } from "./tags";
 import {
   documentFromLegacyPost,
@@ -7175,6 +7176,53 @@ async function upsertUser(
     if (owner) return owner;
   }
 
+  // A second provider with the same address is not automatically the same
+  // person. Require the existing account to sign in and connect this provider
+  // in Settings before it can reach that workspace. Never silently create a
+  // second workspace that looks like the first person's files disappeared.
+  const normalizedEmail = user.email?.trim().toLowerCase();
+  if (normalizedEmail) {
+    return db!.transaction(async (tx) => {
+      // Serialize first sign-ins for this address, including the insert. A
+      // separate read followed by an insert would let concurrent providers
+      // each create a workspace before either observed the other's address.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedEmail}))`);
+      const originalSubject = (
+        await tx.select({ id: users.id }).from(users)
+          .where(eq(users.appleSub, user.sub)).limit(1)
+      )[0];
+      if (!originalSubject) {
+        const existingEmail = (
+          await tx.select({ id: users.id }).from(users)
+            .where(sql`lower(${users.email}) = ${normalizedEmail}`).limit(1)
+        )[0];
+        if (existingEmail) throw new AccountLinkRequiredError();
+      }
+      await tx.insert(users).values({
+        appleSub: user.sub,
+        name: user.name ?? null,
+        email: user.email ?? null,
+      }).onConflictDoUpdate({
+        target: users.appleSub,
+        set: {
+          name: user.name ?? sql`${users.name}`,
+          email: user.email ?? sql`${users.email}`,
+        },
+      });
+      const row = (
+        await tx.select({ id: users.id, name: users.name, username: users.username })
+          .from(users).where(eq(users.appleSub, user.sub)).limit(1)
+      )[0];
+      if (!row) throw new Error("failed to resolve user");
+      await tx.insert(userIdentities).values({
+        userId: row.id,
+        provider: providerForSubject(user.sub, row.id),
+        subject: user.sub,
+      }).onConflictDoNothing();
+      return row;
+    });
+  }
+
   await db!
     .insert(users)
     .values({
@@ -7529,6 +7577,8 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
 // filters deleted workspaces out and is React-cache()d. After CLOSE the handle
 // no longer resolves, so a handle-taking purge helper would throw.
 // ---------------------------------------------------------------------------
+
+export { AccountLinkRequiredError } from "./account-link-required";
 
 /** Thrown when a session belongs to an account that was deleted. */
 export class AccountDeletedError extends Error {

@@ -56,6 +56,8 @@ const ERROR_COPY: Record<string, string> = {
     "That sign-in link has expired or was already used. Request a fresh one.",
   OAuthAccountNotLinked:
     "That account could not be linked. Try the way you first signed in.",
+  AccountLinkRequired:
+    "This email already has a TextText account. Sign in with its existing method, then add this method in Settings.",
   AccessDenied: "That account is not allowed to sign in.",
   Configuration:
     "Sign-in hit a server configuration problem. Try again in a moment.",
@@ -128,8 +130,8 @@ export default async function SignInPage({ searchParams }: Props) {
 
       {providerLabel && (
         <p className="signin-hint">
-          You last used {providerLabel}. Use the same option to find your
-          existing workspace, even if another provider uses the same email.
+          You last used {providerLabel}. Sign in that way to open your account.
+          You can add other sign-in methods in Settings.
         </p>
       )}
 

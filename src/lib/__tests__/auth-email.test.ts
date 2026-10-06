@@ -46,6 +46,10 @@ function createFakeDb(state: FakeState) {
     deletes: [],
   };
   const db = {
+    execute() { return Promise.resolve(); },
+    transaction(callback: (tx: unknown) => Promise<unknown>) {
+      return callback(db);
+    },
     select(fields: unknown) {
       return {
         from(table: unknown) {
@@ -234,6 +238,19 @@ describe("createUser", () => {
         emailVerified: null,
       }),
     ).rejects.toThrow(/email/i);
+  });
+
+  it("does not create a magic-link account over an existing provider's email", async () => {
+    const { adapter, calls } = setup({
+      selectRows: [[{ appleSub: "apple-existing" }]],
+      deleteRows: [],
+    });
+    await expect(adapter.createUser!({
+      id: "new",
+      email: "Person@Example.com",
+      emailVerified: new Date(),
+    })).rejects.toThrow(/existing account/i);
+    expect(calls.inserts).toHaveLength(0);
   });
 });
 

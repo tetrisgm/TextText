@@ -750,7 +750,8 @@ export function WorkspaceSettings({
                 })}
               </ul>
               <p className={styles.identityNote}>
-                Signing in once with an emailed link connects it.
+                Email links remain available for accounts created with email.
+                Connect other sign-in methods here while signed in.
               </p>
             </div>
             {/* One control, not a red heading above a red link of the same

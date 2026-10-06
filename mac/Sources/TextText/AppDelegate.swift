@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var statusWindow: StatusWindowController?
     private var primaryWebWindow: WebAppWindowController?
     private var localVaultWindow: LocalVaultWindowController?
+    private var accountGateWindow: AccountGateWindowController?
     private var additionalWebWindows: [WebAppWindowController] = []
     private var webWindow: WebAppWindowController? {
         get {
@@ -217,7 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 self?.fileProviderStatusMonitor.snapshot.severity == .working })
         }
         NSApp.mainMenu = buildMainMenu()
-        if localVaultWindow == nil { nativeMenu.install(on: NSApp.mainMenu!) }
+        if localVaultWindow == nil && accountGateWindow == nil { nativeMenu.install(on: NSApp.mainMenu!) }
         nativeMenu.requestState = { [weak self] in self?.webWindow?.requestNativeMenuState() }
         nativeMenu.invoke = { [weak self] id in self?.webWindow?.runNativeMenuCommand(id) }
         nativeMenu.isWorkspaceKey = { [weak self] in self?.webWindow?.window?.isKeyWindow == true }
@@ -239,7 +240,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         authSession = AuthSessionController(store: store)
         authSession.onChange = { [weak self] in
             guard let self else { return }
-            if case .failed = self.authSession.state { self.showStatusWindow() }
+            if let presentation = AuthSessionController.presentation(for: self.authSession.state) {
+                self.accountGateWindow?.setStatus(presentation.headline, failed: presentation.failed)
+            } else {
+                self.accountGateWindow?.setStatus(nil)
+            }
+            if case .failed = self.authSession.state, self.accountGateWindow == nil { self.showStatusWindow() }
             else { self.refreshUI() }
         }
         authSession.onActivity = { [weak self] message in self?.appendActivity(message) }
@@ -263,10 +269,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
 
         setupStatusItem()
-        if localVaultWindow == nil { configureQuickCapture() }
+        if localVaultWindow == nil && accountGateWindow == nil { configureQuickCapture() }
         // Warm account.json for a returning user so the File Provider domain can
         // register on launch. Best effort and file-free.
-        if localVaultWindow == nil {
+        if localVaultWindow == nil && accountGateWindow == nil {
             seedCachedWorkspaceIfNeeded()
             configureSpotlightIndexing()
             configureShareInbox()
@@ -1714,6 +1720,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// Everything that has to happen once credentials exist, whichever way they
     /// arrived: the sheet, or a device link from the CLI.
     private func handleSignedIn(_ credentials: Credentials) {
+        if accountGateWindow != nil {
+            accountGateWindow?.close()
+            accountGateWindow = nil
+            warmMainWindow()
+        }
         if let localVaultWindow {
             localVaultWindow.credentialsChanged()
             localVaultWindow.present()
@@ -1738,7 +1749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         showMainWindow()
     }
 
-    private func signIn(providerHost: String? = nil) {
+    private func signIn(providerHost: String? = nil, preferNativeApple: Bool = true) {
         // A device link already in flight belongs to whoever started it (the
         // CLI): reopen THAT approval page rather than minting a second code the
         // first tab could wrongly approve.
@@ -1749,17 +1760,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         guard !linkController.isLinking else { return }
         showMainWindow()
         #if TEXTTEXT_STORE
-        if providerHost == nil || providerHost?.lowercased() == "appleid.apple.com" {
+        if preferNativeApple && (providerHost == nil || providerHost?.lowercased() == "appleid.apple.com") {
             authSession.cancel()
-            nativeAppleSignIn.begin(serverOrigin: resolveServerOrigin(credentials: nil), presentationWindow: localVaultWindow?.window ?? webWindow?.window)
+            nativeAppleSignIn.begin(serverOrigin: resolveServerOrigin(credentials: nil), presentationWindow: accountGateWindow?.window ?? localVaultWindow?.window ?? webWindow?.window)
             return
         }
         nativeAppleSignIn.cancel()
         #endif
-        authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil), restartActive: true, presentationWindow: localVaultWindow?.window ?? webWindow?.window)
+        authSession.begin(serverOrigin: resolveServerOrigin(credentials: nil), restartActive: true, presentationWindow: accountGateWindow?.window ?? localVaultWindow?.window ?? webWindow?.window)
     }
 
     private func signOut() {
+        if let localVaultWindow {
+            localVaultWindow.flushForSignOut { [weak self, weak localVaultWindow] saved in
+                guard let self, let localVaultWindow, self.localVaultWindow === localVaultWindow else { return }
+                guard saved else {
+                    let alert = NSAlert()
+                    alert.messageText = "Save this document before signing out"
+                    alert.informativeText = "TextText could not finish saving the open document. Resolve the save warning and try again."
+                    alert.runModal()
+                    return
+                }
+                self.finishSignOut()
+            }
+            return
+        }
+        finishSignOut()
+    }
+
+    private func finishSignOut() {
         // Local-only by design: the server-side revoke route may not exist
         // yet; degrade gracefully. The folder and its files stay put.
         authSession.cancel()
@@ -1771,14 +1800,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 origin: resolveServerOrigin(credentials: credentials), token: credentials.token))
         }
         store.deleteCredentials()
-        if let localVaultWindow {
-            localVaultWindow.credentialsChanged()
-            refreshUI()
-            return
-        }
         spotlightQueue.async { [weak self] in self?.clearSpotlightIndex() }
         removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
+        if let localVaultWindow {
+            localVaultWindow.close()
+            self.localVaultWindow = nil
+            warmMainWindow()
+            showMainWindow()
+            refreshUI()
+            return
+        }
         // Take the window somewhere that says what happened. Clearing the
         // credential used to leave the web view sitting on the workspace URL,
         // which without a session renders the PUBLIC page for that workspace:
@@ -2666,6 +2698,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if accountGateWindow != nil {
+            menu.addItem(item("Open TextText", #selector(showMainWindowAction)))
+            menu.addItem(item("Sign in", #selector(signInAction)))
+            menu.addItem(.separator())
+            menu.addItem(item("Quit \(appName)", #selector(quit)))
+            return
+        }
         if localVaultWindow != nil {
             menu.addItem(item("Open TextText", #selector(showMainWindowAction)))
             menu.addItem(item("Open Folder", #selector(openFolderAction)))
@@ -2850,6 +2889,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     @objc private func openLocalVaultAction() {
+        guard store.loadCredentials() != nil else { showMainWindow(); return }
         guard let entry = LocalVaultWindowController.entryURL else {
             let alert = NSAlert()
             alert.messageText = "The local editor is missing from this build"
@@ -2998,6 +3038,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func showMainWindow(path: String? = nil) {
         warmMainWindow(path: path)
         hasRevealedInitialWindow = true
+        if let accountGateWindow { accountGateWindow.present(); return }
         if let localVaultWindow { localVaultWindow.present(); return }
         webWindow?.present()
         #if DEBUG
@@ -3127,8 +3168,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     private func warmMainWindow(path: String? = nil) {
-        if localVaultWindow != nil { return }
+        if accountGateWindow != nil || localVaultWindow != nil { return }
         if let entry = LocalVaultWindowController.entryURL {
+            guard store.loadCredentials() != nil else {
+                let controller = AccountGateWindowController()
+                controller.onSignIn = { [weak self] in self?.signIn() }
+                controller.onOtherSignIn = { [weak self] in self?.signIn(preferNativeApple: false) }
+                accountGateWindow = controller
+                return
+            }
             localVaultWindow = LocalVaultWindowController(entry: entry, credentials: { [weak self] in
             guard let account = self?.store.loadCredentials() else { return nil }
             return (resolveServerOrigin(credentials: account), account.token)
