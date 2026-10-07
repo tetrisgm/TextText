@@ -22,13 +22,34 @@
   No background build, install or release job was added.
 - Sync verification now has its own [subsystem contract](../sync/README.md) and
   exact-source receipts. Release `--skip-tests` requires matching Mac core/native
-  receipts. Mac: 194 sync tests + 58 native tests; Windows: 136 client contract
+  receipts. Mac: 202 sync tests + 58 native tests; Windows: 142 client contract
   tests, TypeScript and 3 receipt-gate tests. These are test-runner results, not
   Windows desktop app verification. No native Windows client exists in this repo.
   The PC source/test copy is `C:\Users\Shokunin\dev\texttext-sync-20261007`.
   Oracle server durability uses POSIX directory fsync; it was not weakened for
   Windows. The owner expects an installed Windows client matching the Mac; that
   remains unimplemented, including native files, auth, lifecycle and installer.
+
+## Sync isolation
+
+- Production client, CRDT projection, merge and durable-store code now lives in
+  `src/sync/engine`, with separate `src/sync/client.ts` and `server.ts` entries.
+  The five old paths are export-only compatibility seams. Engine code was
+  compared with its predecessor: identical except two relocated imports.
+- Dependency tests prohibit runtime UI/routes/account-layer imports and Node
+  imports in the client dependency graph. Native LocalVault files cannot import
+  AppKit, SwiftUI, WebKit or the app target.
+- A frozen v1 pending journal from `5085642a` must reopen and replay exactly
+  once; unknown future journals must remain untouched with zero requests.
+- Standard local Mac builds now require current receipts or automatically run
+  sync verification. Failure blocks build/signing. The build-stop behavior is
+  tested with a rejecting runner. No hooks or background jobs were added.
+- Mac and PC exact-source receipts passed after extraction, as did TypeScript,
+  shell syntax and the local editor browser bundle. Logs are
+  `/tmp/texttext-sync-isolation-final.log` and PC
+  `C:\Users\Shokunin\dev\texttext-sync-20261007\verify-isolation-final.log`.
+  This source-only extraction was not deployed or reinstalled; installed build
+  1173 and the running Oracle release listed above remain the live baseline.
 
 ## Live verification
 

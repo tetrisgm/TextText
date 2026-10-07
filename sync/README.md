@@ -1,7 +1,7 @@
 # Sync subsystem
 
 TextText's sync engine has one contract across native files, direct file edits,
-browser collaboration and server persistence. This directory owns its executable
+browser collaboration and server persistence. `src/sync` owns the production engine; this directory owns its executable
 verification boundary. It tests production implementations, not a second model
 of the merge algorithm. The app UI is a client of this subsystem.
 
@@ -9,10 +9,10 @@ of the merge algorithm. The app UI is a client of this subsystem.
 
 | Responsibility | Production module |
 | --- | --- |
-| Full-document CRDT and TextPack projection | `src/lib/vault/collaboration.ts` |
-| File merge and conflict preservation | `src/lib/vault/reconcile.ts`, `pack-reconcile.ts` |
-| Durable server operations, receipts, locks and tombstones | `src/lib/vault/server-store.ts` |
-| Client journal, replay, backoff and lifecycle | `src/local-vault/collaboration-client.ts` |
+| Full-document CRDT and TextPack projection | `src/sync/engine/collaboration.ts` |
+| File merge and conflict preservation | `src/sync/engine/reconcile.ts`, `pack-reconcile.ts` |
+| Durable server operations, receipts, locks and tombstones | `src/sync/engine/store.ts` |
+| Client journal, replay, backoff and lifecycle | `src/sync/engine/client.ts` |
 | Browser and native transport adapters | `src/local-vault/web-transport.ts`, `bridge.ts` |
 | Native filesystem coordination and sync | `mac/Sources/TextTextFileProviderKit/LocalVault*` |
 | Native session ownership and authentication renewal | `mac/Sources/TextText/LocalVaultCollaboration.swift` |
@@ -59,11 +59,19 @@ A failed rerun invalidates the earlier receipt before tests start. A source chan
 during execution prevents a receipt. Source, tests, package lock and gate code
 are fingerprinted, including additions and deletions. Prose is excluded.
 
+The public entry points are `src/sync/client.ts` and `src/sync/server.ts`.
+Old import locations contain only compatibility exports. Dependency tests follow
+the engine's runtime imports and reject UI, routes and account/store dependencies;
+the client entry additionally rejects Node dependencies. Native LocalVault files
+are checked against AppKit/SwiftUI/WebKit imports. The native filesystem adapter
+remains in its existing independently compiled Swift library.
+
 The existing manually invoked release command runs this gate. Even `--skip-tests`
 requires matching receipts; it cannot silently waive sync verification. Receipts
 live in ignored `.texttext/sync/`. Windows client success cannot stand in for native
-Mac success. No hooks, scheduled builds, deployments or source-editing bots are
-installed. Automatic runtime recovery is tested; a code regression blocks the
+Mac success. Normal local Mac build commands also check receipts and automatically rerun
+verification when stale; a regression stops them before compilation/signing.
+No hooks, scheduled builds, deployments or source-editing bots are installed. Automatic runtime recovery is tested; a code regression blocks the
 release and must be fixed, never hidden by retrying tests until they pass.
 
 ## Extending the subsystem
@@ -85,3 +93,15 @@ The Windows directory-fsync probe returned EPERM. Server crash/persistence tests
 therefore run on POSIX hosts; no fsync was removed or weakened. Windows verifies
 its actual supported client boundary, not server power-loss durability. A missing
 or skipped native suite fails the Mac gate even if Swift exits with status zero.
+
+## Version compatibility
+
+`fixtures/v1-pending-journal.json` was captured from source `5085642a` before the
+engine extraction. Keep it as historical data; do not regenerate it with the
+current implementation to make tests pass. It contains an old TextPack, baseline,
+pending upload and original operation ID. `compatibility.test.ts` reopens and
+replays it against the current engine, verifying the exact final text and one
+operation. An unknown future journal is preserved unchanged with zero network
+requests. Add fixtures when introducing a new persisted/protocol version, and
+retain earlier versions for the supported upgrade window. Version migrations
+must be explicit and tested for interruption before changing stored user data.

@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const inputs = ['src', 'sync', 'scripts/fixtures', 'scripts/vault-http-test-server.ts', 'mac/Sources', 'mac/Tests',
   'mac/Package.swift', 'mac/Package.resolved', 'package.json', 'package-lock.json',
-  'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'release/ship.sh'];
+  'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'release/ship.sh', 'mac/scripts/build-app.sh', 'mac/scripts/build-store.sh'];
 
 export async function fingerprint(base, paths = inputs) {
   const hash = createHash('sha256');

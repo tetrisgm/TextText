@@ -23,6 +23,10 @@ APP="$MAC/build/TextText.app"
 # sandboxed and carries no updater; the standalone edition is Developer ID with
 # Sparkle. TEXTTEXT_STORE=1 selects the first.
 STORE="${TEXTTEXT_STORE:-0}"
+# Store builds are gated by build-store.sh before it changes SwiftPM state.
+if [ "$STORE" != "1" ]; then
+  node "$MAC/../sync/verify.mjs" --check || node "$MAC/../sync/verify.mjs"
+fi
 if [ "$STORE" = "1" ]; then
   ENT="$MAC/texttext-app-store.entitlements"
 else

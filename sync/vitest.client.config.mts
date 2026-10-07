@@ -6,6 +6,7 @@ import base from '../vitest.config';
 export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
+    'sync/{boundary,compatibility}.test.ts',
     'src/local-vault/{collaboration-client,web-transport,bridge,presence-client}.test.ts',
     'src/lib/vault/{collaboration,reconcile,pack-reconcile}.test.ts',
     'src/app/api/vault/{auth,scoped-auth,collaboration-auth}.test.ts',
