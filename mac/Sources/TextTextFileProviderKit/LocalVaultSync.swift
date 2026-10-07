@@ -260,6 +260,30 @@ public actor LocalVaultSync {
         return try JSONDecoder().decode(State.self, from: Data(contentsOf: url)).binding
     }
 
+    /// A person has explicitly chosen a new web connection for this folder.
+    /// Keep the complete previous journal on this Mac before starting a fresh
+    /// cursor; localhost revisions and queued operations cannot be sent to a
+    /// different server. TextPack files in the selected folder are untouched.
+    public static func archiveAndRebind(root: URL, to binding: LocalVaultSyncBinding) throws {
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        try LocalVaultDeviceState.migrate(root: canonicalRoot)
+        let device = LocalVaultDeviceState.directory(root: canonicalRoot)
+        let directory = device.appendingPathComponent("sync", isDirectory: true)
+        let stateURL = directory.appendingPathComponent("state.json")
+        guard directory.resolvingSymlinksInPath().path == directory.path,
+              stateURL.resolvingSymlinksInPath().path == stateURL.path else {
+            throw LocalVaultDocumentStore.Failure.invalidPath
+        }
+        let previous = try JSONDecoder().decode(State.self, from: Data(contentsOf: stateURL))
+        guard previous.binding != binding else { return }
+        let archives = device.appendingPathComponent("sync-archives", isDirectory: true)
+        try FileManager.default.createDirectory(at: archives, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let archive = archives.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.copyItem(at: directory, to: archive)
+        try writeVaultSyncJournal(JSONEncoder().encode(State(binding: binding)), to: stateURL)
+    }
+
     /// Collaboration may take over only after these exact local bytes have an acknowledged remote baseline.
     public static func collaborationReady(root: URL, path: String, itemId: String, localHash: String) throws -> Bool {
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()

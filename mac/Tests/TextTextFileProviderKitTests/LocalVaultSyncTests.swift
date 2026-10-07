@@ -33,6 +33,25 @@ final class LocalVaultSyncTests: XCTestCase {
             transport: transport)
     }
 
+    func testRebindArchivesPreviousJournalAndKeepsLocalPack() throws {
+        let bytes = try pack("Keep this note")
+        try putLocal(bytes)
+        _ = try engine(FakeVaultTransport())
+        let device = LocalVaultDeviceState.directory(root: root)
+        let oldState = try Data(contentsOf: device.appendingPathComponent("sync/state.json"))
+        let newBinding = try LocalVaultSyncBinding(
+            origin: URL(string: "https://texttext.app")!, workspaceId: "newWorkspace")
+
+        try LocalVaultSync.archiveAndRebind(root: root, to: newBinding)
+
+        XCTAssertEqual(try LocalVaultSync.binding(root: root), newBinding)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), bytes)
+        let archives = try FileManager.default.contentsOfDirectory(
+            at: device.appendingPathComponent("sync-archives"), includingPropertiesForKeys: nil)
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: archives[0].appendingPathComponent("state.json")), oldState)
+    }
+
     func testUploadThenIdlePassDoesNotUploadOrDownloadAgain() async throws {
         let bytes = try pack("First")
         try putLocal(bytes)

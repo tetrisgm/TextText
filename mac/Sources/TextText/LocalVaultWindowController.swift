@@ -344,7 +344,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         if method == "connect" {
             guard let connection else { reply(id, result: .failure(VaultBridgeError("Open a folder first."))); return }
             Task { [weak self] in
-                do { self?.reply(id, result: .success(try await connection.connect())) }
+                do { self?.reply(id, result: .success(try await connection.connect(allowRebind: params["allowRebind"] as? Bool == true))) }
                 catch { self?.reply(id, result: .failure(error)) }
             }
             return

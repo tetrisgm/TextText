@@ -19,6 +19,7 @@ final class LocalVaultConnectionController {
     private var rerun = false
     private var retryDelay: TimeInterval = 2
     private var binding: LocalVaultSyncBinding?
+    private var previousBinding: LocalVaultSyncBinding?
     private(set) var message: String?
     private var watchFailureIsCurrent = false
     private var hasConflicts = false
@@ -28,6 +29,7 @@ final class LocalVaultConnectionController {
         self.root = root; self.credentials = credentials
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
+                previousBinding = existing
                 guard let account = credentials() else {
                     message = "Sign in to resume this folder's web connection."; return
                 }
@@ -43,7 +45,8 @@ final class LocalVaultConnectionController {
         a.scheme == b.scheme && a.host == b.host && a.port == b.port
     }
     var status: [String: Any] {
-        var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil, "hasConflicts": hasConflicts]
+        var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil,
+                                    "hasConflicts": hasConflicts, "requiresRebind": previousBinding != nil && binding == nil]
         if let binding {
             value["workspaceId"] = binding.workspaceId
             value["webURL"] = binding.origin.appendingPathComponent("vault/\(binding.workspaceId)").absoluteString
@@ -51,7 +54,7 @@ final class LocalVaultConnectionController {
         if let message { value["message"] = message }
         return value
     }
-    func connect() async throws -> [String: Any] {
+    func connect(allowRebind: Bool = false) async throws -> [String: Any] {
         guard let account = credentials() else { throw LocalVaultConnectionError("Sign in to TextText before connecting this folder to the web.") }
         // Validate before attaching the token to a URL.
         _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: "discovery")
@@ -59,13 +62,29 @@ final class LocalVaultConnectionController {
         request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+        guard let http = response as? HTTPURLResponse else {
+            throw LocalVaultConnectionError("The web connection did not respond. Your files remain saved on this Mac.")
+        }
+        switch http.statusCode {
+        case 200: break
+        case 401, 403:
+            throw LocalVaultConnectionError("Your TextText sign-in has expired. Sign in again to connect this folder.")
+        case 503:
+            throw LocalVaultConnectionError("Web sync is not configured on the TextText server yet. Your files remain saved on this Mac.")
+        default:
             throw LocalVaultConnectionError("The server could not connect this folder. Your files remain saved on this Mac.")
         }
         struct Workspace: Decodable { let workspaceId: String }
         let workspace = try JSONDecoder().decode(Workspace.self, from: data)
         let binding = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspace.workspaceId)
+        if let previous = try LocalVaultSync.binding(root: root), previous != binding {
+            guard allowRebind else {
+                throw LocalVaultConnectionError("This folder has sync history from a different server. Confirm the new connection to preserve its old history before continuing.")
+            }
+            try LocalVaultSync.archiveAndRebind(root: root, to: binding)
+        }
         try configure(binding, token: account.token)
+        previousBinding = binding
         message = nil
         watchFailureIsCurrent = false
         schedule()
