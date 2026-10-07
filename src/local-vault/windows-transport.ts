@@ -133,6 +133,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
   const transport: VaultTransport = async (method, params, signal) => {
     if (method.startsWith("agent")) return rpc.request(method, params, signal);
     if (method === "connection") return { ...await rpc.request<Status>("native.status"), ...await rpc.request<Record<string, unknown>>("files.connection"), webURL: `https://texttext.app/vault/${status.workspaceId}` };
+    if (method === "recovery") return rpc.request("native.recovery", {}, signal);
     if (["settings", "signOut", "openWeb", "openFolder"].includes(method)) return rpc.request(`native.${method}`, params, signal);
     if (method === "list" || method === "open") {
       const value = await shared.request("list", params, signal) as VaultListing;

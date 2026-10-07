@@ -149,8 +149,13 @@ public sealed class TextPackStore
     void RecordIntent(FileIntent intent) => AtomicWrite(System.IO.Path.Combine(StateDirectory,"intent-"+intent.ItemId+".json"),JsonSerializer.SerializeToUtf8Bytes(intent));
     public FileIntent? Intent(string id) { var path=System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"); return File.Exists(path)?JsonSerializer.Deserialize<FileIntent>(File.ReadAllBytes(path)):null; }
     public void ClearIntent(string id) => File.Delete(System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"));
+    public string GetRecoveryDirectory() {
+        var directory=System.IO.Path.Combine(StateDirectory,"recovery");
+        CheckLinks(directory);Directory.CreateDirectory(directory);CheckLinks(directory);
+        return directory;
+    }
     public string Preserve(byte[] bytes,string kind)
     {
-        var path=System.IO.Path.Combine(StateDirectory,"recovery",kind+"-"+Hash(bytes)+".textpack"); if(!File.Exists(path)) AtomicWrite(path,bytes); return path;
+        var path=System.IO.Path.Combine(GetRecoveryDirectory(),kind+"-"+Hash(bytes)+".textpack"); if(!File.Exists(path)) AtomicWrite(path,bytes); return path;
     }
 }

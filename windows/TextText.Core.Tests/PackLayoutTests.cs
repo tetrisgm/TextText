@@ -27,6 +27,13 @@ static class PackLayoutTests
         File.WriteAllBytes(store.Resolve("Notes/Incomplete.textpack"),[1,2,3]);var scanned=store.Scan();Check(scanned.Count==1&&store.LastScanErrors.Any(x=>x.Path=="Notes/Incomplete.textpack"),"malformed pack is diagnosed without hiding healthy file");
         File.WriteAllBytes(store.Resolve("Notes/Duplicate.textpack"),store.Read(file.Path));scanned=store.Scan();Check(scanned.Count==0&&store.LastScanErrors.Count(x=>x.Reason.Contains("Duplicate"))==2,"all copies of ambiguous identity are excluded and diagnosed");
         File.Delete(store.Resolve("Notes/Duplicate.textpack"));File.Delete(store.Resolve("Notes/Incomplete.textpack"));Check(store.Scan().Count==1&&store.LastScanErrors.Count==0,"scan diagnostics clear after files recover");
+        var recovery=store.Preserve(bytes,"conflict");var recoveryDirectory=store.GetRecoveryDirectory();Check(Path.GetDirectoryName(recovery)==recoveryDirectory&&File.ReadAllBytes(recovery).SequenceEqual(bytes),"recovery location exposes only this workspace retained copies");
+        var guarded=new TextPackStore(Path.Combine(temporaryRoot,"guarded-recovery"),Path.Combine(temporaryRoot,"guarded-state"));var outsideRecovery=Path.Combine(temporaryRoot,"outside-recovery");Directory.CreateDirectory(outsideRecovery);
+        try {
+            Directory.CreateSymbolicLink(Path.Combine(guarded.StateDirectory,"recovery"),outsideRecovery);
+            try{_=guarded.GetRecoveryDirectory();throw new Exception("linked recovery directory accepted");}catch(IOException){Console.WriteLine("PASS recovery location rejects redirected directory");}
+            Check(Directory.GetFileSystemEntries(outsideRecovery).Length==0,"recovery path validation leaves external directory untouched");
+        }catch(UnauthorizedAccessException){Console.WriteLine("SKIP creating test symlink requires Windows developer mode");}
         var target=Path.Combine(temporaryRoot,"link-target");Directory.CreateDirectory(target);try{Directory.CreateSymbolicLink(store.Resolve("Linked"),target);Check(store.Scan().Count==1&&store.LastScanErrors.Any(x=>x.Path=="Linked"),"linked directory skipped with diagnostic");}catch(UnauthorizedAccessException){Console.WriteLine("SKIP creating test symlink requires Windows developer mode");}
     }
 }

@@ -116,6 +116,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 ct.ThrowIfCancellationRequested();
                 switch (method) {
                     case "files.connection": return new { connected = true, available = true, onlineReady = lastStatus == "ready", hasConflicts = lastStatus == "conflict", webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri };
+                    case "files.recoveryDirectory": return files.GetRecoveryDirectory();
                     case "files.ready": return new { ready = await sync.IsReadyAsync(Required(p, "itemId"), ct) };
                     case "files.list": {
                         var items = Inventory();

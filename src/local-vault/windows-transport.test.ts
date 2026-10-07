@@ -31,6 +31,7 @@ async function fixture() {
   let ready = true; let checkpoint: Record<string, unknown> | undefined;
   const view = native((method, p) => {
     if (method === "native.status") return { root: "C:\\Users\\Person\\TextText\\workspace", workspaceId: "workspace", name: "Workspace", available: true, connected: true };
+    if (method === "native.recovery") return null;
     if (method === "files.connection") return { onlineReady: ready };
     if (method === "files.ready") return { ready };
     if (method === "files.list") { const items = [...files].map(([itemId, file]) => ({ itemId, relativePath: file.path, revision: digest(file.bytes) })); return { items, revision: JSON.stringify(items), folders: ["Notes"] }; }
@@ -60,6 +61,15 @@ describe("Windows native RPC", () => {
   });
 });
 describe("Windows shared transport", () => {
+  it("opens only native recovery copies without forwarding a renderer-controlled path", async () => {
+    const f = await fixture();
+    try {
+      await expect(f.transport.request("recovery", { path: "C:\\arbitrary", url: "https://untrusted.example" })).resolves.toBeNull();
+      expect(f.view.messages.at(-1)).toMatchObject({ method: "native.recovery", params: {} });
+      expect(f.view.messages.some(message => message.method === "native.http")).toBe(false);
+    } finally { f.transport.destroy(); }
+  });
+
   it("reads and creates local packs without issuing cloud file requests", async () => {
     const f = await fixture();
     try {

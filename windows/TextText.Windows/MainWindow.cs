@@ -175,6 +175,13 @@ public sealed class MainWindow : Window
             case "native.cancel": if(p.TryGetProperty("requestId",out var request) && requests.TryGetValue(request.GetString() ?? "",out var cancellation)) cancellation.Cancel(); return null;
             case "native.http": return await Http(p,ct);
             case "native.openWeb": OpenExternal(new Uri(Origin,"/vault/" + account!.WorkspaceId).AbsoluteUri); return null;
+            case "native.recovery": {
+                // The renderer cannot choose a shell path. Resolve only the
+                // current native workspace's validated recovery directory.
+                var directory = bridge is null ? null : await bridge.InvokeAsync("files.recoveryDirectory",JsonSerializer.SerializeToElement(new {}),ct) as string;
+                if (directory is null || !Path.IsPathFullyQualified(directory)) throw new InvalidOperationException("Recovery location is unavailable.");
+                Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true }); return null;
+            }
             case "native.openFolder": Process.Start(new ProcessStartInfo(root) { UseShellExecute = true }); return null;
             case "native.settings": MessageBox.Show(this,$"{account?.Name}\n\nFiles: {root}","TextText settings",MessageBoxButton.OK,MessageBoxImage.Information); return null;
             case "native.signOut":
