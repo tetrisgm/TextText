@@ -183,6 +183,7 @@ export class FileCollaborationClient {
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private failures = 0;
+  private uploadFailures = 0;
   private journalGeneration = 0;
   private initialRetirement: string | null = null;
   private checkpointQueued: FileCollaborationCheckpoint | null = null;
@@ -438,7 +439,7 @@ export class FileCollaborationClient {
       this.handleFailure(error);
     }
   }
-  private handleFailure(error: unknown): void {
+  private handleFailure(error: unknown, uploading = false): void {
     if (this.dead || this.frozen) return;
     if (!(error instanceof RequestFailure)) { this.fatal(error); return; }
     if (!this.active) return;
@@ -447,10 +448,13 @@ export class FileCollaborationClient {
     if (detail?.name === "AbortError") return;
     if ([401, 403, 404].includes(detail?.status ?? 0) || detail?.code === "epoch_changed" || detail?.status === 409) { this.retire("This file or your access changed. Pending edits are kept for recovery."); return; }
     if ([400, 413, 422].includes(detail?.status ?? 0)) { this.retire("The server rejected this edit. Your pending document is kept for recovery."); return; }
-    // Local validation/storage failures are terminal; network errors may retry.
-    if (error instanceof Error && /Invalid|Incomplete|Saved|history|storage|quota|Quota|localStorage|journal/i.test(error.message)) { this.fatal(error); return; }
+    // HTTP service failures remain retryable regardless of server message wording.
+    // Native bridge validation errors without an HTTP retry status still fail closed.
+    const retryableStatus = detail?.status === 429 || (detail?.status !== undefined && detail.status >= 500 && detail.status <= 599);
+    if (!retryableStatus && error instanceof Error && /Invalid|Incomplete|Saved|history|storage|quota|Quota|localStorage|journal/i.test(error.message)) { this.fatal(error); return; }
     this.report("offline", "Waiting for the connection. Pending edits are saved on this device.");
-    const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.failures++, 5));
+    const failures = uploading ? this.uploadFailures++ : this.failures++;
+    const delay = Math.min(30_000, 1000 * 2 ** Math.min(failures, 5));
     if (this.initialized) { this.schedulePush(delay); this.schedulePoll(delay); }
     else this.schedulePoll(delay);
   }
@@ -479,7 +483,7 @@ export class FileCollaborationClient {
       if (!remote.unchanged && remote.seq! >= this.current.seq) {
         cursor(remote); Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.snapshot(); this.current = cursor(remote); this.persist(); this.options.onChange?.(this.snapshot());
       }
-      this.authoritative = true; this.failures = 0; this.report(this.pending.length || this.batch ? "saving" : "ready"); this.schedulePush(0); this.schedulePoll(250);
+      this.authoritative = true; this.failures = 0; this.report(this.uploadFailures ? "offline" : this.pending.length || this.batch ? "saving" : "ready"); this.schedulePush(0); this.schedulePoll(250);
     } catch (error) { this.handleFailure(error); }
     finally { this.schedulePoll(250); }
   }
@@ -524,11 +528,11 @@ export class FileCollaborationClient {
         try { this.persist(); } catch (error) { this.batch = acknowledged; throw error; }
         this.options.onChange?.(this.snapshot());
         if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return false;
-        this.failures = 0;
+        this.uploadFailures = 0;
       }
       if (!this.dead && !this.frozen) this.report("ready");
       return !this.batch && !this.pending.length;
-    } catch (error) { this.handleFailure(error); return false; }
+    } catch (error) { this.handleFailure(error, true); return false; }
   }
   setActive(active: boolean): void {
     if (this.dead || active === this.active) return;
@@ -541,7 +545,7 @@ export class FileCollaborationClient {
     if (this.dead || this.frozen) return;
     this.active = true;
     this.authoritative = false;
-    this.failures = 0;
+    this.failures = 0; this.uploadFailures = 0;
     this.cancelWork();
     if (!this.initialized) {
       if (this.starting) await this.starting;

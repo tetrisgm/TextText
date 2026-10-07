@@ -53,6 +53,39 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
+  it("backs off failed uploads even while reads succeed", async () => {
+    const server = new Server(); const attempts: number[] = []; let unavailable = true;
+    const request: FileCollaborationRequest = async (method, params, signal) => {
+      if (method === "push" && unavailable) { attempts.push(Date.now()); throw Object.assign(new Error("Unavailable"), { status: 503 }); }
+      if (method === "read") return server.response();
+      return server.request(method, params, signal);
+    };
+    const editor = client(server, new Journal(), request); await editor.start();
+    editor.mutate(doc => documentText(doc, "body").insert(5, " retained"));
+    await editor.flush(); await vi.advanceTimersByTimeAsync(7500);
+    expect(attempts.slice(1).map((time, i) => time - attempts[i])).toEqual([1000, 2000, 4000]);
+    expect(editor.hasPendingChanges).toBe(true);
+    unavailable = false; await vi.advanceTimersByTimeAsync(8000);
+    expect(editor.hasPendingChanges).toBe(false);
+  });
+
+  it.each([429, 500, 503])("retries temporary HTTP %s storage failures without retiring pending edits", async status => {
+    const server = new Server(); let unavailable = true;
+    const request: FileCollaborationRequest = async (method, params, signal) => {
+      if (method === "push" && unavailable) throw Object.assign(new Error("Storage temporarily unavailable"), { status });
+      return server.request(method, params, signal);
+    };
+    const editor = client(server, new Journal(), request); await editor.start();
+    editor.mutate(doc => documentText(doc, "body").insert(5, " retained"));
+    expect(await editor.flush()).toBe(false);
+    expect(editor.status).toBe("offline"); expect(editor.hasPendingChanges).toBe(true);
+    unavailable = false; await vi.advanceTimersByTimeAsync(1100);
+    expect(editor.hasPendingChanges).toBe(false);
+    expect(editor.status).toBe("ready");
+    expect(documentText(editor.doc, "body").toString()).toBe("Hello retained");
+    expect(server.pushes).toHaveLength(1);
+  });
+
   it("keeps a clean web journal hidden until a fresh read confirms downgraded access", async () => {
     const server = new Server(), journal = new Journal(), first = client(server, journal);
     await first.start(); const retained = journal.load(first.journalKey)!; first.destroy();
