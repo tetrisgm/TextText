@@ -215,9 +215,25 @@ echo ">> App Intents metadata (xcodebuild const-values pass)"
 # and the `texttext` CLI product cannot both be called TextText on a
 # case-insensitive volume. A stale name here fails only in the release path,
 # where the metadata pass runs.
-xcodebuild build -jobs 2 -scheme TextTextApp -destination 'platform=macOS,arch=arm64' \
-  -configuration Release -derivedDataPath "$MAC/.build/xcode-dd" \
-  SWIFT_EMIT_CONST_VALUES=YES CODE_SIGNING_ALLOWED=NO -quiet
+if [ "${TEXTTEXT_LOCAL_CACHED_APPINTENTS:-0}" = "1" ]; then
+  [ "${TEXTTEXT_STORE_LOCAL:-0}" = "1" ] || {
+    echo "Cached App Intents values are allowed only for a local Store build." >&2; exit 1;
+  }
+  intents_values="$MAC/.build/xcode-dd/Build/Intermediates.noindex/TextText.build/Release/TextTextAppIntents-t.build/Objects-normal/arm64/TextTextAppIntents-primary.swiftconstvalues"
+  app_values="$MAC/.build/xcode-dd/Build/Intermediates.noindex/TextText.build/Release/TextTextApp-p.build/Objects-normal/arm64/TextTextApp-primary.swiftconstvalues"
+  [ -s "$intents_values" ] && [ -s "$app_values" ] || {
+    echo "Cached App Intents values are missing." >&2; exit 1;
+  }
+  [ -z "$(find "$MAC/Sources/TextTextAppIntents" -name '*.swift' -newer "$intents_values" -print -quit)" ] && \
+    [ ! "$MAC/Sources/TextText/AppShortcuts.swift" -nt "$app_values" ] || {
+      echo "App Intents sources changed since cached values were generated." >&2; exit 1;
+    }
+  echo ">> Reusing unchanged App Intents const values for this local build"
+else
+  xcodebuild build -jobs 2 -scheme TextTextApp -destination 'platform=macOS,arch=arm64' \
+    -configuration Release -derivedDataPath "$MAC/.build/xcode-dd" \
+    SWIFT_EMIT_CONST_VALUES=YES CODE_SIGNING_ALLOWED=NO -quiet
+fi
 CONSTVALS="$MAC/build/appintents-constvals.txt"
 find "$MAC/.build/xcode-dd" -name '*.swiftconstvalues' | sort > "$CONSTVALS"
 [ -s "$CONSTVALS" ] || { echo "xcodebuild emitted no .swiftconstvalues" >&2; exit 1; }

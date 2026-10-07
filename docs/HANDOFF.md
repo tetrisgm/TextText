@@ -7,16 +7,18 @@ sign-in gate, and sign-out flushes the open document before closing that UI.
 The web editor routes through `/signin`; a second provider claiming an existing
 email must be linked from the existing account in Settings. Focused account
 route, adapter, and local PostgreSQL collision tests passed. A Store-shaped
-Apple Development build 0.204 (1160) is installed at `/Applications/TextText.app`.
+Apple Development build 0.204 (1161) is installed at `/Applications/TextText.app`.
 Its native sheet visibly offers “Continue with Touch ID”; the prior Developer ID
 build's website consent prompt is gone. The owner completed Touch ID, but the
 workspace panel still appeared unchanged: it conflated a saved account with a
 separate web sync binding to another server. The follow-up source separates
 those states and checks that the Apple credential is actually saved before
-reporting success. Build 1161 could not pass the required App Intents metadata
-step because this Mac's Xcode cannot load DVTCoreDeviceCore against its installed
-CoreDevice framework (CoreSimulator 1051.55.0 versus expected 1171.7.0).
-The installed app remains 1160; do not install the partial 1161 bundle.
+reporting success. Build 1161 opens the existing iCloud folder and shows the
+saved account separately from the old sync binding. Xcode's const-values pass
+currently fails because its CoreDevice components are mismatched. This local
+build reused unchanged cached const values and regenerated the required App
+Intents metadata (10 intents, 4 shortcuts, 4 parameter summaries). Release
+builds still require the normal Xcode pass.
 Google exists in source but lacks Oracle OAuth
 configuration. OpenAI has not issued a commercial Sign in with ChatGPT client
 ID; this identity flow is separate from hosted MCP connector authorization.
@@ -43,9 +45,9 @@ On `main`, these source changes are pushed:
 - The prior 1157 standalone build added a CLI-only fallback for an unreadable
   app security bookmark when the saved ordinary folder itself is readable.
 
-The installed canonical `/Applications/TextText.app` is local **0.204 (1160)**, an Apple Development signed, sandboxed Store-shaped build with native Apple sign-in, the bundled Codex runtime, and three registered extensions. It opens `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`. The Store edition has no bundled `texttext` CLI, so the signed 1158 standalone CLI is separately installed at `~/.local/share/texttext-cli/0.204-1158/texttext` and linked from `~/.local/bin/texttext`; it listed four iCloud Notes. Its prior broken symlink was preserved as `~/.local/share/texttext-cli/obsolete-link-20261006`. The bundled agent's live connection still needs verification. The prior 1158 app bundle was moved to Trash by the installer. Earlier removed workspaces were compared before deletion; the preinstall Blog recovery copy remains at `/Users/shokunin/Library/Application Support/TextText/Recovery/2026-10-05-preinstall/How we decide what to build.textpack`. No website deployment or public release was made.
+The installed canonical `/Applications/TextText.app` is local **0.204 (1161)**, an Apple Development signed, sandboxed Store-shaped build with native Apple sign-in, the bundled Codex runtime, and three registered extensions. It opens `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`. The Store edition has no bundled `texttext` CLI, so the signed 1158 standalone CLI is separately installed at `~/.local/share/texttext-cli/0.204-1158/texttext` and linked from `~/.local/bin/texttext`; it listed four iCloud Notes. Its prior broken symlink was preserved as `~/.local/share/texttext-cli/obsolete-link-20261006`. The bundled agent's live connection still needs verification. The prior 1158 app bundle was moved to Trash by the installer. Earlier removed workspaces were compared before deletion; the preinstall Blog recovery copy remains at `/Users/shokunin/Library/Application Support/TextText/Recovery/2026-10-05-preinstall/How we decide what to build.textpack`. No website deployment or public release was made.
 
-The app picker writes a security-scoped bookmark. The earlier standalone CLI could read the saved ordinary folder path when its bookmark was unavailable. Focused `LocalVaultConfigurationTests` and `LocalVaultTests` passed for that change. Build 1160 is locally signed and has no release attestation; the Store sandbox keeps its runtime health report private from the installer. The installer verified the signature, extensions, and single running canonical app; UI verification covered the opened workspace, existing notes, search, and save/reopen. The installed app still reports “Connect to web”; account reconnection and web sync remain unverified.
+The app picker writes a security-scoped bookmark. The earlier standalone CLI could read the saved ordinary folder path when its bookmark was unavailable. Focused `LocalVaultConfigurationTests` and `LocalVaultTests` passed for that change. Build 1161 is locally signed and has no release attestation; the Store sandbox keeps its runtime health report private from the installer. The installer verified the signature, extensions, and single running canonical app. UI verification on 1161 covered the opened workspace, existing note, and distinct account and web sync states; search and save/reopen passed on 1160 and were unaffected by this change. The installed app shows “Signed in to TextText” and separately reports the older folder binding to a different server. Web sync remains unverified.
 
 ## Verification and next steps
 
