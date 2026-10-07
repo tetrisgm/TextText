@@ -84,6 +84,22 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertFalse(state.contains("Bearer"))
     }
 
+    func testMissingRemoteWithoutTombstoneRecreatesCurrentLocalPack() async throws {
+        let original = try pack("Original")
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        let initial = try await sync.sync()
+        XCTAssertEqual(initial.uploaded, 1)
+        await transport.forgetWithoutTombstone(itemId: itemId)
+        let restored = try await sync.sync()
+        XCTAssertTrue(restored.errors.isEmpty)
+        XCTAssertEqual(restored.uploaded, 1)
+        let remote = try await transport.download(itemId: itemId)
+        XCTAssertEqual(remote.data, original)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), original)
+    }
+
     func testNativeEditorRevisionIsAttributedAfterOfflineSaves() async throws {
         let original = try pack("First")
         try putLocal(original)
@@ -432,6 +448,7 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
         items[itemId] = .init(data: data, relativePath: path, revision: TextTextStableDigest.sha256Hex(data))
     }
     func loseNextReply() { loseReply = true }
+    func forgetWithoutTombstone(itemId: String) { items.removeValue(forKey: itemId) }
     func mergeNextUpload(with data: Data) { merged = data }
     func operations() -> [String] { uploadedOperations }
     func uploadOrigins() -> [Bool] { nativeOrigins }

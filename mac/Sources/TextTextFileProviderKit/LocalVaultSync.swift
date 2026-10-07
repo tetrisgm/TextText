@@ -641,8 +641,16 @@ public actor LocalVaultSync {
                         try persist()
                     }
                 }
-                if let baseline, remote == nil {
-                    report.errors.append("\(baseline.path): server omitted this tracked document without a tombstone")
+                if baseline != nil, remote == nil {
+                    // The local TextPack remains authoritative when a server
+                    // loses an item without a tombstone. Create with a server
+                    // precondition so a concurrent remote return cannot be
+                    // overwritten; the old baseline remains in the journal.
+                    let bytes = try Data(contentsOf: store.url(for: path))
+                    guard TextTextStableDigest.sha256Hex(bytes) == current.hash else { throw LocalVaultSyncFailure.changed }
+                    let pending = try stage(itemId: id, path: path, hash: current.hash,
+                        base: nil, bytes: bytes)
+                    try await send(pending, report: &report)
                     continue
                 }
                 if let remote, remote.relativePath != path { throw LocalVaultSyncFailure.duplicateIdentity(path) }
