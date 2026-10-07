@@ -22,6 +22,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Shared UI build failed.' }
   & $dotnet publish windows/TextText.Windows/TextText.Windows.csproj --configuration Release --runtime win-x64 --self-contained true --output $candidate
   if ($LASTEXITCODE -ne 0) { throw 'Windows desktop publish failed.' }
+  & powershell -NoProfile -ExecutionPolicy Bypass -File windows/scripts/smoke.ps1
+  if ($LASTEXITCODE -ne 0) { throw 'Native desktop editor/close regression tests failed.' }
   & node windows/scripts/receipt.mjs seal $candidate $source
   if ($LASTEXITCODE -ne 0) { throw 'Windows verification receipt failed.' }
   Write-Output "Verified candidate: $candidate"

@@ -15,6 +15,7 @@ of the merge algorithm. The app UI is a client of this subsystem.
 | Client journal, replay, backoff and lifecycle | `src/sync/engine/client.ts` |
 | Browser and native transport adapters | `src/local-vault/web-transport.ts`, `bridge.ts` |
 | Native filesystem coordination and sync | `mac/Sources/TextTextFileProviderKit/LocalVault*` |
+| Windows native files, outbox and shared checkpoints | `windows/TextText.Core/` (no WPF/WebView/account dependencies) |
 | Native session ownership and authentication renewal | `mac/Sources/TextText/LocalVaultCollaboration.swift` |
 | Authenticated HTTP boundary | `src/app/api/vault/` |
 
@@ -43,6 +44,8 @@ agents can change text.md directly without a parallel document.json rewrite.
 
 ## Commands
 
+- `windows/scripts/build.ps1`: native Windows storage/agent checks, shared client tests, TypeScript, and a source-bound self-contained candidate.
+- `windows/scripts/smoke.ps1`: real WebView editor plus actual native-window save/close handshake, isolated from user accounts.
 - `npm run test:sync`: portable contracts, TypeScript and native Mac/HTTP tests.
 - `npm run test:sync:core`: server/client tests and TypeScript on macOS/Linux.
 - `npm run test:sync:client`: client/transport/merge/auth tests and TypeScript on Windows.

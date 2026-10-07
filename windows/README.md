@@ -17,7 +17,8 @@ powershell -NoProfile -File windows/scripts/install.ps1 -Candidate <printed-cand
 ```
 
 Build checks native storage and agent subprocess regressions, shared client tests,
-and TypeScript, bundles the shared editor, and publishes a self-contained win-x64 desktop candidate. Its receipt binds all
+and TypeScript, bundles the shared editor, runs the actual desktop/editor/close
+regressions in the signed-in desktop session, and publishes a self-contained win-x64 desktop candidate. Its receipt binds all
 source inputs and every published file, including UI assets. Install rejects changed
 sources or artifacts, stages and verifies a copy before replacing the app, and keeps
 the previous installation alongside it. It refuses to replace a running installed

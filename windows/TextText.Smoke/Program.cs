@@ -47,7 +47,7 @@ static class Program
    await File.WriteAllTextAsync(Path.Combine(args[1],"desktop-smoke.json"),output);
    using(var image=File.Create(Path.Combine(args[1],"desktop-smoke.png"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
    if(!receipt.RootElement.GetProperty("ok").GetBoolean()) throw new Exception(output);
-   Console.WriteLine(output); result=0;
+   Console.WriteLine(output); await MainWindowCloseTests.RunAsync(temp,args[1],timeout.Token); result=0;
   }catch(Exception ex){Console.Error.WriteLine(ex);}finally{bridge?.Dispose();view.Dispose();app.Shutdown(result);} };
   Console.WriteLine("smoke: run window"); app.Run(window);
   var binding = TextPackStore.Hash(Encoding.UTF8.GetBytes("https://127.0.0.1:1/\nsmoke-workspace\n"+Path.Combine(temp,"workspace")));

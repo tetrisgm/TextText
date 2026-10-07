@@ -28,10 +28,10 @@ else if (mode === 'seal') {
   if (digest !== expected) throw new Error('Sources changed during Windows verification. Rebuild.');
   const artifacts = (await tree(output)).filter(([name])=>name !== 'verification.json');
   if (!artifacts.some(([name])=>name === 'TextText.exe')) throw new Error('Desktop executable missing');
-  await writeFile(path.join(output,'verification.json'), JSON.stringify({version:1,platform:process.platform,source:digest,checks:['native-core','native-agent','shared-client','typescript','shared-ui-bundle','desktop-publish'],artifacts,created:new Date().toISOString()},null,2));
+  await writeFile(path.join(output,'verification.json'), JSON.stringify({version:1,platform:process.platform,source:digest,checks:['native-core','native-agent','shared-client','typescript','shared-ui-bundle','desktop-publish','native-desktop'],artifacts,created:new Date().toISOString()},null,2));
 } else if (mode === 'verify') {
   const receipt = JSON.parse(await readFile(path.join(output,'verification.json'),'utf8'));
-  if (receipt.version !== 1 || receipt.platform !== 'win32' || receipt.source !== await source() || !['native-core','native-agent','shared-client','typescript','shared-ui-bundle','desktop-publish'].every(check => receipt.checks?.includes(check))) throw new Error('Windows candidate does not match verified sources. Rebuild.');
+  if (receipt.version !== 1 || receipt.platform !== 'win32' || receipt.source !== await source() || !['native-core','native-agent','shared-client','typescript','shared-ui-bundle','desktop-publish','native-desktop'].every(check => receipt.checks?.includes(check))) throw new Error('Windows candidate does not match verified sources. Rebuild.');
   const artifacts=(await tree(output)).filter(([name])=>name !== 'verification.json');
   if (JSON.stringify(artifacts)!==JSON.stringify(receipt.artifacts)) throw new Error('Windows candidate changed after verification. Rebuild.');
   console.log('Windows candidate source and artifact receipt verified.');

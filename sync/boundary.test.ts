@@ -67,3 +67,14 @@ it('native file-sync implementation stays independent of application UI framewor
     expect(/\bimport\s+(AppKit|SwiftUI|WebKit|TextText)\b/.test(source), file).toBe(false);
   }
 });
+
+
+it('Windows native sync stays independent of desktop UI and credential storage', () => {
+  const directory = 'windows/TextText.Core';
+  const project = readFileSync(path.join(directory, 'TextText.Core.csproj'), 'utf8');
+  expect(project).not.toMatch(/UseWPF|WebView2|TextText\.Windows|ProtectedData/);
+  for (const file of readdirSync(directory).filter(name => name.endsWith('.cs'))) {
+    const source = readFileSync(path.join(directory, file), 'utf8');
+    expect(source, file).not.toMatch(/\b(?:System\.Windows|Microsoft\.Web\.WebView2|TextText\.Windows|CredentialStore|ProtectedData)\b/);
+  }
+});

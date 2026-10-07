@@ -27,6 +27,8 @@ try {
   if ($result -ne 0) { throw "Native desktop smoke failed ($result). Receipts: $receipts" }
   $report = Get-Content (Join-Path $receipts 'desktop-smoke.json') -Raw | ConvertFrom-Json
   if (!$report.ok) { throw "Native desktop assertions failed. Receipts: $receipts" }
+  $closeReport = Get-Content (Join-Path $receipts 'main-window-close.json') -Raw | ConvertFrom-Json
+  if (!$closeReport.ok) { throw "Native close assertions failed. Receipts: $receipts" }
   Write-Output "Native desktop smoke passed. Receipts: $receipts"
 } finally {
   if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
