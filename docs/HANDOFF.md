@@ -1,118 +1,85 @@
 # TextText handoff
 
-## Current state
+## Installed and live
 
-- `/Applications/TextText.app` is local Store-shaped **0.204 (1173)**, signed with
-  all three extensions. It opens the existing iCloud Drive workspace at
+- Mac: `/Applications/TextText.app`, local Store-shaped **0.204 (1176)**,
+  including the saved-file close guard. Existing account, native
+  Apple sign-in entitlement, three signed extensions and iCloud workspace are
+  preserved. Workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
-  User files and journals were preserved. No public Mac release was published.
-  The local development install bypassed sandbox-private runtime attestation;
-  installed startup, editing, reopening and search were verified in the app.
-- Oracle serves `texttext-oracle-20261007T092817Z-f151886c`. The deployment
-  passed authenticated browser-cookie origin enforcement, native read/write,
-  storage and audit smoke checks. Previous release retained; Algorave active
-  and HAProxy unchanged. Vault storage is `/home/ubuntu/texttext/state/vault`.
-- Native window/session invalidation, in-flight credential renewal, retryable
-  server errors and upload backoff are fixed. Browser cookie writes now use the
-  validated public origin behind Oracle's proxy. Server Markdown checkpoints
-  preserve the actual relative file path, including after rename.
-- See the [sync failure audit and verification](verification/2026-10-07-sync-failure-audit.md)
-  for reproductions, test counts and remaining limits. `npm run test:sync` is a
-  committed manual regression suite and runs in the normal release workflow.
-  No background build, install or release job was added.
-- Sync verification now has its own [subsystem contract](../sync/README.md) and
-  exact-source receipts. Release `--skip-tests` requires matching Mac core/native
-  receipts. Mac: 202 sync tests + 58 native tests; Windows: 142 client contract
-  tests, TypeScript and 3 receipt-gate tests. These are test-runner results, not
-  Windows desktop app verification. The new native Windows implementation is
-  described below; those earlier Node checks did not certify it.
-  The PC source/test copy is `C:\Users\Shokunin\dev\texttext-sync-20261007`.
-  Oracle server durability uses POSIX directory fsync; it was not weakened for
-  Windows. Oracle hosting and storage remain unchanged by the Windows work.
+  No public desktop release was published.
+- Oracle: **`texttext-oracle-20261007T223538Z-4712e8d9`**. Authenticated session,
+  cookie-origin enforcement, read/write, canonical storage and audit smoke passed.
+  Backup: `texttext-20261007T223642Z-a2a9efd0.dump`. Previous release retained;
+  Algorave services active, HAProxy unchanged. Hosting and storage remain Oracle.
+- Windows: self-contained WPF/WebView2 app installed in
+  `C:\Users\Shokunin\AppData\Local\Programs\TextText`, candidate
+  **`8ca77072ef324c95b4202de1e79ac490`**, source `911e7564`.
+  No Node or .NET SDK is required by users. Account state is DPAPI-protected;
+  native code owns TextPack files, sync journals and bundled Codex.
+  Previous app retained as `TextText-previous-20261007T155724-bc262a43`.
+- PC source: `C:\Users\Shokunin\dev\texttext-sync-20261007`.
+  Final build log: `windows-final-utf8-build.log`; desktop receipts:
+  `windows/build/smoke-receipts-8b5efd2734e149318439dc771df70f1b`.
 
-## Windows implementation in progress
+## Verification and fixes
 
-- `windows/` contains a WPF/WebView2 desktop host, DPAPI account storage,
-  native TextPack store and durable sync engine, shared editing checkpoints,
-  and a bundled native Codex app-server adapter. It embeds the same `VaultApp`
-  and renderer as Mac. Node is a build/test tool only.
-- Latest Mac verification: 90 portable native assertions, six app-server
-  subprocess scenarios, and shared sync/presence/Windows transport tests.
-  TypeScript and Windows cross-compilation pass. Logs:
-  `/tmp/texttext-core-native-final.log`, `/tmp/texttext-windows-agent-native.log`,
-  `/tmp/texttext-shared-sync-final.log`.
-- Actual PC WebView smoke passed eight checks including creation, search,
-  real editor input, autosave to disk, and reopened rendered content. Receipts
-  and screenshot: `.texttext/windows-smoke/`. SSH service sessions cannot host
-  the WebView; `windows/scripts/smoke.ps1` runs only the test executable in a
-  temporary interactive task and removes that task afterward. Nested TextPack
-  handling was fixed from a real failure found by this test.
-- A verified self-contained candidate is installed at
-  `C:\Users\Shokunin\AppData\Local\Programs\TextText`. Real sign-in completed;
-  all 21 existing TextPacks downloaded and the native app rendered the workspace.
-  `windows/scripts/build.ps1` checks native core, native agent, shared client,
-  TypeScript, UI bundling and desktop publication. `install.ps1` verifies exact
-  source/artifact receipts and preserves the previous application and user data.
-  No public release was published. Final hardening changes need a rebuilt install.
-- A new test TextPack created directly on Windows reached Mac and Safari.
-  Direct Mac Markdown and web editor return edits reached the Mac file.
-- Remaining: final rebuilt installation; finish Mac/web/Windows convergence and
-  offline/restart scenarios; real agent sign-in/tool interaction;
-  deploy and verify the new authenticated agent-attributed vault presence route.
-  The isolated UI fixture does not establish those results. Shared native agent
-  presence now uses one lifecycle and the vault route on both desktops; see
-  [presence verification](verification/2026-10-07-cross-client-agent-presence.md).
-  Do not describe full parity as finished.
+- Mac/web/Windows edits and direct TextPack edits converged in the real apps.
+  Editing while Windows was stopped survived restart and uploaded correctly.
+  Actual Mac and Windows Codex authorization and tool edits passed, with agent
+  identities visible in Safari. Only the dedicated Windows verification note
+  was changed in these passes; original user notes were preserved.
+- Server presence rejected agent identities below the mocked route boundary.
+  `4712e8d9` fixes join/read/leave validation; the real store now has a signed
+  session lifecycle regression, including malformed and cross-principal denial.
+- `96d02284`: own-upload ACK now notifies the Windows editor even when global
+  connection state stays ready. `8bdae21e`: checkpoint-only typing skips extra
+  manifest requests, while 30-second remote checks cannot be starved.
+- `1048ba24`: a read-only editor awaiting external sync can close only after a
+  fresh file read and successful clean-journal retirement. Pending or unreadable
+  journals and persistence failures still block close. Publishing is unchanged.
+- Final Windows ACK refresh, normal close and reopen passed, preserving all eight
+  verification markers and both saved accounts. `911e7564` explicitly uses UTF-8
+  for agent subprocess input/output; eight agent/guard regression checks passed.
+  Final installed verification exposed a WPF compositor startup stall before
+  sign-in or sync initialization. `277f5a22` adds process-local software rendering;
+  `7d838ec6` makes the desktop harness use/assert the same configuration. Mac
+  crosscompilation passed. These corrections are not installed: the PC harness
+  subsequently stalled before Main, with no returned diagnostic stack. PC SSH
+  then stopped responding. Do not waive the desktop gate or call Windows ready.
+  `69c7dae9` separates the smoke entry log from WPF type loading (Mac
+  crosscompile passed). Resume focused startup diagnosis, then gated install
+  and actual Unicode check.
+- Receipts: [Windows live checks](verification/2026-10-07-windows-desktop-live.md),
+  [Mac 1176 install](verification/2026-10-07-mac-1176-local-install.md),
+  [Mac 1174 save/reopen](verification/2026-10-07-mac-1174-local-install.md),
+  [Mac 1175 agent lifecycle](verification/2026-10-07-mac-1175-agent-presence.md),
+  [sync failure audit](verification/2026-10-07-sync-failure-audit.md).
 
-## Sync isolation
+## Regression protection
 
-- Production client, CRDT projection, merge and durable-store code now lives in
-  `src/sync/engine`, with separate `src/sync/client.ts` and `server.ts` entries.
-  The five old paths are export-only compatibility seams. Engine code was
-  compared with its predecessor: identical except two relocated imports.
-- Dependency tests prohibit runtime UI/routes/account-layer imports and Node
-  imports in the client dependency graph. Native LocalVault files cannot import
-  AppKit, SwiftUI, WebKit or the app target.
-- A frozen v1 pending journal from `5085642a` must reopen and replay exactly
-  once; unknown future journals must remain untouched with zero requests.
-- Standard local Mac builds now require current receipts or automatically run
-  sync verification. Failure blocks build/signing. The build-stop behavior is
-  tested with a rejecting runner. No hooks or background jobs were added.
-- Mac and PC exact-source receipts passed after extraction, as did TypeScript,
-  shell syntax and the local editor browser bundle. Logs are
-  `/tmp/texttext-sync-isolation-final.log` and PC
-  `C:\Users\Shokunin\dev\texttext-sync-20261007\verify-isolation-final.log`.
-  This source-only extraction was not deployed or reinstalled; installed build
-  1173 and the running Oracle release listed above remain the live baseline.
+- [Sync subsystem contract](../sync/README.md): separate engine/client/server
+  boundaries, native core isolation, frozen v1 journals, future-version rejection,
+  stale epochs, external edits, lost ACKs, recovery and provider-absence coverage.
+- Exact-source receipts gate normal Mac builds/releases. Windows builds require
+  native core, agent, shared client, TypeScript and actual desktop tests; install
+  verifies source and every artifact. No build/release/install background jobs.
+- Latest native Windows suite: **109 assertions passed** on Mac and PC build;
+  actual desktop suite covers eight editor and five window-close checks.
+  Full earlier Mac web suite: 4,303 passed, 146 skipped; DB suites: 114 passed.
+  Changed code received focused tests and required build gates. Unaffected
+  125-second picker evidence was reused.
 
-## Live verification
+## Limits and preserved work
 
-- Mac edits reached Safari. Direct edits of `text.md` inside a TextPack, without
-  rewriting `document.json`, reached Mac, Safari and search. Safari edits then
-  reached the Mac's file. Marker removal invalidated search correctly.
-- Original note text remains. Temporary markers were removed; the test-only
-  recovered copy was moved to recoverable Trash. Both clients reopened the
-  original without recovery banners. Both workspace inventories have 21 active
-  TextPacks. After the final browser save, the edited note’s Markdown and all
-  three JSON entries match exactly on Mac and Oracle. Its archive bytes differ
-  between native/server encoding; the other 20 archive hashes match. The final
-  path metadata fix has a rename regression as well.
-- The previous 125-second picker receipt remains applicable; no picker changes.
-  See [earlier handoff](archive/HANDOFF-2026-10-06-before-oracle-workspace.md).
-
-## Follow-up and boundaries
-
-- Actual iCloud transfer/eviction on a second physical Apple device remains
-  unverified. Native provider-absence and real HTTP two-folder tests passed;
-  they do not certify Apple's cross-device transport or power-loss behavior.
-- The existing `Shoku's Space/My Notes/TextText Changelog.textpack` is absent from
-  the active workspace (`texttext search 'TextText Changelog' --json`: no match).
-  No duplicate changelog was created.
-- The separately installed CLI at `~/.local/bin/texttext` still uses standalone
-  build 1158. The bundled agent's live connection and template/reference parity
-  are outside this sync verification.
-- Unrelated worker changes remain untouched in
-  `src/components/workspace/assistant/attachments.ts`,
-  `src/lib/workspace/__tests__/tabs.test.ts` and `scripts/.probe-editor.ts`.
-- Oracle web deployment is authorized by the owner. Public Mac releases still
-  require an explicit request. Preserve Algorave and HAProxy routing.
+- A second physical Apple device, provider eviction/hydration on Windows and
+  hardware power loss were not live-tested. Automated tests do not certify those.
+  Template/reference visual parity is outside this sync verification.
+- The requested existing `Shoku's Space/My Notes/TextText Changelog.textpack`
+  is absent from the active workspace and CLI search. No duplicate was created.
+- Standalone `~/.local/bin/texttext` still uses build 1158; bundled agent testing
+  used the installed native runtimes, not that CLI.
+- Unrelated worker changes remain in `src/components/workspace/assistant/attachments.ts`,
+  `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`.
+- Oracle deploys and one-off local installs are authorized. Public desktop
+  releases still require an explicit request. Preserve Algorave and shared HAProxy.
