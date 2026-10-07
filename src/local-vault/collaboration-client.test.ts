@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DetachedFileSaveProof } from "./detached-file-save";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentText } from "@/lib/collab/document";
@@ -717,4 +718,39 @@ describe("durable file collaboration client", () => {
     editor.destroy(); expect(held).toBe(false); expect(server.reads).toBe(0);
   });
 
+});
+
+
+describe("durable detached external-file navigation", () => {
+  it("allows a clean externally replaced file to close without waiting for its cloud upload", async () => {
+    const server = new Server(), journal = new Journal();
+    const editor = client(server, journal); await editor.start();
+    editor.notifyExternalFileChange(); expect(editor.status).toBe("stale-file");
+    const savedFile = { path: "Shared.textpack", hash: "saved-external-file" };
+    const proof = new DetachedFileSaveProof();
+    proof.retire(editor, savedFile); editor.destroy();
+    expect(proof.matches(savedFile)).toBe(true);
+    expect(journal.values.size).toBe(0);
+    expect(proof.matches({ ...savedFile, path: "Other.textpack" })).toBe(false);
+    expect(proof.matches({ ...savedFile, hash: "later-file" })).toBe(false);
+    proof.clear(); expect(proof.matches(savedFile)).toBe(false);
+  });
+
+  it("never allows pending edits, unreadable journals or failed journal removal to become detached save proof", async () => {
+    const savedFile = { path: "Shared.textpack", hash: "disk-file" };
+    const pending = client(new Server()); await pending.start();
+    pending.mutate(doc => documentText(doc, "body").insert(5, " unsaved"));
+    pending.notifyExternalFileChange();
+    const proof = new DetachedFileSaveProof();
+    expect(() => proof.retire(pending, savedFile)).toThrow(); expect(proof.matches(savedFile)).toBe(false);
+    const brokenJournal = new Journal(); const clean = client(new Server(), brokenJournal); await clean.start();
+    vi.spyOn(brokenJournal, "remove").mockImplementation(() => { throw new Error("disk denied"); });
+    expect(() => proof.retire(clean, savedFile)).toThrow("disk denied"); expect(proof.matches(savedFile)).toBe(false);
+    const unreadableJournal = new Journal(), unreadable = client(new Server(), unreadableJournal);
+    unreadableJournal.values.set(unreadable.journalKey, "damaged journal"); await unreadable.start();
+    expect(unreadable.hasUnreadableJournal).toBe(true);
+    expect(() => proof.retire(unreadable, savedFile)).toThrow("Pending collaboration");
+    expect(unreadableJournal.load(unreadable.journalKey)).toBe("damaged journal");
+    expect(proof.matches(savedFile)).toBe(false);
+  });
 });

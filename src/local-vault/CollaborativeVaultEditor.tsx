@@ -22,6 +22,7 @@ import { ArticleCapture } from "./ArticleCapture";
 import { articleSource } from "@/lib/vault/article-capture";
 import { WorkspaceTypeLibrary } from "./LocalTemplateLibrary";
 import { flushForNavigation } from "./navigation-flush";
+import { DetachedFileSaveProof } from "./detached-file-save";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { queueArticleEnrichment } from "./article-enrichment";
 import { currentVaultWindowActive } from "./window-activity";
@@ -67,6 +68,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const [busy, setBusy] = useState(false);
   const [waitingForExternalSync, setWaitingForExternalSync] = useState(false);
   const externalReloadRef = useRef(false);
+  const detachedSaveRef = useRef(new DetachedFileSaveProof());
   const autoResettingRef = useRef(false);
   useEffect(() => {
     if (!awareness || !client?.hasBaseline) return;
@@ -158,6 +160,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       onChange: next => { if (!stopped) { latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
       onStatus: (next, message) => { if (!stopped && shared) { setStatus(next); setDetail(message ?? ""); setCanEdit(shared.canEdit); setClient(shared); } },
     });
+    detachedSaveRef.current.clear();
     clientRef.current = shared;
     document.addEventListener("visibilitychange", visibility); window.addEventListener("online", visibility); window.addEventListener("offline", visibility);
     window.addEventListener("focus", visibility); window.addEventListener("blur", visibility);
@@ -168,7 +171,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       if (stopped) return;
       if (config.localFiles && externalReloadRef.current && error instanceof VaultError && error.code === "local_changed") {
         setWaitingForExternalSync(true); setStatus("offline"); setDetail("Waiting for the updated file to sync…");
-      } else { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); }
+      } else { detachedSaveRef.current.clear(); setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); }
     });
     return () => {
       stopped = true;
@@ -206,7 +209,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   }, [config.localFiles, generation]);
   const flush = useCallback(async (navigation = false) => {
     const shared = clientRef.current;
-    if (!shared) return false;
+    if (!shared) return Boolean(config.localFiles && waitingForExternalSync && !nativeSessionRef.current && detachedSaveRef.current.matches(file.current));
     if (navigation && !config.localFiles) return flushForNavigation(shared, onChanged);
     if (config.localFiles) {
       if (navigator.onLine && shared.hasPendingChanges) await shared.flush();
@@ -217,7 +220,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       file.current = next; setOpened(next);
     } catch { /* The journal is durable; a temporarily unavailable file replica must not lose edits. */ }
     onChanged(); return true;
-  }, [config.localFiles, onChanged]);
+  }, [config.localFiles, waitingForExternalSync, onChanged]);
   const publishFlush = useCallback(async () => {
     const shared = clientRef.current;
     if (!shared?.hasBaseline || !navigator.onLine || shared.status !== "ready") return false;
@@ -252,6 +255,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   }, [publishFlush, updateArticle]);
   useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails); }, [flush, publishFlush, registerFlush, saveStoryDetails]);
   const reset = useCallback(async (recovered = false, waitForSync = false) => {
+    detachedSaveRef.current.clear();
     const shared = clientRef.current;
     try {
       const native = nativeSessionRef.current;
@@ -261,13 +265,15 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
         nativeSessionRef.current = null;
       }
       const fresh = await vaultRequest<VaultFile>("read", { path: shared?.relativePath ?? file.current.path });
+      const freshSnapshot = readDocument(fresh);
       if (shared) {
         if (recovered) shared.clearRetiredAfterRecovery();
+        else if (waitForSync && config.localFiles) detachedSaveRef.current.retire(shared, fresh);
         else shared.discardCleanJournal();
         shared.destroy();
         if (clientRef.current === shared) clientRef.current = null;
       }
-      file.current = fresh; setOpened(fresh); setSnapshot(readDocument(fresh));
+      file.current = fresh; setOpened(fresh); setSnapshot(freshSnapshot);
       setClient(null); setStatus("offline");
       if (waitForSync) {
         externalReloadRef.current = true;
@@ -278,10 +284,11 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       }
       onChanged();
     } catch (error) {
+      detachedSaveRef.current.clear();
       if (waitForSync) setStatus("error");
       setDetail(error instanceof Error ? error.message : "Could not reopen the file.");
     }
-  }, [config.itemId, onChanged]);
+  }, [config.itemId, config.localFiles, onChanged]);
   const pasteImages = useCallback(async (request: EditorImagePasteRequest): Promise<EditorImagePasteResult> => {
     let closedNativeSession = false;
     try {
