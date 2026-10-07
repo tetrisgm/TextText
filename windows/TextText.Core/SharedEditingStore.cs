@@ -13,8 +13,8 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
     static T? Read<T>(string path) {if(!File.Exists(path))return default;if(new FileInfo(path).Length>90*1024*1024)throw new InvalidDataException("Shared state exceeds bounds.");return JsonSerializer.Deserialize<T>(File.ReadAllBytes(path))??throw new InvalidDataException("Invalid shared state.");}
     static void Save<T>(string path,T value)=>TextPackStore.AtomicWrite(path,JsonSerializer.SerializeToUtf8Bytes(value));
     static bool ValidHash(string hash)=>Regex.IsMatch(hash,@"^[0-9a-f]{64}$");
-    void Validate(SharedCheckpoint cp) {
-        _=DirectoryFor(cp.ItemId);_=store.Resolve(cp.Path);
+    static void Validate(TextPackStore store,SharedCheckpoint cp) {
+        if(!Regex.IsMatch(cp.ItemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");_=store.Resolve(cp.Path);
         if(cp.Version!=1 || !ValidHash(cp.ProjectedHash)||!ValidHash(cp.AcknowledgedRevision)||cp.Epoch<1||cp.Seq<0||cp.JournalGeneration<1||cp.Epoch>9007199254740991||cp.Seq>9007199254740991||cp.JournalGeneration>9007199254740991||cp.Journal.Length>4*1024*1024)throw new InvalidDataException("Unsupported shared checkpoint. Retained edits are unchanged.");
         using var doc=JsonDocument.Parse(cp.Journal);var j=doc.RootElement;
         if(j.GetProperty("version").GetInt32()!=1||j.GetProperty("epoch").GetInt64()!=cp.Epoch||j.GetProperty("seq").GetInt64()!=cp.Seq||j.GetProperty("journalGeneration").GetInt64()!=cp.JournalGeneration||j.GetProperty("revision").GetString()!=cp.AcknowledgedRevision||j.GetProperty("relativePath").GetString()!=cp.Path)throw new InvalidDataException("Journal metadata mismatch.");
@@ -30,6 +30,17 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
         return cp!=null&&(cp.Version!=1||cp.Pending||cp.RetiredReason!=null);
     }
+    internal static bool HasReadyCheckpoint(TextPackStore store,string itemId) {
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))return false;
+        var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
+        if(File.Exists(System.IO.Path.Combine(directory,"intent.json")))return false;
+        try {
+            var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
+            if(cp==null||cp.ItemId!=itemId||cp.RetiredReason!=null)return false;
+            Validate(store,cp);var file=store.Describe(cp.Path);
+            return file.ItemId==itemId&&file.Path==cp.Path&&file.Hash==cp.ProjectedHash;
+        }catch(Exception error)when(error is IOException or InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException or UnauthorizedAccessException){return false;}
+    }
     internal static List<string> ReconcileAcknowledgements(TextPackStore store,SyncEngine.State state) {
         var completed=new List<string>();var root=System.IO.Path.Combine(store.StateDirectory,"shared-editing");if(!System.IO.Directory.Exists(root))return completed;
         foreach(var file in System.IO.Directory.EnumerateFiles(root,"acknowledge.json",SearchOption.AllDirectories)) {
@@ -43,10 +54,10 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
     SharedCheckpoint? Recover(string itemId) {
         var directory=DirectoryFor(itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
         if(intent!=null) {if(intent.Version!=1)throw new InvalidDataException("Unsupported shared intent.");Finish(intent,directory);}
-        var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
+        var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
     }
     PackFile Finish(Intent intent,string directory) {
-        Validate(intent.Checkpoint);var bytes=Convert.FromBase64String(intent.Payload);if(TextPackStore.Identity(bytes)!=intent.Checkpoint.ItemId||TextPackStore.Hash(bytes)!=intent.Checkpoint.ProjectedHash)throw new InvalidDataException("Invalid shared projection.");
+        Validate(store,intent.Checkpoint);var bytes=Convert.FromBase64String(intent.Payload);if(TextPackStore.Identity(bytes)!=intent.Checkpoint.ItemId||TextPackStore.Hash(bytes)!=intent.Checkpoint.ProjectedHash)throw new InvalidDataException("Invalid shared projection.");
         var current=store.Describe(intent.Checkpoint.Path);
         if(current.Hash==intent.BeforeHash)current=store.Write(current.Path,bytes,current.Hash);
         else if(current.Hash!=intent.Checkpoint.ProjectedHash){Save(System.IO.Path.Combine(directory,"checkpoint.json"),intent.Checkpoint with{RetiredReason="The file changed outside this editing session. Its shared edits are retained."});store.Preserve(bytes,"shared-conflict");File.Delete(System.IO.Path.Combine(directory,"intent.json"));throw new FileChangedException();}
@@ -67,7 +78,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         await gate.WaitAsync(ct);try {
             ObjectDisposedException.ThrowIf(disposed,this);
             if(!sessions.TryGetValue(sessionToken,out var session))throw new SharedSessionClosedException();
-            Validate(checkpoint);if(checkpoint.ItemId!=session.ItemId||checkpoint.Path!=session.Path||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
+            Validate(store,checkpoint);if(checkpoint.ItemId!=session.ItemId||checkpoint.Path!=session.Path||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
             var prior=Recover(session.ItemId);var current=store.Describe(session.Path);
             if(prior!=null) {
                 if(prior.RetiredReason!=null||checkpoint.JournalGeneration<prior.JournalGeneration||prior.Pending&&checkpoint.Epoch!=prior.Epoch)throw new InvalidOperationException("Newer or protected shared edits are retained.");
