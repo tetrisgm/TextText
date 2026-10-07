@@ -415,7 +415,7 @@ try {
   await page.screenshot({ path: "/tmp/texttext-starter-overview-dark.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.getByRole("button", { name: "TextText account Signed in" }).click();
-  await page.getByText("Available on this Mac").waitFor();
+  assert.equal(await page.getByText("Available on this Mac").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Retry connection", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Switch account", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Settings", exact: true }).waitFor();
@@ -426,7 +426,7 @@ try {
   assert.equal(openedWeb, true);
   assert.equal(await page.getByText(/^(?:Syncing|Synced)$/).count(), 0);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace", message: "A conflicting edit was preserved." } })));
-  await page.getByText("A conflicting edit was preserved.").waitFor();
+  assert.equal(await page.getByText("A conflicting edit was preserved.").count(), 0);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace" } })));
   await page.keyboard.press("Meta+k");
   const connectedCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });

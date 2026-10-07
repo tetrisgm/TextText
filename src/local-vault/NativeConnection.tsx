@@ -3,7 +3,7 @@ import { vaultRequest } from "./bridge";
 
 type Connection = { connected: boolean; available: boolean; connecting?: boolean; onlineReady?: boolean; webURL?: string; message?: string; hasConflicts?: boolean };
 
-/** The open folder is the workspace; account and connection status share one profile menu. */
+/** Account actions for the open workspace. Sync runs automatically. */
 export function NativeConnection({ root }: { root: string }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [open, setOpen] = useState(false);
@@ -48,7 +48,6 @@ export function NativeConnection({ root }: { root: string }) {
     finally { setBusy(false); }
   };
   const signedIn = connection?.available === true;
-  const workspaceStatus = connection?.onlineReady ? "Available online" : connection?.connecting || connection?.connected && !connection?.message ? "Connecting…" : "Available on this Mac";
 
   return <section ref={container} className="vault-connection" aria-label="TextText account">
     <button type="button" className="vault-account-toggle" aria-expanded={open} aria-controls="vault-account-menu"
@@ -59,13 +58,12 @@ export function NativeConnection({ root }: { root: string }) {
     </button>
     {open && <div id="vault-account-menu" className="vault-account-menu">
       {signedIn ? <>
-        <div className="vault-account-sync-state"><span>Workspace</span><span>{workspaceStatus}</span></div>
         {connection?.onlineReady && <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open workspace on web</button>}
         <button type="button" disabled={busy} onClick={() => void perform("settings")}>Settings</button>
         <button type="button" disabled={busy} onClick={() => void perform("signOut")}>Log out</button>
       </> : <button type="button" disabled={busy || !connection} onClick={() => void perform("signIn")}>Sign in to TextText</button>}
       {connection?.hasConflicts && <button type="button" disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
-      {(failure || connection?.message) && <div className="vault-account-message" role="status"><p>{failure || connection?.message}</p></div>}
+      {failure && <div className="vault-account-message" role="alert"><p>{failure}</p></div>}
     </div>}
   </section>;
 }

@@ -2707,7 +2707,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
         if localVaultWindow != nil {
             menu.addItem(item("Open TextText", #selector(showMainWindowAction)))
-            menu.addItem(item("Open Folder", #selector(openFolderAction)))
             menu.addItem(item("Open workspace folder…", #selector(openLocalVaultAction)))
             menu.addItem(item(store.loadCredentials() == nil ? "Sign in" : "Sign out", store.loadCredentials() == nil ? #selector(signInAction) : #selector(signOutAction)))
             menu.addItem(.separator())
@@ -2729,17 +2728,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             menu.addItem(item("Try Linking Again", #selector(signInAction)))
         }
 
-        let finderStatus = fileProviderStatusMonitor.snapshot
-        let finder = NSMenuItem(
-            title: finderStatus.title, action: nil, keyEquivalent: "")
-        finder.isEnabled = false
-        finder.image = NSImage(
-            systemSymbolName: finderStatus.symbolName,
-            accessibilityDescription: finderStatus.title)
-        menu.addItem(finder)
-        let last = NSMenuItem(title: lastSyncLine(), action: nil, keyEquivalent: "")
-        last.isEnabled = false
-        menu.addItem(last)
         if quickCaptureFeedback != .ready {
             let captureStatus = NSMenuItem(
                 title: quickCaptureFeedback.title,
@@ -2801,15 +2789,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             keyEquivalent: "v", modifiers: [.command, .shift]))
         menu.addItem(.separator())
 
-        let sync = item("Sync Now", #selector(syncNowAction))
-        sync.isEnabled = store.loadCredentials() != nil
-            && fileProviderStatusMonitor.snapshot.severity != .working
-        menu.addItem(sync)
         menu.addItem(item("Open Folder", #selector(openFolderAction)))
         if let blog = store.cachedWorkspace()?.blog {
             menu.addItem(item("Open \(blog.name.isEmpty ? "Blog" : blog.name) in browser", #selector(openBlogAction)))
         }
-        menu.addItem(item("Sync & settings…", #selector(showStatusWindowAction)))
+        menu.addItem(item("Settings…", #selector(showStatusWindowAction)))
         menu.addItem(.separator())
 
         let login = item("Start \(appName) at Login", #selector(toggleLoginItem))
@@ -2849,34 +2833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
     }
 
-    private func lastSyncLine() -> String {
-        // The File Provider mount is the sole writer, so its live status is the
-        // sync status. (The full snapshot is also surfaced as finderStatus.)
-        guard store.loadCredentials() != nil else { return "Not synced yet" }
-        let snapshot = fileProviderStatusMonitor.snapshot
-        switch snapshot.severity {
-        case .working: return "Syncing now…"
-        case .warning: return snapshot.detail.isEmpty ? snapshot.title : snapshot.detail
-        case .healthy, .neutral:
-            return snapshot.detail.isEmpty ? snapshot.title : snapshot.detail
-        }
-    }
-
     // MARK: Menu actions
-
-    @objc private func syncNowAction() { requestSyncNow() }
-
-    /// "Sync Now" from the menu/status window. The File Provider mount is the
-    /// sole writer, so poll the server and re-materialize the mount. Also re-drives
-    /// domain registration: if a transient sign-in fetch left the domain
-    /// unregistered, this is the manual recovery lever.
-    private func requestSyncNow() {
-        guard localVaultWindow == nil else { return }
-        seedCachedWorkspaceIfNeeded()
-        changeListener?.nudge()
-        signalFileProviderChange(serverReachable: true)
-        retryQuickCaptureDrain()
-    }
 
     @objc private func newNoteAction() {
         if let localVaultWindow { localVaultWindow.newDocument(); return }
@@ -3263,8 +3220,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                     else { self.linkController.cancel() }
                 },
                 reopenApproval: { [weak self] in self?.linkController.reopenApproval() },
-                openFolder: { [weak self] in self?.openFolderAction() },
-                syncNow: { [weak self] in self?.requestSyncNow() },
                 makeDefaultMarkdown: { [weak self] in self?.makeTextTextDefaultForMarkdown() }
             ))
         }
@@ -3290,17 +3245,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func refreshUI() {
         guard let statusWindow else { return }
 
-        var accountLine = "Not linked"
+        var accountLine = "Not signed in"
         var accountDetail: String?
         var linkCode: String?
         var linkHint: String?
         let credentials = store.loadCredentials()
         let linked = credentials != nil
 
-        if let credentials {
-            let blog = store.cachedWorkspace()?.blog
-            accountLine = "Linked as \(blog.map { $0.name.isEmpty ? $0.handle : $0.name } ?? credentials.tokenName)"
-            accountDetail = "\(credentials.tokenName) · \(credentials.serverOrigin)"
+        if credentials != nil {
+            accountLine = "Signed in to TextText"
         }
         var linkFailed = false
         var waitingApproval = false
@@ -3364,12 +3317,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             linking: signingIn,
             linkFailed: linkFailed,
             waitingApproval: waitingApproval,
-            folderPath: fileProviderUserVisibleURL?.path ?? "TextText in Finder",
-            folderStatus: "All Markdown files are kept on this Mac.",
-            lastSyncLine: lastSyncLine(),
-            finderStatus: fileProviderStatusMonitor.snapshot,
-            busy: fileProviderStatusMonitor.snapshot.severity == .working,
-            activity: activityLog,
             isDefaultForMarkdown: MarkdownDefaultHandler.isDefault()
         ))
     }
