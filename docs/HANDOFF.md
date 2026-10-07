@@ -41,15 +41,22 @@
 - Final Windows ACK refresh, normal close and reopen passed, preserving all eight
   verification markers and both saved accounts. `911e7564` explicitly uses UTF-8
   for agent subprocess input/output; eight agent/guard regression checks passed.
-  Final installed verification exposed a WPF compositor startup stall before
-  sign-in or sync initialization. `277f5a22` adds process-local software rendering;
-  `7d838ec6` makes the desktop harness use/assert the same configuration. Mac
-  crosscompilation passed. These corrections are not installed: the PC harness
-  subsequently stalled before Main, with no returned diagnostic stack. PC SSH
-  then stopped responding. Do not waive the desktop gate or call Windows ready.
-  `69c7dae9` separates the smoke entry log from WPF type loading (Mac
-  crosscompile passed). Resume focused startup diagnosis, then gated install
-  and actual Unicode check.
+  Startup diagnosis established a test-launch error: scheduled tasks defaulted
+  to background CPU/I/O/memory priority. The same WPF probe rendered in 494 ms
+  at normal priority versus 14.5 seconds at background priority. `c2761fd9`
+  sets/asserts normal interactive test priority. The unproven software-rendering
+  workaround was removed in `ff3462c1`; default rendering and diagnostics remain.
+  Actual account restoration and all eight markers were confirmed after correcting
+  the launch priority, and the app closed normally. Final candidate
+  `6ecf6765af1d4a2e871a03a6b5f2ce70` (source `c1c99964`) passed its full build gate
+  and sealed receipt; smoke `1962809f581d477eb76e1a0b28dce860` passed. SSH reset
+  during the install attempt, so its outcome is unknown. Inspect the installed
+  receipt before retrying; do not rebuild unchanged source. Both documented PC
+  routes subsequently failed. Final Unicode response and comment checks remain.
+- `71c00dac` connects Windows recovery actions to the validated local recovery
+  directory, ignoring renderer-supplied paths. Native coverage now has 112
+  assertions. Expanded real desktop smoke passed 26 UI/template/image checks,
+  native recovery access and five actual window-close checks (`c1c99964`).
 - Receipts: [Windows live checks](verification/2026-10-07-windows-desktop-live.md),
   [Mac 1176 install](verification/2026-10-07-mac-1176-local-install.md),
   [Mac 1174 save/reopen](verification/2026-10-07-mac-1174-local-install.md),
@@ -64,8 +71,9 @@
 - Exact-source receipts gate normal Mac builds/releases. Windows builds require
   native core, agent, shared client, TypeScript and actual desktop tests; install
   verifies source and every artifact. No build/release/install background jobs.
-- Latest native Windows suite: **109 assertions passed** on Mac and PC build;
-  actual desktop suite covers eight editor and five window-close checks.
+- Latest native Windows suite: **112 assertions passed** on Mac and PC build;
+  actual desktop suite covers 26 UI/template/image checks, native recovery and
+  five window-close checks.
   Full earlier Mac web suite: 4,303 passed, 146 skipped; DB suites: 114 passed.
   Changed code received focused tests and required build gates. Unaffected
   125-second picker evidence was reused.
