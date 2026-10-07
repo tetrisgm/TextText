@@ -11,6 +11,9 @@ import {
   VAULT_PRESENCE_STALE_MS, VaultCollaborationEpochError, VaultPresenceSessionError,
 } from "./server-store";
 
+import { nativeAgentPresence } from "./agent-presence";
+import { issueVaultPresenceSession, verifyVaultPresenceSession } from "./presence-session.server";
+
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 function pack(body: string) {
   const document = emptyDocumentSnapshot(); document.content.body = body;
@@ -28,7 +31,7 @@ describe("file vault human presence", () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-vault-presence-"));
     await writeVaultTextpack({ ...location(), relativePath, operationId: "initial", baseRevision: null, bytes: pack("Hello") });
   });
-  afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
+  afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); });
 
   it("joins, heartbeats, discloses bounded peers, and closes a registered session", async () => {
     const epoch = (await readVaultCollaboration(location()))!.epoch;
@@ -38,6 +41,37 @@ describe("file vault human presence", () => {
     expect(await readVaultPresence(location())).toMatchObject({ epoch, presence: [{ clientId: actor.clientId }] });
     expect(await leaveVaultPresence({ ...location(), ...actor })).toEqual({ epoch, presence: [] });
     await expect(updateVaultPresence({ ...location(), ...actor, awareness: null })).rejects.toBeInstanceOf(VaultPresenceSessionError);
+    expect(await readVaultPresence(location())).toEqual({ epoch, presence: [] });
+  });
+
+  it("persists authenticated agent identity through the real signed-session lifecycle", async () => {
+    vi.stubEnv("AUTH_SECRET", "test-only-native-presence-key");
+    const epoch = (await readVaultCollaboration(location()))!.epoch;
+    const attribution = nativeAgentPresence({ agent: { name: "Codex", taskId: "task-1" } },
+      { actorUserId: "user-1", actorName: "Ava", canAttributeNativeEditor: true, canEditContent: true })!;
+    const session = issueVaultPresenceSession(attribution.principal, workspaceId, itemId, epoch, 42);
+    const actor = { ...identity(epoch, session.clientId), ...attribution, sessionExpiresAt: session.expiresAt };
+    expect(verifyVaultPresenceSession(session.sessionCredential, actor.principal, workspaceId, itemId, actor.clientId)).toMatchObject({ principal: attribution.principal });
+    expect(verifyVaultPresenceSession(session.sessionCredential, "account:user-1", workspaceId, itemId, actor.clientId)).toBeNull();
+    await joinVaultPresence({ ...location(), ...actor });
+    expect(await readVaultPresence(location())).toMatchObject({ presence: [{ userName: "Codex (agent) · Ava" }] });
+    await updateVaultPresence({ ...location(), ...actor, awareness: "AAA=" });
+    expect(await readVaultPresence(location())).toMatchObject({ presence: [{ awareness: "AAA=" }] });
+    await expect(leaveVaultPresence({ ...location(), ...actor, principal: 'native-agent:["other","Codex","task-1"]' })).rejects.toBeInstanceOf(VaultPresenceSessionError);
+    expect(await leaveVaultPresence({ ...location(), ...actor })).toEqual({ epoch, presence: [] });
+    await joinVaultPresence({ ...location(), ...actor });
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + VAULT_PRESENCE_STALE_MS + 1);
+    expect(await readVaultPresence(location())).toEqual({ epoch, presence: [] });
+  });
+
+  it("rejects malformed or noncanonical agent principals in joins and leaves", async () => {
+    const epoch = (await readVaultCollaboration(location()))!.epoch;
+    for (const principal of ["native-agent:any", 'native-agent:{}', 'native-agent:["user","Codex"]',
+      'native-agent:["","Codex","task"]', 'native-agent:["user","Codex","task", "extra"]',
+      'native-agent:["user","Codex","bad/task"]', 'native-agent:[ "user","Codex","task"]']) {
+      await expect(joinVaultPresence({ ...location(), ...identity(epoch), principal })).rejects.toThrow("Invalid vault presence identity");
+      await expect(leaveVaultPresence({ ...location(), ...identity(epoch), principal })).rejects.toBeInstanceOf(VaultPresenceSessionError);
+    }
     expect(await readVaultPresence(location())).toEqual({ epoch, presence: [] });
   });
 

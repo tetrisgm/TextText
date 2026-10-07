@@ -827,8 +827,21 @@ type VaultPresenceIdentity = {
 export class VaultPresenceSessionError extends Error {
   constructor() { super("Join item presence again."); }
 }
+function validPresencePrincipal(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 1024) return false;
+  if (value.startsWith("account:")) return value.length > "account:".length;
+  if (!value.startsWith("native-agent:")) return false;
+  try {
+    const identity = JSON.parse(value.slice("native-agent:".length));
+    return Array.isArray(identity) && identity.length === 3 &&
+      typeof identity[0] === "string" && identity[0].length > 0 && identity[0].length <= 256 && !/[\u0000-\u001f\u007f]/.test(identity[0]) &&
+      typeof identity[1] === "string" && /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(identity[1]) &&
+      typeof identity[2] === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(identity[2]) &&
+      value === `native-agent:${JSON.stringify(identity)}`;
+  } catch { return false; }
+}
 function validPresenceIdentity(value: VaultPresenceIdentity) {
-  if (!presenceClientId.test(value.clientId) || !value.principal.startsWith("account:") ||
+  if (!presenceClientId.test(value.clientId) || !validPresencePrincipal(value.principal) ||
       !Number.isSafeInteger(value.epoch) || value.epoch < 1 ||
       !Number.isSafeInteger(value.awarenessClientId) || value.awarenessClientId < 0 || value.awarenessClientId > 0xffffffff ||
       !Number.isSafeInteger(value.sessionExpiresAt) || value.sessionExpiresAt <= Date.now() ||
@@ -850,7 +863,7 @@ async function presenceRows(layout: Layout, itemId: string, epoch: number) {
     const row = JSON.parse(await fs.readFile(file, "utf8")) as VaultPresenceRow;
     if (row.clientId !== entry.name.slice(0, -5) || !Number.isSafeInteger(row.epoch) ||
         !Number.isSafeInteger(row.expiresAt) || !Number.isSafeInteger(row.sessionExpiresAt) ||
-        !Number.isSafeInteger(row.awarenessClientId) || !row.principal?.startsWith("account:") ||
+        !Number.isSafeInteger(row.awarenessClientId) || !validPresencePrincipal(row.principal) ||
         typeof row.userName !== "string" || typeof row.color !== "string" ||
         (row.role !== "editor" && row.role !== "viewer") ||
         (row.awareness !== null && (typeof row.awareness !== "string" || row.awareness.length > 20 * 1024))) {
@@ -941,7 +954,7 @@ export async function leaveVaultPresence(input: VaultPresenceLocation & Pick<Vau
   beforeCommit?: (relativePath: string) => Promise<void>;
 }) {
   segment(input.itemId);
-  if (!presenceClientId.test(input.clientId) || !input.principal.startsWith("account:")) throw new VaultPresenceSessionError();
+  if (!presenceClientId.test(input.clientId) || !validPresencePrincipal(input.principal)) throw new VaultPresenceSessionError();
   const layout = await setup(input);
   return locked(layout, async () => {
     const current = await currentPresence(layout, input.itemId);
