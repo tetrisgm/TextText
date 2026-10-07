@@ -329,6 +329,11 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
     }
   }, [config.itemId, flush, onChanged, reset]);
   useEffect(() => {
+    if (status !== "stale-session" || !config.localFiles || autoResettingRef.current) return;
+    autoResettingRef.current = true;
+    void reset().finally(() => { autoResettingRef.current = false; });
+  }, [status, config.localFiles, reset]);
+  useEffect(() => {
     if (status !== "stale-file" || !config.localFiles || autoResettingRef.current) return;
     autoResettingRef.current = true;
     void reset(false, true).finally(() => { autoResettingRef.current = false; });

@@ -5,7 +5,7 @@ import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 
 const REMOTE = Symbol("file-collaboration-remote");
 const LIMIT = 4 * 1024 * 1024;
-export type FileCollaborationStatus = "ready" | "saving" | "offline" | "stale-file" | "recovery" | "error";
+export type FileCollaborationStatus = "ready" | "saving" | "offline" | "stale-file" | "stale-session" | "recovery" | "error";
 export type FileCollaborationRequest = (method: "read" | "push", params: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
 export interface FileCollaborationJournalStore { load(key: string): string | null; save(key: string, value: string): void; remove(key: string): void }
 type Batch = { operationId: string; updates: string[]; acknowledged?: boolean; revision?: string };
@@ -251,9 +251,12 @@ export class FileCollaborationClient {
         if (this.dead) continue;
         const clean = !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement &&
           !value.journal.pending.length && !value.journal.batch && !value.journal.unqueuedDirty && !value.journal.retired;
-        if ((error as { code?: string } | null)?.code === "local_changed" && clean) {
+        if ((error as { code?: string } | null)?.code === "409" && clean) {
+          this.frozen = true; this.canEdit = false; this.cancelWork();
+          this.report("stale-session", "Reopening this note…");
+        } else if ((error as { code?: string } | null)?.code === "local_changed" && clean) {
           this.notifyExternalFileChange();
-        } else this.fatal(new Error(`The local document checkpoint could not be saved. Pending edits are kept for recovery. ${String(error)}`));
+        } else this.fatal(new Error("This note needs to be reopened. Your edits are saved for recovery."));
       }
     }
   }
@@ -369,6 +372,16 @@ export class FileCollaborationClient {
         cleanWebFallback = retained;
         this.journalGeneration = retained.journalGeneration ?? 0;
         retained = null;
+      }
+      if (retained && retained.retired && !this.options.initialRetirement &&
+          !retained.pending.length && !retained.batch && !retained.unqueuedDirty) {
+        // An old interrupted session can leave a retired browser journal even
+        // though its native checkpoint and document are clean. Reopen the file
+        // instead of presenting recovery controls for edits that do not exist.
+        this.saved = retained; this.current = cursor(retained);
+        this.journalGeneration = retained.journalGeneration ?? 0;
+        this.frozen = true; this.canEdit = false;
+        this.report("stale-session", "Reopening this note…"); return;
       }
       if (retained) {
         this.restoreRetained(retained);

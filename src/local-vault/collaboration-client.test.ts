@@ -389,6 +389,34 @@ describe("durable file collaboration client", () => {
     expect(server.pushes).toHaveLength(0);
   });
 
+  it("reopens a clean note when its native editing session closes", async () => {
+    const server = new Server(), journal = new Journal();
+    let closed = false;
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async () => { if (closed) throw Object.assign(new Error("Session closed"), { code: "409" }); } });
+    clients.push(editor); await editor.start(); expect(await editor.flushLocal()).toBe(true);
+    closed = true;
+    server.state = { ...server.state, seq: 1, revision: "a".repeat(64) }; server.wake();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(editor.status).toBe("stale-session"); expect(editor.hasPendingChanges).toBe(false);
+    expect(() => editor.discardCleanJournal()).not.toThrow();
+  });
+
+  it("does not show recovery for an old clean retired session", async () => {
+    const server = new Server(), journal = new Journal();
+    const original = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async () => {} });
+    clients.push(original); await original.start(); expect(await original.flushLocal()).toBe(true);
+    const retained = JSON.parse(journal.load(original.journalKey)!);
+    retained.retired = "The local document checkpoint could not be saved.";
+    journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      localRevision: server.state.revision, checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("stale-session"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(() => reopened.discardCleanJournal()).not.toThrow();
+  });
+
   it("refreshes a clean externally changed file before a checkpoint, while retaining newer human edits", async () => {
     const server = new Server(), cleanJournal = new Journal(), clean = client(server, cleanJournal);
     await clean.start();
