@@ -35,6 +35,13 @@ describe("file vault human presence route", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
+  it("advertises native agent support before clients announce a participant", async () => {
+    const response = await GET(new Request(url), context);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ capabilities: { nativeAgentPresence: true } });
+    expect(mocks.join).not.toHaveBeenCalled();
+  });
+
   async function join() {
     const response = await POST(post({ join: true, awarenessClientId: 42 }), context);
     expect(response.status).toBe(200);
@@ -102,5 +109,48 @@ describe("file vault human presence route", () => {
       expect([400, 409]).toContain(status);
     }
     expect((await POST(post({ join: true, awarenessClientId: 42, padding: "x".repeat(96 * 1024) }), context)).status).toBe(413);
+  });
+});
+
+describe("native agent vault presence", () => {
+  const agent = { name: "Codex", taskId: "task-1" };
+  beforeEach(() => {
+    vi.resetAllMocks(); vi.stubEnv("AUTH_SECRET", "test-only-vault-presence-key");
+    const nativeAccess = { ...access, canAttributeNativeEditor: true };
+    mocks.authorize.mockResolvedValue(nativeAccess); mocks.authorizeAtPath.mockResolvedValue(nativeAccess);
+    mocks.readCollaboration.mockResolvedValue(state);
+    for (const mock of [mocks.join, mocks.update, mocks.leave]) mock.mockImplementation(async input => { await input.beforeCommit("Notes/Shared.textpack"); return { epoch: 2, presence: [] }; });
+  });
+  afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); });
+  async function joinAgent() { const response = await POST(post({ join: true, awarenessClientId: 42, agent }), context); expect(response.status).toBe(200); return (await response.json()).session; }
+  it("attributes agent identity to its authenticated owner and supports update and leave", async () => {
+    const session = await joinAgent();
+    expect(mocks.join).toHaveBeenCalledWith(expect.objectContaining({ principal: 'native-agent:["user-1","Codex","task-1"]', userName: "Codex (agent) · Ava" }));
+    const awareness = encodePresenceAwareness(42, 1, { user: { name: "Another user", role: "admin" } });
+    expect((await POST(post({ ...session, agent, awareness }), context)).status).toBe(200);
+    const sanitized = decodePresenceAwareness(mocks.update.mock.calls[0][0].awareness);
+    expect(JSON.stringify(sanitized)).toContain("Codex (agent) · Ava"); expect(JSON.stringify(sanitized)).not.toContain("Another user");
+    expect((await POST(post({ ...session, agent, leave: true }), context)).status).toBe(200);
+    expect(mocks.leave).toHaveBeenCalledWith(expect.objectContaining({ principal: 'native-agent:["user-1","Codex","task-1"]' }));
+  });
+  it("rejects browser attribution, identity spoofing and unsafe task identifiers", async () => {
+    mocks.authorize.mockResolvedValueOnce(access);
+    expect((await POST(post({ join: true, awarenessClientId: 42, agent }), context)).status).toBe(403);
+    expect((await POST(post({ join: true, awarenessClientId: 42, agent, actorUserId: "victim" }), context)).status).toBe(400);
+    expect((await POST(post({ join: true, awarenessClientId: 42, agent: { ...agent, taskId: "../other" } }), context)).status).toBe(400);
+    expect(mocks.join).not.toHaveBeenCalled();
+  });
+  it("binds credentials to account and task and rejects expired credentials", async () => {
+    const session = await joinAgent();
+    expect((await POST(post({ ...session, agent: { ...agent, taskId: "task-2" }, leave: true }), context)).status).toBe(409);
+    mocks.authorize.mockResolvedValueOnce({ ...access, actorUserId: "other", canAttributeNativeEditor: true });
+    expect((await POST(post({ ...session, agent, leave: true }), context)).status).toBe(409);
+    vi.useFakeTimers(); vi.setSystemTime(session.expiresAt + 1);
+    expect((await POST(post({ ...session, agent, leave: true }), context)).status).toBe(409);
+    expect(mocks.leave).not.toHaveBeenCalled();
+  });
+  it("rechecks native attribution inside the commit lock", async () => {
+    mocks.authorizeAtPath.mockResolvedValueOnce(access);
+    expect((await POST(post({ join: true, awarenessClientId: 42, agent }), context)).status).toBe(403);
   });
 });

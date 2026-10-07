@@ -151,6 +151,24 @@ final class LocalVaultCollaborationTests: XCTestCase {
                 method: "presenceLeave", params: invalid))
         }
     }
+    func testAgentPresenceKeepsTaskAttributionAndRejectsForgedIdentity() throws {
+        let agent = ["name": "Codex", "taskId": "task-1"]
+        let join = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "presenceJoin", params: ["itemId": "item", "awarenessClientId": 42, "agent": agent])
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(join.httpBody)) as? [String: Any])
+        XCTAssertEqual(body["agent"] as? [String: String], agent)
+        let session: [String: Any] = ["itemId": "item", "clientId": "p-00000000-0000-4000-8000-000000000001", "sessionCredential": "v1:fixture", "agent": agent]
+        for method in ["presenceUpdate", "presenceLeave"] {
+            let params = method == "presenceUpdate" ? session.merging(["awareness": "AAA="]) { _, new in new } : session
+            let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture", method: method, params: params)
+            let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            XCTAssertEqual(encoded["agent"] as? [String: String], agent)
+        }
+        for invalid in [["name": "Codex", "taskId": "../other"], ["name": "Codex", "taskId": "task", "actorUserId": "victim"]] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+                method: "presenceJoin", params: ["itemId": "item", "awarenessClientId": 42, "agent": invalid]))
+        }
+    }
     func testShareRequestsUseBoundWorkspaceAndOnlyApprovedFields() throws {
         let scope: [String: Any] = ["scopeType": "folder", "scopeKey": "Research/Shared"]
         let list = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",

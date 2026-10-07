@@ -1,3 +1,4 @@
+import { nativeAgentPresence } from "@/lib/vault/agent-presence";
 import { authorizeVaultItem, authorizeVaultItemAtPath } from "@/app/api/vault/scoped-auth";
 import { colorForSub } from "@/lib/collab";
 import { sanitizePresenceAwareness } from "@/lib/collab/presence-awareness";
@@ -51,7 +52,7 @@ export async function GET(request: Request, context: Context) {
     if (current instanceof Response) return current;
     if (current.actorUserId !== access.actorUserId) return respond({ error: "Session changed" }, 403);
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
-    return state ? respond(state) : respond({ error: "Item not found" }, 404);
+    return state ? respond({ ...state, capabilities: { nativeAgentPresence: true } }) : respond({ error: "Item not found" }, 404);
   } catch (error) { return failure(error); }
 }
 
@@ -63,15 +64,16 @@ export async function POST(request: Request, context: Context) {
     // Authorize after the body arrives: an upload must not retain a revoked grant.
     const access = await humanAccess(request, context);
     if (access instanceof Response) return access;
-    const principal = `account:${access.actorUserId}`;
-    const role = access.canEditContent ? "editor" as const : "viewer" as const;
-    const userName = access.actorName?.trim() || "Member";
-    const color = colorForSub(access.actorUserId);
     const body = parsed.value as Record<string, unknown>;
+    const agent = nativeAgentPresence(body, access);
+    const principal = agent?.principal ?? `account:${access.actorUserId}`;
+    const role = access.canEditContent ? "editor" as const : "viewer" as const;
+    const userName = agent?.userName ?? (access.actorName?.trim() || "Member");
+    const color = colorForSub(access.actorUserId);
     const beforeCommit = async (relativePath: string) => {
       const latest = await authorizeVaultItemAtPath(request, access.workspaceId, access.itemId, relativePath, "read");
       if (latest instanceof Response) throw latest;
-      if (!latest.canUseHumanPresence || latest.actorUserId !== access.actorUserId) throw respond({ error: "Session changed" }, 403);
+      if (!latest.canUseHumanPresence || latest.actorUserId !== access.actorUserId || (agent && nativeAgentPresence(body, latest)?.principal !== principal)) throw respond({ error: "Session changed" }, 403);
       if (latest.canEditContent !== access.canEditContent) throw respond({ error: "Item role changed. Join presence again." }, 409);
       request.signal.throwIfAborted();
     };

@@ -24,11 +24,45 @@
   exact-source receipts. Release `--skip-tests` requires matching Mac core/native
   receipts. Mac: 202 sync tests + 58 native tests; Windows: 142 client contract
   tests, TypeScript and 3 receipt-gate tests. These are test-runner results, not
-  Windows desktop app verification. No native Windows client exists in this repo.
+  Windows desktop app verification. The new native Windows implementation is
+  described below; those earlier Node checks did not certify it.
   The PC source/test copy is `C:\Users\Shokunin\dev\texttext-sync-20261007`.
   Oracle server durability uses POSIX directory fsync; it was not weakened for
-  Windows. The owner expects an installed Windows client matching the Mac; that
-  remains unimplemented, including native files, auth, lifecycle and installer.
+  Windows. Oracle hosting and storage remain unchanged by the Windows work.
+
+## Windows implementation in progress
+
+- `windows/` contains a WPF/WebView2 desktop host, DPAPI account storage,
+  native TextPack store and durable sync engine, shared editing checkpoints,
+  and a bundled native Codex app-server adapter. It embeds the same `VaultApp`
+  and renderer as Mac. Node is a build/test tool only.
+- Latest Mac verification: 90 portable native assertions, six app-server
+  subprocess scenarios, and shared sync/presence/Windows transport tests.
+  TypeScript and Windows cross-compilation pass. Logs:
+  `/tmp/texttext-core-native-final.log`, `/tmp/texttext-windows-agent-native.log`,
+  `/tmp/texttext-shared-sync-final.log`.
+- Actual PC WebView smoke passed eight checks including creation, search,
+  real editor input, autosave to disk, and reopened rendered content. Receipts
+  and screenshot: `.texttext/windows-smoke/`. SSH service sessions cannot host
+  the WebView; `windows/scripts/smoke.ps1` runs only the test executable in a
+  temporary interactive task and removes that task afterward. Nested TextPack
+  handling was fixed from a real failure found by this test.
+- A verified self-contained candidate is installed at
+  `C:\Users\Shokunin\AppData\Local\Programs\TextText`. Real sign-in completed;
+  all 21 existing TextPacks downloaded and the native app rendered the workspace.
+  `windows/scripts/build.ps1` checks native core, native agent, shared client,
+  TypeScript, UI bundling and desktop publication. `install.ps1` verifies exact
+  source/artifact receipts and preserves the previous application and user data.
+  No public release was published. Final hardening changes need a rebuilt install.
+- A new test TextPack created directly on Windows reached Mac and Safari.
+  Direct Mac Markdown and web editor return edits reached the Mac file.
+- Remaining: final rebuilt installation; finish Mac/web/Windows convergence and
+  offline/restart scenarios; real agent sign-in/tool interaction;
+  deploy and verify the new authenticated agent-attributed vault presence route.
+  The isolated UI fixture does not establish those results. Shared native agent
+  presence now uses one lifecycle and the vault route on both desktops; see
+  [presence verification](verification/2026-10-07-cross-client-agent-presence.md).
+  Do not describe full parity as finished.
 
 ## Sync isolation
 

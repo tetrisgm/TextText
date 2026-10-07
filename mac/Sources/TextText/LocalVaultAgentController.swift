@@ -27,7 +27,6 @@ final class LocalVaultAgentController {
     private(set) var status: [String: Any] = ["state": "disconnected"]
     private let root: URL
     private let files: DispatchQueue
-    private let makePresencePublisher: () -> PresencePublisher
     private let makeServer: (() throws -> any LocalVaultAgentServer)?
     private let cancellationTimeout: TimeInterval
     private var ownsProfile: Bool
@@ -74,27 +73,18 @@ final class LocalVaultAgentController {
     var activeTaskIdentifiers: (taskID: String, threadID: String?, turnID: String?)? {
         activeTask.map { ($0.taskID, $0.threadID, $0.turnID) }
     }
-    private struct ActivePresence {
-        let document: String
-        let actor: AgentActor
-        let publisher: PresencePublisher
-    }
-    private var activePresence: ActivePresence?
-    private var presenceTask: Task<Void, Never>?
 
     init(root: URL,
-         presencePublisher: @escaping () -> PresencePublisher = { PresencePublisher() },
          serverFactory: (() throws -> any LocalVaultAgentServer)? = nil,
          ownsProfile: Bool = false,
          cancellationTimeout: TimeInterval = 15) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
-        self.makePresencePublisher = presencePublisher
         self.makeServer = serverFactory
         self.ownsProfile = ownsProfile
         self.cancellationTimeout = max(0.01, cancellationTimeout)
         files = DispatchQueue(label: "app.texttext.vault-agent-files", qos: .userInitiated)
     }
-    deinit { deadline?.cancel(); presenceTask?.cancel(); server?.stop() }
+    deinit { deadline?.cancel(); server?.stop() }
 
     private static func makeDiagnosticID() -> String {
         "TT-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).uppercased()
@@ -207,7 +197,6 @@ final class LocalVaultAgentController {
             fileFence: LocalVaultAgentCancellation())
         activeTask = task
         busy = true; phases.removeAll(); update("working")
-        beginPresence(for: access)
         armDeadline(seconds: 120)
         do {
             // Every submitted task gets a private ephemeral model thread. A
@@ -230,47 +219,6 @@ final class LocalVaultAgentController {
     private static func validTaskID(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 128 && !value.unicodeScalars.contains {
             $0.value < 0x20 || $0.value == 0x7f
-        }
-    }
-
-    private func beginPresence(for access: LocalVaultAgentAccess) {
-        endPresence()
-        let path: String, activity: AgentActor.Activity
-        switch access {
-        case .item(let selected): path = selected; activity = .edit
-        case .itemCustomization(let selected): path = selected; activity = .open
-        default: return
-        }
-        guard let document = try? LocalVaultDocumentStore(root: root).readMetadata(path: path),
-              let itemID = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId,
-              (try? LocalVaultSync.collaborationReady(
-                root: root, path: path, itemId: itemID, localHash: document.hash)) == true else { return }
-        let publisher = makePresencePublisher()
-        guard publisher.isConfigured else { return }
-        let presence = ActivePresence(document: path,
-            actor: AgentActor(name: "Codex", activity: activity, itemId: itemID), publisher: publisher)
-        activePresence = presence
-        let previous = presenceTask
-        presenceTask = Task {
-            _ = await previous?.result
-            guard !Task.isCancelled else { return }
-            await presence.publisher.publish(document: presence.document, actor: presence.actor, active: true)
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(8)) } catch { break }
-                guard !Task.isCancelled else { break }
-                await presence.publisher.publish(document: presence.document, actor: presence.actor, active: true)
-            }
-        }
-    }
-
-    private func endPresence() {
-        guard let presence = activePresence else { return }
-        activePresence = nil
-        let previous = presenceTask
-        previous?.cancel()
-        presenceTask = Task {
-            _ = await previous?.result
-            await presence.publisher.publish(document: presence.document, actor: presence.actor, active: false)
         }
     }
 
@@ -309,7 +257,6 @@ final class LocalVaultAgentController {
         task.cancelRequested = true
         task.fileFence.cancel()
         activeTask = task
-        endPresence()
         pendingProposals.removeAll()
         phases.removeAll()
 
@@ -350,7 +297,6 @@ final class LocalVaultAgentController {
     }
 
     func stop() {
-        endPresence()
         activeTask?.fileFence.cancel()
         if let loginID { try? request("account/login/cancel", ["loginId": loginID]) }
         loginID = nil; attemptedLogin = false; disconnecting = false
@@ -358,6 +304,8 @@ final class LocalVaultAgentController {
         server?.onEvent = nil; server?.onExit = nil; server?.stop(); server = nil
         activeTask = nil; disabledMCPServers = nil
         busy = false; pending.removeAll(); phases.removeAll()
+        // A retained WebView must stop its shared presence heartbeat when the native agent stops.
+        update("disconnected")
     }
 
     private func classifiedFailure(_ raw: String, diagnosticID: String) -> CodexConnectionFailure {
@@ -390,7 +338,6 @@ final class LocalVaultAgentController {
         guard let task = activeTask, task.taskID == taskID,
               task.instanceID == instanceID else { return }
         task.fileFence.cancel()
-        endPresence()
         activeTask = nil
         busy = false
         pendingProposals.removeAll()

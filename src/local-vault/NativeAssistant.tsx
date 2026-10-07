@@ -1,3 +1,4 @@
+import { AgentPresenceClient } from "./agent-presence-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vaultRequest } from "./bridge";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -29,6 +30,11 @@ function bounded(messages: Message[]): Message[] {
 export function NativeAssistant({ open, path, root, request, onClose, beforeSend }: {
   root: string; open: boolean; path?: string; request: NativeAssistantRequest | null; onClose: () => void; beforeSend: () => Promise<boolean>;
 }) {
+  const presence = useRef<AgentPresenceClient | null>(null);
+  useEffect(() => {
+    const client = new AgentPresenceClient(vaultRequest); presence.current = client;
+    return () => { client.destroy(); if (presence.current === client) presence.current = null; };
+  }, [root]);
   const [status, setStatus] = useState<Status>({ state: "disconnected" });
   const [messages, setMessages] = useState<Message[]>([]);
   const [prompt, setPrompt] = useState("");
@@ -264,9 +270,11 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       requested.current = text;
       const selectedPath = customizing ?? taskFence?.target;
       const refinement = proposal ? `\n\nRefine this pending design for the same file. It has not been saved. Baseline hash: ${proposal.hash}\nPending templateJSON: ${proposal.templateJSON}\nPending templateAuthoringSourceJSON: ${proposal.templateAuthoringSourceJSON ?? "none"}` : "";
+      if (selectedPath) void presence.current?.start(selectedPath, turnFence.taskId);
       await vaultRequest("agentSend", { prompt: text + refinement, scope: "item", customizing: !!customizing,
         taskId: turnFence.taskId, ...(selectedPath ? { path: selectedPath } : {}) });
     } catch (error) {
+      presence.current?.stop();
       if (taskFence && agentTaskMatches(taskRef.current, taskFence)) changeTask(taskFence, { prompt: text, phase: "draft" });
       if (activeTaskFence.current?.taskId === turnFence.taskId) activeTaskFence.current = null;
       setActiveTurn(null);

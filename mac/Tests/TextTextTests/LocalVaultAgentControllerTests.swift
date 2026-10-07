@@ -322,6 +322,19 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testWindowStopNotifiesRetainedWebViewToEndAgentPresence() async throws {
+        let (root, controller, server) = try await fixture()
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        try await start("task-window", threadID: "thread-window", turnID: "turn-window", controller: controller, server: server)
+        var events: [[String: Any]] = []
+        controller.onEvent = { events.append($0) }
+        controller.stop()
+        XCTAssertEqual(events.last?["type"] as? String, "status")
+        XCTAssertEqual(events.last?["state"] as? String, "disconnected")
+        XCTAssertNil(controller.activeTaskIdentifiers)
+    }
+
+    @MainActor
     func testExternalProfileDisconnectStopsOnlyTextTextSession() async throws {
         let (root, controller, server) = try await fixture()
         defer { controller.stop(); try? FileManager.default.removeItem(at: root) }

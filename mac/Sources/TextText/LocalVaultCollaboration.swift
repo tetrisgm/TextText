@@ -242,9 +242,19 @@ final class LocalVaultCollaboration {
         } else if method == "presenceRead" {
             guard Set(params.keys) == ["itemId"] else { throw LocalVaultCollaborationError(code: "400", message: "Invalid presence read parameters.") }
         } else if ["presenceJoin", "presenceUpdate", "presenceLeave"].contains(method) {
+            var agent: [String: String]?
+            if let raw = params["agent"] {
+                guard let value = raw as? [String: String], Set(value.keys) == ["name", "taskId"],
+                      let name = value["name"], name.range(of: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$", options: .regularExpression) != nil,
+                      let taskId = value["taskId"], taskId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Invalid agent presence identity.")
+                }
+                agent = value
+            }
+            let parameterKeys = Set(params.keys).subtracting(agent == nil ? [] : ["agent"])
             var body: [String: Any]
             if method == "presenceJoin" {
-                guard Set(params.keys) == ["itemId", "awarenessClientId"] else {
+                guard parameterKeys == ["itemId", "awarenessClientId"] else {
                     throw LocalVaultCollaborationError(code: "400", message: "Invalid presence join parameters.")
                 }
                 let awarenessClientId = try integer(params["awarenessClientId"], minimum: 0, maximum: 4_294_967_295)
@@ -253,7 +263,7 @@ final class LocalVaultCollaboration {
                 let expected: Set<String> = method == "presenceUpdate"
                     ? ["itemId", "clientId", "sessionCredential", "awareness"]
                     : ["itemId", "clientId", "sessionCredential"]
-                guard Set(params.keys) == expected,
+                guard parameterKeys == expected,
                       let clientId = params["clientId"] as? String,
                       clientId.range(of: "^p-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", options: .regularExpression) != nil,
                       let credential = params["sessionCredential"] as? String,
@@ -268,6 +278,7 @@ final class LocalVaultCollaboration {
                     body["awareness"] = awareness
                 } else { body["leave"] = true }
             }
+            if let agent { body["agent"] = agent }
             let data = try JSONSerialization.data(withJSONObject: body)
             guard data.count <= 96 * 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Presence request exceeds its size limit.") }
             request.httpMethod = "POST"; request.httpBody = data

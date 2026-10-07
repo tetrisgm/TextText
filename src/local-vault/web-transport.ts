@@ -333,6 +333,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
         : method === "presenceUpdate" ? { clientId: params.clientId, sessionCredential: params.sessionCredential, awareness: params.awareness }
         : method === "presenceLeave" ? { clientId: params.clientId, sessionCredential: params.sessionCredential, leave: true }
         : null;
+      if (body && params.agent !== undefined) Object.assign(body, { agent: params.agent });
       const response = await request(`${base}/${encodeURIComponent(itemId)}/presence`, {
         method: body ? "POST" : "GET", credentials: "same-origin", cache: "no-store", signal,
         ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
