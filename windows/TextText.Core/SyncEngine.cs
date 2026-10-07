@@ -22,6 +22,7 @@ public sealed class SyncEngine
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath;
     public SyncStatus Status {get;private set;}=new(false,null,0);
     public event Action<SyncStatus>? StatusChanged;
+    public event Action? DurabilityChanged;
     public SyncEngine(TextPackStore store,ISyncTransport transport) { this.store=store;this.transport=transport;statePath=Path.Combine(store.StateDirectory,"sync.json"); }
     public async Task<IDisposable> AcquireCollaborationAsync(string itemId,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");return new Fence(this,itemId);}finally{gate.Release();}
@@ -44,7 +45,11 @@ public sealed class SyncEngine
     public async Task<string?> BaselineRevisionAsync(string itemId,CancellationToken ct=default) {await gate.WaitAsync(ct);try{return Load().Items.GetValueOrDefault(itemId)?.Revision;}finally{gate.Release();}}
     static bool Blocked(State state,string id)=>state.Outbox.Any(x=>x.ItemId==id&&x.Conflicted);
     State Load() { if(!File.Exists(statePath)) return new(); var result=JsonSerializer.Deserialize<State>(File.ReadAllBytes(statePath)) ?? throw new InvalidDataException("Invalid sync state."); if(result.Version!=1) throw new InvalidDataException("This workspace was used by a newer app. Update TextText."); return result; }
-    void Save(State state)=>TextPackStore.AtomicWrite(statePath,JsonSerializer.SerializeToUtf8Bytes(state));
+    void Save(State state) {
+        var bytes=JsonSerializer.SerializeToUtf8Bytes(state);
+        if(File.Exists(statePath)&&File.ReadAllBytes(statePath).AsSpan().SequenceEqual(bytes))return;
+        TextPackStore.AtomicWrite(statePath,bytes);DurabilityChanged?.Invoke();
+    }
     void Report(bool running,string? error,int pending) { Status=new(running,error,pending);StatusChanged?.Invoke(Status); }
     public async Task SyncAsync(CancellationToken cancellation=default)
     {

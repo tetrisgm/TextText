@@ -27,6 +27,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     readonly SemaphoreSlim requests = new(1, 1);
     IReadOnlyList<PackFile>? inventory;
     string? lastStatus;
+    long durabilityVersion, notifiedDurabilityVersion;
 
     public WindowsBridge(WorkspaceContext context)
     {
@@ -38,6 +39,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         agent = new(context.Root, context.WorkspaceId, context.Emit, ExecuteAgentTool);
         notification = new(_ => { if (!lifetime.IsCancellationRequested) _ = context.Emit("texttext:vault-changed", new { }); }, null, Timeout.Infinite, Timeout.Infinite);
         files.Changed += Changed;
+        sync.DurabilityChanged += SyncStateChanged;
         watcher = new(context.Root) { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size };
         watcher.Changed += FileChanged; watcher.Created += FileChanged; watcher.Deleted += FileChanged; watcher.Renamed += FileChanged;
         watcher.Error += (_, _) => Changed();
@@ -51,6 +53,10 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         if (!e.FullPath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) Changed();
     }
     void Changed() { Volatile.Write(ref inventory, null); changes.Writer.TryWrite(true); if (!lifetime.IsCancellationRequested) notification.Change(200, Timeout.Infinite); }
+    // Record durable state transitions, then notify readiness only after the
+    // sync pass completes. Never feed acknowledgements back into Changed:
+    // doing that would wake another cloud request after every acknowledgement.
+    void SyncStateChanged() => Interlocked.Increment(ref durabilityVersion);
     IReadOnlyList<PackFile> Inventory() => Volatile.Read(ref inventory) ?? (inventory = files.Scan());
     PackFile Find(string id) => Inventory().SingleOrDefault(file => file.ItemId == id) ?? throw new FileNotFoundException("Document is not available on this device.");
     static string Required(JsonElement p, string key) => p.GetProperty(key).GetString() ?? throw new InvalidDataException("Missing " + key);
@@ -66,7 +72,11 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     await sync.SyncAsync(lifetime.Token);
                     failures = 0;
                     var status = sync.Status.Error is null ? "ready" : "conflict";
-                    if (lastStatus != status) { lastStatus = status; await context.Emit("texttext:vault-sync-status", new { connected = true, available = true, onlineReady = true, hasConflicts = status == "conflict" }); }
+                    var completedVersion = Volatile.Read(ref durabilityVersion);
+                    if (lastStatus != status || notifiedDurabilityVersion != completedVersion) {
+                        lastStatus = status; notifiedDurabilityVersion = completedVersion;
+                        await context.Emit("texttext:vault-sync-status", new { connected = true, available = true, onlineReady = true, hasConflicts = status == "conflict" });
+                    }
                 } catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { break; }
                 catch (Exception error) {
                     failures = Math.Min(failures + 1, 6);
@@ -180,7 +190,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
 
     public void Dispose()
     {
-        lifetime.Cancel(); agent.Dispose(); watcher.Dispose(); notification.Dispose(); files.Changed -= Changed;
+        lifetime.Cancel(); agent.Dispose(); watcher.Dispose(); notification.Dispose(); files.Changed -= Changed; sync.DurabilityChanged -= SyncStateChanged;
         // Do not race an in-flight durable write. Teardown completes after that write and the sync worker.
         _ = Task.Run(async () => {
             try { await worker; await requests.WaitAsync(); editing.Dispose(); http.Dispose(); }
