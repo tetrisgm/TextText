@@ -16,7 +16,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Collaboration uses full-document Yjs, awareness, and epoch fencing. UI, assistant, and MCP share workspace commands; the app never calls its own MCP endpoint.
 - External agents use hosted `/api/mcp`; local agents use `texttext` CLI, never a restored loopback server. AI architecture: `docs/ai-sidebar-architecture.md`; development providers: `docs/AI-DEVELOPMENT.md` when needed.
 - Release only when asked, using human-invoked `release/ship.sh` (`npm run ship`). Never automate builds/releases/reinstalls through jobs, hooks, schedules, commits, watchers, or installer scripts. Debug locally, never through public update channels.
-- The owner has authorized one-off local TextText builds and installs to `/Applications/TextText.app` and requested TextText configuration work on Oracle. Preserve current user content and verify changes. Do not ask again for local-install permission. Website deployment and public releases still require a separate request.
+- The owner has authorized one-off local TextText builds and installs to `/Applications/TextText.app`, requested TextText configuration work on Oracle, and Oracle website deployments needed to finish requested product work. Preserve current user content and verify changes. Do not ask again for those actions. Public Mac releases still require an explicit request.
 - Local development/tests/builds use local Postgres, never production Neon. Before database or release-secret work, read `docs/DATABASE-OPERATIONS.md`.
 - Shipped product changes use `texttext:project-changelog` and the existing `Shoku's Space/My Notes/TextText Changelog.textpack`; verify the shipped version. No repository changelog copy; infrastructure-only changes need no entry.
 - No GitHub Actions workflows, secrets, or runners. GitHub hosts git; tests run locally on the Mac.
@@ -24,9 +24,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Deploys
 
 - Pushing to `main` deploys nothing. The web app runs on the Oracle server
-  (`release/oracle/README.md`) and ships with the Mac app through `npm run ship`,
-  run from the Mac only when the owner asks. The Vercel project `write` is
-  paused; do not deploy to it.
+  (`release/oracle/README.md`). For requested web product changes, use the
+  verified Mac web-only release path and check the live result. The Mac app
+  publishes through `npm run ship` only when the owner explicitly asks. The
+  Vercel project `write` is paused; do not deploy to it.
 - Cloud sessions cannot release: that needs the Mac's signing keys, Keychain and
   SSH access. Push a branch or open a PR and say what needs shipping.
 - Nothing from the owner's Mac reaches cloud sessions: not their global
