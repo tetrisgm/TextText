@@ -43,7 +43,7 @@ Object.assign(window, { runDesktopSmoke: async () => {
   // editor. The note check above separately exercises actual editor typing.
   const buttonNamed = async (name: string, scope: ParentNode = document) => {
     for (let attempt=0;attempt<80;attempt++) { const button=[...scope.querySelectorAll<HTMLButtonElement>('button')].find(item=>item.textContent?.trim()===name&&!item.disabled);if(button)return button;await delay(100); }
-    throw new Error('Missing enabled button: '+name);
+    throw new Error('Missing enabled button: '+name+'; available: '+[...scope.querySelectorAll<HTMLButtonElement>('button')].filter(item=>item.getClientRects().length).map(item=>item.textContent?.trim()).join(', '));
   };
   const setInput = (input: HTMLInputElement,value: string) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,value);
@@ -52,7 +52,12 @@ Object.assign(window, { runDesktopSmoke: async () => {
   for(const kind of ['article','bookmark','gallery','talk']) {
     const template=BUILTIN_TEMPLATES.find(item=>item.id===`texttext.${kind}`)!;
     const before=new Set((await vaultRequest<VaultListing>('list')).items.map(item=>item.path));
-    (await waitFor('summary[aria-label="More actions"]')).click();
+    try {
+    // The shipped creation menu belongs to the overview, not an open item.
+    (await waitFor('button.vault-home-button')).click();
+    await buttonNamed('New from template');
+    const more=await waitFor('summary[aria-label="More actions"]');
+    if(!more.closest('details')?.open)more.click();
     (await buttonNamed('New from template')).click();
     (await waitFor(`[role="dialog"][aria-label="New from template"] button[aria-label="${CSS.escape(template.name)}"]`)).click();
     if(kind==='bookmark') {
@@ -92,6 +97,7 @@ Object.assign(window, { runDesktopSmoke: async () => {
     window.dispatchEvent(new CustomEvent('texttext:vault-open',{detail:{path:again.path}}));
     for(let attempt=0;attempt<50&&!document.body.innerText.includes(snapshot.content.title);attempt++)await delay(100);
     assert(document.body.innerText.includes(snapshot.content.title),`${kind}: saved item opens in shared desktop UI`);
+    } catch(error) { throw new Error(`${kind} template workflow: ${error instanceof Error ? error.message : String(error)}`); }
   }
   return checks;
 }});
