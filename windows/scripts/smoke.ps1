@@ -16,8 +16,9 @@ try {
   $bundle = Join-Path $root 'windows/build/smoke-ui'
   $action = New-ScheduledTaskAction -Execute $dotnet -Argument "`"$assembly`" `"$bundle`" `"$receipts`""
   $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 100)
+  $settings = New-ScheduledTaskSettingsSet -Priority 4 -ExecutionTimeLimit (New-TimeSpan -Seconds 100)
   Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null
+  if ((Get-ScheduledTask -TaskName $taskName).Settings.Priority -ne 4) { throw 'Desktop smoke requires normal interactive process/I/O/memory priority.' }
   Start-ScheduledTask -TaskName $taskName
   Start-Sleep -Seconds 3
   $deadline = (Get-Date).AddSeconds(100)
