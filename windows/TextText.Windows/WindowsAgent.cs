@@ -19,7 +19,7 @@ public sealed class WindowsAgent : IDisposable
     private CancellationTokenSource? taskCancellation;
     private string state = "disconnected", message = "", email = "", taskId = "", selectedPath = "", threadId = "", turnId = "", loginId = "";
     private long generation;
-    private bool customizing;
+    private bool customizing, restoreAttempted;
     private readonly ConcurrentDictionary<string,TaskCompletionSource<bool>> proposals = new();
     private int disposed, activeNotifications;
     private readonly string runtime;
@@ -31,7 +31,23 @@ public sealed class WindowsAgent : IDisposable
     private async Task Update(string next,string text = "") { state = next; message = text; await emit("texttext:vault-agent",new { type = "status",state,message,accountEmail = email }); }
     public async Task<object?> DispatchAsync(string method,JsonElement parameters,CancellationToken ct)
     {
-        if(method == "agentStatus") return Status;
+        if(method == "agentStatus") {
+            // Restore once on demand. Status polling must never open an OAuth page
+            // or repeatedly spawn a signed-out runtime.
+            if(!restoreAttempted && state == "disconnected" && File.Exists(runtime)) {
+                using var restore = CancellationTokenSource.CreateLinkedTokenSource(ct,lifetime.Token);
+                restore.CancelAfter(TimeSpan.FromSeconds(15));
+                await commands.WaitAsync(restore.Token);
+                try {
+                    if(!restoreAttempted) {
+                        restoreAttempted = true;
+                        try { await Connect(restore.Token,allowLogin:false); }
+                        catch { /* Connect records a recoverable failure; explicit Connect can retry. */ }
+                    }
+                } finally { commands.Release(); }
+            }
+            return Status;
+        }
         if(method == "agentCancel") { if(Get(parameters,"taskId") == taskId) await Cancel(); return Status; }
         if(method == "agentProposalResult") { if(Get(parameters,"taskId") == taskId && proposals.TryGetValue(Get(parameters,"proposalId"),out var proposal)) proposal.TrySetResult(parameters.TryGetProperty("valid",out var valid) && valid.GetBoolean()); return Status; }
         await commands.WaitAsync(ct);
@@ -46,8 +62,9 @@ public sealed class WindowsAgent : IDisposable
             return Status;
         } finally { commands.Release(); }
     }
-    private async Task Connect(CancellationToken ct)
+    private async Task Connect(CancellationToken ct,bool allowLogin = true)
     {
+        restoreAttempted = true;
         if(state == "ready" || state == "working" || state == "connecting") return;
         if(!File.Exists(runtime)) { await Update("failed","This build does not include the Codex runtime."); return; }
         Stop();
@@ -69,6 +86,7 @@ public sealed class WindowsAgent : IDisposable
             await Write(new { method = "initialized",@params = new {} });
             var account = await Call("account/read",new {},ct);
             if(await AcceptAccount(account)) return;
+            if(!allowLogin) { await Update("disconnected"); return; }
             var result = await Call("account/login/start",new { type = "chatgpt" },ct);
             var url = Get(result,"authUrl"); loginId = Get(result,"loginId");
             if(!Uri.TryCreate(url,UriKind.Absolute,out var uri) || uri.Scheme != "https" || uri.UserInfo.Length != 0 || (uri.Host != "auth.openai.com" && uri.Host != "chatgpt.com")) throw new InvalidOperationException("Invalid authorization address.");

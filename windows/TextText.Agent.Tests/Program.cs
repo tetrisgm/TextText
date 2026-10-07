@@ -62,6 +62,8 @@ try {
     using var agent = new WindowsAgent(scratch,"fixture",(_,value) => { events.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },async (_,tool,_,ct) => {
       if(tool == "write_file") { entered.TrySetResult(); if(scenario == "cancel") await Task.Delay(1000,ct); ct.ThrowIfCancellationRequested(); Interlocked.Increment(ref writes); } return "ok";
     },executable,Prefix());
+    await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
+    Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="ready","Saved account was not restored by status");
     await agent.DispatchAsync("agentConnect",JsonSerializer.SerializeToElement(new {}),default);
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="ready","Connection failed");
     await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new { taskId = scenario,path = "Note.textpack",prompt = scenario }),default);
@@ -72,9 +74,16 @@ try {
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="disconnected","Process shutdown failed");
     Console.WriteLine("PASS agent "+scenario);
   }
-  var loginEvents = new ConcurrentQueue<JsonElement>();
-  using(var agent = new WindowsAgent(scratch,"fixture-login",(_,value) => { loginEvents.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },(_,_,_,_) => Task.FromResult("ok"),executable,Prefix(true),_ => {})) {
+  var loginEvents = new ConcurrentQueue<JsonElement>(); var browserLaunches = 0;
+  using(var agent = new WindowsAgent(scratch,"fixture-login",(_,value) => { loginEvents.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },(_,_,_,_) => Task.FromResult("ok"),executable,Prefix(true),_ => Interlocked.Increment(ref browserLaunches))) {
+    await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
+    await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
+    Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="disconnected","Signed-out restoration should remain disconnected");
+    Check(browserLaunches==0,"Status restoration opened OAuth");
+    Check(loginEvents.Count(e => S(e,"state")=="connecting")==1,"Repeated signed-out status restarted the runtime");
+    Console.WriteLine("PASS lazy account restore, signed-out polling and no automatic OAuth");
     await agent.DispatchAsync("agentConnect",JsonSerializer.SerializeToElement(new {}),default);
+    Check(browserLaunches==1,"Explicit Connect did not open OAuth exactly once");
     await Task.Delay(90);
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="connecting","Foreign login callback accepted");
     await Until(() => JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="ready");
