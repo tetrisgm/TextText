@@ -70,7 +70,7 @@ public sealed class WindowsAgent : IDisposable
         Stop();
         var home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","Agent",workspaceId);
         Directory.CreateDirectory(home);
-        var start = new ProcessStartInfo(runtime) { UseShellExecute = false,CreateNoWindow = true,RedirectStandardInput = true,RedirectStandardOutput = true,RedirectStandardError = true,WorkingDirectory = home };
+        var start = new ProcessStartInfo(runtime) { UseShellExecute = false,CreateNoWindow = true,RedirectStandardInput = true,RedirectStandardOutput = true,RedirectStandardError = true,StandardInputEncoding = new UTF8Encoding(false),StandardOutputEncoding = new UTF8Encoding(false),StandardErrorEncoding = new UTF8Encoding(false),WorkingDirectory = home };
         foreach(var argument in runtimePrefix) start.ArgumentList.Add(argument);
         start.ArgumentList.Add("app-server");
         start.Environment["CODEX_HOME"] = home;
