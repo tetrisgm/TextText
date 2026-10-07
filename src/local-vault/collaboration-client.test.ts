@@ -393,7 +393,7 @@ describe("durable file collaboration client", () => {
     const server = new Server(), journal = new Journal();
     let closed = false;
     const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
-      checkpoint: async () => { if (closed) throw Object.assign(new Error("Session closed"), { code: "409" }); } });
+      checkpoint: async () => { if (closed) throw Object.assign(new Error("Session closed"), { code: "session_closed" }); } });
     clients.push(editor); await editor.start(); expect(await editor.flushLocal()).toBe(true);
     closed = true;
     server.state = { ...server.state, seq: 1, revision: "a".repeat(64) }; server.wake();
@@ -408,13 +408,41 @@ describe("durable file collaboration client", () => {
       checkpoint: async () => {} });
     clients.push(original); await original.start(); expect(await original.flushLocal()).toBe(true);
     const retained = JSON.parse(journal.load(original.journalKey)!);
-    retained.retired = "The local document checkpoint could not be saved.";
+    retained.retired = "The local document checkpoint could not be saved. Pending edits are kept for recovery. Error: This shared editing session has closed. Your recovery journal is kept.";
     journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
     const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
       localRevision: server.state.revision, checkpoint: async () => {} });
     clients.push(reopened); await reopened.start();
     expect(reopened.status).toBe("stale-session"); expect(reopened.hasPendingChanges).toBe(false);
     expect(() => reopened.discardCleanJournal()).not.toThrow();
+  });
+
+  it("does not discard a clean journal retired for a different reason", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start();
+    const retained = JSON.parse(journal.load(original.journalKey)!);
+    retained.retired = "This file or its access changed.";
+    journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.recoveryJournal?.retired).toBe(retained.retired);
+  });
+
+  it("keeps pending edits if an unexpected native session loss still occurs", async () => {
+    const server = new Server(), journal = new Journal();
+    let closed = false;
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async () => { if (closed) throw Object.assign(new Error("Session closed"), { code: "session_closed" }); } });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    closed = true;
+    editor.mutate(doc => documentText(doc, "body").insert(5, " still here"));
+    expect(await editor.flush()).toBe(false);
+    expect(editor.status).toBe("error"); expect(editor.hasPendingChanges).toBe(true);
+    expect(documentText(editor.doc, "body").toString()).toBe("Hello still here");
+    expect(server.pushes).toHaveLength(0);
+    expect(() => editor.discardCleanJournal()).toThrow();
+    expect(journal.load(editor.journalKey)).toBeTruthy();
   });
 
   it("refreshes a clean externally changed file before a checkpoint, while retaining newer human edits", async () => {

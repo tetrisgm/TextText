@@ -10,6 +10,9 @@ final class LocalVaultConnectionController {
     private static let retryMessage = "Changes are saved on this Mac. The web connection will retry."
     private let root: URL
     private let credentials: CredentialsProvider
+    private let session: URLSession
+    private var credentialGeneration = 0
+    private var connectedCredentialGeneration = 0
     private var engine: LocalVaultSync?
     var collaborationEngine: LocalVaultSync? { engine }
     private var transport: HTTPLocalVaultSyncTransport?
@@ -24,20 +27,35 @@ final class LocalVaultConnectionController {
     private var watchFailureIsCurrent = false
     private var hasConflicts = false
     private var connecting = false
+    private var stopped = false
+    private var connectingTask: Task<Void, Never>?
     private var onlineReady = false
     private var connectRetry: Task<Void, Never>?
     private var connectDelay: UInt64 = 2
     var onChange: (([String: Any], Bool) -> Void)?
 
-    init(root: URL, credentials: @escaping CredentialsProvider) {
-        self.root = root; self.credentials = credentials
+    init(root: URL, session: URLSession = .shared, credentials: @escaping CredentialsProvider) {
+        self.root = root; self.credentials = credentials; self.session = session
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
                 previousBinding = existing
             }
         } catch { message = error.localizedDescription }
     }
-    deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel() }
+    deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel(); connectingTask?.cancel() }
+    func stop() {
+        stopped = true
+        connectingTask?.cancel(); connectingTask = nil
+        watching?.cancel(); watching = nil
+        running?.cancel(); running = nil
+        scheduled?.cancel(); scheduled = nil
+        connectRetry?.cancel(); connectRetry = nil
+        onChange = nil
+    }
+    func credentialsChanged() {
+        credentialGeneration += 1
+        connectAutomatically()
+    }
     var status: [String: Any] {
         var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil,
                                     "hasConflicts": hasConflicts, "connecting": connecting,
@@ -54,7 +72,8 @@ final class LocalVaultConnectionController {
     /// Only an old loopback test journal may migrate automatically; another real
     /// server may represent a different account and needs explicit review.
     func connectAutomatically() {
-        guard binding == nil, !connecting, credentials() != nil else { return }
+        guard !stopped, binding == nil || connectedCredentialGeneration != credentialGeneration,
+              !connecting, credentials() != nil else { return }
         if let previousBinding, !Self.isLoopback(previousBinding.origin),
            let account = credentials(), previousBinding.origin != account.origin {
             message = "This workspace was connected to another account. Its files are safe on this Mac."
@@ -62,28 +81,34 @@ final class LocalVaultConnectionController {
             return
         }
         connecting = true
+        let attemptedGeneration = credentialGeneration
         onChange?(status, false)
-        Task { [weak self] in
+        connectingTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let mayMigrateLegacy = self.previousBinding.map { Self.isLoopback($0.origin) } == true
                 _ = try await self.connect(allowRebind: mayMigrateLegacy)
+                self.connectedCredentialGeneration = attemptedGeneration
                 self.connectRetry?.cancel()
                 self.connectRetry = nil
                 self.connectDelay = 2
             }
             catch {
+                guard !self.stopped else { return }
                 self.message = "Your workspace is saved on this Mac. Online collaboration is unavailable right now."
                 self.scheduleConnectRetry()
             }
             self.connecting = false
+            self.connectingTask = nil
             self.onChange?(self.status, false)
+            if self.credentialGeneration != attemptedGeneration { self.connectAutomatically() }
         }
     }
     private static func isLoopback(_ origin: URL) -> Bool {
         ["localhost", "127.0.0.1", "::1"].contains(origin.host ?? "")
     }
     private func scheduleConnectRetry() {
+        guard !stopped else { return }
         connectRetry?.cancel()
         let delay = connectDelay
         connectDelay = min(connectDelay * 2, 60)
@@ -101,7 +126,9 @@ final class LocalVaultConnectionController {
         var request = URLRequest(url: account.origin.appendingPathComponent("api/vault"), timeoutInterval: 30)
         request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard !stopped else { throw CancellationError() }
         guard let http = response as? HTTPURLResponse else {
             throw LocalVaultConnectionError("The web connection did not respond. Your files remain saved on this Mac.")
         }
@@ -116,6 +143,9 @@ final class LocalVaultConnectionController {
         }
         struct Workspace: Decodable { let workspaceId: String }
         let workspace = try JSONDecoder().decode(Workspace.self, from: data)
+        guard let latest = credentials(), latest.origin == account.origin, latest.token == account.token else {
+            throw CancellationError()
+        }
         let binding = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspace.workspaceId)
         if let previous = try LocalVaultSync.binding(root: root), previous != binding {
             guard allowRebind else {
@@ -123,7 +153,7 @@ final class LocalVaultConnectionController {
             }
             try LocalVaultSync.archiveAndRebind(root: root, to: binding)
         }
-        try configure(binding, token: account.token)
+        try await configure(binding, token: account.token)
         onlineReady = false
         previousBinding = binding
         message = nil
@@ -148,8 +178,13 @@ final class LocalVaultConnectionController {
         watchFailureIsCurrent = false
         message = value
     }
-    private func configure(_ binding: LocalVaultSyncBinding, token: String) throws {
-        let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token)
+    private func configure(_ binding: LocalVaultSyncBinding, token: String) async throws {
+        if self.binding == binding, let transport, engine != nil {
+            // Keep the actor that owns live file sessions and checkpoints.
+            await transport.updateToken(token)
+            return
+        }
+        let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token, session: session)
         let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
         self.binding = binding; self.transport = transport; self.engine = engine
         watching?.cancel()
@@ -173,7 +208,7 @@ final class LocalVaultConnectionController {
         schedule()
     }
     func schedule() {
-        guard engine != nil else { return }
+        guard !stopped, engine != nil else { return }
         if running != nil { rerun = true; return }
         scheduled?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.run() }
@@ -181,6 +216,7 @@ final class LocalVaultConnectionController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
     private func retry() {
+        guard !stopped else { return }
         scheduled?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.run() }
         scheduled = work
@@ -188,7 +224,7 @@ final class LocalVaultConnectionController {
         retryDelay = min(retryDelay * 2, 60)
     }
     private func run() {
-        guard let engine, running == nil else { return }
+        guard !stopped, let engine, running == nil else { return }
         running = Task { [weak self, engine] in
             do {
                 let report = try await engine.sync()

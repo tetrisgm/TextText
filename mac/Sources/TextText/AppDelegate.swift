@@ -1804,6 +1804,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         removeFileProviderDomain()
         appendActivity("Signed out; local files kept")
         if let localVaultWindow {
+            localVaultWindow.shutdown()
             localVaultWindow.close()
             self.localVaultWindow = nil
             warmMainWindow()

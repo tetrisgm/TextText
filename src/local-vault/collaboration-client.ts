@@ -251,7 +251,7 @@ export class FileCollaborationClient {
         if (this.dead) continue;
         const clean = !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement &&
           !value.journal.pending.length && !value.journal.batch && !value.journal.unqueuedDirty && !value.journal.retired;
-        if ((error as { code?: string } | null)?.code === "409" && clean) {
+        if ((error as { code?: string } | null)?.code === "session_closed" && clean) {
           this.frozen = true; this.canEdit = false; this.cancelWork();
           this.report("stale-session", "Reopening this note…");
         } else if ((error as { code?: string } | null)?.code === "local_changed" && clean) {
@@ -373,7 +373,8 @@ export class FileCollaborationClient {
         this.journalGeneration = retained.journalGeneration ?? 0;
         retained = null;
       }
-      if (retained && retained.retired && !this.options.initialRetirement &&
+      if (this.options.checkpoint && retained?.retired?.startsWith("The local document checkpoint could not be saved.") &&
+          retained.retired.includes("This shared editing session has closed.") && !this.options.initialRetirement &&
           !retained.pending.length && !retained.batch && !retained.unqueuedDirty) {
         // An old interrupted session can leave a retired browser journal even
         // though its native checkpoint and document are clean. Reopen the file

@@ -365,7 +365,7 @@ final class LocalVaultCollaboration {
             return [:]
         }
         guard let token = params["sessionToken"] as? String, let active = localSessions[token], active.itemId == itemId else {
-            throw LocalVaultCollaborationError(code: "409", message: "This shared editing session has closed. Your recovery journal is kept.")
+            throw LocalVaultCollaborationError(code: "session_closed", message: "This shared editing session has closed. Your recovery journal is kept.")
         }
         if method == "collaborationRecover" {
             guard Set(params.keys) == ["itemId", "sessionToken", "recoveryPath", "recoveryHash"],

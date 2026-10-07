@@ -46,7 +46,7 @@ public protocol LocalVaultSyncTransport: Sendable {
 /// Bearer credentials live only in this transport, never in vault files.
 public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private let endpoint: URL
-    private let token: String
+    private var token: String
     private let session: URLSession
     private var manifestETag: String?
     private var cachedManifest: [LocalVaultRemoteItem] = []
@@ -56,6 +56,8 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         self.endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("items")
         self.token = token; self.session = session
     }
+
+    public func updateToken(_ token: String) { self.token = token }
 
     private func request(_ url: URL) -> URLRequest {
         var request = URLRequest(url: url, timeoutInterval: 30)

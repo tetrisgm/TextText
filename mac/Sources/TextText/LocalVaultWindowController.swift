@@ -37,6 +37,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     init(entry: URL, root initialRoot: URL? = nil,
          starterTemplates: URL? = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil),
          websiteDataStore: WKWebsiteDataStore = .default(),
+         collaboration: LocalVaultCollaboration? = nil,
          credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil }) {
         self.entry = entry
         self.starterTemplates = starterTemplates
@@ -61,6 +62,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 try selectRoot(configuration.resolvingRoot())
             }
         } catch { openError = error.localizedDescription }
+        self.collaboration = collaboration
         webView.loadFileURL(entry, allowingReadAccessTo: entry.deletingLastPathComponent())
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
@@ -80,7 +82,16 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     }
     deinit { watcher?.stop(); if scoped { root?.stopAccessingSecurityScopedResource() } }
 
-    func windowWillClose(_ notification: Notification) { collaboration?.cancelAll(); collaboration = nil; agent?.stop(); agent = nil }
+    // AppDelegate retains this window and its WebView after Command-W. Its
+    // editor may still drain a local checkpoint and is reused on reopening.
+    // Closing a window must not invalidate that editor's native session token.
+    func windowWillClose(_ notification: Notification) { agent?.stop(); agent = nil }
+    func shutdown() {
+        collaboration?.cancelAll(); collaboration = nil
+        agent?.stop(); agent = nil
+        watcher?.stop(); watcher = nil
+        connection?.stop(); connection = nil
+    }
     func present() { NSApp.activate(ignoringOtherApps: true); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
 
     func openFile(_ url: URL) -> Bool {
@@ -93,7 +104,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         present(); return true
     }
     func credentialsChanged() {
-        collaboration?.cancelAll(); collaboration = nil
+        if let connection { connection.credentialsChanged(); return }
         guard let root else { return }
         connection = LocalVaultConnectionController(root: root, credentials: credentials)
         connection?.onChange = { [weak self] state, changed in
@@ -179,7 +190,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     }
 
     private func selectRoot(_ url: URL) throws {
+        if connection != nil, root?.standardizedFileURL.resolvingSymlinksInPath() == url.standardizedFileURL.resolvingSymlinksInPath() { return }
         collaboration?.cancelAll(); collaboration = nil
+        connection?.stop(); connection = nil
         agent?.stop(); agent = nil
         watcher?.stop()
         if scoped { root?.stopAccessingSecurityScopedResource() }
