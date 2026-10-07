@@ -47,21 +47,33 @@ Sign in with ChatGPT for a TextText account.
 ## Regression gates
 
 - Full Mac web suite: 4,303 passed, 146 skipped; database suites: 114 passed.
-- Native Windows core: 109 storage/sync assertions; native agent/flush checks
+- Native Windows core: 112 storage/sync assertions; native agent/flush checks
   include saved-account restoration and signed-out polling.
 - Final Mac shared subsystem: 234 tests passed; Windows client subset: 172.
-- Actual Windows editor: eight checks covering creation, search, input, autosave,
-  and reopen. Added actual MainWindow close integration after a missing RPC
-  handler escaped the lower-level flush tests. The Windows build now requires
-  this desktop gate before issuing an installable source/artifact receipt.
-  All eight editor and five actual MainWindow close assertions passed on the PC.
-  The final build command also completed with exit status zero.
+- Actual Windows shared UI: 26 checks covering note creation, search, actual
+  editor input/autosave/reopen, article/bookmark/gallery/talk creation through
+  their UI, template-preserving shared-command edits, and native image bytes
+  and dimensions after reopen. One trusted recovery-path check and five actual
+  MainWindow close assertions also passed. Non-note body edits use the shared
+  command contract; this does not claim typing coverage for every rich editor.
+  The Windows build requires this desktop gate before sealing an installable
+  source/artifact receipt.
 - Historical 125-second picker evidence remains applicable; picker code unchanged.
 
 Local UI receipts are under `.texttext/windows-smoke/`; PC candidate/test logs
 are under `C:\Users\Shokunin\dev\texttext-sync-20261007\windows\build`.
 
 ## Final candidate and verification limits
+
+Final source `c1c999648289f7efc8bcb7d5855156cad07e1ad3` completed the full
+manual Windows build with exit zero. Sealed candidate:
+`6ecf6765af1d4a2e871a03a6b5f2ce70`. Expanded desktop receipt:
+`windows/build/smoke-receipts-1962809f581d477eb76e1a0b28dce860`; build log:
+`windows-final-software-build.log` (historical filename; rendering is default).
+The subsequent install SSH connection reset before any installer output.
+Installation must be checked before retry; final Unicode/comments live checks
+are still pending. The preceding focused expanded smoke also passed:
+`windows/build/smoke-receipts-882acd2cf6ed441da603f59ff639cbcc`.
 
 Last installed candidate is `8ca77072ef324c95b4202de1e79ac490`, source
 `911e7564` (UTF-8 subprocess fix). Exact-source/artifact verification and all
@@ -74,7 +86,7 @@ preceding candidate `e97aec8b1d2d480785e1e9e6bfc66e7f`; they are not evidence
 that the last installed candidate started successfully.
 The final candidate includes lazy saved agent-account restoration, shared agent
 presence readiness, and validated durable-checkpoint readiness. The portable
-native suite passed 109 assertions; the final candidate also contains the
+native suite passed 112 assertions; the final candidate also contains the
 saved-file close proof. Final shared client run passed 172 tests.
 The final installed Windows app restored the saved Codex account without a
 Connect/OAuth click. At 22:40:37 UTC the actual textarea and Start task button
@@ -103,37 +115,45 @@ accented text, CJK and emoji in tool arguments, results and final messages.
 Mac portable tests and WPF cross-build passed. The subsequent installed-candidate
 read-only Unicode check has **not** run because startup stalled.
 
-## Remaining Windows startup blocker
+## Windows test-launch startup diagnosis
 
-Installed UTF-8 candidate process 40024 had no visible window. A managed stack
-captured the main thread in WPF `DUCE.Channel.SyncFlush` through
-`HwndTarget.UpdateWindowSettings`, `Window.ShowHelper` and `App.Main`.
-This is an evidenced native compositor startup stall before document loading,
-not a sync failure. Receipt:
-`.texttext/windows-smoke/final-live/wpf-startup-stack.txt`.
-The exact process was stopped for replacement after capturing the stack; content
-was not changed. No global GPU, Windhawk or network settings were modified.
+The startup blocker was traced to our temporary test launcher. Windows Task
+Scheduler defaults to priority 7, intended for background CPU, I/O and memory
+work. That did not represent an ordinary desktop launch. The installed process
+was confirmed `BelowNormal`. [Microsoft documents the priority mapping](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-priority).
 
-Commits `277f5a22` and `7d838ec6` configure process-local software rendering for
-native WPF chrome and exercise the same configuration in the desktop harness.
-Mac WPF/harness cross-build passed. Two subsequent PC candidates were **not
-sealed or installed**: their native/core/agent/shared-client/build checks passed,
-but the bounded desktop harness timed out before writing its Main-entry receipt.
-The second unsealed candidate is `8aaf54743aae46cf8123ef8aed64af6c`; log
-`windows-final-software-build.log`, attempted smoke receipt identifier
-`795c22f32c3a471197e7d85632ed7d5d`. The directory was never created.
-This pre-entry harness symptom has not been proven to share the compositor cause.
-Loaded modules included CLR, PresentationCore and Windhawk; that inventory alone
-does not identify the cause. Managed diagnostic collection did not complete
-before the bounded test process ended. A native wait-chain capture was prepared,
-but the process had already exited.
+Controlled independent probes on the same PC:
 
-PC SSH subsequently timed out during banner exchange and SCP closed its
-connection, independently observed by two agents. A new focused diagnostic
-launch did not execute. Remaining work: capture the pre-entry native wait chain,
-pass the unchanged desktop gate, install the verified software-rendering candidate,
-verify two normal startups and the read-only Unicode response, and record its
-installed hashes. Do not report Windows final acceptance complete.
+| Probe | Result |
+| --- | --- |
+| 10,001 BCL URI operations, SSH | 9 ms |
+| Same BCL operations, interactive task | 11 ms |
+| Minimal WPF, task priority 7, default rendering | First render 14,496 ms; exit 18,699 ms |
+| Same WPF, task priority 7, software rendering | First render 24,225 ms; exit 27,788 ms |
+| Same WPF, task priority 4, default rendering | First render 494 ms; exit 545 ms |
+| Independent WPF/WebView2, priority 4 | Environment 314 ms; ready 622 ms; navigation 708 ms |
+
+An earlier managed stack showed WPF `DUCE.Channel.SyncFlush` before window
+creation. Separate isolated stacks/dump showed slow WPF/BCL initialization, not
+TextText sync code. Windhawk module presence was not causal evidence. Neither
+process-local software rendering nor disabling diagnostic ports established a
+fix; both experiments were removed. No global GPU, hooks, networking or runtime
+settings changed. The isolated dump remains local and ignored.
+
+Commit `c2761fd9` sets the desktop smoke task to normal interactive priority 4
+and verifies the registered setting before launching. The existing 90-second
+harness and 100-second task limits remain unchanged. All eight editor and five
+actual MainWindow close checks passed at normal priority/default rendering and
+diagnostics: `windows/build/smoke-receipts-1563843c20424878a0c2989eb399eda7`.
+Commit `ff3462c1` removed the unproven rendering workaround. Useful startup
+boundary diagnostics remain in the test-only harness.
+
+The earlier installed process was preserved while its actual state was checked.
+Correcting only that test-launched process to normal CPU priority let it render
+the signed-in account and all eight existing probe markers. No new OAuth or
+credential copying was required. Final candidate assembly and read-only Unicode
+acceptance remain to be recorded below; prior unsealed candidates were never
+installed.
 
 ## Verification limits
 
