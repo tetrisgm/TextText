@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { VaultApp } from "./VaultApp";
+import { WebAccount } from "./WebAccount";
 import { setVaultTransport } from "./bridge";
 import { createWebVaultTransport } from "./web-transport";
 
-export function WebVault({ workspaceId, name }: { workspaceId: string; name: string }) {
+export function WebVault({ workspaceId, name, accountEmail, accountName }: { workspaceId: string; name: string; accountEmail: string | null; accountName: string | null }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const transport = createWebVaultTransport(workspaceId, name);
@@ -50,5 +51,5 @@ export function WebVault({ workspaceId, name }: { workspaceId: string; name: str
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [workspaceId, name]);
-  return ready ? <VaultApp allowFolderPicker={false} /> : <p>Opening workspace…</p>;
+  return ready ? <VaultApp allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /> : <p>Opening workspace…</p>;
 }

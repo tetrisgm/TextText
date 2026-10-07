@@ -31,10 +31,19 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const failures = [], unexpected = [];
+  let signedOut = false;
   page.on("pageerror", (error) => failures.push(error.message));
   await page.route("**/*", async (route) => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== "https://vault.test") { unexpected.push(request.url()); await route.abort(); return; }
+    if (url.pathname === "/api/auth/csrf") { await route.fulfill({ json: { csrfToken: "test-csrf" } }); return; }
+    if (url.pathname === "/api/auth/signout") {
+      assert.equal(request.method(), "POST");
+      assert.equal(new URLSearchParams(request.postData()).get("csrfToken"), "test-csrf");
+      signedOut = true;
+      await route.fulfill({ json: { url: "https://vault.test/signin" } }); return;
+    }
+    if (url.pathname === "/signin") { await route.fulfill({ body: "Signed out", contentType: "text/html" }); return; }
     if (url.pathname === "/api/vault/workspace/access") {
       await route.fulfill({ json: { fullAccess: true, isOwner: true, canEditContent: true, canComment: true, canManageShares: true, grants: [] } }); return;
     }
@@ -97,6 +106,10 @@ try {
     unexpected.push(url.pathname); await route.abort();
   });
   await page.goto("https://vault.test/vault/workspace");
+  await page.getByRole("navigation", { name: "Folders" }).waitFor();
+  await page.getByRole("button", { name: /test@example.com Signed in/ }).click();
+  await page.getByRole("button", { name: "Log out" }).waitFor();
+  await page.getByRole("button", { name: /test@example.com Signed in/ }).click();
   await page.getByRole("navigation", { name: "Folders" }).locator("summary").filter({ hasText: "Notes" }).click();
   await page.getByRole("button", { name: "Open Web note" }).click();
   await page.getByRole("button", { name: "Edit card" }).click();
@@ -125,9 +138,13 @@ try {
   await page.screenshot({ path: "/tmp/texttext-vault-light.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-vault-dark.png" });
+  await page.getByRole("button", { name: /test@example.com Signed in/ }).click();
+  await page.getByRole("button", { name: "Log out" }).click();
+  await page.waitForURL("https://vault.test/signin");
+  assert.equal(signedOut, true);
   assert.deepEqual(failures, []);
   assert.deepEqual(unexpected, []);
-  console.log("Web vault UI passed: shared editor, file GET/PUT, assets preserved, raw file refresh, creation; no legacy content routes.");
+  console.log("Web vault UI passed: signed-in account menu and logout, shared editor, file GET/PUT, assets preserved, raw file refresh, creation; no legacy content routes.");
 } finally {
   await browser?.close();
   await rm(output, { recursive: true, force: true });

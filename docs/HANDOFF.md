@@ -9,6 +9,7 @@
 
 ## Verification and follow-up
 
+- Web workspace now has the same sidebar account placement as the Mac app, with the session email, **Signed in**, and **Log out**. The protected `/vault/[workspaceId]` route already required a signed-in session; this fixes the missing identity UI. Local TypeScript, lint, and focused web browser verification passed. This source change is **not deployed**; the owner asked to approve website deployments separately.
 - The Oracle web-only release passed its standard web, database, TypeScript, packaging, authenticated workspace, edit, storage, and audit checks. The first build attempt stopped before deploy because a temporary clean copy used a dependency symlink rejected by Turbopack; the verified deployment used a full local dependency copy. See [Oracle procedure](../release/oracle/README.md).
 - The broad local browser test passed the account-menu section, then failed later in an unrelated new-card link selection assertion (`verify-browser.mjs:2837`). It was not a web deployment gate. TypeScript, account UI lint, focused Swift connection/recovery tests, and the targeted vault route tests passed. Search cache and the 125-second picker were unaffected and were not rerun. See the [previous handoff](archive/HANDOFF-2026-10-06-before-oracle-workspace.md) for their receipts.
 - The existing `Shoku's Space/My Notes/TextText Changelog.textpack` is not present in the active iCloud workspace (`texttext search 'TextText Changelog' --json` returned no match). Do not create a second changelog merely to record this work.

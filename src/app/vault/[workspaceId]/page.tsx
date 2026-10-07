@@ -26,5 +26,5 @@ export default async function VaultPage({ params, searchParams }: {
     const root = process.env.TEXTTEXT_VAULT_ROOT;
     if (!root || !(await activeVaultGrants({ root, workspaceId, userId: access.userId })).length) notFound();
   }
-  return <WebVault workspaceId={workspaceId} name={blog.name} />;
+  return <WebVault workspaceId={workspaceId} name={blog.name} accountEmail={user.email ?? null} accountName={user.name ?? null} />;
 }

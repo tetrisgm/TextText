@@ -479,7 +479,7 @@ class DocumentBoundary extends Component<{ children: ReactNode }, { error: strin
   render() { return this.state.error ? <div className="vault-notice" role="alert">This TextPack could not be opened: {this.state.error}</div> : this.props.children; }
 }
 
-export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boolean }) {
+export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolderPicker?: boolean; accountMenu?: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
   const sidebarReopenButton = useRef<HTMLButtonElement>(null);
@@ -1152,8 +1152,8 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
         <button ref={searchButton} className="vault-search-trigger" disabled={busy} onClick={openSearch}><span>Search and actions</span><kbd>⌘K</kbd></button>
         <nav aria-label="Folders"><FolderNavigation tree={tree} selectedFolder={selected ? folderForItem(selected.path) : destinationFolder.trim()}
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); setFolderDesignOpen(false); }, true)} /></nav>
-        {allowFolderPicker && <NativeConnection key={listing.root} root={listing.root} />}
       </>}
+      {allowFolderPicker && listing?.root ? <NativeConnection key={listing.root} root={listing.root} /> : accountMenu}
     </aside>
     {sidebarOpen && <button type="button" className="vault-sidebar-backdrop" aria-label="Close folders"
       onClick={() => setSidebarVisible(false, true)} />}
