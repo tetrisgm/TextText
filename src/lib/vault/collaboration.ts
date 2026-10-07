@@ -110,14 +110,14 @@ export function projectVaultFileEdit(state: VaultCollaborationState, currentByte
   } finally { doc.destroy(); }
 }
 
-export function applyVaultCollaboration(state: VaultCollaborationState, currentPackBytes: Uint8Array, updates: string[]): { state: VaultCollaborationState; bytes: Uint8Array } {
+export function applyVaultCollaboration(state: VaultCollaborationState, currentPackBytes: Uint8Array, updates: string[], relativePath = "Document.textpack"): { state: VaultCollaborationState; bytes: Uint8Array } {
   if (!Number.isSafeInteger(state.epoch) || state.epoch < 1 || !Number.isSafeInteger(state.seq) || state.seq < 0 || state.seq >= Number.MAX_SAFE_INTEGER || state.revision !== hash(currentPackBytes)) fail();
   if (!Array.isArray(updates) || updates.length < 1 || updates.length > 64) fail();
   const baseline = decode(state.update, Math.ceil(MAX_VAULT_COLLABORATION_BYTES / 3) * 4);
   if (baseline.byteLength > MAX_VAULT_COLLABORATION_BYTES) fail();
   const decoded = updates.map(update => decode(update, MAX_UPDATE_CHARS));
   if (decoded.reduce((sum, bytes) => sum + bytes.byteLength, 0) > MAX_VAULT_COLLABORATION_BYTES) fail();
-  const pack = openPack(currentPackBytes, "Document.textpack", state.revision);
+  const pack = openPack(currentPackBytes, relativePath, state.revision);
   const before = readDocument(pack.file);
   const doc = new Y.Doc();
   try {

@@ -695,7 +695,7 @@ async function collaborationCheckpoint(layout: Layout, itemId: string, item: Non
   if (saved?.revision === item.revision) {
     // A valid JSON file is not necessarily a valid Yjs baseline. Validate the
     // complete persisted state with a canonical empty update before serving it.
-    applyVaultCollaboration(saved, item.bytes, ["AAA="]);
+    applyVaultCollaboration(saved, item.bytes, ["AAA="], item.relativePath);
     return saved;
   }
   if (saved) {
@@ -984,7 +984,7 @@ export async function pushVaultCollaboration(input: VaultLocation & {
     if (!item) throw new Error("Collaboration file is missing or deleted");
     const baseline = await collaborationCheckpoint(layout, input.itemId, item);
     if (baseline.epoch !== input.epoch) throw new VaultCollaborationEpochError(baseline.epoch);
-    const next = applyVaultCollaboration(baseline, item.bytes, input.updates);
+    const next = applyVaultCollaboration(baseline, item.bytes, input.updates, item.relativePath);
     validatePack(next.bytes, input.itemId);
     await input.beforeCommit?.(item.relativePath);
     input.signal?.throwIfAborted();

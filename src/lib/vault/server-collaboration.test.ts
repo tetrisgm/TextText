@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import * as Y from "yjs";
 import { fork } from "node:child_process";
 import { once } from "node:events";
+import { unzipSync, strFromU8 } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentText } from "@/lib/collab/document";
@@ -42,6 +43,19 @@ describe("durable file collaboration", () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
+
+  it("preserves the actual Markdown path across edits and renames", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    await push("path-edit", initial, edit(initial, " edited"));
+    const saved = (await readVaultTextpack(location()))!;
+    expect(strFromU8(unzipSync(saved.bytes)["Note.textbundle/text.md"])).toContain(`slug: "${relativePath}"`);
+    await moveVaultTextpack({ ...location(), operationId: "path-move", basePath: relativePath,
+      baseRevision: saved.revision, relativePath: "Notes/Renamed.textpack" });
+    const moved = (await readVaultCollaboration(location()))!;
+    await push("renamed-edit", moved, edit(moved, " again"));
+    const renamed = (await readVaultTextpack(location()))!;
+    expect(strFromU8(unzipSync(renamed.bytes)["Note.textbundle/text.md"])).toContain('slug: "Notes/Renamed.textpack"');
+  });
 
   it("waits quietly, wakes for a committed edit, and closes an aborted wait", async () => {
     const initial = (await readVaultCollaboration(location()))!;

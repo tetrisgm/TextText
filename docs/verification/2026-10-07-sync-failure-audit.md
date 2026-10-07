@@ -106,3 +106,11 @@ public-origin write reaches body validation and a foreign-origin write gets
 403. The body-validation check cannot create a file. These auth tests are now
 part of `test:sync`. This finding demonstrates why live bidirectional verification
 is required in addition to the storage and CRDT fixtures.
+
+## File metadata convergence
+
+The final live comparison found identical document/template data but different
+Markdown `slug` metadata: the server's collaboration writer used the placeholder
+`Document.textpack`. It now receives the stored relative path. A regression first
+reproduced the placeholder and now verifies both an ordinary edit and an edit
+after rename. The two affected collaboration suites passed all 21 tests.
