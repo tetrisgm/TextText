@@ -129,6 +129,7 @@ if [ "$WEB_ONLY" = "1" ]; then
     }
     npm test -- --maxWorkers="$web_test_workers"
     npm run test:db
+    npm run test:sync -- --native-only
   fi
   npx tsc --noEmit
   node --test "$ROOT/release/oracle/test.mjs" "$ROOT/release/oracle/test-smoke.mjs" "$ROOT/release/oracle/test-restore-drill.mjs"
@@ -162,6 +163,8 @@ fi
 echo ">> ship TextText $VERSION"
 
 if [ "$SKIP_TESTS" != "1" ]; then
+  echo ">> verify durable file sync"
+  npm run test:sync
   echo ">> verify exact release source"
   npx tsx "$ROOT/scripts/verify-release.ts"
 else

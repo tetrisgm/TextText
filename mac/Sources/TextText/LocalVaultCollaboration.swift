@@ -441,9 +441,18 @@ final class LocalVaultCollaboration {
                         request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin")
                     }
                 }
-                let (data, status) = try await Self.responseData(session: self.session, request: request,
-                    maxBytes: method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024)
+                let maxBytes = method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
+                var (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
                 try Task.checkCancellation()
+                // A response can arrive after credential renewal. Retry only
+                // idempotent collaboration operations, once, for the same binding.
+                if status == 401, ["collaborationRead", "collaborationPush"].contains(method),
+                   let renewed = try Self.context(root: root, account: self.credentials()),
+                   renewed.binding == context.binding, renewed.token != context.token {
+                    request.setValue("Bearer \(renewed.token)", forHTTPHeaderField: "Authorization")
+                    (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
+                    try Task.checkCancellation()
+                }
                 let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 guard status == 200, let value else {
                     let message = (value?["error"] as? String).map { String($0.prefix(1000)) } ?? "Workspace request could not complete."

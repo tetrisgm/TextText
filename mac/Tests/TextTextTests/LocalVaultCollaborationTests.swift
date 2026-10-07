@@ -5,6 +5,32 @@ import TextTextFileProviderKit
 final class LocalVaultCollaborationTests: XCTestCase {
     private let origin = URL(string: "https://texttext.app")!
     @MainActor
+    func testInFlightUnauthorizedReadRetriesRenewedCredentialsOnce() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sync = root.appendingPathComponent(".texttext/sync")
+        try FileManager.default.createDirectory(at: sync, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let state: [String: Any] = ["binding": ["origin": origin.absoluteString, "workspaceId": "workspace"],
+            "baselines": [:], "outbox": [:], "conflicts": [:], "cursor": 0]
+        try JSONSerialization.data(withJSONObject: state).write(to: sync.appendingPathComponent("state.json"))
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [RenewedCollaborationProtocol.self]
+        var reads = 0
+        let relay = LocalVaultCollaboration(credentials: {
+            reads += 1
+            return (self.origin, reads == 1 ? "fixture-old" : "fixture-new")
+        }, session: URLSession(configuration: config))
+        let done = expectation(description: "read succeeds after renewal")
+        relay.start(id: "renewal", method: "collaborationRead", params: ["itemId": "item"], root: root) { result in
+            switch result {
+            case .success(let value): XCTAssertEqual(value?["renewed"] as? Bool, true)
+            case .failure(let error): XCTFail("Renewed credential rejected: \(error.localizedDescription)")
+            }
+            done.fulfill()
+        }
+        await fulfillment(of: [done], timeout: 3)
+    }
+    @MainActor
     func testNativeCheckpointReportsExternalFileChangeSeparatelyFromOtherFailures() {
         XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.changed, method: "collaborationCheckpoint"), "local_changed")
         XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.changed, method: "collaborationOpen"), "local_changed")
@@ -222,4 +248,17 @@ final class LocalVaultCollaborationTests: XCTestCase {
             payload: ["itemId": itemId, "revision": revision, "published": false, "canPublish": "true",
                 "publishedAt": NSNull(), "publicPath": "/v/workspace/item-1"]))
     }
+}
+
+private final class RenewedCollaborationProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let renewed = request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-new"
+        let response = HTTPURLResponse(url: request.url!, statusCode: renewed ? 200 : 401, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data((renewed ? "{\"renewed\":true}" : "{\"error\":\"Expired\"}").utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

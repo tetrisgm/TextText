@@ -51,3 +51,41 @@ Process-kill fault injection across the whole native-to-Oracle path and a real
 second Apple device's iCloud behavior are not established by unit fixtures.
 The new TypeScript fixes require packaging/install and Oracle web deployment
 before they protect both running clients. Build 1172 remains installed.
+
+## Durable regression suite
+
+`npm run test:sync` runs the file-sync and collaboration tests with two workers,
+then native tests with two Swift jobs. It opts into the real Swift HTTP contract
+fixture, using temporary local folders and a temporary loopback server only.
+The normal human-invoked release runs it; web-only release runs the native
+portion in addition to its full web tests. No watcher or scheduled build exists.
+
+Additional confirmed fault: a native request started before token renewal could
+return 401 after renewal and permanently retire the editor. The relay now retries
+an idempotent collaboration read/push once when the bound workspace is unchanged
+and the credential has changed. Same operation ID/body are retained. Cancellation
+and actual rejection still fail closed. Its regression failed before the fix.
+
+The new child-process test kills a server-store writer with SIGKILL after durable
+commit but before acknowledgement. Reopening and replaying that operation
+preserves the committed text exactly once and clears the abandoned lock.
+
+The combined suite passed 147 TypeScript tests and 58 native tests, including the
+actual HTTP interoperability fixture. Those tests cover nonoverlapping offline
+file edits converging with assets retained, overlapping changes retaining both
+original packs, rename/delete races, provider absence, and zero idle uploads.
+
+### Foundation and limits
+
+Keep Yjs: its update operations are commutative and idempotent
+(https://docs.yjs.dev/api/document-updates). Keep Apple's NSFileCoordinator for
+local file access (https://developer.apple.com/documentation/foundation/nsfilecoordinator).
+A new transport library does not replace the archive projection, durable
+outbox, authentication or file-provider integration tested here.
+
+Arbitrary simultaneous replacement of the same bytes has no universally correct
+semantic merge. Disjoint text changes merge; ambiguous overlapping file edits
+must preserve both versions. This is a data-preservation invariant, not a claim
+that every conflict can disappear. Actual cross-device iCloud eviction and
+transfer still require a second Apple device; local provider-absence fixtures do
+not certify Apple's transport. Power-loss durability is distinct from SIGKILL.

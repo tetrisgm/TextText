@@ -4,6 +4,8 @@ import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
+import { fork } from "node:child_process";
+import { once } from "node:events";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentText } from "@/lib/collab/document";
@@ -236,6 +238,31 @@ describe("durable file collaboration", () => {
     expect(await readVaultCollaboration(location())).toEqual(recovered);
     expect(await fs.readdir(path.dirname(pending))).toEqual([]);
   });
+
+  it("survives a killed writer and replays its unacknowledged operation exactly once", async () => {
+    const state = (await readVaultCollaboration(location()))!, update = edit(state, " survived");
+    const payloadFile = path.join(root, "request.json");
+    await fs.writeFile(payloadFile, JSON.stringify({ workspaceId, itemId, operationId: "killed-writer", epoch: state.epoch, updates: [update], audit }));
+    const child = fork(path.resolve("scripts/fixtures/sync-crash-worker.ts"), [root, payloadFile], {
+      execArgv: ["--import", "tsx"], stdio: ["ignore", "ignore", "pipe", "ipc"],
+    });
+    let errors = "";
+    child.stderr?.on("data", chunk => { errors = (errors + chunk).slice(-2000); });
+    try {
+      const committed = await Promise.race([
+        once(child, "message").then(([value]) => value),
+        once(child, "exit").then(() => { throw new Error(`Writer exited before commit: ${errors}`); }),
+      ]);
+      expect(committed).toBe("committed-before-acknowledgement");
+      const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
+      const recovered = (await readVaultCollaboration(location()))!;
+      expect(body(recovered)).toBe("Hello survived");
+      await push("killed-writer", state, update);
+      expect(await readVaultCollaboration(location())).toEqual(recovered);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }
+  }, 15_000);
 
   it("keeps the committed checkpoint through audit outage without applying updates twice", async () => {
     const state = (await readVaultCollaboration(location()))!, update = edit(state, " audit");

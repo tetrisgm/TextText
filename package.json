@@ -17,6 +17,7 @@
     "reading:images:backfill": "node --env-file=.env.local --import tsx scripts/backfill-reading-images.mjs",
     "reading:channels:backfill": "node --env-file=.env.local --import tsx scripts/backfill-feed-channels.mjs",
     "perf:queries": "npx tsx scripts/query-budget.ts",
+    "test:sync": "bash scripts/test-sync.sh",
     "sync:check": "npx tsx scripts/check-sync-consistency.ts",
     "bench": "npx tsx scripts/bench-actions.ts",
     "bench:sync": "npx tsx scripts/bench-sync.ts",
