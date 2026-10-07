@@ -54,7 +54,14 @@ static class Program
    await File.WriteAllTextAsync(Path.Combine(args[1],"desktop-smoke.json"),output);
    using(var image=File.Create(Path.Combine(args[1],"desktop-smoke.png"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
    if(!receipt.RootElement.GetProperty("ok").GetBoolean()) throw new Exception(output);
-   Console.WriteLine(output); await MainWindowCloseTests.RunAsync(temp,args[1],timeout.Token); result=0;
+   Console.WriteLine(output);
+   var recoveryDirectory=await bridge.InvokeAsync("files.recoveryDirectory",JsonSerializer.SerializeToElement(new{path="C:\\not-the-recovery-location"}),timeout.Token) as string;
+   var binding=TextPackStore.Hash(Encoding.UTF8.GetBytes("https://127.0.0.1:1/\nsmoke-workspace\n"+Path.Combine(temp,"workspace")));
+   var expectedRecovery=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","Sync",binding,"recovery");
+   if(recoveryDirectory!=expectedRecovery||!Directory.Exists(recoveryDirectory)||Directory.GetFiles(recoveryDirectory,"*.textpack").Length==0)throw new Exception("Native recovery copies were not exposed at the fixed workspace location.");
+   await File.WriteAllTextAsync(Path.Combine(args[1],"native-recovery.json"),JsonSerializer.Serialize(new{ok=true,checks=new[]{"native recovery location ignores supplied path","saved revision copies exist in native recovery location"}}));
+   Console.WriteLine("PASS isolated native recovery copies exposed at fixed workspace location");
+   await MainWindowCloseTests.RunAsync(temp,args[1],timeout.Token); result=0;
   }catch(Exception ex){Console.Error.WriteLine(ex);}finally{bridge?.Dispose();view.Dispose();app.Shutdown(result);} };
   Console.WriteLine("smoke: run window"); app.Run(window);
   var binding = TextPackStore.Hash(Encoding.UTF8.GetBytes("https://127.0.0.1:1/\nsmoke-workspace\n"+Path.Combine(temp,"workspace")));
