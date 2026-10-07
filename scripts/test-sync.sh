@@ -8,7 +8,9 @@ if [ "${1:-}" != "--native-only" ]; then
     src/local-vault/bridge.test.ts src/local-vault/presence-client.test.ts \
     src/lib/vault/server-collaboration.test.ts src/lib/vault/server-store.test.ts \
     src/lib/vault/collaboration.test.ts src/lib/vault/reconcile.test.ts \
-    src/lib/vault/pack-reconcile.test.ts src/lib/vault/server-presence.test.ts
+    src/lib/vault/pack-reconcile.test.ts src/lib/vault/server-presence.test.ts \
+    src/app/api/vault/auth.test.ts src/app/api/vault/scoped-auth.test.ts \
+    src/app/api/vault/collaboration-auth.test.ts src/lib/__tests__/request-origin.test.ts
   npx tsc --noEmit --pretty false
 fi
 # SwiftPM's Store manifest omits Sparkle; preserve the standalone resolution.

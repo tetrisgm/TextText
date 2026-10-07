@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ session: vi.fn(), token: vi.fn(), workspace: vi.fn(), item: vi.fn(), itemPath: vi.fn(), access: vi.fn(), grants: vi.fn() }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.session }));
@@ -17,6 +17,7 @@ const folderGrant = { id: "grant-folder", scope: { type: "folder", key: "Reading
 const status = (result: unknown) => result instanceof Response ? result.status : 200;
 
 describe("file-vault item authorization", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/trusted/vault");
@@ -66,6 +67,18 @@ describe("file-vault item authorization", () => {
     const agent = await authorizeVaultItemAtPath(request("POST", { authorization: "Bearer opaque" }), workspaceId, itemId, "Private/One.textpack", "edit");
     expect(agent).toMatchObject({ actorType: "external_agent", canUseHumanPresence: false,
       canAttributeNativeEditor: false, canManageShares: false });
+  });
+
+  it("accepts cookie writes through the HTTPS proxy and rejects foreign origins", async () => {
+    vi.stubEnv("AUTH_URL", "https://texttext.app");
+    vi.stubEnv("NODE_ENV", "production");
+    for (const origin of ["https://texttext.app", "https://attacker.test", "null"]) {
+      const proxied = new Request(`http://127.0.0.1:3400/api/vault/${workspaceId}/items/${itemId}`, {
+        method: "POST", headers: { host: "texttext.app", origin, "x-forwarded-proto": "https" },
+      });
+      expect(status(await authorizeVaultItemAtPath(proxied, workspaceId, itemId, "Private/One.textpack", "edit")))
+        .toBe(origin === "https://texttext.app" ? 200 : 403);
+    }
   });
 
   it("checks same-origin cookie mutations and refuses invalid bearer fallback", async () => {

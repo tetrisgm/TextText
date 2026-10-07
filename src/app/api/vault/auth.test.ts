@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ token: vi.fn(), session: vi.fn(), owned: vi.fn(), access: vi.fn() }));
 vi.mock("@/app/api/sync/v1/auth", () => ({ resolveSyncWorkspace: mocks.token }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.session }));
@@ -7,8 +7,10 @@ vi.mock("@/lib/permissions", () => ({ resolveWorkspaceAccess: mocks.access }));
 import { authorizeVault } from "./auth";
 
 describe("vault authorization", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("AUTH_URL", "https://texttext.test");
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/tmp/vault");
     mocks.token.mockResolvedValue({ sub: "apple-1", userId: "user-1", blog: { handle: "owner" } });
     mocks.session.mockResolvedValue({ sub: "apple-1", userId: "user-1" });

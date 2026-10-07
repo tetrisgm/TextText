@@ -1,3 +1,4 @@
+import { requestPublicOrigin } from "@/lib/request-origin";
 import { getCurrentUser } from "@/lib/session";
 import { resolveApiToken } from "@/lib/api-tokens";
 import { hasItemAgentScope } from "@/lib/item-agent-access";
@@ -20,7 +21,7 @@ export async function authorizeVaultCollaboration(request: Request, workspaceId:
   } else {
     const session = await getCurrentUser();
     if (!session) return deny(401, "Sign in required");
-    if (!["GET", "HEAD"].includes(request.method) && request.headers.get("origin") !== new URL(request.url).origin) {
+    if (!["GET", "HEAD"].includes(request.method) && request.headers.get("origin") !== requestPublicOrigin(request)) {
       return deny(403, "A same-origin request is required");
     }
     user = session;

@@ -107,6 +107,24 @@ export async function smoke({ scratch = false, environment = process.env, origin
       "Native session did not issue an authenticated cookie.");
     checks.push("authenticated app session");
 
+    // Exercise cookie authentication through the public HTTPS proxy shape.
+    // Bearer-only checks cannot catch rejecting a browser's public Origin
+    // against Next's private loopback request.url.
+    const cookie = session.headers.getSetCookie().map(value => value.split(";", 1)[0]).join("; ");
+    const publicOrigin = new URL(environment.AUTH_URL || environment.TEXTTEXT_PRODUCT_ORIGIN || "https://texttext.app").origin;
+    const browserProbe = async origin => fetchImpl(`${base}/api/vault/${fixture.blogId}/items/${randomUUID()}`, {
+      method: "PUT", redirect: "manual", signal: AbortSignal.timeout(20_000),
+      headers: { Cookie: cookie, Origin: origin, Host: new URL(publicOrigin).host,
+        "X-Forwarded-Proto": "https", "If-None-Match": "*",
+        "X-TextText-Path": "Notes/Origin-probe.textpack", "X-TextText-Operation-Id": randomUUID() },
+    });
+    // No body: successful authorization reaches validation, creates no file.
+    const browserWrite = await browserProbe(publicOrigin);
+    assert.equal(browserWrite.status, 400, "Browser cookie mutation did not reach body validation.");
+    assert.equal((await browserWrite.json()).error, "TextPack body is required", "Browser write failed before body validation.");
+    assert.equal((await browserProbe("https://attacker.invalid")).status, 403, "Cross-origin cookie mutation was accepted.");
+    checks.push("browser cookie mutation origin enforcement");
+
     const workspace = await request("/api/sync/v1/workspace");
     assert.equal(workspace.status, 200, `Workspace read returned HTTP ${workspace.status}.`);
     const workspaceData = await workspace.json();

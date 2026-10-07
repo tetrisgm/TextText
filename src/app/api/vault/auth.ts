@@ -1,3 +1,4 @@
+import { requestPublicOrigin } from "@/lib/request-origin";
 import { resolveSyncWorkspace } from "@/app/api/sync/v1/auth";
 import { getCurrentUser } from "@/lib/session";
 import { getOwnedBlog } from "@/lib/store";
@@ -18,7 +19,7 @@ export async function authorizeVault(request: Request, workspaceId?: string) {
   } else {
     const session = await getCurrentUser();
     if (!session) return Response.json({ error: "Sign in required" }, { status: 401 });
-    if (request.method !== "GET" && request.method !== "HEAD" && request.headers.get("origin") !== new URL(request.url).origin) {
+    if (request.method !== "GET" && request.method !== "HEAD" && request.headers.get("origin") !== requestPublicOrigin(request)) {
       return Response.json({ error: "A same-origin request is required" }, { status: 403 });
     }
     const blog = await getOwnedBlog(session.sub);

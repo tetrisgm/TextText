@@ -89,3 +89,20 @@ must preserve both versions. This is a data-preservation invariant, not a claim
 that every conflict can disappear. Actual cross-device iCloud eviction and
 transfer still require a second Apple device; local provider-absence fixtures do
 not certify Apple's transport. Power-loss durability is distinct from SIGKILL.
+
+## Live browser failure missed by the initial gates
+
+Build 1173 correctly saved to Oracle; a raw Markdown-only edit inside the iCloud
+TextPack reached Mac, search, and Safari. A subsequent Safari edit entered
+recovery. Inspection exposed the vault's three cookie-auth helpers comparing
+Origin with the standalone server's private request URL. The proxy-shaped
+regression returned 403 for the configured public HTTPS origin. Native bearer
+checks bypassed this comparison, explaining why native smoke tests passed.
+
+The vault auth helpers now use the existing validated `requestPublicOrigin`,
+with foreign and missing origins still rejected. The release smoke additionally
+uses its scratch account's issued cookie, without a bearer, to test a valid
+public-origin write reaches body validation and a foreign-origin write gets
+403. The body-validation check cannot create a file. These auth tests are now
+part of `test:sync`. This finding demonstrates why live bidirectional verification
+is required in addition to the storage and CRDT fixtures.
