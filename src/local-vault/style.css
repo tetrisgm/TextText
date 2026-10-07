@@ -754,3 +754,20 @@
   .vault-overview { padding: 18px 16px 64px; }
   .vault-app .vault-assistant { width: 100%; z-index: 100; }
 }
+
+/* Keep account identity visible while folder and sync controls stay separate. */
+.vault-app .vault-sidebar{display:flex;flex-direction:column}
+.vault-app .vault-connection{position:relative;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+.vault-app .vault-account-toggle{display:flex;align-items:center;gap:10px;width:100%;padding:7px 9px;text-align:left;border:0;border-radius:9px;background:transparent;color:var(--ink)}
+.vault-app .vault-account-toggle:hover,.vault-app .vault-account-toggle[aria-expanded=true]{background:var(--selection)}
+.vault-app .vault-account-avatar{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;background:var(--tt-accent);color:#101820;font-size:15px;font-weight:700}
+.vault-app .vault-account-label{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}
+.vault-app .vault-account-label strong{font-size:13px;font-weight:600}
+.vault-app .vault-account-label small{color:var(--muted);font-size:11px}
+.vault-app .vault-account-chevron{color:var(--muted)}
+.vault-app .vault-account-menu{position:absolute;bottom:calc(100% + 8px);left:0;right:0;z-index:20;padding:7px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 10px 28px #0003}
+.vault-app .vault-account-menu>button,.vault-app .vault-account-confirm button,.vault-app .vault-account-message button{display:block;width:100%;padding:8px 10px;text-align:left;border:0;border-radius:6px;background:transparent;color:var(--ink)}
+.vault-app .vault-account-menu button:hover:not(:disabled){background:var(--selection)}
+.vault-app .vault-account-sync-state{display:flex;justify-content:space-between;padding:8px 10px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.vault-app .vault-account-confirm,.vault-app .vault-account-message{margin-top:5px;padding-top:5px;border-top:1px solid var(--line)}
+.vault-app .vault-account-confirm p,.vault-app .vault-account-message p{margin:5px 10px 8px}

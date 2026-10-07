@@ -1139,6 +1139,7 @@ export function VaultApp({ allowFolderPicker = true }: { allowFolderPicker?: boo
     <aside id="vault-sidebar" className="vault-sidebar" aria-hidden={!sidebarOpen}
       onClickCapture={(event) => {
         if (window.matchMedia("(max-width: 700px)").matches &&
+            !(event.target as HTMLElement).closest(".vault-connection") &&
             (event.target as HTMLElement).closest("button,a,summary")) setSidebarVisible(false);
       }}>
       <div className="vault-sidebar-header"><h1><button type="button" className="vault-home-button" onClick={() => void operate(async () => { closeRemoved(); setDestinationFolder(""); setFolderDesignOpen(false); }, true)}>TextText</button></h1>

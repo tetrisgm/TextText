@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { vaultRequest } from "./bridge";
 
 type Connection = { connected: boolean; available: boolean; webURL?: string; message?: string; hasConflicts?: boolean; requiresRebind?: boolean };
 
-/** Connection chrome is event driven. Successful background saves stay quiet. */
+/** Account identity is always visible; optional sync controls stay in the profile menu. */
 export function NativeConnection({ root }: { root: string }) {
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
   const [confirmRebind, setConfirmRebind] = useState(false);
+  const container = useRef<HTMLElement>(null);
+
   useEffect(() => {
     let active = true;
     const update = (event: Event) => {
@@ -23,6 +26,23 @@ export function NativeConnection({ root }: { root: string }) {
     }).catch((error: Error) => { if (active) setFailure(error.message); });
     return () => { active = false; window.removeEventListener("texttext:vault-sync-status", update); };
   }, [root]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!container.current?.contains(event.target as Node)) { setOpen(false); setConfirmRebind(false); }
+    };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setOpen(false); setConfirmRebind(false); }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeEscape);
+    };
+  }, [open]);
+
   const perform = async (method: "connect" | "sync" | "openWeb" | "signIn" | "recovery", allowRebind = false) => {
     setBusy(true); setFailure("");
     try {
@@ -32,22 +52,31 @@ export function NativeConnection({ root }: { root: string }) {
     } catch (error) { setFailure(error instanceof Error ? error.message : "The web connection could not be opened."); }
     finally { setBusy(false); }
   };
-  const message = failure || connection?.message;
-  return <section className="vault-connection" aria-label="Web connection">
-    {connection?.available && <p role="status">Signed in to TextText</p>}
-    {connection?.connected ? <button disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open on web</button>
-      : connection && !connection.available
-        ? <button disabled={busy} onClick={() => void perform("signIn")}>Sign in</button>
-        : <button disabled={busy || !connection} onClick={() => connection?.requiresRebind ? setConfirmRebind(true) : void perform("connect")}>{busy ? "Connecting…" : "Connect to web"}</button>}
-    {connection && !connection.connected && connection.available &&
-      <button disabled={busy} onClick={() => void perform("signIn")}>Switch account</button>}
-    {!connection?.connected && connection && !connection.available && !message && <p>Sign in to TextText to connect this folder.</p>}
-    {connection?.hasConflicts && <button disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
-    {confirmRebind && <div role="group" aria-label="Confirm web connection">
-      <p>This folder has history from another server. Connecting it to this account saves that history for recovery and keeps your files here.</p>
-      <button disabled={busy} onClick={() => void perform("connect", true)}>Connect this folder</button>
-      <button disabled={busy} onClick={() => setConfirmRebind(false)}>Cancel</button>
+  const signedIn = connection?.available === true;
+  const message = failure || (!connection?.requiresRebind || connection?.connected ? connection?.message : "");
+
+  return <section ref={container} className="vault-connection" aria-label="TextText account">
+    <button type="button" className="vault-account-toggle" aria-expanded={open} aria-controls="vault-account-menu"
+      onClick={() => setOpen((value) => !value)}>
+      <span className="vault-account-avatar" aria-hidden="true">T</span>
+      <span className="vault-account-label"><strong>TextText account</strong><small>{connection ? signedIn ? "Signed in" : "Sign in" : "Checking…"}</small></span>
+      <span className="vault-account-chevron" aria-hidden="true">⌄</span>
+    </button>
+    {open && <div id="vault-account-menu" className="vault-account-menu">
+      {signedIn ? <>
+        <div className="vault-account-sync-state"><span>Web sync</span><span>{connection?.connected ? "On" : "Off"}</span></div>
+        {connection?.connected
+          ? <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open on web</button>
+          : <button type="button" disabled={busy} onClick={() => connection?.requiresRebind ? setConfirmRebind(true) : void perform("connect")}>Set up web sync</button>}
+        <button type="button" disabled={busy} onClick={() => void perform("signIn")}>Switch account</button>
+      </> : <button type="button" disabled={busy || !connection} onClick={() => void perform("signIn")}>Sign in to TextText</button>}
+      {connection?.hasConflicts && <button type="button" disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
+      {confirmRebind && <div className="vault-account-confirm" role="group" aria-label="Confirm web connection">
+        <p>Connect this folder to your TextText account? Its previous sync history stays on this Mac, and your files stay in this folder.</p>
+        <button type="button" disabled={busy} onClick={() => void perform("connect", true)}>Connect this folder</button>
+        <button type="button" disabled={busy} onClick={() => setConfirmRebind(false)}>Cancel</button>
+      </div>}
+      {message && <div className="vault-account-message" role="status"><p>{message}</p>{connection?.connected && <button type="button" disabled={busy} onClick={() => void perform("sync")}>Retry connection</button>}</div>}
     </div>}
-    {message && <div role="status"><p>{message}</p>{connection?.connected && <button disabled={busy} onClick={() => void perform("sync")}>Retry connection</button>}</div>}
   </section>;
 }
