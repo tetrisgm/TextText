@@ -3207,7 +3207,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         if statusWindow == nil {
             statusWindow = StatusWindowController(actions: .init(
                 signIn: { [weak self] in self?.signIn() },
-                signOut: { [weak self] in self?.signOut() },
                 cancelLink: { [weak self] in
                     guard let self else { return }
                     #if TEXTTEXT_STORE

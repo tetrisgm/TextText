@@ -18,7 +18,6 @@ struct StatusModel {
 final class StatusWindowController: NSWindowController {
     struct Actions {
         var signIn: () -> Void = {}
-        var signOut: () -> Void = {}
         var cancelLink: () -> Void = {}
         var reopenApproval: () -> Void = {}
         var makeDefaultMarkdown: () -> Void = {}
@@ -36,7 +35,6 @@ final class StatusWindowController: NSWindowController {
     private let markdownButton = NSButton(title: "Use TextText", target: nil, action: nil)
 
     private var linking = false
-    private var linked = false
     private var linkFailed = false
 
     init(actions: Actions) {
@@ -126,7 +124,6 @@ final class StatusWindowController: NSWindowController {
     // MARK: Refresh
 
     func refresh(_ model: StatusModel) {
-        linked = model.linked
         linking = model.linking
         linkFailed = model.linkFailed
 
@@ -141,13 +138,12 @@ final class StatusWindowController: NSWindowController {
         linkHintLabel.isHidden = model.linkHint == nil
 
         reopenButton.isHidden = !model.waitingApproval
+        accountButton.isHidden = model.linked && !model.linking && !model.linkFailed
 
         if model.linking {
             accountButton.title = "Cancel"
         } else if model.linkFailed {
             accountButton.title = "Try Again"
-        } else if model.linked {
-            accountButton.title = "Sign Out"
         } else {
             accountButton.title = "Sign In"
         }
@@ -169,7 +165,6 @@ final class StatusWindowController: NSWindowController {
     @objc private func accountAction() {
         if linking { actions.cancelLink() }
         else if linkFailed { actions.signIn() } // Try Again mints a fresh code
-        else if linked { actions.signOut() }
         else { actions.signIn() }
     }
 
