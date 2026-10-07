@@ -2901,6 +2901,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             return (resolveServerOrigin(credentials: account), account.token)
         })
         controller.onSignIn = { [weak self] in self?.signIn() }
+        controller.onSignOut = { [weak self] in self?.signOut() }
+        controller.onSettings = { [weak self] in self?.showStatusWindow() }
         controller.onSelectedFolder = { [weak self, weak controller] in
             guard let self, let controller else { return }
             self.localVaultWindow = controller
@@ -3182,6 +3184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             return (resolveServerOrigin(credentials: account), account.token)
         })
             localVaultWindow?.onSignIn = { [weak self] in self?.signIn() }
+            localVaultWindow?.onSignOut = { [weak self] in self?.signOut() }
+            localVaultWindow?.onSettings = { [weak self] in self?.showStatusWindow() }
             return
         }
         if webWindow == nil {

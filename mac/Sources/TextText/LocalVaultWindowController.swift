@@ -31,6 +31,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private let starterTemplates: URL?
     var onSelectedFolder: (() -> Void)?
     var onSignIn: (() -> Void)?
+    var onSignOut: (() -> Void)?
+    var onSettings: (() -> Void)?
 
     init(entry: URL, root initialRoot: URL? = nil,
          starterTemplates: URL? = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil),
@@ -99,6 +101,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if changed { self?.emit("texttext:vault-changed", value: [:]) }
         }
         emit("texttext:vault-sync-status", value: connection?.status ?? [:])
+        connection?.connectAutomatically()
     }
     func flushForSignOut(_ completion: @escaping (Bool) -> Void) {
         guard loaded else { completion(true); return }
@@ -198,6 +201,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             self?.emit("texttext:vault-sync-status", value: state)
             if filesChanged { self?.emit("texttext:vault-changed", value: [:]) }
         }
+        connection?.connectAutomatically()
     }
 
     func chooseFolder(requestID: String? = nil, directory: URL? = nil, completion: ((Result<[String: Any], Error>) -> Void)? = nil) {
@@ -340,6 +344,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             return
         }
         if method == "signIn" { onSignIn?(); reply(id, result: .success([:])); return }
+        if method == "signOut" { onSignOut?(); reply(id, result: .success([:])); return }
+        if method == "settings" { onSettings?(); reply(id, result: .success([:])); return }
         if method == "connection" { reply(id, result: .success(connection?.status ?? ["connected": false, "available": credentials() != nil])); return }
         if method == "connect" {
             guard let connection else { reply(id, result: .failure(VaultBridgeError("Open a folder first."))); return }

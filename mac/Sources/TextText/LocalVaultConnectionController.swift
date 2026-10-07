@@ -23,6 +23,10 @@ final class LocalVaultConnectionController {
     private(set) var message: String?
     private var watchFailureIsCurrent = false
     private var hasConflicts = false
+    private var connecting = false
+    private var onlineReady = false
+    private var connectRetry: Task<Void, Never>?
+    private var connectDelay: UInt64 = 2
     var onChange: (([String: Any], Bool) -> Void)?
 
     init(root: URL, credentials: @escaping CredentialsProvider) {
@@ -30,29 +34,65 @@ final class LocalVaultConnectionController {
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
                 previousBinding = existing
-                guard let account = credentials() else {
-                    message = "Sign in to resume this folder's web connection."; return
-                }
-                guard Self.sameOrigin(existing.origin, account.origin) else {
-                    message = "This folder is linked to a different TextText server. Your files remain available here."; return
-                }
-                try configure(existing, token: account.token)
             }
         } catch { message = error.localizedDescription }
     }
-    deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel() }
-    private static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
-        a.scheme == b.scheme && a.host == b.host && a.port == b.port
-    }
+    deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel() }
     var status: [String: Any] {
         var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil,
-                                    "hasConflicts": hasConflicts, "requiresRebind": previousBinding != nil && binding == nil]
+                                    "hasConflicts": hasConflicts, "connecting": connecting,
+                                    "onlineReady": onlineReady,
+                                    "requiresRebind": previousBinding != nil && binding == nil]
         if let binding {
             value["workspaceId"] = binding.workspaceId
             value["webURL"] = binding.origin.appendingPathComponent("vault/\(binding.workspaceId)").absoluteString
         }
         if let message { value["message"] = message }
         return value
+    }
+    /// An authenticated folder is the workspace. Attach it without a separate setup step.
+    /// Only an old loopback test journal may migrate automatically; another real
+    /// server may represent a different account and needs explicit review.
+    func connectAutomatically() {
+        guard binding == nil, !connecting, credentials() != nil else { return }
+        if let previousBinding, !Self.isLoopback(previousBinding.origin),
+           let account = credentials(), previousBinding.origin != account.origin {
+            message = "This workspace was connected to another account. Its files are safe on this Mac."
+            onChange?(status, false)
+            return
+        }
+        connecting = true
+        onChange?(status, false)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let mayMigrateLegacy = self.previousBinding.map { Self.isLoopback($0.origin) } == true
+                _ = try await self.connect(allowRebind: mayMigrateLegacy)
+                self.connectRetry?.cancel()
+                self.connectRetry = nil
+                self.connectDelay = 2
+            }
+            catch {
+                self.message = "Your workspace is saved on this Mac. Online collaboration is unavailable right now."
+                self.scheduleConnectRetry()
+            }
+            self.connecting = false
+            self.onChange?(self.status, false)
+        }
+    }
+    private static func isLoopback(_ origin: URL) -> Bool {
+        ["localhost", "127.0.0.1", "::1"].contains(origin.host ?? "")
+    }
+    private func scheduleConnectRetry() {
+        connectRetry?.cancel()
+        let delay = connectDelay
+        connectDelay = min(connectDelay * 2, 60)
+        connectRetry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.connectRetry = nil
+            self?.connectAutomatically()
+        }
     }
     func connect(allowRebind: Bool = false) async throws -> [String: Any] {
         guard let account = credentials() else { throw LocalVaultConnectionError("Sign in to TextText before connecting this folder to the web.") }
@@ -84,6 +124,7 @@ final class LocalVaultConnectionController {
             try LocalVaultSync.archiveAndRebind(root: root, to: binding)
         }
         try configure(binding, token: account.token)
+        onlineReady = false
         previousBinding = binding
         message = nil
         watchFailureIsCurrent = false
@@ -153,6 +194,7 @@ final class LocalVaultConnectionController {
                 let report = try await engine.sync()
                 guard let self else { return }
                 self.hasConflicts = !report.conflicts.isEmpty
+                self.onlineReady = report.errors.isEmpty && report.conflicts.isEmpty
                 if !report.conflicts.isEmpty { self.recordSyncMessage("Conflicting edits were kept in this folder's recovery copies.") }
                 else { self.recordSyncMessage(report.errors.first) }
                 self.onChange?(self.status, report.downloaded > 0)
@@ -166,6 +208,7 @@ final class LocalVaultConnectionController {
                 }
             } catch {
                 guard let self else { return }
+                self.onlineReady = false
                 self.recordSyncMessage(Self.retryMessage)
                 self.onChange?(self.status, false); self.running = nil
                 self.retry()

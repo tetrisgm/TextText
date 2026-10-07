@@ -87,8 +87,7 @@ try {
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
     else if (request.method === "collaborationConfig") result = null;
-    else if (request.method === "connection" || request.method === "connect" || request.method === "sync") {
-      if (request.method === "connect") connected = true;
+    else if (request.method === "connection" || request.method === "sync") {
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace", workspaceId } : {}) };
     } else if (request.method === "openWeb") { openedWeb = true; result = {}; }
     else if (request.method === "search") {
@@ -415,8 +414,15 @@ try {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-starter-overview-dark.png" });
   await page.emulateMedia({ colorScheme: "light" });
-  await page.getByRole("button", { name: "Connect to web", exact: true }).click();
-  await page.getByRole("button", { name: "Open on web", exact: true }).click();
+  await page.getByRole("button", { name: "TextText account Signed in" }).click();
+  await page.getByText("Available on this Mac").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Retry connection", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Switch account", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Settings", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Log out", exact: true }).waitFor();
+  connected = true;
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, onlineReady: true, webURL: "https://example.test/vault/workspace", workspaceId: "7a32c401-f041-4bc1-bbfd-f60317797873" } })));
+  await page.getByRole("button", { name: "Open workspace on web", exact: true }).click();
   assert.equal(openedWeb, true);
   assert.equal(await page.getByText(/^(?:Syncing|Synced)$/).count(), 0);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace", message: "A conflicting edit was preserved." } })));

@@ -21,11 +21,12 @@ public struct LocalVaultRemotePack: Sendable {
 }
 
 public enum LocalVaultSyncFailure: Error, LocalizedError {
-    case conflict, invalidResponse, invalidBinding, busy, changed, duplicateIdentity(String)
+    case conflict, invalidResponse, invalidBinding, busy, changed, duplicateIdentity(String), httpStatus(Int)
     public var errorDescription: String? {
         switch self {
         case .conflict: return "Both copies changed. Resolve the saved conflict copies."
         case .invalidResponse: return "The sync server returned an invalid document or response."
+        case .httpStatus(let status): return "The sync server returned HTTP \(status)."
         case .invalidBinding: return "Choose a valid workspace and HTTPS server before connecting this folder."
         case .busy: return "This folder already has a sync pass running."
         case .changed: return "The local file changed during sync; the next pass will retry."
@@ -67,9 +68,10 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw LocalVaultSyncFailure.invalidResponse }
         if response.statusCode == 409 || response.statusCode == 412 { throw LocalVaultSyncFailure.conflict }
-        guard ((200..<300).contains(response.statusCode) || response.statusCode == 304), data.count <= 64 * 1024 * 1024 else {
-            throw LocalVaultSyncFailure.invalidResponse
+        guard ((200..<300).contains(response.statusCode) || response.statusCode == 304) else {
+            throw LocalVaultSyncFailure.httpStatus(response.statusCode)
         }
+        guard data.count <= 64 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
         return (data, response)
     }
 

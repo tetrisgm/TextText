@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { vaultRequest } from "./bridge";
 
-type Connection = { connected: boolean; available: boolean; webURL?: string; message?: string; hasConflicts?: boolean; requiresRebind?: boolean };
+type Connection = { connected: boolean; available: boolean; connecting?: boolean; onlineReady?: boolean; webURL?: string; message?: string; hasConflicts?: boolean };
 
-/** Account identity is always visible; optional sync controls stay in the profile menu. */
+/** The open folder is the workspace; account and connection status share one profile menu. */
 export function NativeConnection({ root }: { root: string }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
-  const [confirmRebind, setConfirmRebind] = useState(false);
   const container = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -30,11 +29,9 @@ export function NativeConnection({ root }: { root: string }) {
   useEffect(() => {
     if (!open) return;
     const closeOutside = (event: PointerEvent) => {
-      if (!container.current?.contains(event.target as Node)) { setOpen(false); setConfirmRebind(false); }
+      if (!container.current?.contains(event.target as Node)) setOpen(false);
     };
-    const closeEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setOpen(false); setConfirmRebind(false); }
-    };
+    const closeEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     document.addEventListener("pointerdown", closeOutside);
     document.addEventListener("keydown", closeEscape);
     return () => {
@@ -43,17 +40,15 @@ export function NativeConnection({ root }: { root: string }) {
     };
   }, [open]);
 
-  const perform = async (method: "connect" | "sync" | "openWeb" | "signIn" | "recovery", allowRebind = false) => {
+  const perform = async (method: "openWeb" | "signIn" | "signOut" | "settings" | "recovery") => {
     setBusy(true); setFailure("");
     try {
-      const next = await vaultRequest<Connection>(method, allowRebind ? { allowRebind: true } : {});
-      if (method !== "openWeb" && typeof next?.connected === "boolean") setConnection(next);
-      if (method === "connect" && next?.connected) setConfirmRebind(false);
-    } catch (error) { setFailure(error instanceof Error ? error.message : "The web connection could not be opened."); }
+      await vaultRequest(method);
+    } catch (error) { setFailure(error instanceof Error ? error.message : "The action could not be completed."); }
     finally { setBusy(false); }
   };
   const signedIn = connection?.available === true;
-  const message = failure || (!connection?.requiresRebind || connection?.connected ? connection?.message : "");
+  const workspaceStatus = connection?.onlineReady ? "Available online" : connection?.connecting || connection?.connected && !connection?.message ? "Connecting…" : "Available on this Mac";
 
   return <section ref={container} className="vault-connection" aria-label="TextText account">
     <button type="button" className="vault-account-toggle" aria-expanded={open} aria-controls="vault-account-menu"
@@ -64,19 +59,13 @@ export function NativeConnection({ root }: { root: string }) {
     </button>
     {open && <div id="vault-account-menu" className="vault-account-menu">
       {signedIn ? <>
-        <div className="vault-account-sync-state"><span>Web sync</span><span>{connection?.connected ? "On" : "Off"}</span></div>
-        {connection?.connected
-          ? <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open on web</button>
-          : <button type="button" disabled={busy} onClick={() => connection?.requiresRebind ? setConfirmRebind(true) : void perform("connect")}>Set up web sync</button>}
-        <button type="button" disabled={busy} onClick={() => void perform("signIn")}>Switch account</button>
+        <div className="vault-account-sync-state"><span>Workspace</span><span>{workspaceStatus}</span></div>
+        {connection?.onlineReady && <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open workspace on web</button>}
+        <button type="button" disabled={busy} onClick={() => void perform("settings")}>Settings</button>
+        <button type="button" disabled={busy} onClick={() => void perform("signOut")}>Log out</button>
       </> : <button type="button" disabled={busy || !connection} onClick={() => void perform("signIn")}>Sign in to TextText</button>}
       {connection?.hasConflicts && <button type="button" disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
-      {confirmRebind && <div className="vault-account-confirm" role="group" aria-label="Confirm web connection">
-        <p>Connect this folder to your TextText account? Its previous sync history stays on this Mac, and your files stay in this folder.</p>
-        <button type="button" disabled={busy} onClick={() => void perform("connect", true)}>Connect this folder</button>
-        <button type="button" disabled={busy} onClick={() => setConfirmRebind(false)}>Cancel</button>
-      </div>}
-      {message && <div className="vault-account-message" role="status"><p>{message}</p>{connection?.connected && <button type="button" disabled={busy} onClick={() => void perform("sync")}>Retry connection</button>}</div>}
+      {(failure || connection?.message) && <div className="vault-account-message" role="status"><p>{failure || connection?.message}</p></div>}
     </div>}
   </section>;
 }

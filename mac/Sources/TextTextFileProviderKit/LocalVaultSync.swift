@@ -260,7 +260,6 @@ public actor LocalVaultSync {
         return try JSONDecoder().decode(State.self, from: Data(contentsOf: url)).binding
     }
 
-    /// A person has explicitly chosen a new web connection for this folder.
     /// Keep the complete previous journal on this Mac before starting a fresh
     /// cursor; localhost revisions and queued operations cannot be sent to a
     /// different server. TextPack files in the selected folder are untouched.
