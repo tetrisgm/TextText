@@ -12,7 +12,7 @@ export default defineConfig({
     // {ts,tsx} because it was ts alone, and a .tsx test file committed on
     // 2026-08-19 with three tests in it had never once run. A test that cannot
     // fail is worse than no test: it reads as coverage.
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "sync/**/*.test.ts"],
     // Keep the full suite from starving the large-document and durability
     // checks when this Mac is also building another project.
     maxWorkers: 4,

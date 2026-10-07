@@ -120,6 +120,7 @@ if [ "$WEB_ONLY" = "1" ]; then
   }
   echo ">> verify web application and PostgreSQL behavior"
   if [ "$SKIP_TESTS" = "1" ]; then
+    npm run test:sync:check
     echo ">> reuse separately passed web and database Vitest gates"
   else
     web_test_workers="${TEXTTEXT_WEB_TEST_WORKERS:-4}"
@@ -129,7 +130,7 @@ if [ "$WEB_ONLY" = "1" ]; then
     }
     npm test -- --maxWorkers="$web_test_workers"
     npm run test:db
-    npm run test:sync -- --native-only
+    npm run test:sync
   fi
   npx tsc --noEmit
   node --test "$ROOT/release/oracle/test.mjs" "$ROOT/release/oracle/test-smoke.mjs" "$ROOT/release/oracle/test-restore-drill.mjs"
@@ -168,6 +169,7 @@ if [ "$SKIP_TESTS" != "1" ]; then
   echo ">> verify exact release source"
   npx tsx "$ROOT/scripts/verify-release.ts"
 else
+  npm run test:sync:check
   echo ">> reuse exact release receipt"
   npx tsx "$ROOT/scripts/verify-release.ts" --check
 fi

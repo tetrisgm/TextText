@@ -17,7 +17,7 @@
     "reading:images:backfill": "node --env-file=.env.local --import tsx scripts/backfill-reading-images.mjs",
     "reading:channels:backfill": "node --env-file=.env.local --import tsx scripts/backfill-feed-channels.mjs",
     "perf:queries": "npx tsx scripts/query-budget.ts",
-    "test:sync": "bash scripts/test-sync.sh",
+    "test:sync": "node sync/verify.mjs",
     "sync:check": "npx tsx scripts/check-sync-consistency.ts",
     "bench": "npx tsx scripts/bench-actions.ts",
     "bench:sync": "npx tsx scripts/bench-sync.ts",
@@ -75,7 +75,10 @@
     "eval:item-verbs": "node --env-file=.env.local --import tsx scripts/eval-item-verbs.ts",
     "eval:sidebar": "node --env-file=.env.local --import tsx scripts/eval-sidebar-looks.ts",
     "verify:look-contract": "tsx scripts/verify-look-contract.ts",
-    "try": "mac/scripts/try.sh"
+    "try": "mac/scripts/try.sh",
+    "test:sync:core": "node sync/verify.mjs --core-only",
+    "test:sync:check": "node sync/verify.mjs --check",
+    "test:sync:client": "node sync/verify.mjs --client-only"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.15",

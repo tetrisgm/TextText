@@ -20,6 +20,15 @@
   for reproductions, test counts and remaining limits. `npm run test:sync` is a
   committed manual regression suite and runs in the normal release workflow.
   No background build, install or release job was added.
+- Sync verification now has its own [subsystem contract](../sync/README.md) and
+  exact-source receipts. Release `--skip-tests` requires matching Mac core/native
+  receipts. Mac: 194 sync tests + 58 native tests; Windows: 136 client contract
+  tests, TypeScript and 3 receipt-gate tests. These are test-runner results, not
+  Windows desktop app verification. No native Windows client exists in this repo.
+  The PC source/test copy is `C:\Users\Shokunin\dev\texttext-sync-20261007`.
+  Oracle server durability uses POSIX directory fsync; it was not weakened for
+  Windows. The owner expects an installed Windows client matching the Mac; that
+  remains unimplemented, including native files, auth, lifecycle and installer.
 
 ## Live verification
 
