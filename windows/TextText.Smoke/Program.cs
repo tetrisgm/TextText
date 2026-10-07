@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text;
 using TextText.Core;
@@ -14,6 +15,12 @@ static class Program
   Directory.CreateDirectory(args[1]);
   using var log = new StreamWriter(Path.Combine(args[1],"desktop-smoke.log")) { AutoFlush=true };
   Console.SetOut(log); Console.SetError(log); Console.WriteLine("smoke: entry");
+  return RunWpf(args);
+ }
+ // Keep WPF type loading/JIT separate from the first durable startup diagnostic.
+ [MethodImpl(MethodImplOptions.NoInlining)]
+ private static int RunWpf(string[] args) {
+  Console.WriteLine("smoke: WPF entry");
   TextText.Windows.App.ConfigureRendering();
   if(System.Windows.Media.RenderOptions.ProcessRenderMode != System.Windows.Interop.RenderMode.SoftwareOnly) throw new InvalidOperationException("Native startup rendering mode was not configured.");
   var app = new Application(); Console.WriteLine("smoke: application created"); var result = 1;
