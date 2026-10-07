@@ -51,7 +51,7 @@ public sealed class SyncEngine
         TextPackStore.AtomicWrite(statePath,bytes);DurabilityChanged?.Invoke();
     }
     void Report(bool running,string? error,int pending) { Status=new(running,error,pending);StatusChanged?.Invoke(Status); }
-    public async Task SyncAsync(CancellationToken cancellation=default)
+    public async Task SyncAsync(CancellationToken cancellation=default,bool localChangesOnly=false)
     {
         if(!await gate.WaitAsync(0,cancellation)) return;
         State? state=null;
@@ -61,8 +61,10 @@ public sealed class SyncEngine
             state=Load();var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
             Report(true,null,state.Outbox.Count);
             if(state.PendingPull!=null) {if(IsEditing(state.PendingPull.ItemId)){Report(false,null,state.Outbox.Count);return;}ApplyPull(state);}
+            var local=store.Scan().ToDictionary(x=>x.ItemId);
+            if(localChangesOnly&&!HasLocalWork(state,local)) {Report(false,StateError(state),state.Outbox.Count);return;}
             await Drain(state,cancellation);
-            var local=store.Scan().ToDictionary(x=>x.ItemId); var remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);
+            var remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);
             foreach(var pair in state.Items.ToArray()) {
                 cancellation.ThrowIfCancellationRequested();var id=pair.Key;if(IsEditing(id)||Blocked(state,id))continue;var baseline=pair.Value;var intent=store.Intent(id);
                 local.TryGetValue(id,out var file); remote.TryGetValue(id,out var server);
@@ -95,8 +97,18 @@ public sealed class SyncEngine
             }
             foreach(var item in remote.Values.Where(x=>!store.LastScanErrors.Any(e=>e.ItemId==x.ItemId||e.Path=="."||e.Path==x.RelativePath||x.RelativePath.StartsWith(e.Path+"/",StringComparison.OrdinalIgnoreCase)) && !IsEditing(x.ItemId) && !Blocked(state,x.ItemId) && !x.Deleted && !local.ContainsKey(x.ItemId) && !state.Items.ContainsKey(x.ItemId))) await Pull(state,item.ItemId,null,cancellation);
             foreach(var pending in state.Items.Where(x=>x.Value.Refresh).ToArray()) { if(IsEditing(pending.Key)||Blocked(state,pending.Key))continue;var current=store.Describe(pending.Value.Path); if(current.Hash==pending.Value.Hash) await Pull(state,pending.Key,current,cancellation); }
-            Report(false,state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null,state.Outbox.Count);
+            Report(false,StateError(state),state.Outbox.Count);
         } catch(Exception error) { Report(false,error.Message,state?.Outbox.Count??0);throw; } finally {gate.Release();}
+    }
+    string? StateError(State state)=>state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;
+    bool HasLocalWork(State state,Dictionary<string,PackFile> local) {
+        if(state.Outbox.Any(op=>!op.Conflicted&&!IsEditing(op.ItemId)))return true;
+        foreach(var file in local.Values) {
+            if(IsEditing(file.ItemId)||Blocked(state,file.ItemId))continue;
+            if(!state.Items.TryGetValue(file.ItemId,out var baseline)||baseline.Refresh||baseline.Hash!=file.Hash||baseline.Path!=file.Path)return true;
+        }
+        foreach(var item in state.Items)if(!local.ContainsKey(item.Key)&&!IsEditing(item.Key)&&!Blocked(state,item.Key)&&store.Intent(item.Key)?.Kind=="delete")return true;
+        return false;
     }
     void QueueUpload(State state,PackFile file,string? revision) {
         var bytes=store.Read(file.Path);if(TextPackStore.Hash(bytes)!=file.Hash) throw new FileChangedException();

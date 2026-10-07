@@ -65,11 +65,17 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
 
     async Task Run()
     {
-        var failures = 0;
+        var failures = 0; var localWake = false; var lastRemotePass = DateTimeOffset.MinValue;
         try {
             while (!lifetime.IsCancellationRequested) {
                 try {
-                    await sync.SyncAsync(lifetime.Token);
+                    // File saves from an active shared editor are already sent
+                    // through collaboration. Local wakeups need no cloud read
+                    // unless another file changed; remote discovery still runs
+                    // at least every 30 seconds under continuous local typing.
+                    var localOnly = localWake && failures == 0 && DateTimeOffset.UtcNow - lastRemotePass < TimeSpan.FromSeconds(30);
+                    if (!localOnly) lastRemotePass = DateTimeOffset.UtcNow;
+                    await sync.SyncAsync(lifetime.Token, localChangesOnly: localOnly);
                     failures = 0;
                     var status = sync.Status.Error is null ? "ready" : "conflict";
                     var completedVersion = Volatile.Read(ref durabilityVersion);
@@ -86,7 +92,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 }
                 using var wake = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
                 wake.CancelAfter(TimeSpan.FromSeconds(failures == 0 ? 30 : Math.Min(120, 2 << failures)));
-                try { await changes.Reader.ReadAsync(wake.Token); } catch (OperationCanceledException) when (!lifetime.IsCancellationRequested) { }
+                try { await changes.Reader.ReadAsync(wake.Token); localWake = true; } catch (OperationCanceledException) when (!lifetime.IsCancellationRequested) { localWake = false; }
                 while (changes.Reader.TryRead(out _)) { }
                 await Task.Delay(failures == 0 ? 400 : Math.Min(30_000, 1000 << failures), lifetime.Token);
             }
