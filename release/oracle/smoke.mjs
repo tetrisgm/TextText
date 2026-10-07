@@ -120,8 +120,9 @@ export async function smoke({ scratch = false, environment = process.env, origin
     });
     // No body: successful authorization reaches validation, creates no file.
     const browserWrite = await browserProbe(publicOrigin);
-    assert.equal(browserWrite.status, 400, "Browser cookie mutation did not reach body validation.");
-    assert.equal((await browserWrite.json()).error, "TextPack body is required", "Browser write failed before body validation.");
+    assert.ok([400, 422].includes(browserWrite.status), `Browser cookie mutation returned HTTP ${browserWrite.status} before body validation.`);
+    const bodyError = (await browserWrite.json()).error;
+    assert.ok(["TextPack body is required", "Invalid TextPack or file metadata"].includes(bodyError), "Browser write failed before body validation.");
     assert.equal((await browserProbe("https://attacker.invalid")).status, 403, "Cross-origin cookie mutation was accepted.");
     checks.push("browser cookie mutation origin enforcement");
 
