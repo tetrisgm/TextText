@@ -15,8 +15,12 @@ static class Program
   Directory.CreateDirectory(args[1]);
   using var log = new StreamWriter(Path.Combine(args[1],"desktop-smoke.log")) { AutoFlush=true };
   Console.SetOut(log); Console.SetError(log); Console.WriteLine("smoke: entry");
+  ConfigureRendering();
+  Console.WriteLine("smoke: rendering configured");
   return RunWpf(args);
  }
+ [MethodImpl(MethodImplOptions.NoInlining)]
+ private static void ConfigureRendering() => TextText.Windows.App.ConfigureRendering();
  // Keep WPF type loading/JIT separate from the first durable startup diagnostic.
  [MethodImpl(MethodImplOptions.NoInlining)]
  private static int RunWpf(string[] args) {
