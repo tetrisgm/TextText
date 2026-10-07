@@ -21,6 +21,18 @@ describe("shared native agent presence lifecycle", () => {
       expect(calls.find(c => c.method === "presenceLeave")?.params.agent).toEqual({ name: "Codex", taskId: "task-1" });
     } finally { client.destroy(); }
   });
+  it("announces an existing shared item while its local checkpoint is ahead of the file baseline", async () => {
+    const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+      if (method === "collaborationConfig") return params.readyOnly ? null : { itemId: "item", localFiles: true };
+      return { capabilities: { nativeAgentPresence: true }, epoch: 1, presence: [], session: { clientId: "p-00000000-0000-4000-8000-000000000001", sessionCredential: "v1:fixture", expiresAt: Date.now() + 100000 } };
+    });
+    const client = new AgentPresenceClient(request, events());
+    try {
+      await client.start("Note.textpack", "task");
+      await vi.waitFor(() => expect(request.mock.calls.some(([method]) => method === "presenceJoin")).toBe(true));
+      expect(request.mock.calls[0]).toEqual(["collaborationConfig", { path: "Note.textpack" }, expect.any(AbortSignal)]);
+    } finally { client.destroy(); }
+  });
   it("does not announce an obsolete start or an unsynced file", async () => {
     let resolve!: (value: unknown) => void;
     const request = vi.fn(() => new Promise(done => { resolve = done; }));

@@ -26,7 +26,7 @@ export class AgentPresenceClient {
     const generation = this.generation;
     const opening = new AbortController(); this.opening = opening;
     try {
-      const config = await this.request("collaborationConfig", { path, readyOnly: true }, opening.signal) as { itemId?: string; localFiles?: boolean } | null;
+      const config = await this.request("collaborationConfig", { path }, opening.signal) as { itemId?: string; localFiles?: boolean } | null;
       if (this.destroyed || generation !== this.generation || !config?.itemId || config.localFiles !== true) return;
       const server = await this.request("presenceRead", { itemId: config.itemId }, opening.signal) as { capabilities?: { nativeAgentPresence?: boolean } } | null;
       // Older servers treat an unknown agent field as human presence. Never announce before support is explicit.
