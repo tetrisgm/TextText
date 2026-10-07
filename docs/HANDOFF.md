@@ -2,17 +2,53 @@
 
 ## Current state
 
-- The canonical Mac app is `/Applications/TextText.app`, local Store-shaped build **0.204 (1172)**. It opens the iCloud Drive workspace at `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`. The account menu shows **Signed in**, **Open workspace on web**, **Settings**, and **Log out**. The Settings window has no duplicate sign-out button, Finder mirror, manual sync control, or empty activity log. Sign-in attaches the folder automatically; transient connection failures retry in the background. Existing local sync journals and TextPacks were preserved. Build 1172 fixes native session invalidation when closing the retained window or refreshing credentials. Pending writes survive both paths. See the [root-cause reproduction and verification](verification/2026-10-07-editing-session-lifecycle.md). The local installer used its development-build path, so release runtime attestation was not run.
-- Oracle serves the web backend from deployment `texttext-oracle-20261007T073532Z-613c15e4` (source `613c15e4`). `/etc/texttext/runtime.env` points `TEXTTEXT_VAULT_ROOT` to `/home/ubuntu/texttext/state/vault`, owned by `ubuntu` with mode 0700. A copy of the previous runtime environment is `/etc/texttext/runtime.env.before-vault-20261007`. The previous Oracle release was retained. `texttext.service` and `algorave.service` are active.
-- The current Mac and Oracle workspace each contain **21 active TextPacks** with identical relative paths and SHA-256 hashes. The local `.texttext` recovery material was excluded from this comparison. No public Mac release was published.
-- The source migration fix after the deployed backend restores a current local TextPack if an old journal tracks it but the server has no item and no tombstone. It uses `If-None-Match: *`, so a concurrent server copy cannot be overwritten. The focused Swift test passed; build 1166 was installed and the complete workspace hash comparison passed.
+- `/Applications/TextText.app` is local Store-shaped **0.204 (1173)**, signed with
+  all three extensions. It opens the existing iCloud Drive workspace at
+  `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
+  User files and journals were preserved. No public Mac release was published.
+  The local development install bypassed sandbox-private runtime attestation;
+  installed startup, editing, reopening and search were verified in the app.
+- Oracle serves `texttext-oracle-20261007T092817Z-f151886c`. The deployment
+  passed authenticated browser-cookie origin enforcement, native read/write,
+  storage and audit smoke checks. Previous release retained; Algorave active
+  and HAProxy unchanged. Vault storage is `/home/ubuntu/texttext/state/vault`.
+- Native window/session invalidation, in-flight credential renewal, retryable
+  server errors and upload backoff are fixed. Browser cookie writes now use the
+  validated public origin behind Oracle's proxy. Server Markdown checkpoints
+  preserve the actual relative file path, including after rename.
+- See the [sync failure audit and verification](verification/2026-10-07-sync-failure-audit.md)
+  for reproductions, test counts and remaining limits. `npm run test:sync` is a
+  committed manual regression suite and runs in the normal release workflow.
+  No background build, install or release job was added.
 
-## Verification and follow-up
+## Live verification
 
-- Broader sync audit reproduced two additional client faults: retryable server storage errors became terminal, and successful reads defeated upload backoff. Source fixes pass 93 client/server/transport tests; packaging/install and web deployment remain pending. See [failure audit and remaining gaps](verification/2026-10-07-sync-failure-audit.md).
-- The web workspace now shows the session email, **Signed in**, and **Log out** in the sidebar. The protected `/vault/[workspaceId]` route already required a signed-in session. The focused browser flow, release web and database checks, Oracle backup/migration smoke, and live Safari account-menu check passed. The owner removed the separate approval rule for Oracle web deployments; public Mac releases still require a request. The existing workspace had no TextText Changelog, so no duplicate was created.
-- The Oracle web-only release passed its standard web, database, TypeScript, packaging, authenticated workspace, edit, storage, and audit checks. The first build attempt stopped before deploy because a temporary clean copy used a dependency symlink rejected by Turbopack; the verified deployment used a full local dependency copy. See [Oracle procedure](../release/oracle/README.md).
-- The broad local browser test passed the account-menu section, then failed later in an unrelated new-card link selection assertion (`verify-browser.mjs:2837`). It was not a web deployment gate. TypeScript, account UI lint, focused Swift connection/recovery tests, and the targeted vault route tests passed. Search cache and the 125-second picker were unaffected and were not rerun. See the [previous handoff](archive/HANDOFF-2026-10-06-before-oracle-workspace.md) for their receipts.
-- The existing `Shoku's Space/My Notes/TextText Changelog.textpack` is not present in the active iCloud workspace (`texttext search 'TextText Changelog' --json` returned no match). Do not create a second changelog merely to record this work.
-- The CLI installed separately at `~/.local/bin/texttext` still points to the signed 1158 standalone CLI. The bundled agent's live connection and template/reference parity remain unverified. No additional Oracle deployment or public release is implied by this handoff.
-- Unrelated dirty files from another worker remain untouched: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`.
+- Mac edits reached Safari. Direct edits of `text.md` inside a TextPack, without
+  rewriting `document.json`, reached Mac, Safari and search. Safari edits then
+  reached the Mac's file. Marker removal invalidated search correctly.
+- Original note text remains. Temporary markers were removed; the test-only
+  recovered copy was moved to recoverable Trash. Both clients reopened the
+  original without recovery banners. Both workspace inventories have 21 active
+  TextPacks. After the final browser save, the edited note’s Markdown and all
+  three JSON entries match exactly on Mac and Oracle. Its archive bytes differ
+  between native/server encoding; the other 20 archive hashes match. The final
+  path metadata fix has a rename regression as well.
+- The previous 125-second picker receipt remains applicable; no picker changes.
+  See [earlier handoff](archive/HANDOFF-2026-10-06-before-oracle-workspace.md).
+
+## Follow-up and boundaries
+
+- Actual iCloud transfer/eviction on a second physical Apple device remains
+  unverified. Native provider-absence and real HTTP two-folder tests passed;
+  they do not certify Apple's cross-device transport or power-loss behavior.
+- The existing `Shoku's Space/My Notes/TextText Changelog.textpack` is absent from
+  the active workspace (`texttext search 'TextText Changelog' --json`: no match).
+  No duplicate changelog was created.
+- The separately installed CLI at `~/.local/bin/texttext` still uses standalone
+  build 1158. The bundled agent's live connection and template/reference parity
+  are outside this sync verification.
+- Unrelated worker changes remain untouched in
+  `src/components/workspace/assistant/attachments.ts`,
+  `src/lib/workspace/__tests__/tabs.test.ts` and `scripts/.probe-editor.ts`.
+- Oracle web deployment is authorized by the owner. Public Mac releases still
+  require an explicit request. Preserve Algorave and HAProxy routing.

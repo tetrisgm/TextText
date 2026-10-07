@@ -33,8 +33,7 @@ one particular historical screenshot.
 - Native file replacement, restart replay, iCloud absence versus explicit
   deletion, concurrent remote edits, recovery and origin attribution:
   `mac/Tests/TextTextFileProviderKitTests/LocalVaultSyncTests.swift` and
-  `LocalVaultSharedEditingTests.swift`. These existing native cases were
-  inspected, not rerun for the TypeScript-only corrections.
+  `LocalVaultSharedEditingTests.swift`. These cases were rerun in the combined durable sync suite below.
 
 ## Verification
 
@@ -43,14 +42,30 @@ TypeScript check passed before the additional table-driven HTTP cases; those
 cases are included in the 93-test run. Both newly exposed failure classes were
 first reproduced against the previous implementation.
 
-## Remaining limits
+## Installed verification
 
-This is not a blanket reliability certification. In-flight requests carrying
-old credentials while tokens refresh still need an explicit failure test.
-Process-kill fault injection across the whole native-to-Oracle path and a real
-second Apple device's iCloud behavior are not established by unit fixtures.
-The new TypeScript fixes require packaging/install and Oracle web deployment
-before they protect both running clients. Build 1172 remains installed.
+Mac 0.204 (1173) is installed at `/Applications/TextText.app`, signed with all
+three extensions present. The live iCloud workspace was preserved. Temporary
+Mac edits reached Safari; a direct `text.md` edit (leaving `document.json`
+unchanged) reached both clients and appeared in Mac search. After the proxy
+correction, Safari edits reached the Mac's TextPack. Removing the marker also
+removed its search result. Original note content remains; temporary markers
+were removed and the test-only recovery copy was moved to recoverable Trash.
+Both clients reopened the original without recovery banners.
+
+The clean release snapshot passed 4,269 web tests (146 skipped), 114 database
+tests and TypeScript. After the proxy fix, 108 vault/auth/origin tests passed.
+Unaffected tests were not repeated for the final path-only correction.
+Deployment smoke now verifies browser-cookie writes as well as native-bearer
+read/write, canonical storage and mutation audit. The initial proxy deployment
+rolled back safely because its smoke expected HTTP 400 where an empty streamed
+body produces 422; the corrected probe accepts only those expected validation
+errors and still rejects foreign origins.
+
+Local logs: `/tmp/texttext-sync-suite.log`, `/tmp/texttext-sync-web-tests.log`,
+`/tmp/texttext-sync-db-tests.log`, `/tmp/texttext-sync-proxy-tests.log`,
+`/tmp/texttext-sync-path-tests.log`. These are machine-local receipts; the
+regression cases and manual release gate are committed.
 
 ## Durable regression suite
 
@@ -114,3 +129,12 @@ Markdown `slug` metadata: the server's collaboration writer used the placeholder
 `Document.textpack`. It now receives the stored relative path. A regression first
 reproduced the placeholder and now verifies both an ordinary edit and an edit
 after rename. The two affected collaboration suites passed all 21 tests.
+
+Final Oracle deployment: `texttext-oracle-20261007T092817Z-f151886c`.
+Authenticated browser/native smoke passed. A fresh Safari save after deployment
+reached the installed Mac; both clients displayed the original note without a
+recovery banner. Inventories each contain 21 active TextPacks. The 20 untouched
+archive hashes match. The edited archive has identical `text.md`,
+`document.json`, `template.json`, and `info.json` on both sides (archive encoding
+bytes differ). Its Markdown slug now contains the actual Notes path. Algorave
+remained active and HAProxy was unchanged. No public Mac release was made.
