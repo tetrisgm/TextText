@@ -771,3 +771,20 @@
 .vault-app .vault-account-menu button:hover:not(:disabled){background:var(--selection)}
 .vault-app .vault-account-confirm,.vault-app .vault-account-message{margin-top:5px;padding-top:5px;border-top:1px solid var(--line)}
 .vault-app .vault-account-confirm p,.vault-app .vault-account-message p{margin:5px 10px 8px}
+
+/* Personal mixed-library layout; template-specific collections retain their own views. */
+.vault-app .vault-document-view-options { display:flex; justify-content:flex-end; gap:4px; margin:0 0 16px; }
+.vault-app .vault-document-view-options button { padding:6px 12px; border-radius:6px; color:var(--muted); }
+.vault-app .vault-document-view-options button[aria-pressed="true"] { background:var(--sidebar); color:var(--ink); }
+.vault-app .vault-document-grid .vault-file-type-icon { display:none; }
+.vault-app .vault-document-list { display:grid; }
+.vault-app .vault-document-list > button { display:grid; grid-template-columns:32px minmax(0,1fr) minmax(80px,18%); gap:3px 12px; align-items:center; text-align:left; padding:12px 4px; border:0; border-bottom:1px solid var(--line); border-radius:0; background:transparent; color:var(--ink); min-width:0; }
+.vault-app .vault-document-list > button:hover { background:var(--sidebar); }
+.vault-app .vault-document-list > button:focus-visible { outline:2px solid var(--tt-accent); outline-offset:-2px; }
+.vault-app .vault-document-list strong { grid-column:2; grid-row:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; }
+.vault-app .vault-document-list small { grid-column:3; grid-row:1 / span 2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:12px; }
+.vault-app .vault-document-list .vault-file-preview { grid-column:1; grid-row:1 / span 2; width:32px; height:32px; object-fit:cover; }
+.vault-app .vault-document-list .vault-file-type-icon { grid-column:1; grid-row:1 / span 2; color:var(--muted); font-size:23px; }
+.vault-app .vault-document-list .vault-file-excerpt { grid-column:2; grid-row:2; height:auto; padding:0; margin:0; background:transparent; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:13px; line-height:1.4; }
+.vault-app .vault-document-list .vault-file-source, .vault-app .vault-document-list > button > span:last-child { display:none; }
+@media(max-width:540px) { .vault-app .vault-document-list > button { grid-template-columns:26px minmax(0,1fr) minmax(55px,20%); gap:3px 8px; } .vault-app .vault-document-list .vault-file-preview { width:26px; height:26px; } }
