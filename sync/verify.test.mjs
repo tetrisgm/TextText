@@ -3,7 +3,22 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { fingerprint, validateReceipt, recordPassingRun } from './verify.mjs';
+
+test('invocation through a symlink executes the gate and rejects invalid flags', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-sync-entry-'));
+  try {
+    const linkedDirectory = path.join(root, 'sync');
+    await fs.symlink(fileURLToPath(new URL('.', import.meta.url)), linkedDirectory,
+      process.platform === 'win32' ? 'junction' : 'dir');
+    const entry = path.join(linkedDirectory, 'verify.mjs');
+    const result = spawnSync(process.execPath, [entry, '--invalid-gate-option'], { encoding: 'utf8' });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Unknown flag --invalid-gate-option/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test('source additions, changes and removals invalidate receipts; prose does not', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-sync-gate-'));
