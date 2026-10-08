@@ -29,6 +29,22 @@ beforeEach(() => {
   });
 });
 describe("canonical file MCP read adapter", () => {
+  it("narrows owner reads, search and folders to the server-issued task folder", async () => {
+    const scoped = { ...auth, extra: { ...auth.extra, folderAgentPath: "Notes" } };
+    expect(result(await executeVaultReadTool("list_folders", {}, scoped)).folders.map((folder: {path: string}) => folder.path)).toEqual(["Notes"]);
+    expect(result(await executeVaultReadTool("search", {query: "needle"}, scoped)).items.map((item: {id: string}) => item.id)).toEqual([id]);
+    expect((await executeVaultReadTool("read_item", {id: secret}, scoped)).isError).toBe(true);
+    expect((await executeVaultReadTool("get_workspace", {}, scoped)).isError).toBe(true);
+    mock.identity.mockResolvedValue({itemId: id, relativePath: "Private/Moved.textpack", revision: "hash"});
+    expect((await executeVaultReadTool("read_item", {id}, scoped)).isError).toBe(true);
+  });
+  it("rejects malformed folder boundaries before accessing files", async () => {
+    for (const folderAgentPath of ["../Notes", "Notes/", "Notes\\Other", null]) {
+      expect((await executeVaultReadTool("read_item", {id}, { ...auth, extra: { ...auth.extra, folderAgentPath } })).isError).toBe(true);
+    }
+    expect(mock.read).not.toHaveBeenCalled();
+  });
+
   it("dispatches the public executor and resource-style call to files, with a narrowed catalog", async () => {
     const { executeMcpTool, runWorkspaceToolForAuth } = await import("../tools");
     const { listTools, callTool } = await import("../registry");

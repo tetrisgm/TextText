@@ -181,6 +181,15 @@ async function createCapture(
 }
 
 describe("workspace write proposals", () => {
+  it("persists the task folder through owner approval and rejects out-of-folder staging", async () => {
+    const h = harness();
+    const actor = { ...owner, folderAgentPath: "Notes" };
+    await expect(createWorkspaceWriteProposal({actor, tool: "create_item", arguments: {capture: "Hello", folder_path: "Private"}}, h.dependencies)).rejects.toThrow("inside");
+    const proposal = await createWorkspaceWriteProposal({actor, tool: "create_item", arguments: {capture: "Hello", folder_path: "Notes"}}, h.dependencies);
+    expect(h.repository.rows.get(proposal.id)?.metadata?.folderAgentPath).toBe("Notes");
+    await decideWorkspaceWriteProposal({actor: owner, proposalId: proposal.id, decision: "approve"}, h.dependencies);
+    expect(h.execute).toHaveBeenCalledWith("create_item", expect.anything(), expect.objectContaining({folderAgentPath: "Notes"}));
+  });
   it("retains one frozen proposal for concurrent staging retries and rejects changed intent", async () => {
     const h = harness();
     const input = {actor: owner, tool: "create_item", arguments: {capture: "One note"}, stagingKey: "retry-key-123456789"};

@@ -1,3 +1,4 @@
+import { FOLDER_AGENT_TOOLS, insideAgentFolder, validFolderAgentPath } from "./folder-agent-boundary";
 import { documentAssetSchema, type DocumentAsset } from "@/lib/documents/model";
 // Server-only durable approval service for cloud-assistant workspace writes.
 
@@ -27,6 +28,7 @@ import { validateFolderMoveReview } from "@/lib/vault/folder-move-review";
 import { executeApprovedFolderMove, previewFolderMoveCommand, type ApprovedFolderMove } from "@/lib/vault/folder-move-command.server";
 
 export type WorkspaceWriteProposalActor = {
+  folderAgentPath?: string;
   approvedFolderMove?: ApprovedFolderMove;
   receiptOnly?: boolean;
   sub: string;
@@ -432,6 +434,23 @@ export async function createWorkspaceWriteProposal(
   const owner = await proposalBinding(input.actor, dependencies);
   if (!owner) throw new Error("Only the workspace owner can stage a write.");
   const requested = validateWorkspaceWriteProposal(input.tool, input.arguments);
+  if (input.actor.folderAgentPath !== undefined) {
+    const boundary = input.actor.folderAgentPath;
+    if (!validFolderAgentPath(boundary) || !FOLDER_AGENT_TOOLS.has(requested.name)) throw new Error("This task can only work in its selected folder.");
+    const args = requested.arguments as Record<string, unknown>;
+    if (requested.name === "create_item" || requested.name === "move_item") {
+      if (typeof args.folder_path !== "string" || !insideAgentFolder(boundary, args.folder_path)) throw new Error("Choose a destination inside this task's folder.");
+    }
+    if (requested.name === "create_folder") {
+      const parent = typeof args.parent_path === "string" ? args.parent_path : "";
+      if (!insideAgentFolder(boundary, parent)) throw new Error("Choose a destination inside this task's folder.");
+    } else if (requested.name !== "create_item") {
+      if (typeof args.id !== "string") throw new Error("An item inside this task's folder is required.");
+      const current = await dependencies.resolveItems(owner.workspace.handle, [args.id], input.actor);
+      const item = current.get(args.id);
+      if (!item || !insideAgentFolder(boundary, item.folderPath)) throw new Error("This task can only work in its selected folder.");
+    }
+  }
   const now = dependencies.now();
   const ttl = Math.min(
     Math.max(1_000, input.ttlMs ?? WRITE_PROPOSAL_TTL_MS),
@@ -441,6 +460,7 @@ export async function createWorkspaceWriteProposal(
   if (input.stagingKey !== undefined && !/^[A-Za-z0-9_-]{16,128}$/.test(input.stagingKey)) throw new Error("Invalid proposal staging identifier.");
   const stagingDigest = input.stagingKey === undefined ? null : createHash("sha256").update(JSON.stringify([
     requested.name, requested.arguments, input.origin ?? null, input.actor.connectionId ?? null, input.actor.actorType ?? "ai",
+    ...(input.actor.folderAgentPath !== undefined ? [{ folderAgentPath: input.actor.folderAgentPath }] : []),
   ])).digest("hex");
   const identity = input.stagingKey === undefined ? null : createHash("sha256").update(JSON.stringify([
     owner.binding.blogId, owner.binding.actorUserId, input.stagingKey,
@@ -519,6 +539,7 @@ export async function createWorkspaceWriteProposal(
     toolName: validated.name,
     arguments: validated.arguments,
     metadata: {
+      ...(input.actor.folderAgentPath !== undefined ? { folderAgentPath: input.actor.folderAgentPath } : {}),
       ...(preview ? { preview } : {}),
       ...(input.origin ? { origin: input.origin } : {}),
       durableCommandVersion: 1,
@@ -778,7 +799,9 @@ export async function decideWorkspaceWriteProposal(
   }
 
   try {
-    const executionActor = { ...input.actor, approvedFolderMove, receiptOnly, runId: claimed.id,
+    const storedFolder = claimed.metadata?.folderAgentPath;
+    if (storedFolder !== undefined && !validFolderAgentPath(storedFolder)) throw new Error("The stored task folder is invalid.");
+    const executionActor = { ...input.actor, folderAgentPath: storedFolder as string | undefined, approvedFolderMove, receiptOnly, runId: claimed.id,
       actorType: claimed.metadata?.agentActorType === "human" ? "human" as const : claimed.metadata?.agentActorType === "external_agent" ? "external_agent" as const : "ai" as const,
       connectionId: typeof claimed.metadata?.agentConnectionId === "string"
         ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` };

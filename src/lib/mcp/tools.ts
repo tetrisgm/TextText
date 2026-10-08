@@ -3726,7 +3726,7 @@ async function executeLegacyWorkspaceCommand(
 export async function runWorkspaceToolForSession(
   name: WorkspaceToolName,
   args: Record<string, unknown>,
-  actor: { receiptOnly?: boolean; sub: string; userId: string | null; handle: string; email?: string | null; name?: string | null; connectionId?: string; runId?: string; actorType?: "human" | "ai" | "external_agent" },
+  actor: { folderAgentPath?: string; receiptOnly?: boolean; sub: string; userId: string | null; handle: string; email?: string | null; name?: string | null; connectionId?: string; runId?: string; actorType?: "human" | "ai" | "external_agent" },
 ): Promise<CallToolResult> {
   const extra: ToolContext = {
     authInfo: {
@@ -3742,6 +3742,7 @@ export async function runWorkspaceToolForSession(
         connectionId: actor.connectionId ?? `assistant:${actor.userId}`,
         runId: actor.runId,
         receiptOnly: actor.receiptOnly,
+        folderAgentPath: actor.folderAgentPath,
         workspaceHandle: actor.handle,
         // The name the assistant renders under in the presence row. It is the
         // workspace's own assistant, not a connected outside client, so it is

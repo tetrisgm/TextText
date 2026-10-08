@@ -1,3 +1,4 @@
+import { FOLDER_AGENT_TOOLS, insideAgentFolder, validFolderAgentPath } from "@/lib/ai/folder-agent-boundary";
 import { createHash, randomUUID } from "node:crypto";
 import type { AuthInfo, CallToolResult } from "./types";
 import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-agent-access";
@@ -22,6 +23,10 @@ const error = (text: string): CallToolResult => ({ content: [{ type: "text", tex
  * again here so this adapter cannot inherit legacy collaborator authority.
  */
 export async function executeVaultReadTool(name: string, args: Record<string, unknown>, auth: AuthInfo | undefined): Promise<CallToolResult> {
+  const folderBoundary = auth?.extra?.folderAgentPath;
+  const folderScoped = folderBoundary !== undefined;
+  if (folderScoped && (!validFolderAgentPath(folderBoundary) || !FOLDER_AGENT_TOOLS.has(name))) return error("This task can only work in its selected folder.");
+  const withinFolder = (path: string) => !folderScoped || insideAgentFolder(folderBoundary as string, path);
   const sub = auth?.extra?.sub;
   if (typeof sub !== "string" || !sub) return error("Sign in required.");
   const scopes = auth?.scopes ?? [];
@@ -42,9 +47,9 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   const owner = identity.ownerId === userId;
   const grants = owner ? [] : await activeVaultGrants({ ...location, userId });
   const allowed = (item: { itemId: string; relativePath: string }) =>
-    (!itemScope || itemScope.itemId === item.itemId) && (owner || Boolean(roleForVaultItem(grants, item.itemId, item.relativePath)));
+    withinFolder(item.relativePath) && (!itemScope || itemScope.itemId === item.itemId) && (owner || Boolean(roleForVaultItem(grants, item.itemId, item.relativePath)));
   async function allowedNow(item: { itemId: string; relativePath: string }) {
-    if (itemScope && itemScope.itemId !== item.itemId) return false;
+    if (!withinFolder(item.relativePath) || itemScope && itemScope.itemId !== item.itemId) return false;
     const currentUser = await getUserIdBySub(sub as string);
     if (!currentUser || currentUser !== userId) return false;
     const currentWorkspace = await getBlogEditRecord(blog!.handle);
@@ -117,10 +122,10 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
       const currentUser = await getUserIdBySub(sub as string);
       const currentWorkspace = await getBlogEditRecord(blog.handle);
       if (currentUser !== userId || currentWorkspace?.id !== location.workspaceId || (itemScope && itemScope.itemId !== itemId)) throw new Error("Item access changed.");
+      const currentPath = path || (await readVaultTextpackIdentity({ ...location, itemId }))?.relativePath;
+      if (!currentPath || !withinFolder(currentPath)) throw new Error("This task can only work in its selected folder.");
       if (currentWorkspace.ownerId === currentUser) return;
       const currentGrants = await activeVaultGrants({ ...location, userId });
-      const currentPath = path || (await readVaultTextpackIdentity({ ...location, itemId }))?.relativePath;
-      if (!currentPath) throw new Error("Item not found.");
       const slash = currentPath.lastIndexOf("/");
       const role = creating ? roleForVaultFolder(currentGrants, slash < 0 ? "" : currentPath.slice(0, slash)) : roleForVaultItem(currentGrants, itemId, currentPath);
       if (role !== "editor") throw new Error("Item editing is not allowed.");
@@ -134,6 +139,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
         if (typeof args.idempotency_key !== "string" || !args.idempotency_key) throw new Error("A stable idempotency_key is required.");
         const relativePath = parent ? `${parent}/${name}` : name;
         const authorizeFolder = async () => {
+          if (!withinFolder(relativePath)) throw new Error("This task can only work in its selected folder.");
           if (itemScope) throw new Error("This connection can only access its granted item.");
           const currentUser = await getUserIdBySub(sub as string);
           const workspace = await getBlogEditRecord(blog.handle);
@@ -208,7 +214,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
     const currentWorkspace = await getBlogEditRecord(blog.handle);
     if (currentUser !== userId || currentWorkspace?.id !== location.workspaceId) return error("Workspace access changed.");
     const currentGrants = currentWorkspace.ownerId === userId ? [] : await activeVaultGrants({ ...location, userId });
-    return json({ folders: manifest.folders.filter((folder) => currentWorkspace.ownerId === userId || Boolean(roleForVaultFolder(currentGrants, folder))).map((path) => ({ path, name: path.split("/").at(-1) })) });
+    return json({ folders: manifest.folders.filter((folder) => withinFolder(folder) && (currentWorkspace.ownerId === userId || Boolean(roleForVaultFolder(currentGrants, folder)))).map((path) => ({ path, name: path.split("/").at(-1) })) });
   }
   const limit = Math.min(name === "search" ? 50 : 100, Math.max(1, typeof args.limit === "number" ? args.limit : name === "search" ? 25 : 50));
   const folder = typeof args.folder_path === "string" ? args.folder_path.replace(/\/$/, "") : null;
