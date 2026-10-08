@@ -192,3 +192,29 @@ Actual second-Apple-device iCloud delivery, Windows provider eviction/hydration,
 and hardware power-loss behavior are not established by these tests. Missing
 provider files, interrupted operations, lost acknowledgments, external edits,
 and future journal versions have automated regression coverage.
+
+## Account, search and file-activation follow-up
+
+Source `346ddf0d` passed the Windows gates and installed candidate
+`37bde41a123d42b09de28a46dac547fb`; previous app is retained as
+`TextText-previous-20261007T171640-94305ab7`. Startup measured 710 ms to shell,
+1,604 ms to the existing verification note. Actual command search for the
+body-only phrase `Windows ACK refresh verification` returned the correct note
+and relative path. Account Settings verification awaits the Oracle endpoint.
+
+Final source `035f5fd7` adds guarded single-instance file activation and pins
+npm 11.10.0 with a clean dependency install inside the build. PC npm 10.9.8
+rejected the canonical lock; pinned npm 11.10.0 installed it successfully with
+no lock changes. The complete gate passed: 117 native assertions, 176 shared
+client tests, 28 actual shared UI checks, recovery access and eight window
+close/activation assertions. Sealed candidate:
+`699cd68d717142d0bbcbae3efd8c0eb5`; desktop receipt:
+`windows/build/smoke-receipts-c9d9be89632041d997aaeb648d741672`.
+The preceding candidate `e060104a879043709020b285be6ba09d` was deliberately
+not installed because its build used the older dependency tree.
+
+Immediately after the final successful build, both documented PC SSH routes
+reset/closed before command execution. Installation of `699cd...` is not
+confirmed; inspect the current process/installed receipt before retrying.
+Actual Explorer activation, final account identity and close/reopen checks
+remain pending. No additional rebuild is needed for the sealed candidate.
