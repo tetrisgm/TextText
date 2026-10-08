@@ -2,14 +2,15 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1206)**, source `3a115301`.
+- Mac `/Applications/TextText.app`: **0.204 (1207)**, source `2cc028b9`.
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
-  save/reopen passed. [Mac receipt](verification/2026-10-08-mac-1206.md).
-- Oracle: **texttext-oracle-20261008-3a115301-gallery**. Thirteen live checks
+  save/reopen passed in 1206; 1207 startup, existing note, home navigation and
+  saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
+- Oracle: **texttext-oracle-20261008-2cc028b9-preview**. Thirteen live checks
   passed; actual Safari editor reads the Mac photo metadata.
-  [Deployment receipt](verification/2026-10-08-oracle-gallery-1206.md).
+  [Deployment and live reconnect receipt](verification/2026-10-08-oracle-preview-1207.md).
   Graceful shutdown exited 143 without timeout/SIGKILL. The additive systemd
-  override now accepts 130/143; next ordinary rollout should attest its exit
+  override accepts 130/143; ordinary 1207 rollout attested successful exit
   classification. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
 - Windows installed source remains `f3167c4b`.
   Verified candidate **73740adb** passed actual PC native suites, 327 shared-client
@@ -27,7 +28,9 @@
   Safari. [Receipt](verification/2026-10-08-home-layouts-live.md).
   Shared source now retains bounded saved-title labels during return navigation,
   and fixes preview invalidation on same-path external edits. Unit and rebuilt
-  browser regressions passed. Not installed/deployed yet.
+  browser regressions passed. Installed on Mac 1207 and deployed to Oracle.
+  Cold first home still briefly shows filenames pending previews; fix the initial
+  saved-title listing contract without loading whole archives into listings.
   [Preview receipt](verification/2026-10-08-home-preview-labels.md).
 - Install verified Windows candidate when the old process closes, then verify
   startup, existing notes, search, save/reopen, Gallery metadata and live sync.
