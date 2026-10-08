@@ -75,12 +75,16 @@
   remain explicitly unverified; this evaluator does not certify those features.
   Rerun the required full release gate on the committed candidate before delivery.
 
-- Candidate `0d452874` is running the required full release gate (`48138`), log
-  `/tmp/texttext-reader-fixed-release-gates.log`. The preceding gate failed only
-  when the reader rerender fixture omitted its TextPack identity. That fixture
-  now uses the real serializer; its focused check passed with one parse before
-  and after repeated status and presence updates. No delivery is implied.
-  The candidate directory below now contains `0d452874`; its earlier packaged
+- Candidate `36c91bd2` is running the required full release gate (`65788`), log
+  `/tmp/texttext-current-browser-contract-release-gates.log`. Preceding gates
+  exposed stale fixtures: missing TextPack identity, removed web assistant prop,
+  and omitted folder-review staging key. All focused fixes passed. Reader parsing
+  stays at one across status/presence updates; folder-review retries retain the
+  same key after an interrupted response; the full assistant browser suite passes.
+  Logs: `/tmp/texttext-reader-rerender-fixed.log`,
+  `/tmp/texttext-ai-provider-settings-fixed.log`,
+  `/tmp/texttext-web-assistant-current-contract.log`. No delivery is implied.
+  The candidate directory below now contains `36c91bd2`; its earlier packaged
   archive remains older source and must not be deployed as this candidate.
 
 - Oracle template delivery candidate is clean source `223954b8` in
