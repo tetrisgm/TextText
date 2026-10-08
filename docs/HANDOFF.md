@@ -7,7 +7,11 @@
   app remains running with unknown unsaved state.
   [Candidate receipt](verification/2026-10-08-windows-folder-inventory.md).
 
-- Mac `/Applications/TextText.app`: **0.204 (1215)**, source `0428bfca`.
+- Mac `/Applications/TextText.app`: **0.204 (1216)**, source `1ae33f20`.
+  Source/provenance corrections installed; account/iCloud startup, baseline
+  content preservation, save, search invalidation and reopen passed.
+  [1216 receipt](verification/2026-10-08-mac-1216.md).
+  Previous 1215 source `0428bfca`:
   Actual account/iCloud startup, 55-file installation preservation,
   custom-template note save, saved-body search invalidation and reopen passed.
   [1215 receipt](verification/2026-10-08-mac-1215.md).
@@ -339,7 +343,7 @@
   now inherits omitted compatible source and rejects incompatible omissions.
   Explicit replacement remains supported for manual folder-design editing.
   Targeted regression log: `/tmp/texttext-authoring-refinement-regression.log`.
-  This correction is source-only until a verified client/web build is installed.
+  This correction is installed on Mac 1216; Oracle/Windows delivery remains.
   Actual immutable version creation/retry and Mac picker/new-item acceptance
   now passed. Persisted command previews also retain their matching blueprint.
   [Version/source receipt](verification/2026-10-08-template-version-authoring.md).

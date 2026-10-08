@@ -18,6 +18,11 @@ version 2 of `local.2cf77b78-905b-46b6-b4db-85f17e104a90` using
 - A fresh-process retry returned the identical new file identity and revision.
 
 Evidence: `/tmp/texttext-template-version-1216-{before,result,list,retry}.json`.
+An additional real `create_item_type` / blueprint `update_item_type` round trip
+created an authored template and its separate version 2. Independent local
+ZIP inspection confirmed the updated name/starter and `template-source.json`;
+the original authored package remained byte-identical. Evidence:
+`/tmp/texttext-authored-template-1216-{create,update}.json`.
 The temporary empty note created while locating New from template was retained.
 No existing content was removed.
 
@@ -40,7 +45,8 @@ Targeted verification: 35 tests across preview, saved-look, folder-view and
 workspace-template command suites. Log:
 `/tmp/texttext-authoring-command-preview-regression.log`.
 
-Limits: source corrections still need installed acceptance; the live test above
+Limits: the correction is installed in Mac 1216, with startup/save/search/reopen
+acceptance. A real model refinement still needs verification; the live test above
 uses a source-less definition and does not certify model-generated blueprint
 updates or Windows installed behavior. It does not certify reference-service
 fidelity or all sync failure modes.
