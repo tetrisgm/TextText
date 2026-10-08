@@ -215,16 +215,18 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertEqual(read.value(forHTTPHeaderField: "Authorization"), "Bearer app-token")
         XCTAssertEqual(read.httpMethod, "GET")
         let add = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
-            method: "commentsAdd", params: ["itemId": itemId, "operationId": operationId, "body": "A useful note", "parentId": commentId])
+            method: "commentsAdd", params: ["itemId": itemId, "operationId": operationId, "body": "A useful note", "parentId": commentId, "imageAssetId": "photo-1"])
         XCTAssertEqual(add.httpMethod, "POST")
         let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(add.httpBody)) as? [String: Any])
-        XCTAssertEqual(Set(body.keys), ["operationId", "body", "parentId"])
+        XCTAssertEqual(Set(body.keys), ["operationId", "body", "parentId", "imageAssetId"])
+        XCTAssertEqual(body["imageAssetId"] as? String, "photo-1")
         let resolve = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
             method: "commentsResolve", params: ["itemId": itemId, "operationId": operationId, "commentId": commentId, "resolved": true])
         XCTAssertEqual(resolve.httpMethod, "PATCH")
         let resolution = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(resolve.httpBody)) as? [String: Any])
         XCTAssertEqual(Set(resolution.keys), ["operationId", "commentId", "resolved"])
-        for invalid: [String: Any] in [["itemId": itemId, "limit": 101],
+        for invalid: [String: Any] in [["itemId": itemId, "operationId": operationId, "body": "Note", "imageAssetId": String(repeating: "x", count: 121)],
+                                       ["itemId": itemId, "limit": 101],
                                        ["itemId": itemId, "after": "../other"],
                                        ["itemId": itemId, "operationId": operationId, "body": "", "workspaceId": "forged"],
                                        ["itemId": itemId, "operationId": operationId, "commentId": commentId, "resolved": "yes"]] {

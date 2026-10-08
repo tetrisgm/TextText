@@ -7,13 +7,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fixedDate = new Date(1980, 0, 1);
 type ActorType = "human" | "external_agent";
 export type VaultItemComment = {
-  id: string; parentId: string | null; body: string;
+  id: string; parentId: string | null; body: string; imageAssetId?: string;
   authorUserId: string; authorName: string; authorActorType: ActorType;
   createdAt: string; updatedAt: string; resolvedAt: string | null;
   resolvedByUserId: string | null; resolvedByActorType: ActorType | null;
 };
 export type VaultCommentMutation =
-  | { kind: "create"; body: string; parentId?: string | null }
+  | { kind: "create"; body: string; parentId?: string | null; imageAssetId?: string }
   | { kind: "resolve"; commentId: string; resolved: boolean };
 export type VaultCommentActor = { userId: string; name: string; type: ActorType; authorType?: ActorType };
 
@@ -41,6 +41,7 @@ function checkedRows(value: unknown): VaultItemComment[] {
   for (const row of value.comments) {
     if (!object(row) || typeof row.id !== "string" || !UUID.test(row.id) || seen.has(row.id) ||
         (row.parentId !== null && (typeof row.parentId !== "string" || !UUID.test(row.parentId))) ||
+        (row.imageAssetId !== undefined && (typeof row.imageAssetId !== "string" || !row.imageAssetId.trim() || row.imageAssetId.length > 120)) ||
         typeof row.body !== "string" || !row.body.trim() || row.body.length > 4000 ||
         typeof row.authorUserId !== "string" || !UUID.test(row.authorUserId) ||
         typeof row.authorName !== "string" || !row.authorName.trim() || row.authorName.length > 80 ||
@@ -55,7 +56,7 @@ function checkedRows(value: unknown): VaultItemComment[] {
     }
     if (row.parentId !== null) {
       const parent = seen.get(row.parentId);
-      if (!parent || parent.parentId !== null || row.resolvedAt !== null) throw new Error("Invalid TextPack comment reply");
+      if (!parent || parent.parentId !== null || row.resolvedAt !== null || row.imageAssetId !== parent.imageAssetId) throw new Error("Invalid TextPack comment reply");
     }
     seen.set(row.id, row as VaultItemComment);
   }
@@ -101,17 +102,28 @@ export function mutateVaultItemCommentsInPack(bytes: Uint8Array, itemId: string,
   if (mutation.kind === "create") {
     const body = cleanBody(mutation.body);
     const parentId = mutation.parentId ?? null;
+    let imageAssetId = mutation.imageAssetId;
+    if (imageAssetId !== undefined && (typeof imageAssetId !== "string" || !imageAssetId.trim() || imageAssetId.length > 120)) throw new VaultCommentInputError("Invalid image anchor");
     if (parentId !== null) {
       if (!UUID.test(parentId)) throw new VaultCommentInputError("Invalid parent comment");
       const parent = comments.find(row => row.id === parentId && row.parentId === null);
       if (!parent) throw new VaultCommentNotFoundError("Parent comment not found");
+      if (imageAssetId !== undefined && imageAssetId !== parent.imageAssetId) throw new VaultCommentInputError("Reply image does not match its thread");
+      imageAssetId = parent.imageAssetId;
       if (parent.resolvedAt) throw new VaultCommentInputError("A resolved thread cannot receive replies");
+    }
+    if (parentId === null && imageAssetId !== undefined) {
+      const document = JSON.parse(strFromU8(current.entries[current.prefix + "document.json"]));
+      const assets = document?.content?.assets;
+      if (!Array.isArray(assets) || assets.filter((asset: { id?: string; kind?: string }) => asset.id === imageAssetId && asset.kind === "image").length !== 1) {
+        throw new VaultCommentInputError("This image is no longer in the file");
+      }
     }
     if (comments.length >= MAX_COMMENTS) throw new VaultCommentCapacityError("This item has too many comments");
     if (comments.some(row => row.id === operationId)) throw new VaultCommentInputError("Comment operation was reused");
     const now = new Date().toISOString();
     commentId = operationId;
-    comments.push({ id: commentId, parentId, body, authorUserId: actor.userId, authorName: actor.name.trim(),
+    comments.push({ id: commentId, parentId, body, ...(imageAssetId === undefined ? {} : { imageAssetId }), authorUserId: actor.userId, authorName: actor.name.trim(),
       authorActorType: actor.authorType ?? actor.type, createdAt: now, updatedAt: now, resolvedAt: null,
       resolvedByUserId: null, resolvedByActorType: null });
   } else {

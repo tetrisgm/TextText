@@ -193,7 +193,7 @@ final class LocalVaultCollaboration {
         } else if method == "commentsAdd" || method == "commentsResolve" {
             let keys = Set(params.keys)
             let expected: Set<String> = method == "commentsAdd" ? ["itemId", "operationId", "body"] : ["itemId", "operationId", "commentId", "resolved"]
-            guard (method == "commentsAdd" ? keys == expected || keys == expected.union(["parentId"]) : keys == expected),
+            guard (method == "commentsAdd" ? expected.isSubset(of: keys) && keys.isSubset(of: expected.union(["parentId", "imageAssetId"])) : keys == expected),
                   let operationId = params["operationId"] as? String, UUID(uuidString: operationId) != nil else {
                 throw LocalVaultCollaborationError(code: "400", message: "Invalid comment operation.")
             }
@@ -204,6 +204,12 @@ final class LocalVaultCollaboration {
                     throw LocalVaultCollaborationError(code: "400", message: "Write a comment up to 4000 characters.")
                 }
                 body["body"] = comment
+                if let image = params["imageAssetId"] {
+                    guard let image = image as? String, !image.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, image.count <= 120 else {
+                        throw LocalVaultCollaborationError(code: "400", message: "Invalid image anchor.")
+                    }
+                    body["imageAssetId"] = image
+                }
                 if let parent = params["parentId"] {
                     guard let parent = parent as? String, UUID(uuidString: parent) != nil else {
                         throw LocalVaultCollaborationError(code: "400", message: "Invalid comment thread.")

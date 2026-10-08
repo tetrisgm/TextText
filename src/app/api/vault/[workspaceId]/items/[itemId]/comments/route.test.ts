@@ -31,6 +31,13 @@ describe("file-vault item comments route", () => {
     });
   });
 
+  it("passes bounded image anchors without accepting caller identity", async () => {
+    expect((await POST(post({ operationId, body: "Photo", imageAssetId: "photo-1" }), context)).status).toBe(200);
+    expect(mocks.mutate).toHaveBeenCalledWith(expect.objectContaining({ mutation: expect.objectContaining({ imageAssetId: "photo-1" }), actor: expect.objectContaining({ userId: actorUserId }) }));
+    expect((await POST(post({ operationId, body: "Photo", imageAssetId: 1 }), context)).status).toBe(400);
+    expect((await POST(post({ operationId, body: "Photo", imageAssetId: "photo", authorUserId: "other" }), context)).status).toBe(400);
+  });
+
   it("bounds reads, rechecks access after the file read, and withholds a revoked page", async () => {
     const response = await GET(new Request(`${url}?limit=25`), context);
     expect(response.status).toBe(200);

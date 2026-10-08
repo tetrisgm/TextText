@@ -61,13 +61,13 @@ async function change(request: Request, context: Context, capability: "comment" 
     const body = parsed.value;
     if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400, "Send a JSON object");
     const value = body as Record<string, unknown>;
-    const allowed = capability === "comment" ? ["operationId", "body", "parentId"] : ["operationId", "commentId", "resolved"];
+    const allowed = capability === "comment" ? ["operationId", "body", "parentId", "imageAssetId"] : ["operationId", "commentId", "resolved"];
     if (Object.keys(value).some(key => !allowed.includes(key)) || typeof value.operationId !== "string" || !isUuid(value.operationId)) {
       return fail(400, "Invalid comment operation");
     }
     const mutation = capability === "comment"
-      ? typeof value.body === "string" && (value.parentId === undefined || value.parentId === null || typeof value.parentId === "string" && isUuid(value.parentId))
-        ? { kind: "create" as const, body: value.body, parentId: value.parentId as string | null | undefined } : null
+      ? typeof value.body === "string" && (value.imageAssetId === undefined || typeof value.imageAssetId === "string" && !!value.imageAssetId.trim() && value.imageAssetId.length <= 120) && (value.parentId === undefined || value.parentId === null || typeof value.parentId === "string" && isUuid(value.parentId))
+        ? { kind: "create" as const, body: value.body, parentId: value.parentId as string | null | undefined, ...(value.imageAssetId === undefined ? {} : { imageAssetId: value.imageAssetId as string }) } : null
       : typeof value.commentId === "string" && isUuid(value.commentId) && typeof value.resolved === "boolean"
         ? { kind: "resolve" as const, commentId: value.commentId, resolved: value.resolved } : null;
     if (!mutation) return fail(400, "Invalid comment request");

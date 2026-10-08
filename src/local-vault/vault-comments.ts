@@ -3,6 +3,7 @@ import type { VaultAccess } from "./shared-vaults";
 export type VaultComment = {
   id: string;
   parentId: string | null;
+  imageAssetId?: string;
   body: string;
   authorUserId: string;
   authorName: string;
@@ -21,6 +22,7 @@ function validComment(value: unknown): value is VaultComment {
   const comment = value as Partial<VaultComment> | null;
   return !!comment && typeof comment.id === "string" && uuid.test(comment.id) &&
     (comment.parentId === null || typeof comment.parentId === "string" && uuid.test(comment.parentId)) &&
+    (comment.imageAssetId === undefined || typeof comment.imageAssetId === "string" && !!comment.imageAssetId.trim() && comment.imageAssetId.length <= 120) &&
     typeof comment.body === "string" && comment.body.length > 0 && comment.body.length <= 4000 &&
     typeof comment.authorUserId === "string" && typeof comment.authorName === "string" &&
     ["human", "external_agent"].includes(comment.authorActorType ?? "") &&

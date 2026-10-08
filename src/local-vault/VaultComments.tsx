@@ -7,7 +7,7 @@ import { useEscapeLayer } from "./LocalKeyboard";
 import styles from "./VaultComments.module.css";
 
 type MutationResult = { status: "written" | "unchanged" | "conflict"; itemId: string; commentId: string };
-type Props = { itemId: string; path: string; canComment: boolean; canResolve: boolean; onClose: () => void; embedded?: boolean };
+type Props = { itemId: string; path: string; canComment: boolean; canResolve: boolean; onClose: () => void; embedded?: boolean; imageAssetId?: string };
 const PAGE_SIZE = 100;
 const MAX_COMMENTS = 500;
 
@@ -54,7 +54,7 @@ function CommentBody({ comment }: { comment: VaultComment }) {
   </div>;
 }
 
-export function VaultComments({ itemId, path, canComment, canResolve, onClose, embedded = false }: Props) {
+export function VaultComments({ itemId, path, canComment, canResolve, onClose, embedded = false, imageAssetId }: Props) {
   useEscapeLayer(embedded, "gallery-comments", onClose);
   const headingId = useId();
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -71,7 +71,7 @@ export function VaultComments({ itemId, path, canComment, canResolve, onClose, e
   const [draft, setDraft] = useState("");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const threads = useMemo(() => groupVaultCommentThreads(comments ?? []), [comments]);
+  const threads = useMemo(() => groupVaultCommentThreads(comments ?? []).filter(thread => imageAssetId === undefined || thread.root.imageAssetId === imageAssetId), [comments, imageAssetId]);
   const openThreads = threads.filter(thread => !thread.root.resolvedAt);
   const resolvedThreads = threads.filter(thread => !!thread.root.resolvedAt);
   const visibleThreads = mode === "open" ? openThreads : resolvedThreads;
@@ -145,8 +145,8 @@ export function VaultComments({ itemId, path, canComment, canResolve, onClose, e
   const add = async (body: string, parentId?: string) => {
     const trimmed = body.trim();
     if (!trimmed || trimmed.length > 4000) { setError("Write a comment of up to 4,000 characters."); return; }
-    const key = JSON.stringify(["add", parentId ?? null, trimmed]);
-    const saved = await mutate("commentsAdd", key, { body: trimmed, ...(parentId ? { parentId } : {}) });
+    const key = JSON.stringify(["add", parentId ?? null, imageAssetId ?? null, trimmed]);
+    const saved = await mutate("commentsAdd", key, { body: trimmed, ...(imageAssetId ? { imageAssetId } : {}), ...(parentId ? { parentId } : {}) });
     if (saved) {
       if (parentId) {
         setReplyDrafts(previous => ({ ...previous, [parentId]: "" }));
@@ -158,7 +158,7 @@ export function VaultComments({ itemId, path, canComment, canResolve, onClose, e
     void mutate("commentsResolve", JSON.stringify(["resolve", commentId, resolved]), { commentId, resolved });
   };
 
-  return <aside className={embedded ? styles.embedded : styles.panel} aria-label={embedded ? "Item comments" : undefined} aria-labelledby={embedded ? undefined : headingId}>
+  return <aside className={embedded ? styles.embedded : styles.panel} aria-label={embedded ? imageAssetId ? "Image comments" : "Item comments" : undefined} aria-labelledby={embedded ? undefined : headingId}>
     {!embedded && <header className={styles.header}>
       <div><h2 id={headingId}>Comments</h2><p title={path}>{path}</p></div>
       <button ref={closeButton} type="button" onClick={onClose} aria-label="Close comments">Close</button>
@@ -171,8 +171,9 @@ export function VaultComments({ itemId, path, canComment, canResolve, onClose, e
     <div className={styles.list} aria-busy={loading}>
       {loading && comments === null ? <p className={styles.empty} role="status">Loading comments…</p> :
         comments === null ? <p className={styles.empty}>Comments are unavailable. Refresh to try again.</p> :
-        visibleThreads.length === 0 ? <p className={styles.empty}>{mode === "open" ? "No open comments on this file." : "No resolved comments on this file."}</p> :
+        visibleThreads.length === 0 ? <p className={styles.empty}>{mode === "open" ? `No open comments on this ${imageAssetId ? "image" : "file"}.` : `No resolved comments on this ${imageAssetId ? "image" : "file"}.`}</p> :
         visibleThreads.map(thread => <section className={styles.thread} key={thread.root.id} aria-label={`Thread by ${thread.root.authorName}`}>
+          {!imageAssetId && thread.root.imageAssetId && <p className={styles.meta}>Image comment</p>}
           <CommentBody comment={thread.root} />
           {thread.replies.map(reply => <div className={styles.reply} key={reply.id}><CommentBody comment={reply} /></div>)}
           <div className={styles.actions}>

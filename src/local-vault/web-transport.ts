@@ -313,6 +313,10 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
         if (method === "commentsAdd") {
           if (typeof params.body !== "string" || !params.body.trim() || params.body.length > 4000) throw new Error("Write a comment up to 4000 characters.");
           body.body = params.body;
+          if (params.imageAssetId !== undefined) {
+            if (typeof params.imageAssetId !== "string" || !params.imageAssetId.trim() || params.imageAssetId.length > 120) throw new Error("Invalid image anchor.");
+            body.imageAssetId = params.imageAssetId;
+          }
           if (params.parentId !== undefined && params.parentId !== null) {
             if (typeof params.parentId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.parentId)) throw new Error("Invalid comment thread.");
             body.parentId = params.parentId;
