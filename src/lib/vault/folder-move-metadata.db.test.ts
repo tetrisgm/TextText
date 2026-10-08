@@ -8,7 +8,7 @@ it.skipIf(!enabled)("reserves grant metadata durably and blocks revocation until
  if(!["localhost","127.0.0.1","[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname))throw Error("Local PostgreSQL only");
  const {db}=await import("@/lib/db/client");if(!db)throw Error("Missing database");
  const {users,blogs,vaultGrants,vaultFolderMoves,actionAudit}=await import("@/lib/db/schema");
- const {reserveFolderMove,completeFolderMoveMetadata,abortFolderMoveMetadata}=await import("./folder-move-metadata");
+ const {reserveFolderMove,completeFolderMoveMetadata,abortFolderMoveMetadata,previewFolderMoveMetadata}=await import("./folder-move-metadata");
  const {changeVaultGrant}=await import("./grants");
  const {vaultFolderSignature}=await import("./folder-identity");
  const {planFolderMove}=await import("@/sync/engine/folder-move-plan");
@@ -21,6 +21,9 @@ it.skipIf(!enabled)("reserves grant metadata durably and blocks revocation until
   const tree={source:"Projects/One",destination:"Archive/One",manifestRevision:"a".repeat(64),folders:["Projects","Projects/One","Projects/One/Empty","Archive"],items:[]};
   const plan=planFolderMove({...tree,grants:[{id:grantId,path:"Projects",signature,email:"reader@example.com",role:"viewer"}]});
   const request={...tree,root,workspaceId,actorUserId,operationId:"fixture",requestHash:"b".repeat(64),expectedGrantsFingerprint:plan.grantsFingerprint};
+  expect(await previewFolderMoveMetadata(request)).toEqual(plan);
+  expect(await db.select().from(vaultFolderMoves).where(eq(vaultFolderMoves.workspaceId,workspaceId))).toHaveLength(0);
+  await expect(previewFolderMoveMetadata({...request,actorUserId:crypto.randomUUID()})).rejects.toThrow("Only the workspace owner");
   expect(await reserveFolderMove(request)).toEqual(plan);
   await expect(changeVaultGrant({root,workspaceId,actorUserId,scope:{type:"folder",key:"Projects"},grantId,revoke:true})).rejects.toThrow("being recovered");
   expect(await reserveFolderMove(request)).toEqual(plan);

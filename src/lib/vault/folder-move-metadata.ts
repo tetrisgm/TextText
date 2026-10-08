@@ -12,6 +12,30 @@ async function ownerLock(tx: Transaction, workspaceId: string, actorUserId: stri
  const result = await tx.execute(sql`SELECT id FROM blogs WHERE id = ${workspaceId}::uuid AND owner_id = ${actorUserId}::uuid AND deleted_at IS NULL FOR UPDATE`);
  if (result.rows.length !== 1) throw Error("Only the workspace owner can move folders");
 }
+type FolderMovePreviewInput = {
+ root: string; workspaceId: string; actorUserId: string;
+ source: string; destination: string; manifestRevision: string;
+ folders: string[]; items: FolderMoveItem[];
+};
+async function folderMovePreview(tx: Transaction, input: FolderMovePreviewInput) {
+ const rows=await tx.select().from(vaultGrants).where(and(eq(vaultGrants.workspaceId,input.workspaceId),eq(vaultGrants.scopeType,"folder"),isNull(vaultGrants.revokedAt)));
+ const grants: FolderMoveGrant[]=[];
+ for(const row of rows) {
+  const signature=await vaultFolderSignature(input.root,input.workspaceId,row.scopeKey);
+  if(signature && signature===row.folderSignature && ["viewer","commenter","editor"].includes(row.role)) grants.push({id:row.id,path:row.scopeKey,signature,email:normalizeAccessEmail(row.invitedEmail),role:row.role as FolderMoveGrant["role"]});
+ }
+ return planFolderMove({...input,grants});
+}
+/** Owner-only preview does not reserve or mutate access. The engine manifest
+ * supplied here must be rechecked at approval before reservation/publication. */
+export async function previewFolderMoveMetadata(input: FolderMovePreviewInput) {
+ if(!db)throw Error("Sharing requires the database");
+ return db.transaction(async tx=>{
+  await ownerLock(tx,input.workspaceId,input.actorUserId);
+  await assertNoReservedFolderMove(tx,input.workspaceId);
+  return folderMovePreview(tx,input);
+ });
+}
 export async function assertNoReservedFolderMove(tx: Transaction, workspaceId: string) {
  const pending = await tx.select({ id: vaultFolderMoves.operationId }).from(vaultFolderMoves).where(and(eq(vaultFolderMoves.workspaceId, workspaceId), eq(vaultFolderMoves.status, "reserved"))).limit(1);
  if (pending.length) throw Error("A folder move is being recovered. Try again shortly.");
@@ -34,13 +58,7 @@ export async function reserveFolderMove(input: {
    return prior.plan as Plan;
   }
   await assertNoReservedFolderMove(tx,input.workspaceId);
-  const rows=await tx.select().from(vaultGrants).where(and(eq(vaultGrants.workspaceId,input.workspaceId),eq(vaultGrants.scopeType,"folder"),isNull(vaultGrants.revokedAt)));
-  const grants: FolderMoveGrant[]=[];
-  for(const row of rows) {
-   const signature=await vaultFolderSignature(input.root,input.workspaceId,row.scopeKey);
-   if(signature && signature===row.folderSignature && ["viewer","commenter","editor"].includes(row.role)) grants.push({id:row.id,path:row.scopeKey,signature,email:normalizeAccessEmail(row.invitedEmail),role:row.role as FolderMoveGrant["role"]});
-  }
-  const plan=planFolderMove({...input,grants});
+  const plan=await folderMovePreview(tx,input);
   if(plan.grantsFingerprint!==input.expectedGrantsFingerprint) throw Error("Folder access changed. Review the move again.");
   await tx.insert(vaultFolderMoves).values({workspaceId:input.workspaceId,operationId:input.operationId,requestHash:input.requestHash,actorUserId:input.actorUserId,plan});
   return plan;
