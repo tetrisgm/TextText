@@ -79,7 +79,20 @@ static class MainWindowCloseTests
             await fenced.View.ExecuteScriptAsync("window.chrome.webview.postMessage({id:'current-write',method:'files.write',params:{}})");
             await Until(()=>Task.FromResult(fencedBridge.Calls==1),ct);
             Check(fencedBridge.Calls==1,"current view remains usable after rejected retired request",checks);
-        } finally { Field("web").SetValue(fenced.Window,fenced.View);replacement.Dispose();ForceClose(fenced.Window); }
+            var savedFactory=MainWindow.WorkspaceFactory;
+            try {
+                MainWindow.WorkspaceFactory=_=>new ActivationBridge();
+                var preparedRoot=Path.Combine(root,"prepared-workspace");Directory.CreateDirectory(preparedRoot);
+                var failed=false;
+                try { await ((Task)open.Invoke(fenced.Window,[preparedRoot,(Action)(()=>throw new IOException("isolated commit failure"))])!).WaitAsync(TimeSpan.FromSeconds(15),ct); }
+                catch(IOException){failed=true;}
+                Check(failed&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&fenced.Window.IsVisible,"failed initialized workspace switch restores usable previous presentation",checks);
+                await ((Task)open.Invoke(fenced.Window,[preparedRoot,null])!).WaitAsync(TimeSpan.FromSeconds(15),ct);
+                var initialized=(WebView2)Field("web").GetValue(fenced.Window)!;
+                await Until(async()=>await initialized.ExecuteScriptAsync("location.host === 'texttext.local' && document.readyState === 'complete'")=="true",ct);
+                Check(initialized.IsLoaded&&initialized.ActualWidth>100&&initialized.CoreWebView2 is not null,"production OpenWorkspace initializes attached visible native view",checks);
+            }finally{MainWindow.WorkspaceFactory=savedFactory;}
+        } finally { replacement.Dispose();ForceClose(fenced.Window); }
         var success=await Create(Path.Combine(root,"close-success"),ct);
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);success.Window.Closed+=(_,_)=>closed.TrySetResult();

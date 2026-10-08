@@ -110,7 +110,15 @@ public sealed partial class MainWindow : Window
         var nextRoot = selectedRoot ?? WorkspaceRoot(active.WorkspaceId);
         Directory.CreateDirectory(nextRoot);
         WorkspaceLocation.Bind(nextRoot, Origin.AbsoluteUri, active.WorkspaceId);
-        var nextWeb = new WebView2();
+        var nextWeb = new WebView2 { Width = 1, Height = 1, IsHitTestVisible = false };
+        // WPF WebView2 initialization requires a live presentation source.
+        // Stage it behind the current content rather than awaiting an unattached view.
+        var previousContent = Content as UIElement;
+        Content = null;
+        var staging = new Grid();
+        staging.Children.Add(nextWeb);
+        if (previousContent is not null) staging.Children.Add(previousContent);
+        Content = staging;
         INativeWorkspaceBridge? nextBridge = null;
         try
         {
@@ -147,10 +155,19 @@ public sealed partial class MainWindow : Window
         if (oldWeb?.CoreWebView2 is { } oldCore) oldCore.WebMessageReceived -= Receive;
         foreach (var request in requests.Values) request.Cancel();
         root = nextRoot; web = nextWeb; bridge = nextBridge;
+        staging.Children.Remove(nextWeb);
+        nextWeb.Width = double.NaN; nextWeb.Height = double.NaN; nextWeb.IsHitTestVisible = true;
         SetWorkspaceContent(nextWeb);
         oldBridge?.Dispose(); oldWeb?.Dispose();
         }
-        catch { if (!ReferenceEquals(web, nextWeb)) { nextBridge?.Dispose(); nextWeb.Dispose(); } throw; }
+        catch {
+            if (!ReferenceEquals(web, nextWeb)) {
+                nextBridge?.Dispose(); nextWeb.Dispose();
+                if (previousContent is not null) staging.Children.Remove(previousContent);
+                Content = previousContent;
+            }
+            throw;
+        }
     }
     private static bool IsLocal(string url) => Uri.TryCreate(url,UriKind.Absolute,out var uri) && uri.Scheme == "https" && uri.Host == "texttext.local" && uri.IsDefaultPort;
     private static void OpenExternal(string url)
