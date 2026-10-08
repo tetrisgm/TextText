@@ -35,6 +35,7 @@ export function NativeConnection({ root }: { root: string }) {
   const signedIn = connection?.available === true;
 
   return <AccountMenu profileKey={`${root}:${connection?.workspaceId ?? ""}`} signedIn={connection ? signedIn : null}
+    accountSite={connection?.webURL}
     logOut={() => vaultRequest<void>("signOut")} signIn={() => vaultRequest<void>("signIn")}
     actions={<>
       {connection?.onlineReady && <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open workspace on web</button>}

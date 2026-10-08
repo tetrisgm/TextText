@@ -86,7 +86,7 @@ try {
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
-    else if (request.method === "accountRead") result = { email: "writer@example.test", name: "Test writer", identities: ["apple", "google"], workspaceName: "My notes" };
+    else if (request.method === "accountRead") result = { accountId: "fixture-owner", email: "writer@example.test", name: "Test writer", identities: ["apple", "google"], workspaceName: "My notes" };
     else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "sync") {
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace", workspaceId } : {}) };
@@ -437,6 +437,12 @@ try {
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, onlineReady: true, webURL: "https://example.test/vault/workspace", workspaceId: "7a32c401-f041-4bc1-bbfd-f60317797873" } })));
   await page.getByRole("button", { name: "Open workspace on web", exact: true }).click();
   assert.equal(openedWeb, true);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const manageAccount = page.getByRole("link", { name: "Manage sign-in methods", exact: true });
+  await manageAccount.waitFor();
+  assert.equal(await manageAccount.getAttribute("href"), "https://example.test/account/sign-in-methods?account=fixture-owner");
+  assert.equal(await manageAccount.getAttribute("target"), "_blank");
+  await page.keyboard.press("Escape");
   assert.equal(await page.getByText(/^(?:Syncing|Synced)$/).count(), 0);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, webURL: "https://example.test/vault/workspace", message: "A conflicting edit was preserved." } })));
   assert.equal(await page.getByText("A conflicting edit was preserved.").count(), 0);
