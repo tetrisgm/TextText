@@ -2,11 +2,11 @@
 
 ## Installed and live
 
-- Mac: `/Applications/TextText.app` **0.204 (1180)**, source `160a74ba`.
-  Account, iCloud workspace, native Apple sign-in and three extensions preserved.
-  Startup, search, List/Cards persistence and normal close/reopen passed.
-  Automatic reconnection through the Oracle deploy passed without Retry.
-  [Receipt](verification/2026-10-07-mac-1180-home-views.md).
+- Mac: `/Applications/TextText.app` **0.204 (1181)**, source `116d3dde`.
+  Account, iCloud folder and three extensions preserved. Startup, search cache
+  invalidation, actual save and normal reopen passed. New tenth test marker
+  reached Windows automatically exactly once.
+  [Receipt](verification/2026-10-07-mac-1181-file-core.md).
 - Oracle: **`texttext-oracle-20261008T024706Z-160a74ba`**. Exact-source
   sync core (244 checks) and native gates passed. Authenticated session,
   origin enforcement, read/create/edit and audit smoke passed; scratch removed.
@@ -14,11 +14,10 @@
   TextText and all three Algorave services active; HAProxy mtime unchanged.
   Logs: `/tmp/texttext-home-sync-core.log`, exact-source Node 22 native receipt
   from the Mac snapshot, `/tmp/texttext-home-deploy.log`. No public desktop release.
-- Windows: source **`160a74ba`**, sealed candidate
-  `2ceb30aa87be49b0a9a70919f50a6fcd`, installed in the existing location.
-  Full build/native startup gates, account, List/Cards persistence, normal
-  close/reopen and all nine sync markers passed; outbox empty. Live folder
-  picker switch/back deferred while the owner was using the PC.
+- Windows: source **`116d3dde`**, sealed candidate
+  `6c51e20e7df74552b663767a9390de38`, installed in the existing location.
+  Native smoke, 189 shared tests, startup/search/reopen passed. Account preserved;
+  ten markers exactly once, empty outbox. Receipts `222f68ec`, `bb569016`.
   [Receipt](verification/2026-10-07-windows-desktop-live.md).
 - Active Mac workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
@@ -71,16 +70,19 @@ Completed source changes, not yet deployed:
   contract; CLI cannot stage SQL proposals. Resource tests, 36 CLI/auth tests
   and scoped lint passed.
 
-Current work: freeze the source, run exact-source gates, then build/install both
-clients and deploy Oracle. `88c5a359` removes public SQL fallback; missing file
-storage fails closed. `2ce56ca3` restores capture and full-Markdown creation on
-the file path. `f4352d53` adds durable file comments and public retry keys;
-its public adapter integration is being verified. `48ac492a` adds agent mutation,
-comment and presence regressions to the mandatory sync core gate.
-Remaining agent capabilities are explicit in [the backend inventory](agent-file-backend.md).
-The broader suite passed 4,413 checks with 149 skips; its only two failures were
-then-in-progress mutation mocks, subsequently replaced and passing in focused
-checks. The subsequent MCP suite passed 153 tests across 15 files.
+Current work: Oracle `116d3dde` deployment failed its authenticated smoke and
+rolled back to `160a74ba`; all services healthy and HAProxy unchanged. The new
+canonical command response exposed a storage receipt where native callers expect
+`item.id`, and the smoke still verifies old SQL post storage. Fix public native
+response compatibility and trusted human attribution, then update smoke to verify
+real file persistence/audit/retry and clean only its random scratch workspace.
+Do not bypass the failed check. Mac/Windows `116d3dde` remain installed and passed
+live cross-device edit acceptance against the restored server.
+
+File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
+(`f4352d53`, `1ccb5163`) and expanded sync gate (`48ac492a`) are committed.
+Frozen-source core passed 286 tests; native gate passed. MCP suite passed 153.
+Remaining agent capabilities are in [the backend inventory](agent-file-backend.md).
 The prior export/inventory helpers never migrated production content.
 
 Windows startup regression `033231ae` is fixed in the installed candidate:
