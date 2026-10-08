@@ -862,7 +862,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     title: "Move item",
     description: "Move one item to another folder of the same mode.",
     inputSchema: z
-      .object({ id, folder_path: folderPath, if_match_hash: ifMatchHash })
+      .object({ id, folder_path: z.union([folderPath, z.literal("")]), if_match_hash: ifMatchHash, path: z.string().min(1).max(4096).optional(), idempotency_key: z.string().trim().min(1).max(500).optional() })
       .strict(),
     mutability: "write",
     destructive: true,
@@ -913,7 +913,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     title: "Move item to Trash",
     description:
       "Move one item to Trash. It stays restorable; this never permanently deletes.",
-    inputSchema: z.object({ id, if_match_hash: ifMatchHash }).strict(),
+    inputSchema: z.object({ id, if_match_hash: ifMatchHash, path: z.string().min(1).max(4096).optional(), idempotency_key: z.string().trim().min(1).max(500).optional() }).strict(),
     mutability: "write",
     confirmation: "destructive",
     idempotent: true,

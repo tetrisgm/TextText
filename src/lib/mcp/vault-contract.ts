@@ -1,11 +1,13 @@
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
-export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved"] as const;
+export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item"] as const;
 const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
   add_comment: ["id", "body", "parent_comment_id", "idempotency_key"],
   create_item: ["capture", "markdown", "title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key"],
   update_item: ["id", "title", "body", "excerpt", "tags", "section", "expected_section_body", "if_match_hash"],
 };
 const descriptions: Partial<Record<WorkspaceToolName, string>> = {
+  move_item: "Move a file to a destination folder, preserving its filename and contents. Requires source path and if_match_hash from read_item, plus a stable idempotency_key. Destination folder editing permission is required.",
+  delete_item: "Remove a file from the workspace while retaining its recovery copy. Requires path and if_match_hash from read_item and a stable idempotency_key. Permanent deletion and restore commands are not supported yet.",
   add_comment: "Add a file comment or reply, up to 4000 characters. Pass idempotency_key for retry safety. Quote anchors are not supported yet.",
   list_comments: "Read accessible file comment threads filtered by open, resolved or all state.",
   create_item: "Create a private file using title, body, excerpt, kind and optional fields. Uses Notes, Blog, Bookmarks, Gallery or Presentations unless folder_path is supplied. Pass idempotency_key for retry safety. Pass capture for text or a standalone URL, or markdown for a complete Markdown file with frontmatter. These are alternatives to structured fields. Custom templates are not supported by this command yet.",
@@ -21,8 +23,9 @@ export function vaultToolDefinitions() {
     const allowed = fields[name];
     if (allowed && inputSchema.properties) inputSchema.properties = Object.fromEntries(Object.entries(inputSchema.properties).filter(([key]) => allowed.includes(key)));
     if (name === "add_comment" && inputSchema.properties?.body) inputSchema.properties.body = { type: "string", minLength: 1, maxLength: 4000 };
+    if (name === "move_item" || name === "delete_item") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "path", "if_match_hash", "idempotency_key"])];
     if (name === "update_item") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "if_match_hash"])];
     if (name === "append_to_item") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "if_match_hash"])];
-    return { name, title: definition.title, description: descriptions[name] ?? definition.description, inputSchema, annotations: definition.annotations };
+    return { name, title: name === "delete_item" ? "Delete file" : definition.title, description: descriptions[name] ?? definition.description, inputSchema, annotations: definition.annotations };
   });
 }

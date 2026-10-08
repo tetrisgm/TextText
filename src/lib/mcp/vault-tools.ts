@@ -68,9 +68,11 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
     };
     try {
       const { executeVaultCommentTool } = await import("./vault-comments");
-      const connectionName = typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent";
-      const action = () => executeVaultCommentTool(name, args, { ...location, actorUserId: userId, actorName: connectionName, operationId: randomUUID(), authorize });
-      if (name === "list_comments") return json(await action());
+      const connectionName = actorType === "human"
+        ? (typeof auth?.extra?.name === "string" ? auth.extra.name : typeof auth?.extra?.email === "string" ? auth.extra.email : "TextText user")
+        : typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent";
+      const action = () => executeVaultCommentTool(name, args, { ...location, actorUserId: userId, actorType, actorName: connectionName, operationId: randomUUID(), authorize });
+      if (name === "list_comments" || actorType === "human") return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
       return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId, connectionName,
         connectionId: typeof auth?.extra?.connectionId === "string" ? auth.extra.connectionId : undefined,
@@ -93,6 +95,10 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
       if (role !== "editor") throw new Error("Item editing is not allowed.");
     };
     try {
+      if (name === "move_item" || name === "delete_item") {
+        const { organizeVaultItem } = await import("./vault-organization");
+        return json(await organizeVaultItem(name, args, { ...location, actorUserId: userId, actorType, authorize }));
+      }
       const action = async () => {
         const receipt = await mutateVaultTool(name, args, { ...location, actorUserId: userId, actorType, authorize });
         if (receipt.status === "conflict") throw new Error("The item changed. Read it again before editing.");
