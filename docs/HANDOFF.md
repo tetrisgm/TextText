@@ -9,7 +9,7 @@
   [Receipt](verification/2026-10-08-parent-native-contract.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T130323Z-121e95fc**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T131236Z-cfa62408**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
   timestamps are unchanged. Fresh backup `texttext-20261008T130430Z-f6dc73b6.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
@@ -47,9 +47,12 @@
   older app being saved/closed. Live active-editor acceptance remains pending.
   Oracle stop again hit its 30-second timeout before restart; investigate the
   actual production request drain rather than treating deploy success as proof.
-  Source follow-up extends shutdown cancellation to the three legacy read-poll
-  routes. Subprocess regressions and TypeScript pass; not deployed. This closes
-  an observed coverage gap, not a proven explanation of the Oracle timeout. Stable staging retry identity and Oracle timeout remain open.
+  Legacy read cancellation is deployed in cfa62408 after frozen 804-test and
+  native gates. Local production shutdown passed in 6.058 seconds, but an
+  explicit restart of the new Oracle process still timed out at 30.197 seconds.
+  The fix is insufficient to explain the timeout. All services recovered. Next
+  reproduce/trace the Linux packaged runtime in isolation; avoid more blind
+  live restarts. Stable staging retry identity and Oracle timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
