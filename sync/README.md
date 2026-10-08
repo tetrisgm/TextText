@@ -91,8 +91,8 @@ comment replay/attribution, cleanup, and expiry use the production file store.
 A failed rerun invalidates the earlier receipt before tests start. A source change
 during execution prevents a receipt. Source, tests, package lock and gate code
 are fingerprinted, including additions and deletions. Prose is excluded.
-The Windows core and its regression sources are included; generated .NET
-`bin`/`obj` output is excluded. Windows candidate builds also execute these
+The Windows core, native desktop adapters and regression sources are included;
+generated .NET `bin`/`obj` output and downloaded desktop `Runtime` are excluded. Windows candidate builds also execute these
 tests on Windows, where filesystem behavior is platform-specific.
 
 The public entry points are `src/sync/client.ts` and `src/sync/server.ts`.

@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const inputs = ['src', 'sync', 'presets/builtin', 'scripts/generate-builtin-presets.ts', 'scripts/builtin-preset-assets.ts', 'scripts/fixtures', 'scripts/vault-http-test-server.ts', 'mac/Sources', 'mac/Tests',
-  'scripts/build-local-vault.mjs', 'scripts/verify-production-shutdown.mjs', 'windows/scripts/build-ui.mjs', 'windows/TextText.Windows/TextText.Windows.csproj',
+  'scripts/build-local-vault.mjs', 'scripts/verify-production-shutdown.mjs', 'windows/scripts/build-ui.mjs', 'windows/TextText.Windows',
   'windows/TextText.Core', 'windows/TextText.Core.Tests',
   'mac/Package.swift', 'mac/Package.resolved', 'package.json', 'package-lock.json',
   'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'release/ship.sh', 'mac/scripts/build-app.sh', 'mac/scripts/build-store.sh'];
@@ -22,6 +22,7 @@ export async function fingerprint(base, paths = inputs) {
         // .NET regenerates these directories during tests. They are not
         // source and must neither inflate nor invalidate verification hashes.
         if (relative.startsWith('windows/') && ['bin', 'obj'].includes(name)) continue;
+        if (relative === 'windows/TextText.Windows' && name === 'Runtime') continue;
         await visit(`${relative}/${name}`);
       }
     } else if (stat.isFile() && !relative.endsWith('.md') && !relative.endsWith('.DS_Store')) {

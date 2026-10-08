@@ -50,8 +50,9 @@ test('missing, failed, stale and wrong-platform or scope receipts fail closed', 
 test('Windows sync sources and regressions invalidate receipts, generated .NET output does not', async () => {
   assert.ok(inputs.includes('windows/TextText.Core'));
   assert.ok(inputs.includes('windows/TextText.Core.Tests'));
+  assert.ok(inputs.includes('windows/TextText.Windows'));
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-windows-gate-'));
-  const paths = ['windows/TextText.Core', 'windows/TextText.Core.Tests'];
+  const paths = ['windows/TextText.Core', 'windows/TextText.Core.Tests', 'windows/TextText.Windows'];
   try {
     for (const directory of paths) {
       await fs.mkdir(path.join(root,directory),{recursive:true});
@@ -62,11 +63,16 @@ test('Windows sync sources and regressions invalidate receipts, generated .NET o
       await fs.mkdir(path.join(root,paths[0],generated));
       await fs.writeFile(path.join(root,paths[0],generated,'output'),'generated');
     }
+    await fs.mkdir(path.join(root,paths[2],'Runtime'));
+    await fs.writeFile(path.join(root,paths[2],'Runtime','codex.exe'),'downloaded runtime');
     assert.equal(await fingerprint(root,paths),before);
     await fs.writeFile(path.join(root,paths[0],'Source.cs'),'changed sync');
     const changed = await fingerprint(root,paths); assert.notEqual(changed,before);
     await fs.writeFile(path.join(root,paths[1],'Source.cs'),'changed regression');
     assert.notEqual(await fingerprint(root,paths),changed);
+    const beforeBridge = await fingerprint(root,paths);
+    await fs.writeFile(path.join(root,paths[2],'Source.cs'),'changed native HTTP bridge');
+    assert.notEqual(await fingerprint(root,paths),beforeBridge);
   } finally { await fs.rm(root,{recursive:true,force:true}); }
 });
 

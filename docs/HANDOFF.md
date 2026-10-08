@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
+  (`/tmp/texttext-folder-integrated-core.log`). Unrelated working edits were
+  present, so this is not a frozen release receipt. Follow-up closes a gate
+  fingerprint gap: Windows native desktop source now invalidates stale receipts;
+  generated outputs/downloaded runtime remain excluded. Seven gate tests pass.
+  Freeze a clean candidate and rerun required gates before install/deployment.
+
 - Shared folder dialog is wired into the folder More menu for file managers.
   It validates destinations, stages the canonical reviewed move and opens an
   owner review link, using the native workspace origin on desktop. Folder or
