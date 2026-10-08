@@ -9,9 +9,9 @@
   [Receipt](verification/2026-10-08-parent-native-contract.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T102758Z-8621dd0c**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T105546Z-1e983413**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T102936Z-149ff735.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T105710Z-d08da82e.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -35,7 +35,9 @@
   TypeScript and both browser flows passed, including the path-only full-app
   fixture. Mac 1194 is installed with actual parent selection/navigation/reopen
   verified. Windows passed 302 shared tests and desktop smoke; its running editor
-  must close normally before installation. Oracle deployment is in progress.
+  must close normally before installation. Oracle deployed with thirteen passing
+  checks. Actual Safari parent navigation saved its edit and delivered it to Mac.
+  An initial deployment-time page error cleared on reload; cause remains unproven.
   [Evidence](verification/2026-10-08-parent-native-contract.md).
 
 - Frozen candidate `8621dd0c` passed 759 core tests, TypeScript, required native

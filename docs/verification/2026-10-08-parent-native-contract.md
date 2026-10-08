@@ -46,5 +46,20 @@ The installed Windows process is still running; replacement awaits its normal
 save/close. Logs: `/tmp/texttext-mac1194-build.log`,
 `/tmp/texttext-mac1194-install.log`, `/tmp/texttext-windows-1e983413-build.log`.
 
-Oracle deployment and actual Safari acceptance remain pending. No public desktop
-release. This does not certify complete Supernotes fidelity or all extensions.
+Oracle serves `texttext-oracle-20261008T105546Z-1e983413`. All thirteen live
+deployment checks passed, with previous release retained and fresh backup
+`texttext-20261008T105710Z-d08da82e.dump`. TextText and all three Algorave units
+are active; shared proxy/runtime configuration mtimes are unchanged. Log:
+`/tmp/texttext-oracle-1e983413-deploy-resume.log`.
+
+Actual Safari opened the child with the Mac edit and resolved saved parent title.
+Appending `Safari parent navigation save verification 1194.` then navigating to
+the parent saved the web edit; it arrived in the open Mac reader automatically.
+The first page load during deployment showed error `err-1eudxtd`; a reload after
+the release became active succeeded. No matching server journal error was found.
+Its cause and automatic recovery are not certified by this observation.
+
+No public desktop release. This does not certify complete Supernotes fidelity,
+all extensions or the full remaining product objective. The required existing
+changelog remains unavailable in the inspected account/folders; no duplicate was
+created.
