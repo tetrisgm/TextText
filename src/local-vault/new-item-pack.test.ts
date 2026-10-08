@@ -30,4 +30,13 @@ describe("complete new-item import", () => {
     expect(() => newItemPack(document, { template }, [{ filename: "../private", data: new Uint8Array() }])).toThrow("Invalid TextPack asset filename");
     expect(() => newItemPack(document, { template, sourceJSON: '{"unrecognized":true}' })).toThrow();
   });
+  it("rejects oversized staged attachments before allocating the archive or writing a draft", () => {
+    const template = requireBuiltinTemplate("texttext.note");
+    const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
+    document.content.body = "Keep my draft";
+    const asset = { filename: "large.png", data: new Uint8Array(32 * 1024 * 1024) };
+    expect(() => newItemPack(document, { template }, [asset])).toThrow("32 MiB");
+    expect(document.content.body).toBe("Keep my draft");
+    expect(asset.data.byteLength).toBe(32 * 1024 * 1024);
+  });
 });
