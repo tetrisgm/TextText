@@ -5,9 +5,11 @@ public struct LocalVaultRemoteItem: Codable, Sendable, Equatable {
     public let relativePath: String
     public let revision: String
     public let deleted: Bool?
+    public let lifecycle: String?
+    public let restoreFromRevision: String?
     public var isDeleted: Bool { deleted == true }
-    public init(itemId: String, relativePath: String, revision: String, deleted: Bool = false) {
-        self.itemId = itemId; self.relativePath = relativePath; self.revision = revision; self.deleted = deleted
+    public init(itemId: String, relativePath: String, revision: String, deleted: Bool = false, lifecycle: String? = nil, restoreFromRevision: String? = nil) {
+        self.itemId = itemId; self.relativePath = relativePath; self.revision = revision; self.deleted = deleted; self.lifecycle = lifecycle; self.restoreFromRevision = restoreFromRevision
     }
 }
 

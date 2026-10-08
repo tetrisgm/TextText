@@ -116,6 +116,13 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 ct.ThrowIfCancellationRequested();
                 switch (method) {
                     case "files.connection": return new { connected = true, available = true, onlineReady = lastStatus == "ready", hasConflicts = lastStatus == "conflict", webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri };
+                    case "files.restoreReconcile": {
+                        var itemId=Required(p,"itemId");await sync.ReconcileRestoredAsync(itemId,Required(p,"relativePath"),Required(p,"operationId"),ct);
+                        Volatile.Write(ref inventory,null);
+                        var restored=Find(itemId);
+                        if(restored.Path!=Required(p,"relativePath")||!await sync.IsReadyAsync(itemId,ct))throw new IOException("The restored file is still downloading. Try again.");
+                        return Result(restored);
+                    }
                     case "files.recoveryDirectory": return files.GetRecoveryDirectory();
                     case "files.ready": return new { ready = await sync.IsReadyAsync(Required(p, "itemId"), ct) };
                     case "files.list": {

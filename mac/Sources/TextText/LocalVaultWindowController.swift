@@ -264,7 +264,23 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
               let body = message.body as? [String: Any], let id = body["id"] as? String, id.count <= 100,
               let method = body["method"] as? String else { return }
         let params = body["params"] as? [String: Any] ?? [:]
-        if ["accountRead", "collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel", "collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover", "presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave", "shareList", "shareInvite", "shareRole", "shareRevoke", "commentsRead", "commentsAdd", "commentsResolve", "publicationRead", "publicationSet", "feedDiscover", "feedRead", "feedEntry"].contains(method) {
+        if method == "trashReconcile" {
+            guard let engine = connection?.collaborationEngine, root != nil,
+                  let lifecycle = params["operationId"] as? String,
+                  let itemId = params["itemId"] as? String,
+                  let path = params["relativePath"] as? String else {
+                reply(id, result: .failure(VaultBridgeError("Open a connected workspace first."))); return
+            }
+            Task { [weak self] in
+                do {
+                    try await engine.reconcileRestored(itemId: itemId, path: path, lifecycle: lifecycle)
+                    self?.reply(id, result: .success([:]))
+                    self?.emit("texttext:vault-changed", value: [:])
+                } catch { self?.reply(id, result: .failure(error)) }
+            }
+            return
+        }
+        if ["trashList", "trashRestore", "accountRead", "collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel", "collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover", "presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave", "shareList", "shareInvite", "shareRole", "shareRevoke", "commentsRead", "commentsAdd", "commentsResolve", "publicationRead", "publicationSet", "feedDiscover", "feedRead", "feedEntry"].contains(method) {
             if method == "collaborationCancel" {
                 if let requestId = params["requestId"] as? String, requestId.count <= 100 { collaboration?.cancel(requestId) }
                 reply(id, result: .success([:])); return

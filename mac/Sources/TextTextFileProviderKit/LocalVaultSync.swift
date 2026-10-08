@@ -1,4 +1,5 @@
 import Foundation
+import ZIPFoundation
 import TextTextWorkspaceCore
 
 private func writeVaultSyncJournal(_ data: Data, to url: URL) throws {
@@ -52,6 +53,7 @@ public actor LocalVaultSync {
         var action: String? = nil
         var newPath: String? = nil
         var nativeEditor: Bool? = nil
+        var lifecycle: String? = nil
         var originMarkerHash: String? = nil
     }
     private struct Conflict: Codable {
@@ -68,6 +70,7 @@ public actor LocalVaultSync {
         var cursor = 0
         var identities: [String: String]? = nil
         var sharedDownloads: [String: Bool]? = nil
+        var lifecycles: [String: String]? = nil
     }
     private let root: URL
     private let directory: URL
@@ -334,6 +337,18 @@ public actor LocalVaultSync {
     private func install(_ pack: LocalVaultRemotePack, itemId: String, path: String, expectedLocal: String?) throws {
         guard try !sharedProtection(itemId: itemId) else { throw LocalVaultSharedFailure.protected }
         try validate(pack, itemId: itemId, path: path)
+        // Bind the installed bytes, not an earlier manifest snapshot, to their
+        // lifecycle. A concurrent restore can change generation during download.
+        var installedLifecycle: String?
+        let archive = try Archive(data: pack.data, accessMode: .read)
+        if let entry = archive["texttext-lifecycle.json"] {
+            guard entry.uncompressedSize <= 4096 else { throw LocalVaultSyncFailure.invalidResponse }
+            var data = Data(); _ = try archive.extract(entry) { data.append($0) }
+            struct Marker: Decodable { let version: Int; let generation: String }
+            let marker = try JSONDecoder().decode(Marker.self, from: data)
+            guard marker.version == 1, !marker.generation.isEmpty else { throw LocalVaultSyncFailure.invalidResponse }
+            installedLifecycle = marker.generation
+        }
         let target = try LocalVaultDocumentStore(root: root).url(for: path)
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         var error: NSError?
@@ -361,6 +376,10 @@ public actor LocalVaultSync {
         if let error { throw error }
         guard let result else { throw LocalVaultSyncFailure.changed }
         try result.get()
+        if let installedLifecycle {
+            if state.lifecycles == nil { state.lifecycles = [:] }
+            state.lifecycles?[itemId] = installedLifecycle
+        }
     }
 
     private func preserveConflict(_ pending: Pending, remote: LocalVaultRemotePack) throws -> [String] {
@@ -405,7 +424,7 @@ public actor LocalVaultSync {
         let pending = Pending(itemId: itemId, path: path, hash: hash, baseRevision: base,
                               operationId: UUID().uuidString.lowercased(), action: action, newPath: newPath,
                               nativeEditor: originMarkerHash == hash,
-                              originMarkerHash: originMarkerHash)
+                              lifecycle: state.lifecycles?[itemId], originMarkerHash: originMarkerHash)
         if let bytes { try writeVaultSyncJournal(bytes, to: payload(pending)) }
         state.outbox[itemId] = pending
         try persist()
@@ -509,18 +528,23 @@ public actor LocalVaultSync {
         try result.get()
     }
 
+    public func reconcileRestored(itemId: String, path: String, lifecycle: String) async throws {
+        _ = try await sync(maxItems: 512)
+        guard state.lifecycles?[itemId] == lifecycle, state.outbox[itemId] == nil,
+              state.conflicts[itemId] == nil, let baseline = state.baselines[itemId], baseline.path == path,
+              try !sharedProtection(itemId: itemId) else { throw LocalVaultSyncFailure.changed }
+        let file = try LocalVaultDocumentStore(root: root).read(path: path)
+        guard file.hash == baseline.localHash,
+              MarkdownIdentityCodec.extract(from: file.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
+    }
+
     public func sync(maxItems: Int = 128) async throws -> LocalVaultSyncReport {
         guard !running else { throw LocalVaultSyncFailure.busy }
         running = true
         defer { running = false }
         var report = LocalVaultSyncReport()
         let budget = max(1, min(maxItems, 512))
-        // Retry exact journal entries before producing new operations.
-        for pending in state.outbox.values.sorted(by: { $0.path < $1.path }).prefix(budget) {
-            do { try await send(pending, report: &report) }
-            catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
-        }
-        let manifest = try await transport.manifest()
+        var manifest = try await transport.manifest()
         let folders = await transport.folders()
         guard folders.count <= 20_000 else { throw LocalVaultSyncFailure.invalidResponse }
         for folder in folders {
@@ -534,6 +558,52 @@ public actor LocalVaultSync {
             guard remoteByID[item.itemId] == nil else { throw LocalVaultSyncFailure.invalidResponse }
             if !item.isDeleted, !remotePaths.insert(item.relativePath).inserted { throw LocalVaultSyncFailure.invalidResponse }
             remoteByID[item.itemId] = item
+        }
+        // A restore is a new lifecycle. Old device deletion intents must not
+        // delete it again, and old edits remain recoverable conflicts.
+        for remote in manifest where !remote.isDeleted && remote.lifecycle != nil {
+            let id = remote.itemId
+            guard try !sharedProtection(itemId: id) else { continue }
+            if state.lifecycles?[id] == nil, state.baselines[id]?.revision == remote.revision, let lifecycle = remote.lifecycle {
+                if state.lifecycles == nil { state.lifecycles = [:] }; state.lifecycles?[id] = lifecycle
+            }
+            if var pending = state.outbox[id], pending.lifecycle == nil, pending.baseRevision == remote.revision {
+                pending.lifecycle = remote.lifecycle; state.outbox[id] = pending
+            }
+            try persist()
+            if let pending = state.outbox[id], pending.lifecycle != remote.lifecycle {
+                if pending.action != "delete" {
+                    let pack = try await transport.download(itemId: id)
+                    report.conflicts += try preserveConflict(pending, remote: pack)
+                }
+                state.outbox.removeValue(forKey: id)
+                try persist()
+                if pending.action == "delete", try LocalVaultDeviceState.hasDeletion(root: root, itemId: id, path: pending.path, hash: pending.hash) {
+                    try LocalVaultDeviceState.clearDeletion(root: root, itemId: id)
+                }
+                try? FileManager.default.removeItem(at: payload(pending))
+            }
+            if let baseline = state.baselines[id], state.lifecycles?[id] != remote.lifecycle,
+               state.outbox[id] == nil, state.conflicts[id] == nil,
+               !FileManager.default.fileExists(atPath: try LocalVaultDocumentStore(root: root).url(for: baseline.path).path) {
+                state.baselines.removeValue(forKey: id)
+                try persist()
+                if try LocalVaultDeviceState.hasDeletion(root: root, itemId: id, path: baseline.path, hash: baseline.localHash) {
+                    try LocalVaultDeviceState.clearDeletion(root: root, itemId: id)
+                }
+            }
+        }
+        // Retry exact journal entries before producing new operations.
+        for pending in state.outbox.values.sorted(by: { $0.path < $1.path }).prefix(budget) {
+            do { try await send(pending, report: &report) }
+            catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
+        }
+        if report.uploaded > 0 {
+            manifest = try await transport.manifest(); remoteByID.removeAll()
+            for item in manifest {
+                guard remoteByID[item.itemId] == nil else { throw LocalVaultSyncFailure.invalidResponse }
+                remoteByID[item.itemId] = item
+            }
         }
         let store = LocalVaultDocumentStore(root: root)
         let paths = try store.list()
@@ -699,6 +769,13 @@ public actor LocalVaultSync {
                 try await send(pending, report: &report)
             } catch LocalVaultSharedFailure.protected { continue }
             catch { report.errors.append("\(activePath): \(error.localizedDescription)") }
+        }
+        if report.downloaded > 0 { manifest = try await transport.manifest() }
+        for remote in manifest where !remote.isDeleted {
+            if state.baselines[remote.itemId]?.revision == remote.revision, let lifecycle = remote.lifecycle {
+                if state.lifecycles == nil { state.lifecycles = [:] }
+                state.lifecycles?[remote.itemId] = lifecycle
+            }
         }
         state.cursor = (start + count) % ids.count
         report.hasMore = report.hasMore || !indexComplete || start + count < ids.count || !state.outbox.isEmpty

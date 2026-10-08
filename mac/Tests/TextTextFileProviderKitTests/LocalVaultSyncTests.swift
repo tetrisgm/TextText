@@ -1,4 +1,5 @@
 import XCTest
+import ZIPFoundation
 @testable import TextTextFileProviderKit
 
 final class LocalVaultSyncTests: XCTestCase {
@@ -10,6 +11,53 @@ final class LocalVaultSyncTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+
+    func testPassiveRestoreRetiresOldDeletionButHonorsNewDeletion() async throws {
+        let transport = FakeVaultTransport()
+        await transport.set(itemId: itemId, path: path, data: try pack("before"))
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        let store = LocalVaultDocumentStore(root: root)
+        try store.delete(path: path, expectedHash: store.read(path: path).hash)
+        await transport.restore(itemId: itemId, path: path, data: try pack("restored"), lifecycle: "restore-one")
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        var state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let baseline = try XCTUnwrap((state["baselines"] as? [String: [String: Any]])?[itemId])
+        state["outbox"] = [itemId: ["itemId": itemId, "path": path, "hash": baseline["localHash"]!, "baseRevision": baseline["revision"]!, "operationId": UUID().uuidString, "action": "delete"]]
+        try JSONSerialization.data(withJSONObject: state).write(to: stateURL, options: .atomic)
+        let resumed = try engine(transport)
+        let restored = try await resumed.sync()
+        XCTAssertTrue(restored.errors.isEmpty)
+        XCTAssertTrue(try store.read(path: path).contents.markdown.contains("restored"))
+        let firstManifest = await transport.manifest()
+        XCTAssertFalse(try XCTUnwrap(firstManifest.first).isDeleted)
+        try await resumed.reconcileRestored(itemId: itemId, path: path, lifecycle: "restore-one")
+        do { try await resumed.reconcileRestored(itemId: itemId, path: path, lifecycle: "wrong"); XCTFail("Wrong restore generation accepted") } catch {}
+        try store.delete(path: path, expectedHash: store.read(path: path).hash)
+        var migrated = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        migrated.removeValue(forKey: "lifecycles")
+        try JSONSerialization.data(withJSONObject: migrated).write(to: stateURL, options: .atomic)
+        _ = try await engine(transport).sync()
+        let secondManifest = await transport.manifest()
+        XCTAssertTrue(try XCTUnwrap(secondManifest.first).isDeleted)
+    }
+
+    func testDownloadRaceBindsInstalledLifecycleAndPreservesNewDelete() async throws {
+        let transport = FakeVaultTransport()
+        await transport.restore(itemId: itemId, path: path, data: try pack("first"), lifecycle: "first")
+        let archive = try Archive(data: pack("second"), accessMode: .update)
+        let marker = Data(#"{"version":1,"generation":"second"}"#.utf8)
+        try archive.addEntry(with: "texttext-lifecycle.json", type: .file, uncompressedSize: Int64(marker.count)) { position, size in marker.subdata(in: Int(position)..<Int(position) + size) }
+        await transport.raceDownload(data: try XCTUnwrap(archive.data), lifecycle: "second")
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        let store = LocalVaultDocumentStore(root: root)
+        XCTAssertTrue(try store.read(path: path).contents.markdown.contains("second"))
+        try store.delete(path: path, expectedHash: store.read(path: path).hash)
+        _ = try await sync.sync()
+        let manifest = await transport.manifest()
+        XCTAssertTrue(try XCTUnwrap(manifest.first).isDeleted)
+    }
 
     func testRemoteEmptyFoldersAreAdditiveAndRejectUnsafePaths() async throws {
         let transport = FakeVaultTransport()
@@ -461,6 +509,10 @@ final class LocalVaultSyncTests: XCTestCase {
 }
 
 private actor FakeVaultTransport: LocalVaultSyncTransport {
+    private var racedDownload: (Data, String)?
+    func raceDownload(data: Data, lifecycle: String) { racedDownload = (data, lifecycle) }
+    private var lifecycles: [String: String] = [:]
+    func restore(itemId: String, path: String, data: Data, lifecycle: String) { set(itemId: itemId, path: path, data: data); tombstones.removeValue(forKey: itemId); lifecycles[itemId] = lifecycle }
     private var remoteFolders: [String] = []
     func folders() -> [String] { remoteFolders }
     func setFolders(_ value: [String]) { remoteFolders = value }
@@ -482,9 +534,10 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     func uploadOrigins() -> [Bool] { nativeOrigins }
     func counts() -> (upload: Int, download: Int) { (uploadedOperations.count, downloads) }
     func manifest() -> [LocalVaultRemoteItem] {
-        items.map { .init(itemId: $0.key, relativePath: $0.value.relativePath, revision: $0.value.revision) } + Array(tombstones.values)
+        items.map { .init(itemId: $0.key, relativePath: $0.value.relativePath, revision: $0.value.revision, lifecycle: lifecycles[$0.key]) } + Array(tombstones.values)
     }
     func download(itemId: String) throws -> LocalVaultRemotePack {
+        if let raced = racedDownload, let current = items[itemId] { racedDownload = nil; restore(itemId: itemId, path: current.relativePath, data: raced.0, lifecycle: raced.1) }
         downloads += 1
         guard let item = items[itemId] else { throw LocalVaultSyncFailure.invalidResponse }
         return item
