@@ -2,10 +2,10 @@
 
 ## Installed and live
 
-- Current Windows source `36c91bd2` passed actual PC packaging and desktop smoke,
-  including the new native write-receipt regressions. Not installed; the older
+- Current Windows source `0428bfca` passed actual PC packaging and desktop smoke,
+  including durable agent creation and native write-receipt regressions. Not installed; the older
   app remains running with unknown unsaved state.
-  [Candidate receipt](verification/2026-10-08-windows-36c91bd2-candidate.md).
+  [Candidate receipt](verification/2026-10-08-windows-agent-creation.md).
 
 - Mac `/Applications/TextText.app`: **0.204 (1214)**, source `3382b36a`.
   Actual startup/account/iCloud, existing custom-template note, editor save,
@@ -54,17 +54,11 @@
 
 ## Current work and next checks
 
-- Windows native file writes now persist operation intent/completion receipts;
-  repeated writes follow committed identity after rename/edit and refuse
-  resurrection after deletion. Interrupted completion accepts only exact
-  prepared bytes; future/tampered intents fail closed. Creation publication
-  uses a no-overwrite move. Native bridge receives the shared operation ID;
-  shared transport honors the returned current path. Portable native suites,
-  47 shared transport tests and TypeScript pass. Logs:
-  `/tmp/texttext-windows-native-mutation-receipts.log`,
-  `/tmp/texttext-native-retry-follow-path.log`,
-  `/tmp/texttext-windows-mutation-types.log`. Source only: physical Windows
-  build/install and higher-level repeated agent creation remain unverified.
+- Windows agent creation now freezes original intent, identity, path and package
+  before publication, then compacts completed records. Actual PC packaging,
+  native regressions, renderer-restart/lost-response transport tests and shell
+  smoke pass. Installed real-model creation remains unverified.
+  [Current creation receipt](verification/2026-10-08-windows-agent-creation.md).
 
 - Replaced the legacy SQL sharing evaluator with real file-backed acceptance.
   Creation retries, stale-write refusal, persisted comments, two-principal
@@ -75,26 +69,16 @@
   remain explicitly unverified; this evaluator does not certify those features.
   Rerun the required full release gate on the committed candidate before delivery.
 
-- Candidate `36c91bd2` failed the required full release gate (`65788`), log
-  `/tmp/texttext-current-browser-contract-release-gates.log`. Preceding gates
-  exposed stale fixtures: missing TextPack identity, removed web assistant prop,
-  and omitted folder-review staging key. All focused fixes passed. Reader parsing
-  stays at one across status/presence updates; folder-review retries retain the
-  same key after an interrupted response; the full assistant browser suite passes.
-  Logs: `/tmp/texttext-reader-rerender-fixed.log`,
-  `/tmp/texttext-ai-provider-settings-fixed.log`,
-  `/tmp/texttext-web-assistant-current-contract.log`. No delivery is implied.
-  The candidate directory below now contains `36c91bd2`; its earlier packaged
-  archive remains older source and must not be deployed as this candidate.
-  The final unit failures exposed a missing native assistant folder-move handler
-  and stale asset-import expectations. Folder moves now stage the canonical
-  owner review with a stable retry key; they never silently execute a move.
-  All 33 targeted tests and TypeScript passed. Logs:
-  `/tmp/texttext-native-folder-review-tools.log`,
-  `/tmp/texttext-folder-review-types.log`. Full release checks must be rerun.
+- Source `0c71652e` passed all 22 required release checks after fixing the
+  native assistant folder-move handler and stale fixtures.
+  [Exact receipt](verification/2026-10-08-folder-review-release-gates.json).
+  Newer source `0428bfca` is running its full gate (`33981`), log
+  `/tmp/texttext-windows-creation-release-gates.log`. The clean candidate clone
+  `/private/tmp/texttext-candidate-1195-5ELVuo` now contains this source.
+  Older packaged archives must not be deployed as this candidate.
 
-- Oracle template delivery candidate is clean source `223954b8` in
-  `/private/tmp/texttext-candidate-1195-5ELVuo`. Exact core gates passed
+- Earlier Oracle template package used clean source `223954b8`.
+  It is superseded and must not be deployed as the current candidate. Its core gates passed
   (837 tests, 87 files), native sync gates passed, and the production web
   build and immutable packaging completed successfully. Logs:
   `/tmp/texttext-oracle-template-gates.log`,
