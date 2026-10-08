@@ -21,6 +21,8 @@ export async function openWebWorkspace(params: Record<string, unknown>, options:
   const access = await request(`/api/vault/${encodeURIComponent(id)}/access`, { credentials: "same-origin", cache: "no-store", signal: options.signal });
   if (!access.ok) throw new Error("This workspace is no longer available to your account.");
   check();
+  if (!await options.flush()) throw new Error("Finish saving your changes before opening another workspace.");
+  check();
   options.stopAgent();
   options.navigate(`/vault/${encodeURIComponent(id)}`);
 }

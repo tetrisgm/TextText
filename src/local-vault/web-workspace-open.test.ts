@@ -23,6 +23,11 @@ describe('workspace switch boundary',()=>{
   await expect(openWebWorkspace({workspaceId:target},options)).rejects.toThrow('no longer available');
   expect(request).toHaveBeenCalledTimes(1);expect(options.stopAgent).not.toHaveBeenCalled();
  });
+ it('flushes edits made during access checks before retiring the active agent',async()=>{
+  const {options}=fixture();options.flush.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  await expect(openWebWorkspace({workspaceId:target},options)).rejects.toThrow('Finish saving');
+  expect(options.flush).toHaveBeenCalledTimes(2);expect(options.stopAgent).not.toHaveBeenCalled();expect(options.navigate).not.toHaveBeenCalled();
+ });
  it('keeps the current workspace a no-op',async()=>{
   const {options,request}=fixture();await openWebWorkspace({workspaceId:current},options);expect(request).not.toHaveBeenCalled();expect(options.flush).not.toHaveBeenCalled();
  });
