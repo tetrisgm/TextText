@@ -376,3 +376,22 @@ Installed DLL SHA-256:
 `b37d3e0f47b102b2b430e1c7d02a6bd739346bfc1b65c33e8b00f363e8d4331b`.
 Live Trash restore acceptance awaits the matching Oracle deployment; native
 restore lifecycle and stale-operation regressions passed in the build above.
+
+### Live same-ID Trash restoration
+
+After Oracle `233e53b3` deployment, the dedicated Mac-created note
+`290afb22-c198-4a7f-9d26-9a4f04dd9020` at `Notes/Untitled 2.textpack`
+was deleted through the actual Mac 1182 UI. Passive Windows verification at
+04:32:15 UTC confirmed both file and baseline absent, empty outbox and no
+pending pull. No Windows mutation or manual refresh was performed.
+
+The actual Mac Trash UI then restored it. At 04:32:47 UTC, Windows had
+received the same ID/path, exact body `Same file identity across Mac Windows
+and web. Restore marker 1182.`, and icon U+2705 (✅). The pack's version-1
+lifecycle generation and saved baseline both equal
+`d76988fa-6307-4182-b2f0-01426b4864a3`. Local hash and acknowledged revision
+both equal `e4f1ad4c7dc1adb74fddd8f095a78107c6208665b5a5ca255f3741c2110e4b35`;
+outbox remained empty, no pull pending, and no refresh flag remained.
+Before deletion, differing Mac/Windows archive hashes were confirmed to have
+identical four entry-content digests; ZIP byte identity was not used as a
+substitute for content and acknowledged-state verification.
