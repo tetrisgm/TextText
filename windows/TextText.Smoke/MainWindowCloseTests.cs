@@ -52,12 +52,34 @@ static class MainWindowCloseTests
     static async Task Until(Func<Task<bool>> condition,CancellationToken ct){using var bounded=CancellationTokenSource.CreateLinkedTokenSource(ct);bounded.CancelAfter(TimeSpan.FromSeconds(8));while(!await condition()){await Task.Delay(40,bounded.Token);}}
     sealed class ActivationBridge : INativeWorkspaceBridge
     {
-        public Task<object?> InvokeAsync(string method, JsonElement parameters, CancellationToken cancellationToken) => throw new InvalidOperationException("Unexpected activation fixture RPC");
+        public int Calls;
+        public Task<object?> InvokeAsync(string method, JsonElement parameters, CancellationToken cancellationToken) { Calls++; return Task.FromResult<object?>(null); }
         public void Dispose() { }
     }
     public static async Task RunAsync(string root,string receipts,CancellationToken ct)
     {
         var checks=new List<string>();
+        var fenced=await Create(Path.Combine(root,"retired-sender"),ct);
+        var replacement=new WebView2();var fencedBridge=new ActivationBridge();
+        try {
+            Field("bridge").SetValue(fenced.Window,fencedBridge);
+            var rejectedRoot=Path.Combine(root,"rejected-workspace");Directory.CreateDirectory(Path.Combine(rejectedRoot,".texttext"));
+            await File.WriteAllTextAsync(Path.Combine(rejectedRoot,".texttext","workspace-binding.json"),"{invalid",ct);
+            Field("account").SetValue(fenced.Window,new Account("isolated-not-a-token",Guid.NewGuid().ToString(),"Isolated"));
+            Field("root").SetValue(fenced.Window,root);
+            var open=typeof(MainWindow).GetMethod("OpenWorkspace",PrivateInstance)!;
+            var rejected=false;
+            try { await ((Task)open.Invoke(fenced.Window,[rejectedRoot,null])!); } catch(IOException) { rejected=true; }
+            Check(rejected&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&ReferenceEquals(Field("bridge").GetValue(fenced.Window),fencedBridge)&&(string)Field("root").GetValue(fenced.Window)! == root,"failed workspace preparation preserves previous view bridge and root",checks);
+            Field("web").SetValue(fenced.Window,replacement);
+            await fenced.View.ExecuteScriptAsync("window.chrome.webview.postMessage({id:'retired-write',method:'files.write',params:{}})");
+            await Task.Delay(150,ct);
+            Check(fencedBridge.Calls==0,"retired WebView cannot dispatch writes to replacement bridge",checks);
+            Field("web").SetValue(fenced.Window,fenced.View);
+            await fenced.View.ExecuteScriptAsync("window.chrome.webview.postMessage({id:'current-write',method:'files.write',params:{}})");
+            await Until(()=>Task.FromResult(fencedBridge.Calls==1),ct);
+            Check(fencedBridge.Calls==1,"current view remains usable after rejected retired request",checks);
+        } finally { Field("web").SetValue(fenced.Window,fenced.View);replacement.Dispose();ForceClose(fenced.Window); }
         var success=await Create(Path.Combine(root,"close-success"),ct);
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);success.Window.Closed+=(_,_)=>closed.TrySetResult();

@@ -103,20 +103,21 @@ public sealed partial class MainWindow : Window
             CredentialStore.Save(account); return;
         }
     }
-    private async Task OpenWorkspace(string? selectedRoot = null)
+    private async Task OpenWorkspace(string? selectedRoot = null, Action? beforeCommit = null)
     {
         var active = account ?? throw new InvalidOperationException("Sign in required");
         if(!Guid.TryParse(active.WorkspaceId,out _)) throw new InvalidOperationException("Invalid workspace");
-        root = selectedRoot ?? WorkspaceRoot(active.WorkspaceId);
-        Directory.CreateDirectory(root);
-        WorkspaceLocation.Bind(root, Origin.AbsoluteUri, active.WorkspaceId);
-        bridge?.Dispose();
-        bridge = WorkspaceFactory?.Invoke(new(root, active.WorkspaceId, Origin, () => Task.FromResult(account?.Token ?? throw new InvalidOperationException("Sign in required")),EmitEventAsync));
-        web = new WebView2(); SetWorkspaceContent(web);
+        var nextRoot = selectedRoot ?? WorkspaceRoot(active.WorkspaceId);
+        Directory.CreateDirectory(nextRoot);
+        WorkspaceLocation.Bind(nextRoot, Origin.AbsoluteUri, active.WorkspaceId);
+        var nextWeb = new WebView2();
+        INativeWorkspaceBridge? nextBridge = null;
+        try
+        {
         var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",active.WorkspaceId);
         var environment = await CoreWebView2Environment.CreateAsync(null,profile);
-        await web.EnsureCoreWebView2Async(environment);
-        var core = web.CoreWebView2;
+        await nextWeb.EnsureCoreWebView2Async(environment);
+        var core = nextWeb.CoreWebView2;
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.AreHostObjectsAllowed = false;
         core.Settings.IsPasswordAutosaveEnabled = false;
@@ -137,7 +138,19 @@ public sealed partial class MainWindow : Window
         };
         core.WindowCloseRequested += (_,_) => { _ = RequestClose(); };
         core.WebMessageReceived += Receive;
+        nextBridge = WorkspaceFactory?.Invoke(new(nextRoot, active.WorkspaceId, Origin,
+            () => Task.FromResult(account?.Token ?? throw new InvalidOperationException("Sign in required")),
+            (name, detail) => EmitForView(nextWeb, name, detail)));
         core.Navigate("https://texttext.local/index.html");
+        beforeCommit?.Invoke();
+        var oldWeb = web; var oldBridge = bridge;
+        if (oldWeb?.CoreWebView2 is { } oldCore) oldCore.WebMessageReceived -= Receive;
+        foreach (var request in requests.Values) request.Cancel();
+        root = nextRoot; web = nextWeb; bridge = nextBridge;
+        SetWorkspaceContent(nextWeb);
+        oldBridge?.Dispose(); oldWeb?.Dispose();
+        }
+        catch { if (!ReferenceEquals(web, nextWeb)) { nextBridge?.Dispose(); nextWeb.Dispose(); } throw; }
     }
     private static bool IsLocal(string url) => Uri.TryCreate(url,UriKind.Absolute,out var uri) && uri.Scheme == "https" && uri.Host == "texttext.local" && uri.IsDefaultPort;
     private static void OpenExternal(string url)
@@ -146,7 +159,7 @@ public sealed partial class MainWindow : Window
     }
     private async void Receive(object? sender,CoreWebView2WebMessageReceivedEventArgs e)
     {
-        if(!IsLocal(e.Source)) return;
+        if(!ReferenceEquals(sender, web?.CoreWebView2) || !IsLocal(e.Source)) return;
         string? id = null, method = null;
         try {
             using var message = JsonDocument.Parse(e.WebMessageAsJson);
@@ -159,15 +172,15 @@ public sealed partial class MainWindow : Window
             if(method == "native.flushResult") { flushGuard.Accept(id,parameters.TryGetProperty("ok",out var ok) && ok.ValueKind == JsonValueKind.True); return; }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             if(!requests.TryAdd(id,cancellation)) return;
-            try { var result = await Dispatch(method,parameters,cancellation.Token); Reply(new { id,result }); }
+            try { var result = await Dispatch(method,parameters,cancellation.Token); if (ReferenceEquals(sender, web?.CoreWebView2)) Reply(new { id,result }); }
             finally { requests.TryRemove(id,out _); }
         }
-        catch(OperationCanceledException) { Reply(new { id,error = new { message = "Request cancelled",code = "CANCELLED" } }); }
-        catch(FileChangedException) { Reply(new { id,error = new { message = "This file changed. Its current contents have been preserved.",code = method?.StartsWith("collaboration.") == true ? "local_changed" : "conflict" } }); }
-        catch(SharedSessionClosedException) { Reply(new { id,error = new { message = "This editing session has closed.",code = "session_closed" } }); }
-        catch(FileNotFoundException) { Reply(new { id,error = new { message = "This file is not available on this device yet.",code = "not_found" } }); }
-        catch(NotSupportedException error) { Reply(new { id,error = new { message = error.Message,code = "unsupported" } }); }
-        catch { Reply(new { id,error = new { message = "The operation could not be completed. Please try again.",code = "NATIVE_ERROR" } }); }
+        catch(OperationCanceledException) { ReplyForSource(sender, new { id,error = new { message = "Request cancelled",code = "CANCELLED" } }); }
+        catch(FileChangedException) { ReplyForSource(sender, new { id,error = new { message = "This file changed. Its current contents have been preserved.",code = method?.StartsWith("collaboration.") == true ? "local_changed" : "conflict" } }); }
+        catch(SharedSessionClosedException) { ReplyForSource(sender, new { id,error = new { message = "This editing session has closed.",code = "session_closed" } }); }
+        catch(FileNotFoundException) { ReplyForSource(sender, new { id,error = new { message = "This file is not available on this device yet.",code = "not_found" } }); }
+        catch(NotSupportedException error) { ReplyForSource(sender, new { id,error = new { message = error.Message,code = "unsupported" } }); }
+        catch { ReplyForSource(sender, new { id,error = new { message = "The operation could not be completed. Please try again.",code = "NATIVE_ERROR" } }); }
     }
     private async Task<object?> Dispatch(string method,JsonElement p,CancellationToken ct)
     {
@@ -226,6 +239,10 @@ public sealed partial class MainWindow : Window
         while((count = await input.ReadAsync(buffer,ct)) > 0) { if(output.Length + count > limit) throw new InvalidDataException("Response exceeds size limit."); output.Write(buffer,0,count); }
         return new { status = (int)response.StatusCode, headers = response.Headers.Concat(response.Content.Headers).Where(h => !h.Key.Equals("Set-Cookie",StringComparison.OrdinalIgnoreCase)).ToDictionary(h => h.Key,h => string.Join(", ",h.Value)),body = Convert.ToBase64String(output.ToArray()) };
     }
+    private void ReplyForSource(object? sender, object value) { if (ReferenceEquals(sender, web?.CoreWebView2)) Reply(value); }
     private void Reply(object value) { if(web?.CoreWebView2 is { } core) core.PostWebMessageAsJson(JsonSerializer.Serialize(value)); }
+    private Task EmitForView(WebView2 owner, string name, object? detail) => Dispatcher.InvokeAsync(() => {
+        if (ReferenceEquals(owner, web)) Reply(new { @event = name, detail });
+    }).Task;
     public Task EmitEventAsync(string name,object? detail) => Dispatcher.InvokeAsync(() => Reply(new { @event = name,detail })).Task;
 }

@@ -40,7 +40,6 @@ public sealed partial class MainWindow
         if (initialDirectory is not null && Directory.Exists(initialDirectory)) picker.InitialDirectory = initialDirectory;
         if (picker.ShowDialog(this) != true) return;
         transitioning = true;
-        var previousRoot = root;
         try
         {
             var selected = WorkspaceLocation.Validate(picker.FolderName, Origin.AbsoluteUri, account.WorkspaceId);
@@ -52,18 +51,17 @@ public sealed partial class MainWindow
             if (MessageBox.Show(this, $"Use this folder for {account.Name}? TextText will download this workspace here. Files in the previous folder stay there.", "Open workspace folder", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
             if (!await FlushEditor()) { ShowSaveFailure(); return; }
             WorkspaceLocation.Bind(selected, Origin.AbsoluteUri, account.WorkspaceId);
-            var oldWeb = web;
-            await OpenWorkspace(selected);
-            oldWeb?.Dispose();
-            var path = LocationFile(account.WorkspaceId); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var temporary = path + ".pending";
-            await File.WriteAllBytesAsync(temporary, JsonSerializer.SerializeToUtf8Bytes(selected));
-            File.Move(temporary, path, true);
+            await OpenWorkspace(selected, () => {
+                var path = LocationFile(account.WorkspaceId); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var temporary = path + ".pending";
+                File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(selected));
+                File.Move(temporary, path, true);
+            });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)
         {
             // The old folder and its durable journal remain intact on every failure.
-            if (root != previousRoot) { try { web?.Dispose(); await OpenWorkspace(previousRoot); } catch { } }
+            // OpenWorkspace prepares the replacement before retiring the current view.
             MessageBox.Show(this, "This folder could not be opened. Your previous workspace files have been kept.", "Open workspace folder");
         }
         finally { transitioning = false; if (web is not null) web.IsEnabled = true; }
