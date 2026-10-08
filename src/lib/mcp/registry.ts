@@ -1,3 +1,4 @@
+import { VAULT_TOOL_NAMES, vaultToolDefinitions } from "./vault-contract";
 import { hasItemAgentScope, itemAgentAllows } from "@/lib/item-agent-access";
 // The server's capability registry, independent of any transport.
 //
@@ -127,6 +128,7 @@ function hostedNote(name: WorkspaceToolName, confirmation: string): string {
 }
 
 export function listTools() {
+  if (process.env.TEXTTEXT_VAULT_ROOT) return vaultToolDefinitions();
   return WORKSPACE_TOOL_NAMES.map((name) => {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     return {
@@ -152,6 +154,9 @@ export async function callTool(
   const scopes = context.authInfo?.scopes ?? [];
   if (hasItemAgentScope(scopes) && !itemAgentAllows(scopes, name, args)) {
     return { isError: true, content: [{ type: "text", text: "This connection only permits reading or editing its item." }] };
+  }
+  if (process.env.TEXTTEXT_VAULT_ROOT && !(VAULT_TOOL_NAMES as readonly string[]).includes(name)) {
+    return { isError: true, content: [{ type: "text", text: `The file workspace does not support ${name} through this connection yet.` }] };
   }
   if (hostedToolNeedsProposal(name, args)) {
     return stageHostedToolProposal(name, args, context);

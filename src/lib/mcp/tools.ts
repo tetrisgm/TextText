@@ -847,6 +847,11 @@ async function executeWorkspaceCommand(
     );
   }
 
+  if (process.env.TEXTTEXT_VAULT_ROOT) {
+    const { executeVaultReadTool } = await import("./vault-tools");
+    return executeVaultReadTool(name, args as Record<string, unknown>, extra.authInfo);
+  }
+
   switch (name) {
     case "list_agent_changes":
     case "revert_agent_change": {
