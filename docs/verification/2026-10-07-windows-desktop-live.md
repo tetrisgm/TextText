@@ -347,3 +347,32 @@ the new archive hash
 `ccb3a3747643353726927b6ae619f789588de975f9cd4127291b742e64dda37c`,
 with empty outbox and no pending pull. This read-only check used the existing
 account/workspace and required no Windows edit or manual refresh.
+
+## Restore lifecycle candidate 5861988e
+
+Source `5861988e` passed the required Windows build: 151 Core assertions,
+native agent checks, 191 shared-client tests, TypeScript, self-contained publish
+and actual desktop smoke, including production workspace startup, failed-switch
+retention, editor flush, close and activation. Build log:
+`windows-combined-5861988e-build.log`; desktop receipt:
+`windows/build/smoke-receipts-41f4f73e84104206be2bb58e74ced70f`.
+The later Mac fixture-only fix `b2ceb842` does not change this Windows product.
+
+Installed candidate `fdd6221385d54e3794031c2a48f2b1d0`, verified twice by the
+installer, preserved `TextText-previous-20261007T212236-0c0d0e3e`.
+The existing signed-in reader had no unsaved editor before normal close.
+At 2026-10-08 04:22:56 UTC, startup restored the original account, workspace
+and note in 1,757 ms (shell 908 ms). Actual command search for
+`Windows ACK refresh` returned the correct note and path. Normal close/reopen
+passed at 04:24:03 UTC: reader 1,776 ms, shell 683 ms.
+
+At 04:24:06 UTC, all ten existing markers were present exactly once, outbox
+was empty, no pull was pending, and the acknowledged note hash remained
+`ccb3a3747643353726927b6ae619f789588de975f9cd4127291b742e64dda37c`.
+The app was left open on the saved reader; no user document was modified.
+Installed EXE SHA-256:
+`8eaf0eb49815a8c12240c408b20a8d88d6d36a8bce2382692e86e629cc56c37f`.
+Installed DLL SHA-256:
+`b37d3e0f47b102b2b430e1c7d02a6bd739346bfc1b65c33e8b00f363e8d4331b`.
+Live Trash restore acceptance awaits the matching Oracle deployment; native
+restore lifecycle and stale-operation regressions passed in the build above.
