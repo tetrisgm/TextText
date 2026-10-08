@@ -37,3 +37,15 @@ The previous [1184 receipt](2026-10-07-windows-shared-1184.md) retains bounded
 memory and warm-launch measurements; unaffected tests were not repeated.
 This receipt does not claim a configured live AI model interaction or a live
 Windows network-outage test.
+
+## Passive canonical agent creation
+
+After Oracle deployed the same source, Mac CLI created item
+`273adce8-01cb-4934-8079-c0397efc82a3` using Research template version two.
+Windows received `Notes/Agent template creation verification 1185-273adce8.textpack`
+without manual sync. Disk inspection confirmed the exact four-heading starter,
+DocumentSnapshot presentation version two and matching embedded `template.json`
+version two (`local.889cf205-c18e-4a67-8153-4be1d2576c98`). Actual installed UI
+search found and opened it; Next steps rendered successfully. No content was
+changed. PC UI evidence: `windows/build/remote-template-ui.json` and
+`remote-template-result.json`.
