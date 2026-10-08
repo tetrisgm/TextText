@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { cloudAssistantToolNames } from "@/lib/ai/cloud-tools";
-import { isProposableWorkspaceWrite } from "@/lib/ai/write-proposal-policy";
+import { isProposableWorkspaceWrite, requiresFrozenPreview } from "@/lib/ai/write-proposal-policy";
 import { WORKSPACE_TOOL_DEFINITIONS } from "@/lib/ai/tools";
 
 /**
@@ -19,15 +19,11 @@ describe("what the browser assistant is offered", () => {
     expect(full).not.toContain("delete_items");
   });
 
-  it("still cannot share or fetch a chosen URL", () => {
-    // Each changes who can see something, or reaches outward, and none has a
-    // preview a person could judge. Approval does not make a fetch safe.
-    for (const name of [
-      "add_item_asset",
-      "recapture_bookmark",
-    ] as const) {
-      expect(full).not.toContain(name);
-    }
+  it("offers reviewed asset import while excluding legacy recapture", () => {
+    expect(full).toContain("add_item_asset");
+    expect(isProposableWorkspaceWrite("add_item_asset")).toBe(true);
+    expect(requiresFrozenPreview("add_item_asset")).toBe(true);
+    expect(full).not.toContain("recapture_bookmark");
   });
 
   it("offers restore through the same owner-reviewed proposal path", () => {

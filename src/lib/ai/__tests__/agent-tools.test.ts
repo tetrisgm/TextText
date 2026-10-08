@@ -772,6 +772,27 @@ describe("external agent presence signalling", () => {
     expect(applyItemPatch).not.toHaveBeenCalled();
   });
 
+  it("stages a folder move review with a stable key and never executes a move", async () => {
+    const fetchReview = vi.fn(async () => Response.json({reviewPath: "/proposals/11111111-1111-4111-8111-111111111111"}));
+    vi.stubGlobal("fetch", fetchReview);
+    try {
+      const executeTool = vi.fn(), refreshPool = vi.fn();
+      const tools = createWorkspaceAgentTools({handle:"local",getPool:workspacePool,confirmDestructive:vi.fn(async()=>true),executeTool,refreshPool});
+      const input = {source_path:"notes",destination_path:"Archive/Notes",idempotency_key:"same model call"};
+      const first = await tools.executor("move_folder_tree",input);
+      expect(first).toMatchObject({status:"pending",reviewPath:"/proposals/11111111-1111-4111-8111-111111111111"});
+      await tools.executor("move_folder_tree",input);
+      expect(fetchReview).toHaveBeenCalledTimes(2);
+      expect(fetchReview.mock.calls[0]).toEqual(fetchReview.mock.calls[1]);
+      const [url, init] = fetchReview.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("/api/vault/blog-1/folder-moves");
+      expect(JSON.parse(String(init.body))).toMatchObject({source:"notes",destination:"Archive/Notes",stagingKey:expect.stringMatching(/^[a-f0-9]{64}$/)});
+      expect(executeTool).not.toHaveBeenCalled();expect(refreshPool).not.toHaveBeenCalled();
+      fetchReview.mockResolvedValueOnce(Response.json({error:"Access unavailable"},{status:403}));
+      await expect(tools.executor("move_folder_tree",input)).rejects.toThrow("Access unavailable");
+    } finally {vi.unstubAllGlobals();}
+  });
+
   it("does not signal presence for the person at the keyboard", async () => {
     const signalAgentActivity = vi.fn();
     const tools = createWorkspaceAgentTools({

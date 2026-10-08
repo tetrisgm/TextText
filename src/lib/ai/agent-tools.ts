@@ -376,6 +376,12 @@ export function createWorkspaceAgentTools(
     if (WORKSPACE_TOOL_DEFINITIONS[name].confirmation === "none") return true;
     if (!confirmDestructive) return false;
 
+    if (name === "move_folder_tree") {
+      return await confirmDestructive(
+        `Prepare a review to move "${String(input.source_path)}" to "${String(input.destination_path)}"? The review includes inherited access.`,
+      );
+    }
+
     if (name === "delete_folder" || name === "restore_folder") {
       const folderId =
         typeof input.folder_id === "string" ? input.folder_id : "";
@@ -577,6 +583,22 @@ export function createWorkspaceAgentTools(
         const result = await runRemote("update_item_type", input);
         await refreshPoolAfterMutation();
         return { ok: true, ...result };
+      }
+
+      case "move_folder_tree": {
+        const input = args as WorkspaceToolInput<"move_folder_tree">;
+        const stagingKey = [...new Uint8Array(await crypto.subtle.digest("SHA-256",
+          new TextEncoder().encode(input.idempotency_key)))].map(value => value.toString(16).padStart(2, "0")).join("");
+        const response = await fetch(`/api/vault/${encodeURIComponent(pool().blogId)}/folder-moves`, {
+          method: "POST", credentials: "same-origin", cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: input.source_path, destination: input.destination_path, stagingKey }),
+        });
+        const result = await response.json().catch(() => null) as { reviewPath?: unknown; error?: unknown } | null;
+        if (!response.ok) throw new Error(typeof result?.error === "string" ? result.error : "The folder move review could not be prepared.");
+        if (typeof result?.reviewPath !== "string" || !/^\/proposals\/[0-9a-f-]{36}$/i.test(result.reviewPath)) throw new Error("The folder move review was not confirmed.");
+        return { ok: true, status: "pending", reviewPath: result.reviewPath,
+          message: "The folder has not moved. Open this review and approve the exact files and inherited access to continue." };
       }
 
       case "rename_folder": {
