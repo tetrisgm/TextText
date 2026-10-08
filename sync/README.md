@@ -47,6 +47,27 @@ agents can change text.md directly without a parallel document.json rewrite.
     the restoration; newer local work remains recoverable. Retrying restoration
     cannot replace edits accepted after the original restore.
 
+## Shared workspace manifests
+
+The authenticated items manifest reports `fullAccess`, `canCreateContent`,
+`writableFolders` and each item's/tombstone's `canEditContent`. These describe
+current permissions; every server mutation still reauthorizes under its commit
+lock. A partial listing omits inaccessible files, so absence never means deletion
+or permission to recreate a missing item. Retain unauthorized local edits and
+operation identities without continuously retrying a forbidden write.
+
+New files may be uploaded only with workspace creation permission or inside a
+listed writable folder (including descendants). Existing items use their exact
+item capability. Move/delete currently require full workspace editing access.
+Client caches retain permissions with their manifest and refresh them before
+uploading; a missing capability is not an authorization grant.
+
+ETags include capabilities so a role change invalidates an otherwise unchanged
+manifest. The HTTP route maps a matching permission-aware ETag back to the raw
+file revision before waiting on the filesystem, preserving long-poll behavior.
+Core route regressions cover downgrade, scoped paths and unchanged long polls;
+local PostgreSQL grants tests cover account-bound membership discovery.
+
 ## Commands
 
 - `windows/scripts/build.ps1`: native Windows storage/agent checks, shared client tests, TypeScript, and a source-bound self-contained candidate.
