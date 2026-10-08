@@ -482,6 +482,12 @@ and actions, with a personal per-device/workspace preference.
 - Approval-to-TextPack regression coverage now includes gallery, cover and body placement. It reads the committed archive through the actual pack reader, verifies exact original image bytes plus the preview, checks placement and retained title/body, and proves completion-receipt replay does not fetch or rewrite the image.
 - All 40 write-proposal tests and TypeScript passed. This is automated boundary evidence; live signed-in agent image creation/removal acceptance remains pending.
 
+## Current PC verification and candidate build
+
+- Actual Windows PC full native file/durable sync suite passed against `dbea2f59`, including interrupted move reopening and journal replay/recovery follow-ups. Receipt: `/tmp/texttext-recovery-dbea2f59-pc.log`.
+- A full replacement candidate build is running from `C:\Users\Shokunin\dev\texttext-recovery-dbea2f59`; local SSH process handle `49719`, log `/tmp/texttext-windows-dbea2f59-build.log`. Revalidate the live handle and log before continuing; do not restart merely on timeout. Candidate acceptance is not yet attested.
+- Installed PC process 44968 remains running at the standard installed path with an empty window title. Unsaved state is unknown; installation remains pending the already requested save/close. No process was killed or client replaced.
+
 ## Interrupted move session reopening
 
 - Regression reproduced Windows reopening against a removed source path after durable move recovery. Session opening now follows only an exact retained move intent matching requested source, item identity and expected projection hash. Missing unrelated paths still fail closed.
