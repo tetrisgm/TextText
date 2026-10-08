@@ -38,11 +38,22 @@ content system and the same UI/editor/sync implementation on Mac, Windows and
 web, with narrow native filesystem, credential and OS integration adapters.
 No deletion has been performed or is required to stop exposing the old paths.
 
-Current work: route authenticated owner legacy home entry into `/vault`, route
-new template creation through the shared file UI, and add a shared-client
-architecture regression gate. Existing export/inventory helpers are preparation
-only and have never migrated production content. References: `a7bd430d`,
-`f910d38f`, `8eda3d86`; real local-Postgres regression/fix `9ef750e0`.
+Completed source changes, not yet deployed:
+- `14f0c275`: authenticated owner legacy home opens the shared file workspace;
+  five focused route tests passed.
+- `ac01d85e`, `f52d268c`: template links open the shared permission-gated picker;
+  no GET-created SQL drafts. Unit tests, actual browser creation regression,
+  session regression and TypeScript passed.
+- `89a2bdc1`: all three client entry points and native packaging share one UI;
+  six architecture checks participate in core/Windows gates.
+- `86acd6bb`: empty directories appear in server/web manifests, scoped grants
+  filter folder names, and folder changes invalidate listing revisions.
+  67 relevant tests, TypeScript and scoped ESLint passed.
+
+Current work: fresh-account file provisioning, native empty-folder delivery,
+then hosted agent commands using the file backend. `d09bfdf4` is the read
+adapter preparation only; production dispatch awaits mutation/permission tests.
+The prior export/inventory helpers never migrated production content.
 
 Windows startup regression `033231ae` is fixed in the installed candidate:
 WebView2 enters the live visual tree before initialization. Actual installed
