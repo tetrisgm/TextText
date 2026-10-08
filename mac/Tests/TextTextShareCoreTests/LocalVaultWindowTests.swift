@@ -22,7 +22,7 @@ final class LocalVaultWindowTests: XCTestCase {
     }
 
     @MainActor
-    func testBundledEditorReadsWritesAndObservesRealFilesWithoutServer() async throws {
+    func testSignedInBundledEditorReadsWritesAndObservesRealFilesWhileOffline() async throws {
         _ = NSApplication.shared
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -35,14 +35,18 @@ final class LocalVaultWindowTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let files = DocumentStore(root: root)
         let target = try files.create(title: "Integration", body: "Original body.")
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "http://127.0.0.1:1")!, workspaceId: "offline-fixture")
+        try PortableWorkspaceBinding.bindVerified(root: root, binding: binding)
+        let capabilities = try JSONDecoder().decode(LocalVaultSyncCapabilities.self, from: Data(#"{"fullAccess":true,"canCreateContent":true,"writableFolders":[],"writableItems":[],"knownPaths":["Integration.textpack"],"writablePaths":["Integration.textpack"]}"#.utf8))
+        try LocalVaultCapabilityCache.write(capabilities, root: root, binding: binding)
         let controller = LocalVaultWindowController(entry: entry, root: root,
             websiteDataStore: .nonPersistent(),
-            credentials: { nil })
+            credentials: { (origin: URL(string: "http://127.0.0.1:1")!, token: "offline-test-fixture") })
         defer { controller.close() }
         let view = try XCTUnwrap(controller.window?.contentView as? WKWebView)
         controller.showWindow(nil)
         try await until(view: view) {
-            (try? await view.evaluateJavaScript("document.querySelector('nav[aria-label=\"Folders\"]') !== null && document.querySelector('[aria-label=\"Web connection\"]')?.innerText.includes('Sign in to TextText to connect this folder.') === true") as? Bool) == true
+            (try? await view.evaluateJavaScript("document.querySelector('nav[aria-label=\"Folders\"]') !== null && document.querySelector('section[aria-label=\"TextText account\"] small')?.textContent === 'Signed in'") as? Bool) == true
         }
         XCTAssertTrue(controller.openFile(target), "The native bridge should open a file inside its selected local root.")
         try await until(view: view) {
@@ -52,9 +56,9 @@ final class LocalVaultWindowTests: XCTestCase {
         try await until(view: view) {
             (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Document body\"]')?.textContent?.trim()") as? String) == "Original body."
         }
-        let signInPromptRemains = (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Web connection\"]')?.innerText.includes('Sign in to TextText to connect this folder.')") as? Bool) == true
-        XCTAssertTrue(signInPromptRemains,
-            "Local editing must remain available while web connection is unauthenticated.")
+        let signedInRemains = (try? await view.evaluateJavaScript("document.querySelector('section[aria-label=\"TextText account\"] small')?.textContent === 'Signed in'") as? Bool) == true
+        XCTAssertTrue(signedInRemains,
+            "A signed-in account must retain local editing while the server is offline.")
         _ = try await view.evaluateJavaScript("const body=document.querySelector('[aria-label=\"Document body\"]'); body.focus(); body.textContent='Human edited the real file.'; body.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));")
         try await until(view: view) { (try? files.readMarkdown(at: target).contains("Human edited the real file.")) == true }
         // Simulate an external editor atomically replacing text.md inside the

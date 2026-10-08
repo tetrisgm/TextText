@@ -47,8 +47,10 @@
   commits its receipt in the same TextPack replacement; reopen/later-edit retry
   and payload mismatch regression passed. Cross-client receipt preservation
   remains unverified. [Receipt](verification/2026-10-08-local-append-idempotency.md).
-  Storage/CLI suites passed 84 tests. Bundled editor UI smoke failed in the
-  broader run and requires investigation before the next client acceptance.
+  Storage/CLI suites passed 84 tests. Bundled editor smoke now passes with
+  current account/cached-permission fixture semantics; the earlier failure was
+  stale message and unauthenticated-edit expectations.
+  [Offline editor receipt](verification/2026-10-08-offline-editor-smoke.md).
 - Complete agent item/template creation acceptance. Real native Gallery image
   description and metadata writing passed; hosted configured-provider generation
   and approval remain unverified.
