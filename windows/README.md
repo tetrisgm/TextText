@@ -67,3 +67,12 @@ invoked over SSH: its service session cannot provide a valid WebView window.
 The temporary task has a 100-second limit and is always removed. No recurring
 job, production launch, build task, or installer task is registered. The signed-in
 Windows user must have an active desktop session.
+
+## Explorer activation
+
+The local installer adds TextText to **Open with** for `.textpack` without
+changing the chosen default. A second launch forwards requests to the existing
+process over a current-user-only pipe. The app waits for sign-in and the editor,
+then saves before opening a file inside the current account's workspace.
+Files outside that workspace are not imported or moved. Opening another
+workspace from Explorer remains unsupported until workspace selection exists.

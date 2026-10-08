@@ -966,9 +966,16 @@ export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolde
   useEffect(() => {
     const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true); };
     const newFile = () => { if (canCreate) createNote(focusedControl()); };
+    const nativeWindow = window as Window & { texttextOpenFile?: (path: string) => Promise<string> };
+    nativeWindow.texttextOpenFile = async path => {
+      if (busy) return "busy";
+      let opened = false;
+      await operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); opened = true; }, true);
+      return opened ? "opened" : "blocked";
+    };
     window.addEventListener("texttext:vault-open", openFile);
     window.addEventListener("texttext:vault-new", newFile);
-    return () => { window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
+    return () => { delete nativeWindow.texttextOpenFile; window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
   });
   const commandActions: VaultSearchAction[] = [];
   const commandFolder = destinationFolder.trim();

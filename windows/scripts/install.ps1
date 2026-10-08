@@ -31,6 +31,14 @@ try {
   $shortcut.TargetPath = Join-Path $target 'TextText.exe'
   $shortcut.WorkingDirectory = $target
   $shortcut.Save()
+  # Advertise Open with without changing the user's chosen default application.
+  $progId = 'HKCU:\Software\Classes\TextText.TextPack'
+  New-Item -Path ($progId + '\shell\open\command') -Force | Out-Null
+  Set-Item -Path $progId -Value 'TextText document'
+  Set-Item -Path ($progId + '\shell\open\command') -Value ('"' + (Join-Path $target 'TextText.exe') + '" "%1"')
+  $openWith = 'HKCU:\Software\Classes\.textpack\OpenWithProgids'
+  New-Item -Path $openWith -Force | Out-Null
+  New-ItemProperty -Path $openWith -Name 'TextText.TextPack' -PropertyType String -Value '' -Force | Out-Null
   Write-Output "Installed: $target"
   if ($moved) { Write-Output "Previous app preserved: $backup" }
 } finally { Pop-Location }

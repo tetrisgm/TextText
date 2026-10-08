@@ -50,6 +50,11 @@ static class MainWindowCloseTests
     }
     static void ForceClose(MainWindow window){Field("closing").SetValue(window,true);window.Close();}
     static async Task Until(Func<Task<bool>> condition,CancellationToken ct){using var bounded=CancellationTokenSource.CreateLinkedTokenSource(ct);bounded.CancelAfter(TimeSpan.FromSeconds(8));while(!await condition()){await Task.Delay(40,bounded.Token);}}
+    sealed class ActivationBridge : INativeWorkspaceBridge
+    {
+        public Task<object?> InvokeAsync(string method, JsonElement parameters, CancellationToken cancellationToken) => throw new InvalidOperationException("Unexpected activation fixture RPC");
+        public void Dispose() { }
+    }
     public static async Task RunAsync(string root,string receipts,CancellationToken ct)
     {
         var checks=new List<string>();
@@ -88,6 +93,25 @@ static class MainWindowCloseTests
             Check(Volatile.Read(ref observedDialog)==1,"actual MainWindow handles failed renderer flush",checks);
             Check(!closed&&failure.Window.IsVisible&&failure.View.IsEnabled,"failed flush preserves open usable window",checks);
         }finally{dismiss.Change(Timeout.Infinite,Timeout.Infinite);if(failure.Window.IsVisible)ForceClose(failure.Window);}
+        var activationRoot=Path.Combine(root,"activation");
+        var activation=await Create(activationRoot,ct);
+        try {
+            var workspace=Path.Combine(activationRoot,"workspace");Directory.CreateDirectory(workspace);
+            var target=Path.Combine(workspace,"Example.textpack");
+            using(var zip=System.IO.Compression.ZipFile.Open(target,System.IO.Compression.ZipArchiveMode.Create))
+            using(var writer=new StreamWriter(zip.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: activation-fixture\n---\nSaved content");
+            Field("root").SetValue(activation.Window,workspace);
+            Field("account").SetValue(activation.Window,new Account("isolated-unused",Guid.NewGuid().ToString(),"Fixture"));
+            Field("bridge").SetValue(activation.Window,new ActivationBridge());
+            await activation.View.ExecuteScriptAsync("window.opened=[];window.busyOnce=true;window.texttextOpenFile=async path=>{if(window.busyOnce){window.busyOnce=false;return 'busy';}window.opened.push(path);return 'opened';};window.texttextFlushForSignOut=()=>new Promise(resolve=>{window.finishActivationFlush=()=>{window.texttextFlushForSignOut=async()=>true;resolve(true)};});");
+            activation.Window.ActivateFiles([target]);
+            await Until(async()=>await activation.View.ExecuteScriptAsync("typeof window.finishActivationFlush==='function'")=="true",ct);
+            Check(await activation.View.ExecuteScriptAsync("window.opened.length")=="0","file activation waits for durable editor flush",checks);
+            await activation.View.ExecuteScriptAsync("window.finishActivationFlush()");
+            await Until(async()=>await activation.View.ExecuteScriptAsync("window.opened.length")=="1",ct);
+            Check(await activation.View.ExecuteScriptAsync("window.opened[0]")=="\"Example.textpack\"","busy file activation retries and routes native acknowledgement",checks);
+            Check(activation.Window.IsVisible&&activation.View.IsEnabled,"file activation leaves existing host usable",checks);
+        } finally { ForceClose(activation.Window); }
         await File.WriteAllTextAsync(Path.Combine(receipts,"main-window-close.json"),JsonSerializer.Serialize(new{ok=true,checks}),ct);
     }
     delegate bool EnumWindow(IntPtr window,IntPtr state);

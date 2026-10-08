@@ -11,6 +11,11 @@ static class Test
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  Throws<IOException>(()=>store.Resolve("../outside.textpack"),"reject traversal");Throws<IOException>(()=>store.Resolve("Notes/a.textpack:stream"),"reject alternate data streams");
  var first=store.Write("Notes/Test.textpack",Pack());Assert(first.ItemId=="test-1","identity extraction");
+ Assert(FileActivation.Resolve(store,Path.Combine(store.Root,"Notes","Test.textpack"))==first.Path,"activation resolves existing workspace pack");
+ Throws<IOException>(()=>FileActivation.Resolve(store,Path.Combine(temp,"outside.textpack")),"activation rejects outside workspace");
+ Throws<IOException>(()=>FileActivation.Resolve(store,"Notes/Test.textpack"),"activation rejects relative arguments");
+ Throws<IOException>(()=>FileActivation.Resolve(store,Path.Combine(store.Root,"Notes","Test.md")),"activation rejects non TextPack arguments");
+ Throws<FileNotFoundException>(()=>FileActivation.Resolve(store,Path.Combine(store.Root,"Notes","missing.textpack")),"activation rejects missing pack");
  Throws<FileChangedException>(()=>store.Write(first.Path,Pack("overwrite"),"stale"),"stale write rejected");
  var changed=store.UpdateMarkdown(first.Path,"---\ntextTextId: \"test-1\"\n---\nmodified",first.Hash);
  using(var zip=new ZipArchive(new MemoryStream(store.Read(first.Path))))using(var reader=new StreamReader(zip.GetEntry("unknown.bin")!.Open()))Assert(reader.ReadToEnd()=="opaque-original","opaque assets preserved");

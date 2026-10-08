@@ -13,7 +13,7 @@ using TextText.Core;
 namespace TextText.Windows;
 
 public sealed record WorkspaceContext(string Root, string WorkspaceId, Uri Origin, Func<Task<string>> TokenProvider, Func<string,object?,Task> Emit);
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     public static Func<WorkspaceContext, INativeWorkspaceBridge>? WorkspaceFactory { get; set; }
     private static readonly Uri Origin = new("https://texttext.app");
@@ -154,6 +154,7 @@ public sealed class MainWindow : Window
             if(string.IsNullOrEmpty(id) || id.Length > 128) return;
             method = input.GetProperty("method").GetString()!;
             var parameters = input.TryGetProperty("params",out var p) ? p.Clone() : JsonSerializer.SerializeToElement(new {});
+            if(method == "native.fileOpenResult") { AcceptFileOpen(id, parameters); return; }
             if(method == "native.flushResult") { flushGuard.Accept(id,parameters.TryGetProperty("ok",out var ok) && ok.ValueKind == JsonValueKind.True); return; }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             if(!requests.TryAdd(id,cancellation)) return;

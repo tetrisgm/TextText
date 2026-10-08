@@ -38,6 +38,10 @@ Object.assign(window, { runDesktopSmoke: async () => {
   await openNote();
   await waitFor('[aria-label="Note card"]');
   assert(document.querySelector('[aria-label="Note card"]')?.textContent?.includes('edited through native desktop UI'),'reopened editor content rendered');
+  const nativeOpen=(window as unknown as {texttextOpenFile:(path:string)=>Promise<string>}).texttextOpenFile;
+  assert(await nativeOpen(saved.path)==='opened','acknowledged native file activation opens existing note');
+  assert(readDocument(await vaultRequest<VaultFile>('read',{path:saved.path})).content.body.includes('edited through native desktop UI'),'native file activation preserves saved editor content');
+
   // Creation uses the shipped controls. Subsequent save/reopen assertions use
   // the shared workspace commands and the real native file bridge, not a mock
   // editor. The note check above separately exercises actual editor typing.
