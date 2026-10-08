@@ -49,7 +49,13 @@ export function prepareLegacyTextpack(input: {
     }
   }
   const rendered = JSON.parse(renderSyncDocumentFile(input.blog, post, input.folderPath, template, source).text);
+  const identified = replacePackIdentity(rendered.markdown, post.id);
+  const header = identified.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0];
+  if (!header) throw new Error("Missing migration frontmatter");
+  // The legacy renderer normalizes body whitespace. The file editor reads it
+  // verbatim, so emit its exact separator and preserve the canonical body.
+  const markdown = `${header}\n${document.content.body}`;
   const name = input.path.split("/").at(-1)!.slice(0, -9);
-  const bytes = buildTextpack(name, { markdown: replacePackIdentity(rendered.markdown, post.id), document, template, templateAuthoringSource: source, files, info: { "net.texttext.assets": mappings } });
+  const bytes = buildTextpack(name, { markdown, document, template, templateAuthoringSource: source, files, info: { "net.texttext.assets": mappings } });
   return { itemId: post.id, path: input.path, bytes, hash: sha256Hex(bytes), sourceRevision: post.revision ?? null };
 }
