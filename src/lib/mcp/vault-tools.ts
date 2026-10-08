@@ -46,6 +46,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   }
   if (!owner && !grants.length) return error("Workspace not found.");
   const readOnly = scopes.some((scope) => /^(read|readonly|read-only)$/.test(scope.trim().toLowerCase()) || /(?:^|[:./_-])read(?:[-_]?only)?$/.test(scope.trim().toLowerCase()));
+  const actorType = auth?.extra?.actorType === "human" ? "human" as const : "external_agent" as const;
   const canWrite = !readOnly && (itemScope?.role === "edit" || scopes.includes("sync"));
   if (["list_comments", "add_comment", "set_comment_resolved"].includes(name)) {
     if (name !== "list_comments" && !canWrite) return error("This connection is read-only.");
@@ -85,8 +86,12 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
       if (role !== "editor") throw new Error("Item editing is not allowed.");
     };
     try {
-      const action = () => mutateVaultTool(name, args, { ...location, actorUserId: userId, authorize });
-      if (name === "create_item") return json(await action());
+      const action = async () => {
+        const receipt = await mutateVaultTool(name, args, { ...location, actorUserId: userId, actorType, authorize });
+        if (receipt.status === "conflict") throw new Error("The item changed. Read it again before editing.");
+        return { ...receipt, item: { id: receipt.itemId, hash: receipt.revision, path: receipt.relativePath } };
+      };
+      if (name === "create_item" || actorType === "human") return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
       return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId,
         connectionName: typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent",
@@ -105,16 +110,17 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
     if (!pack || !allowed({ itemId: item.itemId, relativePath: pack.relativePath })) return null;
     bytesRead += pack.bytes.byteLength;
     if (bytesRead > 64 * 1024 * 1024) throw new Error("File read budget exceeded; narrow the folder or query.");
-    const document = readDocument(openPack(pack.bytes, pack.relativePath, pack.revision, item.itemId).file);
+    const opened = openPack(pack.bytes, pack.relativePath, pack.revision, item.itemId);
+    const document = readDocument(opened.file);
     if (!await allowedNow({ itemId: item.itemId, relativePath: pack.relativePath })) return null;
-    return { id: item.itemId, path: pack.relativePath, hash: pack.revision, title: document.content.title, body: document.content.body, document };
+    return { id: item.itemId, path: pack.relativePath, hash: pack.revision, title: document.content.title, body: document.content.body, document, markdown: opened.file.markdown };
   }
   if (name === "read_item") {
     if (typeof args.id !== "string") return error("Item not found.");
     const identity = await readVaultTextpackIdentity({ ...location, itemId: args.id });
     if (!identity || !allowed(identity)) return error("Item not found.");
     const item = await read(identity);
-    return item ? json({ item }) : error("Item not found.");
+    return item ? json({ item, markdown: item.markdown, assets: item.document.content.assets }) : error("Item not found.");
   }
   const manifest = await listVaultTextpacks(location);
   const visible = manifest.items.filter(allowed);

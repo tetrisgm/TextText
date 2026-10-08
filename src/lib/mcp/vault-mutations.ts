@@ -9,7 +9,7 @@ import { buildTextpack } from "@/lib/github/textpack";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 
 export type VaultMutationContext = {
-  root: string; workspaceId: string; actorUserId: string;
+  root: string; workspaceId: string; actorUserId: string; actorType?: "human" | "external_agent";
   authorize: (itemId: string, path: string, creating: boolean) => Promise<void>;
 };
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -60,7 +60,7 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
       ? rawMarkdown!.replace(frontmatter[0], `---\ntextTextId: ${itemId}\n${frontmatter[1].split(/\r?\n/).filter(line => !/^textTextId\s*:/.test(line)).join("\n")}\n---\n`)
       : `---\ntextTextId: ${itemId}\ntitle: ${JSON.stringify(document.content.title)}\n---\n\n${document.content.body}`;
     return writeVaultTextpack({ ...location, itemId, operationId, relativePath, baseRevision: null,
-      bytes: buildTextpack("Document", { document, markdown, template }), actorUserId: context.actorUserId, actorType: "external_agent",
+      bytes: buildTextpack("Document", { document, markdown, template }), actorUserId: context.actorUserId, actorType: context.actorType ?? "external_agent",
       beforeCommit: (path) => context.authorize(itemId, path, true) });
   }
   only(args, name === "append_to_item"
@@ -86,6 +86,6 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
       } else if (typeof args.body === "string") mutation.body = args.body;
     }
     return mutateVaultDocument({ ...location, itemId, operationId, expectedRevision: args.if_match_hash,
-      mutation, actorUserId: context.actorUserId, actorType: "external_agent",
+      mutation, actorUserId: context.actorUserId, actorType: context.actorType ?? "external_agent",
       beforeCommit: (path) => context.authorize(itemId, path, false) });
 }
