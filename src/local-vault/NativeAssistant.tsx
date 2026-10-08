@@ -116,7 +116,7 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
         acceptTask(saved);
         setPrompt(saved?.prompt ?? "");
         if (targetChanged) { setMessages([]); setAction(""); }
-        if (saved?.phase === "submitted") setNotice("This task may already have started before TextText closed. It was not sent again. Check the item before sending it again.");
+        if (saved?.phase === "submitted") setNotice(`This task may already have started before TextText closed. It was not sent again. Check the ${taskScope === "folder" ? "folder" : "item"} before sending it again.`);
         else if (saved?.phase === "connecting") setNotice("Your task is saved. Continue connecting Codex when you are ready.");
         else setNotice("");
       } catch (error) {
@@ -285,7 +285,7 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
     if (!text || submitting || status.state !== "ready") return;
     const currentTask = taskRef.current;
     const taskFence = currentTask && currentTask.root === root && currentTask.target === taskTarget && (currentTask.scope ?? "item") === taskScope ? currentTask : null;
-    if (!customizing && !taskFence) { setNotice("Add the agent from the open item before starting a task."); return; }
+    if (!customizing && !taskFence) { setNotice(taskScope === "folder" ? "Add the agent from the current folder before starting a task." : "Add the agent from the open item before starting a task."); return; }
     const turnFence: ActiveTurnFence | null = taskFence
       ? { type: "agent", taskId: taskFence.taskId, root: taskFence.root, target: taskFence.target, scope: taskFence.scope }
       : customizing && customizationTaskId

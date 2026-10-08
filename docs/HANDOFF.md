@@ -42,7 +42,10 @@
   from the current folder menu, passing explicit folder scope without an item
   path. Actual bundled browser dispatch and existing web customization checks
   passed; TypeScript passed. Logs `/tmp/texttext-folder-agent-browser-fixed.log`
-  and `/tmp/texttext-folder-customize-regression.log`. Dark preview inspected.
+  and `/tmp/texttext-folder-customize-regression.log`. Dark preview inspected. Folder navigation regression now proves isolated
+  drafts, original-folder fencing during an active turn, post-turn retargeting
+  and empty-root dispatch (`/tmp/texttext-folder-agent-navigation.log`);
+  TypeScript passed (`/tmp/texttext-folder-navigation-types.log`).
   This action is not installed and actual model creation remains unverified. Mac bridge now accepts validated `folderPath`, rejects
   mixed item/folder/photo/customization requests, and exposes creation tools
   within that boundary. All 16 controller tests passed; log
