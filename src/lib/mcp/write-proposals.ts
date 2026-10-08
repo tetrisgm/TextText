@@ -23,6 +23,7 @@ const HOSTED_STAGED_TOOLS: ReadonlySet<WorkspaceToolName> = new Set<WorkspaceToo
   "remove_item_asset",
   "add_item_asset",
   "retire_document_template",
+  "move_folder_tree",
 ]);
 
 export function hostedToolNeedsProposal(

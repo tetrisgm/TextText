@@ -55,6 +55,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   const readOnly = scopes.some((scope) => /^(read|readonly|read-only)$/.test(scope.trim().toLowerCase()) || /(?:^|[:./_-])read(?:[-_]?only)?$/.test(scope.trim().toLowerCase()));
   const actorType = auth?.extra?.actorType === "human" ? "human" as const : "external_agent" as const;
   const canWrite = !readOnly && (itemScope?.role === "edit" || scopes.includes("sync"));
+  if (name === "move_folder_tree") return error("Folder moves require a stored owner-approved review. Stage this command through the proposal entry point.");
   if (["list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template"].includes(name)) {
     if (name !== "list_document_templates" && !canWrite) return error("This connection is read-only.");
     const authorize = async (itemId: string, path: string, write: boolean) => {

@@ -1481,6 +1481,9 @@ async function executeLegacyWorkspaceCommand(
       }
     }
 
+    case "move_folder_tree": {
+      return errorResult("Folder moves require a stored owner-approved canonical review.");
+    }
     case "move_folder": {
       const input = args as WorkspaceToolInput<"move_folder">;
       const resolved = await requireWorkspace(extra, true);

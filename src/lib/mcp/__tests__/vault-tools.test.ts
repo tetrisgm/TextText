@@ -34,7 +34,7 @@ describe("canonical file MCP read adapter", () => {
     const { listTools, callTool } = await import("../registry");
     expect(result(await executeMcpTool("read_item", { id }, { authInfo: auth })).item.id).toBe(id);
     expect(result(await runWorkspaceToolForAuth("list_folders", {}, { authInfo: auth })).folders.map((folder: { path: string }) => folder.path)).toEqual(["Notes", "Private"]);
-    expect(listTools().map((tool) => tool.name)).toEqual(["get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "add_item_asset", "remove_item_asset", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template"]);
+    expect(listTools().map((tool) => tool.name)).toEqual(["get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "add_item_asset", "remove_item_asset", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template", "move_folder_tree"]);
     expect((await callTool("delete_item", { id }, { authInfo: { ...auth, scopes: ["sync"] } })).isError).toBe(true);
     const update = listTools().find((tool) => tool.name === "update_item")!;
     expect(update.inputSchema.properties).not.toHaveProperty("markdown");

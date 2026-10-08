@@ -8508,11 +8508,12 @@ export async function previewVaultFolderMove(input: FolderMoveActor & { source: 
 export async function moveVaultFolder(input: FolderMoveActor & {
   operationId: string; plan: ReturnType<typeof planFolderMove>; reviewedPlanHash: string;
   actorType: "human" | "external_agent"; reviewedAccessExpansion?: boolean;
+  receiptOnly?: boolean;
 }) {
   if (!db) throw new Error(NO_DATABASE);
   if (folderMovePlanHash(input.plan) !== input.reviewedPlanHash) throw new Error("Reviewed folder move changed");
   if (input.plan.addedAccess.length && input.reviewedAccessExpansion !== true) throw new Error("Review the additional folder access before moving.");
-  return moveDirectoryFolder({root:input.root,workspaceId:input.workspaceId,operationId:input.operationId,
+  return moveDirectoryFolder({root:input.root,workspaceId:input.workspaceId,operationId:input.operationId,receiptOnly:input.receiptOnly,
     plan:input.plan,actorUserId:input.actorUserId,actorType:input.actorType,
     authorize:()=>authorizeFolderMoveOwner(input),...folderMoveCoordinator(input.root)});
 }

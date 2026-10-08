@@ -49,6 +49,7 @@ const EXPECTED_NAMES = [
   "create_folder",
   "rename_folder",
   "move_folder",
+  "move_folder_tree",
   "delete_folder",
   "restore_folder",
   "set_access",
@@ -83,6 +84,7 @@ const DESTRUCTIVE_TOOLS = new Set([
 ]);
 
 const IDEMPOTENT_WRITES = new Set([
+  "move_folder_tree",
   "hide_summary",
   "set_reading_preference",
   "revert_agent_change",
@@ -106,6 +108,7 @@ const IDEMPOTENT_WRITES = new Set([
 ]);
 
 const CONFIRMED_TOOLS = new Set([
+  "move_folder_tree",
   "clear_reading_preferences",
   "empty_trash",
   "delete_items",
@@ -440,7 +443,7 @@ describe("item type save scope command contract", () => {
 describe("remixed item type command contract", () => {
   it("loads one definition and rejects ambiguous edits", () => {
     expect(parseWorkspaceToolInput("list_document_templates", { template_id: "texttext.note" })).toEqual({ template_id: "texttext.note" });
-    expect(parseWorkspaceToolInput("remix_item_type", { template_id: "texttext.note", template_version: 1, name: "My note" })).toMatchObject({ name: "My note" });
+    expect(parseWorkspaceToolInput("remix_item_type", { template_id: "texttext.note", template_version: 1, name: "My note", idempotency_key: "remix-note" })).toMatchObject({ name: "My note" });
     const base = { template_id: "my-note", base_version: 1 };
     expect(parseWorkspaceToolInput("update_item_type", { ...base, definition: { id: "my-note" } })).toMatchObject({ apply: false, apply_to_existing: false });
     expect(() => parseWorkspaceToolInput("update_item_type", base)).toThrow();
@@ -483,7 +486,7 @@ describe("type migration intent", () => {
   it("defaults create and update to preserving existing documents", () => {
     expect(parseWorkspaceToolInput("create_item_type", { blueprint, folder_path: "notes" })).toMatchObject({ apply_to_existing: false });
     expect(parseWorkspaceToolInput("update_item_type", { blueprint, template_id: "review", base_version: 1 })).toMatchObject({ apply: false, apply_to_existing: false });
-    expect(parseWorkspaceToolInput("set_folder_template", { folder_path: "notes", template_id: "review", template_version: 1 }).apply_to_existing).not.toBe(true);
+    expect(parseWorkspaceToolInput("set_folder_template", { folder_path: "notes", template_id: "review", template_version: 1, if_match_hash: null, idempotency_key: "folder-default" }).apply_to_existing).not.toBe(true);
   });
   it("preserves explicit migration intent", () => {
     expect(parseWorkspaceToolInput("update_item_type", { blueprint, template_id: "review", base_version: 1, apply: true, apply_to_existing: true })).toMatchObject({ apply: true, apply_to_existing: true });

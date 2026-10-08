@@ -14,12 +14,12 @@ const planSchema = z.object({
   preserveInherited:z.array(grant.extend({destination:text}).strict()),
   addedAccess:z.array(z.object({email:text,role,via:text}).strict()),
 }).strict();
-const reviewSchema = z.object({kind:z.literal("folder_move"),tool:z.literal("move_folder"),plan:planSchema,reviewedPlanHash:hash}).strict();
+const reviewSchema = z.object({kind:z.literal("folder_move"),tool:z.literal("move_folder_tree"),plan:planSchema,reviewedPlanHash:hash}).strict();
 
 /** Clone the authoritative preview so later caller edits cannot alter what is
  * stored and shown. This module is server-only; UI imports only its data type. */
 export function freezeFolderMoveReview(plan: ReturnType<typeof planFolderMove>): FrozenFolderMovePreview {
-  return validateFolderMoveReview({kind:"folder_move",tool:"move_folder",plan:structuredClone(plan),reviewedPlanHash:folderMovePlanHash(plan)}, {source:plan.source,destination:plan.destination});
+  return validateFolderMoveReview({kind:"folder_move",tool:"move_folder_tree",plan:structuredClone(plan),reviewedPlanHash:folderMovePlanHash(plan)}, {source:plan.source,destination:plan.destination});
 }
 
 /** Approval accepts only the stored review and original requested paths. The

@@ -106,10 +106,10 @@ describe("hosted MCP durable proposal boundary", () => {
     );
     expect(staged.sort()).toEqual([
       "add_item_asset", "delete_folder", "delete_item", "delete_items", "empty_trash",
-      "remove_item_asset", "retire_document_template", "set_item_status",
+      "move_folder_tree", "remove_item_asset", "retire_document_template", "set_item_status",
     ]);
     for (const name of staged) {
-      if (name === "delete_item" || name === "retire_document_template" || name === "remove_item_asset" || name === "add_item_asset") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
+      if (name === "delete_item" || name === "retire_document_template" || name === "remove_item_asset" || name === "add_item_asset" || name === "move_folder_tree") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
       else expect(listTools().find((tool) => tool.name === name)).toBeUndefined();
     }
     for (const name of ["restore_item", "restore_folder", "set_access", "revoke_access", "update_item"] as const) {

@@ -27,9 +27,9 @@ export class WriteProposalValidationError extends Error {
 }
 
 /** Only canonical file commands may enter the durable approval queue. */
-export const DURABLE_PROPOSAL_TOOLS: ReadonlySet<string> = new Set(["create_folder", "create_item", "update_item", "append_to_item", "move_item", "delete_item", "restore_item", "set_item_template", "add_comment", "set_comment_resolved", "create_item_type", "update_item_type", "save_item_as_look", "remix_item_type", "retire_document_template", "remove_item_asset", "add_item_asset", "set_folder_template"]);
+export const DURABLE_PROPOSAL_TOOLS: ReadonlySet<string> = new Set(["create_folder", "create_item", "update_item", "append_to_item", "move_item", "delete_item", "restore_item", "set_item_template", "add_comment", "set_comment_resolved", "create_item_type", "update_item_type", "save_item_as_look", "remix_item_type", "retire_document_template", "remove_item_asset", "add_item_asset", "set_folder_template", "move_folder_tree"]);
 
-const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_item", "restore_item", "retire_document_template", "remove_item_asset", "add_item_asset"];
+const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_item", "restore_item", "retire_document_template", "remove_item_asset", "add_item_asset", "move_folder_tree"];
 
 export function isProposableWorkspaceWrite(
   name: WorkspaceToolName,

@@ -1,6 +1,6 @@
 # Folder subtree move recovery source
 
-Not installed or enabled through public commands yet.
+Public staging/approval is implemented in source, not installed or deployed yet.
 
 The engine commits a durable intent before reserving sharing metadata, moves
 the subtree through its pending directory, finishes metadata idempotently, then
@@ -28,6 +28,27 @@ Verification on the Mac:
 
 Pending: public immutable move preview and approval adapter, expanded-access
 review, client integration, integrated required gate and live acceptance.
+
+The pending list above records the earlier engine-only checkpoint. Current
+source adds `move_folder_tree` to the canonical proposal catalog, with hosted
+staging, immutable path/plan validation and a dedicated approved executor. Raw
+execution and self-supplied review fields are refused. Approval atomically saves
+the review hash and explicit access acknowledgement; recovery requires that saved
+decision. The content boundary now forwards receipt-only mode to the engine.
+
+Real local PostgreSQL acceptance exercises the hosted entry point, stored owner
+review, rejected missing acknowledgement, revoked sign-in before execution,
+retry after restored authority, exact TextPack bytes, empty subfolders and one
+move audit across replay. Service tests cover invalid replacement paths,
+self-supplied reviews and expired receipt-only recovery after a lost completion.
+The first broader gate caught an undecided direct-local command policy; the
+command is now explicitly proposal-only at that boundary. The final core gate
+passed **772 tests in 81 files plus TypeScript**. Log:
+`/tmp/texttext-folder-proposal-core-final.log`. Focused catalog/service tests also
+passed; ESLint has no errors and one pre-existing unused-variable warning.
+Unrelated working edits were present, so this is not a frozen release candidate
+receipt. Shared folder action UI, frozen client/release verification, deployment
+and actual live approval remain pending.
 
 Before public integration, reservation now binds the entire freshly recomputed
 plan to its reviewed hash, including items, empty folders, inherited shares and

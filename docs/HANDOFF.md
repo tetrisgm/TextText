@@ -28,6 +28,14 @@
 
 ## Current work
 
+- Canonical `move_folder_tree` now stages a frozen file/folder/access review and
+  executes it through the durable store only after owner approval. Approval saves
+  the review hash and access acknowledgement atomically; receipt-only expiry is
+  forwarded correctly. Real local PostgreSQL hosted-to-execution acceptance and
+  the mandatory core gate passed 772 tests in 81 files plus TypeScript. This is
+  source-only; shared folder action UI, frozen release gates and live deployment
+  acceptance remain pending. [Evidence](verification/2026-10-08-folder-move-recovery-source.md).
+
 - Proposal reviews now provide a return link to the server-authorized workspace.
   The page/service suites passed 47 tests and TypeScript passed. This navigation
   follow-up is source-only; it has not been deployed.

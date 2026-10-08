@@ -37,7 +37,20 @@ Template listing reads built-ins and authorized `Templates/*.textpack` definitio
 
 Approval recovery persists a server-generated command key with immutable arguments before execution. Only versioned canonical commands can resume an already-approved operation; pending/denied and older unversioned proposals never auto-execute. Concurrent recovery reuses the engine receipt and SQL completion only transitions the matching executing proposal. After expiry, recovery validates the exact command fingerprint and current authority in receipt-only mode; it never starts a new write. Missing receipts return expired. Adapter/receipt transport failures remain uncertain and retryable with the same proposal ID, because a file commit may already be durable.
 
-`create_folder` creates one filesystem directory under an existing parent (empty `parent_path` means workspace root). It requires a stable idempotency key, fresh parent editing authority, and the shared durable journal/audit receipt. Replaying a completed operation never recreates a subsequently removed directory. Folder metadata, rename and deletion remain outside the catalog.
+`create_folder` creates one filesystem directory under an existing parent (empty `parent_path` means workspace root). It requires a stable idempotency key, fresh parent editing authority, and the shared durable journal/audit receipt. Replaying a completed operation never recreates a subsequently removed directory. Folder deletion remains outside the catalog.
+
+`move_folder_tree` moves or renames a canonical folder tree using exact
+`source_path` and `destination_path` plus an idempotency key. Hosted calls stage
+an owner proposal; the direct local command endpoint refuses it, while CLI
+`propose` uses the same approval service. The server freezes the complete current
+file/folder/grant plan and displays additional destination recipients and roles.
+An explicit access acknowledgement is persisted atomically with the approved
+plan hash. The dedicated executor rechecks the sign-in subject and ownership,
+then reserves current grants under the engine lock before any directory move.
+Bytes, identities, empty folders and existing access are preserved. Expired
+recovery only reads an existing receipt. Legacy `move_folder`/`rename_folder`
+remain unsupported; do not use per-item loops as a substitute for a tree move.
+This adapter is source-only pending a verified deployment and live acceptance.
 
 `update_item_type` requires the source file identity/hash and base version from the template list. It creates a separate Templates TextPack with the same validated template ID and the next version, preserving the prior definition and every document pinned to it. Authored types retain their validated editable blueprint; source-less looks accept compatible render-data definitions. Incompatible stored fields and automatic application requests are refused. The artifact identity is derived from workspace/template/version, so competing updates cannot overwrite or create two definitions for the same next version. Both source editing and library editing authority are rechecked for new writes and completed receipt replay.
 

@@ -24,8 +24,10 @@ import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/too
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import { getBlogEditRecord } from "@/lib/store";
 import { validateFolderMoveReview } from "@/lib/vault/folder-move-review";
+import { executeApprovedFolderMove, previewFolderMoveCommand, type ApprovedFolderMove } from "@/lib/vault/folder-move-command.server";
 
 export type WorkspaceWriteProposalActor = {
+  approvedFolderMove?: ApprovedFolderMove;
   receiptOnly?: boolean;
   sub: string;
   userId: string | null;
@@ -90,6 +92,7 @@ export type WorkspaceWriteProposalBinding = {
   blogId: string;
   actorUserId: string;
 };
+export type FolderMoveApproval = { reviewedPlanHash: string; accessAcknowledged: boolean };
 
 export type WorkspaceWriteProposalRepository = {
   create(proposal: StoredWorkspaceWriteProposal): Promise<void>;
@@ -101,6 +104,7 @@ export type WorkspaceWriteProposalRepository = {
     id: string,
     binding: WorkspaceWriteProposalBinding,
     now: Date,
+    folderApproval?: FolderMoveApproval,
   ): Promise<StoredWorkspaceWriteProposal | null>;
   deny(id: string, binding: WorkspaceWriteProposalBinding, now: Date): Promise<boolean>;
   state(
@@ -131,6 +135,7 @@ type WorkspaceRecord = {
 };
 
 export type WorkspaceWriteProposalDependencies = {
+  resolveFolderMove?(actor: WorkspaceWriteProposalActor, requested: { source: string; destination: string }): Promise<import("@/lib/ai/write-proposal-preview").FrozenFolderMovePreview>;
   repository: WorkspaceWriteProposalRepository;
   resolveWorkspace(handle: string): Promise<WorkspaceRecord | null>;
   execute(
@@ -253,11 +258,12 @@ export const databaseWorkspaceWriteProposalRepository: WorkspaceWriteProposalRep
     return selectStoredProposal(id, binding);
   },
 
-  async claim(id, binding, now) {
+  async claim(id, binding, now, folderApproval) {
     const database = requireDatabase();
     const changed = database
       .update(aiWriteProposals)
-      .set({ status: "executing", decidedAt: now })
+      .set({ status: "executing", decidedAt: now,
+        ...(folderApproval ? {metadata:sql`coalesce(${aiWriteProposals.metadata}, '{}'::jsonb) || ${JSON.stringify({folderMoveApproval:folderApproval})}::jsonb`} : {}) })
       .where(
         and(
           eq(aiWriteProposals.id, id),
@@ -265,6 +271,7 @@ export const databaseWorkspaceWriteProposalRepository: WorkspaceWriteProposalRep
           eq(aiWriteProposals.actorUserId, binding.actorUserId),
           eq(aiWriteProposals.status, "pending"),
           gt(aiWriteProposals.expiresAt, now),
+          ...(folderApproval ? [sql`${aiWriteProposals.metadata}->'preview'->>'reviewedPlanHash' = ${folderApproval.reviewedPlanHash}`] : []),
         ),
       )
       .returning({ id: aiWriteProposals.id });
@@ -377,7 +384,12 @@ export const databaseWorkspaceWriteProposalRepository: WorkspaceWriteProposalRep
 const defaultDependencies: WorkspaceWriteProposalDependencies = {
   repository: databaseWorkspaceWriteProposalRepository,
   resolveWorkspace: getBlogEditRecord,
-  execute: runWorkspaceToolForSession,
+  execute: async (name, args, actor) => {
+    if (name !== "move_folder_tree") return runWorkspaceToolForSession(name, args, actor);
+    const result = await executeApprovedFolderMove(actor, args, actor.approvedFolderMove);
+    return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
+  },
+  resolveFolderMove: previewFolderMoveCommand,
   now: () => new Date(),
   randomId: randomUUID,
   resolveItems: resolveProposalItems,
@@ -431,7 +443,12 @@ export async function createWorkspaceWriteProposal(
   // public are. The revision travels with each one so approval can ask whether
   // the world still matches.
   let preview: FrozenProposalPreview | null = null;
-  if (requiresFrozenPreview(validated.name)) {
+  if (validated.name === "move_folder_tree") {
+    if (!dependencies.resolveFolderMove) throw new Error("Folder review storage is not configured.");
+    preview = validateFolderMoveReview(await dependencies.resolveFolderMove(input.actor, {
+      source: validated.arguments.source_path as string, destination: validated.arguments.destination_path as string,
+    }), {source: validated.arguments.source_path as string, destination: validated.arguments.destination_path as string});
+  } else if (requiresFrozenPreview(validated.name)) {
     const singleId = validated.name === "retire_document_template" ? validated.arguments.source_item_id : validated.arguments.id;
     const ids = typeof singleId === "string"
       ? [singleId]
@@ -587,7 +604,7 @@ export async function decideWorkspaceWriteProposal(
   const knownPreview = known.metadata?.preview as FrozenProposalPreview | undefined;
   let knownFolderReview;
   if (knownPreview?.kind === "folder_move") {
-    try { knownFolderReview = validateFolderMoveReview(knownPreview,{source:knownPreview.plan?.source ?? "",destination:knownPreview.plan?.destination ?? ""}); }
+    try { knownFolderReview = validateFolderMoveReview(knownPreview,{source:typeof known.arguments.source_path === "string" ? known.arguments.source_path : "",destination:typeof known.arguments.destination_path === "string" ? known.arguments.destination_path : ""}); }
     catch { return {status:"failed",proposalId:input.proposalId,message:"The stored folder review is invalid. Ask for a new proposal."}; }
   }
   if (known.status === "pending" && knownFolderReview?.plan.addedAccess.length && input.acknowledgeAccessExpansion !== true) {
@@ -598,6 +615,7 @@ export async function decideWorkspaceWriteProposal(
     input.proposalId,
     owner.binding,
     now,
+    knownFolderReview ? {reviewedPlanHash:knownFolderReview.reviewedPlanHash,accessAcknowledged:input.acknowledgeAccessExpansion === true} : undefined,
   );
   let recovering = false;
   let receiptOnly = false;
@@ -654,7 +672,19 @@ export async function decideWorkspaceWriteProposal(
   // Fails closed. A command that must be shown before it runs, arriving with
   // no preview or an unreadable one, was simply skipping the check: the drift
   // block only ran when the metadata happened to parse.
-  if (requiresFrozenPreview(validated.name) && (frozen?.kind !== "items" || frozen.tool !== validated.name || !Array.isArray(frozen.items) || frozen.items.length !== 1 || frozen.items[0].id !== (validated.name === "retire_document_template" ? validated.arguments.source_item_id : validated.arguments.id))) {
+  let approvedFolderMove: ApprovedFolderMove | undefined;
+  if (validated.name === "move_folder_tree") {
+    try {
+      const review = validateFolderMoveReview(frozen, {source:validated.arguments.source_path as string,destination:validated.arguments.destination_path as string});
+      if (!knownFolderReview || review.reviewedPlanHash !== knownFolderReview.reviewedPlanHash) throw new Error("Folder review changed during approval.");
+      const approval = claimed.metadata?.folderMoveApproval as FolderMoveApproval | undefined;
+      if (approval?.reviewedPlanHash !== review.reviewedPlanHash || (review.plan.addedAccess.length && approval.accessAcknowledged !== true)) throw new Error("Folder approval is missing.");
+      approvedFolderMove = { review, accessAcknowledged: approval.accessAcknowledged === true };
+    } catch {
+      await dependencies.repository.fail(input.proposalId,owner.binding,"preview_missing",dependencies.now());
+      return {status:"failed",proposalId:input.proposalId,message:"The stored folder review is invalid. Ask for a new proposal."};
+    }
+  } else if (requiresFrozenPreview(validated.name) && (frozen?.kind !== "items" || frozen.tool !== validated.name || !Array.isArray(frozen.items) || frozen.items.length !== 1 || frozen.items[0].id !== (validated.name === "retire_document_template" ? validated.arguments.source_item_id : validated.arguments.id))) {
     await dependencies.repository.fail(
       input.proposalId,
       owner.binding,
@@ -716,7 +746,7 @@ export async function decideWorkspaceWriteProposal(
   }
 
   try {
-    const executionActor = { ...input.actor, receiptOnly, runId: claimed.id,
+    const executionActor = { ...input.actor, approvedFolderMove, receiptOnly, runId: claimed.id,
       actorType: claimed.metadata?.agentActorType === "external_agent" ? "external_agent" as const : "ai" as const,
       connectionId: typeof claimed.metadata?.agentConnectionId === "string"
         ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` };
@@ -831,7 +861,7 @@ export async function getWorkspaceWriteProposalForReview(
   const validated = validateWorkspaceWriteProposal(stored.toolName, stored.arguments);
   const preview = stored.metadata?.preview as FrozenProposalPreview | undefined;
   if (preview?.kind === "folder_move") {
-    try { validateFolderMoveReview(preview,{source:preview.plan?.source ?? "",destination:preview.plan?.destination ?? ""}); }
+    try { validateFolderMoveReview(preview,{source:validated.arguments.source_path as string,destination:validated.arguments.destination_path as string}); }
     catch { return null; }
   }
   return {

@@ -37,6 +37,7 @@ import {
   type WorkspaceWriteProposalDependencies,
   type WorkspaceWriteProposalRepository,
   type AssistantProposalReceipt,
+  type FolderMoveApproval,
 } from "@/lib/ai/write-proposals.server";
 import { WriteProposalValidationError } from "@/lib/ai/write-proposal-policy";
 import { planFolderMove } from "@/sync/engine/folder-move-plan";
@@ -64,7 +65,7 @@ class MemoryProposalRepository implements WorkspaceWriteProposalRepository {
       : null;
   }
 
-  async claim(id: string, binding: WorkspaceWriteProposalBinding, now: Date) {
+  async claim(id: string, binding: WorkspaceWriteProposalBinding, now: Date, folderApproval?:FolderMoveApproval) {
     const row = this.bound(id, binding);
     if (
       !row ||
@@ -72,6 +73,10 @@ class MemoryProposalRepository implements WorkspaceWriteProposalRepository {
       row.expiresAt.getTime() <= now.getTime()
     ) {
       return null;
+    }
+    if (folderApproval) {
+      if ((row.metadata?.preview as {reviewedPlanHash?:string})?.reviewedPlanHash !== folderApproval.reviewedPlanHash) return null;
+      row.metadata = {...row.metadata,folderMoveApproval:structuredClone(folderApproval)};
     }
     row.status = "executing";
     return structuredClone(row);
@@ -175,11 +180,50 @@ async function createCapture(
 }
 
 describe("workspace write proposals", () => {
+  it("stages the authoritative folder review and executes only that stored plan after acknowledgement", async () => {
+    const h = harness();
+    const review = freezeFolderMoveReview(planFolderMove({source:"Source",destination:"Archive/Moved",manifestRevision:"a".repeat(64),folders:["Source","Source/Empty","Archive"],items:[],grants:[{id:"destination",path:"Archive",signature:"folder",email:"editor@example.com",role:"editor"}]}));
+    h.dependencies.resolveFolderMove = vi.fn(async () => review);
+    const proposal = await createWorkspaceWriteProposal({actor:owner,tool:"move_folder_tree",arguments:{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:"agent-key"}},h.dependencies);
+    expect(h.dependencies.resolveFolderMove).toHaveBeenCalledExactlyOnceWith(owner,{source:"Source",destination:"Archive/Moved"});
+    expect(proposal.summary).toContain("editor@example.com (editor)");
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(await getWorkspaceWriteProposalForReview(owner,proposal.id,h.dependencies)).toMatchObject({workspaceUrl:"/vault/blog-1",additionalAccess:review.plan.addedAccess});
+    expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies)).toMatchObject({status:"failed"});
+    expect(h.repository.rows.get(proposal.id)?.status).toBe("pending");
+    expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve",acknowledgeAccessExpansion:true},h.dependencies)).toMatchObject({status:"completed"});
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith("move_folder_tree",{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:`proposal:${proposal.id}`},expect.objectContaining({approvedFolderMove:{review,accessAcknowledged:true},receiptOnly:false}));
+    expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies)).toMatchObject({status:"completed"});
+    expect(h.execute).toHaveBeenCalledOnce();
+  });
+  it("rejects caller-supplied reviews and an authoritative review for different paths before storing anything", async () => {
+    const h = harness(), arguments_ = {source_path:"Source",destination_path:"Archive/Moved",idempotency_key:"agent-key"};
+    await expect(createWorkspaceWriteProposal({actor:owner,tool:"move_folder_tree",arguments:{...arguments_,approvedFolderMove:{accessAcknowledged:true}}},h.dependencies)).rejects.toThrow();
+    h.dependencies.resolveFolderMove = async () => freezeFolderMoveReview(planFolderMove({source:"Other",destination:"Archive/Moved",manifestRevision:"a".repeat(64),folders:["Other","Archive"],items:[],grants:[]}));
+    await expect(createWorkspaceWriteProposal({actor:owner,tool:"move_folder_tree",arguments:arguments_},h.dependencies)).rejects.toThrow("Reviewed folder move changed");
+    expect(h.repository.rows.size).toBe(0);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it("retries a lost folder completion with the original review, and expired retries are receipt-only", async () => {
+    const h = harness();
+    const review = freezeFolderMoveReview(planFolderMove({source:"Source",destination:"Archive/Moved",manifestRevision:"a".repeat(64),folders:["Source","Archive"],items:[],grants:[{id:"destination",path:"Archive",signature:"folder",email:"editor@example.com",role:"editor"}]}));
+    h.dependencies.resolveFolderMove = async () => review;
+    const proposal = await createWorkspaceWriteProposal({actor:owner,tool:"move_folder_tree",arguments:{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:"agent-key"}},h.dependencies);
+    h.repository.rejectCompletion = true;
+    await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve",acknowledgeAccessExpansion:true},h.dependencies);
+    expect(h.repository.rows.get(proposal.id)?.status).toBe("executing");
+    expect(h.repository.rows.get(proposal.id)?.metadata?.folderMoveApproval).toEqual({reviewedPlanHash:review.reviewedPlanHash,accessAcknowledged:true});
+    h.advance(31 * 60_000);
+    h.repository.rejectCompletion = false;
+    expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies)).toMatchObject({status:"completed"});
+    expect(h.execute).toHaveBeenLastCalledWith("move_folder_tree",expect.objectContaining({idempotency_key:`proposal:${proposal.id}`}),expect.objectContaining({receiptOnly:true,approvedFolderMove:{review,accessAcknowledged:true}}));
+  });
   it("requires destination-access acknowledgement before claiming a stored folder review", async () => {
     const h = harness(), proposal = await createCapture(h.dependencies);
     const row = h.repository.rows.get(proposal.id)!;
     const plan = planFolderMove({source:"Source",destination:"Archive/Moved",manifestRevision:"a".repeat(64),folders:["Source","Archive"],items:[],grants:[{id:"destination",path:"Archive",signature:"folder",email:"editor@example.com",role:"editor"}]});
-    row.toolName = "move_folder";
+    row.toolName = "move_folder_tree";
+    row.arguments = {source_path: "Source", destination_path: "Archive/Moved", idempotency_key: `proposal:${proposal.id}`};
     row.metadata = {preview:freezeFolderMoveReview(plan)};
     const result = await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies);
     expect(result).toMatchObject({status:"failed",message:expect.stringContaining("acknowledge")});

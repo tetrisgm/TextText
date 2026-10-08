@@ -1135,6 +1135,18 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     mutability: "write",
     destructive: true,
   }),
+  move_folder_tree: defineTool("move_folder_tree", {
+    title: "Move folder",
+    description: "Move or rename an ordinary folder tree to an exact workspace-relative destination path. Stages a review of every file, folder and inherited access before execution. File contents and identities are preserved. Requires a stable idempotency key.",
+    inputSchema: z.object({
+      source_path: folderPath,
+      destination_path: folderPath,
+      idempotency_key: z.string().trim().min(1).max(500),
+    }).strict(),
+    mutability: "write",
+    confirmation: "audience",
+    idempotent: true,
+  }),
   delete_folder: defineTool("delete_folder", {
     title: "Move folder to Trash",
     description:

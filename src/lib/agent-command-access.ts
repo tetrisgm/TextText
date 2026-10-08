@@ -105,6 +105,9 @@ export const LOCAL_AGENT_DENIED: readonly WorkspaceToolName[] = [
   "empty_trash",
   "restore_item",
   "delete_folder",
+  // Tree moves may inherit a wider destination audience. Use the durable
+  // proposal endpoint, never the direct local command endpoint.
+  "move_folder_tree",
   "restore_folder",
   "set_item_status",
   "set_access",

@@ -3,7 +3,7 @@ import type { planFolderMove } from "@/sync/engine/folder-move-plan";
 
 export type FrozenFolderMovePreview = {
   kind: "folder_move";
-  tool: "move_folder";
+  tool: "move_folder_tree";
   plan: ReturnType<typeof planFolderMove>;
   reviewedPlanHash: string;
 };
