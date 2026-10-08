@@ -19,28 +19,21 @@
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Only dedicated verification notes changed during acceptance.
 
-## Current work, not yet shipped
+## Current work
 
-- `2ecab750`: shared UI client-directive regression protects native/web packaging.
-- `0fad7bb7`: reusable note body snippets use existing Templates TextPacks;
-  inline/full editing, save/insert/reopen and both themes verified. Embedded
-  media snippets remain unsupported.
-- `8ecfc126`, `60a51add`: platform shortcut labels with hydration tests.
-- `d317a757`: cloud model catalog uses canonical file commands and guarded
-  schemas. Eleven focused tests and combined TypeScript passed.
-- `61b379d7`: canonical agent template listing/application, live custom definition
-  delivery and durable native checkpoints. Passed 74 selected sync, 18 server and
-  13 Mac shared-editing tests, TypeScript and lint.
-- `816e9912`: cloud agent context uses authorized canonical files and hash-fenced
-  selections; 71 focused checks passed.
-- `48a3f378`: canonical approval previews, fresh hashes/grants and durable replay;
-  88 tests passed, including a real TextPack absent from SQL.
-- Frozen `48a3f378` passed 377 core tests, TypeScript and native gates.
-  [Receipt](verification/2026-10-07-shared-template-core.md). No new install yet.
-- Approval claim/result crash recovery is being fixed after review found that
-  durable file success can otherwise remain ambiguous in the proposal record.
-- Shared web assistant transport and usable workspace provider Settings are in
-  progress. Read-only support is an increment, not full write/proposal parity.
+- Product source `04c265c7` passed 457 mandatory core tests, TypeScript and native
+  gates. Mac 0.204 (1183) is installed: startup, template controls, save,
+  search invalidation and normal reopen passed.
+  [Current receipt](verification/2026-10-07-shared-clients-1183.md).
+- Canonical templates, cloud file context, approval crash recovery, shared web
+  assistant proposals/provider settings and attributed whole-turn agent presence
+  are implemented. Regression coverage is wired into the mandatory gates.
+- Windows candidate from the same source passed 195 shared-client tests, native
+  checks and actual desktop smoke. Installation acceptance is underway.
+- Oracle web-only deployment of the same source is underway. Do not treat the
+  new web assistant/provider flow as live-verified yet.
+- Next bounded increment: canonical folder creation through the shared file
+  store, with authorization, audit and durable retry coverage.
 
 Keep one canonical file system and shared UI/editor/sync implementation across
 Mac, Windows and web. Native adapters handle filesystem, credentials and OS
