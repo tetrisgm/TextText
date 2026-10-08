@@ -84,8 +84,14 @@ Source follow-up since the installed/deployed baseline:
   and keyboard checks plus light/dark inspection. Default test includes it.
 - `d11108f6`: owner legacy item edit/private URLs use canonical files, while
   public readers remain intact; 12 route tests, TypeScript and lint passed.
-- In progress: tombstone-aware Trash listing/restoration. Preserve identity,
-  reject pre-delete file writes and collaboration epochs, and test interruption.
+- `f6da3440`: canonical Trash listing and same-ID restore with fresh lifecycle
+  and epoch. 74 affected regressions passed; final 24 targeted tests after
+  manifest additions passed, plus TypeScript/lint. Covers interrupted install
+  and audit, repeated restores, stale file/live writers, publication removal,
+  copy identity and replay after later edits. Manifest exposes lifecycle metadata.
+- In progress: shared Trash UI and Mac/Windows passive restore reconciliation,
+  including an old pending delete on another client. Do not deploy the engine
+  alone before those adapters and combined acceptance are verified.
   These source changes are not installed or deployed yet.
 
 File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
