@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { listVaultTextpacks, readVaultTemplate, mutateVaultDocument, createVaultTemplate } from "@/lib/store";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
+import { validatedLookSource } from "@/lib/presentation/template-library";
+import type { VaultTemplateCreation } from "@/lib/presentation/vault-template-authoring";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 export type VaultTemplateContext = {
   receiptOnly?: boolean;
@@ -12,6 +14,19 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
   if (args.template_id !== undefined && (typeof args.template_id !== "string" || !args.template_id.length)) throw new Error("Invalid template identifier");
   if (args.template_version !== undefined && (typeof args.template_version !== "number" || !Number.isSafeInteger(args.template_version) || args.template_version < 1)) throw new Error("Invalid template version");
   const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId };
+  if (name === "update_item_type") {
+    if (Object.keys(args).some(key => !["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key", "apply", "apply_to_existing"].includes(key)) || args.apply === true || args.apply_to_existing === true) throw new Error("Save a new template version separately from applying it to existing items.");
+    if (!context.authorizeCreation || typeof args.template_id !== "string" || typeof args.base_version !== "number" || !Number.isSafeInteger(args.base_version) || args.base_version < 1 || args.base_version >= Number.MAX_SAFE_INTEGER || typeof args.source_item_id !== "string" || typeof args.source_hash !== "string" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim()) throw new Error("Read the template and provide its source hash, base version and stable idempotency key");
+    const version = args.base_version + 1;
+    const operationId = createHash("sha256").update(JSON.stringify([context.actorUserId, name, args.idempotency_key])).digest("hex");
+    const seed = createHash("sha256").update(JSON.stringify([context.workspaceId, args.template_id, version])).digest("hex");
+    const itemId = `${seed.slice(0,8)}-${seed.slice(8,12)}-4${seed.slice(13,16)}-8${seed.slice(17,20)}-${seed.slice(20,32)}`;
+    const creation: VaultTemplateCreation = { sourceItemId: args.source_item_id, sourceHash: args.source_hash, update: { templateId: args.template_id, baseVersion: args.base_version, ...(args.blueprint !== undefined ? { blueprint: args.blueprint } : {}), ...(args.definition !== undefined ? { definition: args.definition } : {}) } };
+    const receipt = await createVaultTemplate({ ...location, itemId, operationId, creation, actorUserId: context.actorUserId, actorType: context.actorType,
+      beforeCommit: context.authorizeCreation, beforeSourceRead: (id, path) => context.authorize(id, path, true) });
+    if (receipt.status === "conflict") throw new Error("A newer template version already exists. Refresh the template list.");
+    return { ...receipt, template_id: args.template_id, template_version: version, source_item_id: itemId, source_hash: receipt.revision };
+  }
   if (name === "create_item_type" || name === "save_item_as_look") {
     const allowed = name === "create_item_type" ? ["blueprint", "idempotency_key", "apply_to_existing"] : ["id", "name", "if_match_hash", "idempotency_key"];
     if (Object.keys(args).some(key => !allowed.includes(key)) || args.apply_to_existing === true) throw new Error("This command creates a new template only; it does not change folders or existing items.");
@@ -31,7 +46,7 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
     const builtins = BUILTIN_TEMPLATES.filter(template => !args.template_id || template.id === args.template_id).map(definition => ({ definition, scope: "texttext" }));
     const inventory = await listVaultTextpacks(location);
     const sources = inventory.items.filter(item => /^Templates\//i.test(item.relativePath));
-    const custom: { definition: ReturnType<typeof validateTemplateDefinition>; scope: string; source_item_id: string; source_hash: string; path: string }[] = [];
+    const custom: { definition: ReturnType<typeof validateTemplateDefinition>; scope: string; authoring_source?: ReturnType<typeof validatedLookSource>; source_item_id: string; source_hash: string; path: string }[] = [];
     let skipped = 0, accessible = 0, truncated = false;
     for (const item of sources) {
       try { await context.authorize(item.itemId, item.relativePath, false); } catch { continue; }
@@ -41,7 +56,7 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
         if (!metadata?.templateJSON || metadata.hash !== item.revision || metadata.path !== item.relativePath) { skipped++; continue; }
         const definition = validateTemplateDefinition(JSON.parse(metadata.templateJSON));
         await context.authorize(item.itemId, metadata.path, false);
-        if (!args.template_id || definition.id === args.template_id) custom.push({ definition, scope: "workspace", source_item_id: item.itemId, source_hash: metadata.hash, path: metadata.path });
+        if (!args.template_id || definition.id === args.template_id) custom.push({ definition, ...(metadata.templateAuthoringSourceJSON ? { authoring_source: validatedLookSource(definition, JSON.parse(metadata.templateAuthoringSourceJSON)) } : {}), scope: "workspace", source_item_id: item.itemId, source_hash: metadata.hash, path: metadata.path });
       } catch { skipped++; }
     }
     return { templates: [...builtins, ...custom], truncated, skipped };

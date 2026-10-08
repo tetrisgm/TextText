@@ -147,3 +147,55 @@ it("recovers a failed audit acknowledgement after a source edit with the origina
   expect((await createVaultTemplate({ ...input, receiptOnly: true })).revision).toBe(first!.revision);
   expect((await readVaultTextpack({ ...location(), itemId: input.itemId }))!.revision).toBe(first!.revision);
 });
+it("updates an authored look as a new immutable version and advertises editable source", async () => {
+  const created = await executeVaultTemplateTool("create_item_type", { blueprint, idempotency_key: "authored-v1" }, context());
+  if (!("template_id" in created)) throw new Error("missing template");
+  const base = (await readVaultTextpack({ ...location(), itemId: created.itemId }))!;
+  await executeVaultTemplateTool("set_item_template", { id: target, template_id: created.template_id, source_item_id: created.itemId, source_hash: base.revision, if_match_hash: revision, idempotency_key: "pin-v1" }, context());
+  const pinned = (await readVaultTextpack({ ...location(), itemId: target }))!;
+  const updated = await executeVaultTemplateTool("update_item_type", parseWorkspaceToolInput("update_item_type", {
+    template_id: created.template_id, base_version: 1, source_item_id: created.itemId, source_hash: base.revision,
+    blueprint: { ...blueprint, name: "Review improved" }, idempotency_key: "authored-v2",
+  }), context());
+  if (!("template_id" in updated)) throw new Error("missing updated template");
+  expect(updated.template_id).toBe(created.template_id); expect(updated.template_version).toBe(2);
+  expect(updated.itemId).not.toBe(created.itemId);
+  expect((await readVaultTextpack({ ...location(), itemId: created.itemId }))!.revision).toBe(base.revision);
+  expect((await readVaultTextpack({ ...location(), itemId: target }))!.revision).toBe(pinned.revision);
+  const file = openPack(pinned.bytes, pinned.relativePath, pinned.revision).file;
+  expect(readTemplate(file, readDocument(file)).version).toBe(1);
+  const list = await executeVaultTemplateTool("list_document_templates", { template_id: created.template_id }, context());
+  if (!("templates" in list) || !list.templates) throw new Error("missing list");
+  expect(list.templates.map(item => item.definition.version).sort()).toEqual([1, 2]);
+  expect(list.templates).toEqual(expect.arrayContaining([expect.objectContaining({ authoring_source: expect.objectContaining({ blueprint: expect.objectContaining({ name: "Review improved" }) }) })]));
+});
+it("serializes competing look updates, replays after source edits and refuses revoked replay", async () => {
+  const args = { template_id: custom.id, base_version: 1, source_item_id: source, source_hash: sourceRevision,
+    definition: { ...custom, name: "Version two" }, idempotency_key: "v2" };
+  const candidates = await Promise.allSettled([
+    executeVaultTemplateTool("update_item_type", args, context()),
+    executeVaultTemplateTool("update_item_type", { ...args, definition: { ...custom, name: "Competing two" }, idempotency_key: "competing-v2" }, context()),
+  ]);
+  expect(candidates.filter(result => result.status === "fulfilled")).toHaveLength(1);
+  expect(candidates.filter(result => result.status === "rejected")).toHaveLength(1);
+  const winnerIndex = candidates.findIndex(result => result.status === "fulfilled");
+  const winnerArgs = winnerIndex === 0 ? args : { ...args, definition: { ...custom, name: "Competing two" }, idempotency_key: "competing-v2" };
+  const winner = candidates[winnerIndex] as PromiseFulfilledResult<Awaited<ReturnType<typeof executeVaultTemplateTool>>>;
+  await mutateVaultDocument({ ...location(), itemId: source, operationId: "edited-base", expectedRevision: sourceRevision, mutation: { appendBody: "Later edit" }, audit: { actorUserId: "actor", actorType: "human" }, onReceipt: async () => {} });
+  expect(await executeVaultTemplateTool("update_item_type", winnerArgs, context())).toEqual(winner.value);
+  await expect(executeVaultTemplateTool("update_item_type", { ...winnerArgs, definition: { ...custom, name: "Changed payload" } }, context())).rejects.toThrow("reused");
+  await expect(executeVaultTemplateTool("update_item_type", { ...args, idempotency_key: "stale-source" }, context())).rejects.toThrow("source changed");
+  authorize.mockRejectedValue(new Error("source edit revoked"));
+  await expect(executeVaultTemplateTool("update_item_type", winnerArgs, context())).rejects.toThrow("source edit revoked");
+});
+it("rejects incompatible fields, false base identity/version and implicit application", async () => {
+  const created = await executeVaultTemplateTool("create_item_type", { blueprint, idempotency_key: "compat-v1" }, context());
+  if (!("template_id" in created)) throw new Error("missing template");
+  const args = { template_id: created.template_id, base_version: 1, source_item_id: created.itemId, source_hash: created.revision, blueprint, idempotency_key: "compat-v2" };
+  await expect(executeVaultTemplateTool("update_item_type", { ...args, blueprint: { ...blueprint, fields: [{ id: "rating", label: "Rating", type: "text" }], starter: undefined } }, context())).rejects.toThrow();
+  await expect(executeVaultTemplateTool("update_item_type", { ...args, base_version: 5 }, context())).rejects.toThrow("current workspace template");
+  await expect(executeVaultTemplateTool("update_item_type", { ...args, template_id: "other.id" }, context())).rejects.toThrow("current workspace template");
+  await expect(executeVaultTemplateTool("update_item_type", { ...args, apply: true }, context())).rejects.toThrow("separately");
+  authorizeCreation.mockRejectedValue(new Error("library revoked"));
+  await expect(executeVaultTemplateTool("update_item_type", args, context())).rejects.toThrow("library revoked");
+});

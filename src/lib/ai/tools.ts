@@ -669,6 +669,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       "Built-in types cannot be changed in place; first make a copy with remix_item_type. A type with an unreadable or outdated source needs manual recovery before editing.",
     inputSchema: z
       .object({
+        source_item_id: z.string().trim().min(1).max(128).optional(),
+        source_hash: ifMatchHash,
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
         template_id: z
           .string()
           .trim()

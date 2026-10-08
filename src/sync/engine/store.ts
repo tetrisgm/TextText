@@ -1178,7 +1178,7 @@ export async function createVaultTemplate(input: VaultLocation & {
   if (json(input.creation).length > 1_000_000) throw new Error("Template exceeds limits");
   if ("sourceItemId" in input.creation) {
     segment(input.creation.sourceItemId);
-    if (!/^[a-f0-9]{64}$/.test(input.creation.sourceHash) || !input.creation.name.trim() || input.creation.name.length > 160) throw new Error("Read the source and provide its hash and a look name");
+    if (!/^[a-f0-9]{64}$/.test(input.creation.sourceHash) || ("name" in input.creation && (!input.creation.name.trim() || input.creation.name.length > 160))) throw new Error("Read the source and provide its hash and a look name");
   }
   const relativePath = `Templates/${input.itemId}.textpack`;
   const requestHash = hash(json(["create-template", input.itemId, input.creation, input.audit]));
@@ -1201,7 +1201,7 @@ export async function createVaultTemplate(input: VaultLocation & {
     }
     if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     if ("sourceHash" in input.creation && source?.revision !== input.creation.sourceHash) throw new Error("Template source changed. Read it again before saving its look.");
-    if (await maybeRead(path.join(layout.items, `${input.itemId}.json`))) throw new Error("Template identity is already in use");
+    if (await maybeRead(path.join(layout.items, `${input.itemId}.json`))) throw new Error("update" in input.creation ? "A newer template version already exists. Refresh the template list." : "Template identity is already in use");
     const built = buildVaultTemplateArtifact(input.itemId, input.creation, source ?? undefined);
     validatePack(built.bytes, input.itemId);
     if (await maybeRead(await targetPath(layout, relativePath))) throw new Error("Template destination is occupied");
