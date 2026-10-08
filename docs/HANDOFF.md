@@ -30,8 +30,10 @@
   Rename/edit retries, deletion/duplicate fences, capture retry, prepared-intent
   resumption and concurrent local creation passed in 64 native tests.
   [Receipt and explicit limits](verification/2026-10-08-local-creation-journal.md).
-  This source is not installed in the CLI or Mac app yet; cross-device iCloud
-  keyed creation is not attested by the local lock tests.
+  CLI source `ffbc83ee` is installed. Fresh-process iCloud-workspace creation,
+  rename, later CLI edit, retry with unchanged package hash, and mismatched
+  payload rejection passed. Mac app remains 1208; cross-device iCloud keyed
+  creation is not attested by the local lock tests.
 - Home List/Cards toggles and navigation persistence passed in actual Mac and
   Safari. [Receipt](verification/2026-10-08-home-layouts-live.md).
   Shared source now retains bounded saved-title labels during return navigation,
@@ -96,20 +98,8 @@
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.
-  Local CLI create/capture still need durable idempotency-key handling.
-  Source now rejects explicitly keyed local create/capture before writing instead
-  of silently ignoring the key; 8 LocalVaultTests passed
-  (`/tmp/texttext-local-create-key-guard.log`). This temporary safety guard is
-  not installed and is not the final creation-retry feature. Required design:
-  durable workspace-level creation intent, payload binding, coordinated commit
-  and identity-based recovery after rename/edit/interruption.
-  CLI creation publication now synchronizes its staged TextPack, coordinates
-  the create-only move and fsyncs the destination directory. Sixty local/remote
-  DocumentStore and LocalVault tests passed, including a concurrent same-name
-  create proving one winner, no overwrite and no staging debris
-  (`/tmp/texttext-cli-create-publication.log`). Source only; journal/retry
-  implementation and installed acceptance are still pending. Keyed append now
-  commits its receipt in the same TextPack replacement; reopen/later-edit retry
+  Durable local create/capture is now installed and verified as recorded above.
+  Keyed append commits its receipt in the same TextPack replacement; reopen/later-edit retry
   and payload mismatch regression passed. Web package rebuild, Windows core
   rewrite and shared server/agent mutation receipt preservation regressions
   passed. Installed Mac 1208/updated CLI round trip passed: keyed append, later app
