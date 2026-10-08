@@ -1,0 +1,9 @@
+[
+ {"name":"canonical","marker":{"version":1,"origin":"https://texttext.app","workspaceId":"workspace-1"},"valid":true},
+ {"name":"authority normalization","marker":{"version":1,"origin":"https://TEXTTEXT.app:443/","workspaceId":"workspace-1"},"valid":true},
+ {"name":"legacy Windows casing","marker":{"Version":1,"Origin":"https://texttext.app/","WorkspaceId":"workspace-1"},"valid":true},
+ {"name":"future version","marker":{"version":2,"origin":"https://texttext.app","workspaceId":"workspace-1"},"valid":false},
+ {"name":"credential URL","marker":{"version":1,"origin":"https://user:secret@texttext.app","workspaceId":"workspace-1"},"valid":false},
+ {"name":"path URL","marker":{"version":1,"origin":"https://texttext.app/other","workspaceId":"workspace-1"},"valid":false},
+ {"name":"foreign workspace syntax","marker":{"version":1,"origin":"https://texttext.app","workspaceId":"../other"},"valid":false}
+]

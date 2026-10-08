@@ -256,8 +256,11 @@ public actor LocalVaultSync {
         try LocalVaultDeviceState.migrate(root: canonicalRoot)
         let url = LocalVaultDeviceState.directory(root: canonicalRoot).appendingPathComponent("sync/state.json")
         guard url.resolvingSymlinksInPath().path == url.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return try JSONDecoder().decode(State.self, from: Data(contentsOf: url)).binding
+        let portable = try PortableWorkspaceBinding.read(root: canonicalRoot)
+        guard FileManager.default.fileExists(atPath: url.path) else { return portable }
+        let local = try JSONDecoder().decode(State.self, from: Data(contentsOf: url)).binding
+        if let portable, portable != (try PortableWorkspaceBinding.normalized(local)) { throw LocalVaultSyncFailure.invalidBinding }
+        return local
     }
 
     /// Keep the complete previous journal on this Mac before starting a fresh

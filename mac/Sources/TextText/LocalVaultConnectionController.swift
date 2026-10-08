@@ -147,12 +147,16 @@ final class LocalVaultConnectionController {
             throw CancellationError()
         }
         let binding = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspace.workspaceId)
+        if let portable = try PortableWorkspaceBinding.read(root: root), portable != (try PortableWorkspaceBinding.normalized(binding)) {
+            throw LocalVaultSyncFailure.invalidBinding
+        }
         if let previous = try LocalVaultSync.binding(root: root), previous != binding {
             guard allowRebind else {
                 throw LocalVaultConnectionError("This folder has sync history from a different server. Confirm the new connection to preserve its old history before continuing.")
             }
             try LocalVaultSync.archiveAndRebind(root: root, to: binding)
         }
+        try PortableWorkspaceBinding.bindVerified(root: root, binding: binding)
         try await configure(binding, token: account.token)
         onlineReady = false
         previousBinding = binding
