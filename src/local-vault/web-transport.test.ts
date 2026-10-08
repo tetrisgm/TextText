@@ -21,6 +21,7 @@ function fixture() {
   const pack = emptyPack();
   pack.entries[pack.prefix + "assets/picture.bin"] = new Uint8Array([0, 1, 255, 4]);
   pack.entries[pack.prefix + "agent-metadata.json"] = strToU8('{"keep":true}');
+  pack.entries[pack.prefix + "net.texttext.mutations/" + "a".repeat(64) + ".json"] = strToU8('{"fingerprint":"original"}');
   const initial = encodePack(pack, writePayload(seed, document));
   const files = new Map([[id, { path, bytes: initial }]]);
   const operations: string[] = [];
@@ -462,6 +463,7 @@ describe("web file vault transport", () => {
     const unpacked = unzipSync(entry.bytes);
     expect(unpacked["Document.textbundle/assets/picture.bin"]).toEqual(new Uint8Array([0, 1, 255, 4]));
     expect(strFromU8(unpacked["Document.textbundle/agent-metadata.json"])).toBe('{"keep":true}');
+    expect(Object.keys(unpacked).some(name => name.includes("/net.texttext.mutations/"))).toBe(false);
     await expect(test.transport.request("importPack", { data, title: "Unsafe", folder: "../escape" })).rejects.toThrow("Invalid folder");
     await expect(test.transport.request("importPack", { data: "junk!!!!", title: "Invalid" })).rejects.toThrow("valid TextPack");
     expect(test.files.size).toBe(2);
@@ -485,6 +487,8 @@ describe("web file vault transport", () => {
     expect(readDocument(clone)).toEqual(readDocument(source));
     expect(clone.assets).toEqual(source.assets);
     expect(clone.markdown).not.toContain(test.id);
+    const cloneBytes = [...test.files.values()].find(entry => entry.path === clone.path)!.bytes;
+    expect(Object.keys(unzipSync(cloneBytes)).some(name => name.includes("/net.texttext.mutations/"))).toBe(false);
     const moved = await test.transport.request("rename", { path: clone.path, hash: clone.hash, newPath: "Projects/Moved.textpack" }) as VaultFile;
     expect(moved.path).toBe("Projects/Moved.textpack");
     expect(moved.markdown).toBe(clone.markdown);
@@ -504,6 +508,7 @@ describe("web file vault transport", () => {
     const unpacked = unzipSync(test.files.get(test.id)!.bytes);
     expect(unpacked["Document.textbundle/assets/picture.bin"]).toEqual(new Uint8Array([0, 1, 255, 4]));
     expect(strFromU8(unpacked["Document.textbundle/agent-metadata.json"])).toBe('{"keep":true}');
+    expect(strFromU8(unpacked["Document.textbundle/net.texttext.mutations/" + "a".repeat(64) + ".json"])).toBe('{"fingerprint":"original"}');
     test.transport.destroy();
   });
   it("keeps the read snapshot available for a conflict copy with original asset bytes", async () => {

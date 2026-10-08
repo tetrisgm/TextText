@@ -97,6 +97,9 @@ final class LocalVaultImportTests: XCTestCase {
             let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: original\n---\n\nHello ![](assets/photo.png)",
                 assets: [.init(filename: "photo.png", data: Data([1, 2, 3]), remoteURL: "assets/photo.png")], sourceURL: "https://example.com", in: root)
             try Data([9, 8, 7]).write(to: package.url.appendingPathComponent("opaque.dat"))
+            let receipts = package.url.appendingPathComponent("net.texttext.mutations")
+            try FileManager.default.createDirectory(at: receipts, withIntermediateDirectories: true)
+            try Data("{\"fingerprint\":\"original\"}".utf8).write(to: receipts.appendingPathComponent("original.json"))
             let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)
             let original = try Data(contentsOf: packed)
             let first = try store.importFile(from: packed, newPath: "Notes/First.textpack")
@@ -110,6 +113,7 @@ final class LocalVaultImportTests: XCTestCase {
             XCTAssertTrue(metadata.contents.markdown.contains("Hello"))
             XCTAssertEqual(first.contents.sourceURL, "https://example.com")
             let archive = try Archive(url: store.url(for: first.path), accessMode: .read)
+            XCTAssertFalse(archive.contains { $0.path.contains("/net.texttext.mutations/") })
             let entry = try XCTUnwrap(archive.first { $0.path.hasSuffix("/opaque.dat") })
             var opaque = Data()
             _ = try archive.extract(entry) { opaque.append($0) }

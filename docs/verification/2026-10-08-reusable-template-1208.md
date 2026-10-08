@@ -22,4 +22,14 @@ entries and assets. The old-revision clone regression includes a source
 receipt and checks its absence from the clone, preservation of other entries,
 fresh identity, and unchanged source. All 53 DocumentStore/remote tests passed
 in `/tmp/texttext-clone-receipts.log`. This source fix is not installed yet;
-Windows/web clone paths still require equivalent inspection.
+Windows and web both use `createWebVaultTransport` and the shared `encodePack`.
+The shared encoder now drops only the old item's mutation namespace when the
+Markdown identity changes. Ordinary writes retain receipts. Actual transport
+regressions cover import and clone for both web and Windows, preserve media and
+unknown metadata, retain the original source, and check Windows performs no
+cloud file request for the operation. All 330 shared-client tests (38 files)
+and TypeScript passed: `/tmp/texttext-copy-receipts-client.log`,
+`/tmp/texttext-copy-receipts-types.log`. Mac import uses the fixed native clone;
+its import regression also passes (`/tmp/texttext-import-receipts-native.log`).
+These source changes require rebuilt clients and Oracle deployment before
+claiming runtime delivery. Existing copies are not silently rewritten.

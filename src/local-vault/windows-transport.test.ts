@@ -27,6 +27,7 @@ async function fixture() {
   const itemId = "0bd05f92-c562-4a78-8c0d-b5e41ca3215d", path = "Notes/Original.textpack";
   const doc = emptyDocumentSnapshot({ id: "texttext.note", version: 1 }); doc.content.title = "Original"; doc.content.body = "first needle";
   const pack = emptyPack(); pack.entries[pack.prefix + "assets/opaque.bin"] = new Uint8Array([0, 2, 255]); pack.entries[pack.prefix + "agent.json"] = strToU8('{"preserve":true}');
+  pack.entries[pack.prefix + "net.texttext.mutations/" + "a".repeat(64) + ".json"] = strToU8('{"fingerprint":"original"}');
   const initial = encodePack(pack, writePayload({ path, hash: "", markdown: `---\ntextTextId: "${itemId}"\n---\n\n` }, doc));
   const files = new Map([[itemId, { path, bytes: initial }]]);
   let ready = true; let checkpoint: Record<string, unknown> | undefined;
@@ -62,6 +63,23 @@ describe("Windows native RPC", () => {
   });
 });
 describe("Windows shared transport", () => {
+  it("does not inherit item mutation receipts when cloning or importing a new identity", async () => {
+    const f = await fixture();
+    try {
+      const source = await f.transport.request("read", { path: f.path }) as VaultFile;
+      const cloned = await f.transport.request("create", { title: "Copy", folder: "Notes", sourcePath: source.path, sourceHash: source.hash }) as VaultFile;
+      const imported = await f.transport.request("importPack", { title: "Import", folder: "Notes", data: Buffer.from(f.files.get(f.itemId)!.bytes).toString("base64") }) as VaultFile;
+      for (const file of [cloned, imported]) {
+        const bytes = [...f.files.values()].find(entry => entry.path === file.path)!.bytes;
+        const entries = unzipSync(bytes);
+        expect(Object.keys(entries).some(name => name.includes("/net.texttext.mutations/"))).toBe(false);
+        expect(entries["Document.textbundle/assets/opaque.bin"]).toEqual(new Uint8Array([0, 2, 255]));
+        expect(strFromU8(entries["Document.textbundle/agent.json"])).toBe('{"preserve":true}');
+      }
+      expect(Object.keys(unzipSync(f.files.get(f.itemId)!.bytes)).some(name => name.includes("/net.texttext.mutations/"))).toBe(true);
+      expect(f.view.messages.some(call => call.method === "native.http")).toBe(false);
+    } finally { f.transport.destroy(); }
+  });
   it("scopes Notes search before the result cap without reading unrelated packs", async () => {
     const f = await fixture();
     try {

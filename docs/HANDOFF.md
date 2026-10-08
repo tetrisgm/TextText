@@ -29,8 +29,11 @@
 
 - Mac 1208 reusable agent design → Save as look → New from template → saved
   item passed. Package inspection found copied identity-specific mutation
-  receipts. Native clone fix and 53 storage/remote tests passed, not installed;
-  equivalent Windows/web paths remain to inspect.
+  receipts. Native clone fix and 53 storage/remote tests passed, not installed.
+  Web/Windows share the package encoder, now stripping receipts on new identity
+  and retaining them on ordinary writes. All 330 shared-client tests and
+  TypeScript passed; native import regression passed. Rebuild/install/deploy
+  these changes; existing copies remain untouched.
   [Acceptance and fix receipt](verification/2026-10-08-reusable-template-1208.md).
 
 - Oracle candidate `af65cbc6` deployed successfully after matching core/native

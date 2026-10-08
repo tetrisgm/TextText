@@ -54,6 +54,14 @@ export function openPack(bytes: Uint8Array, path: string, hash: string, expected
 }
 export function encodePack(pack: Pick<OpenPack, "entries" | "prefix">, changes: Pick<VaultFile, "markdown" | "documentJSON" | "templateJSON" | "templateAuthoringSourceJSON">, addedAssets: readonly PackAssetAddition[] = []): Uint8Array {
   const entries = { ...pack.entries };
+  const originalMarkdown = entries[pack.prefix + "text.md"];
+  if (originalMarkdown && packIdentity(strFromU8(originalMarkdown)) !== packIdentity(changes.markdown)) {
+    // Receipts fence mutations of one item. A fresh identity must start without
+    // the source item's receipts; ordinary writes retain them unchanged.
+    for (const name of Object.keys(entries)) {
+      if (name.startsWith(pack.prefix + "net.texttext.mutations/")) delete entries[name];
+    }
+  }
   entries[pack.prefix + "text.md"] = strToU8(changes.markdown);
   for (const [name, value] of [["document.json", changes.documentJSON], ["template.json", changes.templateJSON], ["template-source.json", changes.templateAuthoringSourceJSON]] as const) {
     if (value !== undefined && value !== null) entries[pack.prefix + name] = strToU8(value);
