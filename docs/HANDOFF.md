@@ -89,9 +89,15 @@ Source follow-up since the installed/deployed baseline:
   manifest additions passed, plus TypeScript/lint. Covers interrupted install
   and audit, repeated restores, stale file/live writers, publication removal,
   copy identity and replay after later edits. Manifest exposes lifecycle metadata.
-- In progress: shared Trash UI and Mac/Windows passive restore reconciliation,
-  including an old pending delete on another client. Do not deploy the engine
-  alone before those adapters and combined acceptance are verified.
+- `a719d63f`: shared Trash route/UI/relay and full VaultApp restore roundtrip.
+  Lost response reuses the same request and opens the same ID, never an import
+  clone. 36 route/transport checks, TypeScript, browser and 15 Swift relay tests
+  passed. Recovery copies default to their source parent, not Recovered.
+- `59f6f963`, `1fcd03bf`: fresh owner authorization after waits and restoration
+  baseline fencing; five auth and 39 store/Trash regressions passed.
+- In progress: Mac/Windows passive restore reconciliation, including an old
+  pending delete on another client. Do not deploy before those adapters and
+  combined acceptance are verified.
   These source changes are not installed or deployed yet.
 
 File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
