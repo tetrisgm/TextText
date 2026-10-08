@@ -510,6 +510,13 @@ export async function BlogHomeForHandle({
     getBlogEditRecord(handle),
   ]);
   if (!blog) notFound();
+  const access = await accessPromise;
+  // Both /t/handle and /@username are old workspace entry points. Owners use
+  // the same file-backed home as desktop; legacy home filters are not vault
+  // item links. Public-origin homes and document routes keep their readers.
+  if (access.isOwner && access.blogId) {
+    redirect(`/vault/${encodeURIComponent(access.blogId)}`);
+  }
   // Fire the workspace pool while the authoritative identity check inside
   // getBlogEditAccess is still in flight. The JWT's embedded userId names the
   // owner in the ordinary case; if the identity table disagrees, the result is
@@ -526,7 +533,6 @@ export async function BlogHomeForHandle({
   const previewHomeLayout = queryHomeLayout(queryValue(query.layout));
   const homeLayoutPromise = getFolderCollectionLayout(handle, "blog");
   homeLayoutPromise.catch(() => {});
-  const access = await accessPromise;
   // The owner needs no collaborator-grant resolution: every place the result
   // is consulted short-circuits on ownership.
   const workspaceAccess =
