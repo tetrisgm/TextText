@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-const mock = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), identity: vi.fn(), grants: vi.fn(), user: vi.fn(), owner: vi.fn(), preview: vi.fn(), search: vi.fn() }));
-vi.mock("@/lib/store", () => ({ getUserIdBySub: mock.user, getOwnedBlog: async () => ({ handle: "owner", name: "Files" }), getBlog: async () => ({ handle: "owner", name: "Files" }), getBlogEditRecord: mock.owner, listVaultTextpacks: mock.list, readVaultTextpack: mock.read, readVaultTextpackIdentity: mock.identity, readVaultPreview: mock.preview, searchVaultTextpacks: mock.search }));
+const mock = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), identity: vi.fn(), grants: vi.fn(), user: vi.fn(), owner: vi.fn(), preview: vi.fn(), search: vi.fn(), comments: vi.fn(), commentWrite: vi.fn() }));
+vi.mock("@/lib/store", () => ({ getUserIdBySub: mock.user, getOwnedBlog: async () => ({ handle: "owner", name: "Files" }), getBlog: async () => ({ handle: "owner", name: "Files" }), getBlogEditRecord: mock.owner, listVaultTextpacks: mock.list, readVaultTextpack: mock.read, readVaultTextpackIdentity: mock.identity, readVaultPreview: mock.preview, searchVaultTextpacks: mock.search, listVaultItemComments: mock.comments, mutateVaultItemComments: mock.commentWrite }));
 vi.mock("@/lib/vault/grants", () => ({ activeVaultGrants: mock.grants, roleForVaultFolder: () => null, roleForVaultItem: (grants: { id: string }[], id: string) => grants.some((g) => g.id === id) ? "viewer" : null }));
+vi.mock("../vault-agent-presence", () => ({ withVaultAgentPresence: async (context: {authorize: (path: string) => Promise<void>}, action: () => Promise<unknown>) => { await context.authorize("Notes/Note.textpack"); return action(); } }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAuthConfigured: () => false }));
 import { executeVaultReadTool } from "../vault-tools";
 const id = "11111111-1111-4111-8111-111111111111", secret = "22222222-2222-4222-8222-222222222222";
@@ -14,6 +15,8 @@ beforeEach(() => {
   mock.user.mockResolvedValue("owner"); mock.owner.mockResolvedValue({ id: "workspace", ownerId: "owner" }); mock.grants.mockResolvedValue([]);
   mock.list.mockResolvedValue({ items: [{ itemId: id, relativePath: "Notes/Note.textpack", revision: "hash" }, { itemId: secret, relativePath: "Private/Secret.textpack", revision: "hash" }], problems: [], folders: ["Notes", "Private"] });
   mock.identity.mockImplementation(async ({ itemId }) => ({ itemId, relativePath: itemId === id ? "Notes/Note.textpack" : "Private/Secret.textpack", revision: "hash" }));
+  mock.comments.mockResolvedValue({ comments: [], nextCursor: null, revision: "hash", relativePath: "Notes/Note.textpack" });
+  mock.commentWrite.mockImplementation(async (input) => { await input.beforeCommit("Notes/Note.textpack"); return { status: "written", commentId: input.operationId }; });
   mock.preview.mockResolvedValue({ title: "Real file", excerpt: "File body needle" });
   mock.search.mockImplementation(async (_location, entries) => ({ items: entries.map((entry: { relativePath: string }) => ({ path: entry.relativePath, title: "Real file", snippet: "needle" })), truncated: false }));
   mock.read.mockImplementation(async ({ itemId }) => {
@@ -27,10 +30,32 @@ describe("canonical file MCP read adapter", () => {
     const { listTools, callTool } = await import("../registry");
     expect(result(await executeMcpTool("read_item", { id }, { authInfo: auth })).item.id).toBe(id);
     expect(result(await runWorkspaceToolForAuth("list_folders", {}, { authInfo: auth })).folders.map((folder: { path: string }) => folder.path)).toEqual(["Notes", "Private"]);
-    expect(listTools().map((tool) => tool.name)).toEqual(["get_workspace", "list_folders", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item"]);
+    expect(listTools().map((tool) => tool.name)).toEqual(["get_workspace", "list_folders", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved"]);
     expect((await callTool("delete_item", { id }, { authInfo: { ...auth, scopes: ["sync"] } })).isError).toBe(true);
     const update = listTools().find((tool) => tool.name === "update_item")!;
     expect(update.inputSchema.properties).not.toHaveProperty("markdown");
+  });
+  it("dispatches file comments for readers and editors with a narrowed anchor-free catalog", async () => {
+    const { executeMcpTool } = await import("../tools");
+    expect(result(await executeMcpTool("list_comments", { id }, { authInfo: auth })).comments).toEqual([]);
+    expect((await executeMcpTool("add_comment", { id, body: "hello" }, { authInfo: auth })).isError).toBe(true);
+    const editor = { ...auth, scopes: ["sync"], extra: { ...auth.extra, userId: "owner", connectionId: "connection" } };
+    const added = await executeMcpTool("add_comment", { id, body: "hello", idempotency_key: "event" }, { authInfo: editor });
+    expect(added.isError).not.toBe(true);
+    expect(mock.commentWrite).toHaveBeenCalledTimes(1);
+    const { listTools } = await import("../registry");
+    const schema = listTools().find((tool) => tool.name === "add_comment")!.inputSchema;
+    expect(schema.properties).not.toHaveProperty("anchor_quote");
+    expect(schema.properties?.body).toMatchObject({ maxLength: 4000 });
+  });
+  it("denies comment writes for file viewers and rechecks revocation after reading", async () => {
+    mock.user.mockResolvedValue("guest"); mock.grants.mockResolvedValue([{ id }]);
+    const editor = { ...auth, scopes: ["sync"], extra: { ...auth.extra, userId: "guest", connectionId: "connection" } };
+    expect((await executeVaultReadTool("add_comment", { id, body: "hello" }, editor)).isError).toBe(true);
+    expect(mock.commentWrite).not.toHaveBeenCalled();
+    mock.comments.mockImplementation(async () => { mock.grants.mockResolvedValue([]); return { comments: [{ body: "private" }], nextCursor: null, revision: "hash", relativePath: "Notes/Note.textpack" }; });
+    const response = await executeVaultReadTool("list_comments", { id }, auth);
+    expect(response.isError).toBe(true); expect(JSON.stringify(response)).not.toContain("private");
   });
   it("reads actual packs and searches body; no SQL post source exists", async () => {
     expect(result(await executeVaultReadTool("read_item", { id }, auth)).item).toMatchObject({ id, title: "Real file", body: "File body needle" });

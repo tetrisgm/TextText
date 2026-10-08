@@ -2,7 +2,7 @@
 
 Hosted MCP, authenticated CLI commands and in-app workspace tools use the same file-backed executor. Missing storage configuration fails closed. No public executor falls back to SQL content. Account and authorization metadata remain in SQL.
 
-The current canonical catalog is defined in `src/lib/mcp/vault-contract.ts`. It exposes workspace/folder discovery, item listing/reading/search and create/update/append. Existing-item changes use full-document Yjs and the sync engine's durable command receipts; retrying the same append key after a lost acknowledgement does not append twice. Live account/grant checks run before content return and under the mutation commit lock. Agent presence is attributed and removed when the command finishes.
+The current canonical catalog is defined in `src/lib/mcp/vault-contract.ts`. It exposes workspace/folder discovery, item listing/reading/search, create/update/append, and comment listing/replies/resolution. Existing-item changes use full-document Yjs and the sync engine's durable command receipts; retrying the same append key after a lost acknowledgement does not append twice. Live account/grant checks run before content return and under the mutation commit lock. Agent presence is attributed and removed when the command finishes.
 
 ## Remaining parity
 
@@ -11,7 +11,7 @@ This is an intermediate backend, not completion of all agent functionality. Thes
 - Navigation and research: `review_brief_sources`, `open_item`, `list_reading_sources`, `search_reading`, `keep_item`, `add_feed`, `hide_summary`, `set_reading_preference`, `clear_reading_preferences`, `run_command`.
 - Templates: `list_document_templates`, `remix_item_type`, `create_item_type`, `update_item_type`, `save_item_as_look`, `set_folder_template`, `retire_document_template`, `set_item_template`.
 - History, publication and organization: `list_agent_changes`, `revert_agent_change`, `set_item_status`, `move_item`, `organize_items`, `delete_item`, `delete_items`, `empty_trash`, `restore_item`, `list_trash`.
-- Assets and discussion: `add_item_asset`, `remove_item_asset`, `recapture_bookmark`, `list_comments`, `add_comment`, `set_comment_resolved`, `list_responses`.
+- Assets and discussion: `add_item_asset`, `remove_item_asset`, `recapture_bookmark`, `list_responses`.
 - Folders and sharing: `create_folder`, `rename_folder`, `move_folder`, `delete_folder`, `restore_folder`, `list_access`, `set_access`, `revoke_access`.
 
 The narrowed schema also identifies the supported fields on implemented commands. Adding an operation requires the file store/audit boundary, current grant checks, concurrency and retry tests, then a catalog change. SQL-only fixtures are not evidence of file-backend parity.
