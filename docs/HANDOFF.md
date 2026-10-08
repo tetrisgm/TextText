@@ -38,7 +38,17 @@
 - `ccf675f8` is deployed: 475 core tests, TypeScript, native gates and 13 live
   checks passed. CLI template creation and identical retry passed; Research note
   synced into the Mac template picker. Creating an item from it omitted starter
-  text despite stored starter/example body. Shared creation fix is underway.
+  text despite stored starter/example body. `1f4ab68e` fixes explicit starter
+  creation; actual browser create/edit/reopen and focused tests passed. Awaiting
+  client installation and live acceptance.
+- `2d258ef7` bounds stalled collaboration requests and repairs interrupted
+  startup recovery; 53 client tests passed, including same-operation write retry.
+  Awaiting combined gates, client installation and Oracle deployment.
+- Server shutdown investigation reproduced a 25-second read poll plus HTTP
+  keep-alive exceeding the 30-second stop limit. A graceful read-drain fix is
+  underway; this is a separate cause from client recovery.
+- `30726329` offers the latest version of each template for creation while
+  retaining older pinned definitions. Focused and browser checks passed.
 - `b54dd129` adds immutable template-version updates; 31 focused checks passed,
   not yet deployed. Preserve old pinned documents during updates.
 - Standalone CLI `ccf675f8` is installed; 106 tests passed. Real commands and
