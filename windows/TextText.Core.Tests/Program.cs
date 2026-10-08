@@ -16,6 +16,23 @@ static class Test
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"Research","Empty")),"sync materializes empty remote folders");
  folderRemote.Folders=[];await new SyncEngine(folderStore,folderRemote).SyncAsync();
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"Feeds")),"omitted remote folder remains local");
+ folderRemote.AuthoritativeFolders=["Feeds","Research","Research/Empty","Keep","UnknownParent","Placeholder"];
+ folderRemote.Folders=folderRemote.AuthoritativeFolders;await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ File.WriteAllText(Path.Combine(folderStore.Root,"Keep","readme.txt"),"local content");
+ Directory.CreateDirectory(Path.Combine(folderStore.Root,"UnknownParent","Local child"));
+ File.WriteAllText(Path.Combine(folderStore.Root,".Placeholder.icloud"),"");
+ folderRemote.AuthoritativeFolders=null;folderRemote.Folders=[];await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ Assert(Directory.Exists(Path.Combine(folderStore.Root,"Research","Empty")),"missing authoritative catalog preserves tracked folders");
+ folderRemote.AuthoritativeFolders=["After","After/Empty"];folderRemote.Folders=folderRemote.AuthoritativeFolders;
+ await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ Assert(!Directory.Exists(Path.Combine(folderStore.Root,"Research"))&&!Directory.Exists(Path.Combine(folderStore.Root,"Feeds")),"authoritative removed folder tree prunes empty directories after restart");
+ Assert(Directory.Exists(Path.Combine(folderStore.Root,"After","Empty")),"new empty folder tree materializes");
+ Assert(File.ReadAllText(Path.Combine(folderStore.Root,"Keep","readme.txt"))=="local content"&&Directory.Exists(Path.Combine(folderStore.Root,"UnknownParent","Local child")),"untracked content and empty descendants survive folder removal");
+ Assert(Directory.Exists(Path.Combine(folderStore.Root,"Placeholder")),"provider placeholder prevents folder removal");
+ File.Delete(Path.Combine(folderStore.Root,"Keep","readme.txt"));File.Delete(Path.Combine(folderStore.Root,".Placeholder.icloud"));
+ await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ Assert(!Directory.Exists(Path.Combine(folderStore.Root,"Keep"))&&!Directory.Exists(Path.Combine(folderStore.Root,"Placeholder")),"retained catalog removals retry durably after content and provider blockage clear");
+ Directory.CreateDirectory(Path.Combine(folderStore.Root,"Feeds"));
  foreach(var unsafePath in new[]{"../escape",".texttext/cache","Notes//bad","Fake.textpack/child"})Throws<IOException>(()=>folderStore.EnsureFolders([unsafePath]),"remote folder rejects "+unsafePath);
  File.WriteAllText(Path.Combine(folderStore.Root,"Occupied"),"keep");Throws<IOException>(()=>folderStore.EnsureFolders(["Occupied/child"]),"remote folder preserves existing file");
  Directory.CreateSymbolicLink(Path.Combine(folderStore.Root,"Linked"),Path.Combine(folderStore.Root,"Feeds"));Throws<IOException>(()=>folderStore.EnsureFolders(["Linked/child"]),"remote folder rejects symlink");
@@ -133,13 +150,14 @@ static class Test
  await movedEngine.SyncAsync();
  Assert(movedEngine.Status.Error==null&&movedRemote.Item!.RelativePath==movedPath&&TextPackStore.Markdown(movedRemote.Data).Contains("Offline agent edit")&&!File.Exists(movedStore.Resolve(movedFile.Path))&&TextPackStore.Markdown(movedStore.Read(movedPath)).Contains("Offline agent edit"),"remote folder move carries concurrent local edits without reverting paths");
  var movedUploads=movedRemote.UploadCount;await new SyncEngine(movedStore,movedRemote).SyncAsync();Assert(movedRemote.UploadCount==movedUploads,"remote folder move remains converged after engine restart");
- var queuedStore=new TextPackStore(Path.Combine(temp,"queued-remote-move"),Path.Combine(temp,"queued-remote-move-state"));var queuedFile=queuedStore.Write("Before/Queued.textpack",Pack("baseline","queued-move"));var queuedRemote=new Fake();await new SyncEngine(queuedStore,queuedRemote).SyncAsync();
+ var queuedStore=new TextPackStore(Path.Combine(temp,"queued-remote-move"),Path.Combine(temp,"queued-remote-move-state"));var queuedFile=queuedStore.Write("Before/Queued.textpack",Pack("baseline","queued-move"));var queuedRemote=new Fake{Folders=["Before","Before/Empty"],AuthoritativeFolders=["Before","Before/Empty"]};await new SyncEngine(queuedStore,queuedRemote).SyncAsync();
  queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+"\nQueued offline edit",queuedStore.Describe(queuedFile.Path).Hash);queuedRemote.FailBeforeCommit=true;
  try{await new SyncEngine(queuedStore,queuedRemote).SyncAsync();throw new Exception("expected offline upload");}catch(HttpRequestException){}
- var queuedOperation=queuedRemote.Operations.Last();queuedRemote.Item=queuedRemote.Item! with{RelativePath="After/Queued.textpack"};
+ var queuedOperation=queuedRemote.Operations.Last();queuedRemote.Item=queuedRemote.Item! with{RelativePath="After/Queued.textpack"};queuedRemote.Folders=["After","After/Empty"];queuedRemote.AuthoritativeFolders=queuedRemote.Folders;
  queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+" plus later edit",queuedStore.Describe(queuedFile.Path).Hash);
  var queuedEngine=new SyncEngine(queuedStore,queuedRemote);await queuedEngine.SyncAsync();
  Assert(queuedEngine.Status.Error==null&&queuedEngine.Status.Pending==0&&queuedRemote.Item!.RelativePath=="After/Queued.textpack"&&TextPackStore.Markdown(queuedRemote.Data).Contains("Queued offline edit plus later edit")&&!File.Exists(queuedStore.Resolve(queuedFile.Path)),"persisted upload follows remote folder move and preserves later local edits");
+ Assert(!Directory.Exists(Path.Combine(queuedStore.Root,"Before"))&&Directory.Exists(Path.Combine(queuedStore.Root,"After","Empty")),"queued upload folder move prunes old tree only after preserving and uploading edits");
  Assert(queuedRemote.Operations.Last()!=queuedOperation,"retargeted upload uses a new payload-bound operation identity");
  var queuedUploads=queuedRemote.UploadCount;await new SyncEngine(queuedStore,queuedRemote).SyncAsync();Assert(queuedRemote.UploadCount==queuedUploads,"retargeted queued upload remains converged after restart");
  foreach(var ordering in new[]{"adoption-interrupted","remote-content-changed","permission-revoked","lost-ack"}) {
@@ -217,6 +235,7 @@ static class Test
  sealed class Fake:ISyncTransport{
   public WorkspaceCapabilities? Capabilities {get;set;}
   public IReadOnlyList<string> Folders {get;set;}=[];
+  public IReadOnlyList<string>? AuthoritativeFolders {get;set;}
   public System.Net.HttpStatusCode? DownloadFailure;public RemoteItem? Item;public byte[] Data=[];public int UploadCount,DeleteCount,ManifestCount;public bool FailAfterCommit,FailBeforeCommit;public Action? BeforeDownload;public List<string> Operations=[];readonly Dictionary<string,string> receipts=[];
   public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default){ManifestCount++;return Task.FromResult<IReadOnlyList<RemoteItem>>(Item==null?[]:[Item]);}
   public Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default){var hook=BeforeDownload;BeforeDownload=null;hook?.Invoke();if(DownloadFailure!=null)throw new HttpRequestException("Remote item unavailable.",null,DownloadFailure);return Task.FromResult(new RemotePack(Data,Item!.RelativePath,Item.Revision));}

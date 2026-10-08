@@ -47,6 +47,26 @@ public sealed class TextPackStore
             }
         }
     }
+    public void ValidateManagedFolder(string path) {
+        if(path.Length>1024||path.Split('/').Any(p=>p.StartsWith('.')||p.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase)))throw new IOException("Invalid workspace folder.");
+        _=Resolve(path);
+    }
+    // Nonrecursive deletion refuses concurrent entries, unknown descendants and provider placeholders.
+    public bool RemoveEmptyManagedFolder(string path) {
+        if(path.Length>1024||path.Split('/').Any(p=>p.StartsWith('.')||p.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase)))throw new IOException("Invalid workspace folder.");
+        lock(gate) {
+            var full=Resolve(path);var current=Root;
+            foreach(var part in path.Split('/')) {
+                current=System.IO.Path.Combine(current,part);CheckLinks(current);
+                if(Directory.Exists(current)&&(File.GetAttributes(current)&FileAttributes.Offline)!=0)throw new IOException("Folder is awaiting download.");
+                if(File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(current)!,"."+part+".icloud")))throw new IOException("Folder is awaiting download.");
+            }
+            try {Directory.Delete(full,false);Changed?.Invoke();return true;}
+            catch(DirectoryNotFoundException){return true;}
+            catch(IOException){return false;}
+            catch(UnauthorizedAccessException){return false;}
+        }
+    }
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     public byte[] Read(string path) { lock(gate) return File.ReadAllBytes(Resolve(path)); }
     public PackFile Describe(string path) { var bytes = Read(path); return new(path, Hash(bytes), Identity(bytes)); }

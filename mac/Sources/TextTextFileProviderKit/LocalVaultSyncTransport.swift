@@ -57,6 +57,7 @@ public protocol LocalVaultSyncTransport: Sendable {
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool
     func manifest() async throws -> [LocalVaultRemoteItem]
     func folders() async -> [String]
+    func authoritativeFolders() async -> [String]?
     func download(itemId: String) async throws -> LocalVaultRemotePack
     func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String
     func rename(itemId: String, from: String, to: String, baseRevision: String, operationId: String) async throws -> String
@@ -65,6 +66,7 @@ public protocol LocalVaultSyncTransport: Sendable {
 
 public extension LocalVaultSyncTransport {
     func folders() async -> [String] { [] }
+    func authoritativeFolders() async -> [String]? { nil }
     func canOrganize() async -> Bool { true }
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool { true }
 }
@@ -79,7 +81,9 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private var canCreateContent = false
     private var writableFolders: [String] = []
     private var cachedFolders: [String] = []
+    private var hasFolderCatalog = false
     public func folders() -> [String] { cachedFolders }
+    public func authoritativeFolders() async -> [String]? { hasFolderCatalog && fullAccess && canCreateContent ? cachedFolders : nil }
     private var cachedManifest: [LocalVaultRemoteItem] = []
 
     public init(origin: URL, workspaceId: String, token: String, session: URLSession = .shared) throws {
@@ -153,8 +157,9 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         fullAccess = decoded.fullAccess == true
         canCreateContent = decoded.canCreateContent == true
         writableFolders = (decoded.writableFolders ?? []).filter { !$0.isEmpty && !$0.hasPrefix("/") && !$0.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) && !$0.contains("\\") }
-        let changed = manifest != cachedManifest || folders != cachedFolders || previousCapabilities.0 != fullAccess || previousCapabilities.1 != canCreateContent || previousCapabilities.2 != writableFolders
+        let changed = hasFolderCatalog != (decoded.folders != nil && decoded.fullAccess == true && decoded.canCreateContent == true) || manifest != cachedManifest || folders != cachedFolders || previousCapabilities.0 != fullAccess || previousCapabilities.1 != canCreateContent || previousCapabilities.2 != writableFolders
         cachedFolders = folders
+        hasFolderCatalog = decoded.folders != nil && decoded.fullAccess == true && decoded.canCreateContent == true
         cachedManifest = manifest
         manifestETag = response.value(forHTTPHeaderField: "ETag")
         return changed

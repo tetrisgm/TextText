@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import ZIPFoundation
 import TextTextWorkspaceCore
 
@@ -67,7 +68,7 @@ public struct LocalVaultDocumentStore: Sendable {
         return target
     }
 
-    /// Add manifest directories only; absence is never a deletion instruction.
+    /// Materialize visible directories. Catalog reconciliation separately removes only empty managed directories.
     public func ensureFolders(_ folders: [String]) throws {
         guard folders.count <= 20_000 else { throw Failure.invalidPath }
         for path in folders {
@@ -87,6 +88,41 @@ public struct LocalVaultDocumentStore: Sendable {
                 guard current.standardizedFileURL.resolvingSymlinksInPath().path == current.standardizedFileURL.path else { throw Failure.invalidPath }
             }
         }
+    }
+
+    public func validateFolderCatalog(_ folders: [String]) throws {
+        guard folders.count <= 20_000 else { throw Failure.invalidPath }
+        for path in folders {
+            let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+            guard path.utf8.count <= 1024, !parts.isEmpty,
+                  parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") && !$0.contains(":") && !$0.hasSuffix(" ") && !$0.hasSuffix(".") && !$0.lowercased().hasSuffix(".textpack") }) else { throw Failure.invalidPath }
+        }
+    }
+
+    /// Never recursively delete: rmdir is atomic and refuses even a concurrently created entry.
+    public func removeEmptyManagedFolder(_ path: String) throws -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard path.utf8.count <= 1024, !parts.isEmpty,
+              parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") && !$0.contains(":") && !$0.hasSuffix(" ") && !$0.hasSuffix(".") && !$0.lowercased().hasSuffix(".textpack") }) else { throw Failure.invalidPath }
+        var target = root
+        for part in parts {
+            target.appendPathComponent(String(part), isDirectory: true)
+            guard !FileManager.default.fileExists(atPath: target.deletingLastPathComponent().appendingPathComponent(".\(part).icloud").path),
+                  target.resolvingSymlinksInPath().path == target.path else { throw Failure.invalidPath }
+        }
+        if let values = try? target.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]),
+           values.ubiquitousItemDownloadingStatus == .notDownloaded { return false }
+        if !FileManager.default.fileExists(atPath: target.path) { return true }
+        var removed = false
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: target, options: .forDeleting, error: &coordinationError) { coordinated in
+            guard coordinated.standardizedFileURL.path == target.standardizedFileURL.path,
+                  coordinated.resolvingSymlinksInPath().path == target.path else { return }
+            let result = coordinated.withUnsafeFileSystemRepresentation { pointer in pointer.map { Darwin.rmdir($0) } ?? -1 }
+            removed = result == 0 || errno == ENOENT
+        }
+        if let coordinationError { throw coordinationError }
+        return removed
     }
 
     public func list() throws -> [String] {

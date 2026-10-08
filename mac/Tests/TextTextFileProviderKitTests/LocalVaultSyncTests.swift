@@ -12,6 +12,30 @@ final class LocalVaultSyncTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
+    func testAuthoritativeFolderCatalogPrunesOnlyEmptyTrackedTreesAcrossRestart() async throws {
+        let transport = FakeVaultTransport()
+        await transport.setFolders(["Before", "Before/Empty", "Keep", "Placeholder", "UnknownParent"], authoritative: true)
+        _ = try await engine(transport).sync()
+        try Data("local content".utf8).write(to: root.appendingPathComponent("Keep/readme.txt"))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("UnknownParent/Local child"), withIntermediateDirectories: false)
+        try Data().write(to: root.appendingPathComponent(".Placeholder.icloud"))
+        await transport.setFolders([], authoritative: false)
+        _ = try await engine(transport).sync()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Before/Empty").path))
+        await transport.setFolders(["After", "After/Empty"], authoritative: true)
+        _ = try await engine(transport).sync()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Before").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("After/Empty").path))
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("Keep/readme.txt"), encoding: .utf8), "local content")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("UnknownParent/Local child").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Placeholder").path))
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Keep/readme.txt"))
+        try FileManager.default.removeItem(at: root.appendingPathComponent(".Placeholder.icloud"))
+        _ = try await engine(transport).sync()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Keep").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Placeholder").path))
+    }
+
     func testRevokedPendingWriteIsRetainedWithoutRetryLoop() async throws {
         let transport = FakeVaultTransport()
         await transport.set(itemId: itemId, path: path, data: try pack("before"))
@@ -548,6 +572,7 @@ final class LocalVaultSyncTests: XCTestCase {
         let queued = try pack("Queued edit")
         try putLocal(original)
         let transport = FakeVaultTransport()
+        await transport.setFolders(["Notes", "Notes/Empty"], authoritative: true)
         _ = try await engine(transport).sync()
         try putLocal(queued)
         if ordering == "lost-ack" { await transport.loseNextReply() }
@@ -558,6 +583,7 @@ final class LocalVaultSyncTests: XCTestCase {
         let base = TextTextStableDigest.sha256Hex(ordering == "lost-ack" ? queued : original)
         _ = try await transport.rename(itemId: itemId, from: path, to: movedPath,
             baseRevision: base, operationId: UUID().uuidString)
+        await transport.setFolders(["Archive", "Archive/Queued", "Archive/Queued/Empty"], authoritative: true)
         if ordering == "interrupted" {
             try FileManager.default.createDirectory(at: root.appendingPathComponent("Archive/Queued"), withIntermediateDirectories: true)
             try FileManager.default.moveItem(at: root.appendingPathComponent(path), to: root.appendingPathComponent(movedPath))
@@ -576,6 +602,8 @@ final class LocalVaultSyncTests: XCTestCase {
         let remote = try await transport.download(itemId: itemId)
         XCTAssertEqual(remote.relativePath, movedPath)
         XCTAssertEqual(remote.data, queued)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Notes").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Archive/Queued/Empty").path))
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(movedPath)), queued)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
     }
@@ -663,7 +691,9 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     func restore(itemId: String, path: String, data: Data, lifecycle: String) { set(itemId: itemId, path: path, data: data); tombstones.removeValue(forKey: itemId); lifecycles[itemId] = lifecycle }
     private var remoteFolders: [String] = []
     func folders() -> [String] { remoteFolders }
-    func setFolders(_ value: [String]) { remoteFolders = value }
+    private var authoritativeCatalog = false
+    func authoritativeFolders() -> [String]? { authoritativeCatalog && writable ? remoteFolders : nil }
+    func setFolders(_ value: [String], authoritative: Bool = false) { remoteFolders = value; authoritativeCatalog = authoritative }
     private var items: [String: LocalVaultRemotePack] = [:]
     private var receipts: [String: String] = [:]
     private var tombstones: [String: LocalVaultRemoteItem] = [:]

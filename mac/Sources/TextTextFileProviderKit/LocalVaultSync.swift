@@ -71,6 +71,7 @@ public actor LocalVaultSync {
         var identities: [String: String]? = nil
         var sharedDownloads: [String: Bool]? = nil
         var lifecycles: [String: String]? = nil
+        var managedFolders: [String]? = nil
     }
     private let root: URL
     private let directory: URL
@@ -608,6 +609,20 @@ public actor LocalVaultSync {
               MarkdownIdentityCodec.extract(from: file.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
     }
 
+    private func reconcileManagedFolders() async throws {
+        if let catalog = await transport.authoritativeFolders() {
+            let current = Set(catalog)
+            var retained = current
+            for folder in (state.managedFolders ?? []).filter({ !current.contains($0) }).sorted(by: { $0.count > $1.count }) {
+                do {
+                    if try !LocalVaultDocumentStore(root: root).removeEmptyManagedFolder(folder) { retained.insert(folder) }
+                } catch { retained.insert(folder) }
+            }
+            let updated = retained.sorted()
+            if state.managedFolders != updated { state.managedFolders = updated; try persist() }
+        }
+    }
+
     public func sync(maxItems: Int = 128) async throws -> LocalVaultSyncReport {
         guard !running else { throw LocalVaultSyncFailure.busy }
         running = true
@@ -617,6 +632,12 @@ public actor LocalVaultSync {
         var manifest = try await transport.manifest()
         let folders = await transport.folders()
         guard folders.count <= 20_000 else { throw LocalVaultSyncFailure.invalidResponse }
+        if let catalog = await transport.authoritativeFolders() {
+            try LocalVaultDocumentStore(root: root).validateFolderCatalog(catalog)
+            let updated = Array(Set(state.managedFolders ?? []).union(catalog)).sorted()
+            guard updated.count <= 40_000 else { throw LocalVaultSyncFailure.invalidResponse }
+            if state.managedFolders != updated { state.managedFolders = updated; try persist() }
+        }
         for folder in folders {
             do { try LocalVaultDocumentStore(root: root).ensureFolders([folder]) }
             catch { report.errors.append("A workspace folder could not be opened. Other files continue syncing.") }
@@ -701,7 +722,7 @@ public actor LocalVaultSync {
         var localByID: [String: [String]] = [:]
         for (path, id) in identities { localByID[id, default: []].append(path) }
         let ids = Array(Set(localByID.keys).union(remoteByID.keys).union(state.baselines.keys)).sorted()
-        guard !ids.isEmpty else { return report }
+        guard !ids.isEmpty else { try await reconcileManagedFolders(); return report }
         let start = min(state.cursor, ids.count - 1)
         let count = min(budget, ids.count - start)
         for id in ids[start..<(start + count)] {
@@ -864,6 +885,7 @@ public actor LocalVaultSync {
         for pending in state.outbox.values {
             if await canSend(pending) { report.hasMore = true; break }
         }
+        try await reconcileManagedFolders()
         try persist()
         return report
     }

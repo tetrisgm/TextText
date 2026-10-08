@@ -28,6 +28,7 @@ public sealed class HttpSyncTransport : ISyncTransport
         while((count=await input.ReadAsync(buffer,ct))>0){if(output.Length+count>64*1024*1024)throw new InvalidDataException("Remote file too large.");output.Write(buffer,0,count);}return output.ToArray();
     }
     public IReadOnlyList<string> Folders {get;private set;}=[];
+    public IReadOnlyList<string>? AuthoritativeFolders {get;private set;}
     public WorkspaceCapabilities? Capabilities {get;private set;}
     sealed record Manifest(RemoteItem[] Items,RemoteItem[]? Tombstones,string[]? Folders,bool? FullAccess,bool? CanCreateContent,string[]? WritableFolders);
     public async Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default) {
@@ -35,6 +36,7 @@ public sealed class HttpSyncTransport : ISyncTransport
         if(response.StatusCode==HttpStatusCode.NotModified)return cached;
         var manifest=JsonSerializer.Deserialize<Manifest>(await Bytes(response,cancellation),Json)??throw new InvalidDataException("Invalid manifest.");
         Folders=manifest.Folders??[];
+        AuthoritativeFolders=manifest.Folders!=null&&manifest.FullAccess==true&&manifest.CanCreateContent==true?Folders:null;
         cached=manifest.Items.Concat((manifest.Tombstones??[]).Select(x=>x with{Deleted=true})).ToArray();
         Capabilities=new(manifest.FullAccess??ownerFallback,manifest.CanCreateContent??ownerFallback,manifest.WritableFolders??[],cached.ToDictionary(item=>item.ItemId,item=>item.CanEditContent??ownerFallback));
         etag=response.Headers.ETag?.ToString();return cached;

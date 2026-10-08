@@ -6,6 +6,7 @@ public sealed record RemotePack(byte[] Data,string RelativePath,string Revision)
 public interface ISyncTransport
 {
     IReadOnlyList<string> Folders => [];
+    IReadOnlyList<string>? AuthoritativeFolders => null;
     WorkspaceCapabilities? Capabilities => null;
     Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default);
     Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default);
@@ -20,7 +21,7 @@ public sealed class SyncEngine
     public sealed record Baseline(string Path,string Hash,string Revision,bool Refresh=false,string? Lifecycle=null);
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
-    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; }
+    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath;
     public SyncStatus Status {get;private set;}=new(false,null,0);
@@ -85,6 +86,13 @@ public sealed class SyncEngine
             await Drain(state,cancellation);
             if(hadPendingWrites) {remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);RememberCapabilities(state);}
             if(transport.Folders.Count>20000)throw new IOException("Too many workspace folders.");
+            if(transport.AuthoritativeFolders is {} catalog) {
+                if(catalog.Count>20000)throw new IOException("Too many workspace folders.");
+                foreach(var folder in catalog)store.ValidateManagedFolder(folder);
+                var updated=(state.ManagedFolders??[]).Union(catalog,StringComparer.Ordinal).OrderBy(x=>x,StringComparer.Ordinal).ToList();
+                if(updated.Count>40000)throw new IOException("Too many retained workspace folders.");
+                if(state.ManagedFolders==null||!state.ManagedFolders.SequenceEqual(updated)){state.ManagedFolders=updated;Save(state);}
+            }
             var folderError=false;
             foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
             foreach(var pair in state.Items.ToArray()) {
@@ -133,6 +141,14 @@ public sealed class SyncEngine
             }
             foreach(var item in remote.Values.Where(x=>!store.LastScanErrors.Any(e=>e.ItemId==x.ItemId||e.Path=="."||e.Path==x.RelativePath||x.RelativePath.StartsWith(e.Path+"/",StringComparison.OrdinalIgnoreCase)) && !IsEditing(x.ItemId) && !Blocked(state,x.ItemId) && !x.Deleted && !local.ContainsKey(x.ItemId) && !state.Items.ContainsKey(x.ItemId))) await Pull(state,item.ItemId,null,cancellation,item.Lifecycle,item.Revision);
             foreach(var pending in state.Items.Where(x=>x.Value.Refresh).ToArray()) { if(IsEditing(pending.Key)||Blocked(state,pending.Key))continue;var current=store.Describe(pending.Value.Path); if(current.Hash==pending.Value.Hash) await Pull(state,pending.Key,current,cancellation,remote.GetValueOrDefault(pending.Key)?.Lifecycle,remote.GetValueOrDefault(pending.Key)?.Revision); }
+            if(transport.AuthoritativeFolders is {} currentCatalog) {
+                var retained=new HashSet<string>(currentCatalog,StringComparer.Ordinal);
+                foreach(var folder in (state.ManagedFolders??[]).Where(x=>!retained.Contains(x)).OrderByDescending(x=>x.Length).ToArray()) {
+                    try {if(!store.RemoveEmptyManagedFolder(folder))retained.Add(folder);}catch(IOException){retained.Add(folder);}catch(UnauthorizedAccessException){retained.Add(folder);}
+                }
+                var updated=retained.OrderBy(x=>x,StringComparer.Ordinal).ToList();
+                if(state.ManagedFolders==null||!state.ManagedFolders.SequenceEqual(updated)){state.ManagedFolders=updated;Save(state);}
+            }
             Report(false,StateError(state)??(folderError?"A workspace folder could not be opened. Other files continue syncing.":null),state.Outbox.Count);
         } catch(Exception error) { Report(false,error.Message,state?.Outbox.Count??0);throw; } finally {gate.Release();}
     }

@@ -87,6 +87,8 @@ final class LocalVaultHTTPContractTests: XCTestCase {
         let downloaded = try await second.sync()
         XCTAssertTrue(downloaded.errors.isEmpty, downloaded.errors.joined(separator: ", "))
         XCTAssertEqual(try Data(contentsOf: secondRoot.appendingPathComponent(path)), original)
+        let catalog = await secondTransport.authoritativeFolders()
+        XCTAssertTrue(catalog?.contains("Notes") == true, "Catalog: \(String(describing: catalog))")
 
         // Both clients edit offline against the same baseline. The server must
         // merge distinct regions and send the resulting full archive back.
