@@ -9,7 +9,7 @@
   [Receipt](verification/2026-10-08-parent-native-contract.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T133807Z-9b9a218e**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T144520Z-da36425d**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
   timestamps are unchanged. Fresh backup `texttext-20261008T134032Z-e279b2e0.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
@@ -27,6 +27,24 @@
   Only dedicated verification notes changed during acceptance.
 
 ## Current work
+
+- Oracle `da36425d` deployed after 813 core tests and native exact-source gates;
+  thirteen live checks passed and Algorave stayed active. Package/deploy logs:
+  `/tmp/texttext-folder-content-oracle-package.log`,
+  `/tmp/texttext-folder-content-oracle-deploy.log`.
+  Fresh review `0882e342-25ba-4c1d-89d5-b19692d87614` completed in Safari while
+  Mac 1200 kept its editor open. The item followed 1199 to 1200 automatically;
+  text typed after review was retained. Finish saved all three lines, stable
+  ID `466761a0-c4e2-4fad-8214-c976fcc30a7a`, hash
+  `3fd1ef5784a53fa08af51016a2d234e788c8133daf21677066aae3e7dc8e4b21`;
+  old file path is absent. Reopen FAILED with equal-generation journal
+  divergence: native path rebased but browser retained the old path.
+  Source follow-up accepts only a path-only difference attested by the native
+  same-item open session, with every other journal field equal. Genuine state
+  divergence remains fail-closed. Offline reopen regression preserves pending
+  text; 55 collaboration tests and TypeScript passed. New Mac build/install
+  and real reopen acceptance are required; the current recovery screen is
+  intact and saved TextPack contains all verification text.
 
 - Folder move approval no longer rejects ordinary document edits or unrelated
   workspace changes solely because the global manifest revision advanced.

@@ -751,6 +751,22 @@ describe("durable file collaboration client", () => {
     expect(editor.hasPendingChanges).toBe(false);
   });
 
+  it("reopens a native-attested relocation without treating path-only changes as divergent edits", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start();
+    original.mutate(doc => documentText(doc, "body").insert(5, " retained"));
+    const browser = journal.load(original.journalKey)!;
+    original.destroy();
+    const relocated = JSON.stringify({ ...JSON.parse(browser), relativePath: "Moved/Note.textpack" });
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", active: false, journal, retainedJournal: relocated, retainedJournalPath: "Moved/Note.textpack", request: server.request });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.hasUnreadableJournal).toBe(false);
+    expect(reopened.hasBaseline).toBe(true);
+    expect(reopened.snapshot().content.body).toBe("Hello retained");
+    expect(reopened.recoveryJournal?.relativePath).toBe("Moved/Note.textpack");
+    expect(reopened.hasPendingChanges).toBe(true);
+  });
+
   it("cold-opens the newer native journal offline and rejects equal-generation divergence without overwriting either", async () => {
     const server = new Server(), journal = new Journal(), original = client(server, journal);
     await original.start(); const older = journal.load(original.journalKey)!;
@@ -767,6 +783,10 @@ describe("durable file collaboration client", () => {
     offline.destroy();
     const changed = JSON.stringify({ ...JSON.parse(newer), relativePath: "Other.textpack" });
     expect(() => selectFileCollaborationJournal(newer, changed)).toThrow(/diverged/);
+    expect(selectFileCollaborationJournal(newer, changed, "Other.textpack")).toBe(changed);
+    expect(() => selectFileCollaborationJournal(newer, changed, "Unattested.textpack")).toThrow(/diverged/);
+    const changedState = JSON.stringify({ ...JSON.parse(changed), seq: JSON.parse(changed).seq + 1 });
+    expect(() => selectFileCollaborationJournal(newer, changedState, "Other.textpack")).toThrow(/diverged/);
     expect(() => selectFileCollaborationJournal("broken", newer)).toThrow();
     journal.values.set(original.journalKey, newer);
     const conflict = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, retainedJournal: changed, request: server.request });

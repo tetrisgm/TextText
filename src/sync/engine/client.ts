@@ -30,6 +30,8 @@ export type FileCollaborationOptions = {
   journal?: FileCollaborationJournalStore; active?: boolean; inactiveReason?: "paused" | "offline";
   ownership?: FileCollaborationOwnership;
   retainedJournal?: string | null;
+  /** Current path attested by the native same-item open session. */
+  retainedJournalPath?: string;
   initialRetirement?: string;
   localRevision?: string;
   checkpoint?: (value: FileCollaborationCheckpoint) => Promise<void>;
@@ -89,13 +91,18 @@ function comparableJournal(value: FileCollaborationJournal): string {
       ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : entry);
 }
 /** Validate both copies before choosing; never overwrite an unreadable or divergent peer journal. */
-export function selectFileCollaborationJournal(browser: string | null, native: string | null): string | null {
+export function selectFileCollaborationJournal(browser: string | null, native: string | null, nativePath?: string): string | null {
   const left = browser === null ? null : parseJournal(browser);
   const right = native === null ? null : parseJournal(native);
   if (!left) return native;
   if (!right) return browser;
   const a = left.journalGeneration ?? 0, b = right.journalGeneration ?? 0;
-  if (a === b && comparableJournal(left) !== comparableJournal(right)) throw new Error("Recovery journals diverged at the same generation. Both copies are preserved.");
+  if (a === b && comparableJournal(left) !== comparableJournal(right)) {
+    // A native relocation preserves the journal generation and all CRDT state.
+    // Only its attested path may differ; every other field must still match.
+    if (nativePath === right.relativePath && comparableJournal({ ...left, relativePath: nativePath }) === comparableJournal(right)) return native;
+    throw new Error("Recovery journals diverged at the same generation. Both copies are preserved.");
+  }
   return b > a ? native : browser;
 }
 function immutableCheckpoint(value: FileCollaborationCheckpoint): FileCollaborationCheckpoint {
@@ -351,7 +358,7 @@ export class FileCollaborationClient {
     try { raw = this.storage.load(this.journalKey); } catch (error) { throw new Error(`Collaboration journal could not be read. ${String(error)}`); }
     this.rawRecoveryJournal = this.options.retainedJournal !== undefined
       ? JSON.stringify({ browser: raw, native: this.options.retainedJournal }) : raw;
-    raw = selectFileCollaborationJournal(raw, this.options.retainedJournal ?? null);
+    raw = selectFileCollaborationJournal(raw, this.options.retainedJournal ?? null, this.options.retainedJournalPath);
     if (raw === null) { this.rawRecoveryJournal = null; return null; }
     const parsed = parseJournal(raw);
     this.rawRecoveryJournal = null;

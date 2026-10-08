@@ -147,6 +147,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       active: currentVaultWindowActive(),
       inactiveReason: navigator.onLine ? "paused" : "offline",
       retainedJournal: native?.journal,
+      retainedJournalPath: native?.path,
       localRevision: native?.acknowledgedRevision,
       initialRetirement: native?.retiredReason ?? undefined,
       checkpoint: native ? async ({ journal, document: next }) => {
