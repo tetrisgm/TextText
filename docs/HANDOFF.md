@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Persisted Windows uploads now follow path-only remote moves using a fresh
+  operation identity, preserving staged and later local edits. Regression first
+  reproduced the conflict; 171 portable core assertions passed, including
+  interrupted adoption, changed remote content, revoked permission and lost ACK.
+  Source-only. Mac persisted-outbox ordering and active editor checks remain next.
+  [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+
 - Remote-move verification exposed a Windows path-adoption bug with concurrent
   offline edits. Windows now carries local bytes to the remote path before
   upload and recovers interruption before baseline save. Path-strict Windows

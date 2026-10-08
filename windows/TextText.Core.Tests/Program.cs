@@ -133,6 +133,29 @@ static class Test
  await movedEngine.SyncAsync();
  Assert(movedEngine.Status.Error==null&&movedRemote.Item!.RelativePath==movedPath&&TextPackStore.Markdown(movedRemote.Data).Contains("Offline agent edit")&&!File.Exists(movedStore.Resolve(movedFile.Path))&&TextPackStore.Markdown(movedStore.Read(movedPath)).Contains("Offline agent edit"),"remote folder move carries concurrent local edits without reverting paths");
  var movedUploads=movedRemote.UploadCount;await new SyncEngine(movedStore,movedRemote).SyncAsync();Assert(movedRemote.UploadCount==movedUploads,"remote folder move remains converged after engine restart");
+ var queuedStore=new TextPackStore(Path.Combine(temp,"queued-remote-move"),Path.Combine(temp,"queued-remote-move-state"));var queuedFile=queuedStore.Write("Before/Queued.textpack",Pack("baseline","queued-move"));var queuedRemote=new Fake();await new SyncEngine(queuedStore,queuedRemote).SyncAsync();
+ queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+"\nQueued offline edit",queuedStore.Describe(queuedFile.Path).Hash);queuedRemote.FailBeforeCommit=true;
+ try{await new SyncEngine(queuedStore,queuedRemote).SyncAsync();throw new Exception("expected offline upload");}catch(HttpRequestException){}
+ var queuedOperation=queuedRemote.Operations.Last();queuedRemote.Item=queuedRemote.Item! with{RelativePath="After/Queued.textpack"};
+ queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+" plus later edit",queuedStore.Describe(queuedFile.Path).Hash);
+ var queuedEngine=new SyncEngine(queuedStore,queuedRemote);await queuedEngine.SyncAsync();
+ Assert(queuedEngine.Status.Error==null&&queuedEngine.Status.Pending==0&&queuedRemote.Item!.RelativePath=="After/Queued.textpack"&&TextPackStore.Markdown(queuedRemote.Data).Contains("Queued offline edit plus later edit")&&!File.Exists(queuedStore.Resolve(queuedFile.Path)),"persisted upload follows remote folder move and preserves later local edits");
+ Assert(queuedRemote.Operations.Last()!=queuedOperation,"retargeted upload uses a new payload-bound operation identity");
+ var queuedUploads=queuedRemote.UploadCount;await new SyncEngine(queuedStore,queuedRemote).SyncAsync();Assert(queuedRemote.UploadCount==queuedUploads,"retargeted queued upload remains converged after restart");
+ foreach(var ordering in new[]{"adoption-interrupted","remote-content-changed","permission-revoked","lost-ack"}) {
+  var qStore=new TextPackStore(Path.Combine(temp,"queued-"+ordering),Path.Combine(temp,"queued-state-"+ordering));var qFile=qStore.Write("Before/Note.textpack",Pack("baseline","q-"+ordering));var qRemote=new Fake();await new SyncEngine(qStore,qRemote).SyncAsync();
+  qStore.UpdateMarkdown(qFile.Path,TextPackStore.Markdown(qStore.Read(qFile.Path))+"\nQueued edit",qStore.Describe(qFile.Path).Hash);
+  if(ordering=="lost-ack")qRemote.FailAfterCommit=true;else qRemote.FailBeforeCommit=true;
+  try{await new SyncEngine(qStore,qRemote).SyncAsync();throw new Exception("expected interrupted upload");}catch(HttpRequestException){}
+  qRemote.Item=qRemote.Item! with{RelativePath="After/Note.textpack"};
+  if(ordering=="adoption-interrupted")qStore.Rename(qFile.Path,"After/Note.textpack",qStore.Describe(qFile.Path).Hash);
+  if(ordering=="remote-content-changed"){qRemote.Data=Pack("different remote content","q-"+ordering);qRemote.Item=qRemote.Item with{Revision=TextPackStore.Hash(qRemote.Data)};}
+  if(ordering=="permission-revoked")qRemote.Capabilities=new(false,false,[],new(){[qFile.ItemId]=false});
+  var qEngine=new SyncEngine(qStore,qRemote);await qEngine.SyncAsync();
+  if(ordering=="remote-content-changed")Assert(qEngine.Status.Pending==1&&qEngine.Status.Error!=null&&File.Exists(qStore.Resolve(qFile.Path))&&TextPackStore.Markdown(qRemote.Data).Contains("different remote content"),"queued move never rebases over changed remote content");
+  else if(ordering=="permission-revoked")Assert(qEngine.Status.Pending==1&&File.Exists(qStore.Resolve(qFile.Path))&&qRemote.UploadCount==1,"queued move waits when fresh permissions deny the upload");
+  else Assert(qEngine.Status.Pending==0&&qEngine.Status.Error==null&&File.Exists(qStore.Resolve("After/Note.textpack"))&&!File.Exists(qStore.Resolve(qFile.Path))&&TextPackStore.Markdown(qRemote.Data).Contains("Queued edit"),"queued move converges after "+ordering);
+ }
  var crashMoveStore=new TextPackStore(Path.Combine(temp,"remote-move-crash"),Path.Combine(temp,"remote-move-crash-state"));var crashMoveFile=crashMoveStore.Write("Before/Note.textpack",Pack("baseline","move-crash"));var crashMoveRemote=new Fake();await new SyncEngine(crashMoveStore,crashMoveRemote).SyncAsync();
  crashMoveRemote.Item=crashMoveRemote.Item! with{RelativePath="After/Note.textpack"};crashMoveStore.UpdateMarkdown(crashMoveFile.Path,TextPackStore.Markdown(crashMoveStore.Read(crashMoveFile.Path))+"\nDurable edit",crashMoveStore.Describe(crashMoveFile.Path).Hash);
  crashMoveStore.Rename(crashMoveFile.Path,"After/Note.textpack",crashMoveStore.Describe(crashMoveFile.Path).Hash);
@@ -185,10 +208,10 @@ static class Test
  sealed class Fake:ISyncTransport{
   public WorkspaceCapabilities? Capabilities {get;set;}
   public IReadOnlyList<string> Folders {get;set;}=[];
-  public System.Net.HttpStatusCode? DownloadFailure;public RemoteItem? Item;public byte[] Data=[];public int UploadCount,DeleteCount,ManifestCount;public bool FailAfterCommit;public Action? BeforeDownload;public List<string> Operations=[];readonly Dictionary<string,string> receipts=[];
+  public System.Net.HttpStatusCode? DownloadFailure;public RemoteItem? Item;public byte[] Data=[];public int UploadCount,DeleteCount,ManifestCount;public bool FailAfterCommit,FailBeforeCommit;public Action? BeforeDownload;public List<string> Operations=[];readonly Dictionary<string,string> receipts=[];
   public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default){ManifestCount++;return Task.FromResult<IReadOnlyList<RemoteItem>>(Item==null?[]:[Item]);}
   public Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default){var hook=BeforeDownload;BeforeDownload=null;hook?.Invoke();if(DownloadFailure!=null)throw new HttpRequestException("Remote item unavailable.",null,DownloadFailure);return Task.FromResult(new RemotePack(Data,Item!.RelativePath,Item.Revision));}
-  public Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default){Operations.Add(operationId);if(receipts.TryGetValue(operationId,out var old))return Task.FromResult(old);if(Item!=null&&(Item.Revision!=baseRevision||Item.RelativePath!=path))throw new SyncConflictException();Data=data;var revision=TextPackStore.Hash(data);Item=new(itemId,path,revision);receipts[operationId]=revision;UploadCount++;if(FailAfterCommit){FailAfterCommit=false;throw new HttpRequestException("ACK lost");}return Task.FromResult(revision);}
+  public Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default){Operations.Add(operationId);if(FailBeforeCommit){FailBeforeCommit=false;throw new HttpRequestException("offline before commit");}if(receipts.TryGetValue(operationId,out var old))return Task.FromResult(old);if(Item!=null&&(Item.Revision!=baseRevision||Item.RelativePath!=path))throw new SyncConflictException();Data=data;var revision=TextPackStore.Hash(data);Item=new(itemId,path,revision);receipts[operationId]=revision;UploadCount++;if(FailAfterCommit){FailAfterCommit=false;throw new HttpRequestException("ACK lost");}return Task.FromResult(revision);}
   public Task<string> RenameAsync(string itemId,string from,string to,string baseRevision,string operationId,CancellationToken cancellation=default){if(receipts.TryGetValue(operationId,out var old))return Task.FromResult(old);if(Item==null||Item.RelativePath!=from||Item.Revision!=baseRevision)throw new SyncConflictException();Item=Item with{RelativePath=to};receipts[operationId]=Item.Revision;return Task.FromResult(Item.Revision);}
   public Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default){Item=Item! with{Deleted=true};DeleteCount++;return Task.CompletedTask;}
  }

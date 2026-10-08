@@ -35,3 +35,20 @@ Actual Windows candidate verification/install and multi-client acceptance remain
 pending. Before shared folder controls ship, also exercise remote moves with
 already-persisted unacknowledged upload operations and active shared editors;
 the new offline-edit test does not prove those separate orderings.
+
+## Persisted Windows upload follow-up
+
+A second regression failed when an upload was durably queued before a remote
+folder move. The engine now adopts the moved path before draining that upload,
+only if its base content revision and lifecycle still match. It retains the
+staged bytes and any later local edits, uses a new operation identity for the
+changed path, and completes interruption between filesystem move and journal
+save. Fresh denied permissions defer the operation. Changed remote content
+continues to preserve a conflict instead of being silently overwritten. A lost
+acknowledgement still replays the original receipt before adopting the new path.
+
+The complete portable Windows core suite passed 171 assertions on the Mac:
+`/tmp/texttext-queued-move-after.log`. The pre-fix failing regression is in
+`/tmp/texttext-queued-move-before.log`. This follow-up remains source-only.
+Mac persisted-outbox ordering and active shared editors remain separate required
+checks; no cross-platform completion or install is claimed.

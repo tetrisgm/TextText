@@ -79,6 +79,8 @@ public sealed class SyncEngine
             local=store.Scan().ToDictionary(x=>x.ItemId);
             RememberCapabilities(state);
             ReconcileLifecycles(state,local,remote);
+            AdoptQueuedUploadPaths(state,local,remote);
+            local=store.Scan().ToDictionary(x=>x.ItemId);
             var hadPendingWrites=state.Outbox.Any(x=>!x.Conflicted&&!IsEditing(x.ItemId)&&Permitted(state,x));
             await Drain(state,cancellation);
             if(hadPendingWrites) {remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);RememberCapabilities(state);}
@@ -133,6 +135,29 @@ public sealed class SyncEngine
             foreach(var pending in state.Items.Where(x=>x.Value.Refresh).ToArray()) { if(IsEditing(pending.Key)||Blocked(state,pending.Key))continue;var current=store.Describe(pending.Value.Path); if(current.Hash==pending.Value.Hash) await Pull(state,pending.Key,current,cancellation,remote.GetValueOrDefault(pending.Key)?.Lifecycle,remote.GetValueOrDefault(pending.Key)?.Revision); }
             Report(false,StateError(state)??(folderError?"A workspace folder could not be opened. Other files continue syncing.":null),state.Outbox.Count);
         } catch(Exception error) { Report(false,error.Message,state?.Outbox.Count??0);throw; } finally {gate.Release();}
+    }
+    void AdoptQueuedUploadPaths(State state,Dictionary<string,PackFile> local,Dictionary<string,RemoteItem> remote) {
+        foreach(var op in state.Outbox.ToArray()) {
+            // A path-only remote move cannot invalidate queued content. Never
+            // change a receipt identity: the replacement is a new command.
+            if(op.Kind!="upload"||op.Conflicted||op.Revision==null||IsEditing(op.ItemId)
+                ||state.Outbox.Count(x=>x.ItemId==op.ItemId)!=1
+                ||!remote.TryGetValue(op.ItemId,out var server)||server.Deleted
+                ||server.RelativePath==op.Path||server.Revision!=op.Revision
+                ||server.Lifecycle!=op.Lifecycle
+                ||!state.Items.TryGetValue(op.ItemId,out var baseline)
+                ||!local.TryGetValue(op.ItemId,out var file)
+                ||(file.Path!=op.Path&&file.Path!=server.RelativePath)
+                ||(baseline.Path!=op.Path&&baseline.Path!=server.RelativePath))continue;
+            var replacement=op with{Id=Guid.NewGuid().ToString(),Path=server.RelativePath};
+            if(!Permitted(state,replacement))continue;
+            var intent=store.Intent(op.ItemId);
+            if(intent!=null&&(intent.Kind!="rename"||file.Path!=server.RelativePath))continue;
+            if(file.Path!=server.RelativePath)store.Rename(file.Path,server.RelativePath,file.Hash);
+            state.Outbox[state.Outbox.IndexOf(op)]=replacement;
+            state.Items[op.ItemId]=baseline with{Path=server.RelativePath};
+            Save(state);store.ClearIntent(op.ItemId);
+        }
     }
     void ReconcileLifecycles(State state,Dictionary<string,PackFile> local,Dictionary<string,RemoteItem> remote) {
         foreach(var item in remote.Values.Where(x=>!x.Deleted&&x.Lifecycle!=null)) {
