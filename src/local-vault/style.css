@@ -806,3 +806,7 @@
 .vault-app .vault-note-draft-parents input { box-sizing:border-box; width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); }
 .vault-app .vault-note-draft-parents details[open] { display:grid; gap:6px; }
 .vault-app .vault-note-draft-parents .tt-reference-selected { display:flex; align-items:center; gap:8px; }
+
+.vault-app .tt-note-parents { flex:1 0 100%; min-width:0; padding-bottom:10px; border-bottom:1px solid var(--line); }
+.vault-app .tt-note-parents .tt-field-row { grid-template-columns:60px minmax(0,1fr); gap:8px; margin:0; }
+.vault-app .tt-note-parents>button { border:0; background:transparent; color:var(--muted); padding:5px 0; font-size:12px; }

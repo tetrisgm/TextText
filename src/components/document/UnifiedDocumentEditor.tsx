@@ -2359,7 +2359,8 @@ export function UnifiedDocumentEditor({
           setTagDraft("");
         }}><input aria-label="Add image tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={121} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}</div></>}
       </aside></div> : documentSurface}
-      {experience === "note" && !activeTemplate.fields.some(field => field.id === "parents") && (noteParentOpen || Array.isArray(document.content.fields.parents) && document.content.fields.parents.length > 0) && <section className="tt-note-parents" aria-label="Note parents" data-field-id="parents">
+      {experience === "note" && <section className="tt-article-topics tt-note-tags" aria-label="Note tags">
+      {experience === "note" && !activeTemplate.fields.some(field => field.id === "parents") && (noteParentOpen || Array.isArray(document.content.fields.parents) && document.content.fields.parents.length > 0) && <div className="tt-note-parents" aria-label="Note parents" data-field-id="parents">
         <FieldInput field={{ id: "parents", label: "Parents", type: "reference", target: "document", multiple: true, required: false, visibility: "public" }} value={document.content.fields.parents}
           onChange={value => updateField("parents", value)} documentReferences={documentReferences} referenceChoices={referenceChoices} onOpenReference={onOpenReference} />
         {noteParentOpen && <button type="button" onClick={event => {
@@ -2367,8 +2368,7 @@ export function UnifiedDocumentEditor({
           if (picker) picker.open = false;
           setNoteParentOpen(false); bodySurfaceRef.current?.focus();
         }}>Done choosing parents</button>}
-      </section>}
-      {experience === "note" && <section className="tt-article-topics tt-note-tags" aria-label="Note tags">
+      </div>}
       {experience === "note" && noteLink && <form className="tt-note-link" aria-label="Add note link" onSubmit={event => { event.preventDefault(); insertNoteLink(); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setNoteLink(null); bodySurfaceRef.current?.focus(); } }}>
         <input autoFocus aria-label="Note link address" type="url" placeholder="https://example.com" value={noteLink.url} onChange={event => setNoteLink(current => current && { ...current, url: event.target.value, error: "" })} />
         <input aria-label="Note link text" placeholder="Link text" value={noteLink.label} onChange={event => setNoteLink(current => current && { ...current, label: event.target.value, error: "" })} />
