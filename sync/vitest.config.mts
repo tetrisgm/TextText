@@ -11,7 +11,7 @@ export default defineConfig({ ...base, test: { ...base.test,
       "src/components/document/__tests__/plain-paragraph.test.tsx",
     'sync/**/*.test.ts',
     'src/local-vault/{reader-write-baselines,collaboration-client,web-transport,web-assistant,web-watch,web-workspace-open,listing-capabilities,account-profile-loader,bootstrap-retry,folder-view,folder-view-metadata,folder-item-default,new-item-pack,template-starter,template-proposal,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
-    'src/lib/vault/{server-collaboration,server-store,server-trash,collaboration,reconcile,pack-reconcile,server-presence,server-item-comments}.test.ts',
+    'src/lib/vault/{image-fetch,server-collaboration,server-store,server-trash,collaboration,reconcile,pack-reconcile,server-presence,server-item-comments}.test.ts',
     // Hosted agents mutate the same durable files and must pass the sync gate.
     'src/lib/mcp/__tests__/vault-*.test.ts',
     'src/lib/mcp/__tests__/native-file-command-route.test.ts',
