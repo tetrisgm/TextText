@@ -33,6 +33,16 @@ describe("owner proposal review page", () => {
     expect(html).not.toContain("<script>unsafe()"); expect(forms(tree)).toHaveLength(2);
     expect(mocks.decide).not.toHaveBeenCalled();
   });
+  it("confirms completion without exposing the internal receipt and keeps proposed details", async () => {
+    mocks.read.mockResolvedValue({ id, title: "Update item", summary: "Review replacement", status: "completed", arguments: { body: "Approved text" }, receipt: { text: JSON.stringify({ status: "written", itemId: "internal-item-id", relativePath: "Notes/internal.textpack", revision: "internal-revision-hash" }) } });
+    const tree = await Page({ params });
+    const html = renderToStaticMarkup(tree);
+    expect(html).toContain('role="status">Change applied.</p>');
+    expect(html).toContain("Exact proposed change");
+    expect(html).toContain("Approved text");
+    for (const internal of ["internal-item-id", "Notes/internal.textpack", "internal-revision-hash", "Proposal status: completed", "written"]) expect(html).not.toContain(internal);
+    expect(forms(tree)).toHaveLength(0);
+  });
   it("requires sign-in before revealing any review data", async () => {
     mocks.user.mockResolvedValue(null);
     await expect(Page({ params })).rejects.toThrow("redirect:/api/auth/signin?callbackUrl=");

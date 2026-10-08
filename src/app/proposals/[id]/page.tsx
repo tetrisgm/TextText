@@ -45,8 +45,8 @@ export default async function ProposalReviewPage({ params }: { params: Promise<{
           <summary>Exact proposed change</summary>
           <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: "50vh", overflow: "auto" }}>{JSON.stringify(proposal.arguments, null, 2)}</pre>
         </details>
-        <p role="status">{proposal.status === "pending" ? "Waiting for your approval. Nothing has been changed." : `Proposal status: ${proposal.status}.`}</p>
-        {proposal.receipt && <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{proposal.receipt.text}</pre>}
+        <p role="status">{proposal.status === "completed" ? "Change applied." : proposal.status === "pending" ? "Waiting for your approval. Nothing has been changed." : `Proposal status: ${proposal.status}.`}</p>
+        {proposal.status !== "completed" && proposal.receipt && <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{proposal.receipt.text}</pre>}
         {proposal.status === "pending" && (
           <div style={{ display: "flex", gap: 8 }}>
             <form action={approve}><button className="ac-btn ac-btn-gray" type="submit">Approve this change</button></form>
