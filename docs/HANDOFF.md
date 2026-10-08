@@ -2,7 +2,7 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1200)**, source `a65465b8`.
+- Mac `/Applications/TextText.app`: **0.204 (1201)**, source `2f959327`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
@@ -27,6 +27,20 @@
   Only dedicated verification notes changed during acceptance.
 
 ## Current work
+
+- Mac 1201 installed from `2f959327` after 814 core tests, TypeScript and all
+  native sync gates. Signed bundle and all three extensions validate. Actual
+  startup preserved account/iCloud workspace and reopened the moved note
+  without journal divergence. Edit, Finish, home navigation and second reopen
+  retained all original lines plus `Reopen save verification 1201.`. Search
+  immediately finds that newly saved body text at the 1200 path; Escape returns
+  to the note. CLI independently reads the stable identity and saved content.
+  Logs: `/tmp/texttext-relocated-reopen-corrected-gates.log`,
+  `/tmp/texttext-mac1201-build.log`, `/tmp/texttext-mac1201-install.log`.
+  Runtime health remains sandbox-private; this is actual UI acceptance.
+  Windows build/install and web deployment of the journal-selector change
+  remain pending. Earlier failure paragraphs below document superseded source
+  investigations; the moved verification note is now editable and saved.
 
 - Oracle `da36425d` deployed after 813 core tests and native exact-source gates;
   thirteen live checks passed and Algorave stayed active. Package/deploy logs:
