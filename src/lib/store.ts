@@ -5,6 +5,8 @@ import { searchVaultPack } from "./vault/pack-search.server";
 // must authorize the workspace and supply its trusted server root first.
 import {
   createVaultTemplate as createDirectoryTemplate,
+  retireVaultTemplate as retireDirectoryTemplate,
+  setVaultFolderTemplate as setDirectoryFolderTemplate,
   createVaultFolder as createDirectoryFolder,
   readVaultTextpack as readDirectoryTextpack,
   readVaultTextpackPath as readDirectoryTextpackPath,
@@ -8469,4 +8471,14 @@ export function createVaultFolder(input: Omit<Parameters<typeof createDirectoryF
 export function createVaultTemplate(input: Omit<Parameters<typeof createDirectoryTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
   return createDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
+
+export function setVaultFolderTemplate(input: Omit<Parameters<typeof setDirectoryFolderTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return setDirectoryFolderTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
+
+export function retireVaultTemplate(input: Omit<Parameters<typeof retireDirectoryTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return retireDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
 }

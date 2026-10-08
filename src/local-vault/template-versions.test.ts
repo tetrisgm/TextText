@@ -9,9 +9,9 @@ it("offers the latest identity version without losing pinned definitions or coll
   expect(all.find(look => look.template.id === "custom.a" && look.template.version === 1)).toBe(old);
   expect(all).toHaveLength(3);
 });
-it("chooses deterministically when user-created duplicate versions arrive in a different order", () => {
+it("rejects duplicate identity versions consistently instead of silently choosing a path", () => {
   const a = { path: "Templates/a.textpack", template: { id: "custom.a", version: 2 } };
   const b = { path: "Templates/b.textpack", template: { id: "custom.a", version: 2 } };
-  expect(latestTemplateVersions([b, a])).toEqual([a]);
-  expect(latestTemplateVersions([a, b])).toEqual([a]);
+  expect(() => latestTemplateVersions([b, a])).toThrow("ambiguous");
+  expect(() => latestTemplateVersions([a, b])).toThrow("ambiguous");
 });

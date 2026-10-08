@@ -9,7 +9,6 @@ The current canonical catalog is defined in `src/lib/mcp/vault-contract.ts`. It 
 This is an intermediate backend, not completion of all agent functionality. These former SQL tools currently return explicit unsupported errors rather than touching an independent content store:
 
 - Navigation and research: `review_brief_sources`, `open_item`, `list_reading_sources`, `search_reading`, `keep_item`, `add_feed`, `hide_summary`, `set_reading_preference`, `clear_reading_preferences`, `run_command`.
-- Templates: `set_folder_template`, `retire_document_template`.
 - History, publication and organization: `list_agent_changes`, `revert_agent_change`, `set_item_status`, `organize_items`, `delete_items`, `empty_trash`.
 - Assets and discussion: `add_item_asset`, `remove_item_asset`, `recapture_bookmark`, `list_responses`.
 - Folders and sharing: `rename_folder`, `move_folder`, `delete_folder`, `restore_folder`, `list_access`, `set_access`, `revoke_access`.
@@ -63,3 +62,11 @@ retry loops. Last-known permissions allow offline local editing; uploads require
 a fresh manifest. Permission-only updates must refresh the listing even when
 no file is downloaded. The shared account menu also exposes this discovery on
 web. See `docs/HANDOFF.md` for installed versions and live acceptance limits.
+
+`set_folder_template` pins a validated item default in the folder’s marked TextPack definition, separate from its collection layout. It requires the current definition hash (null for create-only), exact template version, stable key and current folder editing permission; custom sources also pin identity/hash. Generic UI and agent creation use its starter only for omitted content, while explicit template/kind/capture choices win. Existing items retain their embedded looks. Multiple definitions, occupied paths, stale sources and retired template identities fail without creating a new item. Template-based UI creation imports one complete TextPack, so there is no intermediate blank file.
+
+## Template retirement
+
+`retire_document_template` writes a validated, ordinary TextPack record under the canonical `Templates/Retired/` directory. It retires an entire custom template identity from future selection, creation and version updates; existing documents retain their embedded template. Explicit remixing creates a different identity. Deliberately deleting the retirement record makes the original identity available again. Replaying the old retirement command cannot recreate a deleted record.
+
+Retirement requires the exact source item and hash, current source/destination permissions and a stable idempotency key. In-app proposals freeze the source title and revision and require approval. Expired proposals may recover a completed receipt but cannot make a new change. `vault-template-retirement.test.ts`, the public template adapter tests and proposal lifecycle tests cover these boundaries, including raw file additions/removals without a prior manifest request. The library rejects ambiguous duplicate versions rather than choosing by file name.

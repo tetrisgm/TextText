@@ -1,3 +1,6 @@
+import { buildTemplateRetirement, templateRetirementIdentity } from "@/lib/presentation/vault-template-retirement";
+import { isTemplateRetirementPath, parseTemplateRetirement } from "@/lib/presentation/template-retirement";
+import { createFolderViewPack, readFolderView, readFolderItemDefault, folderViewPath, FOLDER_DEFAULT_FIELD, FOLDER_STANDARD_LAYOUT_FIELD } from "@/local-vault/folder-view";
 import { readDrainSignal } from "./read-drain";
 import { buildVaultTemplateArtifact, type VaultTemplateCreation } from "@/lib/presentation/vault-template-authoring";
 import * as Y from "yjs";
@@ -10,7 +13,7 @@ import { hostname } from "node:os";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { requireBuiltinTemplate, templateExperience } from "@/lib/presentation/templates";
 import { readDocument, writePayload } from "@/local-vault/model";
-import { openPack, encodePack } from "@/local-vault/pack";
+import { openPack, encodePack, packIdentity, replacePackIdentity } from "@/local-vault/pack";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
 import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, type VaultCollaborationState } from "./collaboration";
@@ -33,6 +36,7 @@ export interface VaultLocation {
 }
 export interface VaultWrite extends VaultLocation {
   beforeCommit?: (relativePath: string) => Promise<void>;
+  folderDefaultCreation?: { titleDefault: boolean; bodyDefault: boolean; fieldsDefault: boolean };
   templateCreation?: { id: string; version?: number; titleDefault: boolean; bodyDefault: boolean; fieldsDefault: boolean; folderDefault: boolean };
   beforeTemplateRead?: (itemId: string, relativePath: string) => Promise<void>;
   signal?: AbortSignal;
@@ -688,7 +692,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
   validatePack(input.bytes, input.itemId);
   const revision = hash(input.bytes);
   const requestHash = hash(json([input.itemId, input.relativePath, input.baseRevision, revision,
-    ...(input.liveReconcile ? ["local-file"] : []), ...(input.audit ? [input.audit] : []), ...(input.templateCreation ? [input.templateCreation] : [])]));
+    ...(input.liveReconcile ? ["local-file"] : []), ...(input.audit ? [input.audit] : []), ...(input.templateCreation ? [input.templateCreation] : []), ...(input.folderDefaultCreation ? [input.folderDefaultCreation] : [])]));
   const layout = await setup(input);
   return locked(layout, async () => {
     if (!input.receiptOnly) await recover(layout);
@@ -709,9 +713,31 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     }
     if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     let templateSource: { itemId: string; revision: string; relativePath: string } | undefined;
+    if (input.folderDefaultCreation && !input.templateCreation) {
+      if (input.baseRevision !== null) throw new Error("Folder defaults are creation only");
+      const folder = path.posix.dirname(input.relativePath).replace(/^\.$/, "");
+      await input.beforeCommit?.(input.relativePath);
+      const view = await folderViewLocked(layout, folder);
+      const chosen = view ? readFolderItemDefault(view.view) : null;
+      if (chosen) {
+        if ((await retiredTemplateIds(layout)).has(chosen.template.id)) throw new Error("The folder default template is retired. Choose another template.");
+        if (!input.beforeTemplateRead) throw new Error("Folder default authorization is required");
+        await input.beforeTemplateRead(view!.itemId, view!.relativePath);
+        const pack = openPack(input.bytes, input.relativePath, revision, input.itemId);
+        const document = readDocument(pack.file), options = input.folderDefaultCreation;
+        document.presentation.template = { id: chosen.template.id, version: chosen.template.version };
+        if (options.titleDefault) document.content.title = chosen.template.starter?.title || "Untitled";
+        if (options.bodyDefault) document.content.body = chosen.template.starter?.body ?? "";
+        document.content.fields = { ...chosen.template.starter?.fields, ...(options.fieldsDefault ? {} : document.content.fields) };
+        input.bytes = encodePack(pack, writePayload(pack.file, document, { template: chosen.template, sourceJSON: chosen.authoringSource ? json(chosen.authoringSource) : null }));
+        templateSource = { itemId: view!.itemId, revision: view!.revision, relativePath: view!.relativePath };
+        validatePack(input.bytes, input.itemId);
+      }
+    }
     if (input.templateCreation) {
       if (input.baseRevision !== null) throw new Error("Template starters are creation only");
       const selection = input.templateCreation;
+      if ((await retiredTemplateIds(layout)).has(selection.id)) throw new Error("This template is retired. Choose another template.");
       let template;
       let sourceJSON: string | null = null;
       if (selection.id.startsWith("texttext.")) {
@@ -726,7 +752,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
           const raw = await maybeRead(path.join(layout.items, name));
           if (!raw) continue;
           const index = JSON.parse(raw.toString()) as { itemId: string; relativePath: string; deleted?: boolean };
-          if (index.deleted || !index.relativePath.startsWith("Templates/")) continue;
+          if (index.deleted || !index.relativePath.startsWith("Templates/") || isTemplateRetirementPath(index.relativePath)) continue;
           // Never open a template artifact before the caller's current read grant.
           try { await input.beforeTemplateRead(index.itemId, index.relativePath); } catch { continue; }
           let source, file, definition;
@@ -1240,7 +1266,208 @@ export async function pushVaultCollaboration(input: VaultLocation & {
 }
 
 /** Atomic agent command: replay receipt before stale-revision checks. */
+/** Read identity-wide records under the same workspace lock as selection/mutation. */
+async function retiredTemplateIds(layout: Layout): Promise<Set<string>> {
+  const retired = new Set<string>();
+  let folder = layout.workspace;
+  for (const name of ["Templates", "Retired"]) {
+    // Match client path recognition even on case-insensitive filesystems.
+    if (!(await fs.readdir(folder)).includes(name)) return retired;
+    folder = path.join(folder, name);
+    try { const info = await fs.lstat(folder); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Invalid retirement directory"); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return retired; throw error; }
+  }
+  const candidates = (await fs.readdir(folder)).filter(name => name.endsWith(".textpack"));
+  if (candidates.length > 1000) throw new Error("Template retirement inventory exceeds limits");
+  for (const name of candidates) {
+    const target = await targetPath(layout, `Templates/Retired/${name}`);
+    const info = await fs.lstat(target);
+    if (info.size > 64 * 1024) throw new Error("Template retirement record exceeds limits");
+    const bytes = await maybeRead(target); if (!bytes) continue;
+    const document = readDocument(openPack(bytes, `Templates/Retired/${name}`, hash(bytes)).file);
+    if (document.content.fields.texttextRecordType !== "template-retirement") throw new Error("Invalid template retirement record");
+    retired.add(parseTemplateRetirement(document.content.body).templateId);
+  }
+  return retired;
+}
+
+export async function retireVaultTemplate(input: VaultLocation & {
+  templateId: string; sourceItemId: string; sourceHash: string; operationId: string;
+  audit: NonNullable<VaultWrite["audit"]>;
+  beforeCommit: (relativePath: string) => Promise<void>;
+  beforeSourceRead: (itemId: string, relativePath: string) => Promise<void>;
+}): Promise<VaultWriteResult> {
+  segment(input.operationId); segment(input.sourceItemId);
+  if (!input.onReceipt || !/^[a-f0-9]{64}$/.test(input.sourceHash) || input.templateId.startsWith("texttext.")) throw new Error("Read a custom template and provide its source hash");
+  const itemId = templateRetirementIdentity(input.operationId);
+  const relativePath = `Templates/Retired/${itemId}.textpack`;
+  const requestHash = hash(json(["retire-template", input.templateId, input.sourceItemId, input.sourceHash, input.audit]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await input.beforeCommit(relativePath);
+    if (!input.receiptOnly) await recover(layout);
+    const source = await collaborationItem(layout, input.sourceItemId);
+    if (!source) throw new Error("Template source is unavailable");
+    await input.beforeSourceRead(input.sourceItemId, source.relativePath);
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
+    if (!source.relativePath.startsWith("Templates/") || isTemplateRetirementPath(source.relativePath) || source.revision !== input.sourceHash) throw new Error("Template source changed. Read it again.");
+    const file = openPack(source.bytes, source.relativePath, source.revision, input.sourceItemId).file;
+    const template = validateTemplateDefinition(JSON.parse(file.templateJSON ?? "null"));
+    if (template.id !== input.templateId) throw new Error("Template identity does not match its source");
+    if ((await retiredTemplateIds(layout)).has(template.id)) throw new Error("This template is already retired");
+    const built = buildTemplateRetirement({ format: "texttext-template-retirement", version: 1, templateId: template.id, sourceItemId: input.sourceItemId, sourceHash: input.sourceHash, sourceVersion: template.version }, template.name, input.operationId);
+    validatePack(built.bytes, itemId);
+    if (await maybeRead(path.join(layout.items, `${itemId}.json`)) || await maybeRead(await targetPath(layout, relativePath))) throw new Error("Retirement record identity is occupied");
+    await input.beforeCommit(relativePath); await input.beforeSourceRead(input.sourceItemId, source.relativePath);
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), built.bytes);
+    const intent: Intent = { itemId, operationId: input.operationId, relativePath, baseRevision: null, revision: hash(built.bytes), requestHash, workspaceId: input.workspaceId, audit: input.audit };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent)); await syncDirectory(layout.pending);
+    return apply(layout, intent, pendingDir);
+  });
+}
+
 /** Create immutable library artifacts through the same durable file intent as ordinary documents. */
+/** Immediate-folder metadata only; never infer configuration from the filename. */
+async function folderViewLocked(layout: Layout, folder: string) {
+  const canonical = await targetPath(layout, folderViewPath(folder));
+  const directoryPath = path.dirname(canonical);
+  const names = await fs.readdir(directoryPath).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
+  if (names.length > 2048) throw new Error("Folder view discovery exceeds limits");
+  let found: { itemId: string; relativePath: string; revision: string; bytes: Uint8Array; view: NonNullable<ReturnType<typeof readFolderView>> } | null = null;
+  let scanned = 0;
+  for (const name of names.filter(name => name.endsWith(".textpack"))) {
+    const relativePath = folder ? `${folder}/${name}` : name;
+    const target = await targetPath(layout, relativePath);
+    const stat = await fs.stat(target);
+    if (!stat.isFile()) continue;
+    if ((scanned += stat.size) > 256 * 1024 * 1024) throw new Error("Folder view discovery exceeds limits");
+    const bytes = await maybeRead(target);
+    if (!bytes) continue;
+    let metadata: Record<string, Uint8Array>;
+    try {
+      let expanded = 0;
+      metadata = unzipSync(bytes, { filter(entry) {
+        if (!/(?:^|\/)(document|template)\.json$/.test(entry.name)) return false;
+        if ((expanded += entry.originalSize) > 4 * 1024 * 1024) throw new Error("Folder metadata exceeds limits");
+        return true;
+      } });
+    } catch { continue; }
+    const keys = Object.keys(metadata).filter(key => /(?:^|\/)document\.json$/.test(key));
+    if (keys.length !== 1) continue;
+    const documentJSON = strFromU8(metadata[keys[0]]);
+    let document;
+    try { document = JSON.parse(documentJSON); } catch { continue; }
+    if (document?.content?.fields?.texttextFolderView === undefined) continue;
+    const template = metadata[keys[0].replace(/document\.json$/, "template.json")];
+    const revision = hash(bytes);
+    const view = readFolderView({ path: relativePath, hash: revision, documentJSON, templateJSON: template ? strFromU8(template) : undefined });
+    if (!view) continue;
+    const pack = openPack(bytes, relativePath, revision);
+    if (found) throw new Error("This folder contains multiple folder views");
+    found = { itemId: packIdentity(pack.file.markdown), relativePath, revision, bytes, view };
+  }
+  return found;
+}
+
+export async function setVaultFolderTemplate(input: VaultLocation & {
+  folder: string; operationId: string; expectedRevision: string | null;
+  templateId: string; templateVersion: number; source?: { itemId: string; revision: string };
+  audit: NonNullable<VaultWrite["audit"]>; beforeCommit: (folder: string) => Promise<void>;
+  beforeTemplateRead: (itemId: string, relativePath: string) => Promise<void>;
+}): Promise<VaultWriteResult> {
+  folderViewPath(input.folder); segment(input.operationId);
+  if (!input.onReceipt || input.expectedRevision !== null && !/^[a-f0-9]{64}$/.test(input.expectedRevision)) throw new Error("Provide the current folder view hash or null for a new view");
+  const requestHash = hash(json(["folder-default", input.folder, input.expectedRevision, input.templateId, input.templateVersion, input.source ?? null, input.audit]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await input.beforeCommit(input.folder);
+    if (!input.receiptOnly) await recover(layout);
+    let source: Awaited<ReturnType<typeof collaborationItem>> = null;
+    if (input.source) {
+      segment(input.source.itemId);
+      source = await collaborationItem(layout, input.source.itemId);
+      if (!source) throw new Error("Template source is unavailable");
+      await input.beforeTemplateRead(input.source.itemId, source.relativePath);
+    }
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
+    let template, authoring;
+    if (input.source) {
+      if (!source || source.revision !== input.source.revision || !source.relativePath.startsWith("Templates/")) throw new Error("Template source changed. List templates again.");
+      const file = openPack(source.bytes, source.relativePath, source.revision, input.source.itemId).file;
+      if (!file.templateJSON) throw new Error("Template definition is missing");
+      template = validateTemplateDefinition(JSON.parse(file.templateJSON));
+      authoring = file.templateAuthoringSourceJSON ? validatedLookSource(template, JSON.parse(file.templateAuthoringSourceJSON)) : undefined;
+      if (file.templateAuthoringSourceJSON && !authoring) throw new Error("Invalid template authoring source");
+    } else template = requireBuiltinTemplate(input.templateId);
+    if (template.id !== input.templateId || template.version !== input.templateVersion) throw new Error("Choose the exact template version");
+    if ((await retiredTemplateIds(layout)).has(template.id)) throw new Error("This template is retired");
+    await discoverFiles(layout, []);
+    const existing = await folderViewLocked(layout, input.folder);
+    if ((existing?.revision ?? null) !== input.expectedRevision) throw new Error("The folder view changed. Read it again before setting its default.");
+    const itemId = existing?.itemId ?? (() => { const value = hash(json([input.workspaceId, "folder-default", input.folder, input.operationId])); return `${value.slice(0,8)}-${value.slice(8,12)}-4${value.slice(13,16)}-8${value.slice(17,20)}-${value.slice(20,32)}`; })();
+    const relativePath = existing?.relativePath ?? folderViewPath(input.folder);
+    let pack;
+    if (existing) pack = openPack(existing.bytes, relativePath, existing.revision, itemId);
+    else {
+      const target = await targetPath(layout, relativePath);
+      const siblings = await fs.readdir(path.dirname(target));
+      if (siblings.some(name => name.toLowerCase() === path.basename(target).toLowerCase())) throw new Error("A file already occupies the folder view path");
+      const candidate = createFolderViewPack(input.folder, requireBuiltinTemplate("texttext.note"));
+      pack = openPack(candidate.bytes, relativePath, "");
+      pack.file.markdown = replacePackIdentity(pack.file.markdown, itemId);
+    }
+    const snapshot = readDocument(pack.file);
+    if (!existing) snapshot.content.fields[FOLDER_STANDARD_LAYOUT_FIELD] = "v1";
+    snapshot.content.fields[FOLDER_DEFAULT_FIELD] = json({ version: 1, template, ...(authoring ? { authoringSource: authoring } : {}) });
+    let bytes = encodePack(pack, writePayload(pack.file, snapshot));
+    let collaboration: VaultCollaborationState | undefined;
+    if (existing) {
+      const current = await collaborationItem(layout, itemId);
+      if (!current || current.revision !== existing.revision) throw new Error("The folder view changed. Read it again.");
+      const baseline = await collaborationCheckpoint(layout, itemId, current);
+      if (baseline.revision !== existing.revision) throw new Error("The folder view changed. Read it again.");
+      const doc = new Y.Doc();
+      try {
+        Y.applyUpdate(doc, Buffer.from(baseline.update, "base64"));
+        const vector = Y.encodeStateVector(doc);
+        applyDocumentSnapshot(doc, snapshot, "folder-default");
+        const next = applyVaultCollaboration(baseline, existing.bytes, [Buffer.from(Y.encodeStateAsUpdate(doc, vector)).toString("base64")], relativePath);
+        bytes = next.bytes; collaboration = next.state;
+      } finally { doc.destroy(); }
+    }
+    validatePack(bytes, itemId);
+    await input.beforeCommit(input.folder);
+    if (input.source && source) await input.beforeTemplateRead(input.source.itemId, source.relativePath);
+    if (source && input.source) {
+      const latest = await collaborationItem(layout, input.source.itemId);
+      if (!latest || latest.relativePath !== source.relativePath || latest.revision !== input.source.revision) throw new Error("Template source changed. List templates again.");
+    }
+    const latestView = await folderViewLocked(layout, input.folder);
+    if ((latestView?.revision ?? null) !== input.expectedRevision || latestView?.relativePath !== existing?.relativePath) throw new Error("The folder view changed. Read it again.");
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), bytes);
+    const intent: Intent = { itemId, operationId: input.operationId, relativePath, baseRevision: existing?.revision ?? null,
+      revision: hash(bytes), requestHash, workspaceId: input.workspaceId, audit: input.audit, ...(collaboration ? { collaboration } : {}) };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent)); await syncDirectory(layout.pending);
+    return apply(layout, intent, pendingDir);
+  });
+}
+
 export async function createVaultTemplate(input: VaultLocation & {
   itemId: string; operationId: string; creation: VaultTemplateCreation;
   audit: NonNullable<VaultWrite["audit"]>;
@@ -1278,6 +1505,7 @@ export async function createVaultTemplate(input: VaultLocation & {
     if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     if ("sourceHash" in input.creation && source?.revision !== input.creation.sourceHash) throw new Error("Template source changed. Read it again before saving its look.");
     if (await maybeRead(path.join(layout.items, `${input.itemId}.json`))) throw new Error("update" in input.creation ? "A newer template version already exists. Refresh the template list." : "Template identity is already in use");
+    if ("update" in input.creation && (await retiredTemplateIds(layout)).has(input.creation.update.templateId)) throw new Error("This template is retired. Remix it into a new identity instead.");
     const built = buildVaultTemplateArtifact(input.itemId, input.creation, source ?? undefined);
     validatePack(built.bytes, input.itemId);
     if (await maybeRead(await targetPath(layout, relativePath))) throw new Error("Template destination is occupied");
@@ -1338,6 +1566,7 @@ export async function mutateVaultDocument(input: VaultLocation & {
       const sourceFile = openPack(source.bytes, source.relativePath, source.revision, input.presentation.source.itemId).file;
       if (!sourceFile.templateJSON) throw new Error("Template definition is missing");
       template = validateTemplateDefinition(JSON.parse(sourceFile.templateJSON));
+      if ((await retiredTemplateIds(layout)).has(template.id)) throw new Error("This template is retired. Choose another template.");
       if (template.id !== input.presentation.source.templateId || input.presentation.source.templateVersion !== undefined && template.version !== input.presentation.source.templateVersion) throw new Error("Template source does not match requested template");
       authoring = sourceFile.templateAuthoringSourceJSON ? validatedLookSource(template, JSON.parse(sourceFile.templateAuthoringSourceJSON)) : null;
       if (sourceFile.templateAuthoringSourceJSON && !authoring) throw new Error("Invalid template authoring source");

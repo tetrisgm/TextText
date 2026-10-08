@@ -55,7 +55,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   const readOnly = scopes.some((scope) => /^(read|readonly|read-only)$/.test(scope.trim().toLowerCase()) || /(?:^|[:./_-])read(?:[-_]?only)?$/.test(scope.trim().toLowerCase()));
   const actorType = auth?.extra?.actorType === "human" ? "human" as const : "external_agent" as const;
   const canWrite = !readOnly && (itemScope?.role === "edit" || scopes.includes("sync"));
-  if (["list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type"].includes(name)) {
+  if (["list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template"].includes(name)) {
     if (name !== "list_document_templates" && !canWrite) return error("This connection is read-only.");
     const authorize = async (itemId: string, path: string, write: boolean) => {
       const currentPath = path || (await readVaultTextpackIdentity({ ...location, itemId }))?.relativePath;
@@ -72,8 +72,12 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
         if (itemScope || currentUser !== userId || workspace?.id !== location.workspaceId || !path.startsWith("Templates/")) throw new Error("Template library access changed.");
         if (workspace.ownerId !== userId && roleForVaultFolder(await activeVaultGrants({ ...location, userId }), "Templates") !== "editor") throw new Error("Template library editing is not allowed.");
       };
-      const action = () => executeVaultTemplateTool(name, args, { ...location, actorUserId: userId, actorType, authorize, authorizeCreation });
-      if (name === "list_document_templates" || name === "create_item_type" || name === "save_item_as_look" || name === "update_item_type" || name === "remix_item_type" || actorType === "human" || location.receiptOnly) return json(await action());
+      const authorizeFolder = async (folder: string) => {
+        const currentUser = await getUserIdBySub(sub as string), workspace = await getBlogEditRecord(blog.handle);
+        if (itemScope || currentUser !== userId || workspace?.id !== location.workspaceId || workspace.ownerId !== userId && roleForVaultFolder(await activeVaultGrants({ ...location, userId }), folder) !== "editor") throw new Error("Folder editing is not allowed.");
+      };
+      const action = () => executeVaultTemplateTool(name, args, { ...location, actorUserId: userId, actorType, authorize, authorizeCreation, authorizeFolder });
+      if (name === "list_document_templates" || name === "create_item_type" || name === "save_item_as_look" || name === "update_item_type" || name === "remix_item_type" || name === "set_folder_template" || name === "retire_document_template" || actorType === "human" || location.receiptOnly) return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
       return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId,
         connectionName: typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent",

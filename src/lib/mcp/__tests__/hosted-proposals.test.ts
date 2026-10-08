@@ -64,7 +64,7 @@ describe("hosted MCP durable proposal boundary", () => {
     const args = { id: "item-1", path: "Notes/Note.textpack", if_match_hash: hash, idempotency_key: "delete-note" };
     const response = await callTool("delete_item", args, context);
     expect(response.isError).not.toBe(true);
-    expect(response.structuredContent).toMatchObject({ approvalRequired: true, proposal: { arguments: args, summary: expect.stringContaining("Canonical note") } });
+    expect(response.structuredContent).toMatchObject({ approvalRequired: true, proposal: { arguments: { ...args, idempotency_key: expect.stringMatching(/^proposal:/) }, summary: expect.stringContaining("Canonical note") } });
     expect(mocks.insert).toHaveBeenCalledOnce();
     expect(mocks.approvedExecute).toHaveBeenCalledExactlyOnceWith("read_item", { id: "item-1" }, expect.objectContaining({ sub: "apple-sub", userId: "user-1" }));
     expect(mocks.execute).not.toHaveBeenCalled();
@@ -73,7 +73,7 @@ describe("hosted MCP durable proposal boundary", () => {
   it.each(risky)("refuses unsupported or incomplete %s without creating a SQL proposal", async (name, args) => {
     const result = await callTool(name, args, context);
     expect(result.isError).toBe(true);
-    if (name !== "delete_item") expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
+    if (name !== "delete_item" && name !== "retire_document_template") expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
     expect(mocks.insert).not.toHaveBeenCalled(); expect(mocks.batch).not.toHaveBeenCalled();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
@@ -109,7 +109,7 @@ describe("hosted MCP durable proposal boundary", () => {
       "remove_item_asset", "retire_document_template", "set_item_status",
     ]);
     for (const name of staged) {
-      if (name === "delete_item") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
+      if (name === "delete_item" || name === "retire_document_template") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
       else expect(listTools().find((tool) => tool.name === name)).toBeUndefined();
     }
     for (const name of ["restore_item", "restore_folder", "set_access", "revoke_access", "update_item"] as const) {

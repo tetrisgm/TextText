@@ -1,4 +1,6 @@
 "use client";
+import { newItemPack } from "./new-item-pack";
+import { loadFolderItemDefault, folderStarter } from "./folder-item-default";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
 import { listingCapabilities } from "./listing-capabilities";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
@@ -801,11 +803,19 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     finally { setBusy(false); }
   };
   const createNote = (origin: HTMLElement | null, firstText = "") => operate(async () => {
-    let created = await vaultRequest<VaultFile>("create", { title: firstText, folder: destinationFolder.trim() || "Notes" });
-    if (destinationFolder.trim() === "Blog") {
-      const document = readDocument(created);
-      if (document.presentation.template.id === "texttext.article") created = await vaultRequest<VaultFile>("write", writePayload(created, { ...document, content: { ...document.content, title: "" } }));
-    }
+    const folder = destinationFolder.trim() || "Notes";
+    const chosen = await loadFolderItemDefault(folder, listing);
+    let created: VaultFile;
+    if (chosen) {
+      const document = emptyDocumentSnapshot({ id: chosen.template.id, version: chosen.template.version });
+      document.content = { ...document.content, ...folderStarter(chosen.template, firstText ? { title: firstText } : {}) };
+      created = await vaultRequest<VaultFile>("importPack", { title: document.content.title || "Untitled", folder, data: encodeBase64(newItemPack(document, { template: chosen.template, sourceJSON: chosen.authoringSource ? JSON.stringify(chosen.authoringSource) : null })) });
+    } else if (folder === "Blog") {
+      const template = BUILTIN_TEMPLATES.find(item => item.id === "texttext.article")!;
+      const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
+      document.content.title = firstText;
+      created = await vaultRequest<VaultFile>("importPack", { title: firstText || "Untitled", folder, data: encodeBase64(newItemPack(document, { template })) });
+    } else created = await vaultRequest<VaultFile>("create", { title: firstText, folder });
     setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin,
       focusPending: true, focusTitle: true, awaitSharedMode: allowFolderPicker });
     setSelected(created);
@@ -858,21 +868,23 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     });
   };
   const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => { setTemplateQuery(""); setTemplatePicker(true); }); };
-  const createForFolder = (folder: string, templateName: string, initialTitle = "", builtinTemplate?: TemplateDefinition, initialBody = "", stayInList = false, onCreated?: () => void, initialTags: string[] = [], initialImages: File[] = [], initialColor = "default", initialIcon = "") => operate(async () => {
+  const createForFolder = (folder: string, templateName: string, initialTitle: string | undefined = undefined, builtinTemplate?: TemplateDefinition, initialBody: string | undefined = undefined, stayInList = false, onCreated?: () => void, initialTags: string[] = [], initialImages: File[] = [], initialColor = "default", initialIcon = "") => operate(async () => {
+    const chosen = builtinTemplate ? null : await loadFolderItemDefault(folder, listing);
     const sourcePath = `Templates/${templateName}.textpack`;
-    const source = listing?.items.some(item => item.path === sourcePath) ? await vaultRequest<VaultFile>("read", { path: sourcePath }) : null;
+    const source = !builtinTemplate && !chosen && listing?.items.some(item => item.path === sourcePath) ? await vaultRequest<VaultFile>("read", { path: sourcePath }) : null;
     let imageEdit: Awaited<ReturnType<typeof prepareEditorImagePaste>> | null = null;
     if (initialImages.length) {
       const draft = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
-      draft.content.body = initialBody;
-      imageEdit = await prepareEditorImagePaste({ document: draft, selection: { from: initialBody.length, to: initialBody.length }, files: initialImages, occupiedFilenames: source?.assets?.map(asset => asset.filename) });
+      draft.content.body = initialBody ?? "";
+      imageEdit = await prepareEditorImagePaste({ document: draft, selection: { from: (initialBody ?? "").length, to: (initialBody ?? "").length }, files: initialImages, occupiedFilenames: source?.assets?.map(asset => asset.filename) });
     }
-    const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, ...(source ? { sourcePath, sourceHash: source.hash } : {}) });
-    const example = readDocument(cloned);
-    const fallback = builtinTemplate ?? (source?.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : BUILTIN_TEMPLATES.find(template => template.id === (folder === "Blog" ? "texttext.article" : "texttext.note")));
-    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle || fallback?.starter?.title || "", subtitle: "", body: imageEdit?.document.content.body ?? (initialBody || fallback?.starter?.body || ""), fields: { ...fallback?.starter?.fields, ...(initialColor === "default" ? {} : { texttextNoteColor: initialColor }), ...(noteIcon(initialIcon) ? { texttextNoteIcon: noteIcon(initialIcon) } : {}) }, tags: initialTags, assets: imageEdit?.document.content.assets ?? [] },
+    const example = emptyDocumentSnapshot();
+    const fallback = builtinTemplate ?? chosen?.template ?? (source?.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : BUILTIN_TEMPLATES.find(template => template.id === (folder === "Blog" ? "texttext.article" : "texttext.note")));
+    const starter = folderStarter(fallback, { title: initialTitle, body: initialBody, fields: { ...(initialColor === "default" ? {} : { texttextNoteColor: initialColor }), ...(noteIcon(initialIcon) ? { texttextNoteIcon: noteIcon(initialIcon) } : {}) } });
+    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: starter.title, subtitle: "", body: imageEdit?.document.content.body ?? starter.body, fields: starter.fields, tags: initialTags, assets: imageEdit?.document.content.assets ?? [] },
       presentation: fallback ? { ...example.presentation, template: { id: fallback.id, version: fallback.version } } : example.presentation };
-    const created = await vaultRequest<VaultFile>("write", { ...writePayload(cloned, blank, fallback ? { template: fallback } : undefined), ...(imageEdit ? { addedAssets: imageEdit.addedAssets } : {}) });
+    if (!fallback) throw new Error("Choose an available template.");
+    const created = await vaultRequest<VaultFile>("importPack", { title: blank.content.title || "Untitled", folder, data: encodeBase64(newItemPack(blank, { template: fallback, sourceJSON: chosen?.authoringSource ? JSON.stringify(chosen.authoringSource) : source?.templateAuthoringSourceJSON ?? null }, imageEdit?.addedAssets.map(asset => ({ ...asset, data: Uint8Array.from(atob(asset.data), character => character.charCodeAt(0)) })))) });
     if (stayInList) onCreated?.();
     else {
       setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: folder === "Blog" || folder === "Notes" && !initialBody, awaitSharedMode: allowFolderPicker });
@@ -1347,7 +1359,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         if (template.id === "texttext.bookmark") { setDestinationFolder("Bookmarks"); setCaptureMode("bookmark"); return; }
         if (template.id === "texttext.gallery") { setDestinationFolder("Gallery"); setImageCaptureOpen(true); return; }
         const destination = template.id === "texttext.article" ? ["Blog", "Blog post"] : template.id === "texttext.talk" ? ["Presentations", "Talk"] : ["Notes", "Note"];
-        void createForFolder(destination[0], destination[1], "", template);
+        void createForFolder(destination[0], destination[1], undefined, template);
       }} onCreateFromFile={(path) => void operate(async () => {
         const source = await vaultRequest<VaultFile>("read", { path });
         const sourceDocument = readDocument(source);

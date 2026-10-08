@@ -18,6 +18,7 @@ vi.mock("@/lib/store", async () => {
     readVaultTextpack: engine.readVaultTextpack,
     createVaultFolder: (input: Parameters<typeof engine.createVaultFolder>[0] & { actorUserId: string }) => engine.createVaultFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
     createVaultTemplate: (input: Parameters<typeof engine.createVaultTemplate>[0] & { actorUserId: string }) => engine.createVaultTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
+    retireVaultTemplate: (input: Parameters<typeof engine.retireVaultTemplate>[0] & { actorUserId: string }) => engine.retireVaultTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
     listVaultTrash: engine.listVaultTrash,
     mutateVaultDocument: (input: Parameters<typeof engine.mutateVaultDocument>[0] & { actorUserId: string }) => engine.mutateVaultDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
   };
@@ -362,7 +363,7 @@ describe("owner review of externally staged writes", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each(["delete_folder", "restore_folder", "remove_item_asset", "retire_document_template", "set_access", "revoke_access", "empty_trash", "delete_items"])("rejects unsupported legacy command %s before persistence", async (tool) => {
+  it.each(["delete_folder", "restore_folder", "remove_item_asset", "set_access", "revoke_access", "empty_trash", "delete_items"])("rejects unsupported legacy command %s before persistence", async (tool) => {
     const { dependencies, execute, repository } = harness();
     await expect(createWorkspaceWriteProposal({ actor: owner, tool, arguments: {} }, dependencies)).rejects.toThrow("cannot be staged");
     expect(repository.rows.size).toBe(0);
@@ -533,4 +534,38 @@ it("offers only writes with durable proposal recovery", async () => {
     expect(isProposableWorkspaceWrite(name)).toBe(true);
     expect(DURABLE_PROPOSAL_TOOLS.has(name)).toBe(true);
   }
+});
+
+it("explicitly approves retirement with a frozen source and recovers an expired lost response without retiring twice", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-retirement-proposal-"));
+  vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true;
+  try {
+    const h = harness(); h.dependencies.execute = runWorkspaceToolForSession; h.dependencies.resolveItems = resolveProposalItems;
+    let counter = 0; h.dependencies.randomId = () => `77777777-7777-4777-8777-${String(++counter).padStart(12, "0")}`;
+    const engine = await import("@/sync/engine/store");
+    const location = { root, workspaceId: "blog-1" };
+    const created = await engine.createVaultTemplate({ ...location, itemId: "88888888-8888-4888-8888-888888888888", operationId: "seed-template", beforeCommit: async () => {}, beforeSourceRead: async () => {}, creation: { blueprint: { name: "Research", fields: [], collection: { layout: "list" } } }, audit: { actorUserId: "user-1", actorType: "human" }, onReceipt: async () => {} });
+    const metadata = (await engine.readVaultTemplate({ ...location, itemId: created.itemId }))!;
+    const args = { template_id: JSON.parse(metadata.templateJSON!).id, source_item_id: created.itemId, source_hash: created.revision!, idempotency_key: "caller" };
+    const stage = () => createWorkspaceWriteProposal({ actor: owner, tool: "retire_document_template", arguments: args }, h.dependencies);
+    const approve = (id: string) => decideWorkspaceWriteProposal({ actor: owner, proposalId: id, decision: "approve" }, h.dependencies);
+    const proposal = await stage();
+    expect(proposal.summary).toContain("Existing items keep their appearance");
+    expect((await engine.listVaultTextpacks(location)).items).toHaveLength(1);
+    h.repository.rejectCompletion = true;
+    expect((await approve(proposal.id)).status).toBe("ambiguous");
+    const committed = (await engine.listVaultTextpacks(location)).items;
+    expect(committed).toHaveLength(2);
+    h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+    access.allowed = false;
+    expect((await approve(proposal.id)).status).not.toBe("completed");
+    access.allowed = true;
+    expect((await Promise.all([approve(proposal.id), approve(proposal.id)])).every(result => result.status === "completed")).toBe(true);
+    expect((await engine.listVaultTextpacks(location)).items).toEqual(committed);
+    const expired = await stage();
+    await h.repository.claim(expired.id, { blogId: "blog-1", actorUserId: "user-1" }, h.dependencies.now());
+    h.advance(16 * 60_000);
+    expect((await approve(expired.id)).status).toBe("expired");
+    expect((await engine.listVaultTextpacks(location)).items).toEqual(committed);
+  } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
 });

@@ -1,3 +1,6 @@
+import { isTemplateRetirementPath, parseTemplateRetirement } from "@/lib/presentation/template-retirement";
+import { readDocument } from "./model";
+import type { VaultFile } from "./bridge";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
@@ -28,7 +31,16 @@ export function useVaultTemplates(refreshKey?: string) {
       if (!active) return;
       setLoading(true); setLooks([]); setNotice("");
       const listing = await vaultRequest<VaultListing>("list");
-      const files = listing.items.filter((item) => /^Templates\//i.test(item.path));
+      const retired = new Set<string>();
+      const records = listing.items.filter(item => isTemplateRetirementPath(item.path));
+      if (records.length > 1000) throw new Error("Template retirement inventory exceeds limits");
+      for (const item of records) {
+        if (!active) return;
+        const document = readDocument(await vaultRequest<VaultFile>("read", { path: item.path }));
+        if (document.content.fields.texttextRecordType !== "template-retirement") throw new Error("A template retirement record could not be read.");
+        retired.add(parseTemplateRetirement(document.content.body).templateId);
+      }
+      const files = listing.items.filter((item) => /^Templates\//i.test(item.path) && !isTemplateRetirementPath(item.path));
       const found: VaultLook[] = [];
       let skipped = 0;
       for (const item of files.slice(0, MAX_TEMPLATE_FILES)) {
@@ -40,7 +52,10 @@ export function useVaultTemplates(refreshKey?: string) {
         } catch { skipped++; }
       }
       if (!active) return;
-      setLooks(found);
+      const available = found.filter(look => !retired.has(look.template.id));
+      // Detect ambiguous immutable versions before offering any creation choice.
+      latestTemplateVersions(available);
+      setLooks(available);
       const notices = [];
       if (files.length > MAX_TEMPLATE_FILES) notices.push(`Showing the first ${MAX_TEMPLATE_FILES} template files.`);
       if (skipped) notices.push(`${skipped} template ${skipped === 1 ? "file could" : "files could"} not be read.`);

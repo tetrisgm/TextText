@@ -430,7 +430,7 @@ export async function createWorkspaceWriteProposal(
   // the world still matches.
   let preview: FrozenProposalPreview | null = null;
   if (requiresFrozenPreview(validated.name)) {
-    const singleId = (validated.arguments as { id?: unknown }).id;
+    const singleId = validated.name === "retire_document_template" ? validated.arguments.source_item_id : validated.arguments.id;
     const ids = typeof singleId === "string"
       ? [singleId]
       : Array.isArray((validated.arguments as { ids?: unknown }).ids)
@@ -637,7 +637,7 @@ export async function decideWorkspaceWriteProposal(
   // Fails closed. A command that must be shown before it runs, arriving with
   // no preview or an unreadable one, was simply skipping the check: the drift
   // block only ran when the metadata happened to parse.
-  if (requiresFrozenPreview(validated.name) && (frozen?.kind !== "items" || frozen.tool !== validated.name || !Array.isArray(frozen.items) || frozen.items.length !== 1 || frozen.items[0].id !== validated.arguments.id)) {
+  if (requiresFrozenPreview(validated.name) && (frozen?.kind !== "items" || frozen.tool !== validated.name || !Array.isArray(frozen.items) || frozen.items.length !== 1 || frozen.items[0].id !== (validated.name === "retire_document_template" ? validated.arguments.source_item_id : validated.arguments.id))) {
     await dependencies.repository.fail(
       input.proposalId,
       owner.binding,
@@ -692,7 +692,7 @@ export async function decideWorkspaceWriteProposal(
       .map((item) => item.title || item.id);
     approvedArguments = validateWorkspaceWriteProposal(validated.name, {
       ...validated.arguments,
-      id: stillAgreed[0],
+      ...(validated.name === "retire_document_template" ? { source_item_id: stillAgreed[0] } : { id: stillAgreed[0] }),
     }).arguments;
   }
 

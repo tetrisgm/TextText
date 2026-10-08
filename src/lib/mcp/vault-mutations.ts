@@ -53,9 +53,9 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
     const seed = digest(operationId);
     const itemId = `${seed.slice(0, 8)}-${seed.slice(8, 12)}-4${seed.slice(13, 16)}-8${seed.slice(17, 20)}-${seed.slice(20, 32)}`;
     const folder = typeof args.folder_path === "string" ? args.folder_path : ({ note: "Notes", article: "Blog", bookmark: "Bookmarks", gallery: "Gallery", talk: "Presentations" }[kind]);
-    if (!folder || folder.split("/").some((part) => !part || part === "." || part === "..") || /[\\\x00]/.test(folder)) throw new Error("Invalid folder.");
+    if (folder && folder.split("/").some((part) => !part || part === "." || part === "..") || /[\\\x00]/.test(folder ?? "")) throw new Error("Invalid folder.");
     const title = document.content.title.replace(/[\/\\:*?"<>|\x00-\x1f]/g, " ").trim().slice(0, 80) || "Untitled";
-    const relativePath = `${folder}/${title}-${itemId.slice(0, 8)}.textpack`;
+    const relativePath = `${folder ? `${folder}/` : ""}${title}-${itemId.slice(0, 8)}.textpack`;
     // A selected template may determine the final folder/title under the lock.
     // Authorize that resolved destination in beforeCommit, not this draft path.
     if (typeof args.template_id !== "string") await context.authorize(itemId, relativePath, true);
@@ -73,6 +73,7 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
         fieldsDefault: !capture && !parsed && args.fields === undefined,
         folderDefault: args.folder_path === undefined && args.kind === undefined && !capture && !parsed },
         beforeTemplateRead: context.authorizeTemplate } : {}),
+      ...(!args.template_id && args.kind === undefined && !capture && !parsed ? { folderDefaultCreation: { titleDefault: args.title === undefined, bodyDefault: args.body === undefined, fieldsDefault: args.fields === undefined }, beforeTemplateRead: context.authorizeTemplate } : {}),
       beforeCommit: (path) => context.authorize(itemId, path, true) });
   }
   only(args, name === "append_to_item"

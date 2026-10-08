@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { vaultRequest, type VaultFile, type VaultListing } from "./bridge";
-import { createFolderViewPack, resolveFolderView, type FolderView, type FolderViewMetadata } from "./folder-view";
+import { createFolderViewPack, resolveFolderView, folderCollectionTemplate, explicitFolderDesignPayload, type FolderView, type FolderViewMetadata } from "./folder-view";
 import { FOLDER_PRESETS } from "./folder-presets";
 import { encodeBase64 } from "./image-import";
 import { prepareTemplateProposal } from "./template-proposal";
@@ -39,7 +39,7 @@ export function FolderPresentation({ listing, folder, busy, editable = true, des
       if (base) {
         const file = await vaultRequest<VaultFile>("read", { path: base.path });
         const { payload } = prepareTemplateProposal(file, { path: base.path, hash: base.hash, templateJSON: JSON.stringify(draft) });
-        const saved = await vaultRequest<VaultFile>("write", payload);
+        const saved = await vaultRequest<VaultFile>("write", explicitFolderDesignPayload(payload));
         if (saved.templateJSON !== payload.templateJSON) throw new Error("The saved folder design differs from the preview. Open its file to inspect it.");
       } else {
         const candidate = createFolderViewPack(folder, draft, listing.items);
@@ -53,7 +53,7 @@ export function FolderPresentation({ listing, folder, busy, editable = true, des
   return <section aria-label="Folder presentation">
     {designOpen && <div className="vault-folder-design-controls">
       {editable && <label>Folder design <select aria-label="Folder design" disabled={busy || loading || saving} value={draft?.id ?? ""} onChange={(event) => { draftBase.current = view; setDraft(FOLDER_PRESETS.find((template) => template.id === event.target.value) ?? null); }}>
-        <option value="">{view?.template.name || "Standard view"}</option>
+        <option value="">{folderCollectionTemplate(view)?.name || "Standard view"}</option>
         {FOLDER_PRESETS.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
       </select></label>}
       {editable && draft && <><button disabled={busy || saving} onClick={() => void keep()}>{saving ? "Saving…" : "Keep folder design"}</button><button disabled={saving} onClick={() => setDraft(null)}>Cancel preview</button></>}
@@ -62,7 +62,7 @@ export function FolderPresentation({ listing, folder, busy, editable = true, des
     </div>}
     {designOpen && editable && draft && <p role="status">Previewing {draft.name}. Keeping this design changes only the folder’s design file.</p>}
     {error && <p role="alert">{error} Your files remain available below.</p>}
-    <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy || saving} onOpen={onOpen} onEditNote={editable ? onEditNote : undefined} onRevealBookmark={onRevealBookmark} onCreateNote={editable ? onCreateNote : undefined} onCreateCard={editable ? onCreateCard : undefined} onQuickSaveBookmark={editable ? onQuickSaveBookmark : undefined} onAskBookmarkAgent={onAskBookmarkAgent} preferredBookmarkPath={preferredBookmarkPath} folderTemplate={editable ? draft ?? view?.template : view?.template} excludedPath={view?.path} galleryCommentsAccess={galleryCommentsAccess}
+    <VaultDocumentGrid key={`${listing.root}:${folder}`} listing={listing} folder={folder} busy={busy || saving} onOpen={onOpen} onEditNote={editable ? onEditNote : undefined} onRevealBookmark={onRevealBookmark} onCreateNote={editable ? onCreateNote : undefined} onCreateCard={editable ? onCreateCard : undefined} onQuickSaveBookmark={editable ? onQuickSaveBookmark : undefined} onAskBookmarkAgent={onAskBookmarkAgent} preferredBookmarkPath={preferredBookmarkPath} folderTemplate={editable ? draft ?? folderCollectionTemplate(view) : folderCollectionTemplate(view)} excludedPath={view?.path} galleryCommentsAccess={galleryCommentsAccess}
       emptyMessage={editable ? ({ Bookmarks: "Save a web address to start your reading library.", Gallery: "Add images to start your visual library.", Feeds: "Add a source to see its latest stories here.", Blog: "Write a story to start your publication.", Notes: "Create a note to start your card library." } as Record<string, string>)[folder] || "No files here yet. Choose a template to get started." : "No files in this folder."} />
   </section>;
 }

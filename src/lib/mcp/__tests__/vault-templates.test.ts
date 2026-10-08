@@ -16,6 +16,8 @@ vi.mock("@/lib/store", async () => {
   const engine = await import("@/sync/engine/store");
   return { getUserIdBySub: async () => "actor", getOwnedBlog: async () => ({ handle: "fixture", name: "Fixture" }), getBlogEditRecord: async () => ({ id: "workspace", ownerId: "actor" }), readVaultTextpackIdentity: engine.readVaultTextpackIdentity,
     createVaultTemplate: (input: Parameters<typeof engine.createVaultTemplate>[0] & { actorUserId: string; actorType: "human" | "external_agent" }) => engine.createVaultTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: async () => {} }),
+    retireVaultTemplate: (input: Parameters<typeof engine.retireVaultTemplate>[0] & { actorUserId: string; actorType: "human" | "external_agent" }) => engine.retireVaultTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: async () => {} }),
+    readVaultTextpack: engine.readVaultTextpack,
     listVaultTextpacks: engine.listVaultTextpacks, readVaultTemplate: engine.readVaultTemplate,
     mutateVaultDocument: (input: Parameters<typeof engine.mutateVaultDocument>[0] & { actorUserId: string; actorType: "human" | "external_agent" }) => engine.mutateVaultDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: async () => {} }) };
 });
@@ -252,4 +254,18 @@ it("retains editable authored source on remix and checks exact identity and libr
   authorizeCreation.mockRejectedValue(new Error("library revoked"));
   await expect(executeVaultTemplateTool("remix_item_type", args, context())).rejects.toThrow("library revoked");
   await expect(executeVaultTemplateTool("remix_item_type", { template_id: "texttext.note", template_version: 999, name: "No", idempotency_key: "wrong-version" }, context())).rejects.toThrow("exact built-in");
+});
+
+it("retires through the public external-agent dispatcher and hides every version without changing the source", async () => {
+  vi.stubEnv("TEXTTEXT_VAULT_ROOT", root);
+  const { executeMcpTool } = await import("../tools");
+  const authInfo = { token: "fixture", clientId: "fixture", scopes: ["sync"], extra: { sub: "subject", userId: "actor", connectionId: "fixture" } };
+  const args = { template_id: custom.id, source_item_id: source, source_hash: sourceRevision, idempotency_key: "retire-public" };
+  const first = await executeMcpTool("retire_document_template", args, { authInfo });
+  expect(first, JSON.stringify(first)).not.toHaveProperty("isError", true);
+  expect((await executeMcpTool("retire_document_template", args, { authInfo })).structuredContent).toEqual(first.structuredContent);
+  const list = await executeVaultTemplateTool("list_document_templates", { template_id: custom.id }, context());
+  expect("templates" in list && list.templates).toEqual([]);
+  expect((await readVaultTextpack({ ...location(), itemId: source }))!.revision).toBe(sourceRevision);
+  expect((await executeMcpTool("retire_document_template", args, { authInfo: { ...authInfo, scopes: ["readonly"] } })).isError).toBe(true);
 });

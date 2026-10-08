@@ -59,6 +59,11 @@ export function describeFrozenPreview(preview: FrozenProposalPreview): string {
   }
   const present = preview.items.filter((item) => !item.missing);
   const missing = preview.items.filter((item) => item.missing);
+  if (preview.tool === "retire_document_template") {
+    return present.length === 1
+      ? `Retire "${present[0].title}" from template choices. Existing items keep their appearance and content.`
+      : "The template source could not be found. This change cannot be approved.";
+  }
   const publicOnes = present.filter((item) => item.visibility === "public");
   const status = present[0]?.desiredStatus;
   const lines = [

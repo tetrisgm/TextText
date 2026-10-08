@@ -1,6 +1,7 @@
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
-export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type"] as const;
+export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template"] as const;
 const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
+  set_folder_template: ["folder_path", "template_id", "template_version", "source_item_id", "source_hash", "if_match_hash", "idempotency_key"],
   update_item_type: ["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key"],
   create_item_type: ["blueprint", "idempotency_key"],
   add_comment: ["id", "body", "parent_comment_id", "idempotency_key"],
@@ -8,6 +9,8 @@ const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
   update_item: ["id", "title", "body", "excerpt", "tags", "section", "expected_section_body", "if_match_hash", "idempotency_key"],
 };
 const descriptions: Partial<Record<WorkspaceToolName, string>> = {
+  set_folder_template: "Set the pinned template for future generic items in one folder. Requires current folder view if_match_hash, or null to create a new definition, exact template version and stable idempotency_key. Custom templates require source_item_id/source_hash. Existing items and collection layout remain unchanged. Explicit template choices override this default.",
+  retire_document_template: "Retire a custom template identity from future creation and pickers using a file-backed library record. Requires source_item_id, source_hash and stable idempotency_key. Existing embedded documents stay unchanged. Explicitly deleting the retirement record restores availability; retrying this operation never recreates a deleted marker.",
   remix_item_type: "Copy an exact built-in or accessible workspace template into a new Templates TextPack with its own identity and version 1. Requires a new name, stable idempotency_key and library editing access. Custom templates require source_item_id/source_hash from list_document_templates. Preserves validated presentation and authoring source; does not copy private document writing/assets or change existing items.",
   update_item_type: "Create the next immutable workspace template version in a new Templates TextPack. Requires source_item_id/source_hash and base_version from list_document_templates, current source/library editing authority and a stable idempotency_key. Send the full edited blueprint for authored templates, or a full compatible definition for source-less looks. Existing files and pinned items remain unchanged; apply the new version separately with set_item_template.",
   create_item_type: "Create a new reusable look from a validated blueprint as a Templates TextPack. Requires a stable idempotency_key and template library editing permission. Does not modify folders or existing items.",
@@ -34,10 +37,11 @@ export function vaultToolDefinitions() {
     const allowed = fields[name];
     if (allowed && inputSchema.properties) inputSchema.properties = Object.fromEntries(Object.entries(inputSchema.properties).filter(([key]) => allowed.includes(key)));
     if (allowed && inputSchema.required) inputSchema.required = inputSchema.required.filter(key => allowed.includes(key));
+    if (name === "set_folder_template") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "template_version", "if_match_hash", "idempotency_key"])];
     if (name === "add_comment" && inputSchema.properties?.body) inputSchema.properties.body = { type: "string", minLength: 1, maxLength: 4000 };
     if (name === "move_item" || name === "delete_item" || name === "restore_item") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "path", "if_match_hash", "idempotency_key"])];
     if (name === "create_folder" || name === "create_item_type" || name === "save_item_as_look") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "idempotency_key"])];
-    if (name === "update_item_type") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "source_item_id", "source_hash", "idempotency_key"])];
+    if (name === "update_item_type" || name === "retire_document_template") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "source_item_id", "source_hash", "idempotency_key"])];
     if (name === "save_item_as_look") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "if_match_hash"])];
     if (name === "set_item_template") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "if_match_hash", "idempotency_key"])];
     if (name === "update_item") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "if_match_hash"])];

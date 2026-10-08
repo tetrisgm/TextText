@@ -1,3 +1,5 @@
+import { validatedLookSource } from "@/lib/presentation/template-library";
+import type { AuthoringSource } from "@/lib/presentation/authoring-source";
 import { emptyDocumentSnapshot, validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 import type { VaultFile, VaultItem } from "./bridge";
@@ -71,5 +73,30 @@ export function updateFolderViewPack(pack: OpenPack, expectedHash: string, defin
   if (!view) throw new Error("Choose an explicitly marked folder view file.");
   const template = validateTemplateDefinition(definition);
   const { payload } = prepareTemplateProposal(pack.file, { path: view.path, hash: expectedHash, templateJSON: JSON.stringify(template) });
-  return { path: view.path, expectedHash, bytes: encodePack(pack, payload) };
+  return { path: view.path, expectedHash, bytes: encodePack(pack, explicitFolderDesignPayload(payload)) };
+}
+
+export const FOLDER_DEFAULT_FIELD = "texttextFolderDefault";
+export const FOLDER_STANDARD_LAYOUT_FIELD = "texttextFolderStandardLayout";
+export type FolderItemDefault = { version: 1; template: TemplateDefinition; authoringSource?: AuthoringSource };
+export function readFolderItemDefault(view: FolderView | null): FolderItemDefault | null {
+  const raw = view?.document.content.fields[FOLDER_DEFAULT_FIELD];
+  if (raw === undefined) return null;
+  if (typeof raw !== "string" || raw.length > 1_000_000) throw new Error("Invalid folder item default");
+  const value = JSON.parse(raw);
+  if (!value || value.version !== 1 || Object.keys(value).some(key => !["version", "template", "authoringSource"].includes(key))) throw new Error("Unsupported folder item default");
+  const template = validateTemplateDefinition(value.template);
+  const authoringSource = value.authoringSource === undefined ? undefined : validatedLookSource(template, value.authoringSource);
+  if (value.authoringSource !== undefined && !authoringSource) throw new Error("Invalid folder template source");
+  return { version: 1, template, ...(authoringSource ? { authoringSource } : {}) };
+}
+export function folderCollectionTemplate(view: FolderView | null): TemplateDefinition | undefined {
+  return view?.document.content.fields[FOLDER_STANDARD_LAYOUT_FIELD] === "v1" ? undefined : view?.template;
+}
+
+export function explicitFolderDesignPayload<T extends { documentJSON?: string | null }>(payload: T): T {
+  if (!payload.documentJSON) throw new Error("Folder design document is missing");
+  const document = validateDocumentSnapshot(JSON.parse(payload.documentJSON));
+  delete document.content.fields[FOLDER_STANDARD_LAYOUT_FIELD];
+  return { ...payload, documentJSON: JSON.stringify(document) };
 }

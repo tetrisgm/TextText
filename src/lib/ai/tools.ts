@@ -747,13 +747,17 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         folder_path: z
           .string()
           .trim()
-          .min(1)
+          .min(0)
           .max(255)
           .describe(
             'Folder path inside the workspace, e.g. "blog" or "blog/ideas".',
           ),
         template_id: templateId,
         template_version: templateVersion,
+        source_item_id: z.string().optional(),
+        source_hash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+        if_match_hash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+        idempotency_key: z.string().min(1),
         apply_to_existing: z
           .boolean()
           .optional()
@@ -772,6 +776,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         template_id: templateId,
+        source_item_id: z.string().uuid().optional(),
+        source_hash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+        idempotency_key: z.string().trim().min(1).max(200).optional(),
       })
       .strict(),
     mutability: "write",
