@@ -7,7 +7,11 @@
   app remains running with unknown unsaved state.
   [Candidate receipt](verification/2026-10-08-windows-agent-creation.md).
 
-- Mac `/Applications/TextText.app`: **0.204 (1214)**, source `3382b36a`.
+- Mac `/Applications/TextText.app`: **0.204 (1215)**, source `0428bfca`.
+  Actual account/iCloud startup, 55-file installation preservation,
+  custom-template note save, saved-body search invalidation and reopen passed.
+  [1215 receipt](verification/2026-10-08-mac-1215.md).
+  Earlier source `3382b36a` verification:
   Actual startup/account/iCloud, existing custom-template note, editor save,
   on-disk marker, saved-body search and reopen passed.
   [1214 receipt](verification/2026-10-08-mac-1214.md).
