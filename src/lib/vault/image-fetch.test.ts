@@ -37,3 +37,10 @@ it("rejects disguised content, mismatched MIME, empty data and caller cancellati
  const controller = new AbortController(); controller.abort(); const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
  await expect(preparePublicImage("https://example.com/image", { signal: controller.signal })).rejects.toThrow("interrupted"); expect(fetcher).not.toHaveBeenCalled();
 });
+it("cancels a late response body after a fetch ignored the expired signal", async () => {
+ let resolve!: (response: Response) => void;
+ vi.stubGlobal("fetch", () => new Promise<Response>(done => { resolve = done; }));
+ await expect(preparePublicImage("https://example.com/image", { timeoutMs: 20 })).rejects.toThrow("timed out");
+ const cancel = vi.fn(); resolve(new Response(new ReadableStream({ cancel }), { headers: { "content-type": "image/png" } }));
+ await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+});
