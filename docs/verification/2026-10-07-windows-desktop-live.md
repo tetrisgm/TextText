@@ -236,3 +236,20 @@ Final installed DLL SHA-256:
 `69c6ea7916780cc963d3289dd699502e6df66b8623975456f7ad33f5fe641947`;
 EXE SHA-256 remains the apphost hash recorded above. The installed app remains
 open on the saved verification note. No additional user files were changed.
+
+## Sign-in management link follow-up
+
+Source `889bac73` passed the mandatory clean dependency/native/shared/UI gates.
+Installed candidate `c69bcd6c9a17491db56c038836e963a0`, previous application
+`TextText-previous-20261007T190234-489a3272`; desktop receipt
+`windows/build/smoke-receipts-d97b7fe1856a49d78a9a8aaeb6a9c54c`.
+The verified candidate includes updated shared UI assets; native DLL is unchanged.
+
+After the Oracle deployment, actual Windows Settings showed account details.
+Its Manage sign-in methods link opened Edge at
+`https://texttext.app/account/sign-in-methods?account=1ce83017-26f8-4023-b3a9-7e6e40966204`,
+confirmed from the actual address bar. No provider was linked or unlinked.
+Body search still returned the existing verification note. Normal close/reopen
+passed with selected-reader readiness at 1,599 ms. All nine markers remained
+exactly once, with the same acknowledged note hash, empty outbox and no pending
+pull. The installed app was left open on the saved note.
