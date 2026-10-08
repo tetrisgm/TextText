@@ -9,9 +9,9 @@
   [Receipt](verification/2026-10-08-parent-native-contract.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T131236Z-cfa62408**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T133807Z-9b9a218e**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T130430Z-f6dc73b6.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T134032Z-e279b2e0.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -55,9 +55,13 @@
   Escape dismisses the palette and returns to the note. Runtime health report
   remains unreadable to the unentitled installer, so UI proof is recorded.
   Logs: `/tmp/texttext-mac1199-build.log`, `/tmp/texttext-mac1199-install.log`.
-  Web package is running (session 45721), log
-  `/tmp/texttext-staging-web-package.log`; not deployed yet. Installed-client
-  retry verification and Oracle rollout remain. PC process 44968 still runs;
+  Verified archive `texttext-20261008T133807Z-9b9a218e.tar.gz` deployed to
+  Oracle; thirteen live checks passed, previous release retained, Algorave and
+  shared config unchanged. Receipt: `/tmp/texttext-1199-oracle-deploy.log`.
+  The old process again timed out on SIGTERM before replacement; this rollout
+  does not close the live drain defect. Local rebuilt production probe passed
+  in 6.005 seconds (`/tmp/texttext-1199-production-shutdown.log`).
+  Installed-client retry verification remains. PC process 44968 still runs;
   unsaved state has not been established.
 
 - Mac 1197 installs durable native folder-catalog reconciliation. Frozen core
