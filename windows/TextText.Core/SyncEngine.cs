@@ -26,6 +26,7 @@ public sealed class SyncEngine
     public SyncStatus Status {get;private set;}=new(false,null,0);
     public event Action<SyncStatus>? StatusChanged;
     public event Action? DurabilityChanged;
+    public event Action? CapabilitiesChanged;
     public SyncEngine(TextPackStore store,ISyncTransport transport) { this.store=store;this.transport=transport;statePath=Path.Combine(store.StateDirectory,"sync.json"); }
     public async Task<IDisposable> AcquireCollaborationAsync(string itemId,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");return new Fence(this,itemId);}finally{gate.Release();}
@@ -164,7 +165,7 @@ public sealed class SyncEngine
                 state.Items.ContainsKey(file.ItemId)||state.Outbox.Any(op=>op.ItemId==file.ItemId&&op.Revision is not null)) ?? ownerFallback);
         } finally {gate.Release();}
     }
-    void RememberCapabilities(State state) {if(transport.Capabilities is {} current && JsonSerializer.Serialize(state.Capabilities)!=JsonSerializer.Serialize(current)){state.Capabilities=current;Save(state);}}
+    void RememberCapabilities(State state) {if(transport.Capabilities is {} current && JsonSerializer.Serialize(state.Capabilities)!=JsonSerializer.Serialize(current)){state.Capabilities=current;Save(state);CapabilitiesChanged?.Invoke();}}
     static bool Permitted(State state,Operation op) => state.Capabilities is null || state.Capabilities.CanWrite(op.ItemId,op.Path,op.Revision is not null) && (op.Kind is not ("rename" or "delete") || state.Capabilities.FullAccess && state.Capabilities.CanCreateContent) && (op.Kind!="rename" || state.Capabilities.CanCreate(op.Destination!));
     void QueueUpload(State state,PackFile file,string? revision) {
         var bytes=store.Read(file.Path);if(TextPackStore.Hash(bytes)!=file.Hash) throw new FileChangedException();

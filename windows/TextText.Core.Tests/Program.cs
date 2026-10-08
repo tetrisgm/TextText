@@ -138,7 +138,9 @@ static class Test
  var persistedCapabilities=await new SyncEngine(scopedStore,scopedRemote).CapabilitiesAsync();Assert(persistedCapabilities?.Items["scoped"]==false,"permission snapshot survives restart offline");
  scopedRemote.Capabilities=new(true,true,[],new(){{"scoped",true}});await scopedEngine.SyncAsync();Assert(scopedRemote.DeleteCount==1,"restored permission resumes original durable deletion");
  var permissionStore=new TextPackStore(Path.Combine(temp,"permissions"),Path.Combine(temp,"permissions-state"));var knownPermission=permissionStore.Write("Notes/Known.textpack",Pack("known","known-permission"));var permissionRemote=new Fake();var permissionSync=new SyncEngine(permissionStore,permissionRemote);await permissionSync.SyncAsync();
+ var capabilityNotifications=0;permissionSync.CapabilitiesChanged+=()=>capabilityNotifications++;
  permissionRemote.Item=null;permissionRemote.Capabilities=new(false,false,["Notes"],new());await permissionSync.SyncAsync();
+ await permissionSync.SyncAsync();Assert(capabilityNotifications==1,"permission-only change notifies once and unchanged manifest remains quiet");
  var offlineNote=permissionStore.Write("Notes/Offline.textpack",Pack("draft","offline-new"));var outsideNote=permissionStore.Write("Other/Offline.textpack",Pack("draft","offline-outside"));
  var offlinePermissions=await new SyncEngine(permissionStore,permissionRemote).FilePermissionsAsync(permissionStore.Scan());
  Assert(offlinePermissions[offlineNote.ItemId]&&!offlinePermissions[knownPermission.ItemId]&&!offlinePermissions[outsideNote.ItemId],"offline new folder note editable while omitted known item and outside folder remain readonly");
