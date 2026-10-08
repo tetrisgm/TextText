@@ -2,36 +2,27 @@
 
 ## Installed and live
 
-- Mac: `/Applications/TextText.app` **0.204 (1177)**, source `346ddf0d`.
+- Mac: `/Applications/TextText.app` **0.204 (1178)**, source `889bac73`.
   Native Apple sign-in, three extensions, account and iCloud workspace preserved.
   Save, normal quit/reopen, search and real account Settings passed.
-  [Receipt](verification/2026-10-07-mac-1177-account-settings.md).
-- Oracle: **`texttext-oracle-20261008T002518Z-c5d625b7`**. Account Settings
-  verified in actual Safari and Mac. Backup `texttext-20261008T002625Z-83906e54.dump`;
+  [Receipt](verification/2026-10-07-mac-1178-provider-management.md).
+- Oracle: **`texttext-oracle-20261008T020052Z-889bac73`**. Account Settings
+  verified in actual Safari and Mac. Backup `texttext-20261008T020156Z-3323c000.dump`;
   authenticated read/write/audit smoke passed. Algorave remains active; HAProxy
   unchanged. Hosting/storage remain Oracle; no public desktop release.
-  [Receipt](verification/2026-10-07-account-parity-and-build-gates.md).
-- Windows: installed candidate **`37bde41a123d42b09de28a46dac547fb`**, source
-  `346ddf0d`, at `C:\Users\Shokunin\AppData\Local\Programs\TextText`.
-  Body search and restored content verified; real account Settings check pending.
+  [Receipt](verification/2026-10-07-reconnect-account-management.md).
+- Windows: installed candidate **`c69bcd6c9a17491db56c038836e963a0`**, source
+  `889bac73`, at `C:\Users\Shokunin\AppData\Local\Programs\TextText`.
+  Account Settings, body search, actual single-instance file opening and normal
+  close/reopen passed. Nine markers preserved, outbox empty; reader reopened in
+  1.599 seconds. [Receipt](verification/2026-10-07-windows-desktop-live.md).
 - Active Mac workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Preserve existing files. Only dedicated verification notes changed during tests.
 
-## Next: finish Windows installation
+## Current follow-up
 
-Final candidate **`699cd68d717142d0bbcbae3efd8c0eb5`**, source `035f5fd7`, is
-built and sealed on the PC at `C:\Users\Shokunin\dev\texttext-sync-20261007`.
-It adds guarded same-workspace TextPack opening, single-instance forwarding,
-Open-with registration without overriding defaults, and pinned clean npm setup.
-117 native assertions, 176 shared tests, 28 actual UI checks, recovery and eight
-close/activation checks passed. **Do not rebuild** unless relevant source changes.
-
-Both existing SSH routes (`pc`, `pc-tunnel`) began resetting before commands
-could execute. The final candidate is not installed. When access returns:
-inspect installed receipt and unsaved UI, quit normally, use established installer,
-then verify actual file activation, no duplicate app, account Settings, save/reopen.
-[Windows receipt and candidate details](verification/2026-10-07-windows-desktop-live.md).
+Account-management rollout passed on installed Mac/Windows, Oracle and actual Safari; see [reconnect/account receipt](verification/2026-10-07-reconnect-account-management.md).
 
 ## Changes and durable checks
 
@@ -50,9 +41,9 @@ then verify actual file activation, no duplicate app, account Settings, save/reo
 
 ## Remaining scope and limits
 
-- Connecting additional sign-in providers is not exposed in the new shared
-  Settings yet; current connected providers display correctly. Commercial ChatGPT
-  website sign-in still requires OpenAI registration, which the owner lacks.
+- Settings now exposes account-bound sign-in management. Google is not configured
+  on Oracle; commercial ChatGPT sign-in requires OpenAI registration, which the
+  owner lacks. No real additional provider was linked during verification.
 - Windows arbitrary-workspace file opening, per-image gallery comment anchors,
   and full reference-service visual parity remain beyond this completed batch.
 - Second physical Apple-device iCloud delivery, Windows provider eviction and
