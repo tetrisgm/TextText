@@ -17,7 +17,7 @@ beforeEach(() => {
   mock.identity.mockImplementation(async ({ itemId }) => ({ itemId, relativePath: itemId === id ? "Notes/Note.textpack" : "Private/Secret.textpack", revision: "hash" }));
   mock.comments.mockResolvedValue({ comments: [], nextCursor: null, revision: "hash", relativePath: "Notes/Note.textpack" });
   mock.commentWrite.mockImplementation(async (input) => { await input.beforeCommit("Notes/Note.textpack"); return { status: "written", commentId: input.operationId }; });
-  mock.preview.mockResolvedValue({ title: "Real file", excerpt: "File body needle" });
+  mock.preview.mockResolvedValue({ sourceBytes: 100, document: emptyDocumentSnapshot(), title: "Real file", excerpt: "File body needle" });
   mock.search.mockImplementation(async (_location, entries) => ({ items: entries.map((entry: { relativePath: string }) => ({ path: entry.relativePath, title: "Real file", snippet: "needle" })), truncated: false }));
   mock.read.mockImplementation(async ({ itemId }) => {
     const document = emptyDocumentSnapshot(); document.content.title = itemId === id ? "Real file" : "Private"; document.content.body = "File body needle";
@@ -80,7 +80,7 @@ describe("canonical file MCP read adapter", () => {
   });
   it("rechecks revoked grants after reading metadata and uses shared search", async () => {
     mock.user.mockResolvedValue("guest"); mock.grants.mockResolvedValue([{ id }]);
-    mock.preview.mockImplementation(async () => { mock.grants.mockResolvedValue([]); return { title: "secret", excerpt: "secret" }; });
+    mock.preview.mockImplementation(async () => { mock.grants.mockResolvedValue([]); return { sourceBytes: 100, document: emptyDocumentSnapshot(), title: "secret", excerpt: "secret" }; });
     expect(result(await executeVaultReadTool("list_items", {}, auth)).items).toEqual([]);
     mock.user.mockResolvedValue("owner");
     await executeVaultReadTool("search", { query: "needle" }, auth);

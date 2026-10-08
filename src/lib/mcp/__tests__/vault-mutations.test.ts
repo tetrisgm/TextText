@@ -13,7 +13,7 @@ vi.mock("@/lib/store", async () => {
   const engine = await import("@/sync/engine/store");
   return {
     getUserIdBySub: async () => "actor", getOwnedBlog: async () => ({ handle: "fixture", name: "Fixture" }), getBlogEditRecord: async () => ({ id: "workspace", ownerId: "actor" }),
-    readVaultTextpackIdentity: engine.readVaultTextpackIdentity,
+    readVaultTextpackIdentity: engine.readVaultTextpackIdentity, readVaultTextpack: engine.readVaultTextpack,
     mutateVaultDocument: (input: Parameters<typeof engine.mutateVaultDocument>[0] & { actorUserId: string }) => engine.mutateVaultDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
     writeVaultTextpack: (input: Parameters<typeof engine.writeVaultTextpack>[0] & { actorUserId: string }) => engine.writeVaultTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
   };

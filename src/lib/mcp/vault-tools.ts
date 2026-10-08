@@ -4,9 +4,16 @@ import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-
 import { getOwnedBlog, getBlog, getBlogEditRecord, getUserIdBySub, listVaultTextpacks, readVaultTextpack, readVaultTextpackIdentity, readVaultPreview, searchVaultTextpacks } from "@/lib/store";
 import { activeVaultGrants, roleForVaultItem, roleForVaultFolder } from "@/lib/vault/grants";
 import { openPack } from "@/local-vault/pack";
+import { readVaultPublicationFromPack } from "@/lib/vault/publication";
+import type { DocumentSnapshot } from "@/lib/documents/model";
 import { readDocument } from "@/local-vault/model";
 
 import { VAULT_TOOL_NAMES } from "./vault-contract";
+function summary(id: string, path: string, hash: string, title: string, document: DocumentSnapshot, published = false) {
+  const template = document.presentation.template.id;
+  const kind = template === "texttext.article" ? "article" : template === "texttext.bookmark" ? "bookmark" : template === "texttext.gallery" ? "media_post" : template === "texttext.talk" ? "talk" : "note";
+  return { id, path, slug: id, hash, title, kind, status: published ? "published" : "draft", folder_path: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "" };
+}
 const reads = ["get_workspace", "list_folders", "list_items", "read_item", "search", "list_comments"] as const;
 const json = (value: Record<string, unknown>): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 const error = (text: string): CallToolResult => ({ content: [{ type: "text", text }], isError: true });
@@ -89,7 +96,12 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
       const action = async () => {
         const receipt = await mutateVaultTool(name, args, { ...location, actorUserId: userId, actorType, authorize });
         if (receipt.status === "conflict") throw new Error("The item changed. Read it again before editing.");
-        return { ...receipt, item: { id: receipt.itemId, hash: receipt.revision, path: receipt.relativePath } };
+        const current = await readVaultTextpack({ ...location, itemId: receipt.itemId });
+        if (!current || !await allowedNow({ itemId: receipt.itemId, relativePath: current.relativePath })) throw new Error("Item not found.");
+        const document = readDocument(openPack(current.bytes, current.relativePath, current.revision, receipt.itemId).file);
+        if (!await allowedNow({ itemId: receipt.itemId, relativePath: current.relativePath })) throw new Error("Item not found.");
+        const item = summary(receipt.itemId, current.relativePath, current.revision, document.content.title, document, Boolean(readVaultPublicationFromPack(current.bytes)));
+        return { ...receipt, item, ...(name === "create_item" ? { receipt: { item_id: item.id, kind: item.kind, saved_to: item.folder_path, title: item.title, path: item.path } } : {}) };
       };
       if (name === "create_item" || actorType === "human") return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
@@ -113,7 +125,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
     const opened = openPack(pack.bytes, pack.relativePath, pack.revision, item.itemId);
     const document = readDocument(opened.file);
     if (!await allowedNow({ itemId: item.itemId, relativePath: pack.relativePath })) return null;
-    return { id: item.itemId, path: pack.relativePath, hash: pack.revision, title: document.content.title, body: document.content.body, document, markdown: opened.file.markdown };
+    return { ...summary(item.itemId, pack.relativePath, pack.revision, document.content.title, document, Boolean(readVaultPublicationFromPack(pack.bytes))), body: document.content.body, document, markdown: opened.file.markdown };
   }
   if (name === "read_item") {
     if (typeof args.id !== "string") return error("Item not found.");
@@ -138,15 +150,22 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   const items = [];
   if (name === "search") {
     const found = await searchVaultTextpacks(location, visible, String(args.query));
+    let remainingPreviewBytes = 64 * 1024 * 1024;
+    let previewSkipped = false;
     for (const hit of found.items) {
       const entry = visible.find((item) => item.relativePath === hit.path);
       if (!entry) continue;
       const current = await readVaultTextpackIdentity({ ...location, itemId: entry.itemId });
       if (!current || current.relativePath !== hit.path || current.revision !== entry.revision || !await allowedNow(current)) continue;
-      items.push({ id: entry.itemId, ...hit, hash: current.revision });
+      const preview = await readVaultPreview({ ...location, itemId: entry.itemId, metadataOnly: true, maxBytes: remainingPreviewBytes });
+      if (preview) remainingPreviewBytes -= preview.sourceBytes;
+      else previewSkipped = true;
+      const after = await readVaultTextpackIdentity({ ...location, itemId: entry.itemId });
+      if (!preview || !after || after.revision !== current.revision || after.relativePath !== current.relativePath || !await allowedNow(after)) continue;
+      items.push({ ...hit, ...summary(entry.itemId, after.relativePath, after.revision, preview.title, preview.document, Boolean(preview.publishedAt)) });
       if (items.length >= limit) break;
     }
-    return json({ items, truncated: found.truncated || found.items.length > limit });
+    return json({ query: args.query, results: items, items, truncated: previewSkipped || found.truncated || found.items.length > limit });
   }
   let scanned = 0;
   for (const entry of visible) {

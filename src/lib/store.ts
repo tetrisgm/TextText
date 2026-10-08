@@ -204,11 +204,11 @@ export function readVaultTextpackIdentity(input: Omit<VaultLocation, "onReceipt"
   return readDirectoryTextpackIdentity({ ...input, onReceipt: recordVaultReceipt });
 }
 
-export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> & { itemId: string; metadataOnly?: boolean }) {
+export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> & { itemId: string; metadataOnly?: boolean; maxBytes?: number }) {
   const item = await readVaultTextpack(input);
-  if (!item) return null;
+  if (!item || (input.maxBytes !== undefined && item.bytes.byteLength > input.maxBytes)) return null;
   const { previewTextpack } = await import("./vault/pack-preview.server");
-  return previewTextpack(item.bytes, input.metadataOnly);
+  return { ...await previewTextpack(item.bytes, input.metadataOnly), sourceBytes: item.bytes.byteLength };
 }
 
 export function listVaultFolderViews(input: Omit<VaultLocation, "onReceipt"> & { folder: string }) {

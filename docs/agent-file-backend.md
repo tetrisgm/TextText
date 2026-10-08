@@ -19,3 +19,11 @@ The narrowed schema also identifies the supported fields on implemented commands
 ## Regression evidence
 
 `src/lib/mcp/__tests__/vault-tools.test.ts` covers authoritative identity, item scopes, current file grants, shared search, revision-consistent previews and actual public dispatch. `vault-mutations.test.ts` uses temporary real file workspaces to test public append, lost acknowledgements, operation-key reuse, revoked replay, competing replacements and opaque asset preservation. `vault-agent-presence.test.ts` covers live agent lifecycle and expiry. The sync subsystem's collaboration suite remains the underlying concurrency gate.
+
+Native command responses preserve the shipped Swift decoding contract: item
+identity/title/hash, top-level Markdown, capture destination receipt, and search
+results with kind/status/folder. The mandatory native route regression compiles
+and decodes its actual responses with the production Swift structs on macOS.
+Responses also expose the actual canonical `path`. The older remote CLI path
+cache still constructs a filename from title plus full ID instead of consuming
+that path; this is not a statement that its synthesized filename exists on disk.
