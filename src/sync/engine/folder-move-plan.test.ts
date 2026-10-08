@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { planFolderMove } from "./folder-move-plan";
+import { folderMovePlanHash, planFolderMove } from "./folder-move-plan";
 const base = { source: "Projects/One", destination: "Archive/One", manifestRevision: "a".repeat(64), folders: ["Projects", "Projects/One", "Projects/One/Empty", "Archive"], items: [{ itemId: "stable", relativePath: "Projects/One/Folder view.textpack", revision: "b".repeat(64) }], grants: [] };
 it("plans one subtree transition including empty directories without changing item identities or bytes", () => {
  const plan = planFolderMove(base);
@@ -20,4 +20,14 @@ it.each(["Projects/One/Child", "projects/one", "../Escape", "Archive/.texttext",
 it("fences concurrent authorization edits even when file manifest is unchanged", () => {
  const grant = { id: "grant", path: "Projects", signature: "p", email: "a@example.com", role: "viewer" as const };
  expect(planFolderMove({ ...base, grants: [grant] }).grantsFingerprint).not.toBe(planFolderMove({ ...base, grants: [{ ...grant, role: "editor" }] }).grantsFingerprint);
+});
+it("binds all reviewed changes while accepting JSONB key order and grant input order", () => {
+ const grants = [{id:"z",path:"Archive",signature:"a",email:"reader@example.com",role:"editor" as const},{id:"a",path:"Projects",signature:"p",email:"reader@example.com",role:"viewer" as const}];
+ const plan = planFolderMove({...base,grants});
+ const digest = folderMovePlanHash(plan);
+ expect(folderMovePlanHash(planFolderMove({...base,grants:[...grants].reverse()}))).toBe(digest);
+ expect(folderMovePlanHash(Object.fromEntries(Object.entries(plan).reverse()) as typeof plan)).toBe(digest);
+ for (const changed of [{...plan,items:[]},{...plan,folders:[]},{...plan,addedAccess:[]},{...plan,preserveInherited:[]},{...plan,destination:"Elsewhere"}]) {
+  expect(folderMovePlanHash(changed)).not.toBe(digest);
+ }
 });

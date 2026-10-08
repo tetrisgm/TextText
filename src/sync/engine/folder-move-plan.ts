@@ -23,7 +23,7 @@ export function planFolderMove(input: {
   grants: readonly FolderMoveGrant[];
 }) {
   const source = folder(input.source), destination = folder(input.destination);
-  const grants = input.grants.map(grant => ({ ...grant, email: grant.email.trim().toLowerCase() }));
+  const grants = input.grants.map(grant => ({ ...grant, email: grant.email.trim().toLowerCase() })).sort((a,b) => a.id.localeCompare(b.id));
   const canonical = (value: string) => value.normalize("NFC").toLowerCase();
   if (within(canonical(destination), canonical(source)) || canonical(source) === canonical(destination)) throw Error("Destination must be outside the source folder");
   if (!/^[a-f0-9]{64}$/.test(input.manifestRevision)) throw Error("Invalid manifest revision");
@@ -50,4 +50,14 @@ export function planFolderMove(input: {
     .map(grant => ({ email: grant.email, role: grant.role, via: grant.path }));
   const grantsFingerprint = createHash("sha256").update(JSON.stringify([...grants].sort((a,b) => a.id.localeCompare(b.id)))).digest("hex");
   return { source, destination, manifestRevision: input.manifestRevision, grantsFingerprint, folders, items, movedGrants, preserveInherited, addedAccess };
+}
+
+/** Bind approval and recovery to every planned file and access transition.
+ * Object key order may change after PostgreSQL JSONB round-trips. */
+export function folderMovePlanHash(plan: ReturnType<typeof planFolderMove>): string {
+  const canonical = JSON.stringify(plan, (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+      : value);
+  return createHash("sha256").update(canonical).digest("hex");
 }

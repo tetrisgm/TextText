@@ -28,3 +28,12 @@ Verification on the Mac:
 
 Pending: public immutable move preview and approval adapter, expanded-access
 review, client integration, integrated required gate and live acceptance.
+
+Before public integration, reservation now binds the entire freshly recomputed
+plan to its reviewed hash, including items, empty folders, inherited shares and
+added access. Replays also compare the stored plan. Canonical key ordering keeps
+JSONB round-trips stable, and grant input ordering is deterministic. Engine
+request receipts use the same plan hash. Twelve focused tests passed, including
+real local PostgreSQL rejection before reservation, changed-plan retry rejection,
+unchanged replay without duplicate audits, and reordered object keys. TypeScript
+passed. This follow-up is source-only, not deployed or exposed as a command.

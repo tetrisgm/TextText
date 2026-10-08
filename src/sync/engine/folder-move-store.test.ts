@@ -22,6 +22,9 @@ it("recovers one subtree move with stable pack identity/default bytes, empty fol
   expect(after.folders).toContain("Archive/Moved/Empty");expect(after.folders).not.toContain("Source");
   const item=await readVaultTextpack({...context,itemId:"item-1"});expect(item?.relativePath).toBe("Archive/Moved/Folder view.textpack");expect(Buffer.from(item!.bytes)).toEqual(Buffer.from(bytes));
   expect(await moveVaultFolder(request)).toEqual({status:"folder_moved",relativePath:"Archive/Moved"});expect(audit.size).toBe(1);
+  const reordered=Object.fromEntries(Object.entries(plan).reverse()) as typeof plan;
+  expect(await moveVaultFolder({...request,plan:reordered})).toEqual({status:"folder_moved",relativePath:"Archive/Moved"});expect(audit.size).toBe(1);
+  await expect(moveVaultFolder({...request,plan:{...plan,items:[]}})).rejects.toThrow("Operation id was reused");
   await expect(moveVaultFolder({...request,authorize:async()=>{throw Error("Revoked");}})).rejects.toThrow("Revoked");
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });

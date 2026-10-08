@@ -1,6 +1,6 @@
 import { applyFolderMoveIntent, type FolderMoveIntent } from "./folder-move-operation";
 import { snapshotFolderTree, verifyFolderParents } from "./folder-move-filesystem";
-import type { planFolderMove } from "./folder-move-plan";
+import { folderMovePlanHash, type planFolderMove } from "./folder-move-plan";
 import { detachDocumentAsset } from "@/lib/vault/asset-detachment";
 import { assetCommandPayload, type VaultAssetAttachment } from "@/lib/vault/asset-command";
 import { extractFolderViewMetadata, FolderViewMetadataCache } from "@/local-vault/folder-view-metadata";
@@ -2402,7 +2402,7 @@ async function applySubtreeMove(layout: Layout, intent: FolderMoveIntent, pendin
 export async function moveVaultFolder(input:VaultLocation & {operationId:string;plan:ReturnType<typeof planFolderMove>;actorUserId:string;actorType:"human"|"external_agent";authorize:()=>Promise<void>}):Promise<VaultFolderResult>{
  if(!input.onReceipt||!input.onFolderMove)throw Error("Folder move requires metadata and audit coordinators");
  segment(input.operationId);const layout=await setup(input);
- const requestHash=hash(json(["move_folder",input.plan,input.actorUserId,input.actorType]));
+ const requestHash=hash(json(["move_folder",folderMovePlanHash(input.plan),input.actorUserId,input.actorType]));
  return locked(layout,async()=>{
   await input.authorize();if(!input.receiptOnly)await recover(layout);
   const saved=await maybeRead(path.join(layout.receipts,`${input.operationId}.json`));

@@ -81,6 +81,8 @@
   canonical agents until this is complete; do not compose partial per-item moves.
   Engine recovery and store coordinator are now implemented and focused-tested;
   public approval/client integration remains pending.
+  Reservation and receipt replay now bind the full reviewed plan, with twelve
+  focused tests and TypeScript passing; this follow-up remains source-only.
   [Source evidence](verification/2026-10-08-folder-move-recovery-source.md).
 
 

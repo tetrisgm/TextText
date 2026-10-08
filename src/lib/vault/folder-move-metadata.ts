@@ -2,7 +2,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db/client";
 import { vaultGrants, vaultFolderMoves } from "@/lib/db/schema";
-import { planFolderMove, type FolderMoveGrant, type FolderMoveItem } from "@/sync/engine/folder-move-plan";
+import { folderMovePlanHash, planFolderMove, type FolderMoveGrant, type FolderMoveItem } from "@/sync/engine/folder-move-plan";
 import { vaultFolderSignature } from "./folder-identity";
 import { normalizeAccessEmail } from "@/lib/permissions";
 
@@ -47,6 +47,7 @@ export async function reserveFolderMove(input: {
  root: string; workspaceId: string; actorUserId: string; operationId: string; requestHash: string;
  source: string; destination: string; manifestRevision: string; folders: string[]; items: FolderMoveItem[];
  expectedGrantsFingerprint: string;
+ expectedPlanHash: string;
 }) {
  if (!db) throw Error("Sharing requires the database");
  return db.transaction(async tx => {
@@ -54,12 +55,14 @@ export async function reserveFolderMove(input: {
   const [prior] = await tx.select().from(vaultFolderMoves).where(and(eq(vaultFolderMoves.workspaceId,input.workspaceId),eq(vaultFolderMoves.operationId,input.operationId)));
   if (prior) {
    if(prior.requestHash!==input.requestHash || prior.actorUserId!==input.actorUserId) throw Error("Operation id was reused");
+   if(folderMovePlanHash(prior.plan as Plan)!==input.expectedPlanHash) throw Error("Reviewed folder move changed");
    if(prior.status==="aborted") throw Error("Folder move was cancelled");
    return prior.plan as Plan;
   }
   await assertNoReservedFolderMove(tx,input.workspaceId);
   const plan=await folderMovePreview(tx,input);
   if(plan.grantsFingerprint!==input.expectedGrantsFingerprint) throw Error("Folder access changed. Review the move again.");
+  if(folderMovePlanHash(plan)!==input.expectedPlanHash) throw Error("Reviewed folder move changed");
   await tx.insert(vaultFolderMoves).values({workspaceId:input.workspaceId,operationId:input.operationId,requestHash:input.requestHash,actorUserId:input.actorUserId,plan});
   return plan;
  });
@@ -99,7 +102,7 @@ export async function abortFolderMoveMetadata(input:{workspaceId:string;operatio
 
 export async function coordinateFolderMove(root:string,intent:import("@/sync/engine/folder-move-operation").FolderMoveIntent,phase:"reserve"|"complete"|"abort") {
  const identity={workspaceId:intent.workspaceId,operationId:intent.operationId,requestHash:intent.requestHash};
- if(phase==="reserve") { await reserveFolderMove({...intent.plan,...intent.manifest,...identity,root,actorUserId:intent.actorUserId,expectedGrantsFingerprint:intent.plan.grantsFingerprint});return; }
+ if(phase==="reserve") { await reserveFolderMove({...intent.plan,...intent.manifest,...identity,root,actorUserId:intent.actorUserId,expectedGrantsFingerprint:intent.plan.grantsFingerprint,expectedPlanHash:folderMovePlanHash(intent.plan)});return; }
  if(phase==="abort") return abortFolderMoveMetadata(identity);
  const rootSignature=await vaultFolderSignature(root,intent.workspaceId,intent.plan.destination);
  if(!rootSignature)throw Error("Moved folder identity unavailable");

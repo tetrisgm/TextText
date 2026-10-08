@@ -11,7 +11,7 @@ it.skipIf(!enabled)("reserves grant metadata durably and blocks revocation until
  const {reserveFolderMove,completeFolderMoveMetadata,abortFolderMoveMetadata,previewFolderMoveMetadata}=await import("./folder-move-metadata");
  const {changeVaultGrant}=await import("./grants");
  const {vaultFolderSignature}=await import("./folder-identity");
- const {planFolderMove}=await import("@/sync/engine/folder-move-plan");
+ const {planFolderMove,folderMovePlanHash}=await import("@/sync/engine/folder-move-plan");
  const root=await fs.mkdtemp(path.join(os.tmpdir(),"texttext-move-db-")),workspaceId=crypto.randomUUID(),actorUserId=crypto.randomUUID(),grantId=crypto.randomUUID();
  try{
   await db.insert(users).values({id:actorUserId,name:"Move fixture"});await db.insert(blogs).values({id:workspaceId,ownerId:actorUserId,handle:`move-${workspaceId}`,name:"Move fixture"});
@@ -20,11 +20,14 @@ it.skipIf(!enabled)("reserves grant metadata durably and blocks revocation until
   await db.insert(vaultGrants).values({id:grantId,workspaceId,scopeType:"folder",scopeKey:"Projects",folderSignature:signature,invitedEmail:"reader@example.com",role:"viewer",invitedById:actorUserId});
   const tree={source:"Projects/One",destination:"Archive/One",manifestRevision:"a".repeat(64),folders:["Projects","Projects/One","Projects/One/Empty","Archive"],items:[]};
   const plan=planFolderMove({...tree,grants:[{id:grantId,path:"Projects",signature,email:"reader@example.com",role:"viewer"}]});
-  const request={...tree,root,workspaceId,actorUserId,operationId:"fixture",requestHash:"b".repeat(64),expectedGrantsFingerprint:plan.grantsFingerprint};
+  const request={...tree,root,workspaceId,actorUserId,operationId:"fixture",requestHash:"b".repeat(64),expectedGrantsFingerprint:plan.grantsFingerprint,expectedPlanHash:folderMovePlanHash(plan)};
   expect(await previewFolderMoveMetadata(request)).toEqual(plan);
   expect(await db.select().from(vaultFolderMoves).where(eq(vaultFolderMoves.workspaceId,workspaceId))).toHaveLength(0);
   await expect(previewFolderMoveMetadata({...request,actorUserId:crypto.randomUUID()})).rejects.toThrow("Only the workspace owner");
+  await expect(reserveFolderMove({...request,expectedPlanHash:folderMovePlanHash({...plan,preserveInherited:[]})})).rejects.toThrow("Reviewed folder move changed");
+  expect(await db.select().from(vaultFolderMoves).where(eq(vaultFolderMoves.workspaceId,workspaceId))).toHaveLength(0);
   expect(await reserveFolderMove(request)).toEqual(plan);
+  await expect(reserveFolderMove({...request,expectedPlanHash:"f".repeat(64)})).rejects.toThrow("Reviewed folder move changed");
   await expect(changeVaultGrant({root,workspaceId,actorUserId,scope:{type:"folder",key:"Projects"},grantId,revoke:true})).rejects.toThrow("being recovered");
   expect(await reserveFolderMove(request)).toEqual(plan);
   await fs.rename(path.join(root,workspaceId,"Projects/One"),path.join(root,workspaceId,"Archive/One"));
@@ -37,7 +40,7 @@ it.skipIf(!enabled)("reserves grant metadata durably and blocks revocation until
   const nextTree={source:"Archive/One",destination:"Projects/Back",manifestRevision:"c".repeat(64),folders:["Projects","Archive","Archive/One","Archive/One/Empty"],items:[]};
   const nextGrants=rows.map(row=>({id:row.id,path:row.scopeKey,signature:row.folderSignature!,email:row.invitedEmail,role:row.role as "viewer"}));
   const nextPlan=planFolderMove({...nextTree,grants:nextGrants});
-  const next={...nextTree,root,workspaceId,actorUserId,operationId:"abort-fixture",requestHash:"d".repeat(64),expectedGrantsFingerprint:nextPlan.grantsFingerprint};
+  const next={...nextTree,root,workspaceId,actorUserId,operationId:"abort-fixture",requestHash:"d".repeat(64),expectedGrantsFingerprint:nextPlan.grantsFingerprint,expectedPlanHash:folderMovePlanHash(nextPlan)};
   await reserveFolderMove(next);
   await abortFolderMoveMetadata({...next,requestHash:"e".repeat(64)});
   await expect(changeVaultGrant({root,workspaceId,actorUserId,scope:{type:"folder",key:"Projects"},grantId,revoke:true})).rejects.toThrow("being recovered");
