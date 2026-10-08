@@ -90,7 +90,10 @@
   commits its receipt in the same TextPack replacement; reopen/later-edit retry
   and payload mismatch regression passed. Web package rebuild, Windows core
   rewrite and shared server/agent mutation receipt preservation regressions
-  passed. Installed-client round trip remains unverified.
+  passed. Installed Mac 1208/updated CLI round trip passed: keyed append, later app
+  edit, fresh-process retry with unchanged hash/identity and one append, and
+  changed-payload rejection without a write. Windows/web delivery remains
+  unverified. Previous CLI binary retained; no persistent job installed.
   [Receipt](verification/2026-10-08-local-append-idempotency.md).
   Storage/CLI suites passed 84 tests. Bundled editor smoke now passes with
   current account/cached-permission fixture semantics; the earlier failure was
