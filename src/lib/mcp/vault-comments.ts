@@ -3,6 +3,7 @@ import { listVaultItemComments, mutateVaultItemComments } from "@/lib/store";
 import type { VaultCommentMutation, VaultItemComment } from "@/lib/vault/item-comments";
 export type VaultCommentContext = {
   root: string; workspaceId: string; actorUserId: string; actorName: string;
+  actorType?: "human" | "external_agent";
   /** Stable UUID from the authenticated request, reused on retry. */
   operationId: string;
   authorize: (itemId: string, path: string, write: boolean) => Promise<void>;
@@ -47,6 +48,6 @@ export async function executeVaultCommentTool(name: string, args: Record<string,
     operationId = `${seed.slice(0,8)}-${seed.slice(8,12)}-4${seed.slice(13,16)}-8${seed.slice(17,20)}-${seed.slice(20,32)}`;
   }
   return mutateVaultItemComments({ ...location, operationId, mutation,
-    actor: { userId: context.actorUserId, name: context.actorName, type: "external_agent" },
+    actor: { userId: context.actorUserId, name: context.actorName, type: context.actorType ?? "external_agent" },
     beforeCommit: path => context.authorize(itemId, path, true) });
 }

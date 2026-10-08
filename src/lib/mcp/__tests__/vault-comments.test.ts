@@ -39,3 +39,12 @@ it("real TextPack comment store replays lost acknowledgement once and resolves a
   const open=await executeVaultCommentTool("list_comments",{id:"item",state:"open"},input);expect("comments" in open&&open.comments).toEqual([]);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+it("preserves trusted human comment attribution and rejects caller actor overrides", async () => {
+ const input = { ...context(), actorType: "human" as const, actorName: "Signed-in person" };
+ store.mutateVaultItemComments.mockResolvedValue({ commentId: "created" });
+ await executeVaultCommentTool("add_comment", { id: "item", body: "My comment" }, input);
+ expect(store.mutateVaultItemComments.mock.calls[0][0].actor).toEqual({ userId: "trusted-user", name: "Signed-in person", type: "human" });
+ await expect(executeVaultCommentTool("add_comment", { id: "item", body: "Impersonation", actorType: "human" }, context())).rejects.toThrow("fields");
+ expect(store.mutateVaultItemComments).toHaveBeenCalledTimes(1);
+});
