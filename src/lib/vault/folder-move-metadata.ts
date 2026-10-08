@@ -70,3 +70,20 @@ export async function completeFolderMoveMetadata(input:{workspaceId:string;opera
   await tx.update(vaultFolderMoves).set({status:"applied",completedAt:new Date()}).where(and(eq(vaultFolderMoves.workspaceId,input.workspaceId),eq(vaultFolderMoves.operationId,input.operationId)));
  });
 }
+
+export async function abortFolderMoveMetadata(input:{workspaceId:string;operationId:string;requestHash:string}) {
+ if(!db)throw Error("Sharing requires the database");
+ await db.transaction(async tx=>{
+  await tx.execute(sql`SELECT id FROM blogs WHERE id=${input.workspaceId}::uuid FOR UPDATE`);
+  await tx.update(vaultFolderMoves).set({status:"aborted",completedAt:new Date()}).where(and(eq(vaultFolderMoves.workspaceId,input.workspaceId),eq(vaultFolderMoves.operationId,input.operationId),eq(vaultFolderMoves.requestHash,input.requestHash),eq(vaultFolderMoves.status,"reserved")));
+ });
+}
+
+export async function coordinateFolderMove(root:string,intent:import("@/sync/engine/folder-move-operation").FolderMoveIntent,phase:"reserve"|"complete"|"abort") {
+ const identity={workspaceId:intent.workspaceId,operationId:intent.operationId,requestHash:intent.requestHash};
+ if(phase==="reserve") { await reserveFolderMove({...intent.plan,...intent.manifest,...identity,root,actorUserId:intent.actorUserId,expectedGrantsFingerprint:intent.plan.grantsFingerprint});return; }
+ if(phase==="abort") return abortFolderMoveMetadata(identity);
+ const rootSignature=await vaultFolderSignature(root,intent.workspaceId,intent.plan.destination);
+ if(!rootSignature)throw Error("Moved folder identity unavailable");
+ await completeFolderMoveMetadata({...identity,rootSignature});
+}

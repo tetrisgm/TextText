@@ -8,7 +8,7 @@ it.skipIf(!enabled)("reserves grant metadata durably and blocks revocation until
  if(!["localhost","127.0.0.1","[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname))throw Error("Local PostgreSQL only");
  const {db}=await import("@/lib/db/client");if(!db)throw Error("Missing database");
  const {users,blogs,vaultGrants,vaultFolderMoves,actionAudit}=await import("@/lib/db/schema");
- const {reserveFolderMove,completeFolderMoveMetadata}=await import("./folder-move-metadata");
+ const {reserveFolderMove,completeFolderMoveMetadata,abortFolderMoveMetadata}=await import("./folder-move-metadata");
  const {changeVaultGrant}=await import("./grants");
  const {vaultFolderSignature}=await import("./folder-identity");
  const {planFolderMove}=await import("@/sync/engine/folder-move-plan");
@@ -29,7 +29,19 @@ it.skipIf(!enabled)("reserves grant metadata durably and blocks revocation until
   await completeFolderMoveMetadata(completion);await completeFolderMoveMetadata(completion);
   const rows=await db.select().from(vaultGrants).where(eq(vaultGrants.workspaceId,workspaceId));
   expect(rows).toHaveLength(2);expect(rows.find(row=>row.scopeKey==="Archive/One")).toMatchObject({invitedEmail:"reader@example.com",userId:null,role:"viewer",folderSignature:completion.rootSignature});
+  // An abort must release the sharing fence without rewriting or resurrecting
+  // grants. Repeating the abort is harmless, and its operation ID stays retired.
+  const nextTree={source:"Archive/One",destination:"Projects/Back",manifestRevision:"c".repeat(64),folders:["Projects","Archive","Archive/One","Archive/One/Empty"],items:[]};
+  const nextGrants=rows.map(row=>({id:row.id,path:row.scopeKey,signature:row.folderSignature!,email:row.invitedEmail,role:row.role as "viewer"}));
+  const nextPlan=planFolderMove({...nextTree,grants:nextGrants});
+  const next={...nextTree,root,workspaceId,actorUserId,operationId:"abort-fixture",requestHash:"d".repeat(64),expectedGrantsFingerprint:nextPlan.grantsFingerprint};
+  await reserveFolderMove(next);
+  await abortFolderMoveMetadata({...next,requestHash:"e".repeat(64)});
+  await expect(changeVaultGrant({root,workspaceId,actorUserId,scope:{type:"folder",key:"Projects"},grantId,revoke:true})).rejects.toThrow("being recovered");
+  await abortFolderMoveMetadata(next);await abortFolderMoveMetadata(next);
+  await expect(reserveFolderMove(next)).rejects.toThrow("cancelled");
   expect(await changeVaultGrant({root,workspaceId,actorUserId,scope:{type:"folder",key:"Projects"},grantId,revoke:true})).toBe(true);
+  expect((await db.select().from(vaultGrants).where(eq(vaultGrants.workspaceId,workspaceId))).find(row=>row.scopeKey==="Archive/One")).toMatchObject({role:"viewer",revokedAt:null});
  }finally{
   await db.delete(vaultFolderMoves).where(eq(vaultFolderMoves.workspaceId,workspaceId));await db.delete(vaultGrants).where(eq(vaultGrants.workspaceId,workspaceId));await db.delete(actionAudit).where(eq(actionAudit.actorUserId,actorUserId));await db.delete(blogs).where(eq(blogs.id,workspaceId));await db.delete(users).where(eq(users.id,actorUserId));await fs.rm(root,{recursive:true,force:true});
  }

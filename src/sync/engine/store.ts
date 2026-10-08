@@ -1,3 +1,6 @@
+import { applyFolderMoveIntent, type FolderMoveIntent } from "./folder-move-operation";
+import { snapshotFolderTree, verifyFolderParents } from "./folder-move-filesystem";
+import type { planFolderMove } from "./folder-move-plan";
 import { detachDocumentAsset } from "@/lib/vault/asset-detachment";
 import { assetCommandPayload, type VaultAssetAttachment } from "@/lib/vault/asset-command";
 import { extractFolderViewMetadata, FolderViewMetadataCache } from "@/local-vault/folder-view-metadata";
@@ -37,6 +40,7 @@ export interface VaultLocation {
   /** Required when replaying a mutation containing an audit actor. The durable
    * receipt stays pending until this idempotent metadata sink succeeds. */
   onReceipt?: (receipt: VaultMutationReceipt) => Promise<void>;
+  onFolderMove?: (intent: FolderMoveIntent, phase: "reserve" | "complete" | "abort") => Promise<void>;
 }
 export interface VaultWrite extends VaultLocation {
   beforeCommit?: (relativePath: string) => Promise<void>;
@@ -87,7 +91,7 @@ interface Intent {
   commentAction?: "vault.comment.create" | "vault.comment.reply" | "vault.comment.resolve" | "vault.comment.reopen";
   publicationAction?: "vault.publish" | "vault.unpublish";
 }
-export type VaultFolderResult = { status: "folder_created"; relativePath: string };
+export type VaultFolderResult = { status: "folder_created"; relativePath: string } | { status: "folder_moved"; relativePath: string };
 interface FolderIntent { kind: "create_folder"; workspaceId: string; operationId: string; relativePath: string; requestHash: string; audit: NonNullable<VaultWrite["audit"]> }
 export interface VaultMutationReceipt {
   workspaceId: string; operationId: string;
@@ -209,7 +213,7 @@ async function setup(location: VaultLocation) {
   const removed = await directory(control, "removed");
   const collaboration = await directory(control, "collaboration");
   const presence = await directory(control, "presence");
-  return { workspace, control, pending, receipts, items, conflicts, locks, history, removed, collaboration, presence, onReceipt: location.onReceipt };
+  return { workspace, control, pending, receipts, items, conflicts, locks, history, removed, collaboration, presence, onReceipt: location.onReceipt, onFolderMove: location.onFolderMove };
 }
 type Layout = Awaited<ReturnType<typeof setup>>;
 
@@ -680,8 +684,9 @@ async function recover(layout: Layout): Promise<void> {
     const saved = await maybeRead(path.join(pendingDir, "intent.json"));
     // A payload without a committed intent never changed a visible document.
     if (!saved) { await fs.rm(pendingDir, { recursive: true }); continue; }
-    const intent = JSON.parse(saved.toString()) as Intent | EntryIntent | RestoreIntent | FolderIntent;
-    if ("kind" in intent && intent.kind === "create_folder") await applyFolder(layout, intent, pendingDir);
+    const intent = JSON.parse(saved.toString()) as Intent | EntryIntent | RestoreIntent | FolderIntent | FolderMoveIntent;
+    if ("kind" in intent && intent.kind === "move_folder") await applySubtreeMove(layout, intent, pendingDir);
+    else if ("kind" in intent && intent.kind === "create_folder") await applyFolder(layout, intent, pendingDir);
     else if ("kind" in intent && intent.kind === "restore") await applyRestore(layout, intent, pendingDir);
     else if ("kind" in intent) await applyEntry(layout, intent, pendingDir);
     else await apply(layout, intent, pendingDir);
@@ -2168,8 +2173,9 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
   problems: { relativePath: string; reason: string }[];
 }> {
   const layout = await setup(input);
-  return locked(layout, async () => {
-    await recover(layout);
+  return locked(layout, async () => { await recover(layout); return manifestSnapshot(layout); });
+}
+async function manifestSnapshot(layout: Layout) {
     const folders: string[] = [];
     const problems = await discoverFiles(layout, folders);
     folders.sort();
@@ -2219,7 +2225,7 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
       items.push({ itemId: item.itemId, relativePath: item.relativePath, revision, ...generation });
     }
     return { items, tombstones, folders, problems, revision: hash(json([items, tombstones, folders, problems])) };
-  });
+
 }
 
 async function discoverFiles(layout: Layout, folders: string[]): Promise<{ relativePath: string; reason: string }[]> {
@@ -2358,4 +2364,56 @@ export async function waitVaultCollaboration(input: VaultLocation & {
     watcher.close();
     signal.removeEventListener("abort", wake);
   }
+}
+
+async function applySubtreeMove(layout: Layout, intent: FolderMoveIntent, pendingDir: string): Promise<VaultFolderResult> {
+ if (!layout.onFolderMove) throw Error("Folder move metadata coordinator is unavailable");
+ const receiptPath=path.join(layout.receipts,`${segment(intent.operationId)}.json`);
+ const saved=await maybeRead(receiptPath);
+ if(saved){const receipt=JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;if(receipt.requestHash!==intent.requestHash)throw Error("Operation id was reused");await deliverReceipt(layout,receipt);await fs.rm(pendingDir,{recursive:true});return receipt.result;}
+ const result:VaultFolderResult={status:"folder_moved",relativePath:intent.plan.destination};
+ try { await applyFolderMoveIntent(intent,{workspace:layout.workspace,pendingDirectory:pendingDir,metadata:layout.onFolderMove,sync:syncDirectory,finish:async()=>{
+  for(const item of intent.plan.items){
+   const target=await targetPath(layout,item.destination);const info=await fingerprint(target);
+   if(!info)throw Error("Moved item is unavailable");
+   const metadataPath=path.join(layout.items,`${segment(item.itemId)}.json`);
+   const previous=JSON.parse((await fs.readFile(metadataPath)).toString());
+   await atomicWrite(metadataPath,json({...previous,relativePath:item.destination,fingerprint:info}));
+  }
+  const receipt:Receipt<VaultFolderResult>={requestHash:intent.requestHash,result,mutation:{workspaceId:intent.workspaceId,operationId:intent.operationId,actorUserId:intent.actorUserId,actorType:intent.actorType,result}};
+  await atomicWrite(receiptPath,json(receipt));await deliverReceipt(layout,receipt);
+ }}); } catch (error) {
+  // A rejected pre-publication move releases its metadata reservation only
+  // when the original directory object is still at the original path.
+  const staged = await fs.lstat(path.join(pendingDir, "tree")).catch(() => null);
+  const source = await verifyFolderParents(layout.workspace, intent.plan.source);
+  const currentTree = await snapshotFolderTree(source).catch(() => null);
+  if (!staged && currentTree?.entries[0]?.identity === intent.treeIdentity) {
+   await layout.onFolderMove(intent, "abort");
+   await fs.rm(pendingDir, { recursive: true }); await syncDirectory(layout.pending);
+  }
+  throw error;
+ }
+ await fs.rm(pendingDir,{recursive:true});await syncDirectory(layout.pending);return result;
+}
+
+/** Owner-authorized immutable plan; no public adapter enables this until the
+ * grant reservation and explicit expanded-access review are available. */
+export async function moveVaultFolder(input:VaultLocation & {operationId:string;plan:ReturnType<typeof planFolderMove>;actorUserId:string;actorType:"human"|"external_agent";authorize:()=>Promise<void>}):Promise<VaultFolderResult>{
+ if(!input.onReceipt||!input.onFolderMove)throw Error("Folder move requires metadata and audit coordinators");
+ segment(input.operationId);const layout=await setup(input);
+ const requestHash=hash(json(["move_folder",input.plan,input.actorUserId,input.actorType]));
+ return locked(layout,async()=>{
+  await input.authorize();if(!input.receiptOnly)await recover(layout);
+  const saved=await maybeRead(path.join(layout.receipts,`${input.operationId}.json`));
+  if(saved){const receipt=JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;if(receipt.requestHash!==requestHash)throw Error("Operation id was reused");if(!input.receiptOnly)await deliverReceipt(layout,receipt);return receipt.result;}
+  if(input.receiptOnly)throw Error("No completed receipt exists for this approved operation.");
+  const current=await manifestSnapshot(layout);
+  if(current.revision!==input.plan.manifestRevision)throw Error("Workspace changed. Review the folder move again.");
+  const source=await verifyFolderParents(layout.workspace,input.plan.source);
+  const tree=await snapshotFolderTree(source);await input.authorize();
+  const intent:FolderMoveIntent={kind:"move_folder",workspaceId:input.workspaceId,operationId:input.operationId,requestHash,actorUserId:input.actorUserId,actorType:input.actorType,plan:input.plan,manifest:{folders:current.folders,items:current.items},treeHash:tree.hash,treeIdentity:tree.entries[0].identity};
+  const pendingDir=await directory(layout.pending,input.operationId);await atomicWrite(path.join(pendingDir,"intent.json"),json(intent));await syncDirectory(layout.pending);
+  return applySubtreeMove(layout,intent,pendingDir);
+ });
 }

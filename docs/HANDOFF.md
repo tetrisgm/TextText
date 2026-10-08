@@ -56,6 +56,9 @@
 - Durable folder move/rename is being implemented with filesystem recovery and
   coordinated grant migration. Legacy SQL folder commands remain unavailable to
   canonical agents until this is complete; do not compose partial per-item moves.
+  Engine recovery and store coordinator are now implemented and focused-tested;
+  public approval/client integration remains pending.
+  [Source evidence](verification/2026-10-08-folder-move-recovery-source.md).
 
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.

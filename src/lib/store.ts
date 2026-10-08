@@ -1,3 +1,5 @@
+import { coordinateFolderMove } from "./vault/folder-move-metadata";
+import type { FolderMoveIntent } from "@/sync/engine/folder-move-operation";
 import { provisionFileWorkspace } from "@/lib/vault/provision-workspace";
 import { validatedLookSource } from "./presentation/template-library";
 import { searchVaultPack } from "./vault/pack-search.server";
@@ -59,6 +61,10 @@ import { agentChanges } from "./db/schema";
 
 const NO_DATABASE = "TextText requires DATABASE_URL";
 
+function folderMoveCoordinator(root: string) {
+  return { onReceipt: recordVaultReceipt, onFolderMove: (intent: FolderMoveIntent, phase: "reserve" | "complete" | "abort") => coordinateFolderMove(root, intent, phase) };
+}
+
 // The file receipt is a durable audit outbox. Deterministic audit IDs let a
 // restarted writer replay it without duplicate rows or database content copies.
 async function recordVaultReceipt(receipt: VaultMutationReceipt): Promise<void> {
@@ -69,11 +75,11 @@ async function recordVaultReceipt(receipt: VaultMutationReceipt): Promise<void> 
     id,
     actorUserId: receipt.actorUserId,
     actorType: receipt.actorType,
-    actionName: receipt.actionName ?? ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete", restored: "vault.restore", folder_created: "vault.folder.create" })[receipt.result.status],
-    targetType: receipt.result.status === "folder_created" ? "folder" : "item",
-    targetId: receipt.result.status === "folder_created" ? `${receipt.workspaceId}:${receipt.result.relativePath}` : receipt.actionName ? `${receipt.workspaceId}:${receipt.result.itemId}` : receipt.result.itemId,
+    actionName: receipt.actionName ?? ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete", restored: "vault.restore", folder_created: "vault.folder.create", folder_moved: "vault.folder.move" })[receipt.result.status],
+    targetType: (receipt.result.status === "folder_created" || receipt.result.status === "folder_moved") ? "folder" : "item",
+    targetId: (receipt.result.status === "folder_created" || receipt.result.status === "folder_moved") ? `${receipt.workspaceId}:${receipt.result.relativePath}` : receipt.actionName ? `${receipt.workspaceId}:${receipt.result.itemId}` : receipt.result.itemId,
     inputSummary: `operation ${receipt.operationId}`,
-    outputSummary: receipt.result.status === "folder_created" ? `folder ${receipt.result.relativePath}` : `revision ${receipt.result.revision ?? "none"}`,
+    outputSummary: (receipt.result.status === "folder_created" || receipt.result.status === "folder_moved") ? `folder ${receipt.result.relativePath}` : `revision ${receipt.result.revision ?? "none"}`,
   }).onConflictDoNothing({ target: actionAudit.id });
 }
 
@@ -84,23 +90,23 @@ export function writeVaultTextpack(input: Omit<VaultWrite, "onReceipt" | "audit"
   if (!db) throw new Error(NO_DATABASE);
   return writeDirectoryTextpack({ ...input,
     audit: { actorUserId: input.actorUserId, actorType: input.actorType },
-    onReceipt: recordVaultReceipt,
+    ...folderMoveCoordinator(input.root),
   });
 }
 
 export function readVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return readDirectoryCollaboration({ ...input, onReceipt: recordVaultReceipt });
+  return readDirectoryCollaboration({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export function readVaultPresence(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return readDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+  return readDirectoryPresence({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export async function listVaultItemComments(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; limit?: number; after?: string | null;
 }) {
   if (!db) throw new Error(NO_DATABASE);
-  const item = await readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
+  const item = await readDirectoryTextpack({ ...input, ...folderMoveCoordinator(input.root) });
   return item ? { ...readVaultItemCommentsFromPack(item.bytes, input.itemId, input.limit, input.after),
     relativePath: item.relativePath, revision: item.revision } : null;
 }
@@ -109,11 +115,11 @@ export function mutateVaultItemComments(input: Omit<VaultLocation, "onReceipt"> 
   beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
 }) {
   if (!db) throw new Error(NO_DATABASE);
-  return mutateDirectoryItemComments({ ...input, onReceipt: recordVaultReceipt });
+  return mutateDirectoryItemComments({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export async function readVaultPublication(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  const item = await readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
+  const item = await readDirectoryTextpack({ ...input, ...folderMoveCoordinator(input.root) });
   return item ? { itemId: input.itemId, relativePath: item.relativePath, revision: item.revision,
     publication: readVaultPublicationFromPack(item.bytes) } : null;
 }
@@ -125,7 +131,7 @@ export function mutateVaultPublication(input: Omit<VaultLocation, "onReceipt"> &
   if (!db) throw new Error(NO_DATABASE);
   return mutateDirectoryPublication({ ...input,
     audit: { actorUserId: input.actorUserId, actorType: input.actorType },
-    onReceipt: recordVaultReceipt });
+    ...folderMoveCoordinator(input.root) });
 }
 /** Public file-vault reads use only the current TextPack and its explicit marker.
  * The private archive, comments, source metadata and unbound fields never leave
@@ -134,7 +140,7 @@ export async function readPublicVaultItem(input: { workspaceId: string; itemId: 
   if (!db) throw new Error(NO_DATABASE);
   const root = process.env.TEXTTEXT_VAULT_ROOT;
   if (!root || !await getVaultWorkspaceIdentity(input.workspaceId)) return null;
-  const item = await readDirectoryTextpack({ root, ...input, onReceipt: recordVaultReceipt });
+  const item = await readDirectoryTextpack({ root, ...input, ...folderMoveCoordinator(root) });
   if (!item) return null;
   try { return publishedVaultView(item.bytes, input.workspaceId, input.itemId); }
   catch { return null; }
@@ -143,7 +149,7 @@ export async function readPublicVaultAsset(input: { workspaceId: string; itemId:
   if (!db) throw new Error(NO_DATABASE);
   const root = process.env.TEXTTEXT_VAULT_ROOT;
   if (!root || !await getVaultWorkspaceIdentity(input.workspaceId)) return null;
-  const item = await readDirectoryTextpack({ root, workspaceId: input.workspaceId, itemId: input.itemId, onReceipt: recordVaultReceipt });
+  const item = await readDirectoryTextpack({ root, workspaceId: input.workspaceId, itemId: input.itemId, ...folderMoveCoordinator(root) });
   if (!item) return null;
   try { return publishedVaultAsset(item.bytes, input.workspaceId, input.itemId, input.assetPath); }
   catch { return null; }
@@ -156,23 +162,23 @@ type PresenceIdentity = {
 };
 export function joinVaultPresence(input: Omit<VaultLocation, "onReceipt"> & PresenceIdentity) {
   if (!db) throw new Error(NO_DATABASE);
-  return joinDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+  return joinDirectoryPresence({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export function updateVaultPresence(input: Omit<VaultLocation, "onReceipt"> & PresenceIdentity & { awareness: string | null }) {
   if (!db) throw new Error(NO_DATABASE);
-  return updateDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+  return updateDirectoryPresence({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export function leaveVaultPresence(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; clientId: string; principal: string; epoch: number; beforeCommit?: (relativePath: string) => Promise<void>;
 }) {
   if (!db) throw new Error(NO_DATABASE);
-  return leaveDirectoryPresence({ ...input, onReceipt: recordVaultReceipt });
+  return leaveDirectoryPresence({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export function waitVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; epoch: number; seq: number; waitMs: number; signal?: AbortSignal;
 }) {
   if (!db) throw new Error(NO_DATABASE);
-  return waitDirectoryCollaboration({ ...input, onReceipt: recordVaultReceipt });
+  return waitDirectoryCollaboration({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export function pushVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; operationId: string; epoch: number; updates: string[];
@@ -182,7 +188,7 @@ export function pushVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> &
   if (!db) throw new Error(NO_DATABASE);
   return pushDirectoryCollaboration({ ...input,
     audit: { actorUserId: input.actorUserId, actorType: input.actorType },
-    onReceipt: recordVaultReceipt,
+    ...folderMoveCoordinator(input.root),
   });
 }
 
@@ -197,17 +203,17 @@ export function readVaultRecovery(input: Omit<VaultLocation, "onReceipt"> & { id
 
 export function readVaultTextpack(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return readDirectoryTextpack({ ...input, onReceipt: recordVaultReceipt });
+  return readDirectoryTextpack({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 export function readVaultTextpackPath(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return readDirectoryTextpackPath({ ...input, onReceipt: recordVaultReceipt });
+  return readDirectoryTextpackPath({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 export function readVaultTextpackIdentity(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return readDirectoryTextpackIdentity({ ...input, onReceipt: recordVaultReceipt });
+  return readDirectoryTextpackIdentity({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> & { itemId: string; metadataOnly?: boolean; maxBytes?: number }) {
@@ -219,27 +225,27 @@ export async function readVaultPreview(input: Omit<VaultLocation, "onReceipt"> &
 
 export function listVaultFolderViews(input: Omit<VaultLocation, "onReceipt"> & { folder: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return listDirectoryFolderViews({ ...input, onReceipt: recordVaultReceipt });
+  return listDirectoryFolderViews({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 export function listVaultKeptFeedEntries(input: Omit<VaultLocation, "onReceipt"> & { items: readonly { itemId: string; relativePath: string }[] }) {
   if (!db) throw new Error(NO_DATABASE);
-  return listDirectoryKeptFeedEntries({ ...input, onReceipt: recordVaultReceipt });
+  return listDirectoryKeptFeedEntries({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 export function listVaultReadFeedEntries(input: Omit<VaultLocation, "onReceipt"> & { items: readonly { itemId: string; relativePath: string }[] }) {
   if (!db) throw new Error(NO_DATABASE);
-  return listDirectoryReadFeedEntries({ ...input, onReceipt: recordVaultReceipt });
+  return listDirectoryReadFeedEntries({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 export function readVaultTemplate(input: Omit<VaultLocation, "onReceipt"> & { itemId: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return readDirectoryTemplate({ ...input, onReceipt: recordVaultReceipt });
+  return readDirectoryTemplate({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 export function listVaultTextpacks(input: Omit<VaultLocation, "onReceipt">) {
   if (!db) throw new Error(NO_DATABASE);
-  return listDirectoryTextpacks({ ...input, onReceipt: recordVaultReceipt });
+  return listDirectoryTextpacks({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 /** One bounded on-demand scan for both workspace search and saved-link search. */
@@ -253,7 +259,7 @@ export async function searchVaultTextpacks(input: Omit<VaultLocation, "onReceipt
   let truncated = items.length > 5_000;
   for (const item of items.slice(0, 5_000)) {
     if (signal?.aborted) throw new DOMException("Search canceled", "AbortError");
-    const pack = await readDirectoryTextpack({ ...input, itemId: item.itemId, onReceipt: recordVaultReceipt });
+    const pack = await readDirectoryTextpack({ ...input, itemId: item.itemId, ...folderMoveCoordinator(input.root) });
     if (!pack || pack.relativePath !== item.relativePath) { skippedCount++; continue; }
     if (pack.bytes.length > 64 * 1024 * 1024) { skippedCount++; continue; }
     if (pack.bytes.length > remainingBytes) { truncated = true; break; }
@@ -271,7 +277,7 @@ export function waitVaultTextpacks(input: Omit<VaultLocation, "onReceipt"> & {
   revision: string; waitMs: number; signal?: AbortSignal;
 }) {
   if (!db) throw new Error(NO_DATABASE);
-  return waitDirectoryTextpacks({ ...input, onReceipt: recordVaultReceipt });
+  return waitDirectoryTextpacks({ ...input, ...folderMoveCoordinator(input.root) });
 }
 
 type AuditedVaultEntry = Omit<VaultEntryMutation, "onReceipt" | "audit"> & {
@@ -280,21 +286,21 @@ type AuditedVaultEntry = Omit<VaultEntryMutation, "onReceipt" | "audit"> & {
 
 export function moveVaultTextpack(input: AuditedVaultEntry & { relativePath: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return moveDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return moveDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
 
 export function deleteVaultTextpack(input: AuditedVaultEntry) {
   if (!db) throw new Error(NO_DATABASE);
-  return deleteDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return deleteDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
 
 export function listVaultTrash(input: Omit<VaultLocation, "onReceipt">) {
   if (!db) throw new Error(NO_DATABASE);
-  return listDirectoryTrash({ ...input, onReceipt: recordVaultReceipt });
+  return listDirectoryTrash({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export function restoreVaultTextpack(input: AuditedVaultEntry & { relativePath: string }) {
   if (!db) throw new Error(NO_DATABASE);
-  return restoreDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return restoreDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
 
 import {
@@ -3409,7 +3415,7 @@ export async function ensureWorkspaceFolders(
 async function provisionNewWorkspaceDefaults(blogId: string, actorUserId: string): Promise<void> {
   const root = process.env.TEXTTEXT_VAULT_ROOT;
   if (!root) throw new Error("TextText file storage is not configured");
-  await provisionFileWorkspace({ root, workspaceId: blogId, onReceipt: recordVaultReceipt }, actorUserId);
+  await provisionFileWorkspace({ root, workspaceId: blogId, ...folderMoveCoordinator(root) }, actorUserId);
   const digest = createHash("sha256").update(`provision-complete-v1:${blogId}`).digest("hex");
   const id = `${digest.slice(0,8)}-${digest.slice(8,12)}-${digest.slice(12,16)}-${digest.slice(16,20)}-${digest.slice(20,32)}`;
   await db!.insert(actionAudit).values({ id, actorUserId, actorType: "human",
@@ -8462,25 +8468,25 @@ export function mutateVaultDocument(input: Omit<VaultLocation, "onReceipt"> & {
   beforeCommit?: (relativePath: string) => Promise<void>;
 }) {
   if (!db) throw new Error(NO_DATABASE);
-  return mutateDirectoryDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return mutateDirectoryDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
 
 export function createVaultFolder(input: Omit<Parameters<typeof createDirectoryFolder>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
-  return createDirectoryFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return createDirectoryFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
 
 export function createVaultTemplate(input: Omit<Parameters<typeof createDirectoryTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
-  return createDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return createDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
 
 export function setVaultFolderTemplate(input: Omit<Parameters<typeof setDirectoryFolderTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
-  return setDirectoryFolderTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return setDirectoryFolderTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
 
 export function retireVaultTemplate(input: Omit<Parameters<typeof retireDirectoryTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
-  return retireDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+  return retireDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
 }
