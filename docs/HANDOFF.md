@@ -2,9 +2,9 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1205)**, source `c3c3ed2d`.
+- Mac `/Applications/TextText.app`: **0.204 (1206)**, source `3a115301`.
   Signed build/install, account/iCloud startup and saved Gallery model metadata
-  reopening passed. [Current Mac receipt](verification/2026-10-08-mac-1205.md).
+  reopening passed. [Current Mac receipt](verification/2026-10-08-mac-1206.md).
   Real native Gallery image description and metadata write passed. The Safari
   checkpoint rejection is fixed and live reopening passed.
   [Web follow-up](verification/2026-10-08-gallery-web-checkpoint.md).
@@ -19,10 +19,12 @@
   search freshness: [1202 receipt](verification/2026-10-08-mac-1202.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T163154Z-9b6c44ac**, thirteen live checks passed.
-  Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T163405Z-f6163027.dump`.
-  [Current deployment and unresolved shutdown receipt](verification/2026-10-08-oracle-9b6c44ac.md).
+- Oracle: **texttext-oracle-20261008-3a115301-gallery**, thirteen live checks
+  passed. Mac photo tags are present in the actual Safari editor. The outgoing
+  server exited 143 immediately without timeout/SIGKILL.
+  [Current deployment](verification/2026-10-08-oracle-gallery-1206.md).
+  An additive systemd override now classifies graceful 130/143 exits correctly;
+  no restart was needed. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -58,10 +60,10 @@
   and deployed to Oracle; actual Safari editor and saved model summary reopened
   without rejection. [Live receipt](verification/2026-10-08-gallery-web-checkpoint.md).
 
-- Oracle connection-retirement correction `75cdd6a3` is undergoing deployment.
-  Preserve active writes while retiring keep-alive responses during drain.
-  Detailed Gallery photo resizing `250fd4cd` is tested but not installed or
-  deployed. [Photo input receipt](verification/2026-10-08-gallery-photo-input-budget.md).
+- Oracle connection retirement is deployed and its clean shutdown is attested.
+  Detailed Gallery photo resizing and single-photo metadata editing are installed
+  in Mac 1206 and deployed on Oracle. Windows candidate `73740adb` is building;
+  log `/tmp/texttext-windows-73740adb-build.log`. [Photo input receipt](verification/2026-10-08-gallery-photo-input-budget.md).
 
 - Native Gallery photo input is now wired in source for Mac and Windows. The
   shared UI reads the exact selected embedded asset and prepares the existing
