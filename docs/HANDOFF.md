@@ -29,8 +29,10 @@
   Shared source now retains bounded saved-title labels during return navigation,
   and fixes preview invalidation on same-path external edits. Unit and rebuilt
   browser regressions passed. Installed on Mac 1207 and deployed to Oracle.
-  Cold first home still briefly shows filenames pending previews; fix the initial
-  saved-title listing contract without loading whole archives into listings.
+  Cold first home follow-up now uses placeholders until saved titles arrive,
+  retaining readable access/recovery on preview failure. Rebuilt Cards/List and
+  light/dark browser checks passed; this follow-up is not installed/deployed.
+  [Cold loading receipt](verification/2026-10-08-home-cold-loading.md).
   [Preview receipt](verification/2026-10-08-home-preview-labels.md).
 - Install verified Windows candidate when the old process closes, then verify
   startup, existing notes, search, save/reopen, Gallery metadata and live sync.

@@ -29,7 +29,8 @@ let feedHasNewStory = false;
 const searchQueries = [];
 const commentsByItem = new Map();
 let commentReads = 0;
-let previewBarrier = null;
+let releaseColdPreview;
+let previewBarrier = process.argv.includes("--home-loading-only") ? new Promise(resolve => { releaseColdPreview = resolve; }) : null;
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
@@ -285,6 +286,35 @@ try {
   };
   const folderNavigation = page.getByRole("navigation", { name: "Folders", exact: true });
   const chooseFolder = async (name) => folderNavigation.locator("summary").filter({ hasText: name }).first().click();
+  if (process.argv.includes("--home-loading-only")) {
+    await page.getByRole("heading", { name: "All files", exact: true }).waitFor();
+    const pending = page.getByRole("button", { name: `Open file ${initial.path}`, exact: true });
+    await pending.waitFor();
+    assert.equal(await pending.locator("strong").textContent(), "", "cold title must not show filename");
+    assert.equal(await pending.getAttribute("aria-busy"), "true");
+    await page.screenshot({ path: "/tmp/texttext-home-loading-light.png" });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.screenshot({ path: "/tmp/texttext-home-loading-dark.png" });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.getByRole("button", { name: "List", exact: true }).click();
+    assert.equal(await pending.locator("strong").textContent(), "");
+    await page.screenshot({ path: "/tmp/texttext-home-loading-list-light.png" });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.screenshot({ path: "/tmp/texttext-home-loading-list-dark.png" });
+    await page.emulateMedia({ colorScheme: "light" });
+    files.delete(initial.path);
+    releaseColdPreview(); previewBarrier = null;
+    const failed = page.getByRole("button", { name: "Offline Notes Open →", exact: true });
+    await failed.waitFor();
+    assert.equal(await failed.locator(".vault-file-excerpt").textContent(), "Preview unavailable. Open this file to read it.");
+    assert.equal(await failed.getAttribute("aria-busy"), "false");
+    files.set(initial.path, initial);
+    await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+    await page.getByRole("button", { name: "Offline note Notes Open →", exact: true }).waitFor();
+    assert.deepEqual(failures, []);
+    console.log("Cold home placeholders, preview failure and automatic refresh recovery passed.");
+    await browser.close(); process.exit(0);
+  }
   if (process.argv.includes("--preview-labels-only")) {
     const home = page.getByRole("button", { name: "TextText", exact: true });
     const savedLabel = page.getByRole("button", { name: "Offline note Notes Open →", exact: true });

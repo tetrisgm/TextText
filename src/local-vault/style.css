@@ -772,6 +772,10 @@
 .vault-app .vault-account-confirm,.vault-app .vault-account-message{margin-top:5px;padding-top:5px;border-top:1px solid var(--line)}
 .vault-app .vault-account-confirm p,.vault-app .vault-account-message p{margin:5px 10px 8px}
 
+/* Static placeholders avoid presenting filenames as saved document titles. */
+.vault-app .vault-preview-placeholder { display:inline-block; width:12ch; max-width:100%; height:0.85em; background:var(--muted); opacity:0.2; border-radius:3px; }
+.vault-app .vault-excerpt-placeholder { width:80%; }
+
 /* Personal mixed-library layout; template-specific collections retain their own views. */
 .vault-app .vault-document-view-options { display:flex; justify-content:flex-end; gap:4px; margin:0 0 16px; }
 .vault-app .vault-document-view-options button { padding:6px 12px; border-radius:6px; color:var(--muted); }

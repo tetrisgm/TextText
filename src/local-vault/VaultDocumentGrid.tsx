@@ -472,7 +472,12 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
               rememberPreviewLabel(listing, item.path, preview);
               setPreviewState(previous => ({ listing, values: { ...(previous.listing === listing ? previous.values : previewLabels(listing)), [item.path]: preview } }));
             }
-          } catch { /* The original stays accessible when its preview cannot be read. */ }
+          } catch {
+            if (active) setPreviewState(previous => ({ listing, values: {
+              ...(previous.listing === listing ? previous.values : previewLabels(listing)),
+              [item.path]: { title: previewLabels(listing)[item.path]?.title || fallbackTitle(item), excerpt: "Preview unavailable. Open this file to read it." },
+            } }));
+          }
         }));
       }
     });
@@ -620,16 +625,17 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     })}</tbody></table></div> : <div className={template ? "vault-folder-collection" : genericLayout === "list" ? "vault-document-list" : "vault-document-grid"} data-layout={template ? layout : genericLayout} style={template ? { "--vault-folder-columns": template.collection.columns, "--vault-folder-gap": template.collection.gap === "none" ? "0" : ({ xs: "0.25rem", sm: "0.5rem", md: "1rem", lg: "1.5rem", xl: "2rem" } as Record<string, string>)[template.collection.gap] || "1rem" } as CSSProperties : undefined}>{visible.map((item) => {
       const preview = previews[item.path];
       const fallback = fallbackTitle(item);
+      const savedTitle = preview ? preview.title.trim() || "Untitled" : item.title?.trim();
       return <PreviewImage key={item.path} preview={preview}>{(source) => template ? <div className="vault-folder-item">
         <DocumentCollectionRenderer document={collectionDocument(preview, fallback, source)} template={template} documentId={`folder-${item.path}`} />
         <button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallback}`}>Open</button>
-      </div> : <button disabled={busy || previewOnly} aria-label={`${preview?.title || fallback} ${folderForItem(item.path) || "Workspace"} Open →`} onClick={() => onOpen(item.path)}>
+      </div> : <button disabled={busy || previewOnly} aria-label={savedTitle ? `${savedTitle} ${folderForItem(item.path) || "Workspace"} Open →` : `Open file ${item.path}`} aria-busy={!savedTitle} onClick={() => onOpen(item.path)}>
         {!source && <span className="vault-file-type-icon" aria-hidden="true">▤</span>}
         {source ? /* eslint-disable-next-line @next/next/no-img-element */
           <img className="vault-file-preview" src={source} alt="" loading="lazy" decoding="async" />
           : null}
-        {(!source || genericLayout === "list") && <p className="vault-file-excerpt">{preview?.excerpt || "Open this file to start reading or editing."}</p>}
-        <strong>{preview?.title || fallback}</strong><small>{folderForItem(item.path) || "Workspace"}</small>
+        {(!source || genericLayout === "list") && <p className="vault-file-excerpt">{preview ? preview.excerpt || "Open this file to start reading or editing." : <span className="vault-preview-placeholder vault-excerpt-placeholder" aria-hidden="true" />}</p>}
+        <strong>{savedTitle ?? <span className="vault-preview-placeholder" aria-label="Loading title" />}</strong><small>{folderForItem(item.path) || "Workspace"}</small>
         {preview?.sourceURL && <small className="vault-file-source">{preview.sourceURL}</small>}<span>Open →</span>
       </button>}</PreviewImage>;
     })}</div>}
