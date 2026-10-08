@@ -43,7 +43,14 @@ const server = createServer(async (request, response) => {
         : await listVaultTextpacks(location);
       const etag = `"${manifest.revision}"`;
       if (previous === etag) { response.writeHead(304, { ETag: etag }); response.end(); }
-      else send(200, manifest, { ETag: etag });
+      else send(200, {
+        ...manifest,
+        fullAccess: true,
+        canCreateContent: true,
+        writableFolders: [],
+        items: manifest.items.map((item) => ({ ...item, canEditContent: true })),
+        tombstones: manifest.tombstones.map((item) => ({ ...item, canEditContent: true })),
+      }, { ETag: etag });
       return;
     }
     if (!itemId) { send(404, {}); return; }
