@@ -77,11 +77,10 @@ list/read/search, create/update/append). The other tools in the old registry
 remain feature-parity work, not completed features: sharing/comments, file and
 folder operations, templates, assets, reading and change history. Do not call
 the reduced catalog full agent parity. Capture/full-Markdown creation support
-is being restored on the file path. Then
-then exact-source gates, builds and deployment. The broader suite passed 4,413
+is being restored on the file path. Next are exact-source gates, builds and deployment. The broader suite passed 4,413
 checks with 149 skips; its only two failures were then-in-progress mutation
-mocks, subsequently replaced and passing in the focused run above. `d09bfdf4` is the read
-adapter preparation only; production dispatch awaits mutation/permission tests.
+mocks, subsequently replaced and passing in the focused run above. `a04be655`
+wires the canonical adapter; unconditional dispatch is under final test.
 The prior export/inventory helpers never migrated production content.
 
 Windows startup regression `033231ae` is fixed in the installed candidate:
