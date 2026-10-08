@@ -163,6 +163,9 @@ async function runBounded(
       NEXT_PUBLIC_ROOT_DOMAIN: rootDomain,
       NEXT_TELEMETRY_DISABLED: "1",
       TEXTTEXT_ORIGIN: origin,
+      ...(localAssetFixturePreload
+        ? { NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${localAssetFixturePreload}`].filter(Boolean).join(" ") }
+        : {}),
       ...evaluationMediaEnvironment,
     },
     stdio: ["ignore", "inherit", "inherit"],

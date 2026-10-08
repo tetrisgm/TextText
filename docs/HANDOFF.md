@@ -61,11 +61,14 @@
   `/tmp/texttext-windows-mutation-types.log`. Source only: physical Windows
   build/install and higher-level repeated agent creation remain unverified.
 
-- Release verification on `c3184d96` stopped at the legacy sharing evaluator
-  (`40797` terminal), log `/tmp/texttext-template-release-gates-mcp-fixed.log`.
-  MCP live acceptance passed. The next evaluator calls removed `delete_folder`
-  and SQL folder IDs without file-backed idempotency keys. Replace its obsolete
-  workflow with real file-backed sharing/access acceptance; do not bypass it.
+- Replaced the legacy SQL sharing evaluator with real file-backed acceptance.
+  Creation retries, stale-write refusal, persisted comments, two-principal
+  viewer/editor permission changes, immediate revocation, approved cover import,
+  Trash/restore retry and attributed audits passed in an isolated local workspace.
+  Logs: `/tmp/texttext-file-workflow-live.log`,
+  `/tmp/texttext-file-workflow-types.log`. Bookmark recapture and Living brief
+  remain explicitly unverified; this evaluator does not certify those features.
+  Rerun the required full release gate on the committed candidate before delivery.
 
 - Oracle template delivery candidate is clean source `223954b8` in
   `/private/tmp/texttext-candidate-1195-5ELVuo`. Exact core gates passed
