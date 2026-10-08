@@ -121,6 +121,17 @@ static class Test
  var occupied=movingStore.Write("Archive/Occupied.textpack",Pack("other document","other-id"));
  try{SharedEditingStore.RebaseProjection(movingStore,"test-1",occupied.Path);throw new Exception("occupied destination accepted");}catch(FileChangedException){}
  Assert(movingStore.Describe(occupied.Path).Hash==occupied.Hash,"shared move cannot overwrite destination");
+ var earlyMoveStore=new TextPackStore(Path.Combine(temp,"early-shared-move"),Path.Combine(temp,"early-shared-move-device"));
+ var earlyMoveFile=earlyMoveStore.Write("Notes/Early.textpack",Pack());var earlyMoveRemote=new Fake();var earlyMoveEngine=new SyncEngine(earlyMoveStore,earlyMoveRemote);await earlyMoveEngine.SyncAsync();
+ using(var earlyEditing=new SharedEditingStore(earlyMoveStore,earlyMoveEngine)) {
+   var session=await earlyEditing.OpenAsync("test-1",earlyMoveFile.Path,earlyMoveFile.Hash);
+   earlyMoveRemote.Item=earlyMoveRemote.Item! with{RelativePath="Archive/Early.textpack"};
+   await earlyMoveEngine.SyncAsync();Assert(earlyMoveEngine.Status.Error==null&&File.Exists(earlyMoveStore.Resolve(earlyMoveFile.Path)),"move before first checkpoint safely defers without session failure");
+   var bytes=Pack("First pending edit");var journal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=earlyMoveFile.Hash,relativePath=earlyMoveFile.Path,update="AAA=",pending=new[]{"AAA="}});
+   var cp=new SharedCheckpoint("test-1",earlyMoveFile.Path,TextPackStore.Hash(bytes),earlyMoveFile.Hash,1,0,1,journal,true);
+   await earlyEditing.CheckpointAsync(session.SessionToken,earlyMoveFile.Hash,bytes,cp);
+   await earlyMoveEngine.SyncAsync();Assert(earlyMoveEngine.Status.Error==null&&earlyMoveStore.Describe("Archive/Early.textpack").Hash==TextPackStore.Hash(bytes)&&!File.Exists(earlyMoveStore.Resolve(earlyMoveFile.Path)),"first durable checkpoint releases path relocation without losing pending edit");
+ }
  var sessionRebaseStore=new TextPackStore(Path.Combine(temp,"active-shared-move"),Path.Combine(temp,"active-shared-move-device"));
  var sessionRebaseFile=sessionRebaseStore.Write("Notes/Active.textpack",Pack());var sessionRebaseRemote=new Fake();var sessionRebaseEngine=new SyncEngine(sessionRebaseStore,sessionRebaseRemote);await sessionRebaseEngine.SyncAsync();
  using(var editingMove=new SharedEditingStore(sessionRebaseStore,sessionRebaseEngine)) {

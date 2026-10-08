@@ -131,6 +131,31 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         XCTAssertNotNil(retained.retiredReason); XCTAssertTrue(retained.pending)
         XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, written.hash)
     }
+    func testMoveBeforeFirstCheckpointDefersThenReconcilesWithoutRetiringSession() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let moved = "Archive/Early/Note.textpack"
+        await transport.set(itemId: itemId, path: moved, data: try Data(contentsOf: root.appendingPathComponent(path)))
+        let deferred = try await engine.sync()
+        XCTAssertTrue(deferred.errors.isEmpty)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
+        let target = try checkpoint(original), change = try changes(original, body: "First pending edit")
+        let written = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: target.journal, pending: true, markdown: change.0, documentJSON: change.1)
+        let reconciled = try await engine.sync()
+        XCTAssertTrue(reconciled.errors.isEmpty)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: moved).hash, written.document.hash)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        let retained = try await engine.readSharedCheckpoint(itemId: itemId)
+        XCTAssertEqual(retained?.path, moved)
+        XCTAssertTrue(retained?.pending == true)
+        XCTAssertNil(retained?.retiredReason)
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
     func testRemoteFolderMovePreservesActiveSessionAndPendingEdits() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")

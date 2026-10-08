@@ -28,6 +28,14 @@
 
 ## Current work
 
+- First-checkpoint startup window now has native regressions on both desktops:
+  an early remote move is safely deferred before the first journal, then the
+  ordinary next sync relocates the newly durable pending projection with its
+  session intact. Mac 17 shared editing tests and the full Windows Core suite
+  passed (`/tmp/texttext-first-checkpoint-mac.log`,
+  `/tmp/texttext-first-checkpoint-windows.log`). Actual installed acceptance
+  remains pending; no new client was installed for these source changes.
+
 - Windows recoverable move is now wired into the protected sync path.
   Checkpoints and moves serialize through the store mutation lock; the lock
   is released before awaiting the sync gate. A session rebases from its
@@ -37,7 +45,7 @@
   reopen at new path, both move interruption windows and occupied destination
   refusal (`/tmp/texttext-windows-active-rebase-core.log`). Actual PC execution
   and integrated UI/native acceptance remain pending. Live sessions before
-  their first checkpoint still need explicit handling on both desktops.
+  their first checkpoint are covered by explicit safe-deferral tests on both desktops.
 
 - Shared UI now relocates selected items only by a unique stable identity,
   preserving the editor boundary and drafts when paths move. Local read
