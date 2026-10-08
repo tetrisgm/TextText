@@ -27,9 +27,14 @@
   application approvals are installed. Folder customization remains native-only.
 - Immediate automatic reconnect probes, bookmark baseline release and fresh
   shared discovery permission checks are installed.
-- Next source-only slice `0d4e5772` adds account-level native/browser workspace
-  discovery. Native switching/UI remain disabled pending safe session/folder
-  lifecycle and partial-replica handling. Sixteen focused tests passed.
+- Source-only workspace switching now includes account discovery, fresh membership
+  authorization, commit-time editor flush, and shared permission-aware UI.
+  Windows changes through `fa49b978` pass 160 Core assertions and crosscompile;
+  shared UI `a5dc4d6a` passes focused unit/browser checks and TypeScript.
+  Mac implementation remains in progress, including persisted offline capability
+  handling. Do not build this slice until integrated gates pass. Installed/live
+  versions remain 1187. Owner-capability HTTP fixture `d17b0052` passed the real
+  native two-vault contract check.
 - Core gate now also includes bookmark retention regressions (`0cbe0914`).
 - Owner-approved obsolete deployment cleanup restored Oracle free space;
   retained current/rollback/candidate, all content and backups. No cleanup job.
@@ -54,7 +59,7 @@ and actions, with a personal per-device/workspace preference.
 - Google client exists but its secret is unavailable; Oracle Google sign-in is
   not configured. Commercial ChatGPT sign-in requires OpenAI registration that
   the owner does not yet have.
-- Account workspace discovery remains incomplete. Windows live folder-picker
+- Integrated workspace switching acceptance remains incomplete. Windows live folder-picker
   acceptance is deferred; isolated native checks passed.
 - Second physical Apple-device iCloud delivery, Windows provider eviction and
   hardware power loss are not live-certified.
