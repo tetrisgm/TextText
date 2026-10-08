@@ -2,9 +2,13 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1187)**, source `4c7efe85`.
-- Windows: same source `4c7efe85`, installed in the existing location.
-- Oracle: **texttext-oracle-20261008T070633Z-4c7efe85**, thirteen live checks passed.
+- Mac `/Applications/TextText.app`: **0.204 (1188)**, source `43614e64`.
+- Windows: same source `43614e64`, installed in the existing location.
+- Oracle: **texttext-oracle-20261008T073956Z-43614e64**, thirteen live checks passed.
+- Live Mac verification found permission-only updates do not refresh the listing:
+  `LocalVaultConnectionController.run()` notifies only on downloaded content.
+  A follow-up fix/regression is in progress; Mac 1188 is not final acceptance.
+  Existing document content is intact. [Windows receipt](verification/2026-10-08-windows-shared-1188.md).
 - Accounts, existing notes, saved edits and search freshness passed on installed
   clients. Agent-created template item arrived on both desktops automatically;
   Safari opened the same item with Mac/Windows presence.
@@ -31,10 +35,12 @@
   authorization, commit-time editor flush, and shared permission-aware UI.
   Windows changes through `fa49b978` pass 160 Core assertions and crosscompile;
   shared UI `a5dc4d6a` passes focused unit/browser checks and TypeScript.
-  Mac implementation remains in progress, including persisted offline capability
-  handling. Do not build this slice until integrated gates pass. Installed/live
-  versions remain 1187. Owner-capability HTTP fixture `d17b0052` passed the real
-  native two-vault contract check.
+  Mac `43614e64` includes persisted offline capability handling. The integrated
+  gate passed 588 core tests and required native suites; Windows passed 269
+  shared-client tests and actual desktop smoke. Owner-capability HTTP fixture
+  `d17b0052` passed the real native two-vault contract check. Native and Safari
+  account menus list the current workspace; live cross-workspace switching is
+  not attested because this account has one workspace.
 - Core gate now also includes bookmark retention regressions (`0cbe0914`).
 - Owner-approved obsolete deployment cleanup restored Oracle free space;
   retained current/rollback/candidate, all content and backups. No cleanup job.
