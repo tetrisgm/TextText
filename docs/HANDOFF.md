@@ -70,6 +70,14 @@
   remain explicitly unverified; this evaluator does not certify those features.
   Rerun the required full release gate on the committed candidate before delivery.
 
+- Candidate `0d452874` is running the required full release gate (`48138`), log
+  `/tmp/texttext-reader-fixed-release-gates.log`. The preceding gate failed only
+  when the reader rerender fixture omitted its TextPack identity. That fixture
+  now uses the real serializer; its focused check passed with one parse before
+  and after repeated status and presence updates. No delivery is implied.
+  The candidate directory below now contains `0d452874`; its earlier packaged
+  archive remains older source and must not be deployed as this candidate.
+
 - Oracle template delivery candidate is clean source `223954b8` in
   `/private/tmp/texttext-candidate-1195-5ELVuo`. Exact core gates passed
   (837 tests, 87 files), native sync gates passed, and the production web
@@ -350,8 +358,14 @@
 
 - Commercial ChatGPT account sign-in is deferred at the owner's request
   (2026-10-08) and does not block this version's readiness. Registration/client
-  ID remains unavailable. Google sign-in is not configured on Oracle;
-  verify current credential availability before declaring it blocked.
+  ID remains unavailable. Google sign-in is not configured on Oracle. Actual
+  signed-in Safari inspection confirmed the existing Texttext web client in
+  Google project `project-9ddb389f-8f22-482d-abf`, with the correct production
+  callback and an enabled masked secret. Presence-only checks found neither
+  Google runtime variable on Oracle or in Mac `.env.local`; the expected
+  `texttext-google-oauth` Keychain entry is absent. Replacement-secret approval
+  is pending; no console or runtime setting was changed. Audit:
+  `/tmp/texttext-google-configuration-audit.md`.
 - Second physical Apple-device iCloud delivery, Windows provider eviction and
   hardware power loss are not live-certified.
 - Required existing `Shoku's Space/My Notes/TextText Changelog.textpack` was not
