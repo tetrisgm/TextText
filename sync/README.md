@@ -41,6 +41,11 @@ agents can change text.md directly without a parallel document.json rewrite.
 8. Idle clients do not rewrite content. Search invalidates when file content changes.
 9. Cookie-auth writes validate the configured public origin behind a proxy.
 10. Local window/session lifetime must not cancel another live editor's session.
+11. Restoring a deleted item preserves its identity but begins a new lifecycle.
+    Pre-delete uploads and collaboration updates cannot modify the restored item.
+    A passive client with an old pending delete must converge without deleting
+    the restoration; newer local work remains recoverable. Retrying restoration
+    cannot replace edits accepted after the original restore.
 
 ## Commands
 
