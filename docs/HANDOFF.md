@@ -35,7 +35,7 @@
   Draft keys are identity-based with a preserved legacy-draft migration.
   Browser acceptance passed for typing immediately before a move and saving
   at the new path without recreating the old file; existing note-template
-  creation/editing passed, 15 focused tests and TypeScript passed. Logs:
+  creation/editing passed, 13 focused tests and TypeScript passed. Logs:
   `/tmp/texttext-open-item-move-browser.log`,
   `/tmp/texttext-item-move-note-browser.log`,
   `/tmp/texttext-item-location-tests.log`,
