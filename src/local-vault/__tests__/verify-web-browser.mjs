@@ -149,6 +149,7 @@ try {
     await page.getByRole("option", {name:"Add agent to this item",exact:true}).click();
   };
   await page.getByRole("button",{name:"Add agent",exact:true}).click();
+  await page.getByRole("group",{name:"Agent task target"}).getByText("Web note",{exact:true}).waitFor();
   assert.equal(assistantRequests.length,0);
   await page.getByRole("button",{name:"Set up AI in Settings"}).waitFor();
   assert.equal(await page.getByRole("button",{name:"Connect Codex"}).isVisible(),false);

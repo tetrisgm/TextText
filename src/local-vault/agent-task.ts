@@ -87,3 +87,8 @@ export function updateAgentTask(
   writeAgentTask(storage, next);
   return next;
 }
+
+/** A title belongs to its file, never to whichever item is currently selected. */
+export function agentTaskTitle(target: string, current?: { path: string; title: string }): string {
+  return (current?.path === target ? current.title.trim() : "") || target.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Open item";
+}

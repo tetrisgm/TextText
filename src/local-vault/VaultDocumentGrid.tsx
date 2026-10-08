@@ -616,7 +616,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       return <PreviewImage key={item.path} preview={preview}>{(source) => template ? <div className="vault-folder-item">
         <DocumentCollectionRenderer document={collectionDocument(preview, fallback, source)} template={template} documentId={`folder-${item.path}`} />
         <button disabled={busy || previewOnly} onClick={() => onOpen(item.path)} aria-label={`Open ${preview?.title || fallback}`}>Open</button>
-      </div> : <button disabled={busy || previewOnly} aria-label={`${fallback} ${folderForItem(item.path) || "Workspace"} Open →`} onClick={() => onOpen(item.path)}>
+      </div> : <button disabled={busy || previewOnly} aria-label={`${preview?.title || fallback} ${folderForItem(item.path) || "Workspace"} Open →`} onClick={() => onOpen(item.path)}>
         {!source && <span className="vault-file-type-icon" aria-hidden="true">▤</span>}
         {source ? /* eslint-disable-next-line @next/next/no-img-element */
           <img className="vault-file-preview" src={source} alt="" loading="lazy" decoding="async" />

@@ -1,3 +1,4 @@
+import { agentTaskTitle } from "./agent-task";
 import { AssistantWriteProposals, type AssistantWriteProposal } from "./AssistantWriteProposals";
 import { AgentPresenceClient } from "./agent-presence-client";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -28,8 +29,8 @@ function bounded(messages: Message[]): Message[] {
   return kept;
 }
 
-export function NativeAssistant({ open, path, root, request, onClose, beforeSend, webAssistant = false }: {
-  webAssistant?: boolean; root: string; open: boolean; path?: string; request: NativeAssistantRequest | null; onClose: () => void; beforeSend: () => Promise<boolean>;
+export function NativeAssistant({ open, path, root, targetTitle, request, onClose, beforeSend, webAssistant = false }: {
+  targetTitle?: { path: string; title: string }; webAssistant?: boolean; root: string; open: boolean; path?: string; request: NativeAssistantRequest | null; onClose: () => void; beforeSend: () => Promise<boolean>;
 }) {
   useEffect(() => {
     if (webAssistant) void vaultRequest("agentRetarget", { path: path ?? "" }).catch(() => {});
@@ -327,7 +328,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
   return <><aside className={`vault-assistant${proposal ? " has-design-preview" : ""}`} aria-label={heading}>
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
     {itemTask && <div className="vault-assistant-setup" role="group" aria-label="Agent task target">
-      <strong>{itemTask.target.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Open item"}</strong>
+      <strong>{agentTaskTitle(itemTask.target, targetTitle)}</strong>
       <p>{webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
       <small>{itemTask.target}</small>
     </div>}

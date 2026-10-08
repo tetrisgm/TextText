@@ -52,3 +52,9 @@ describe("local item agent task", () => {
     });
   });
 });
+
+import { agentTaskTitle } from "./agent-task";
+it("uses saved target title without relabeling a running task after selection changes", () => {
+  expect(agentTaskTitle("Notes/Untitled5.textpack", { path: "Notes/Untitled5.textpack", title: "Saved note title" })).toBe("Saved note title");
+  expect(agentTaskTitle("Notes/Untitled5.textpack", { path: "Notes/Other.textpack", title: "Other saved title" })).toBe("Untitled5");
+});
