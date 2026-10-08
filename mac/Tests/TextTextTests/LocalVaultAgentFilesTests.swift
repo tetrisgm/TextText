@@ -462,6 +462,34 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertTrue(try LocalVaultDocumentStore(root: root).list().isEmpty)
     }
 
+    func testAgentCustomCreationPublishesMatchingMetadataOnceAndRejectsChangedIntent() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try run("create_file", arguments: ["title": "Source", "body": "Body"], root: root)
+        let store = LocalVaultDocumentStore(root: root)
+        let source = try store.read(path: "Source.textpack")
+        var document = try json(XCTUnwrap(source.contents.documentJSON))
+        var content = try XCTUnwrap(document["content"] as? [String: Any])
+        content["title"] = "Custom item"; content["fields"] = ["research": "Retained"]
+        document["content"] = content
+        document["presentation"] = ["template": ["id": "local.research", "version": 1], "theme": [:]]
+        var template = try json(XCTUnwrap(source.contents.templateJSON))
+        template["id"] = "local.research"; template["version"] = 1; template["name"] = "Research look"
+        let encode = { (value: [String: Any]) throws in String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), as: UTF8.self) }
+        var args: [String: Any] = ["title": "Custom item", "body": "Body", "documentJSON": try encode(document), "templateJSON": try encode(template), "idempotencyKey": "custom-intent"]
+        _ = try run("create_file", arguments: args, root: root)
+        let saved = try store.read(path: "Custom item.textpack")
+        XCTAssertEqual(try json(XCTUnwrap(saved.contents.templateJSON))["id"] as? String, "local.research")
+        XCTAssertEqual((try json(XCTUnwrap(saved.contents.documentJSON))["content"] as? [String: Any])?["fields"] as? [String: String], ["research": "Retained"])
+        _ = try run("create_file", arguments: args, root: root)
+        XCTAssertEqual(try store.read(path: saved.path).hash, saved.hash)
+        template["name"] = "Different intent"; args["templateJSON"] = try encode(template)
+        XCTAssertThrowsError(try run("create_file", arguments: args, root: root))
+        args["title"] = "Must not publish"; args["idempotencyKey"] = "different-key"
+        XCTAssertThrowsError(try run("create_file", arguments: args, root: root))
+        XCTAssertEqual(try store.list().count, 2)
+    }
+
     private func run(_ name: String, arguments: [String: Any], root: URL,
                      access: LocalVaultAgentAccess = .folder(path: ""),
                      cancellation: LocalVaultAgentCancellation? = nil) throws -> String {

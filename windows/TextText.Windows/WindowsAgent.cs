@@ -164,7 +164,7 @@ public sealed class WindowsAgent : IDisposable
         var itemTools = new[] { Tool("read_file","Read the selected TextPack and revision hash.",new[]{"path"},"path"),
           design ? Tool("propose_template","Preview a complete declarative template without writing.",new[]{"path","hash","templateJSON"},"path","hash","templateJSON","templateAuthoringSourceJSON")
           : Tool("write_file","Update selected TextPack with exact read hash, preserving assets.",new[]{"path","hash","markdown"},"path","hash","markdown","documentJSON","templateJSON","templateAuthoringSourceJSON") };
-        return folder ? itemTools.Concat(new[] { Tool("search_files","Search titles and content within the selected folder.",new[]{"query"},"query"), Tool("list_files","List files in the selected folder.",Array.Empty<string>()), Tool("create_file","Create a TextPack in the selected folder.",new[]{"title","body"},"title","body","folder","kind") }).ToArray() : itemTools;
+        return folder ? itemTools.Concat(new[] { Tool("search_files","Search titles and content within the selected folder.",new[]{"query"},"query"), Tool("list_files","List files in the selected folder.",Array.Empty<string>()), Tool("create_file","Create a TextPack in the selected folder. For a custom look supply matching complete documentJSON and templateJSON; snapshot title/body must match title/body.",new[]{"title","body"},"title","body","folder","kind","documentJSON","templateJSON") }).ToArray() : itemTools;
     }
     static bool FolderToolAllowed(string folder,string tool,JsonElement args) {
         if(tool is "list_files" or "search_files") return true;

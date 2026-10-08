@@ -308,7 +308,8 @@ public struct DocumentStore: Sendable {
     /// real destination, never the journal directory.
     func prepareCreation(
         title: String, body: String? = nil, folder: String? = nil, kind: String? = nil,
-        sourceURL: String? = nil, itemId: String, preparedOutput: URL? = nil
+        sourceURL: String? = nil, itemId: String, preparedOutput: URL? = nil,
+        customDocumentJSON: String? = nil, customTemplateJSON: String? = nil
     ) throws -> URL {
         let fileManager = FileManager.default
         var destination = root
@@ -321,7 +322,10 @@ public struct DocumentStore: Sendable {
                 throw TextTextCLIError.documentNotFound(folder)
             }
         }
-        let folderDefault = kind == nil ? try LocalVaultFolderDefault.read(root: root, folder: destination) : nil
+        guard (customDocumentJSON == nil) == (customTemplateJSON == nil) else {
+            throw TextTextCLIError.invalidDocument("custom creation requires matching snapshot and template metadata")
+        }
+        let folderDefault = kind == nil && customDocumentJSON == nil ? try LocalVaultFolderDefault.read(root: root, folder: destination) : nil
         let effectiveKind = kind ?? "note"
         let body = body ?? folderDefault?.body ?? ""
         let name = DocumentCreation.filename(for: title)
@@ -352,8 +356,8 @@ public struct DocumentStore: Sendable {
             documentJSON = String(decoding: try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]), as: UTF8.self)
         }
         let package = try TextTextTextBundlePackage.materialize(
-            canonicalMarkdown: markdown, documentJSON: documentJSON,
-            templateJSON: folderDefault?.templateJSON ?? builtin.templateJSON,
+            canonicalMarkdown: markdown, documentJSON: customDocumentJSON ?? documentJSON,
+            templateJSON: customTemplateJSON ?? folderDefault?.templateJSON ?? builtin.templateJSON,
             templateAuthoringSourceJSON: folderDefault?.authoringSourceJSON,
             assets: [], sourceURL: sourceURL, in: temporary)
         let packed = try TextTextTextBundlePackage.zipToTextPack(

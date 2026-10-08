@@ -49,6 +49,19 @@
 
 ## Current work and next checks
 
+- Desktop folder-agent `create_file` now accepts complete matching custom
+  snapshot/template JSON. Native packages prepare metadata before publication
+  through the checksum-pinned creation journal, including metadata in retry
+  intent. Windows builds one complete imported package through the shared
+  transport. Title/body/reference mismatch and unimported asset references
+  refuse before writing. Native agent/local-vault suites: 33 tests passed;
+  Windows adapter: eight passed; Mac-run Windows native agent suite and
+  TypeScript passed. Logs `/tmp/texttext-agent-custom-create-{verified,types}.log`,
+  `/tmp/texttext-windows-agent-custom-create.log`,
+  `/tmp/texttext-native-windows-custom-create.log`. Source only: no installed
+  custom-creation or Windows lost-response durability claim. Higher-level
+  reusable template authoring/version/apply workflows remain unfinished.
+
 - Both shared editor modes now prepare saved-look metadata through
   `src/local-vault/saved-look.ts`. Complete validated snapshots, independent
   template identity and retained editable blueprint provenance are prepared

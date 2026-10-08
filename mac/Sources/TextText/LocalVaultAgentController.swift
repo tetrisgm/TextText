@@ -843,7 +843,7 @@ enum LocalVaultAgentFiles {
              ["path": "string", "hash": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "templateJSON"]),
         tool("write_file", "Save Markdown and optional snapshot/template JSON to the real file. Requires the hash from read_file; preserves assets and omitted metadata.",
              ["path": "string", "hash": "string", "markdown": "string", "documentJSON": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "markdown"]),
-        tool("create_file", "Create a new self-contained TextPack in an existing relative folder. Omit kind to inherit its default template; supply kind only for an explicitly requested built-in type. Supply the same idempotencyKey when retrying the same creation, including after renaming or editing the created file.", ["title": "string", "body": "string", "folder": "string", "kind": "string", "idempotencyKey": "string"], ["title", "body"]),
+        tool("create_file", "Create a new self-contained TextPack in an existing relative folder. Omit kind to inherit its default template; supply kind only for an explicitly requested built-in type. For a custom look supply matching complete documentJSON and templateJSON; the snapshot title/body must match title/body. Supply the same idempotencyKey when retrying the same creation, including after renaming or editing the created file.", ["title": "string", "body": "string", "folder": "string", "kind": "string", "idempotencyKey": "string", "documentJSON": "string", "templateJSON": "string"], ["title", "body"]),
         tool("search_files", "Search titles and content in the local folder without a server.", ["query": "string"], ["query"]),
     ]
     static func tools(for access: LocalVaultAgentAccess) -> [[String: Any]] {
@@ -949,17 +949,30 @@ enum LocalVaultAgentFiles {
                 }
                 kind = value
             } else { kind = nil }
+            let customDocument = arguments["documentJSON"] == nil ? nil : try string("documentJSON")
+            let customTemplate = arguments["templateJSON"] == nil ? nil : try string("templateJSON")
+            if customDocument != nil || customTemplate != nil {
+                try validate(snapshot: customDocument, template: customTemplate)
+                let title = try string("title"), body = try string("body")
+                let snapshot = try JSONSerialization.jsonObject(with: Data(customDocument!.utf8)) as! [String: Any]
+                let content = snapshot["content"] as! [String: Any]
+                guard content["title"] as? String == title, content["body"] as? String == body,
+                      (content["assets"] as? [[String: Any]])?.isEmpty == true else {
+                    throw VaultAgentError("Custom creation must match title/body and cannot reference assets it has not imported.")
+                }
+            }
             let retryKey: String?
             if let requestedKey = arguments["idempotencyKey"] {
                 guard let value = requestedKey as? String, !value.isEmpty, value.utf8.count <= 400 else {
                     throw VaultAgentError("Provide an idempotency key of 1 to 400 bytes.")
                 }
                 retryKey = "native-agent-intent:" + value
-            } else { retryKey = creationRetryKey }
+            } else { retryKey = creationRetryKey ?? (customDocument == nil ? nil : "native-agent:" + UUID().uuidString) }
             let file: URL
             if let retryKey {
                 file = try documents.createWithRetryKey(title: string("title"), body: string("body"),
-                    folder: folder.isEmpty ? nil : folder, kind: kind, key: retryKey)
+                    folder: folder.isEmpty ? nil : folder, kind: kind, key: retryKey,
+                    customDocumentJSON: customDocument, customTemplateJSON: customTemplate)
             } else {
                 file = try documents.create(title: string("title"), body: string("body"),
                     folder: folder.isEmpty ? nil : folder, kind: kind)

@@ -32,6 +32,15 @@ export async function executeWindowsFolderAgentTool(request: VaultTransport, fol
     if (destination && !listing.folders?.includes(destination)) throw new Error("Choose an existing folder.");
     if (typeof args.title !== "string" || !args.title.trim() || args.title.length > 240 || typeof args.body !== "string" || args.body.length > 2_000_000) throw new Error("Provide a title and body.");
     if (args.kind !== undefined && !["note", "article", "bookmark", "gallery", "talk"].includes(String(args.kind))) throw new Error("Choose a supported item type.");
+    if (args.documentJSON !== undefined || args.templateJSON !== undefined) {
+      if (typeof args.documentJSON !== "string" || typeof args.templateJSON !== "string" || args.documentJSON.length > 2_000_000 || args.templateJSON.length > 2_000_000) throw new Error("Provide a complete matching snapshot and template.");
+      const document = validateDocumentSnapshot(JSON.parse(args.documentJSON));
+      const template = validateTemplateDefinition(JSON.parse(args.templateJSON));
+      if (document.presentation.template.id !== template.id || document.presentation.template.version !== template.version || document.content.title !== args.title || document.content.body !== args.body || document.content.assets.length) throw new Error("Custom creation must match title/body and cannot reference assets it has not imported.");
+      if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
+      const saved = await request("importPack", { title: args.title, folder: destination, data: encodeBase64(newItemPack(document, { template })) }, signal) as VaultFile;
+      return JSON.stringify({ path: saved.path, hash: saved.hash });
+    }
     if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
     const chosen = args.kind === undefined ? await loadFolderItemDefault(destination, listing, request, signal) : null;
     if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");

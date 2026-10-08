@@ -19,6 +19,26 @@ function fixture() {
   return { request, file: () => file, writes: () => writes };
 }
 describe("Windows selected-item agent tools", () => {
+  it("creates custom metadata in one package and refuses mismatched content before writing", async () => {
+    const template = {...BUILTIN_TEMPLATES.find(value => value.id === "texttext.note")!, id: "local.research", name: "Research"};
+    const document = emptyDocumentSnapshot({id: template.id, version: template.version});
+    document.content.title = "Research item"; document.content.body = "Words";
+    document.content.fields = {research: "Keep"};
+    const writes: Record<string, unknown>[] = [];
+    const request: VaultTransport = async (method, params) => {
+      if (method === "list") return {folders: ["Notes"], items: []};
+      if (method === "importPack") { writes.push(params); return {path: "Notes/Research item.textpack", hash: "saved"}; }
+      throw new Error("Unexpected operation " + method);
+    };
+    const args = {title: "Research item", body: "Words", documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template)};
+    await executeWindowsFolderAgentTool(request, "Notes", "create_file", args);
+    const pack = openPack(Uint8Array.from(atob(String(writes[0].data)), value => value.charCodeAt(0)), "Notes/Research item.textpack", "saved");
+    expect(readDocument(pack.file).content).toEqual(document.content);
+    expect(JSON.parse(pack.file.templateJSON!).id).toBe(template.id);
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {...args, title: "Different"})).rejects.toThrow("match");
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {...args, templateJSON: undefined})).rejects.toThrow("matching");
+    expect(writes).toHaveLength(1);
+  });
   it("creates only within an explicit existing folder and rejects traversal before writes", async () => {
     const calls: Record<string, unknown>[] = [];
     const request: VaultTransport = async (method, params) => {
