@@ -51,9 +51,16 @@ public enum TextTextCLIError: Error, CustomStringConvertible, Equatable {
 /// previous document intact, and file observers see one complete replacement.
 public struct DocumentStore: Sendable {
     public let root: URL
+    let accountCommands: LocalWorkspaceCommands?
 
     public init(root: URL) {
         self.root = root
+        self.accountCommands = nil
+    }
+
+    init(root: URL, accountCommands: LocalWorkspaceCommands) {
+        self.root = root
+        self.accountCommands = accountCommands
     }
 
     /// Open the explicitly selected vault without contacting a server.

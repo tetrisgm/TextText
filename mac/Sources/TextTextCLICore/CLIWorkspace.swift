@@ -124,24 +124,29 @@ public enum CLICommandActor {
 
 /// One command-line view of the workspace.
 ///
-/// Explicit roots and the app's selected vault are always local. Device
-/// credentials provide compatibility until the caller selects a local vault.
+/// Explicit roots and the app's selected vault keep file operations local.
+/// Account commands independently verify the selected folder's account binding.
+/// Device credentials also support remote access when no folder is selected.
 public enum CLIWorkspace: Sendable {
     case local(DocumentStore)
     case remote(RemoteDocumentStore)
 
     public static func locate(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        commandSession: URLSession? = nil
     ) throws -> CLIWorkspace {
+        func local(_ root: URL) -> CLIWorkspace {
+            .local(DocumentStore(root: root, accountCommands: LocalWorkspaceCommands(root: root, environment: environment, session: commandSession)))
+        }
         if let root = environment["TEXTTEXT_WORKSPACE_ROOT"], !root.isEmpty {
-            return .local(DocumentStore(root: URL(fileURLWithPath: root)))
+            return local(URL(fileURLWithPath: root))
         }
 
         if let configuration = try LocalVaultConfiguration.load(
             environment: environment, fileManager: fileManager,
             allowUnscopedRootFallback: true) {
-            return .local(DocumentStore(root: try configuration.resolvingRoot()))
+            return local(try configuration.resolvingRoot())
         }
 
         if let credentials = DeviceCredentials.load(
@@ -207,18 +212,22 @@ public enum CLIWorkspace: Sendable {
         switch self {
         case .remote(let store):
             return try await store.runCommand(name, argumentsJSON: argumentsJSON)
-        case .local:
-            throw TextTextCLIError.workspaceUnavailable(
-                "workspace commands need the signed-in TextText workspace")
+        case .local(let store):
+            guard let commands = store.accountCommands else {
+                throw TextTextCLIError.workspaceUnavailable("this folder has no signed-in account connection")
+            }
+            return try await commands.authorizedStore().runCommand(name, argumentsJSON: argumentsJSON)
         }
     }
 
     public func availableCommands() async throws -> String {
         switch self {
         case .remote(let store): return try await store.availableCommands()
-        case .local:
-            throw TextTextCLIError.workspaceUnavailable(
-                "listing commands needs the signed-in TextText workspace")
+        case .local(let store):
+            guard let commands = store.accountCommands else {
+                throw TextTextCLIError.workspaceUnavailable("this folder has no signed-in account connection")
+            }
+            return try await commands.authorizedStore().availableCommands()
         }
     }
 
