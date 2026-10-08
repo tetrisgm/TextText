@@ -5,6 +5,7 @@ export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
     'src/lib/vault/folder-move-{metadata,boundary}.db.test.ts',
+    'src/lib/ai/__tests__/proposal-staging.db.test.ts',
     'src/lib/vault/folder-move-review.test.ts',
     'src/lib/vault/folder-move-command.test.ts',
     'src/local-vault/FolderMoveDialog.test.tsx',
