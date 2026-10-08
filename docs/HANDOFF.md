@@ -2,7 +2,11 @@
 
 ## Installed and live
 
-- Current Windows source `fcb1cd42` passed actual PC packaging and desktop smoke,
+- Current Windows candidate source `1ae33f20` passed actual PC packaging,
+  native suites, 340 shared-client tests, TypeScript and interactive desktop smoke.
+  [Current candidate receipt](verification/2026-10-08-windows-authoring-candidate.md).
+  Not installed; the older app is still running with unknown unsaved state.
+  Previous source `fcb1cd42` passed actual PC packaging and desktop smoke,
   including empty-folder inventory and durable agent creation. Not installed; the older
   app remains running with unknown unsaved state.
   [Candidate receipt](verification/2026-10-08-windows-folder-inventory.md).

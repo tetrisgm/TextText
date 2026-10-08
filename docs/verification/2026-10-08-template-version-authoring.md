@@ -67,6 +67,12 @@ choosing it created `Notes/Untitled 14.textpack` with the same template identity
 compact title theme, blueprint and Findings/Questions/Next steps starter.
 Independent ZIP inspection verified both files.
 
+After the Oracle authoring deployment, a newly opened real Safari tab loaded
+the new item's canonical shared URL and showed the retained custom look and
+Mac presence. Saving its title as Refined blueprint web reuse verification
+1216 automatically updated the open Mac editor. Independent local ZIP inspection
+confirmed the title, unchanged starter body and retained compact-title blueprint.
+
 Evidence: `/tmp/texttext-authored-refinement-1216-{before,preview,kept}.json`,
 `/tmp/texttext-authored-refinement-1216-before-entries.json` and
 `/tmp/texttext-refined-library-1216.json`.
