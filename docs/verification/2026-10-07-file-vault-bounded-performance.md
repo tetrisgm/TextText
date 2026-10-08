@@ -25,3 +25,13 @@ Direct audited file edits advanced the collaboration epoch and appeared within t
 Evidence: `/tmp/texttext-vault-perf-gYX1tw/result.json`, `/tmp/texttext-vault-perf-WhYJJi/result.json`. Both report complete fixture cleanup. Earlier failed selector-only attempts also cleaned their fixtures.
 
 Verification: scoped ESLint, full `tsc --noEmit`, and the updated diagnosis passed. No product code or live user content changed.
+
+## Scoped reader fix
+
+A Chromium CPU profile (`--diagnose --profile`, `/tmp/texttext-vault-perf-VIhmO3/reader.cpuprofile`) attributed about 1.8 seconds of self time to micromark's data-token coalescing resolver in the production bundle. Thousands of soft line breaks cause repeated array-splice work. This is parser work, not a transport delay.
+
+The shared reader now recognizes a conservative single plain paragraph without Markdown punctuation, indentation, blank-line blocks, whitespace normalization or GFM autolinks. That subset renders directly as a paragraph; ambiguous input retains the unchanged Markdown pipeline. Complete text remains in the DOM and editability is unchanged. The recognizer uses linear scans and no retained content cache.
+
+The actual shared `VaultNoteDisplay` was bundled with the normal production local-UI builder and measured in Chromium with the same 7,300-line body. Unoptimized ReactMarkdown baseline: 257.5 / 352.1 ms. Full optimized note reader: 62.6 / 69.0 ms in light mode and 48.6 / 53.4 ms in dark mode. Exact full-body equality and Edit card action passed. This component-level measurement isolates the parser fix; integrated Next route timing requires the next production build and is not claimed here.
+
+Regression evidence: 59 focused tests (plain-paragraph differential against actual GFM, highlight rendering and render nodes), full TypeScript and scoped ESLint passed. Differential cases include soft breaks, leading/trailing whitespace, tabs, CRLF, HTML/entities, backslashes, autolinks, tables and lists. Unit tests are in both sync configurations; the production browser test is part of `npm test`. The manually started loopback server was terminated after diagnosis. No persistent job or production configuration was installed.

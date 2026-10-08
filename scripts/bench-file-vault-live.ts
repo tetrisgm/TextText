@@ -427,6 +427,8 @@ async function main() {
           finishedMs: event.finished === undefined ? null : Math.round(event.finished - start),
         })) };
       };
+      const profiler = process.argv.includes("--profile") ? await context.newCDPSession(page) : null;
+      if (profiler) { await profiler.send("Profiler.enable"); await profiler.send("Profiler.start"); }
       const navigation = [];
       navigation.push(await tracedClick("Gallery folder", folder("Gallery"), ".vault-context-location h2", "Gallery"));
       const imageStart = performance.now();
@@ -440,6 +442,7 @@ async function main() {
       navigation.push(await tracedClick("All files after Long note", page.getByRole("button", { name: "TextText", exact: true }), ".vault-context-location h2", "All files"));
       navigation.push(await tracedClick("Notes folder after Long note", folder("Notes"), ".vault-context-location h2", "Notes"));
       navigation.push(await tracedClick("Cached Long note item", await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".vault-note-display", "One careful paragraph about a file library", true));
+      if (profiler) { const { profile } = await profiler.send("Profiler.stop"); await fs.writeFile(path.join(outputDir, "reader.cpuprofile"), JSON.stringify(profile)); await profiler.detach(); }
       await page.getByRole("button", { name: "Edit card", exact: true }).click();
       await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20_000 });
       const target = items.find(item => item.title === "Long note")!;

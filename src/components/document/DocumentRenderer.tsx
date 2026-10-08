@@ -2,6 +2,7 @@ import { DocumentRenderBoundary } from "./DocumentRenderBoundary";
 import { isVisualRatingScale } from "@/lib/presentation/rating-scale";
 import { Fragment, memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import { plainParagraph } from "./plain-paragraph";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -394,6 +395,8 @@ const Markdown = memo(function Markdown({
     }
     return map.size > 0 ? map : null;
   }, [assets]);
+  const plain = plainParagraph(value);
+  if (plain !== null) return <p>{plain}</p>;
   return (
     <ReactMarkdown
       remarkPlugins={plugins}
