@@ -182,6 +182,7 @@ export class FileCollaborationClient {
   private dead = false;
   private initialized = false;
   private authoritative = false;
+  private connectionProbePending = false;
   private frozen = false;
   private current: Cursor | null = null;
   private pending: string[] = [];
@@ -507,6 +508,7 @@ export class FileCollaborationClient {
     const retryableStatus = detail?.status === 429 || (detail?.status !== undefined && detail.status >= 500 && detail.status <= 599);
     if (!retryableStatus && error instanceof Error && /Invalid|Incomplete|Saved|history|storage|quota|Quota|localStorage|journal/i.test(error.message)) { this.fatal(error); return; }
     this.report("offline", "Waiting for the connection. Pending edits are saved on this device.");
+    this.connectionProbePending = true;
     const failures = uploading ? this.uploadFailures++ : this.failures++;
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(failures, 5));
     if (this.initialized) { this.schedulePush(delay); this.schedulePoll(delay); }
@@ -523,7 +525,9 @@ export class FileCollaborationClient {
   private async poll(): Promise<void> {
     if (!this.current || !this.active || this.dead || this.frozen) return;
     try {
-      const requested = this.authoritative ? { epoch: this.current.epoch, seq: this.current.seq, waitMs: 25_000 } : null;
+      // Recovery must confirm availability immediately, even when no one edited
+      // the document while disconnected. Resume long polling after that proof.
+      const requested = this.authoritative ? { epoch: this.current.epoch, seq: this.current.seq, waitMs: this.connectionProbePending ? 0 : 25_000 } : null;
       const remote = await this.request("read", requested ?? {}, true) as Partial<StateResponse> & { unchanged?: boolean };
       if (this.dead || !this.active || this.frozen) return;
       if (!remote || !Number.isSafeInteger(remote.epoch) || !Number.isSafeInteger(remote.seq) || remote.seq! < 0 ||
@@ -537,6 +541,7 @@ export class FileCollaborationClient {
       if (!remote.unchanged && remote.seq! >= this.current.seq) {
         cursor(remote); presentation(remote.presentation); Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.adoptPresentation(remote.presentation); this.snapshot(); this.current = cursor(remote); this.persist(); this.options.onChange?.(this.snapshot(), this.presentation);
       }
+      this.connectionProbePending = false;
       this.authoritative = true; this.failures = 0; this.report(this.uploadFailures ? "offline" : this.pending.length || this.batch ? "saving" : "ready"); this.schedulePush(0); this.schedulePoll(250);
     } catch (error) { this.handleFailure(error); }
     finally { this.schedulePoll(250); }

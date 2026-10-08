@@ -380,7 +380,31 @@ describe("durable file collaboration client", () => {
     await vi.advanceTimersByTimeAsync(34_998); expect(polls).toBe(1);
     await vi.advanceTimersByTimeAsync(2); expect(editor.status).toBe("offline");
     await vi.advanceTimersByTimeAsync(1000);
-    expect(editor.status).toBe("ready"); expect(polls).toBe(2);
+    expect(editor.status).toBe("ready"); expect(polls).toBe(1);
+    await vi.advanceTimersByTimeAsync(250); expect(polls).toBe(2);
+    expect(server.pushes).toHaveLength(0);
+  });
+
+  it("confirms automatic reconnection without waiting for another document edit", async () => {
+    const server = new Server(); const waits: unknown[] = []; let disconnect = true;
+    const editor = client(server, new Journal(), (method, params, signal) => {
+      if (method === "read") {
+        waits.push(params.waitMs);
+        if (params.waitMs && disconnect) {
+          disconnect = false;
+          return Promise.reject(Object.assign(new Error("Service restarting"), { status: 503 }));
+        }
+      }
+      return server.request(method, params, signal);
+    });
+    await editor.start(); await vi.advanceTimersByTimeAsync(1);
+    expect(editor.status).toBe("offline");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(editor.status).toBe("ready");
+    expect(waits).toEqual([undefined, 25_000, 0]);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(waits).toEqual([undefined, 25_000, 0, 25_000]);
+    expect(server.waiters.size).toBe(1);
     expect(server.pushes).toHaveLength(0);
   });
 
