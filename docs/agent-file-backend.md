@@ -49,14 +49,17 @@ Approval recovery persists a server-generated command key with immutable argumen
 `GET /api/vault/workspaces` accepts a browser session or an existing native app
 bearer with `sync` scope. Manual/OAuth agent tokens and item-scoped tokens cannot
 use this account surface. It returns `defaultWorkspaceId` and authorized
-`{id, name, access}` summaries for the owned default and explicit file/folder
-invitations, with fresh authorization and no file paths or credentials.
-This discovery slice does not enable native switching.
+`{id, name, access}` summaries for the owned default, full workspace memberships
+and explicit file/folder invitations, with fresh authorization and no file paths
+or credentials. Membership email matching uses the stored account identity.
 
-Native follow-on: expose `workspacesList` and `workspaceOpen({workspaceId})` in
-both adapters; separate selected workspace from account credentials; validate
-access and portable folder binding before retiring the current view; flush
-pending edits, then replace collaboration/agent/watch lifetimes and persist
-selection. Scoped replicas must preserve files missing from filtered manifests
-and must not retry unauthorized writes indefinitely. A chooser must wait for
-that lifecycle and its cancellation/revocation tests.
+Both native adapters expose `workspacesList` and `workspaceOpen({workspaceId})`.
+Selection is separate from account credentials. Opening validates current access
+and the portable folder binding, prepares the replacement, and flushes pending
+edits before retiring the current view. Collaboration, agent and watcher
+lifetimes are replaced together. Scoped replicas preserve files omitted from
+filtered manifests and retain unauthorized pending writes without immediate
+retry loops. Last-known permissions allow offline local editing; uploads require
+a fresh manifest. Permission-only updates must refresh the listing even when
+no file is downloaded. The shared account menu also exposes this discovery on
+web. See `docs/HANDOFF.md` for installed versions and live acceptance limits.
