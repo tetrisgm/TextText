@@ -90,3 +90,11 @@ Explorer requests outside the current root offer the same picker.
 
 This changes a workspace's local location; it does not create or switch cloud
 workspaces. An account-level multiworkspace API remains separate work.
+
+The portable binding is `.texttext/workspace-binding.json` with lowerCamel
+`version: 1`, `origin` (canonical HTTPS authority), and `workspaceId`. Windows
+also validates identity from legacy Mac `.texttext/sync/state.json` when present,
+but never imports that device's cursor, outbox or recovery state. A copied Mac
+folder without either identity marker cannot be attributed safely; it is rejected
+until a verified Mac binding writes the portable marker. Origin slash/case
+normalization does not weaken cross-server or cross-workspace rejection.

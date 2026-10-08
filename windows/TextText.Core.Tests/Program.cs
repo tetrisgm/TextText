@@ -11,6 +11,15 @@ static class Test
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  Throws<IOException>(()=>store.Resolve("../outside.textpack"),"reject traversal");Throws<IOException>(()=>store.Resolve("Notes/a.textpack:stream"),"reject alternate data streams");
  var first=store.Write("Notes/Test.textpack",Pack());Assert(first.ItemId=="test-1","identity extraction");
+ var macFolder=Path.Combine(temp,"mac-folder");Directory.CreateDirectory(Path.Combine(macFolder,".texttext","sync"));
+ var macJournal=Path.Combine(macFolder,".texttext","sync","state.json");
+ File.WriteAllText(macJournal,"{\"binding\":{\"origin\":\"https://TEXTTEXT.app\",\"workspaceId\":\"workspace-a\"},\"cursor\":900,\"outbox\":{}}");
+ var originalMacJournal=File.ReadAllText(macJournal);
+ Assert(WorkspaceLocation.Validate(macFolder,"https://texttext.app/","workspace-a")==macFolder,"Mac legacy binding canonicalizes origin");
+ WorkspaceLocation.Bind(macFolder,"https://texttext.app/","workspace-a");
+ Assert(File.ReadAllText(macJournal)==originalMacJournal,"Mac foreign cursor and outbox remain untouched");
+ Throws<IOException>(()=>WorkspaceLocation.Validate(macFolder,"https://texttext.app","workspace-b"),"Mac legacy binding rejects other workspace");
+ Assert(File.ReadAllText(Path.Combine(macFolder,".texttext","workspace-binding.json")).Contains("\"workspaceId\""),"portable binding uses shared camelCase schema");
  var alternate=Path.Combine(temp,"alternate");Directory.CreateDirectory(alternate);
  WorkspaceLocation.Bind(alternate,"https://texttext.app/","workspace-a");
  Assert(WorkspaceLocation.Validate(alternate,"https://texttext.app/","workspace-a")==alternate,"workspace location validates saved binding");

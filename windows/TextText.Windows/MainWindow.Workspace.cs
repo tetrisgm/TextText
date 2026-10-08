@@ -44,7 +44,7 @@ public sealed partial class MainWindow
         {
             var selected = WorkspaceLocation.Validate(picker.FolderName, Origin.AbsoluteUri, account.WorkspaceId);
             if (string.Equals(selected, root, StringComparison.OrdinalIgnoreCase)) return;
-            if (!File.Exists(Path.Combine(selected, ".texttext", "workspace-binding.json")) && Directory.EnumerateFileSystemEntries(selected).Any())
+            if (!WorkspaceLocation.HasBinding(selected) && Directory.EnumerateFileSystemEntries(selected).Any())
             {
                 MessageBox.Show(this, "Choose an empty folder or a folder already connected to this workspace. Existing files can be added after opening the workspace.", "Open workspace folder"); return;
             }
