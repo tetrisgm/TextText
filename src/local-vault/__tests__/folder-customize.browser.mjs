@@ -20,7 +20,7 @@ try{
  const composer=page.getByRole('textbox',{name:'Message assistant'});await composer.waitFor();for(const colorScheme of ['light','dark']){await page.emulateMedia({colorScheme});await page.screenshot({path:'/tmp/texttext-folder-customize-'+colorScheme+'.png'});}await composer.fill('Show a compact list');await page.getByRole('button',{name:'Send',exact:true}).click();
  await page.waitForFunction(()=>window.calls.some(c=>c.method==='agentSend'));assert.equal(await page.evaluate(()=>window.calls.find(c=>c.method==='agentSend').params.path),'Notes/Folder view.textpack');
  await page.locator('summary').filter({hasText:'Other'}).first().click();await composer.waitFor({state:'hidden'});await page.locator('summary').filter({hasText:'Notes'}).first().click();assert.equal(await composer.count(),0);
- await page.getByText('More',{exact:true}).click();await page.getByRole('button',{name:'Customize folder',exact:true}).click();await composer.waitFor();
+ await page.getByText('More',{exact:true}).click();await page.getByRole('button',{name:'Customize folder',exact:true}).click();await composer.waitFor();assert.equal(await page.getByText('Show a compact list',{exact:false}).count(),0);
  await page.evaluate(()=>{window.workspace='vault:two';window.dispatchEvent(new Event('texttext:vault-changed'))});await composer.waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.method==='agentSend').length),1);assert.deepEqual(errors,[]);
  console.log('PASS web folder customize: actual folder design target, folder departure/back and workspace change fence stale requests.');
 }finally{await browser.close();await rm(dir,{recursive:true,force:true});}

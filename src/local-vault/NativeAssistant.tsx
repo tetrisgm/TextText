@@ -136,7 +136,8 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
         if (request.root !== root || (webAssistant && request.path !== path)) return;
         customizationRoot.current = root;
         activeTaskFence.current = null;
-        acceptTask(null); setPrompt(""); setCustomizing(request.path); setCustomizationTaskId(request.taskId); changeProposal(null);
+        acceptTask(null); setPrompt(""); setMessages([]); setAction(""); replyId.current = null;
+        setCustomizing(request.path); setCustomizationTaskId(request.taskId); changeProposal(null);
         setNotice(webAssistant ? "Describe the design you want. Applying a design needs approval. New reusable templates are saved first, then applied with a separate approval." : "Describe the change you want. You can preview and refine it before keeping it.");
         requestAnimationFrame(() => composer.current?.focus());
         return;

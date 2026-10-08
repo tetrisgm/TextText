@@ -109,7 +109,12 @@
   current account/cached-permission fixture semantics; the earlier failure was
   stale message and unauthenticated-edit expectations.
   [Offline editor receipt](verification/2026-10-08-offline-editor-smoke.md).
-- Complete agent item/template creation acceptance. Real native Gallery image
+- Native Mac 1208 item design generation/preview/keep passed with exact content
+  and asset preservation and retained mutation receipt. Reader settled after a
+  brief automatic sync wait. [Receipt](verification/2026-10-08-native-design-1208.md).
+  New customization requests now clear stale prior-task conversation in source;
+  browser regression and TypeScript passed, not installed.
+- Complete reusable agent template-library creation acceptance. Real native Gallery image
   description and metadata writing passed; hosted configured-provider generation
   and approval remain unverified.
   [Native acceptance](verification/2026-10-08-gallery-agent-1204.md),
