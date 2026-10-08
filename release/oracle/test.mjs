@@ -79,6 +79,13 @@ function temporary(t) {
   return directory;
 }
 
+test("Oracle classifies Next graceful signal exits without hiding crashes", () => {
+  const unit = readFileSync(new URL('./texttext.service', import.meta.url), 'utf8');
+  assert.match(unit, /^SuccessExitStatus=130 143$/m);
+  assert.match(unit, /^Restart=on-failure$/m);
+  assert.doesNotMatch(unit, /^SuccessExitStatus=.*(?:SIGKILL|SIGSEGV|\b1\b|\b137\b)/m);
+});
+
 test("all Oracle CLIs execute through the current release symlink", (t) => {
   const directory = temporary(t);
   const current = join(directory, "current");

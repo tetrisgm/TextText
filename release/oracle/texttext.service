@@ -14,6 +14,8 @@ WorkingDirectory=/home/ubuntu/texttext/current
 EnvironmentFile=/etc/texttext/runtime.env
 ExecStart=/usr/bin/node /home/ubuntu/texttext/current/release/oracle/start.mjs
 Restart=on-failure
+# Next exits with 128 + signal after its graceful close completes.
+SuccessExitStatus=130 143
 RestartSec=5
 TimeoutStopSec=30
 UMask=0077
