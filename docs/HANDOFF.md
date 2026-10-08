@@ -25,9 +25,14 @@
   authorization and durable retries; not shipped. Focused suites passed 56
   tests, with a final 21-test recheck and TypeScript.
   [Receipt](verification/2026-10-08-agent-template-remix.md).
-- In progress: folder defaults that shared UI and canonical item creation both
-  honor. Collection layout and new-item defaults must remain distinct; explicit
-  template choices override defaults and existing items remain unchanged.
+- Shared folder defaults, atomic complete-item creation and reversible template
+  retirement are committed in `197c7552`; local/remote CLI parity is covered by
+  `eaf1c25e`, `5f74d92a` and `af658589`. These changes are not installed yet.
+  Explicit template choices override defaults; existing items retain their design.
+- Before the next build: remove the ordinary-folder scan ceiling and cache only
+  bounded metadata across server, Windows and Mac. Verify external edits,
+  replacement, rename and duplicate definitions invalidate cached discovery.
+  This prevents a large collection from blocking generic item creation.
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
   Agent template creation and durable template/folder approvals
