@@ -81,16 +81,16 @@ static class MainWindowCloseTests
             Check(fencedBridge.Calls==1,"current view remains usable after rejected retired request",checks);
             var savedFactory=MainWindow.WorkspaceFactory;
             try {
-                MainWindow.WorkspaceFactory=_=>new ActivationBridge();
+                var bridgeCreations=0; MainWindow.WorkspaceFactory=_=>{bridgeCreations++;return new ActivationBridge();};
                 var preparedRoot=Path.Combine(root,"prepared-workspace");Directory.CreateDirectory(preparedRoot);
                 var failed=false;
                 try { await ((Task)open.Invoke(fenced.Window,[preparedRoot,(Action)(()=>throw new IOException("isolated commit failure")),null,null])!).WaitAsync(TimeSpan.FromSeconds(15),ct); }
                 catch(IOException){failed=true;}
                 Check(failed&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&fenced.Window.IsVisible,"failed initialized workspace switch restores usable previous presentation",checks);
-                var flushRejected=false;
+                var flushRejected=false; var beforeFailedFlush=bridgeCreations;
                 try { await ((Task)open.Invoke(fenced.Window,[preparedRoot,null,null,(Func<Task>)(()=>throw new IOException("isolated flush failure"))])!).WaitAsync(TimeSpan.FromSeconds(15),ct); }
                 catch(IOException){flushRejected=true;}
-                Check(flushRejected&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&ReferenceEquals(Field("bridge").GetValue(fenced.Window),fencedBridge),"failed prepared editor flush preserves previous workspace and bridge",checks);
+                Check(flushRejected&&bridgeCreations==beforeFailedFlush&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&ReferenceEquals(Field("bridge").GetValue(fenced.Window),fencedBridge),"failed prepared editor flush preserves previous workspace and bridge",checks);
                 await ((Task)open.Invoke(fenced.Window,[preparedRoot,null,null,null])!).WaitAsync(TimeSpan.FromSeconds(15),ct);
                 var initialized=(WebView2)Field("web").GetValue(fenced.Window)!;
                 await Until(async()=>await initialized.ExecuteScriptAsync("location.host === 'texttext.local' && document.readyState === 'complete'")=="true",ct);

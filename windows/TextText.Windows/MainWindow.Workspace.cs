@@ -54,9 +54,11 @@ public sealed partial class MainWindow
             if(id==ActiveWorkspaceId)return;
             await OpenWorkspace(replacement:selected,prepareCommit:async()=>{
                 if(!ReferenceEquals(account,identity))throw new InvalidOperationException("Account changed.");
-                if(!await FlushEditor())throw new IOException("Save the current document before switching workspaces.");
-                // Discovery may have become stale while WebView prepared or edits flushed.
+                // Reauthorize after preparation, then make the editor flush the last
+                // await before activation. Input stays disabled until success or rollback.
                 await directory.AuthorizeAsync(id,deadline.Token);
+                if(!ReferenceEquals(account,identity))throw new InvalidOperationException("Account changed.");
+                if(!await FlushEditor())throw new IOException("Save the current document before switching workspaces.");
                 if(!ReferenceEquals(account,identity))throw new InvalidOperationException("Account changed.");
             },beforeCommit:()=>WorkspaceSelection.Save(identity.WorkspaceId,selected));
         } finally {transitioning=false;if(web is not null)web.IsEnabled=true;}
@@ -77,13 +79,17 @@ public sealed partial class MainWindow
                 MessageBox.Show(this, "Choose an empty folder or a folder already connected to this workspace. Existing files can be added after opening the workspace.", "Open workspace folder"); return;
             }
             if (MessageBox.Show(this, $"Use this folder for {ActiveWorkspaceName}? TextText will download this workspace here. Files in the previous folder stay there.", "Open workspace folder", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
-            if (!await FlushEditor()) { ShowSaveFailure(); return; }
+            var identity = account;
             WorkspaceLocation.Bind(selected, Origin.AbsoluteUri, ActiveWorkspaceId);
             await OpenWorkspace(selected, () => {
                 var path = LocationFile(ActiveWorkspaceId); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var temporary = path + ".pending";
                 File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(selected));
                 File.Move(temporary, path, true);
+            }, prepareCommit: async () => {
+                if (!ReferenceEquals(account, identity)) throw new InvalidOperationException("Account changed.");
+                if (!await FlushEditor()) throw new IOException("Save the current document before switching folders.");
+                if (!ReferenceEquals(account, identity)) throw new InvalidOperationException("Account changed.");
             });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)
