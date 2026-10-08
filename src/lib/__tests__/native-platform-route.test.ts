@@ -11,7 +11,7 @@ beforeEach(() => {
   vi.mocked(runWorkspaceToolForSession).mockResolvedValue({ content: [{ type: "text", text: '{"item":{"id":"one"}}' }] });
 });
 describe("native workspace transport", () => {
-  it.each(["create_item", "append_to_item", "read_item", "search"])("dispatches %s through the shared executor", async name => {
+  it.each(["create_folder", "create_item", "append_to_item", "read_item", "search"])("dispatches %s through the shared executor", async name => {
     const response = await POST(request({ name, args: { id: "one" }, handle: "foreign", actorType: "ai" }));
     expect(response.status).toBe(200);
     expect(runWorkspaceToolForSession).toHaveBeenCalledWith(name, { id: "one" }, { sub: "owner", userId: "user", handle: "mine", actorType: "human", connectionId: "native:user" });

@@ -12,6 +12,7 @@ vi.mock("@/lib/store", async () => {
   return {
     getUserIdBySub: async () => "owner", getOwnedBlog: async () => ({ handle: "fixture", name: "Fixture" }), getBlog: async () => ({ handle: "fixture", name: "Fixture" }), getBlogEditRecord: async () => ({ id: "workspace", ownerId: "owner" }),
     listVaultTextpacks: engine.listVaultTextpacks,
+    createVaultFolder: (input: Parameters<typeof engine.createVaultFolder>[0] & { actorUserId: string; actorType: "human" | "external_agent" }) => engine.createVaultFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: mocks.audit }),
     readVaultPreview: async (input: Parameters<typeof engine.readVaultTextpack>[0]) => { const pack = await engine.readVaultTextpack(input); return pack ? { ...await (await import("@/lib/vault/pack-preview.server")).previewTextpack(pack.bytes, true), sourceBytes: pack.bytes.byteLength } : null; },
     searchVaultTextpacks: async (input: Parameters<typeof engine.listVaultTextpacks>[0], entries: { itemId: string }[], query: string) => {
       const items = [];
@@ -32,6 +33,18 @@ async function command(name: string, args: Record<string, unknown>) {
   const result = await response.json(); expect(response.status, JSON.stringify(result)).toBe(200); return result.result;
 }
 describe("native file command response and human attribution", () => {
+  it("creates an empty folder through the native route and replays the same receipt", async () => {
+    const args = { parent_path: "", name: "Empty folder", idempotency_key: "native-folder" };
+    const created = await command("create_folder", args);
+    expect(created).toEqual({ status: "folder_created", relativePath: "Empty folder" });
+    expect(await command("create_folder", args)).toEqual(created);
+    const { listVaultTextpacks } = await import("@/sync/engine/store");
+    const manifest = await listVaultTextpacks({ root, workspaceId: "workspace" });
+    expect(manifest.folders).toContain("Empty folder");expect(manifest.items).toEqual([]);
+    expect(mocks.presence).not.toHaveBeenCalled();
+    for (const [receipt] of mocks.audit.mock.calls as unknown as [{ actorType: string }][]) expect(receipt.actorType).toBe("human");
+  });
+
   it("creates, reads and appends through the actual native route with stable public fields", async () => {
     const created = await command("create_item", { title: "Native note", body: "Human body", kind: "note", idempotency_key: "create" });
     expect(created.item.id).toMatch(/^[a-f0-9-]{36}$/); expect(created.itemId).toBe(created.item.id);

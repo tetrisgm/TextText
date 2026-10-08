@@ -4,7 +4,7 @@ import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import type { WorkspaceToolName } from "@/lib/ai/tools";
 
 export const dynamic = "force-dynamic";
-const allowed = new Set<WorkspaceToolName>(["create_item", "append_to_item", "read_item", "search"]);
+const allowed = new Set<WorkspaceToolName>(["create_folder", "create_item", "append_to_item", "read_item", "search"]);
 const headers = { "Cache-Control": "private, no-store" };
 // First-party native transport. Auth and tenant come from the existing sync
 // credential, never from JSON. This invokes the shared executor, not /api/mcp.
