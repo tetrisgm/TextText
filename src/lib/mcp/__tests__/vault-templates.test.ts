@@ -199,3 +199,57 @@ it("rejects incompatible fields, false base identity/version and implicit applic
   authorizeCreation.mockRejectedValue(new Error("library revoked"));
   await expect(executeVaultTemplateTool("update_item_type", args, context())).rejects.toThrow("library revoked");
 });
+
+it("remixes an exact built-in through public dispatch once without changing source or pinned items", async () => {
+  vi.stubEnv("TEXTTEXT_VAULT_ROOT", root);
+  const { executeMcpTool } = await import("../tools");
+  const authInfo = { token: "fixture", clientId: "fixture", scopes: ["sync"], extra: { sub: "subject", userId: "actor", connectionId: "fixture" } };
+  const original = requireBuiltinTemplate("texttext.note");
+  const args = { template_id: original.id, template_version: original.version, name: "My note", idempotency_key: "remix-builtin" };
+  const result = await executeMcpTool("remix_item_type", args, { authInfo });
+  expect(result, JSON.stringify(result)).not.toHaveProperty("isError", true);
+  const created = result.structuredContent as { itemId: string; revision: string; template_id: string };
+  const saved = (await readVaultTextpack({ ...location(), itemId: created.itemId }))!;
+  const file = openPack(saved.bytes, saved.relativePath, saved.revision).file;
+  expect(readTemplate(file, readDocument(file))).toEqual({ ...original, id: created.template_id, version: 1, name: "My note" });
+  expect((await executeMcpTool("remix_item_type", args, { authInfo })).structuredContent).toEqual(result.structuredContent);
+  expect((await executeMcpTool("remix_item_type", args, { authInfo: { ...authInfo, scopes: ["readonly"] } })).isError).toBe(true);
+  expect((await readVaultTextpack({ ...location(), itemId: target }))!.revision).toBe(revision);
+  expect((await readVaultTextpack({ ...location(), itemId: source }))!.revision).toBe(sourceRevision);
+});
+it("remixes custom definitions without private contents and replays after the source changes", async () => {
+  const args = { template_id: custom.id, template_version: custom.version, source_item_id: source, source_hash: sourceRevision, name: "Remixed", idempotency_key: "remix-custom" };
+  const created = await executeVaultTemplateTool("remix_item_type", args, context());
+  if (!("itemId" in created)) throw new Error("Missing artifact");
+  const saved = (await readVaultTextpack({ ...location(), itemId: created.itemId }))!;
+  const file = openPack(saved.bytes, saved.relativePath, saved.revision).file;
+  expect(file.markdown).not.toContain("Preserved body");
+  expect(unzipSync(saved.bytes)["opaque.bin"]).toBeUndefined();
+  expect(readTemplate(file, readDocument(file))).toEqual({ ...custom, id: `local.${created.itemId}`, version: 1, name: "Remixed" });
+  await mutateVaultDocument({ ...location(), itemId: source, operationId: "changed-remix-source", expectedRevision: sourceRevision, mutation: { appendBody: "changed" }, audit: { actorUserId: "actor", actorType: "human" }, onReceipt: async () => {} });
+  expect(await executeVaultTemplateTool("remix_item_type", args, context())).toEqual(created);
+  await expect(executeVaultTemplateTool("remix_item_type", { ...args, name: "Different" }, context())).rejects.toThrow("reused");
+  await expect(executeVaultTemplateTool("remix_item_type", { ...args, idempotency_key: "new-remix" }, context())).rejects.toThrow("source changed");
+  authorize.mockRejectedValue(new Error("source revoked"));
+  await expect(executeVaultTemplateTool("remix_item_type", args, context())).rejects.toThrow("source revoked");
+  expect((await readVaultTextpack({ ...location(), itemId: target }))!.revision).toBe(revision);
+});
+it("retains editable authored source on remix and checks exact identity and library authority", async () => {
+  const original = await executeVaultTemplateTool("create_item_type", { blueprint, idempotency_key: "remix-authored-source" }, context());
+  if (!("template_id" in original)) throw new Error("Missing artifact");
+  const args = { template_id: original.template_id, template_version: 1, source_item_id: original.itemId, source_hash: original.revision, name: "Review copy", idempotency_key: "remix-authored" };
+  await expect(executeVaultTemplateTool("remix_item_type", { ...args, template_version: 2 }, context())).rejects.toThrow("exact workspace template");
+  const created = await executeVaultTemplateTool("remix_item_type", args, context());
+  if (!("itemId" in created)) throw new Error("Missing artifact");
+  const saved = (await readVaultTextpack({ ...location(), itemId: created.itemId }))!;
+  const file = openPack(saved.bytes, saved.relativePath, saved.revision).file;
+  expect(JSON.parse(file.templateAuthoringSourceJSON!).blueprint).toMatchObject({ ...blueprint, name: "Review copy" });
+  const sourcePack = (await readVaultTextpack({ ...location(), itemId: original.itemId }))!;
+  const sourceFile = openPack(sourcePack.bytes, sourcePack.relativePath, sourcePack.revision).file;
+  const sourceDefinition = readTemplate(sourceFile, readDocument(sourceFile));
+  const copiedDefinition = readTemplate(file, readDocument(file));
+  for (const key of ["fields", "item", "collection", "theme", "starter"] as const) expect(copiedDefinition[key]).toEqual(sourceDefinition[key]);
+  authorizeCreation.mockRejectedValue(new Error("library revoked"));
+  await expect(executeVaultTemplateTool("remix_item_type", args, context())).rejects.toThrow("library revoked");
+  await expect(executeVaultTemplateTool("remix_item_type", { template_id: "texttext.note", template_version: 999, name: "No", idempotency_key: "wrong-version" }, context())).rejects.toThrow("exact built-in");
+});

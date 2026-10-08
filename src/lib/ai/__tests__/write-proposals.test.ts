@@ -495,6 +495,17 @@ describe("canonical template approval durability", () => {
         expect((await Promise.all([approve(proposal.id), approve(proposal.id)])).every(result => result.status === "completed")).toBe(true);
         expect((await engine.listVaultTextpacks(location)).items).toEqual(committed);
       }
+      const remix = await stage("remix_item_type", { template_id: "texttext.note", template_version: 1, name: "Approved copy" });
+      h.repository.rejectCompletion = true;
+      expect((await approve(remix.id)).status).toBe("ambiguous");
+      const remixed = (await engine.listVaultTextpacks(location)).items;
+      expect(remixed).toHaveLength(3);
+      h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+      access.allowed = false;
+      expect((await approve(remix.id)).status).not.toBe("completed");
+      access.allowed = true;
+      expect((await approve(remix.id)).status).toBe("completed");
+      expect((await engine.listVaultTextpacks(location)).items).toEqual(remixed);
       const folder = await stage("create_folder", { name: "Approved folder", parent_path: "" });
       h.repository.rejectCompletion = true;
       expect((await approve(folder.id)).status).toBe("ambiguous");
@@ -508,7 +519,7 @@ describe("canonical template approval durability", () => {
       await h.repository.claim(expired.id, { blogId: "blog-1", actorUserId: "user-1" }, h.dependencies.now());
       h.advance(16 * 60_000);
       expect((await approve(expired.id)).status).toBe("expired");
-      expect((await engine.listVaultTextpacks(location)).items).toHaveLength(2);
+      expect((await engine.listVaultTextpacks(location)).items).toHaveLength(3);
       await expect(stage("create_item_type", { blueprint, apply_to_existing: false })).rejects.toThrow("arguments are invalid");
     } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
   });

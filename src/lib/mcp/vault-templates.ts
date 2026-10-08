@@ -14,6 +14,23 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
   if (args.template_id !== undefined && (typeof args.template_id !== "string" || !args.template_id.length)) throw new Error("Invalid template identifier");
   if (args.template_version !== undefined && (typeof args.template_version !== "number" || !Number.isSafeInteger(args.template_version) || args.template_version < 1)) throw new Error("Invalid template version");
   const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId };
+  if (name === "remix_item_type") {
+    if (Object.keys(args).some(key => !["template_id", "template_version", "name", "source_item_id", "source_hash", "idempotency_key"].includes(key)) || !context.authorizeCreation || typeof args.template_id !== "string" || typeof args.template_version !== "number" || typeof args.name !== "string" || !args.name.trim() || args.name.length > 160 || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim()) throw new Error("Choose an exact template version, new name and stable idempotency key");
+    const operationId = createHash("sha256").update(JSON.stringify([context.actorUserId, name, args.idempotency_key])).digest("hex");
+    const itemId = `${operationId.slice(0,8)}-${operationId.slice(8,12)}-4${operationId.slice(13,16)}-8${operationId.slice(17,20)}-${operationId.slice(20,32)}`;
+    let creation: VaultTemplateCreation;
+    if (args.source_item_id !== undefined || args.source_hash !== undefined) {
+      if (typeof args.source_item_id !== "string" || typeof args.source_hash !== "string" || !/^[a-f0-9]{64}$/.test(args.source_hash)) throw new Error("Custom templates require source_item_id and source_hash from the template list");
+      creation = { sourceItemId: args.source_item_id, sourceHash: args.source_hash, remix: { templateId: args.template_id, templateVersion: args.template_version, name: args.name } };
+    } else {
+      if (!BUILTIN_TEMPLATES.some(template => template.id === args.template_id && template.version === args.template_version)) throw new Error("Choose an exact built-in version or provide a pinned custom template source");
+      creation = { builtinTemplateId: args.template_id, builtinTemplateVersion: args.template_version, name: args.name };
+    }
+    const receipt = await createVaultTemplate({ ...location, itemId, operationId, creation, actorUserId: context.actorUserId, actorType: context.actorType,
+      beforeCommit: context.authorizeCreation, beforeSourceRead: (id, path) => context.authorize(id, path, false) });
+    if (receipt.status === "conflict") throw new Error("Template destination is occupied");
+    return { ...receipt, template_id: `local.${itemId}`, template_version: 1, source_item_id: itemId, source_hash: receipt.revision };
+  }
   if (name === "update_item_type") {
     if (Object.keys(args).some(key => !["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key", "apply", "apply_to_existing"].includes(key)) || args.apply === true || args.apply_to_existing === true) throw new Error("Save a new template version separately from applying it to existing items.");
     if (!context.authorizeCreation || typeof args.template_id !== "string" || typeof args.base_version !== "number" || !Number.isSafeInteger(args.base_version) || args.base_version < 1 || args.base_version >= Number.MAX_SAFE_INTEGER || typeof args.source_item_id !== "string" || typeof args.source_hash !== "string" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim()) throw new Error("Read the template and provide its source hash, base version and stable idempotency key");

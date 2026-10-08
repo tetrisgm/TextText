@@ -1254,6 +1254,8 @@ export async function createVaultTemplate(input: VaultLocation & {
     segment(input.creation.sourceItemId);
     if (!/^[a-f0-9]{64}$/.test(input.creation.sourceHash) || ("name" in input.creation && (!input.creation.name.trim() || input.creation.name.length > 160))) throw new Error("Read the source and provide its hash and a look name");
   }
+  const requestedName = "remix" in input.creation ? input.creation.remix.name : "name" in input.creation ? input.creation.name : undefined;
+  if (requestedName !== undefined && (typeof requestedName !== "string" || !requestedName.trim() || requestedName.length > 160)) throw new Error("Choose a template name up to 160 characters");
   const relativePath = `Templates/${input.itemId}.textpack`;
   const requestHash = hash(json(["create-template", input.itemId, input.creation, input.audit]));
   const layout = await setup(input);
