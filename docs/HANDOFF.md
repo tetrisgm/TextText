@@ -2,31 +2,32 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1185)**, source `68eaaf80`.
-- Windows: same source `68eaaf80`, installed in the existing location.
-- Oracle: **texttext-oracle-20261008T063810Z-68eaaf80**, thirteen live checks passed.
+- Mac `/Applications/TextText.app`: **0.204 (1186)**, source `a6fee0e4`.
+- Windows: same source `a6fee0e4`, installed in the existing location.
+- Oracle: **texttext-oracle-20261008T065451Z-a6fee0e4**, thirteen live checks passed.
 - Accounts, existing notes, saved edits and search freshness passed on installed
   clients. Agent-created template item arrived on both desktops automatically;
   Safari opened the same item with Mac/Windows presence.
-  [Combined receipt](verification/2026-10-07-shared-templates-performance-1185.md),
-  [Windows receipt](verification/2026-10-07-windows-shared-1185.md).
+  [Current receipt](verification/2026-10-08-shared-template-preview-1186.md),
+  [Windows receipt](verification/2026-10-07-windows-shared-1186.md).
 - Mac folder:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Only dedicated verification notes changed during acceptance.
 
 ## Current work
 
-- Source `68eaaf80` passed 541 core tests, TypeScript, native gates and relevant
+- Source `a6fee0e4` passed 546 core tests, TypeScript, native gates and relevant
   browser checks. Agent template creation and durable template/folder approvals
   now use canonical file operations and retry receipts.
 - Shared reader optimizations reduced the bounded 525 KiB note open from
   1.5–1.6 seconds to 170 ms; cached reopen measured 254 ms. Unchanged
   status/presence no longer reparses Markdown. Actual edits still invalidate.
   [Performance evidence](verification/2026-10-07-file-vault-bounded-performance.md).
-- Shared visual previews for template proposals are in progress. Keep must
-  approve the persisted command, never bypass it with a direct archive write.
-- Home List accessibility labels and agent task labels are being corrected to
-  use saved titles. The visible List title was already correct.
+- Shared frozen-content previews for saved template proposals and saved-title
+  labels are installed. Web Customize and guarded application previews are next.
+- Follow-ups awaiting the next verified build: immediate automatic reconnect
+  probe (`fd0355f0`), bookmark baseline release (`99baf311`), and fresh shared
+  discovery permission checks (`4034f736`). Focused regressions passed.
 - Automatic request/bootstrap recovery and graceful read-poll shutdown are
   installed. [Recovery receipt](verification/2026-10-07-recovery-templates-1184.md),
   [shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
