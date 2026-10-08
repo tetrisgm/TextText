@@ -1,5 +1,5 @@
-// End-to-end proof of the hosted MCP authentication contract after the OAuth
-// server was retired. The test creates an isolated local workspace, mints the
+// End-to-end proof of manual bearer tokens alongside MCP OAuth discovery.
+// The test creates an isolated local workspace, mints the
 // same revocable workspace token used by Connect, drives the real /api/mcp
 // endpoint, revokes the token, proves it can no longer authenticate, then
 // removes every scratch row it created.
@@ -146,11 +146,17 @@ async function requireUnauthorized(token: string | null, label: string) {
       payload.error_description === "A valid bearer token is required",
     `${label} did not return the workspace-token authentication error.`,
   );
-  assert(
-    challenge.includes("resource_documentation=") &&
-      !challenge.toLowerCase().includes("authorization_server"),
-    `${label} did not point directly to workspace-token documentation.`,
-  );
+  const metadataURL = challenge.match(/resource_metadata="([^"]+)"/)?.[1];
+  assert(metadataURL === `${origin}/.well-known/oauth-protected-resource`,
+    `${label} did not advertise the canonical MCP resource metadata.`);
+  const metadataResponse = await fetch(metadataURL, { redirect: "error" });
+  assert(metadataResponse.ok, `${label} advertised unavailable resource metadata.`);
+  const metadata = await metadataResponse.json();
+  assert(metadata.resource === `${origin}/api/mcp` &&
+    metadata.resource_documentation === `${origin}/docs/mcp` &&
+    Array.isArray(metadata.authorization_servers) &&
+    sameMembers(metadata.authorization_servers, new Set([origin])),
+    `${label} advertised incorrect resource, documentation or authorization server.`);
 }
 
 async function main() {

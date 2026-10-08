@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   formatLocalLiveReadiness,
   isLocalLiveServerReady,
@@ -29,6 +30,7 @@ const rootDomain = `localhost:${port}`;
 const evaluationDistDir = ".texttext/next-live-eval";
 const evaluationDistPath = join(process.cwd(), evaluationDistDir);
 const evaluationMediaPath = join(process.cwd(), ".texttext/media-live-eval");
+const evaluationVaultPath = join(tmpdir(), `texttext-live-vault-${randomBytes(12).toString("hex")}`);
 const commandTimeoutMilliseconds = 300_000;
 const localEvaluationEncryptionKey = randomBytes(32).toString("base64url");
 const suiteNames = new Set([
@@ -85,10 +87,12 @@ async function cleanEvaluationBuild() {
   await Promise.all([
     rm(evaluationDistPath, { recursive: true, force: true }),
     rm(evaluationMediaPath, { recursive: true, force: true }),
+    rm(evaluationVaultPath, { recursive: true, force: true }),
   ]);
 }
 
 const evaluationMediaEnvironment = {
+  TEXTTEXT_VAULT_ROOT: evaluationVaultPath,
   MEDIA_ORIGIN: origin,
   TEXTTEXT_MEDIA_ROOT: evaluationMediaPath,
   TEXTTEXT_STORAGE_MIN_FREE_BYTES: String(256 * 1024 ** 2),

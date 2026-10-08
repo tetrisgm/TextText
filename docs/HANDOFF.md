@@ -60,9 +60,15 @@
   (`99704` terminal), then historical handoff links and temporary fixture
   paths (`98957` terminal). Both failures are corrected in `3e01429e` and
   `b403c984`; docs verification and all seven sync-verifier regressions pass.
-  The clean clone is now `b403c984`; full release verification is running
-  through handle `14624`, log `/tmp/texttext-template-release-gates-links-fixed.log`.
-  Resume that handle. Revalidate sync receipts and rebuild/package the exact
+  The clean clone is `b403c984`; full release verification stopped at the
+  stale MCP live-client contract (`14624` terminal), log
+  `/tmp/texttext-template-release-gates-links-fixed.log`. The corrective source
+  now generates the hosted 27-tool catalog from the actual vault registry,
+  checks OAuth resource discovery, and gives local evaluation disposable file
+  storage. Actual MCP discovery/catalog/resources/prompts/revocation/replacement
+  acceptance passed; `/tmp/texttext-mcp-discovery-live-check.log`. TypeScript,
+  docs verification and generated-doc checks passed. Update the clean candidate,
+  then resume full release checks. Revalidate sync receipts and rebuild/package the exact
   new candidate source before deployment; the existing archive is older.
   Oracle remains on `cce4206c`, unchanged. Preflight
   verified 27 GB free, recent backups and all TextText/Algorave services active.
