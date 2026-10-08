@@ -750,7 +750,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
       let template;
       let sourceJSON: string | null = null;
       if (selection.id.startsWith("texttext.")) {
-        template = requireBuiltinTemplate(selection.id);
+        template = requireBuiltinTemplate(selection.id, selection.version);
         if (selection.version !== undefined && template.version !== selection.version) throw new Error("Template version is unavailable");
       } else {
         if (!input.beforeTemplateRead) throw new Error("Template source authorization is required");
@@ -1422,7 +1422,7 @@ export async function setVaultFolderTemplate(input: VaultLocation & {
       template = validateTemplateDefinition(JSON.parse(file.templateJSON));
       authoring = file.templateAuthoringSourceJSON ? validatedLookSource(template, JSON.parse(file.templateAuthoringSourceJSON)) : undefined;
       if (file.templateAuthoringSourceJSON && !authoring) throw new Error("Invalid template authoring source");
-    } else template = requireBuiltinTemplate(input.templateId);
+    } else template = requireBuiltinTemplate(input.templateId, input.templateVersion);
     if (template.id !== input.templateId || template.version !== input.templateVersion) throw new Error("Choose the exact template version");
     if ((await retiredTemplateIds(layout)).has(template.id)) throw new Error("This template is retired");
     await discoverFiles(layout, []);

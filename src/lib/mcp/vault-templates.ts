@@ -3,7 +3,7 @@ import { openPack } from "@/local-vault/pack";
 import { readDocument } from "@/local-vault/model";
 import { createHash } from "node:crypto";
 import { listVaultTextpacks, readVaultTemplate, mutateVaultDocument, createVaultTemplate, retireVaultTemplate, readVaultTextpack, setVaultFolderTemplate } from "@/lib/store";
-import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
+import { BUILTIN_TEMPLATES, getBuiltinTemplate } from "@/lib/presentation/templates";
 import { validatedLookSource } from "@/lib/presentation/template-library";
 import type { VaultTemplateCreation } from "@/lib/presentation/vault-template-authoring";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -46,7 +46,7 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
       if (typeof args.source_item_id !== "string" || typeof args.source_hash !== "string" || !/^[a-f0-9]{64}$/.test(args.source_hash)) throw new Error("Custom templates require source_item_id and source_hash from the template list");
       creation = { sourceItemId: args.source_item_id, sourceHash: args.source_hash, remix: { templateId: args.template_id, templateVersion: args.template_version, name: args.name } };
     } else {
-      if (!BUILTIN_TEMPLATES.some(template => template.id === args.template_id && template.version === args.template_version)) throw new Error("Choose an exact built-in version or provide a pinned custom template source");
+      if ((!BUILTIN_TEMPLATES.some(template => template.id === args.template_id) || !getBuiltinTemplate(args.template_id as string, args.template_version as number))) throw new Error("Choose an exact built-in version or provide a pinned custom template source");
       creation = { builtinTemplateId: args.template_id, builtinTemplateVersion: args.template_version, name: args.name };
     }
     const receipt = await createVaultTemplate({ ...location, itemId, operationId, creation, actorUserId: context.actorUserId, actorType: context.actorType,
@@ -121,7 +121,7 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
     if (typeof args.source_item_id !== "string" || typeof args.source_hash !== "string" || !/^[a-f0-9]{64}$/.test(args.source_hash)) throw new Error("Custom templates require source_item_id and source_hash from the template list");
     presentation = { source: { itemId: args.source_item_id, revision: args.source_hash, templateId, templateVersion: version } };
   } else {
-    const definition = BUILTIN_TEMPLATES.find(template => template.id === templateId && (version === undefined || template.version === version));
+    const definition = version === undefined ? BUILTIN_TEMPLATES.find(template => template.id === templateId) : BUILTIN_TEMPLATES.some(template => template.id === templateId) ? getBuiltinTemplate(templateId, version) : null;
     if (!definition) throw new Error("Choose a built-in or provide a pinned custom template source");
     presentation = { definition };
   }

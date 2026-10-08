@@ -71,8 +71,9 @@ describe("built-in templates", () => {
   });
 
   it("offers parent references for new Notes without changing version 1", () => {
-    const current = requireBuiltinTemplate("texttext.note");
+    const current = requireBuiltinTemplate("texttext.note", 2);
     expect(current.version).toBe(2);
+    expect(requireBuiltinTemplate("texttext.note").version).toBe(1);
     expect(current.fields).toContainEqual({ id: "parents", label: "Parents", type: "reference", target: "document", multiple: true, required: false, visibility: "public" });
     expect(requireBuiltinTemplate("texttext.note", 1).fields.some(field => field.id === "parents")).toBe(false);
   });

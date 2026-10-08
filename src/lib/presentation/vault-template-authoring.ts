@@ -1,4 +1,4 @@
-import { BUILTIN_TEMPLATES } from "./templates";
+import { BUILTIN_TEMPLATES, getBuiltinTemplate } from "./templates";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { openPack } from "@/local-vault/pack";
@@ -14,7 +14,7 @@ export function buildVaultTemplateArtifact(itemId: string, creation: VaultTempla
   let identity = { id: `local.${itemId}`, version: 1 };
   let template; let authoring: AuthoringSource | undefined;
   if ("builtinTemplateId" in creation) {
-    const original = BUILTIN_TEMPLATES.find(value => value.id === creation.builtinTemplateId && value.version === creation.builtinTemplateVersion);
+    const original = BUILTIN_TEMPLATES.some(value => value.id === creation.builtinTemplateId) ? getBuiltinTemplate(creation.builtinTemplateId, creation.builtinTemplateVersion) : null;
     if (!original) throw new Error("Choose an exact built-in template version");
     template = validateTemplateDefinition({ ...original, ...identity, name: creation.name });
   } else if ("blueprint" in creation) {

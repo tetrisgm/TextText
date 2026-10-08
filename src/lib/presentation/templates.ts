@@ -2583,7 +2583,7 @@ export function templateKey(id: string, version: number): string {
 
 export function getBuiltinTemplate(
   id: string,
-  version?: number,
+  version = 1,
 ): TemplateDefinition | null {
   return version === undefined ? activeDefinitions.find(template => template.id === id) ?? [...templatesByKey.values()].find(template => template.id === id) ?? null : templatesByKey.get(templateKey(id, version)) ?? null;
 }
@@ -2618,7 +2618,7 @@ export function styleTemplateIdFor(template: TemplateDefinition): string {
 
 export function requireBuiltinTemplate(
   id: string,
-  version?: number,
+  version = 1,
 ): TemplateDefinition {
   const template = getBuiltinTemplate(id, version);
   if (!template) throw new Error(`Unknown built-in template ${id}@${version}`);
