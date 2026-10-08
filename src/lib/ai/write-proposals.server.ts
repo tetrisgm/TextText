@@ -1,3 +1,4 @@
+import { documentAssetSchema, type DocumentAsset } from "@/lib/documents/model";
 // Server-only durable approval service for cloud-assistant workspace writes.
 
 import { randomUUID } from "node:crypto";
@@ -153,7 +154,7 @@ export type WorkspaceWriteProposalDependencies = {
     ids: readonly string[],
     actor?: WorkspaceWriteProposalActor,
   ): Promise<
-    Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null }>
+    Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null; assets?: DocumentAsset[] }>
   >;
 };
 
@@ -442,6 +443,8 @@ export async function createWorkspaceWriteProposal(
       tool: validated.name,
       items: ids.map((itemId) => {
         const found = current.get(itemId);
+        const asset = validated.name === "remove_item_asset" ? found?.assets?.find(candidate => candidate.id === validated.arguments.asset_id) : undefined;
+        if (validated.name === "remove_item_asset" && !asset) throw new Error("The asset could not be found. Read the item again.");
         return found
           ? {
               id: itemId,
@@ -449,6 +452,7 @@ export async function createWorkspaceWriteProposal(
               folderPath: found.folderPath,
               visibility: found.visibility,
               revision: found.revision,
+              ...(asset ? { asset: { id: asset.id, label: asset.title || asset.alt || asset.src.split("/").at(-1)!, src: asset.src } } : {}),
               ...("status" in validated.arguments ? { desiredStatus: (validated.arguments as { status: "draft" | "published" }).status } : {}),
               ...(validated.name === "restore_item" ? { restore: true as const } : {}),
             }
@@ -651,6 +655,7 @@ export async function decideWorkspaceWriteProposal(
         "That change cannot be approved because what it would do was not recorded when it was offered. Ask again.",
     };
   }
+  if (validated.name === "remove_item_asset" && (frozen?.kind !== "items" || frozen.items[0]?.asset?.id !== validated.arguments.asset_id)) throw new Error("The approved asset does not match this command.");
   if (!recovering && frozen?.kind === "items") {
     let current: Awaited<ReturnType<WorkspaceWriteProposalDependencies["resolveItems"]>>;
     try {
@@ -771,8 +776,8 @@ export async function resolveProposalItems(
   handle: string,
   ids: readonly string[],
   actor?: WorkspaceWriteProposalActor,
-): Promise<Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null }>> {
-  const resolved = new Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null }>();
+): Promise<Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null; assets?: DocumentAsset[] }>> {
+  const resolved = new Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null; assets?: DocumentAsset[] }>();
   if (!actor?.userId || actor.handle !== handle || !ids.length) return resolved;
   let trash: Array<Record<string, unknown>> | undefined;
   for (const id of ids) {
@@ -786,11 +791,14 @@ export async function resolveProposalItems(
       item = trash.find((entry) => entry.id === id);
     }
     if (!item || typeof item.path !== "string" || typeof item.hash !== "string" || !/^[a-f0-9]{64}$/.test(item.hash)) continue;
+    const document = item.document as { content?: { assets?: unknown } } | undefined;
+    const assets = documentAssetSchema.array().safeParse(document?.content?.assets);
     resolved.set(id, {
       title: typeof item.title === "string" ? item.title : item.path.split("/").at(-1)!.replace(/\.textpack$/, ""),
       folderPath: item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")) : "",
       visibility: item.status === "published" ? "public" : "private",
       revision: item.hash,
+      ...(assets.success ? { assets: assets.data } : {}),
     });
   }
   return resolved;

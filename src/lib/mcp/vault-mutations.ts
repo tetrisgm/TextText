@@ -23,6 +23,13 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
   const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId };
   const operationId = typeof args.idempotency_key === "string"
     ? digest(`${context.actorUserId}:${name}:${args.idempotency_key}`) : randomUUID();
+  if (name === "remove_item_asset") {
+    only(args, ["id", "asset_id", "if_match_hash", "idempotency_key"]);
+    if (typeof args.id !== "string" || typeof args.asset_id !== "string" || !args.asset_id || typeof args.if_match_hash !== "string" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim()) throw new Error("Choose an asset ID, current hash and stable idempotency key.");
+    const itemId = args.id; await context.authorize(itemId, "", false);
+    return mutateVaultDocument({ ...location, itemId, operationId, expectedRevision: args.if_match_hash, mutation: {}, detachAssetId: args.asset_id,
+      actorUserId: context.actorUserId, actorType: context.actorType ?? "external_agent", beforeCommit: path => context.authorize(itemId, path, false) });
+  }
   if (name === "add_item_asset") {
     only(args, ["id", "source_url", "placement", "alt_text", "caption", "if_match_hash", "idempotency_key"]);
     if (typeof args.id !== "string" || typeof args.source_url !== "string" || typeof args.if_match_hash !== "string" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim() || !["cover", "body_end", "gallery"].includes(String(args.placement))) throw new Error("Choose an image, placement, current hash and stable idempotency key.");

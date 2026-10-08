@@ -76,3 +76,32 @@ it("does not write when access is revoked during preparation", async () => {
  await expect(mutateVaultDocument(request())).rejects.toThrow("revoked");
  expect((await readVaultTextpack(loc()))!.revision).toBe(revision);
 });
+it("detaches references atomically, retains archive bytes and replays after asset absence", async () => {
+ await mutateVaultDocument(request()); let pack = (await readVaultTextpack(loc()))!;
+ const asset = readDocument(openPack(pack.bytes, pack.relativePath, pack.revision).file).content.assets[0];
+ await mutateVaultDocument({ ...request(), attachment: undefined, operationId: "body", expectedRevision: pack.revision, mutation: { body: `Keep\n\n![Image](${asset.src})\n\n[Label](${asset.src})\n\n\`${asset.src}\`` } });
+ pack = (await readVaultTextpack(loc()))!;
+ const input = { ...request(), attachment: undefined, detachAssetId: asset.id, operationId: "detach", expectedRevision: pack.revision };
+ const receipt = await mutateVaultDocument(input); const detached = (await readVaultTextpack(loc()))!;
+ const opened = openPack(detached.bytes, detached.relativePath, detached.revision); const snapshot = readDocument(opened.file);
+ expect(snapshot.content.assets).toEqual([]); expect(snapshot.content.body).toBe(`Keep\n\n\n\nLabel\n\n\`${asset.src}\``);
+ expect(unzipSync(detached.bytes)[opened.prefix + asset.src]).toEqual(new Uint8Array(prepared.original));
+ expect(await mutateVaultDocument(input)).toEqual(receipt);
+ expect(await mutateVaultDocument({ ...input, receiptOnly: true })).toEqual(receipt);
+ await expect(mutateVaultDocument({ ...input, operationId: "new", expectedRevision: detached.revision })).rejects.toThrow("missing");
+ await expect(mutateVaultDocument({ ...input, operationId: "stale" })).rejects.toThrow("changed");
+ authorize.mockRejectedValue(new Error("revoked")); await expect(mutateVaultDocument(input)).rejects.toThrow("revoked");
+});
+it("detaches nested Markdown references but preserves code and first-definition resolution", async () => {
+ const { detachDocumentAsset } = await import("@/lib/vault/asset-detachment");
+ const document = emptyDocumentSnapshot(); document.content.assets = [{ id: "image", kind: "image", src: "assets/x.png" }];
+ document.content.body = "[![alt](assets/x.png)](assets/x.png)\n\n![other][ref]\n\n[ref]: https://example.com/other.png\n[ref]: assets/x.png\n\n`![code](assets/x.png)`";
+ const mutation = detachDocumentAsset(document, "image");
+ expect(mutation.body).toBe("\n\n![other][ref]\n\n[ref]: https://example.com/other.png\n[ref]: assets/x.png\n\n`![code](assets/x.png)`");
+});
+it("rejects aggregate archive overflow before changing the pack or recording success", async () => {
+ prepare.mockResolvedValue({ ...prepared, original: Buffer.alloc(50 * 1024 * 1024), preview: Buffer.alloc(15 * 1024 * 1024) });
+ await expect(mutateVaultDocument(request())).rejects.toThrow("64 MiB");
+ expect((await readVaultTextpack(loc()))!.revision).toBe(revision);
+ await expect(mutateVaultDocument({ ...request(), receiptOnly: true })).rejects.toThrow("No completed receipt");
+});

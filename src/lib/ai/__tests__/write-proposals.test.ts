@@ -363,7 +363,7 @@ describe("owner review of externally staged writes", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each(["delete_folder", "restore_folder", "remove_item_asset", "set_access", "revoke_access", "empty_trash", "delete_items"])("rejects unsupported legacy command %s before persistence", async (tool) => {
+  it.each(["delete_folder", "restore_folder", "set_access", "revoke_access", "empty_trash", "delete_items"])("rejects unsupported legacy command %s before persistence", async (tool) => {
     const { dependencies, execute, repository } = harness();
     await expect(createWorkspaceWriteProposal({ actor: owner, tool, arguments: {} }, dependencies)).rejects.toThrow("cannot be staged");
     expect(repository.rows.size).toBe(0);
@@ -593,4 +593,21 @@ it("approves declared field edits and reconciles expired completed receipts with
     access.allowed = true; expect((await approve()).status).toBe("completed");
     expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
   } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
+});
+it("freezes the exact asset for explicit removal and recovers an expired completed detach", async () => {
+ const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-detach-proposal-")); vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true;
+ try {
+  const document = emptyDocumentSnapshot(); document.content.body = "Keep"; document.content.assets = [{ id: "photo", kind: "image", src: "assets/photo.png", alt: "Forest" }];
+  const location = { root, workspaceId: "blog-1", itemId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
+  const saved = await writeVaultTextpack({ ...location, operationId: "seed", relativePath: "Gallery/Forest.textpack", baseRevision: null, bytes: buildTextpack("Forest", { document, markdown: `---\ntextTextId: ${location.itemId}\n---\n\nKeep` }) });
+  const h = harness(); h.dependencies.execute = runWorkspaceToolForSession; h.dependencies.resolveItems = resolveProposalItems;
+  const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "remove_item_asset", arguments: { id: location.itemId, asset_id: "photo", if_match_hash: saved.revision, idempotency_key: "detach" } }, h.dependencies);
+  expect(proposal.summary).toContain("Forest"); expect(proposal.summary).toContain("retained for recovery");
+  const approve = () => decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, h.dependencies);
+  h.repository.rejectCompletion = true; expect((await approve()).status).toBe("ambiguous");
+  const committed = (await readVaultTextpack(location))!;
+  h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+  access.allowed = false; expect((await approve()).status).not.toBe("completed"); access.allowed = true;
+  expect((await approve()).status).toBe("completed"); expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
+ } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
 });

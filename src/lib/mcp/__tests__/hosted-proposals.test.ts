@@ -73,7 +73,7 @@ describe("hosted MCP durable proposal boundary", () => {
   it.each(risky)("refuses unsupported or incomplete %s without creating a SQL proposal", async (name, args) => {
     const result = await callTool(name, args, context);
     expect(result.isError).toBe(true);
-    if (name !== "delete_item" && name !== "retire_document_template") expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
+    if (name !== "delete_item" && name !== "retire_document_template" && name !== "remove_item_asset") expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
     expect(mocks.insert).not.toHaveBeenCalled(); expect(mocks.batch).not.toHaveBeenCalled();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
@@ -109,7 +109,7 @@ describe("hosted MCP durable proposal boundary", () => {
       "remove_item_asset", "retire_document_template", "set_item_status",
     ]);
     for (const name of staged) {
-      if (name === "delete_item" || name === "retire_document_template") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
+      if (name === "delete_item" || name === "retire_document_template" || name === "remove_item_asset") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
       else expect(listTools().find((tool) => tool.name === name)).toBeUndefined();
     }
     for (const name of ["restore_item", "restore_folder", "set_access", "revoke_access", "update_item"] as const) {

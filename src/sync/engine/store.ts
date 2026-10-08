@@ -1,3 +1,4 @@
+import { detachDocumentAsset } from "@/lib/vault/asset-detachment";
 import { assetCommandPayload, type VaultAssetAttachment } from "@/lib/vault/asset-command";
 import { extractFolderViewMetadata, FolderViewMetadataCache } from "@/local-vault/folder-view-metadata";
 import { buildTemplateRetirement, templateRetirementIdentity } from "@/lib/presentation/vault-template-retirement";
@@ -1527,6 +1528,7 @@ export async function createVaultTemplate(input: VaultLocation & {
 export async function mutateVaultDocument(input: VaultLocation & {
   itemId: string; operationId: string; expectedRevision: string; mutation: DocumentMutation;
   audit: NonNullable<VaultWrite["audit"]>;
+  detachAssetId?: string;
   attachment?: VaultAssetAttachment;
   presentation?: { definition?: unknown; authoringSource?: unknown; source?: { itemId: string; revision: string; templateId: string; templateVersion?: number } };
   beforeTemplateRead?: (itemId: string, relativePath: string) => Promise<void>;
@@ -1541,7 +1543,8 @@ export async function mutateVaultDocument(input: VaultLocation & {
   if (input.presentation?.authoringSource !== undefined && !authoring) throw new Error("Invalid template authoring source");
   if (input.presentation && Object.keys(input.mutation).length) throw new Error("Apply templates separately from content edits");
   if (input.attachment && (input.presentation || Object.keys(input.mutation).length)) throw new Error("Attach images separately from other changes");
-  const requestHash = hash(json(["document-command", input.itemId, input.expectedRevision, input.mutation, input.audit, ...(input.presentation ? [input.presentation] : []), ...(input.attachment ? [input.attachment.request] : [])]));
+  if (input.detachAssetId !== undefined && (!input.detachAssetId || input.attachment || input.presentation || Object.keys(input.mutation).length)) throw new Error("Detach one asset separately from other changes");
+  const requestHash = hash(json(["document-command", input.itemId, input.expectedRevision, input.mutation, input.audit, ...(input.presentation ? [input.presentation] : []), ...(input.attachment ? [input.attachment.request] : []), ...(input.detachAssetId !== undefined ? [{ detachAssetId: input.detachAssetId }] : [])]));
   if (json(input.mutation).length > 2 * 1024 * 1024) throw new Error("Document command exceeds limits");
   const layout = await setup(input);
   const preparation: { value?: Awaited<ReturnType<VaultAssetAttachment["prepare"]>> } = {};
@@ -1587,7 +1590,10 @@ export async function mutateVaultDocument(input: VaultLocation & {
       Y.applyUpdate(doc, Buffer.from(baseline.update, "base64"));
       const vector = Y.encodeStateVector(doc);
       let workingBytes: Uint8Array = item.bytes;
-      if (input.attachment && preparation.value) {
+      if (input.detachAssetId) {
+        const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId);
+        applyDocumentMutation(doc, detachDocumentAsset(readDocument(pack.file), input.detachAssetId, readTemplate(pack.file, readDocument(pack.file))));
+      } else if (input.attachment && preparation.value) {
         const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId);
         const snapshot = readDocument(pack.file);
         const payload = assetCommandPayload(snapshot, input.attachment.request, preparation.value, input.operationId);

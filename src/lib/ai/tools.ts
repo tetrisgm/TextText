@@ -1006,7 +1006,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         id,
-        asset_url: z.string().url().max(2_048),
+        asset_url: z.string().url().max(2_048).optional(),
+        asset_id: z.string().min(1).max(120).optional(),
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
         if_match_hash: ifMatchHash,
       })
       .strict(),

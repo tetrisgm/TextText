@@ -3481,6 +3481,7 @@ async function executeLegacyWorkspaceCommand(
 
     case "remove_item_asset": {
       const input = args as WorkspaceToolInput<"remove_item_asset">;
+      if (!input.asset_url) return errorResult("Legacy asset removal requires an asset URL.");
       const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       if (!resolved.access.isOwner)
