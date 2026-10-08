@@ -50,8 +50,15 @@ Completed source changes, not yet deployed:
   filter folder names, and folder changes invalidate listing revisions.
   67 relevant tests, TypeScript and scoped ESLint passed.
 
-Current work: fresh-account file provisioning, native empty-folder delivery,
-then hosted agent commands using the file backend. `d09bfdf4` is the read
+- `30e3b3dc`: fresh accounts provision file presets with immutable setup intent
+  and completion records. Real local-Postgres interrupted/concurrent setup test
+  passed without SQL posts/folders; edited/moved/deleted starter retries pass.
+  Deterministic starter IDs are being corrected to UUIDs before shipping.
+- `cf7e9682`: Mac/Windows receive empty folders additively; omission never
+  deletes. A folder collision does not block unrelated document sync. Mac 23
+  sync tests and Windows Core passed. Template browser regression runs in npm test.
+
+Current work: hosted agent commands using the file backend. `d09bfdf4` is the read
 adapter preparation only; production dispatch awaits mutation/permission tests.
 The prior export/inventory helpers never migrated production content.
 
