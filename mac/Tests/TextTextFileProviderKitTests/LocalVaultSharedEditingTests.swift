@@ -427,6 +427,13 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let change = try changes(original, body: "Shared")
         let target = try checkpoint(original, generation: 3)
         let materialized = try store.materialize(checkpoint: target, expectedHash: original.hash, markdown: change.0, documentJSON: change.1)
+        var reordered = materialized.checkpoint
+        let journalObject = try JSONSerialization.jsonObject(with: Data(reordered.journal.utf8))
+        reordered.journal = String(decoding: try JSONSerialization.data(withJSONObject: journalObject, options: [.prettyPrinted, .sortedKeys]), as: UTF8.self)
+        let replayed = try store.materialize(checkpoint: reordered, expectedHash: materialized.document.hash, markdown: change.0, documentJSON: change.1)
+        XCTAssertEqual(replayed.document.hash, materialized.document.hash)
+        XCTAssertEqual(replayed.checkpoint.journalGeneration, materialized.checkpoint.journalGeneration)
+        XCTAssertEqual(replayed.checkpoint.journal, materialized.checkpoint.journal)
         var stale = target; stale.journalGeneration = 2
         XCTAssertThrowsError(try store.materialize(checkpoint: stale, expectedHash: materialized.document.hash, markdown: change.0, documentJSON: change.1))
         stale.journalGeneration = 3; stale.journal = stale.journal.replacingOccurrences(of: "AQ==", with: "Ag==")

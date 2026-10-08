@@ -268,7 +268,9 @@ struct LocalVaultSharedEditingStore: Sendable {
             guard prior.retiredReason == nil else { throw LocalVaultSharedFailure.staleSession }
             guard checkpoint.journalGeneration >= prior.journalGeneration else { throw LocalVaultSharedFailure.generation }
             if checkpoint.journalGeneration == prior.journalGeneration {
-                guard checkpoint.journal == prior.journal, checkpoint.pending == prior.pending,
+                let incomingJournal = try JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8))
+                let retainedJournal = try JSONSerialization.jsonObject(with: Data(prior.journal.utf8))
+                guard try JSONSerialization.data(withJSONObject: incomingJournal, options: [.sortedKeys]) == JSONSerialization.data(withJSONObject: retainedJournal, options: [.sortedKeys]), checkpoint.pending == prior.pending,
                       current.hash == prior.projectedHash, contentMatches(current, intent: intent) else { throw LocalVaultSharedFailure.generation }
                 return LocalVaultSharedMaterialization(document: current, checkpoint: prior)
             }

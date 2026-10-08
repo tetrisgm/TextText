@@ -129,7 +129,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
                 var current=store.Describe(session.Path);
                 if(prior!=null) {
                     if(prior.RetiredReason!=null||checkpoint.JournalGeneration<prior.JournalGeneration||prior.Pending&&checkpoint.Epoch!=prior.Epoch)throw new InvalidOperationException("Newer or protected shared edits are retained.");
-                    if(checkpoint.JournalGeneration==prior.JournalGeneration){if(checkpoint!=prior||current.Hash!=prior.ProjectedHash)throw new InvalidOperationException("Conflicting checkpoint generation.");return current;}
+                    if(checkpoint.JournalGeneration==prior.JournalGeneration){if(checkpoint with{Journal=prior.Journal}!=prior||!System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal),System.Text.Json.Nodes.JsonNode.Parse(prior.Journal))||current.Hash!=prior.ProjectedHash)throw new InvalidOperationException("Conflicting checkpoint generation.");return current;}
                 }
                 if(current.Hash!=expectedHash)throw new FileChangedException();
                 var directory=DirectoryFor(session.ItemId);var intent=new Intent(1,expectedHash,Convert.ToBase64String(textPack),checkpoint);

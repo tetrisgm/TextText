@@ -28,6 +28,16 @@
 
 ## Current work
 
+- Native same-generation replay now compares complete journal JSON values,
+  allowing serialization-only formatting/key-order changes while retaining
+  generation, projection and content checks. Mac replay returns the original
+  checkpoint; Windows also compares every non-journal checkpoint field.
+  Existing divergence and stale-generation refusals remain covered. All 17 Mac
+  shared-editing tests and the full Windows Core suite passed on the Mac.
+  Logs: `/tmp/texttext-semantic-journal-mac-final.log`,
+  `/tmp/texttext-semantic-journal-windows.log`. These follow-up native changes
+  are not included in installed Mac 1201 or the waiting Windows candidate.
+
 - Windows actual PC candidate now matches Mac 1201 source `2f959327`:
   `C:\Users\Shokunin\dev\texttext-build-2f959327\windows\build\candidate-6f629e8c15ef4ca0ad362b1929c4520a`.
   Full native core/agent suites, shared client suite, TypeScript, bundled UI,
