@@ -56,7 +56,12 @@
   request before Next initialization does not install instrumentation, so that
   cold probe is not representative. Warming `/signin` first installs the drain
   and wakes the 25-second diagnostic poll: exit 143 in 6.016 seconds. Evidence:
-  `/tmp/texttext-linux-shutdown-warm-probe.log`. Live timeout remains unresolved. Stable staging retry identity and Oracle timeout remain open.
+  `/tmp/texttext-linux-shutdown-warm-probe.log`. Continuous re-poll variant
+  also exited in 6.017 seconds. The production verifier now warms a real page
+  and explicitly requires installed instrumentation; the packaged Mac probe
+  passed in 6.018 seconds (`/tmp/texttext-production-drain-warmed-gate.log`).
+  Live timeout remains unresolved; three loopback HTTP connections were active
+  during read-only inspection, with no application error in recent logs. Stable staging retry identity and Oracle timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
