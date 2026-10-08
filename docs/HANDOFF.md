@@ -2,12 +2,11 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1190)**, source `5254ff85`.
-  Startup, preserved note, save/search/relaunch and automatic delivery to Safari
-  passed. CLI also updated. [Receipt](verification/2026-10-08-template-cohort-1190.md).
-- Windows: source `5254ff85`, installed in the existing location. Existing note
-  and markers survived; sync recovered automatically after Oracle restart.
-  Account-label refresh follow-up is in progress.
+- Mac `/Applications/TextText.app`: **0.204 (1191)**, source `f3167c4b`.
+  Preserved account/iCloud workspace, note save/relaunch and search freshness passed.
+  [Receipt](verification/2026-10-08-account-proposals-1191.md).
+- Windows: source `f3167c4b`, installed in the existing location. Preserved note,
+  account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
 - Oracle: **texttext-oracle-20261008T083707Z-5254ff85**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
   timestamps are unchanged. Fresh backup `texttext-20261008T083940Z-21135a8d.dump`.
@@ -28,12 +27,12 @@
 ## Current work
 
 - Canonical `remix_item_type` is committed as `626ee884`, with pinned source
-  authorization and durable retries; not shipped. Focused suites passed 56
+  authorization and durable retries; shipped in 1190. Focused suites passed 56
   tests, with a final 21-test recheck and TypeScript.
   [Receipt](verification/2026-10-08-agent-template-remix.md).
 - Shared folder defaults, atomic complete-item creation and reversible template
   retirement are committed in `197c7552`; local/remote CLI parity is covered by
-  `eaf1c25e`, `5f74d92a` and `af658589`. These changes are not installed yet.
+  `eaf1c25e`, `5f74d92a` and `af658589`. These changes shipped in 1190.
   Explicit template choices override defaults; existing items retain their design.
 - Candidate source `5254ff85` passed 662 core tests, TypeScript and native
   sync/creation suites. Mac 1190 and Oracle are installed; Windows verification
@@ -41,11 +40,12 @@
   Server/Windows `a0d9391b` and native `163b9a02` remove aggregate folder scan
   limits, cache bounded metadata, and test external change/rename invalidation.
   [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
-- Custom-field updates are committed/tested in `d79f6417`, not yet shipped.
-- Live checks found two next-cohort gaps: the Windows account label did not
-  refresh after a transient startup profile failure; sync itself reconnected.
-  CLI retirement needs owner approval, but its advertised proposal route rejects
-  file-workspace proposals. Preserve approval and implement that missing path.
+- 1191 source `f3167c4b` passed 725 core tests, TypeScript and required native
+  checks. It includes custom-field updates, bounded account-profile recovery and
+  explicit CLI proposal staging. Clients installed; Oracle deployment and live
+  proposal/field acceptance are in progress.
+- Next cohort: atomic agent image addition/removal, using bounded public-resource
+  preparation and the existing durable engine intent. No asset feature shipped yet.
 
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
@@ -75,7 +75,7 @@
 - Automatic request/bootstrap recovery and graceful read-poll shutdown are
   installed. [Recovery receipt](verification/2026-10-07-recovery-templates-1184.md),
   [shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
-- Standalone CLI `ccf675f8` remains installed; real account commands and template
+- Standalone CLI `5254ff85` remains installed; real account commands and template
   create/update/retry work while local reads stay offline.
   [CLI receipt](verification/2026-10-07-cli-account-commands.md).
 - No web provider is configured; live model execution is not attested.
