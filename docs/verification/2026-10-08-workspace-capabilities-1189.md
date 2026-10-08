@@ -28,6 +28,11 @@ deployment `texttext-oracle-20261008T073956Z-43614e64`.
 - Actual Mac command search found the new body text and reopened the same note.
   This verifies invalidation after the edit; unchanged reader performance is
   covered by the earlier bounded-performance receipt.
+- Windows then saved `Windows save and reopen verification 1189.`. Both Mac
+  and Safari received it automatically. The Mac TextPack contains both markers
+  exactly once and retains all four headings. Only this dedicated test note
+  changed. The initial Windows input attempt did not reach the editor; its
+  absence on disk was confirmed before correcting focus and entering it once.
 
 ## Defect found during live acceptance
 
@@ -44,6 +49,5 @@ intact. Build 1189 contains both fixes.
 The account exposes one workspace, so live switching between differently
 permissioned workspaces is not attested. Preparation, failed flush, revocation,
 partial manifests and offline restart cases are regression-tested. Windows
-save/reopen return-path acceptance is still in progress; an initial input attempt
-made no on-disk edit and is not treated as a sync failure. No public desktop
-release was published. Broader product completion remains unproven.
+reopen acceptance is recorded separately. No public desktop release was
+published. Broader product completion remains unproven.

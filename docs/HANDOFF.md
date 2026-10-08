@@ -2,13 +2,14 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1188)**, source `43614e64`.
-- Windows: same source `43614e64`, installed in the existing location.
+- Mac `/Applications/TextText.app`: **0.204 (1189)**, source `54f33a4e`.
+- Windows: same source `54f33a4e`, installed in the existing location.
 - Oracle: **texttext-oracle-20261008T073956Z-43614e64**, thirteen live checks passed.
-- Live Mac verification found permission-only updates do not refresh the listing:
-  `LocalVaultConnectionController.run()` notifies only on downloaded content.
-  A follow-up fix/regression is in progress; Mac 1188 is not final acceptance.
-  Existing document content is intact. [Windows receipt](verification/2026-10-08-windows-shared-1188.md).
+- Live 1188 acceptance found a permission-only listing notification gap in both
+  native adapters. Build 1189 fixes it with controller/engine regressions.
+  Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
+  marker delivery passed; local TextPack contains both markers exactly once.
+  [Current receipt](verification/2026-10-08-workspace-capabilities-1189.md).
 - Accounts, existing notes, saved edits and search freshness passed on installed
   clients. Agent-created template item arrived on both desktops automatically;
   Safari opened the same item with Mac/Windows presence.
@@ -19,6 +20,11 @@
   Only dedicated verification notes changed during acceptance.
 
 ## Current work
+
+- Next agent slice: canonical `remix_item_type`, copying validated definitions
+  into a new template identity with source/hash authorization and durable retry.
+  Implementation in progress; not shipped. Folder defaults require shared UI
+  and canonical creation to honor them, beyond writing a folder-view file.
 
 - Source `4c7efe85` passed 555 core tests, TypeScript, native gates and relevant
   browser checks. Agent template creation and durable template/folder approvals
