@@ -8412,3 +8412,39 @@ export async function getVisualUploadItemId(handle: string, uploadKey: string): 
     .where(and(eq(blogs.handle, handle), isNull(blogs.deletedAt), eq(idempotencyKeys.key, `visual:${uploadKey}`))).limit(1);
   return rows[0]?.kind === "post" ? rows[0].id : null;
 }
+
+
+/** Caller must authorize workspace administration before reading this inventory.
+ * Manifest is supplied deliberately: vault discovery can repair files and is not read-only.
+ * One SQL statement captures source revisions, comments and grants together.
+ * Any active folder grant in the workspace blocks every item conservatively,
+ * including pending email invitations and grants inherited through ancestors.
+ */
+export async function readLegacyWorkspaceInventory(input: {
+  workspaceId: string;
+  vault: readonly import("./vault/legacy-inventory").VaultInventoryRow[];
+  manifestProblems?: readonly { relativePath: string; reason: string }[];
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  const { inventoryLegacyWorkspace, legacyInventoryDigest } = await import("./vault/legacy-inventory");
+  const rows = await db.select({
+    id: posts.id, revision: posts.revision, document: posts.document,
+    folderId: posts.folderId, slug: posts.slug, slugHistory: posts.slugHistory,
+    visibility: posts.visibility, deletedAt: posts.deletedAt,
+    comments: sql<number>`(select count(*)::int from item_comments c where c.post_id = ${posts.id})`,
+    grants: sql<number>`(select count(*)::int from collaborators c where c.revoked_at is null and
+      ((c.scope_type = 'workspace' and c.scope_id = ${posts.blogId}) or
+       (c.scope_type = 'folder' and c.scope_id in (select f.id from folders f where f.blog_id = ${posts.blogId})) or
+       (c.scope_type = 'item' and c.scope_id = ${posts.id})))`,
+  }).from(posts).where(eq(posts.blogId, input.workspaceId)).limit(5001);
+  if (rows.length > 5000) throw new Error("Reconciliation inventory exceeds 5000 items; use a bounded workspace export");
+  return inventoryLegacyWorkspace({ ...input, legacy: rows.map((row) => ({
+    id: row.id, revision: row.revision, contentDigest: legacyInventoryDigest(row.document),
+    folderId: row.folderId, slug: row.slug, slugHistory: row.slugHistory ?? [],
+    visibility: row.visibility, deleted: row.deletedAt !== null,
+    comments: Number(row.comments), grants: Number(row.grants),
+    // Referenced assets are not fetched by a read-only database inventory.
+    assets: (row.document.content.assets ?? []).map((asset) => ({ id: asset.id, available: null })),
+  })) });
+}
+export { inventoryLegacyWorkspace, legacyInventoryDigest } from "./vault/legacy-inventory";
