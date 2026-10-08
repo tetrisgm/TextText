@@ -41,3 +41,19 @@ Regression evidence: 59 focused tests (plain-paragraph differential against actu
 An instrumented production browser fixture using the real `CollaborativeVaultEditor` and renderer confirmed an additional cause: initial Markdown parse count 1 became 5 after four status updates, then 6 after a presence update. Recursive asset substitution created fresh asset arrays every render, invalidating the reader's Markdown memoization even with unchanged content.
 
 Memoizing substituted display data by the actual snapshot and asset resolver keeps counts at 1/1/1. The browser regression verifies body changes, replacement blob URLs, image alt/dimensions, theme and template changes still render. It runs in the normal long-note browser gate. No global content cache was added. Scoped lint and browser checks passed; the full TypeScript run at this point reported an unrelated concurrent `write-proposals.server.ts:421` argument-type error, to be checked in the combined cohort.
+
+## Integrated production remeasurement
+
+Fresh standalone `texttext-oracle-20261008T063810Z-68eaaf80`, isolated APFS clone, same loopback port/local DB/existing accounts/two-pack fixture, passed preflight and `--diagnose`.
+
+| Operation | New integrated run (ms) | Earlier 98bb52b5 runs (ms) |
+|---|---:|---:|
+| Gallery folder | 69 | 119 / 125 |
+| Gallery image | 32 | 36 / 41 |
+| Notes folder | 43 | 42 / 43 |
+| Long note reader | 170 | 1624 / 1533 |
+| Cached long note reader | 254 | 1513 / 2267 |
+
+External file mutation still appeared within the five-second observation window without reopening. Peak sampled RSS was 253 MiB server / 573 MiB browser tree. All exact UUID fixture cleanup checks passed; zero external requests. The manually started local server received SIGTERM and exited. Evidence: `/tmp/texttext-vault-perf-v7s3z1/result.json`.
+
+This is one bounded integrated confirmation after two baseline runs, not a percentile, broad library benchmark, or long-duration memory test. It confirms the demonstrated large-note reader regression is resolved in the real production route without sacrificing automatic file-change convergence.
