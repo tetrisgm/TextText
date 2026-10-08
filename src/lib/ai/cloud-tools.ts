@@ -13,13 +13,14 @@
 // what the model may call; the executor still enforces every invariant.
 
 import { jsonSchema, tool, type Tool } from "ai";
+import type { JSONSchema7 } from "json-schema";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
-  WORKSPACE_TOOL_NAMES,
   type WorkspaceToolName,
   workspaceToolModelSchema,
   workspaceToolModelDescription,
 } from "@/lib/ai/tools";
+import { VAULT_TOOL_NAMES, vaultToolDefinitions } from "@/lib/mcp/vault-contract";
 import { isProposableWorkspaceWrite } from "@/lib/ai/write-proposal-policy";
 import {
   createWorkspaceWriteProposal,
@@ -67,7 +68,7 @@ export type CloudAssistantWriteProposal =
 export function cloudAssistantToolNames(
   mode: CloudAssistantToolMode = "full",
 ): WorkspaceToolName[] {
-  return WORKSPACE_TOOL_NAMES.filter((name) => {
+  return VAULT_TOOL_NAMES.filter((name) => {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     if (mode === "read_only" && definition.mutability !== "read") return false;
     // Confirmation-gated tools are offered only when a proposal can genuinely
@@ -91,6 +92,21 @@ export function cloudAssistantToolNames(
   });
 }
 
+/** Cloud models receive the same file capabilities as CLI/MCP, with the
+ * existing targeted-edit restriction applied on top. */
+export function cloudAssistantToolContract(name: WorkspaceToolName) {
+  const definition = vaultToolDefinitions().find(definition => definition.name === name);
+  if (!definition) throw new Error(`File command unavailable: ${name}`);
+  const modelSchema = workspaceToolModelSchema(name);
+  const allowed = modelSchema.properties as Record<string, unknown> | undefined;
+  const properties = Object.fromEntries(Object.entries(definition.inputSchema.properties ?? {})
+    .filter(([key]) => !allowed || key in allowed));
+  return {
+    description: name === "update_item" ? `${definition.description} ${workspaceToolModelDescription(name)}` : definition.description,
+    schema: { ...definition.inputSchema, properties } as JSONSchema7,
+  };
+}
+
 function resultText(
   result: Awaited<ReturnType<typeof runWorkspaceToolForSession>>,
 ): string {
@@ -107,11 +123,12 @@ export function cloudAssistantTools(
 ): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
   for (const name of cloudAssistantToolNames(mode)) {
+    const contract = cloudAssistantToolContract(name);
     tools[name] = tool({
-      description: workspaceToolModelDescription(name),
+      description: contract.description,
       // The canonical JSON schema (uniform type) rather than the per-tool Zod
       // union, so the dynamic tool map typechecks; the executor re-validates.
-      inputSchema: jsonSchema(workspaceToolModelSchema(name)),
+      inputSchema: jsonSchema(contract.schema),
       execute: async (args: unknown) => {
         const commandArgs = (args ?? {}) as Record<string, unknown>;
         const result = await runWorkspaceToolForSession(
@@ -166,9 +183,10 @@ export function guardedCloudAssistantTools(
     ) {
       continue;
     }
+    const contract = cloudAssistantToolContract(name);
     tools[name] = tool({
-      description: workspaceToolModelDescription(name),
-      inputSchema: jsonSchema(workspaceToolModelSchema(name)),
+      description: contract.description,
+      inputSchema: jsonSchema(contract.schema),
       execute: async (args: unknown) => {
         const commandArgs = (args ?? {}) as Record<string, unknown>;
         if (definition.mutability === "write") {
