@@ -269,7 +269,7 @@ describe("durable file collaboration client", () => {
       editor.mutate(doc => documentText(doc, "body").insert(5, " pending"));
       if (epochChanged) server.state = seedVaultCollaboration(server.bytes, "item-1", 2);
       else server.canEdit = false;
-      server.wake(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      server.wake(); await vi.advanceTimersByTimeAsync(0);
       expect(editor.status).toBe("recovery"); expect(editor.canEdit).toBe(false);
       expect(editor.recoveryJournal?.retired).toBeTruthy();
       expect(editor.recoveryJournal?.pending).toHaveLength(1);
@@ -350,6 +350,96 @@ describe("durable file collaboration client", () => {
     expect(server.reads).toBe(before);
     await editor.retry(); await vi.advanceTimersByTimeAsync(1);
     expect(server.reads).toBeGreaterThan(before);
+  });
+
+  it("automatically retries a hung initial read even when fetch ignores abort", async () => {
+    const server = new Server(); let attempts = 0;
+    const editor = client(server, new Journal(), (method, params, signal) => {
+      if (++attempts === 1) return new Promise(() => {});
+      return server.request(method, params, signal);
+    });
+    const starting = editor.start();
+    await vi.advanceTimersByTimeAsync(15_000); await starting;
+    expect(editor.status).toBe("offline");
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(editor.status).toBe("ready"); expect(editor.hasBaseline).toBe(true);
+  });
+
+  it("automatically replaces a stalled long poll after its bounded grace period", async () => {
+    const server = new Server(); let stall = true, polls = 0;
+    const editor = client(server, new Journal(), (method, params, signal) => {
+      if (method === "read" && params.waitMs) {
+        polls++;
+        if (stall) { stall = false; return new Promise(() => {}); }
+        return Promise.resolve(server.response());
+      }
+      return server.request(method, params, signal);
+    });
+    await editor.start(); await vi.advanceTimersByTimeAsync(1);
+    expect(polls).toBe(1);
+    await vi.advanceTimersByTimeAsync(34_998); expect(polls).toBe(1);
+    await vi.advanceTimersByTimeAsync(2); expect(editor.status).toBe("offline");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(editor.status).toBe("ready"); expect(polls).toBe(2);
+    expect(server.pushes).toHaveLength(0);
+  });
+
+  it("Retry cancels a hung start immediately without waiting for its deadline", async () => {
+    const server = new Server(); let attempts = 0;
+    const editor = client(server, new Journal(), (method, params, signal) => {
+      if (++attempts === 1) return new Promise(() => {});
+      return server.request(method, params, signal);
+    });
+    const starting = editor.start(); await vi.advanceTimersByTimeAsync(1);
+    await editor.retry(); await starting;
+    expect(editor.status).toBe("ready"); expect(attempts).toBe(2);
+  });
+
+  it("unsolicited transport cancellation automatically reconnects a pending retained journal", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); first.setActive(false);
+    first.mutate(doc => documentText(doc, "body").insert(5, " kept")); first.destroy();
+    let interrupted = true;
+    const editor = client(server, journal, (method, params, signal) => {
+      if (interrupted) { interrupted = false; return Promise.reject(new DOMException("Server interrupted", "AbortError")); }
+      return server.request(method, params, signal);
+    });
+    await editor.start(); expect(editor.status).toBe("offline");
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(editor.status).toBe("ready"); expect(editor.hasPendingChanges).toBe(false);
+    expect(documentText(editor.doc, "body").toString()).toBe("Hello kept");
+  });
+
+  it("rapid resume retries a canceled retained initial read without losing pending edits", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); first.setActive(false);
+    first.mutate(doc => documentText(doc, "body").insert(5, " resumed")); first.destroy();
+    let attempts = 0;
+    const editor = client(server, journal, (method, params, signal) => {
+      if (++attempts === 1) return new Promise(() => {});
+      return server.request(method, params, signal);
+    });
+    const starting = editor.start(); await vi.advanceTimersByTimeAsync(1);
+    editor.setActive(false); editor.setActive(true);
+    await starting; await vi.advanceTimersByTimeAsync(1500);
+    expect(editor.status).toBe("ready"); expect(editor.hasPendingChanges).toBe(false);
+    expect(documentText(editor.doc, "body").toString()).toBe("Hello resumed");
+  });
+
+  it("a timed out committed upload retries the same durable operation exactly once", async () => {
+    const server = new Server(); let lost = true;
+    const editor = client(server, new Journal(), async (method, params, signal) => {
+      const response = await server.request(method, params, signal);
+      if (method === "push" && lost) { lost = false; return new Promise(() => {}); }
+      return response;
+    });
+    await editor.start(); editor.mutate(doc => documentText(doc, "body").insert(5, " once"));
+    const pushing = editor.flush(); await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pushing).toBe(false); expect(editor.hasPendingChanges).toBe(true);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(editor.status).toBe("ready"); expect(editor.hasPendingChanges).toBe(false);
+    expect(server.pushes).toHaveLength(2); expect(server.pushes[1]).toBe(server.pushes[0]);
+    expect(documentText(editor.doc, "body").toString()).toBe("Hello once");
   });
 
   it("opens a retained canonical baseline offline and fences its pending edits when the epoch changes", async () => {

@@ -369,14 +369,38 @@ export class FileCollaborationClient {
   private async request(method: "read" | "push", params: Record<string, unknown>, poll = false): Promise<unknown> {
     const controller = new AbortController(); this.controllers.add(controller);
     if (poll) this.pollController = controller;
-    try { return await this.options.request(method, params, controller.signal); }
-    catch (error) { throw new RequestFailure(error); }
-    finally { this.controllers.delete(controller); if (this.pollController === controller) this.pollController = null; }
+    // Browser networking can remain unsettled after a server restart or a
+    // suspended tab. Bound our own wait even if the transport ignores abort.
+    const timeoutMs = poll ? 35_000 : method === "push" ? 30_000 : 15_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let aborted: (() => void) | undefined;
+    const canceled = new Promise<never>((_, reject) => {
+      aborted = () => { clearTimeout(timer); reject(new DOMException("Request canceled", "AbortError")); };
+      controller.signal.addEventListener("abort", aborted, { once: true });
+      timer = setTimeout(() => {
+        reject(Object.assign(new Error("The connection timed out."), { status: 503 }));
+        controller.abort();
+      }, timeoutMs);
+    });
+    try { return await Promise.race([this.options.request(method, params, controller.signal), canceled]); }
+    catch (error) {
+      // A 204/canceled response without our own cancellation is a transient
+      // service interruption, not permission to silently stop reconnecting.
+      if (!controller.signal.aborted && (error as { name?: string })?.name === "AbortError") {
+        error = Object.assign(new Error("The connection was interrupted."), { status: 503 });
+      }
+      throw new RequestFailure(error);
+    } finally {
+      clearTimeout(timer);
+      if (aborted) controller.signal.removeEventListener("abort", aborted);
+      this.controllers.delete(controller); if (this.pollController === controller) this.pollController = null;
+    }
   }
+
   start(): Promise<void> {
     if (this.starting) return this.starting;
     if (this.dead || this.frozen || this.initialized) return Promise.resolve();
-    this.starting = this.begin().finally(() => { this.starting = null; if (!this.initialized) this.schedulePoll(1000); });
+    this.starting = this.begin().finally(() => { this.starting = null; if (!this.initialized || !this.authoritative) this.schedulePoll(1000); });
     return this.starting;
   }
   private async begin(): Promise<void> {
