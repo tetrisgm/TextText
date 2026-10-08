@@ -480,7 +480,8 @@ and actions, with a personal per-device/workspace preference.
 ## Oracle shutdown candidate in progress
 
 - Clean source `0533908b` at `/private/tmp/texttext-candidate-1195-5ELVuo` passed all 817 core tests, TypeScript and required native sync gates. Receipts `/tmp/texttext-oracle-drain-core.log`, `/tmp/texttext-oracle-drain-clean-types.log`, `/tmp/texttext-oracle-drain-native.log`.
-- Web-only package build running via authorized `release/ship.sh --web-only --skip-tests --no-publish`, local process handle `38647`, log `/tmp/texttext-oracle-drain-package.log`. Revalidate this handle before resuming. No deployment yet; run isolated production shutdown against the completed candidate before deploying.
+- Verified artifact: `/private/tmp/texttext-candidate-1195-5ELVuo/.texttext/oracle/texttext-20261008T155231Z-0533908b.tar.gz`, deployment identity `texttext-oracle-20261008T155231Z-0533908b`. Packaging completed; production read drain passed against the actual standalone build: 25-second vault poll woke on SIGTERM, HTTP closed, exit143 in 6007ms without SIGKILL. Logs `/tmp/texttext-oracle-drain-package.log`, `/tmp/texttext-oracle-drain-production.log`.
+- Authorized web-only deployment reusing this verified artifact is running, local process handle `99522`, log `/tmp/texttext-oracle-drain-deploy.log`. Revalidate handle/log before continuing. Do not assume deployment complete; await all live checks and inspect service shutdown journal. The old live source lacks the assistant drain fix.
 - Oracle preflight: current remains `20261008T144740Z-texttext-oracle-20261008T144520Z-da36425d-d4f6ee`; 15 GB free; TextText plus all three Algorave services active; proxy mtime unchanged October 1; latest backup `texttext-20261008T144805Z-34f4f839.dump`. Recheck before deployment.
 
 ## Assistant shutdown drain follow-up
