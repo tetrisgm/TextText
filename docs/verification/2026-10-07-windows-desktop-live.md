@@ -278,3 +278,36 @@ Before subsequent close/install commands could execute, both documented PC SSH
 routes reset/closed again. The known working app remains the last confirmed
 installed/open app. Final installation, actual folder-picker switch/back and
 final screenshot are pending access recovery; no rebuild is needed.
+
+## Final home-view candidate installed after access recovery
+
+Source `160a74ba` passed the complete Windows build, native/Core/agent/shared
+checks and actual MainWindow smoke. Candidate
+`2ceb30aa87be49b0a9a70919f50a6fcd` was sealed; desktop receipt:
+`windows/build/smoke-receipts-d2c4b4a750c8438cbb3eb05858876eb5`.
+The existing app was not running at the preinstall check. Source and artifact
+verification passed twice; installation preserved
+`TextText-previous-20261007T195626-e6d343c2`.
+
+At 02:56:53 UTC, actual installed UI showed the correct signed-in account,
+workspace, 16 home items and List/Cards controls. List was selected and visually
+checked in light mode (`/tmp/texttext-windows-list.png`). Normal close succeeded;
+List persisted on relaunch. Cards was restored, then the existing Windows sync
+verification note was opened without edits. Fresh UIA at 02:59:36 UTC showed all
+nine markers and TextText on Mac presence. Disk verification confirmed all nine
+markers exactly once, unchanged acknowledged archive hash
+`2e8b78392fb98d4311317bcd130f30f97e6158ae178e2ce617cdf47c3279b1b5`,
+empty outbox and no pending pull. Installed DLL SHA-256:
+`a26a5cacb193bc35e48ece2bc3cda2c48a2e3abef74cd068f26bf28e6e04506f`;
+EXE SHA-256:
+`8eaf0eb49815a8c12240c408b20a8d88d6d36a8bce2382692e86e629cc56c37f`.
+The historical proof script's candidate label was stale; these hashes and the
+verified installer output identify the new candidate.
+
+The timing fixture expected a selected note while startup restored home, so
+its timeout and stale prior timestamp are not a startup timing result. Actual
+home and reader acceptance above passed independently. The owner was actively
+using the PC during final checks; the folder-picker switch/back and unobscured
+final reader screenshot were not performed. Replacement-workspace startup and
+failed-switch retention did pass the mandatory native smoke. No user content
+was changed. Temporary verification tasks removed themselves after execution.
