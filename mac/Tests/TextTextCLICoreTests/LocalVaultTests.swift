@@ -3,6 +3,23 @@ import XCTest
 @testable import TextTextCLICore
 
 final class LocalVaultTests: XCTestCase {
+    func testLocalCreationNeverSilentlyIgnoresRetryKey() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = CLIWorkspace.local(DocumentStore(root: root))
+        do {
+            _ = try await workspace.create(title: "Retry", body: "Original", idempotencyKey: "key")
+            XCTFail("unsupported retry key must not be silently ignored")
+        } catch { XCTAssertTrue(String(describing: error).contains("no file was created")) }
+        let capture = try XCTUnwrap(AgentCaptureInput(value: "Capture this note"))
+        do {
+            _ = try await workspace.capture(capture, rawValue: "Capture this note", idempotencyKey: "key")
+            XCTFail("capture must not silently ignore a retry key")
+        } catch { XCTAssertTrue(String(describing: error).contains("no file was created")) }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+    }
+
     func testLocalAppendReceiptSurvivesReopenAndLaterEdits() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -86,7 +86,13 @@
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.
-  Local CLI create needs durable idempotency-key handling. Keyed append now
+  Local CLI create/capture still need durable idempotency-key handling.
+  Source now rejects explicitly keyed local create/capture before writing instead
+  of silently ignoring the key; 8 LocalVaultTests passed
+  (`/tmp/texttext-local-create-key-guard.log`). This temporary safety guard is
+  not installed and is not the final creation-retry feature. Required design:
+  durable workspace-level creation intent, payload binding, coordinated commit
+  and identity-based recovery after rename/edit/interruption. Keyed append now
   commits its receipt in the same TextPack replacement; reopen/later-edit retry
   and payload mismatch regression passed. Web package rebuild, Windows core
   rewrite and shared server/agent mutation receipt preservation regressions
