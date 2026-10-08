@@ -1,4 +1,6 @@
 "use client";
+import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
+import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
@@ -348,7 +350,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
   const displayTemplate = templates.find((candidate) => candidate.id === external.presentation.template.id && candidate.version === external.presentation.template.version) ?? initialTemplate;
   const experience = templateExperience(displayTemplate);
-  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void retrySave()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={displayTemplate} update={updateArticle} /> : experience === "article" ? <VaultStoryDisplay document={display} template={displayTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} sourceBody={external.content.body} template={displayTemplate} itemId={packIdentity(openedFile.markdown)} onOpenCardPath={path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } }))} onEdit={() => setReading(false)} onOpenCardId={async itemId => { const resolved = await vaultRequest<{ path: string }>("resolveItemId", { itemId }); window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path: resolved.path } })); }} onToggleTask={(index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } })} /> : <UnifiedDocumentEditor transport="local" renderNoteCardLinkPicker={props => <VaultCardLinkPicker {...props} />} externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={displayTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void retrySave()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={displayTemplate} update={updateArticle} /> : experience === "article" ? <VaultStoryDisplay document={display} template={displayTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} sourceBody={external.content.body} template={displayTemplate} itemId={packIdentity(openedFile.markdown)} onOpenCardPath={path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } }))} onEdit={() => setReading(false)} onOpenCardId={async itemId => { const resolved = await vaultRequest<{ path: string }>("resolveItemId", { itemId }); window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path: resolved.path } })); }} onToggleTask={(index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } })} /> : <UnifiedDocumentEditor transport="local" renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} renderNoteCardLinkPicker={props => <VaultCardLinkPicker {...props} />} externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={displayTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();
@@ -481,6 +483,7 @@ class DocumentBoundary extends Component<{ children: ReactNode }, { error: strin
 }
 
 export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null }: { allowFolderPicker?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
+  const shortcut = useShortcutLabel();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
   const sidebarReopenButton = useRef<HTMLButtonElement>(null);
@@ -1038,7 +1041,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   }
   if (selected || commandFolder) commandActions.push({ id: "go-home", label: "Go home", description: "Show all files in this workspace.", shortcut: "H", aliases: ["All files"], keywords: ["workspace", "home"] });
   if (canOpenRecovery) commandActions.push({ id: "trash-recovery", label: "Trash and recovery", description: "Recover deleted items or inspect saved versions.", shortcut: "R", keywords: ["restore", "history", "deleted"] });
-  if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this Mac.", shortcut: "O", keywords: ["workspace", "switch"] });
+  if (allowFolderPicker && listing?.root) commandActions.push({ id: "open-folder", label: "Open another folder", description: "Choose a different workspace folder on this device.", shortcut: "O", keywords: ["workspace", "switch"] });
   for (const folder of folders) commandActions.push({
     id: `go-to-folder:${folder}`, label: `Go to ${folder}`,
     description: "Open this workspace folder.", keywords: ["navigate", "folder", folder],
@@ -1164,7 +1167,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       {allowFolderPicker && !listing?.root && <button disabled={busy} onClick={openWorkspaceFolder}>Open folder</button>}
       {listing?.root && <>
         <p className="vault-root" title={listing.root}>{listing.name || listing.root.split("/").filter(Boolean).at(-1)}</p>
-        <button ref={searchButton} className="vault-search-trigger" disabled={busy} onClick={openSearch}><span>Search and actions</span><kbd>⌘K</kbd></button>
+        <button ref={searchButton} className="vault-search-trigger" disabled={busy} onClick={openSearch}><span>Search and actions</span><kbd>{shortcut("⌘K")}</kbd></button>
         <nav aria-label="Folders"><FolderNavigation tree={tree} selectedFolder={selected ? folderForItem(selected.path) : destinationFolder.trim()}
           onFolder={(path) => void operate(async () => { closeRemoved(); setDestinationFolder(path); setFolderDesignOpen(false); }, true)} /></nav>
       </>}
@@ -1236,7 +1239,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
           onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
           onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); event.stopPropagation(); void importImages(Array.from(event.dataTransfer.files)); }}>
           <header><div><h2>Add images</h2><p>Collect visual references in your Gallery.</p></div><button type="button" aria-label="Close image capture" onClick={closeImageCapture}>✕</button></header>
-          <div className="vault-image-capture-target"><span aria-hidden="true">＋</span><strong>Drop images here</strong><p>Paste an image with ⌘V, or choose files from your Mac.</p><button type="button" autoFocus disabled={busy} onClick={() => imageInput.current?.click()}>Choose images</button></div>
+          <div className="vault-image-capture-target"><span aria-hidden="true">＋</span><strong>Drop images here</strong><p>Paste an image with {shortcut("⌘V")}, or choose files from your device.</p><button type="button" autoFocus disabled={busy} onClick={() => imageInput.current?.click()}>Choose images</button></div>
         </div>
       </div>}
       {importStatus && <p role="status">{importStatus}</p>}

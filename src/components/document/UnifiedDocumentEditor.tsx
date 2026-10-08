@@ -1,5 +1,6 @@
 "use client";
 
+import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
 import { DocumentUndoManager, replaceSharedText } from "@/lib/collab/text-transactions";
 import { templateExperience } from "@/lib/presentation/templates";
 import { NOTE_COLORS, noteColor } from "@/lib/note-colors";
@@ -136,6 +137,7 @@ type UnifiedDocumentEditorProps = {
     onApply: (template: TemplateDefinition) => void;
     onClose: () => void;
   }) => ReactNode;
+  renderNoteTemplatePicker?: (props: { body: string; onPick: (body: string) => void; onCancel: () => void }) => ReactNode;
   renderNoteCardLinkPicker?: (props: { onPick: (target: { id: string; title: string }) => void; onCancel: () => void }) => ReactNode;
   /** Focus the body when opening a newly created note, including after its optimistic ID is saved. */
   focusNewNote?: boolean;
@@ -529,6 +531,7 @@ export function UnifiedDocumentEditor({
   localPresence,
   resolveDocumentAssets,
   renderTemplateLibrary,
+  renderNoteTemplatePicker,
   renderNoteCardLinkPicker,
   focusNewNote = false,
   focusNewNoteTitle = false,
@@ -560,6 +563,7 @@ export function UnifiedDocumentEditor({
       ),
     [post],
   );
+  const shortcut = useShortcutLabel();
   const initialDocumentRef = useRef(initialDocument);
   const initialRevisionRef = useRef(post.revision ?? 0);
   // A caller-owned local Y.Doc is already authoritative before this editor
@@ -587,6 +591,7 @@ export function UnifiedDocumentEditor({
   const noteImageSelection = useRef({ from: 0, to: 0 });
   const [noteInsertOpen, setNoteInsertOpen] = useState(false);
   const [noteColorOpen, setNoteColorOpen] = useState(false);
+  const [noteTemplate, setNoteTemplate] = useState<{body: string; at: number} | null>(null);
   const [noteEmojiOpen, setNoteEmojiOpen] = useState(false);
   const [noteLink, setNoteLink] = useState<{ from: number; to: number; body: string; label: string; url: string; error: string } | null>(null);
   const [noteCardLink, setNoteCardLink] = useState<{ from: number; to: number; body: string; label: string; error: string } | null>(null);
@@ -1840,8 +1845,8 @@ export function UnifiedDocumentEditor({
           /><div ref={noteInsertRef} className="tt-note-insert">
             <button type="button" aria-label="Add to note" aria-expanded={noteInsertOpen} title="Add to card" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen((open) => !open); }}>+</button>
             {noteInsertOpen && <div className="tt-note-insert-menu" role="menu" aria-label="Add to note" onKeyDown={(event) => {
-              if (event.key === "#" || event.key === "^" || event.key === "!" || event.key === "*") {
-                const choice = event.key === "#" ? "Tag" : event.key === "^" ? "Link" : event.key === "!" ? "Image" : "Color";
+              if (event.key === "#" || event.key === "^" || event.key === "!" || event.key === "*" || event.key === "=") {
+                const choice = event.key === "#" ? "Tag" : event.key === "^" ? "Link" : event.key === "!" ? "Image" : event.key === "=" ? "Template" : "Color";
                 const item = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(button => button.textContent === choice && !button.disabled);
                 if (item) { event.preventDefault(); item.click(); }
                 return;
@@ -1859,6 +1864,7 @@ export function UnifiedDocumentEditor({
               <button type="button" role="menuitem" onClick={renderNoteCardLinkPicker ? openNoteCardLink : openNoteLink}>Link</button>
               {renderNoteCardLinkPicker && <button type="button" role="menuitem" onClick={openNoteLink}>Web link</button>}
               {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
+              {renderNoteTemplatePicker && <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); setNoteTemplate({body: currentLocalDocument().content.body, at: noteImageSelection.current.from}); }}>Template</button>}
               <button type="button" role="menuitem" onClick={insertNoteChecklist}>Checklist</button>
               <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); setNoteEmojiOpen(true); }}>Emoji</button>
               <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); setNoteColorOpen(true); }}>Color</button>
@@ -1954,7 +1960,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, noteEmojiOpen, insertNoteEmoji, onPasteImages, openNoteLink, openNoteCardLink, renderNoteCardLinkPicker, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, noteEmojiOpen, renderNoteTemplatePicker, currentLocalDocument, insertNoteEmoji, onPasteImages, openNoteLink, openNoteCardLink, renderNoteCardLinkPicker, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2344,6 +2350,13 @@ export function UnifiedDocumentEditor({
         <button type="submit">Insert link</button><button type="button" onClick={() => { setNoteLink(null); bodySurfaceRef.current?.focus(); }}>Cancel</button>
         {noteLink.error && <p role="alert">{noteLink.error}</p>}
       </form>}
+      {experience === "note" && noteTemplate && renderNoteTemplatePicker && renderNoteTemplatePicker({body: noteTemplate.body, onCancel: () => { setNoteTemplate(null); bodySurfaceRef.current?.focus(); }, onPick: text => {
+        const body = currentLocalDocument().content.body;
+        if (body !== noteTemplate.body) throw new Error("The note changed. Reopen templates at the insertion point.");
+        const at = Math.max(0, Math.min(noteTemplate.at, body.length));
+        updateText("body", body.slice(0, at) + text + body.slice(at)); setNoteTemplate(null);
+        requestAnimationFrame(() => { bodySurfaceRef.current?.focus(); requestDocumentCaret(at + text.length, at + text.length); });
+      }})}
       {experience === "note" && noteCardLink && renderNoteCardLinkPicker && <div className="tt-note-link" aria-label="Add card link">{renderNoteCardLinkPicker({ onPick: insertNoteCardLink, onCancel: () => { setNoteCardLink(null); bodySurfaceRef.current?.focus(); } })}{noteCardLink.error && <p role="alert">{noteCardLink.error}</p>}</div>}
       {experience === "note" && noteColorOpen && <div className="tt-note-colors" role="group" aria-label="Card color" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setNoteColorOpen(false); bodySurfaceRef.current?.focus(); } }}><span>Card color</span>{NOTE_COLORS.map(color => <button key={color} type="button" data-color={color} aria-label={color === "default" ? "Default card color" : `${color} card color`} aria-pressed={noteColor(document.content.fields.texttextNoteColor) === color} onClick={() => { updateField("texttextNoteColor", color); setNoteColorOpen(false); bodySurfaceRef.current?.focus(); }}>{color}</button>)}</div>}
         <h3>Tags</h3>
@@ -2360,7 +2373,7 @@ export function UnifiedDocumentEditor({
           updateDocumentSnapshot({ ...current, content: { ...current.content, tags: [...current.content.tags, topic].slice(0, 500) } });
           setTagDraft("");
         }}><input ref={noteTagInput} aria-label="Add note tag" placeholder="Add a tag" value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} maxLength={41} /><button type="submit" disabled={!tagDraft.trim()}>Add</button></form>}
-        <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title="Finish card (⌘ Enter)">Finish</button>
+        <button type="button" className="tt-note-finish" onClick={() => void stopEditing()} title={`Finish card (${shortcut("⌘ Enter")})`}>Finish</button>
       </section>}
       {onPasteImages && experience === "note" && <input ref={noteImageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="Choose note images" onChange={(event) => {
         const files = Array.from(event.currentTarget.files ?? []);

@@ -788,3 +788,9 @@
 .vault-app .vault-document-list .vault-file-excerpt { grid-column:2; grid-row:2; height:auto; padding:0; margin:0; background:transparent; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:13px; line-height:1.4; }
 .vault-app .vault-document-list .vault-file-source, .vault-app .vault-document-list > button > span:last-child { display:none; }
 @media(max-width:540px) { .vault-app .vault-document-list > button { grid-template-columns:26px minmax(0,1fr) minmax(55px,20%); gap:3px 8px; } .vault-app .vault-document-list .vault-file-preview { width:26px; height:26px; } }
+
+.tt-note-template-picker { padding: 12px; border: 1px solid var(--vault-border, #8886); border-radius: 8px; margin-block: 8px; }
+.tt-note-template-picker label { display: grid; gap: 6px; font-weight: 600; }
+.tt-note-template-picker input { font: inherit; color: inherit; background: transparent; border: 1px solid #8886; border-radius: 5px; padding: 6px; }
+.tt-note-template-picker p { font-size: .85rem; opacity: .8; }
+.tt-note-template-picker button { margin: 3px; }
