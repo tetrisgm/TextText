@@ -26,6 +26,12 @@
 
 ## Current work and next checks
 
+- CLI creation preparation now builds a complete unpublished package with a
+  supplied stable identity, preserving destination folder defaults. The native
+  preparation/publication and remote document suites passed (53 tests), recorded
+  in `/tmp/texttext-creation-preparation.log`. Durable create/capture journaling
+  remains next; this prerequisite is not installed.
+
 - Home List/Cards toggles and navigation persistence passed in actual Mac and
   Safari. [Receipt](verification/2026-10-08-home-layouts-live.md).
   Shared source now retains bounded saved-title labels during return navigation,

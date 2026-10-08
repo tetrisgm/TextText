@@ -299,6 +299,17 @@ public struct DocumentStore: Sendable {
         title: String, body: String? = nil, folder: String? = nil, kind: String? = nil,
         sourceURL: String? = nil
     ) throws -> URL {
+        try prepareCreation(title: title, body: body, folder: folder, kind: kind,
+                            sourceURL: sourceURL, itemId: UUID().uuidString.lowercased())
+    }
+
+    /// Prepare a complete package at an unpublished location when a durable
+    /// creation transaction supplies one. Folder defaults still come from the
+    /// real destination, never the journal directory.
+    func prepareCreation(
+        title: String, body: String? = nil, folder: String? = nil, kind: String? = nil,
+        sourceURL: String? = nil, itemId: String, preparedOutput: URL? = nil
+    ) throws -> URL {
         let fileManager = FileManager.default
         var destination = root
         if let folder, !folder.isEmpty {
@@ -324,7 +335,7 @@ public struct DocumentStore: Sendable {
             into: DocumentCreation.frontmatter(
                 title: title, kind: effectiveKind, sourceURL: sourceURL)
             + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n"),
-            itemId: UUID().uuidString.lowercased(), folderId: nil, kind: effectiveKind)
+            itemId: itemId, folderId: nil, kind: effectiveKind)
 
         let temporary = try makeTemporaryDirectory()
         defer { try? fileManager.removeItem(at: temporary) }
@@ -355,6 +366,14 @@ public struct DocumentStore: Sendable {
         // and file coordination give file observers one complete TextPack.
         let handle = try FileHandle(forWritingTo: staging)
         try handle.synchronize(); try handle.close()
+        if let preparedOutput {
+            guard contains(preparedOutput), preparedOutput != url else {
+                throw TextTextCLIError.invalidDocument("invalid creation staging location")
+            }
+            try fileManager.moveItem(at: staging, to: preparedOutput)
+            try synchronizeCreationDirectory(preparedOutput.deletingLastPathComponent())
+            return url
+        }
         var coordinationError: NSError?
         var published: Result<Void, Error>?
         NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) { target in
@@ -369,16 +388,20 @@ public struct DocumentStore: Sendable {
                     }
                 }
                 try fileManager.moveItem(at: staging, to: target)
-                let descriptor = Darwin.open(target.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-                guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-                defer { Darwin.close(descriptor) }
-                guard Darwin.fsync(descriptor) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+                try synchronizeCreationDirectory(target.deletingLastPathComponent())
             }
         }
         if let coordinationError { throw coordinationError }
         guard let published else { throw CocoaError(.fileWriteUnknown) }
         try published.get()
         return url
+    }
+
+    func synchronizeCreationDirectory(_ directory: URL) throws {
+        let descriptor = Darwin.open(directory.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { Darwin.close(descriptor) }
+        guard Darwin.fsync(descriptor) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     }
 
     /// Build the replacement beside the target, then swap it in with one

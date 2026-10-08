@@ -19,6 +19,22 @@ final class DocumentStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
+    func testPreparedCreationKeepsIdentityWithoutPublishingDestination() throws {
+        let journal = root.appendingPathComponent(".creation-fixture", isDirectory: true)
+        try FileManager.default.createDirectory(at: journal, withIntermediateDirectories: true)
+        let staged = journal.appendingPathComponent("pending.textpack")
+        let identity = UUID().uuidString.lowercased()
+        let target = try store.prepareCreation(title: "Prepared", body: "Complete body.",
+                                               itemId: identity, preparedOutput: staged)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+        XCTAssertEqual(store.itemId(at: staged), identity)
+        XCTAssertTrue(try store.readMarkdown(at: staged).contains("Complete body."))
+        XCTAssertTrue(try store.list().isEmpty)
+        try FileManager.default.moveItem(at: staged, to: target)
+        XCTAssertEqual(store.itemId(at: target), identity)
+        XCTAssertEqual(try store.list(), ["Prepared.textpack"])
+    }
+
     func testVaultRenameAndDeleteFenceChangesAndKeepRecovery() throws {
         _ = try store.create(title: "Rename", body: "Keep me.")
         let files = LocalVaultDocumentStore(root: root)
