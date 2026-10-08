@@ -14,13 +14,13 @@
   Algorave services active, HAProxy unchanged. Hosting and storage remain Oracle.
 - Windows: self-contained WPF/WebView2 app installed in
   `C:\Users\Shokunin\AppData\Local\Programs\TextText`, candidate
-  **`8ca77072ef324c95b4202de1e79ac490`**, source `911e7564`.
+  **`6ecf6765af1d4a2e871a03a6b5f2ce70`**, source `c1c99964`.
   No Node or .NET SDK is required by users. Account state is DPAPI-protected;
   native code owns TextPack files, sync journals and bundled Codex.
-  Previous app retained as `TextText-previous-20261007T155724-bc262a43`.
+  Previous application retained by the verified installer; see Windows receipt.
 - PC source: `C:\Users\Shokunin\dev\texttext-sync-20261007`.
-  Final build log: `windows-final-utf8-build.log`; desktop receipts:
-  `windows/build/smoke-receipts-8b5efd2734e149318439dc771df70f1b`.
+  Final desktop receipts:
+  `windows/build/smoke-receipts-1962809f581d477eb76e1a0b28dce860`.
 
 ## Verification and fixes
 
@@ -46,13 +46,15 @@
   at normal priority versus 14.5 seconds at background priority. `c2761fd9`
   sets/asserts normal interactive test priority. The unproven software-rendering
   workaround was removed in `ff3462c1`; default rendering and diagnostics remain.
-  Actual account restoration and all eight markers were confirmed after correcting
-  the launch priority, and the app closed normally. Final candidate
-  `6ecf6765af1d4a2e871a03a6b5f2ce70` (source `c1c99964`) passed its full build gate
-  and sealed receipt; smoke `1962809f581d477eb76e1a0b28dce860` passed. SSH reset
-  during the install attempt, so its outcome is unknown. Inspect the installed
-  receipt before retrying; do not rebuild unchanged source. Both documented PC
-  routes subsequently failed. Final Unicode response and comment checks remain.
+  Final candidate `6ecf6765af1d4a2e871a03a6b5f2ce70` is installed after source
+  and artifact verification. Both accounts and all eight markers restored.
+  Actual Codex output preserved curly quotes, accents, Japanese and emoji.
+  A unique Windows comment appeared in Safari, attributed to TextText on Windows.
+  Comment resolution reached Safari automatically. Both accounts and all eight
+  body markers survived normal close/reopen. The archive subsequently changed
+  only through comment metadata convergence; the outbox and pending pull are empty.
+  Installed startup measured 752 ms to the shell and 1,435 ms to the selected
+  document, using 250 ms UIA polling from launch at normal priority.
 - `71c00dac` connects Windows recovery actions to the validated local recovery
   directory, ignoring renderer-supplied paths. Native coverage now has 112
   assertions. Expanded real desktop smoke passed 26 UI/template/image checks,
