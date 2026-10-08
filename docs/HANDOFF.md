@@ -40,7 +40,9 @@
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
   save/reopen passed in 1206; 1207 startup, existing note, home navigation and
   saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
-- Oracle: **texttext-oracle-20261008-0428bfca-creation**. Thirteen live checks
+- Oracle: **texttext-oracle-20261008-1ae33f20-authoring**. Deployment exited zero
+  and thirteen live checks passed. [Current receipt](verification/2026-10-08-oracle-authoring.md).
+  Previous **texttext-oracle-20261008-0428bfca-creation**. Thirteen live checks
   passed; [current receipt](verification/2026-10-08-oracle-creation.md).
   Prior atomic-look deployment:
   [receipt](verification/2026-10-08-oracle-atomic-look.md).
