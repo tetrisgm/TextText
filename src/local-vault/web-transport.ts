@@ -175,6 +175,12 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   };
   const transport: VaultTransport = async (method, params, signal) => {
     if (destroyed) throw new Error("This workspace has closed.");
+    if (method === "accountRead") {
+      if (Object.keys(params).length) throw new Error("Invalid account request.");
+      const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/account`, { credentials: "same-origin", cache: "no-store", signal });
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }
     if (method === "keptFeedEntries" || method === "readFeedEntries") {
       const response = await request(`${base}?${method}=1`, { credentials: "same-origin", cache: "no-store", signal });
       if (!response.ok) throw await failure(response);

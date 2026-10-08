@@ -1,0 +1,20 @@
+.dialog {
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  box-shadow: 0 12px 50px #0003;
+}
+.dialog::backdrop { background: #0005; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.header h2 { margin: 0; font-size: 20px; }
+.dialog section { margin-top: 24px; }
+.dialog h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+.dialog p { margin: 6px 0; overflow-wrap: anywhere; }
+.muted { color: var(--muted); font-size: 13px; }
+.providers { list-style: none; padding: 0; margin: 0; }
+.providers li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }

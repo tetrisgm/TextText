@@ -538,3 +538,18 @@ describe("web file vault transport", () => {
     test.transport.destroy();
   });
 });
+
+
+describe("account profile transport", () => {
+  it("reads only the bound workspace account with cancellation and no caching", async () => {
+    const calls: [string, RequestInit | undefined][] = [];
+    const request: typeof fetch = async (url, init) => { calls.push([String(url), init]); return Response.json({ email: "writer@example.test", name: null, identities: ["apple"], workspaceName: "My notes" }); };
+    const transport = createWebVaultTransport("bound-workspace", "My notes", request);
+    const controller = new AbortController();
+    expect(await transport.request("accountRead", {}, controller.signal)).toMatchObject({ email: "writer@example.test" });
+    expect(calls).toEqual([["/api/vault/bound-workspace/account", { credentials: "same-origin", cache: "no-store", signal: controller.signal }]]);
+    await expect(transport.request("accountRead", { workspaceId: "someone-else" })).rejects.toThrow("Invalid account request");
+    expect(calls).toHaveLength(1);
+    transport.destroy();
+  });
+});

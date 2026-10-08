@@ -86,6 +86,7 @@ try {
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
+    else if (request.method === "accountRead") result = { email: "writer@example.test", name: "Test writer", identities: ["apple", "google"], workspaceName: "My notes" };
     else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "sync") {
       result = { connected, available: true, ...(connected ? { webURL: "https://example.test/vault/workspace", workspaceId } : {}) };
@@ -414,11 +415,23 @@ try {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-starter-overview-dark.png" });
   await page.emulateMedia({ colorScheme: "light" });
-  await page.getByRole("button", { name: "TextText account Signed in" }).click();
+  await page.getByRole("button", { name: "writer@example.test Signed in" }).click();
   assert.equal(await page.getByText("Available on this Mac").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Retry connection", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Switch account", exact: true }).count(), 0);
-  await page.getByRole("button", { name: "Settings", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const accountSettings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await accountSettings.getByText("writer@example.test", { exact: true }).waitFor();
+  await accountSettings.getByText("Apple", { exact: true }).waitFor();
+  assert.equal(await accountSettings.getByRole("button", { name: "Log out" }).count(), 0);
+  assert.equal(await accountSettings.getByText("/test/Workspace", { exact: true }).count(), 0);
+  await page.screenshot({ path: "/tmp/texttext-account-settings-light.png" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "/tmp/texttext-account-settings-dark.png" });
+  await page.keyboard.press("Escape");
+  await accountSettings.waitFor({ state: "hidden" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.getByRole("button", { name: "writer@example.test Signed in" }).click();
   await page.getByRole("button", { name: "Log out", exact: true }).waitFor();
   connected = true;
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, onlineReady: true, webURL: "https://example.test/vault/workspace", workspaceId: "7a32c401-f041-4bc1-bbfd-f60317797873" } })));

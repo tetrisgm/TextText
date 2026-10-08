@@ -642,11 +642,10 @@ export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolde
   }, [destinationFolder, listing?.root, locationReadyRoot, selected]);
   const flushRef = useRef<(navigation?: boolean) => Promise<boolean>>(async () => true);
   useEffect(() => {
-    if (!allowFolderPicker) return;
     const nativeWindow = window as Window & { texttextFlushForSignOut?: () => Promise<boolean> };
     nativeWindow.texttextFlushForSignOut = () => flushRef.current(true);
     return () => { delete nativeWindow.texttextFlushForSignOut; };
-  }, [allowFolderPicker]);
+  }, []);
   const publishFlushRef = useRef<() => Promise<string | false>>(async () => false);
   const saveStoryDetailsRef = useRef<(details: StoryDetails) => Promise<string | false>>(async () => false);
   const registerFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails) => {
