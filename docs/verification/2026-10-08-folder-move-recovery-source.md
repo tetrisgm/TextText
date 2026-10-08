@@ -21,6 +21,10 @@ Verification on the Mac:
   local PostgreSQL verifies it creates no reservation and rejects non-owners.
 - Corrected template-version compatibility and the frozen core gate passed
   all 751 tests at `bf0a8eda`. Log: `/tmp/texttext-sync-final-core.log`.
+- Required native gate also passed with no failures; both core/native receipts
+  match the current working source. Log: `/tmp/texttext-native-bf0a8eda.log`.
+  Existing unrelated local edits remain outside these commits; no new client
+  build or deployment is claimed for this source.
 
 Pending: public immutable move preview and approval adapter, expanded-access
 review, client integration, integrated required gate and live acceptance.
