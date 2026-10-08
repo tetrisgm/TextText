@@ -253,3 +253,28 @@ Body search still returned the existing verification note. Normal close/reopen
 passed with selected-reader readiness at 1,599 ms. All nine markers remained
 exactly once, with the same acknowledged note hash, empty outbox and no pending
 pull. The installed app was left open on the saved note.
+
+## Workspace-folder switch follow-up and startup correction
+
+The first folder-switch candidate `2eb4dcc737ef49ca91ca58408fc666b1` passed
+its then-existing gate but exposed a real blank-window regression at startup:
+replacement WebView2 initialization awaited a view not attached to the WPF
+presentation source. No user editor had initialized and no notes were lost.
+The blank app closed normally. The known working `c69bcd...` candidate was
+restored through the source/artifact verified installer and opened the saved
+reader in 2,285 ms at 02:29:52 UTC, PID 28112.
+
+`033231ae` stages a replacement view in the live visual tree while retaining the
+old presentation. Preparation failure restores the old view. The mandatory
+native smoke now executes production `OpenWorkspace`, injects a commit failure,
+asserts the prior view remains usable, then opens successfully and checks a
+loaded visible view with the actual local document. Retired-view writes are
+also rejected before they can reach the replacement bridge.
+
+Final source `033231ae` passed the complete Windows gate and produced sealed
+candidate `b4ba548f662943ec9b70749f58f7442f`, desktop receipt
+`windows/build/smoke-receipts-069e308ed25547bfb6264197d215e72e`.
+Before subsequent close/install commands could execute, both documented PC SSH
+routes reset/closed again. The known working app remains the last confirmed
+installed/open app. Final installation, actual folder-picker switch/back and
+final screenshot are pending access recovery; no rebuild is needed.
