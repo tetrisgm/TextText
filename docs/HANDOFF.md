@@ -33,6 +33,8 @@
   bounded metadata across server, Windows and Mac. Verify external edits,
   replacement, rename and duplicate definitions invalidate cached discovery.
   This prevents a large collection from blocking generic item creation.
+  Server/Windows fix `a0d9391b` passes 26 tests; native equivalent is pending.
+  [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
   Agent template creation and durable template/folder approvals
