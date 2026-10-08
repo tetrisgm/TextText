@@ -1,5 +1,7 @@
 "use client";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
+import { listingCapabilities } from "./listing-capabilities";
+import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { retryBootstrap, isTransientBootstrapError } from "./bootstrap-retry";
 import { templateStarterDocument } from "./template-starter";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
@@ -47,7 +49,7 @@ import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
 import { VaultPublishDialog } from "./VaultPublishDialog";
 import { VaultComments } from "./VaultComments";
 import { vaultCommentCapabilities } from "./vault-comments";
-import { canCreateInVaultFolder, parseVaultAccess, sharedVaultLinkTarget, type VaultAccess } from "./shared-vaults";
+import { parseVaultAccess, sharedVaultLinkTarget, type VaultAccess } from "./shared-vaults";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { readVaultLocation, resolveVaultLocation, writeVaultLocation } from "./vault-location";
@@ -76,7 +78,7 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, registerFlush, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
+function VaultEditor({ readOnly = false, initial, root, onChanged, onRemoved, onTitleChange, registerFlush, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
   const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
@@ -98,6 +100,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     (initialDocument.content.title.trim() || initialDocument.content.body.trim())));
   useEffect(() => {
     const editItem = () => {
+      if (readOnly) return;
       setReading(false);
       requestAnimationFrame(() => requestAnimationFrame(() => {
         document.querySelector<HTMLElement>('[aria-label="Document body"], .tt-text-title[contenteditable="true"]')?.focus();
@@ -105,7 +108,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
     };
     window.addEventListener("texttext:vault-edit-item", editItem);
     return () => window.removeEventListener("texttext:vault-edit-item", editItem);
-  }, []);
+  }, [readOnly]);
   const [notice, setNotice] = useState("");
   const [hasConflict, setHasConflict] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -352,6 +355,7 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
   const displayTemplate = templates.find((candidate) => candidate.id === external.presentation.template.id && candidate.version === external.presentation.template.version) ?? initialTemplate;
   const experience = templateExperience(displayTemplate);
+  if (readOnly) return <section className="vault-document"><p className="vault-notice">Read only</p><DocumentRenderer document={display} template={displayTemplate} /></section>;
   return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void retrySave()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={displayTemplate} update={updateArticle} /> : experience === "article" ? <VaultStoryDisplay document={display} template={displayTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} sourceBody={external.content.body} template={displayTemplate} itemId={packIdentity(openedFile.markdown)} onOpenCardPath={path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } }))} onEdit={() => setReading(false)} onOpenCardId={async itemId => { const resolved = await vaultRequest<{ path: string }>("resolveItemId", { itemId }); window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path: resolved.path } })); }} onToggleTask={(index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } })} /> : <UnifiedDocumentEditor transport="local" renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} renderNoteCardLinkPicker={props => <VaultCardLinkPicker {...props} />} externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={displayTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
@@ -668,18 +672,20 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const registerFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails) => {
     flushRef.current = flush; publishFlushRef.current = publishFlush; saveStoryDetailsRef.current = saveStoryDetails; currentFileRef.current = currentFile;
   }, []);
-  const canCreate = allowFolderPicker || canCreateInVaultFolder(access, destinationFolder.trim());
+  const capabilities = listingCapabilities(listing, access, allowFolderPicker);
+  const canCreate = capabilities.create(destinationFolder.trim());
+  const canEditSelected = Boolean(selected && capabilities.edit(selected.path));
   useEffect(() => {
     if (templateIntent === null || consumedTemplateIntent.current === templateIntent || !listing || !canCreate) return;
     consumedTemplateIntent.current = templateIntent;
     setTemplateQuery(templateIntent.query);
     setTemplatePicker(true);
   }, [templateIntent, listing, canCreate]);
-  const canManageFiles = allowFolderPicker || Boolean(access?.fullAccess && access.canEditContent);
-  const canOpenRecovery = allowFolderPicker || Boolean(access?.isOwner);
+  const canManageFiles = capabilities.manageFiles;
+  const canOpenRecovery = canManageFiles && (allowFolderPicker || Boolean(access?.isOwner));
   const nativeWorkspaceId = allowFolderPicker && nativeConnection?.root === listing?.root ? nativeConnection?.workspaceId ?? null : null;
-  const canReadFeeds = Boolean(webWorkspaceId ? access?.fullAccess : nativeWorkspaceId);
-  const canSubscribeFeed = canCreate && canReadFeeds && (allowFolderPicker || access?.canEditContent === true);
+  const canReadFeeds = Boolean(capabilities.fullAccess && (webWorkspaceId || nativeWorkspaceId));
+  const canSubscribeFeed = canCreate && canReadFeeds && capabilities.create(destinationFolder.trim());
   const sharingWorkspaceId = webWorkspaceId ?? nativeWorkspaceId;
   const canShare = Boolean(webWorkspaceId ? access?.canManageShares : nativeWorkspaceId);
   const selectedItemId = useMemo(() => {
@@ -693,7 +699,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     catch (reason) { return { subscription: null, error: reason instanceof Error ? reason.message : "This feed subscription could not be opened." }; }
   }, [selected]);
   const feedFolder = destinationFolder.trim();
-  const canKeepFeed = canReadFeeds && (allowFolderPicker || Boolean(access?.canEditContent && canCreateInVaultFolder(access, feedFolder)));
+  const canKeepFeed = canReadFeeds && capabilities.create(feedFolder);
   useEffect(() => {
     if (!selected || (!selectedFeed.subscription && !selectedFeed.error)) return;
     currentFileRef.current = () => selected;
@@ -1031,7 +1037,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     keywords: ["assistant", "collaborate", "edit"],
   });
   const contextualActions: VaultSearchAction[] = [];
-  if (selected && !selectedFeed.subscription && canCreate) contextualActions.push({ id: "edit-current", label: "Edit this item", description: "Open the editor for this item.", shortcut: "E", keywords: ["write", "change"] });
+  if (selected && !selectedFeed.subscription && canEditSelected) contextualActions.push({ id: "edit-current", label: "Edit this item", description: "Open the editor for this item.", shortcut: "E", keywords: ["write", "change"] });
   if (canShare && sharingWorkspaceId && (selected || commandFolder)) contextualActions.push({ id: "share-current", label: selected ? "Share this item" : "Share this folder", description: "Manage access to the current location.", keywords: ["collaborate", "invite", "permissions"] });
   if (canOpenComments) contextualActions.push({ id: "show-comments", label: "Show comments", description: "Discuss the open item.", keywords: ["discussion", "replies"] });
   if (selected && canPublish) contextualActions.push({ id: "publish-current", label: "Publish this item", description: "Review public access before publishing.", keywords: ["public", "website"] });
@@ -1358,12 +1364,12 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         setSelected(created); setDestinationFolder(folder); setTemplatePicker(false); refresh();
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}
-      {listing && <ArticleEnrichmentWorker listing={listing} enabled={canCreate} skipPath={selected?.path} onChanged={refresh} />}
+      {listing && <ArticleEnrichmentWorker listing={listing} enabled={canManageFiles} skipPath={selected?.path} onChanged={refresh} />}
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
         {selectedFeed.error ? <div className="vault-notice" role="alert">{selectedFeed.error}</div> : selectedFeed.subscription
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />
-          : <div inert={busy}><OpenVaultEditor initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onTitleChange={updateSelectedTitle} onRemoved={() => closeRemoved(selected.path)}
+          : <div inert={busy}><OpenVaultEditor readOnly={!canEditSelected} initial={selected} root={listing.root} registerFlush={registerFlush} onChanged={refresh} onTitleChange={updateSelectedTitle} onRemoved={() => closeRemoved(selected.path)}
               startEditing={noteEditPath === selected.path}
               focusNewNote={!busy && (newNoteFocus?.file === selected && newNoteFocus.focusPending || noteEditPath === selected.path)}
               focusNewNoteTitle={Boolean(newNoteFocus?.file === selected && newNoteFocus.focusTitle)}
@@ -1381,9 +1387,9 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
                 setNativePublishRefresh(value => value + 1);
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
-      : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath} galleryCommentsAccess={galleryCommentsAccess}
+      : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={!capabilities.fullAccess} preferredBookmarkPath={preferredBookmarkPath} galleryCommentsAccess={galleryCommentsAccess}
         onCreateCard={(title, body, tags, images, color, onCreated, icon) => { void createForFolder("Notes", "Note", title, undefined, body, true, onCreated, tags, images, color, icon); }}
-        onEditNote={canCreate ? (path) => void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true) : undefined}
+        onEditNote={(path) => { if (!capabilities.edit(path)) return; void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true); }}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
         onAskBookmarkAgent={allowFolderPicker || webAssistant ? askBookmarkAgent : undefined}

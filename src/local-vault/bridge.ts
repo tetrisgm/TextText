@@ -1,5 +1,5 @@
-export type VaultItem = { path: string; title?: string; itemId?: string };
-export type VaultListing = { root: string; name?: string; folders?: string[]; items: VaultItem[] };
+export type VaultItem = { path: string; title?: string; itemId?: string; canEditContent?: boolean };
+export type VaultListing = { root: string; name?: string; folders?: string[]; items: VaultItem[]; fullAccess?: boolean; canCreateContent?: boolean; writableFolders?: string[] };
 export type VaultFile = {
   path: string; hash: string; markdown: string;
   documentJSON?: string | null; templateJSON?: string | null;

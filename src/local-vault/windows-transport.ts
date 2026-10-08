@@ -6,8 +6,8 @@ import { executeWindowsAgentTool } from "./windows-agent-tools";
 
 type NativeView = { postMessage(value: unknown): void; addEventListener(type: "message", listener: (event: MessageEvent) => void): void; removeEventListener(type: "message", listener: (event: MessageEvent) => void): void };
 type Status = { root: string; workspaceId: string; name: string; connected: boolean; available: boolean };
-type Entry = { itemId: string; relativePath: string; revision: string };
-type Manifest = { root: string; name: string; items: Entry[]; folders?: string[]; revision: string };
+type Entry = { itemId: string; relativePath: string; revision: string; canEditContent?: boolean };
+type Manifest = { fullAccess?: boolean; canCreateContent?: boolean; writableFolders?: string[]; root: string; name: string; items: Entry[]; folders?: string[]; revision: string };
 type Read = { path: string; hash: string; data: string };
 type Pending = { resolve(value: unknown): void; reject(reason: unknown): void; dispose(): void };
 const documentElementCanvas = (width: number, height: number) => { const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height; return canvas; };

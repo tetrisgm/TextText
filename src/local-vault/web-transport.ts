@@ -6,7 +6,7 @@ import { emptyPack, encodePack, openPack, packIdentity, replacePackIdentity, typ
 import { writePayload } from "./model";
 import { imageType } from "./image-import";
 
-type Manifest = { folders?: string[]; items: { itemId: string; relativePath: string; revision: string }[]; revision: string };
+type Manifest = { fullAccess?: boolean; canCreateContent?: boolean; writableFolders?: string[]; folders?: string[]; items: { itemId: string; relativePath: string; revision: string; canEditContent?: boolean }[]; revision: string };
 type OpenCollaborationPrefetch = {
   itemId: string; controller: AbortController; result: Promise<unknown | null>;
   revision?: string; path?: string; timer?: ReturnType<typeof setTimeout>;
@@ -84,7 +84,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       // A late timed-out response must never replace a newer manifest.
       if (next) manifest = next;
       if (!manifest) throw new Error("The workspace listing was empty.");
-      return { root: `vault:${workspaceId}`, name, folders: manifest.folders ?? [], items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId })) };
+      return { root: `vault:${workspaceId}`, name, fullAccess: manifest.fullAccess, canCreateContent: manifest.canCreateContent, writableFolders: manifest.writableFolders, folders: manifest.folders ?? [], items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId, canEditContent: item.canEditContent })) };
     })().finally(() => { listingRequest = null; });
     return listingRequest;
   };
@@ -173,7 +173,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     const result = await response.json();
     operations.delete(operationKey);
     if (result.status !== "written") throw new Error("The server did not confirm the file save.");
-    const entry = { itemId, relativePath: path, revision: result.revision };
+    const entry = { itemId, relativePath: path, revision: result.revision, canEditContent: true };
     if (manifest) manifest = { ...manifest, items: [...manifest.items.filter((item) => item.itemId !== itemId), entry] };
     if (result.revision !== revision) return read(path); // The server merged another replica.
     return remember(openPack(bytes, path, revision, itemId));

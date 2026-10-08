@@ -86,7 +86,7 @@
     "test:long-note-reader:browser": "node src/local-vault/__tests__/long-note-reader.browser.mjs && node src/local-vault/__tests__/reader-rerender.browser.mjs",
     "test:note-icon:browser": "node src/local-vault/__tests__/note-icon.browser.mjs",
     "test:template-intent:browser": "node src/local-vault/__tests__/template-intent.browser.mjs && node src/local-vault/__tests__/template-versions.browser.mjs",
-    "test:web-session:browser": "node src/local-vault/__tests__/workspace-chooser.browser.mjs && node src/local-vault/__tests__/web-session.browser.mjs",
+    "test:web-session:browser": "node src/local-vault/__tests__/workspace-chooser.browser.mjs && node src/local-vault/__tests__/listing-capabilities.browser.mjs && node src/local-vault/__tests__/web-session.browser.mjs",
     "test:document-layout:browser": "node src/local-vault/__tests__/document-layout.browser.mjs",
     "test:gallery:browser": "node src/local-vault/__tests__/gallery-image-stage.browser.mjs && node src/local-vault/__tests__/gallery-comments.browser.mjs",
     "test:web-assistant:browser": "node src/local-vault/__tests__/bootstrap-recovery.browser.mjs && node src/local-vault/__tests__/assistant-proposals.browser.mjs && node src/local-vault/__tests__/verify-web-browser.mjs"
