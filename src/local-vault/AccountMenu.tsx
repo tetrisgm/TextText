@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { vaultRequest } from "./bridge";
 import styles from "./AccountMenu.module.css";
+import { loadAccountProfile } from "./account-profile-loader";
 import { accountManagementURL } from "./account-management";
 
 type WorkspaceList = { currentId: string; workspaces: { id: string; name: string; access: "owner" | "workspace" | "scoped" }[] };
@@ -47,10 +48,9 @@ export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite
     const controller = new AbortController();
     setProfile(null);
     setProfileFailure(false);
-    void vaultRequest<AccountProfile>("accountRead", {}, controller.signal).then(value => {
-      if (!controller.signal.aborted) setProfile(value);
-    }).catch(() => { if (!controller.signal.aborted) setProfileFailure(true); });
-    return () => controller.abort();
+    const stop = loadAccountProfile({ read: signal => vaultRequest<AccountProfile>("accountRead", {}, signal), signal: controller.signal, events: window,
+      loaded: value => { setProfile(value); setProfileFailure(false); }, failed: () => setProfileFailure(true) });
+    return () => { controller.abort(); stop(); };
   }, [signedIn, profileKey, attempt]);
 
   useEffect(() => {
