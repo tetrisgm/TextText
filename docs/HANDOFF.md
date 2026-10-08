@@ -6,7 +6,9 @@
   Startup, preserved note, save/search/relaunch and automatic delivery to Safari
   passed. CLI also updated. [Receipt](verification/2026-10-08-template-cohort-1190.md).
 - Windows: same source `54f33a4e`, installed in the existing location.
-- Oracle: **texttext-oracle-20261008T073956Z-43614e64**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T083707Z-5254ff85**, thirteen live checks passed.
+  Previous release retained; TextText/Algorave remain active and shared config
+  timestamps are unchanged. Fresh backup `texttext-20261008T083940Z-21135a8d.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -32,13 +34,16 @@
   `eaf1c25e`, `5f74d92a` and `af658589`. These changes are not installed yet.
   Explicit template choices override defaults; existing items retain their design.
 - Candidate source `5254ff85` passed 662 core tests, TypeScript and native
-  sync/creation suites. Mac 1190 is installed; matching Windows acceptance and
-  Oracle deployment are underway.
+  sync/creation suites. Mac 1190 and Oracle are installed; Windows verification
+  is completing on the same source.
   Server/Windows `a0d9391b` and native `163b9a02` remove aggregate folder scan
   limits, cache bounded metadata, and test external change/rename invalidation.
   [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
-- Next agent gap: canonical updates cannot yet edit existing custom item fields.
-  Implementation is separate from the frozen 1190 candidate.
+- Custom-field updates are committed/tested in `d79f6417`, not yet shipped.
+- Live checks found two next-cohort gaps: the Windows account label did not
+  refresh after a transient startup profile failure; sync itself reconnected.
+  CLI retirement needs owner approval, but its advertised proposal route rejects
+  file-workspace proposals. Preserve approval and implement that missing path.
 
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.

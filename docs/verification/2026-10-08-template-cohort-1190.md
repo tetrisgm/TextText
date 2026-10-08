@@ -33,7 +33,13 @@ This is not a startup performance measurement.
 
 The already-open Safari editor received the new marker automatically without
 Reload or Retry. CLI local search also found the same item and current hash.
-Windows and Oracle deployment acceptance will be recorded separately when done.
+Oracle deployment passed all 13 live checks at release
+`texttext-oracle-20261008T083707Z-5254ff85`. Previous release and fresh validated
+backup were retained; TextText and Algorave services remain active, with unchanged
+HAProxy/runtime configuration timestamps. Mac live presence returned without
+Retry after the restart. Log `/tmp/texttext-oracle-5254ff85-deploy.log`.
+
+Windows and extended live template acceptance are recorded separately.
 
 Logs: `/tmp/texttext-sync-5254ff85.log`, `/tmp/texttext-mac1190-build.log`,
 `/tmp/texttext-mac1190-install.log`.
