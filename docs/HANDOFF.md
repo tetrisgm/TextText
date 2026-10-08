@@ -28,11 +28,18 @@
 - `8ecfc126`, `60a51add`: platform shortcut labels with hydration tests.
 - `d317a757`: cloud model catalog uses canonical file commands and guarded
   schemas. Eleven focused tests and combined TypeScript passed.
-- Agent template list/apply is in progress. Before shipping custom application,
-  deliver its validated definition to already-open collaborative editors and
-  preserve it in native checkpoints. Engine receipts alone do not prove this.
-- Web assistant context/proposal paths still use legacy SQL content in places.
-  Audit and port them before exposing the shared assistant on web.
+- `61b379d7`: canonical agent template listing/application, live custom definition
+  delivery and durable native checkpoints. Passed 74 selected sync, 18 server and
+  13 Mac shared-editing tests, TypeScript and lint.
+- `816e9912`: cloud agent context uses authorized canonical files and hash-fenced
+  selections; 71 focused checks passed.
+- `48a3f378`: canonical approval previews, fresh hashes/grants and durable replay;
+  88 tests passed, including a real TextPack absent from SQL.
+- Frozen combined source `48a3f378` is running core/native gates in
+  `/private/tmp/texttext-shared-XdMxA6`; log
+  `/tmp/texttext-shared-48a3f378-sync.log`. No new install yet.
+- Shared web assistant transport and usable workspace provider Settings are in
+  progress. Read-only support is an increment, not full write/proposal parity.
 
 Keep one canonical file system and shared UI/editor/sync implementation across
 Mac, Windows and web. Native adapters handle filesystem, credentials and OS
