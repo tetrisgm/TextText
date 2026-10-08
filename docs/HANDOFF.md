@@ -28,6 +28,18 @@
 
 ## Current work
 
+- Windows actual PC candidate now matches Mac 1201 source `2f959327`:
+  `C:\Users\Shokunin\dev\texttext-build-2f959327\windows\build\candidate-6f629e8c15ef4ca0ad362b1929c4520a`.
+  Full native core/agent suites, shared client suite, TypeScript, bundled UI,
+  publish and actual desktop editor/close/activation smoke passed.
+  Log: `/tmp/texttext-windows-2f959327-build.log`; smoke receipts remain beside
+  the candidate. Installed old process 44968 is still running with no reported
+  window title. Installer refuses running processes to protect unsaved edits;
+  owner has been asked to save/close it. No PC user state was overwritten.
+  Latest Oracle rollout still hit the old process's 30-second SIGTERM timeout;
+  graceful drain remains unresolved, despite the successful replacement/live
+  checks. Do not infer it fixed from isolated production probes.
+
 - Mac 1201 installed from `2f959327` after 814 core tests, TypeScript and all
   native sync gates. Signed bundle and all three extensions validate. Actual
   startup preserved account/iCloud workspace and reopened the moved note
