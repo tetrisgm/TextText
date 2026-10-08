@@ -7,9 +7,9 @@
   checks pending. [Receipt](verification/2026-10-08-assets-cohort-1192.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T092037Z-4e1c218b**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T102758Z-8621dd0c**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T090233Z-b74fd340.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T102936Z-149ff735.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -29,8 +29,9 @@
 - Frozen candidate `8621dd0c` passed 759 core tests, TypeScript, required native
   suites, 16 proposal-review tests and both Note browser flows. It contains the
   versioned Note parent picker/navigation and preset-generation build guard.
-  Oracle web-only deployment and local Mac 1193/Windows builds are in progress;
-  installed clients still retain their prior versions. Windows SSH works again,
+  Oracle is deployed and actual Safari review verified. Local Mac 1193 build is
+  in progress; Windows passed 299 shared-client tests and desktop smoke.
+  Installed clients still retain their prior versions. Windows SSH works again,
   but its running editor must close normally before installation.
   [Candidate evidence](verification/2026-10-08-parent-review-cohort.md).
 

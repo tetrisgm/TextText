@@ -26,7 +26,21 @@ contacting production. A lockfile dependency installation replaced only that
 candidate symlink. Deployment resumed through the web-only workflow; its log is
 `/tmp/texttext-oracle-8621dd0c-deploy-resume.log`.
 
-Mac 1193 and Windows builds are in progress from this same source. Neither
+Oracle now serves `texttext-oracle-20261008T102758Z-8621dd0c`. All thirteen live
+checks passed; the previous release remains available. Backup
+`texttext-20261008T102936Z-149ff735.dump` preceded migrations. TextText and all
+three Algorave units remain active; shared proxy/runtime configuration mtimes
+are unchanged. Actual Safari refresh and screenshot show `Change applied.` and
+collapsed technical details on the completed verification proposal.
+
+Windows passed native core/agent suites, 299 shared-client tests, TypeScript,
+publish and actual desktop/editor/close smoke. Candidate:
+`C:\Users\Shokunin\dev\texttext-build-8621dd0c\windows\build\candidate-14d6cf21a6454631b580ab58ee7acad8`.
+Smoke receipts:
+`C:\Users\Shokunin\dev\texttext-build-8621dd0c\windows\build\smoke-receipts-12d18a40d3f7408781be0f9a4771bf41`.
+Log: `/tmp/texttext-windows-8621dd0c-build.log`.
+
+Mac 1193 build is in progress from this same source. Neither
 installed client has been replaced yet. The Windows installed process remains
 running; normal save/close has been requested before replacement. The existing
 changelog is absent from the signed-in CLI search and the inspected TextText
