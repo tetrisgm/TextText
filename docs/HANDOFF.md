@@ -2,7 +2,11 @@
 
 ## Installed and live
 
-- Current Windows candidate source `1ae33f20` passed actual PC packaging,
+- Current Windows candidate source `4c84df44` passed actual PC packaging,
+  native suites, 340 shared tests, TypeScript and interactive desktop smoke.
+  [Current delivery receipt](verification/2026-10-08-reference-picker-delivery.md).
+  Not installed; the older app remains running with unknown unsaved state.
+  Previous candidate source `1ae33f20` passed actual PC packaging,
   native suites, 340 shared-client tests, TypeScript and interactive desktop smoke.
   [Current candidate receipt](verification/2026-10-08-windows-authoring-candidate.md).
   Not installed; the older app is still running with unknown unsaved state.
@@ -48,7 +52,10 @@
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
   save/reopen passed in 1206; 1207 startup, existing note, home navigation and
   saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
-- Oracle: **texttext-oracle-20261008-1ae33f20-authoring**. Deployment exited zero
+- Oracle: **texttext-oracle-20261008-4c84df44-references**. Thirteen live checks
+  and fresh real Safari loading passed.
+  [Current delivery receipt](verification/2026-10-08-reference-picker-delivery.md).
+  Previous **texttext-oracle-20261008-1ae33f20-authoring**. Deployment exited zero
   and thirteen live checks passed. [Current receipt](verification/2026-10-08-oracle-authoring.md).
   Previous **texttext-oracle-20261008-0428bfca-creation**. Thirteen live checks
   passed; [current receipt](verification/2026-10-08-oracle-creation.md).
@@ -77,7 +84,8 @@
 - Shared parent/document picker now preserves concurrent selection changes
   during delayed identity resolution and ignores obsolete contexts. Browser
   race regressions, full note-template browser checks, ten relevant unit tests
-  and TypeScript passed. Installed in Mac 1217; Oracle and Windows delivery remain.
+  and TypeScript passed. Installed in Mac 1217 and deployed on Oracle.
+  Updated Windows candidate verified; its installation remains.
   [Receipt](verification/2026-10-08-reference-selection-concurrency.md).
 
 - Windows empty folders now enter the native manifest through the same

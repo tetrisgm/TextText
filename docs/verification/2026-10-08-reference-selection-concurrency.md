@@ -21,5 +21,7 @@ Logs: `/tmp/texttext-parent-concurrent-browser.log`,
 `/tmp/texttext-parent-concurrent-unit.log`,
 `/tmp/texttext-parent-concurrent-types.log`.
 
-Installed in [Mac 1217](2026-10-08-mac-1217.md). Windows and Oracle delivery remain.
+Installed in [Mac 1217](2026-10-08-mac-1217.md), deployed on Oracle and packaged
+for Windows. [Delivery receipt](2026-10-08-reference-picker-delivery.md).
+Windows installation remains.
 This is one picker race regression, not certification of all concurrent mutations.
