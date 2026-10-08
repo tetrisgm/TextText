@@ -629,9 +629,12 @@ final class LocalVaultAgentController {
         let token = generation, root = root, fence = task.fileFence
         let taskID = task.taskID, taskInstanceID = task.instanceID, access = task.access
         let toolRequestID = ToolRequestID(rawValue: requestID)
+        // A repeated app-server call must resume the original prepared package,
+        // including when its first response was lost after publication.
+        let creationRetryKey = "native-agent:\(taskInstanceID):\(params["callId"] ?? requestID)"
         emitTaskEvent(["type": "tool-call", "tool": tool, "path": arguments["path"] ?? ""], taskID: taskID)
         files.async { [weak self] in
-            let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, access: access, cancellation: fence) }
+            let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, access: access, cancellation: fence, creationRetryKey: creationRetryKey) }
             DispatchQueue.main.async {
                 guard let self, self.generation == token else { return }
                 guard let current = self.activeTask, current.taskID == taskID,
@@ -840,7 +843,7 @@ enum LocalVaultAgentFiles {
              ["path": "string", "hash": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "templateJSON"]),
         tool("write_file", "Save Markdown and optional snapshot/template JSON to the real file. Requires the hash from read_file; preserves assets and omitted metadata.",
              ["path": "string", "hash": "string", "markdown": "string", "documentJSON": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "markdown"]),
-        tool("create_file", "Create a new self-contained TextPack in an existing relative folder. Omit kind to inherit its default template; supply kind only for an explicitly requested built-in type.", ["title": "string", "body": "string", "folder": "string", "kind": "string"], ["title", "body"]),
+        tool("create_file", "Create a new self-contained TextPack in an existing relative folder. Omit kind to inherit its default template; supply kind only for an explicitly requested built-in type. Supply the same idempotencyKey when retrying the same creation, including after renaming or editing the created file.", ["title": "string", "body": "string", "folder": "string", "kind": "string", "idempotencyKey": "string"], ["title", "body"]),
         tool("search_files", "Search titles and content in the local folder without a server.", ["query": "string"], ["query"]),
     ]
     static func tools(for access: LocalVaultAgentAccess) -> [[String: Any]] {
@@ -856,7 +859,8 @@ enum LocalVaultAgentFiles {
     }
     static func perform(_ name: String, arguments: [String: Any], root: URL,
                         access suppliedAccess: LocalVaultAgentAccess,
-                        cancellation: LocalVaultAgentCancellation? = nil) throws -> String {
+                        cancellation: LocalVaultAgentCancellation? = nil,
+                        creationRetryKey: String? = nil) throws -> String {
         let access = try suppliedAccess.validated(root: root)
         try access.authorize(tool: name)
         try cancellation?.check()
@@ -945,9 +949,25 @@ enum LocalVaultAgentFiles {
                 }
                 kind = value
             } else { kind = nil }
-            let file = try documents.create(title: string("title"), body: string("body"),
-                folder: folder.isEmpty ? nil : folder, kind: kind)
-            output = ["path": documents.relativePath(of: file)]
+            let retryKey: String?
+            if let requestedKey = arguments["idempotencyKey"] {
+                guard let value = requestedKey as? String, !value.isEmpty, value.utf8.count <= 400 else {
+                    throw VaultAgentError("Provide an idempotency key of 1 to 400 bytes.")
+                }
+                retryKey = "native-agent-intent:" + value
+            } else { retryKey = creationRetryKey }
+            let file: URL
+            if let retryKey {
+                file = try documents.createWithRetryKey(title: string("title"), body: string("body"),
+                    folder: folder.isEmpty ? nil : folder, kind: kind, key: retryKey)
+            } else {
+                file = try documents.create(title: string("title"), body: string("body"),
+                    folder: folder.isEmpty ? nil : folder, kind: kind)
+            }
+            // A retry can find its identity after a move. Keep the current task
+            // boundary even though the creation journal correctly follows it.
+            let savedPath = try access.authorizeFile(documents.relativePath(of: file), operation: "read", root: root)
+            output = ["path": savedPath]
         case "search_files":
             let scope = try access.scopedFolder(root: root)
             output = try DocumentStore(root: scope.root).searchPage(string("query"), textpacksOnly: true).items.map {

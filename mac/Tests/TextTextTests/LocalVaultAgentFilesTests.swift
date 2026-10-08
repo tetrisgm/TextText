@@ -416,6 +416,52 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         }
     }
 
+    func testCreationRetryFollowsIdentityAndPreservesLaterEdits() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let args: [String: Any] = ["title": "Agent intent", "body": "Original", "idempotencyKey": "intent-1"]
+        let created = try json(run("create_file", arguments: args, root: root))
+        let originalPath = try XCTUnwrap(created["path"] as? String)
+        let store = LocalVaultDocumentStore(root: root)
+        let original = try store.read(path: originalPath)
+        _ = try store.write(path: originalPath, expectedHash: original.hash, markdown: original.contents.markdown + "\nHuman later edit.\n", documentJSON: nil, templateJSON: nil, templateAuthoringSourceJSON: nil)
+        try FileManager.default.moveItem(at: root.appendingPathComponent(originalPath), to: root.appendingPathComponent("Renamed.textpack"))
+        let edited = try store.read(path: "Renamed.textpack")
+        XCTAssertEqual(try json(run("create_file", arguments: args, root: root))["path"] as? String, "Renamed.textpack")
+        XCTAssertEqual(try store.read(path: "Renamed.textpack").hash, edited.hash)
+        var changed = args; changed["body"] = "Different intent"
+        XCTAssertThrowsError(try run("create_file", arguments: changed, root: root))
+        XCTAssertEqual(try store.list(), ["Renamed.textpack"])
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Renamed.textpack"))
+        XCTAssertThrowsError(try run("create_file", arguments: args, root: root))
+        XCTAssertTrue(try store.list().isEmpty)
+    }
+
+    func testCreationTransportRetryCannotRevealAMovedFileOutsideTask() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Notes"), withIntermediateDirectories: true)
+        let args: [String: Any] = ["title": "Transport intent", "body": "Saved once", "folder": "Notes"]
+        let access = LocalVaultAgentAccess.folder(path: "Notes")
+        let perform = { try LocalVaultAgentFiles.perform("create_file", arguments: args, root: root, access: access, creationRetryKey: "transport-call-1") }
+        _ = try perform()
+        _ = try perform()
+        let store = LocalVaultDocumentStore(root: root)
+        XCTAssertEqual(try store.list(), ["Notes/Transport intent.textpack"])
+        try FileManager.default.moveItem(at: root.appendingPathComponent("Notes/Transport intent.textpack"), to: root.appendingPathComponent("Outside.textpack"))
+        XCTAssertThrowsError(try perform())
+        XCTAssertEqual(try store.list(), ["Outside.textpack"])
+    }
+
+    func testInvalidCreationRetryKeyPublishesNothing() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        for key: Any in ["", String(repeating: "a", count: 401), 42, NSNull()] {
+            XCTAssertThrowsError(try run("create_file", arguments: ["title": "Invalid", "body": "No file", "idempotencyKey": key], root: root))
+        }
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).list().isEmpty)
+    }
+
     private func run(_ name: String, arguments: [String: Any], root: URL,
                      access: LocalVaultAgentAccess = .folder(path: ""),
                      cancellation: LocalVaultAgentCancellation? = nil) throws -> String {

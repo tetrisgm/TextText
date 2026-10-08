@@ -46,6 +46,15 @@
 
 ## Current work and next checks
 
+- Native agent creation now uses the existing durable CLI preparation journal.
+  App-server call retries receive a stable key; agents may supply a stable
+  intent key across calls. Rename/edit retries preserve the original identity
+  and later edits; deleted identities and changed intent refuse recreation.
+  Recovered paths are rechecked against the active folder boundary. Native
+  agent/controller and local/remote document suites: 106 tests passed.
+  Log `/tmp/texttext-native-agent-creation-retry.log`. Source only, not installed.
+  This uses local process locking, not a distributed iCloud lock.
+
 - Hosted workspace-root agent tasks now offer the reusable template library
   commands through both cloud adapters, proposal staging and the canonical
   executor. Named-folder tasks remain fenced, including a task targeting
@@ -241,8 +250,9 @@
 
 ## External limits
 
-- Commercial ChatGPT account sign-in requires OpenAI registration; owner has
-  not received approval/client ID. Google sign-in is not configured on Oracle;
+- Commercial ChatGPT account sign-in is deferred at the owner's request
+  (2026-10-08) and does not block this version's readiness. Registration/client
+  ID remains unavailable. Google sign-in is not configured on Oracle;
   verify current credential availability before declaring it blocked.
 - Second physical Apple-device iCloud delivery, Windows provider eviction and
   hardware power loss are not live-certified.

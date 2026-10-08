@@ -17,7 +17,7 @@ extension DocumentStore {
         let destination: String
     }
 
-    func createWithRetryKey(
+    public func createWithRetryKey(
         title: String, body: String?, folder: String?, kind: String?,
         sourceURL: String? = nil, key: String
     ) throws -> URL {
