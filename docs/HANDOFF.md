@@ -2,6 +2,11 @@
 
 ## Installed and live
 
+- Current Windows source `36c91bd2` passed actual PC packaging and desktop smoke,
+  including the new native write-receipt regressions. Not installed; the older
+  app remains running with unknown unsaved state.
+  [Candidate receipt](verification/2026-10-08-windows-36c91bd2-candidate.md).
+
 - Mac `/Applications/TextText.app`: **0.204 (1214)**, source `3382b36a`.
   Actual startup/account/iCloud, existing custom-template note, editor save,
   on-disk marker, saved-body search and reopen passed.
