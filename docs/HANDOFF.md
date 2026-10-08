@@ -23,6 +23,18 @@
 
 ## Current follow-up
 
+Latest local installs: Mac **0.204 (1182)** source `b2ceb842`, Windows product
+source `5861988e`, candidate `fdd6221385d54e3794031c2a48f2b1d0`. Startup,
+search, save/reopen and the new note icon passed. Dedicated new note converged
+between clients with all four archive entry hashes identical.
+[Mac receipt](verification/2026-10-07-mac-1182-restore.md), Windows `fbb1a98a`.
+Oracle deployment of `233e53b3` is running, log
+`/tmp/texttext-233e53b3-deploy.log`; do not call it live before acceptance.
+Earlier `b2ceb842` attempt stopped locally on a misplaced client directive;
+`233e53b3` fixes it, and the corrected core/native gates plus web build passed.
+Live Trash restore acceptance is next.
+
+
 Home List/Cards (`160a74ba`) uses the same items/actions and a personal
 per-device/workspace preference. Browser regression is in `npm test`; light,
 dark and narrow checked. Actual Safari `/start?to=home` now opens the canonical
