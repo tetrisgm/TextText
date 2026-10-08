@@ -7,6 +7,7 @@ import { getSharedPostsForUser } from "@/lib/shares";
 import { colorForSub } from "@/lib/collab";
 import { resolveItemAccess } from "@/lib/permissions";
 import {
+  readVaultTextpackIdentity,
   getAdjacentPublishedPosts,
   getAccessibleAllPosts,
   getAccessibleFolderCounts,
@@ -202,6 +203,23 @@ export async function PostPageForHandle({
       headers(),
     ]);
   if (!blog) notFound();
+  // Legacy IDs are candidates only; a file must exist in this workspace.
+  if (access.isOwner && access.blogId) {
+    const requestedId = queryValue(query.id);
+    const resolvedPost = slugResolution.kind === "exact" || slugResolution.kind === "history"
+      ? slugResolution.post : null;
+    const candidate = queryValue(query.edit) === "1" && requestedId
+      ? await getPostById(handle, requestedId) : resolvedPost;
+    const publicRead = queryValue(query.edit) !== "1" && candidate?.status === "published" && candidate.visibility === "public";
+    if (!publicRead) {
+      const root = process.env.TEXTTEXT_VAULT_ROOT;
+      const candidateId = requestedId && queryValue(query.edit) === "1" ? requestedId : candidate?.id;
+      const file = root && candidateId
+        ? await readVaultTextpackIdentity({ root, workspaceId: access.blogId, itemId: candidateId }) : null;
+      const destination = `/vault/${encodeURIComponent(access.blogId)}`;
+      redirect(file ? `${destination}?item=${encodeURIComponent(file.itemId)}` : destination);
+    }
+  }
   const tenantHandle = tenantFromHost(headerStore.get("host"));
   const initialSidebarCollapsed = parseWorkspaceSidebarCollapsed(
     cookieStore.get(WORKSPACE_SIDEBAR_COOKIE)?.value,
@@ -217,7 +235,8 @@ export async function PostPageForHandle({
   const initialSidebarWidth = parseWorkspaceSidebarWidth(
     cookieStore.get(WORKSPACE_SIDEBAR_WIDTH_COOKIE)?.value,
   );
-  const canEdit = access.canEdit;
+  // Published URLs retain the public reader, including for their owner.
+  const canEdit = access.canEdit && !access.isOwner;
   const editRequested = queryValue(query.edit) === "1";
   const editId = queryValue(query.id);
   let post =
