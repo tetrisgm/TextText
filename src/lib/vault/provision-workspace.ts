@@ -15,7 +15,8 @@ export async function provisionFileWorkspace(location: VaultLocation, actorUserI
     const pack = parseTextpack(bytes);
     const document = validateDocumentSnapshot(pack.document);
     const title = String(document.content.title).replace(/[\\/:\x00-\x1f]/g, "-").replace(/^[. ]+|[. ]+$/g, "") || "Untitled";
-    const itemId = createHash("sha256").update(`starter-v1:${location.workspaceId}:${preset.id}`).digest("hex").slice(0, 32);
+    const seed = createHash("sha256").update(`starter-v1:${location.workspaceId}:${preset.id}`).digest("hex");
+    const itemId = `${seed.slice(0,8)}-${seed.slice(8,12)}-4${seed.slice(13,16)}-8${seed.slice(17,20)}-${seed.slice(20,32)}`;
     return { itemId, relativePath: `${preset.folder}/${title}.textpack`, bytes: buildTextpack(preset.id, { ...pack, markdown: replacePackIdentity(pack.markdown, itemId) }) };
   }));
   await ensureVaultFolders(location, STARTER_FOLDERS);

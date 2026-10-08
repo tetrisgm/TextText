@@ -1,3 +1,4 @@
+import { itemAgentScope, itemAgentAccess } from "@/lib/item-agent-access";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +13,8 @@ it("provisions canonical preset packs and five folders once, through durable aud
  const root=await mkdtemp(path.join(os.tmpdir(),"texttext-provision-")); roots.push(root); const receipts:unknown[]=[];
  const location={root,workspaceId:"fresh-workspace",onReceipt:async(receipt:unknown)=>{receipts.push(receipt);}};
  await provisionFileWorkspace(location,"owner"); const first=await listVaultTextpacks(location);
- expect(first.items).toHaveLength(4); expect(first.folders).toEqual(expect.arrayContaining([...STARTER_FOLDERS]));
+ expect(first.items).toHaveLength(4);
+ for (const item of first.items) expect(itemAgentAccess([itemAgentScope(item.itemId, "edit")])).toEqual({itemId:item.itemId,role:"edit"}); expect(first.folders).toEqual(expect.arrayContaining([...STARTER_FOLDERS]));
  expect(first.items.every(item=>!item.relativePath.startsWith("Templates/")&&!item.relativePath.startsWith("Tasks/"))).toBe(true);
  expect(receipts).toHaveLength(4); await provisionFileWorkspace(location,"owner"); expect(await listVaultTextpacks(location)).toEqual(first); expect(receipts).toHaveLength(4);
  const [deleted,moved,edited]=first.items;
