@@ -8,14 +8,19 @@ async function prepareImage(data: string, mediaType: string): Promise<Attachment
   const image = await createImageBitmap(new Blob([bytes], { type: mediaType }));
   try {
     if (!image.width || !image.height || image.width * image.height > 64_000_000) throw new Error("This image is too large for the assistant.");
-    const ratio = Math.min(1, 1600 / Math.max(image.width, image.height));
+    let ratio = Math.min(1, 1600 / Math.max(image.width, image.height));
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.width * ratio)); canvas.height = Math.max(1, Math.round(image.height * ratio));
-    const context = canvas.getContext("2d"); if (!context) throw new Error("The image preview could not be prepared.");
-    context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
-    if (dataUrl.length > 1_000_000 || !dataUrl.startsWith("data:image/jpeg;base64,")) throw new Error("This image is too large for the assistant.");
-    return { name: "Selected photo.jpg", mediaType: "image/jpeg", dataUrl };
+    // Detailed photos can exceed the native/hosted input budget at 1600px.
+    // Resize from the original bitmap, never from a previously encoded JPEG.
+    for (let attempt = 0; attempt < 6; attempt++, ratio *= 0.75) {
+      canvas.width = Math.max(1, Math.round(image.width * ratio)); canvas.height = Math.max(1, Math.round(image.height * ratio));
+      const context = canvas.getContext("2d"); if (!context) throw new Error("The image preview could not be prepared.");
+      context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+      if (!dataUrl.startsWith("data:image/jpeg;base64,")) throw new Error("The image preview could not be prepared.");
+      if (dataUrl.length <= 1_000_000) return { name: "Selected photo.jpg", mediaType: "image/jpeg", dataUrl };
+    }
+    throw new Error("This image is too large for the assistant.");
   } finally { image.close(); }
 }
 
