@@ -2,12 +2,14 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1211)**, source `626f965c`.
+- Mac `/Applications/TextText.app`: **0.204 (1212)**, source `d04342d5`.
   Actual folder agent inherited its custom default; ZIP identity/content,
   editor save, saved-body search and reopen passed.
   [1211 receipt](verification/2026-10-08-mac-1211.md).
-  Assistant retained authorization required clicking Connect Codex to discover
-  it; automatic startup discovery remains a follow-up.
+  Automatic retained agent authorization discovery now passed without Connect
+  or browser login. Actual Safari save to local file and CLI return to the
+  open Safari editor passed; Mac reopen retained both markers and custom look.
+  [1212 receipt](verification/2026-10-08-mac-1212.md).
   Actual Save as look now passes on a receipt-bearing note: exact content,
   fresh identity, no inherited receipts, original receipt retained.
   [1210 receipt](verification/2026-10-08-mac-1210.md).
@@ -43,8 +45,8 @@
 - Mac agentStatus now checks retained runtime authorization once on first use.
   Signed-out discovery never starts browser login or repeated runtimes; explicit
   disconnect is not undone by status reads. Explicit Connect still starts login.
-  All 18 controller regressions passed. Source only, not installed; installed
-  1211 remains the observed old behavior. Log `/tmp/texttext-agent-account-restore.log`.
+  All 18 controller regressions passed; installed 1212 actual acceptance passed.
+  Log `/tmp/texttext-agent-account-restore.log`.
 
 - Shared transport now accepts explicit Article/Gallery/Talk creation, matching
   the Windows agent advertised types. Package regressions prove content and
@@ -63,8 +65,8 @@
 - Native agent creation no longer forces built-in Note when kind is omitted.
   It inherits the selected folder default through the ordinary DocumentStore
   creation path. Regression proves inheritance, explicit Note override and
-  unchanged design-file hash; 14 agent file tests passed. Source only, not
-  installed. Log `/tmp/texttext-agent-default-template.log`.
+  unchanged design-file hash; 14 agent file tests passed. Installed 1211/1212
+  actual inheritance passed. Log `/tmp/texttext-agent-default-template.log`.
 
 - Agent blueprint instructions now allow plain notes/articles without invented
   fields, using existing title/body/assets and a minimal Medium-like Blog example.
