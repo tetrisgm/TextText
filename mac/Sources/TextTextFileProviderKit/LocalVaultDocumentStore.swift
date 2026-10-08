@@ -284,34 +284,13 @@ public struct LocalVaultDocumentStore: Sendable {
         let children = try FileManager.default.contentsOfDirectory(at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles])
         let candidates = children.filter { $0.pathExtension.lowercased() == "textpack" }
-        guard candidates.count <= 2048 else { throw Failure.tooLarge }
-        var total = 0, returnedBytes = 0, result: [[String: String]] = []
+        var returnedBytes = 0, result: [[String: String]] = []
         for child in candidates.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            let values = try child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            let values = try child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
-            total += values.fileSize ?? 0
-            guard total <= 256 * 1024 * 1024, (values.fileSize ?? 0) <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
             guard child.standardizedFileURL.resolvingSymlinksInPath().deletingLastPathComponent() == directory else { throw Failure.invalidPath }
-            let bytes = try Data(contentsOf: child)
-            guard bytes.count <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
-            let archive = try Archive(data: bytes, accessMode: .read)
-            var selected: [String: Data] = [:], expanded: UInt64 = 0
-            for entry in archive where ["document.json", "template.json"].contains((entry.path as NSString).lastPathComponent) {
-                expanded += entry.uncompressedSize
-                guard expanded <= 4 * 1024 * 1024, selected[entry.path] == nil else { throw Failure.tooLarge }
-                var data = Data()
-                _ = try archive.extract(entry) { data.append($0) }
-                selected[entry.path] = data
-            }
-            let documents = selected.keys.filter { ($0 as NSString).lastPathComponent == "document.json" }
-            guard documents.count == 1, let key = documents.first, let raw = selected[key],
-                let document = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any],
-                let content = document["content"] as? [String: Any], let fields = content["fields"] as? [String: Any],
-                fields["texttextFolderView"] != nil else { continue }
-            let path = (folder.isEmpty ? "" : folder + "/") + child.lastPathComponent
-            let templateKey = String(key.dropLast("document.json".count)) + "template.json"
-            var file = ["path": path, "hash": TextTextStableDigest.sha256Hex(bytes), "documentJSON": String(decoding: raw, as: UTF8.self)]
-            if let template = selected[templateKey] { file["templateJSON"] = String(decoding: template, as: UTF8.self) }
+            guard var file = try LocalVaultFolderMetadataCache.read(child) else { continue }
+            file["path"] = (folder.isEmpty ? "" : folder + "/") + child.lastPathComponent
             returnedBytes += file.values.reduce(0) { $0 + $1.utf8.count }
             guard returnedBytes <= 4 * 1024 * 1024 else { throw Failure.tooLarge }
             result.append(file)

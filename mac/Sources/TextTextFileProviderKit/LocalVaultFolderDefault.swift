@@ -20,26 +20,18 @@ public struct LocalVaultFolderDefault {
         let relativeFolder = folder.path == root.path ? "" : String(folder.path.dropFirst(root.path.count + 1))
         let manager = FileManager.default
         let store = LocalVaultDocumentStore(root: root)
-        let paths = try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey, .fileSizeKey])
-            .filter { $0.pathExtension == "textpack" }
-        guard paths.count <= 2048 else { throw invalid() }
+        let views = try store.folderViews(folder: relativeFolder)
         var chosen: Self?
         var seenView = false
-        var scanned = 0
-        for url in paths {
-            let info = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .fileSizeKey])
-            guard info.isSymbolicLink != true else { throw invalid() }
-            scanned += info.fileSize ?? 0
-            guard scanned <= 256 * 1024 * 1024 else { throw invalid() }
-            let relative = relativeFolder.isEmpty ? url.lastPathComponent : relativeFolder + "/" + url.lastPathComponent
-            guard let file = try? store.readMetadata(path: relative, includeTemplate: true) else { continue }
-            guard let text = file.contents.documentJSON,
+        for file in views {
+            guard let relative = file["path"], let sourceHash = file["hash"] else { throw invalid() }
+            guard let text = file["documentJSON"],
                   let doc = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
                   let content = doc["content"] as? [String: Any],
                   let fields = content["fields"] as? [String: Any], let marker = fields["texttextFolderView"] else { continue }
             guard marker as? String == "v1", !seenView else { throw invalid() }
             seenView = true
-            guard let templateText = file.contents.templateJSON,
+            guard let templateText = file["templateJSON"],
                   let viewTemplate = try JSONSerialization.jsonObject(with: Data(templateText.utf8)) as? [String: Any],
                   let presentation = doc["presentation"] as? [String: Any], let reference = presentation["template"] as? [String: Any],
                   reference["id"] as? String == viewTemplate["id"] as? String,
@@ -63,7 +55,7 @@ public struct LocalVaultFolderDefault {
                       source["schemaVersion"] as? Int == 1, (source["compilerVersion"] as? Int ?? 0) > 0,
                       source["blueprint"] is [String: Any] else { throw invalid() }
             }
-            chosen = Self(sourcePath: relative, sourceHash: file.hash, templateJSON: try json(template), authoringSourceJSON: try value["authoringSource"].map(json), templateId: id, templateVersion: version, body: starter["body"] as? String, fields: starter["fields"] as? [String: Any] ?? [:])
+            chosen = Self(sourcePath: relative, sourceHash: sourceHash, templateJSON: try json(template), authoringSourceJSON: try value["authoringSource"].map(json), templateId: id, templateVersion: version, body: starter["body"] as? String, fields: starter["fields"] as? [String: Any] ?? [:])
         }
         guard let chosen else { return nil }
         let retired = root.appendingPathComponent("Templates/Retired")

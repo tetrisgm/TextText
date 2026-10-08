@@ -1,5 +1,5 @@
 import XCTest
-import TextTextFileProviderKit
+@testable import TextTextFileProviderKit
 @testable import TextTextCLICore
 
 final class DocumentCreationTests: XCTestCase {
@@ -16,6 +16,25 @@ final class DocumentCreationTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: root)
+    }
+
+    func testLargeOrdinaryFolderUsesWarmMetadataCacheWithoutArchiveReads() throws {
+        let original = try store.create(title: "Seed", folder: "Notes", kind: "note")
+        let bytes = try Data(contentsOf: original)
+        for index in 0..<2050 {
+            try bytes.write(to: root.appendingPathComponent("Notes/Ordinary-\(index).textpack"))
+        }
+        let native = LocalVaultDocumentStore(root: root)
+        XCTAssertEqual(try native.folderViews(folder: "Notes"), [])
+        let coldReads = LocalVaultFolderMetadataCache.archiveReads
+        XCTAssertEqual(try native.folderViews(folder: "Notes"), [])
+        XCTAssertEqual(LocalVaultFolderMetadataCache.archiveReads, coldReads)
+        _ = try store.create(title: "Large folder creation", folder: "Notes")
+        XCTAssertEqual(LocalVaultFolderMetadataCache.archiveReads, coldReads, "Creation reuses metadata discovery rather than opening every archive again")
+        let replaced = root.appendingPathComponent("Notes/Ordinary-0.textpack")
+        try Data("corrupt unrelated archive".utf8).write(to: replaced, options: .atomic)
+        XCTAssertEqual(try native.folderViews(folder: "Notes"), [])
+        XCTAssertEqual(LocalVaultFolderMetadataCache.archiveReads, coldReads + 2, "Replacement and newly created file invalidate only their own entries")
     }
 
     func testLocalFolderDefaultCreatesCompletePackAndPreservesExplicitOverrides() throws {
@@ -42,6 +61,11 @@ final class DocumentCreationTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(result.contents.templateJSON).contains("local.research"))
         XCTAssertTrue(try XCTUnwrap(result.contents.documentJSON).contains("science"))
         XCTAssertEqual(try Data(contentsOf: view), original)
+        let renamed = root.appendingPathComponent("Notes/Renamed view.textpack")
+        try FileManager.default.moveItem(at: view, to: renamed)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).folderViews(folder: "Notes").first?["path"], "Notes/Renamed view.textpack")
+        try FileManager.default.moveItem(at: renamed, to: view)
+
         XCTAssertTrue(FileManager.default.fileExists(atPath: made.path))
         _ = try store.create(title: "Blank", body: "", folder: "Notes")
         XCTAssertFalse(try store.readMarkdown(at: root.appendingPathComponent("Notes/Blank.textpack")).contains("Starter research"))
