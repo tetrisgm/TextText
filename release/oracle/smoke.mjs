@@ -115,7 +115,8 @@ export async function smoke({ scratch = false, environment = process.env, origin
       throw error;
     }
 
-    const session = await request("/api/app/session", { method: "POST", headers: { "x-texttext-app": "1" } });
+    const publicOrigin = new URL(environment.AUTH_URL || environment.TEXTTEXT_PRODUCT_ORIGIN || "https://texttext.app").origin;
+    const session = await request("/api/app/session", { method: "POST", headers: { "x-texttext-app": "1", Host: new URL(publicOrigin).host, "X-Forwarded-Host": new URL(publicOrigin).host, "X-Forwarded-Proto": new URL(publicOrigin).protocol.slice(0, -1) } });
     assert.equal(session.status, 303, `Native session returned HTTP ${session.status}.`);
     assert.match(session.headers.get("set-cookie") ?? "", /(?:^|,\s*)(?:__Secure-)?authjs\.session-token=/,
       "Native session did not issue an authenticated cookie.");
@@ -125,10 +126,9 @@ export async function smoke({ scratch = false, environment = process.env, origin
     // Bearer-only checks cannot catch rejecting a browser's public Origin
     // against Next's private loopback request.url.
     const cookie = session.headers.getSetCookie().map(value => value.split(";", 1)[0]).join("; ");
-    const publicOrigin = new URL(environment.AUTH_URL || environment.TEXTTEXT_PRODUCT_ORIGIN || "https://texttext.app").origin;
     const browserProbe = async origin => fetchImpl(`${base}/api/vault/${fixture.blogId}/items/${randomUUID()}`, {
       method: "PUT", redirect: "manual", signal: AbortSignal.timeout(20_000),
-      headers: { Cookie: cookie, Origin: origin, Host: new URL(publicOrigin).host,
+      headers: { Cookie: cookie, Origin: origin, Host: new URL(publicOrigin).host, "X-Forwarded-Host": new URL(publicOrigin).host,
         "X-Forwarded-Proto": "https", "If-None-Match": "*",
         "X-TextText-Path": "Notes/Origin-probe.textpack", "X-TextText-Operation-Id": randomUUID() },
     });
