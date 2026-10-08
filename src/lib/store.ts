@@ -7137,20 +7137,20 @@ export async function linkIdentityToUser(
   sub: string,
 ): Promise<"linked" | "already-yours" | "taken"> {
   if (!db) throw new Error("linkIdentityToUser requires DATABASE_URL");
-  const existing = await db
-    .select({ userId: userIdentities.userId })
-    .from(userIdentities)
-    .where(eq(userIdentities.subject, sub))
-    .limit(1);
-  if (existing[0]) {
-    return existing[0].userId === userId ? "already-yours" : "taken";
-  }
-  await db.insert(userIdentities).values({
-    userId,
-    provider: providerForSubject(sub, userId),
-    subject: sub,
+  return db.transaction(async (tx) => {
+    const provider = providerForSubject(sub, userId);
+    const inserted = await tx.insert(userIdentities).values({ userId, provider, subject: sub })
+      .onConflictDoNothing({ target: userIdentities.subject }).returning({ userId: userIdentities.userId });
+    if (!inserted.length) {
+      const [existing] = await tx.select({ userId: userIdentities.userId }).from(userIdentities)
+        .where(eq(userIdentities.subject, sub)).limit(1);
+      return existing?.userId === userId ? "already-yours" : "taken";
+    }
+    await tx.insert(actionAudit).values({ actorUserId: userId, actorType: "human",
+      actionName: "account.link_identity", targetType: "account", targetId: userId,
+      inputSummary: provider, outputSummary: "Sign-in method connected" });
+    return "linked";
   });
-  return "linked";
 }
 
 async function upsertUser(
