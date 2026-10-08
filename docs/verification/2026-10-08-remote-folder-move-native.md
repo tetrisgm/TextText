@@ -52,3 +52,26 @@ The complete portable Windows core suite passed 171 assertions on the Mac:
 `/tmp/texttext-queued-move-before.log`. This follow-up remains source-only.
 Mac persisted-outbox ordering and active shared editors remain separate required
 checks; no cross-platform completion or install is claimed.
+
+## Persisted Mac upload follow-up
+
+The matching Mac regression also reproduced a queued-path conflict. Before
+retrying a path-only move, the adapter now indexes identities with bounded
+reads, verifies unique local identity, unchanged base revision/lifecycle and
+fresh write permission, and carries current local bytes to the remote path.
+It durably copies the original payload and attribution to a fresh operation
+identity before committing the new journal entry. The old payload is removed
+only after persistence. Later local edits upload against the staged content ACK.
+
+All 31 Mac sync tests passed in `/tmp/texttext-mac-queued-move-final.log`,
+including later edits, interrupted local adoption, denied permission followed
+by restored permission, and original receipt replay after a lost ACK.
+The failing pre-fix test is `/tmp/texttext-mac-queued-move-before.log`.
+These remain source tests; actual client installs, shared editor ordering and
+live multi-client folder moves are not yet attested.
+
+The mandatory native gate also passed all required Swift suites and 171 Windows
+core assertions: `/tmp/texttext-queued-move-native-gate.log`. The store-mode
+Swift run regenerated `Package.resolved` without Sparkle; that generated change
+was restored to the recorded release dependency file. This is working-tree
+verification, not a frozen release attestation.

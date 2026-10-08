@@ -514,6 +514,76 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(after, count)
     }
 
+    func testPersistedUploadFollowsRemoteFolderMoveWithLaterEdit() async throws {
+        let original = try pack("Initial")
+        let queued = try pack("Queued edit")
+        let later = try pack("Queued edit plus later edit")
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        _ = try await engine(transport).sync()
+        try putLocal(queued)
+        await transport.failNextUploadBeforeCommit()
+        let offline = try await engine(transport).sync()
+        XCTAssertFalse(offline.errors.isEmpty)
+        let movedPath = "Archive/Queued/Note.textpack"
+        _ = try await transport.rename(itemId: itemId, from: path, to: movedPath,
+            baseRevision: TextTextStableDigest.sha256Hex(original), operationId: UUID().uuidString)
+        try putLocal(later)
+        let report = try await engine(transport).sync()
+        XCTAssertTrue(report.errors.isEmpty)
+        XCTAssertTrue(report.conflicts.isEmpty)
+        let remote = try await transport.download(itemId: itemId)
+        XCTAssertEqual(remote.relativePath, movedPath)
+        XCTAssertEqual(remote.data, later)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(movedPath)), later)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        let count = await transport.operations().count
+        _ = try await engine(transport).sync()
+        let after = await transport.operations().count
+        XCTAssertEqual(after, count)
+    }
+
+    private func verifyQueuedMoveOrdering(_ ordering: String) async throws {
+        let original = try pack("Initial")
+        let queued = try pack("Queued edit")
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        _ = try await engine(transport).sync()
+        try putLocal(queued)
+        if ordering == "lost-ack" { await transport.loseNextReply() }
+        else { await transport.failNextUploadBeforeCommit() }
+        let offline = try await engine(transport).sync()
+        XCTAssertFalse(offline.errors.isEmpty)
+        let movedPath = "Archive/Queued/Note.textpack"
+        let base = TextTextStableDigest.sha256Hex(ordering == "lost-ack" ? queued : original)
+        _ = try await transport.rename(itemId: itemId, from: path, to: movedPath,
+            baseRevision: base, operationId: UUID().uuidString)
+        if ordering == "interrupted" {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent("Archive/Queued"), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: root.appendingPathComponent(path), to: root.appendingPathComponent(movedPath))
+        }
+        if ordering == "denied" { await transport.setWritable(false) }
+        let report = try await engine(transport).sync()
+        XCTAssertTrue(report.errors.isEmpty)
+        XCTAssertTrue(report.conflicts.isEmpty)
+        if ordering == "denied" {
+            XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), queued)
+            let untouched = try await transport.download(itemId: itemId)
+            XCTAssertEqual(untouched.data, original)
+            await transport.setWritable(true)
+            _ = try await engine(transport).sync()
+        }
+        let remote = try await transport.download(itemId: itemId)
+        XCTAssertEqual(remote.relativePath, movedPath)
+        XCTAssertEqual(remote.data, queued)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(movedPath)), queued)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+    }
+
+    func testQueuedMoveRecoversInterruptedLocalAdoption() async throws { try await verifyQueuedMoveOrdering("interrupted") }
+    func testQueuedMoveDefersUntilFreshPermissionReturns() async throws { try await verifyQueuedMoveOrdering("denied") }
+    func testQueuedMoveReplaysLostAcknowledgement() async throws { try await verifyQueuedMoveOrdering("lost-ack") }
+
     func testRemoteDeletionCannotEraseAnOfflineEdit() async throws {
         let original = try pack("Initial")
         let edited = try pack("Offline edit")
@@ -572,6 +642,8 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     private var uploadedOperations: [String] = []
     private var nativeOrigins: [Bool] = []
     private var downloads = 0
+    private var failBeforeCommit = false
+    func failNextUploadBeforeCommit() { failBeforeCommit = true }
     private var loseReply = false
     private var merged: Data?
     func set(itemId: String, path: String, data: Data) {
@@ -595,12 +667,14 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) throws -> String {
         uploadedOperations.append(operationId)
         nativeOrigins.append(nativeEditor)
+        if failBeforeCommit { failBeforeCommit = false; throw URLError(.notConnectedToInternet) }
         if let receipt = receipts[operationId] { return receipt }
         if let merged {
             self.merged = nil
             set(itemId: itemId, path: path, data: merged)
         } else {
-            guard tombstones[itemId] == nil, items[itemId]?.revision == baseRevision else { throw LocalVaultSyncFailure.conflict }
+            guard tombstones[itemId] == nil, items[itemId]?.revision == baseRevision,
+                  items[itemId] == nil || items[itemId]?.relativePath == path else { throw LocalVaultSyncFailure.conflict }
             set(itemId: itemId, path: path, data: data)
         }
         let revision = items[itemId]!.revision

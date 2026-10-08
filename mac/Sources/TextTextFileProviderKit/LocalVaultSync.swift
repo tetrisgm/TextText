@@ -453,6 +453,56 @@ public actor LocalVaultSync {
         }
         return await transport.canWrite(itemId: pending.itemId, path: pending.newPath ?? pending.path, existing: state.baselines[pending.itemId] != nil || pending.baseRevision != nil)
     }
+    private func adoptQueuedUploadPath(_ pending: Pending, remote: LocalVaultRemoteItem?, budget: Int,
+                                       report: inout LocalVaultSyncReport) async throws -> Pending? {
+        guard pending.action == nil, let remote, !remote.isDeleted,
+              remote.relativePath != pending.path, remote.revision == pending.baseRevision,
+              remote.lifecycle == pending.lifecycle,
+              var baseline = state.baselines[pending.itemId] else { return pending }
+        guard try !sharedProtection(itemId: pending.itemId) else { return nil }
+        var replacement = pending
+        replacement.path = remote.relativePath
+        replacement.operationId = UUID().uuidString.lowercased()
+        guard await canSend(replacement) else { return nil }
+        let store = LocalVaultDocumentStore(root: root)
+        let paths = try store.list()
+        let pathSet = Set(paths)
+        var identities = (state.identities ?? [:]).filter { pathSet.contains($0.key) }
+        let unknown = paths.filter { identities[$0] == nil }
+        for path in unknown.prefix(budget) {
+            let document = try store.read(path: path)
+            guard let id = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId else {
+                throw LocalVaultSyncFailure.invalidResponse
+            }
+            identities[path] = id
+        }
+        state.identities = identities
+        try persist()
+        guard unknown.count <= budget else { report.hasMore = true; return nil }
+        let localPaths = identities.filter { $0.value == pending.itemId }.map(\.key)
+        guard localPaths.count == 1, let path = localPaths.first,
+              path == pending.path || path == remote.relativePath,
+              baseline.path == pending.path || baseline.path == remote.relativePath else { return pending }
+        let current = try store.read(path: path)
+        guard MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == pending.itemId else {
+            throw LocalVaultSyncFailure.changed
+        }
+        let bytes = try Data(contentsOf: payload(pending))
+        guard TextTextStableDigest.sha256Hex(bytes) == pending.hash else { throw LocalVaultSyncFailure.invalidResponse }
+        // Keep the original staged content and attribution. A different path
+        // needs a new receipt identity; never mutate the original command.
+        try writeVaultSyncJournal(bytes, to: payload(replacement))
+        if path != remote.relativePath { try moveLocal(from: path, to: remote.relativePath, expectedHash: current.hash) }
+        state.identities?.removeValue(forKey: path)
+        state.identities?[remote.relativePath] = pending.itemId
+        baseline.path = remote.relativePath
+        state.baselines[pending.itemId] = baseline
+        state.outbox[pending.itemId] = replacement
+        try persist()
+        try? FileManager.default.removeItem(at: payload(pending))
+        return replacement
+    }
+
     private func send(_ pending: Pending, report: inout LocalVaultSyncReport) async throws {
         guard await canSend(pending) else { return }
         do {
@@ -616,7 +666,10 @@ public actor LocalVaultSync {
         // Retry exact journal entries before producing new operations.
         var writablePending: [Pending] = []
         for pending in state.outbox.values.sorted(by: { $0.path < $1.path }) {
-            if await canSend(pending) { writablePending.append(pending) }
+            do {
+                if let current = try await adoptQueuedUploadPath(pending, remote: remoteByID[pending.itemId], budget: budget, report: &report),
+                   await canSend(current) { writablePending.append(current) }
+            } catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
         }
         for pending in writablePending.prefix(budget) {
             do { try await send(pending, report: &report) }

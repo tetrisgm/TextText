@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Mac persisted uploads now adopt path-only remote moves with bounded identity
+  indexing, fresh permission and base/lifecycle checks, preserving staged
+  attribution and later edits under a new operation identity. All 31 sync tests
+  passed, including interrupted adoption, permission restoration and lost ACK.
+  Source-only; active editors and live multi-client moves remain pending.
+  [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+
 - Persisted Windows uploads now follow path-only remote moves using a fresh
   operation identity, preserving staged and later local edits. Regression first
   reproduced the conflict; 171 portable core assertions passed, including
