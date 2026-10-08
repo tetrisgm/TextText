@@ -5,7 +5,7 @@ import { getDocumentProxy } from "unpdf";
 // receives bytes only; PDF.js has no URL, cookies or external font sources.
 let document;
 try {
-  document = await getDocumentProxy(new Uint8Array(workerData), {
+  document = await getDocumentProxy(new Uint8Array(workerData.bytes), {
     isEvalSupported: false, useSystemFonts: false, disableFontFace: true,
     stopAtErrors: true, verbosity: 0,
   });
@@ -36,5 +36,5 @@ try {
   // Never return parser errors that could include document text or secrets.
   parentPort.postMessage({ error: "This PDF could not be read. Open the original PDF instead." });
 } finally {
-  await document?.destroy();
+  await document?.loadingTask.destroy();
 }

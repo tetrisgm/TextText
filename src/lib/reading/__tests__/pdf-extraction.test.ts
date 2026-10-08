@@ -1,8 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { extractPDFText } from "../pdf-extraction.server";
 import { pdfFixture } from "./pdf-fixture";
+import { Worker } from "node:worker_threads";
+import { resolve } from "node:path";
 
 describe("real isolated PDF parsing", () => {
+  it("preserves PDF bytes with bundler globals and exits cleanly after parsing", async () => {
+    const worker = new Worker(resolve("src/lib/reading/pdf-extraction.worker.mjs"), {
+      workerData: { bytes: pdfFixture("Bundled PDF bytes preserved"), __turbopack_globals__: {} },
+      execArgv: [],
+    });
+    const message = new Promise(resolve => worker.once("message", resolve));
+    const exit = new Promise<number>((resolve, reject) => {
+      worker.once("exit", resolve); worker.once("error", reject);
+    });
+    try {
+      expect(await message).toEqual({ markdown: "Bundled PDF bytes preserved" });
+      expect(await exit).toBe(0);
+    } finally { await worker.terminate(); }
+  });
   it("extracts embedded text without converting literal PDF content to Markdown actions", async () => {
     const markdown = await extractPDFText(pdfFixture("A readable PDF. ![image](https://example.com/image) <script>literal</script>"));
     expect(markdown).toContain("A readable PDF.");

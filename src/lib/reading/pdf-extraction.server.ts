@@ -14,7 +14,9 @@ export async function extractPDFText(bytes: Uint8Array, signal?: AbortSignal): P
   }
   if (activeWorkers >= MAX_PDF_WORKERS) throw new Error("PDF capture is busy. Your link is saved; try again shortly.");
   const worker = new Worker(resolve(process.cwd(), "src/lib/reading/pdf-extraction.worker.mjs"), {
-    workerData: bytes,
+    // Turbopack adds its globals by spreading workerData. Keep binary data
+    // inside an envelope so the production wrapper preserves the typed array.
+    workerData: { bytes },
     env: {}, execArgv: [], stdout: true, stderr: true,
     resourceLimits: { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 },
   });

@@ -83,6 +83,9 @@ export function packageBuild({ projectRoot = root, distDirectory = ".next", migr
   if (!existsSync(join(standalone, "server.js"))) {
     throw new Error("Build with TEXTTEXT_STANDALONE=1 before packaging.");
   }
+  if (existsSync(join(projectRoot, "src/lib/reading/pdf-extraction.worker.mjs"))) {
+    run(process.execPath, ["--experimental-strip-types", join(projectRoot, "scripts/verify-bundled-pdf-worker.mjs"), join(projectRoot, dist)]);
+  }
   if (!migrationsDirectory || !existsSync(join(migrationsDirectory, "manifest.json")) || !existsSync(join(migrationsDirectory, "schema.sql"))) {
     throw new Error("Prepare the migration artifact on the Mac and pass --migrations-dir.");
   }
