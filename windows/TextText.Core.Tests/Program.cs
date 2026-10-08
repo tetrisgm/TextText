@@ -11,6 +11,14 @@ static class Test
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  Throws<IOException>(()=>store.Resolve("../outside.textpack"),"reject traversal");Throws<IOException>(()=>store.Resolve("Notes/a.textpack:stream"),"reject alternate data streams");
  var first=store.Write("Notes/Test.textpack",Pack());Assert(first.ItemId=="test-1","identity extraction");
+ using(var fixture=JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,"workspace-binding.json"))))
+ foreach(var example in fixture.RootElement.EnumerateArray()) {
+ var fixtureRoot=Path.Combine(temp,"fixture-"+Guid.NewGuid());Directory.CreateDirectory(Path.Combine(fixtureRoot,".texttext"));
+ File.WriteAllText(Path.Combine(fixtureRoot,".texttext","workspace-binding.json"),example.GetProperty("marker").GetRawText());
+ var label="shared workspace binding fixture: "+example.GetProperty("name").GetString();
+ if(example.GetProperty("valid").GetBoolean()) Assert(WorkspaceLocation.Validate(fixtureRoot,"https://texttext.app/","workspace-1")==fixtureRoot,label);
+ else Throws<IOException>(()=>WorkspaceLocation.Validate(fixtureRoot,"https://texttext.app/","workspace-1"),label);
+ }
  var macFolder=Path.Combine(temp,"mac-folder");Directory.CreateDirectory(Path.Combine(macFolder,".texttext","sync"));
  var macJournal=Path.Combine(macFolder,".texttext","sync","state.json");
  File.WriteAllText(macJournal,"{\"binding\":{\"origin\":\"https://TEXTTEXT.app\",\"workspaceId\":\"workspace-a\"},\"cursor\":900,\"outbox\":{}}");
@@ -20,6 +28,12 @@ static class Test
  Assert(File.ReadAllText(macJournal)==originalMacJournal,"Mac foreign cursor and outbox remain untouched");
  Throws<IOException>(()=>WorkspaceLocation.Validate(macFolder,"https://texttext.app","workspace-b"),"Mac legacy binding rejects other workspace");
  Assert(File.ReadAllText(Path.Combine(macFolder,".texttext","workspace-binding.json")).Contains("\"workspaceId\""),"portable binding uses shared camelCase schema");
+ var interruptedBinding=Path.Combine(temp,"binding-interruptedBinding");Directory.CreateDirectory(Path.Combine(interruptedBinding,".texttext"));
+ var interruptedBindingTemporary=Path.Combine(interruptedBinding,".texttext",".workspace-binding-interruptedBinding.tmp");File.WriteAllText(interruptedBindingTemporary,"{partial");
+ WorkspaceLocation.Bind(interruptedBinding,"https://texttext.app/","workspace-a");
+ Assert(File.Exists(interruptedBindingTemporary)&&WorkspaceLocation.HasBinding(interruptedBinding),"interruptedBinding marker temporary is ignored and preserved");
+ WorkspaceLocation.Bind(interruptedBinding,"https://texttext.app/","workspace-a");
+ Assert(Directory.GetFiles(Path.Combine(interruptedBinding,".texttext"),"*.tmp").Length==1,"marker publication cleans only its own temporary");
  var alternate=Path.Combine(temp,"alternate");Directory.CreateDirectory(alternate);
  WorkspaceLocation.Bind(alternate,"https://texttext.app/","workspace-a");
  Assert(WorkspaceLocation.Validate(alternate,"https://texttext.app/","workspace-a")==alternate,"workspace location validates saved binding");
