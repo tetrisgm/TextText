@@ -7,7 +7,7 @@
   checks pending. [Receipt](verification/2026-10-08-assets-cohort-1192.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T090012Z-f3167c4b**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T092037Z-4e1c218b**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
   timestamps are unchanged. Fresh backup `texttext-20261008T090233Z-b74fd340.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
@@ -51,7 +51,7 @@
   web folder customization and concise proposal completion. Exact-source gate
   passed 737 tests, TypeScript and required native checks. Initial `4df98955` gate caught an obsolete tool-exclusion assertion;
   the correction tests proposal-only execution with no fetch before approval.
-  Mac 1192 installed; Oracle deployment underway. Windows candidate passed but
+  Mac 1192 installed; Oracle deployment passed all thirteen live checks. Windows candidate passed but
   installation awaits PC SSH recovery; existing Windows app remains 1191.
 - Durable folder move/rename is being implemented with filesystem recovery and
   coordinated grant migration. Legacy SQL folder commands remain unavailable to
