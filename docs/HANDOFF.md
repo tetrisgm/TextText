@@ -2,15 +2,15 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1182)**, source `b2ceb842`.
+- Mac `/Applications/TextText.app`: **0.204 (1183)**, source `04c265c7`.
   Startup, note icon, search cache invalidation, save and normal reopen passed.
-  [Receipt](verification/2026-10-07-mac-1182-restore.md).
+  [Receipt](verification/2026-10-07-shared-clients-1183.md).
 - Windows: product source **5861988e**, candidate
   `fdd6221385d54e3794031c2a48f2b1d0`, installed in the existing location.
   Native Core 151 assertions, actual startup/search/reopen, passive deletion,
   restoration and subsequent file/web edits passed.
   [Receipt](verification/2026-10-07-windows-desktop-live.md).
-- Oracle: **texttext-oracle-20261008T042939Z-233e53b3**. All twelve production
+- Oracle: **texttext-oracle-20261008T052428Z-04c265c7**. All twelve production
   HTTP smoke checks passed. Algorave services and shared proxy were preserved.
 - Actual Mac deletion/restoration, same-ID Safari reading, direct CLI editing,
   web editing and passive Windows convergence passed without manual refresh.
@@ -30,8 +30,10 @@
   are implemented. Regression coverage is wired into the mandatory gates.
 - Windows candidate from the same source passed 195 shared-client tests, native
   checks and actual desktop smoke. Installation acceptance is underway.
-- Oracle web-only deployment of the same source is underway. Do not treat the
-  new web assistant/provider flow as live-verified yet.
+- Oracle deployment passed all 12 production HTTP checks. Actual Safari account,
+  provider Settings and passive Mac-edit delivery passed. No provider is
+  configured, so live model execution is not attested.
+- Investigating a duplicate-Yjs import startup warning in the deployed package.
 - Next bounded increment: canonical folder creation through the shared file
   store, with authorization, audit and durable retry coverage.
 

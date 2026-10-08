@@ -27,8 +27,24 @@ exactly one occurrence. No recovery banner appeared.
 Only test item `290afb22-c198-4a7f-9d26-9a4f04dd9020` was edited. The existing
 125-second picker and unaffected performance tests were not repeated.
 
+## Oracle and live web
+
+Web-only release `texttext-oracle-20261008T052428Z-04c265c7` deployed through
+the verified Mac release path. All twelve production HTTP checks passed,
+including canonical writes, durable retries, deletion/restore and epoch fencing.
+Log: `/tmp/texttext-oracle-04c265c7.log`. TextText and all three Algorave services
+are active; shared proxy and runtime configuration mtimes are unchanged.
+
+Actual Safari retained the signed-in account and passively received the Mac
+marker. After deployment/reload, Settings displayed the shared account and
+provider configuration UI. No web provider is configured, so no real provider
+call or live model-generated approval is claimed. Mocked browser coverage
+certifies those transport/control paths only.
+
+Startup logged a duplicate-Yjs import warning. Investigation is in progress;
+the successful smoke checks do not dismiss that packaging risk.
+
 ## Pending acceptance
 
-Windows candidate checks passed; installed acceptance is in progress.
-Oracle web-only deployment is in progress. This receipt does not yet attest
-either installation or the live new web assistant/provider flow.
+Windows is installed and startup/search passed; snippet and persistence
+acceptance is in progress.
