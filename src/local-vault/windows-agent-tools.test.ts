@@ -29,6 +29,24 @@ describe("Windows selected-item agent tools", () => {
     await executeWindowsFolderAgentTool(request, "Notes", "create_file", { title: "New", body: "Keep", folder: "Notes/Research", kind: "note" });
     expect(calls).toEqual([{ title: "New", body: "Keep", folder: "Notes/Research", kind: "note" }]);
   });
+  it("searches the folder and excludes sibling and traversal results", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const request: VaultTransport = async (method, params) => {
+      if (method === "list") return { folders: ["Notes"], items: [] };
+      if (method === "search") { calls.push(params); return { items: [
+        { path: "Notes/A.textpack", title: "A", snippet: "match" },
+        { path: "Other/B.textpack", title: "Secret", snippet: "private" },
+        { path: "Notes/../Other/B.textpack", title: "Secret", snippet: "private" },
+        { path: "Notes2/C.textpack", title: "Sibling", snippet: "private" },
+      ], skippedCount: 1 }; }
+      throw new Error("Unexpected operation");
+    };
+    const result = JSON.parse(await executeWindowsFolderAgentTool(request, "Notes", "search_files", { query: "match" }));
+    expect(calls).toEqual([{ query: "match", folder: "Notes" }]);
+    expect(result).toEqual({ items: [{ path: "Notes/A.textpack", title: "A", snippet: "match" }], truncated: false, skippedCount: 1 });
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "search_files", { query: "x".repeat(501) })).rejects.toThrow("500");
+    expect(calls).toHaveLength(1);
+  });
   it("rejects other paths, unsupported tools and stale write hashes", async () => {
     const f = fixture(); const path = f.file().path;
     await expect(executeWindowsAgentTool(f.request, path, "read_file", { path: "Notes/Other.textpack" })).rejects.toThrow("selected item");

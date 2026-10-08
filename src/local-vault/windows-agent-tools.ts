@@ -13,6 +13,16 @@ export async function executeWindowsFolderAgentTool(request: VaultTransport, fol
   const listing = await request("list", {}, signal) as VaultListing;
   if (folder && !listing.folders?.includes(folder)) throw new Error("Choose an existing folder.");
   if (tool === "list_files") return JSON.stringify({ paths: listing.items.filter(item => inside(item.path)).map(item => item.path) });
+  if (tool === "search_files") {
+    if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 500) throw new Error("Provide a search query of at most 500 characters.");
+    const result = await request("search", { query: args.query, folder }, signal) as { items: { path: string; title: string; snippet: string }[]; truncated?: boolean; skippedCount?: number };
+    if (!Array.isArray(result.items)) throw new Error("Search results are unavailable.");
+    // Keep the boundary even if a transport returns workspace-wide results.
+    const items = result.items.filter(item => typeof item.path === "string" && inside(item.path)).slice(0, 100);
+    const output = JSON.stringify({ items, truncated: Boolean(result.truncated) || result.items.length > 100, skippedCount: result.skippedCount ?? 0 });
+    if (new TextEncoder().encode(output).byteLength > 2_000_000) throw new Error("Search results are too large. Narrow the query.");
+    return output;
+  }
   if (tool === "create_file") {
     const destination = args.folder === undefined ? folder : args.folder;
     if (typeof destination !== "string" || !valid(destination) || (destination !== folder && !inside(destination))) throw new Error("Create only inside the selected folder.");

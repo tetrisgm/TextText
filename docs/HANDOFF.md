@@ -68,6 +68,12 @@
   existing item/cancel/login/process checks on the Mac .NET runtime; log
   `/tmp/texttext-windows-folder-dispatch.log`. TypeScript passed. Actual PC build and native regressions passed in candidate 0566c006.
   UI acceptance remains pending; no installed folder support is claimed.
+  Windows folder search now uses ordinary cached search with a folder filter
+  and defensive result boundary, query/output limits and cancellation. Five
+  adapter tests, native folder-search dispatch and existing agent regressions,
+  and TypeScript passed (`/tmp/texttext-windows-folder-search.log`,
+  `/tmp/texttext-windows-folder-search-native.log`,
+  `/tmp/texttext-windows-folder-search-types.log`). Not in the PC candidate yet.
   Hosted scope audit: `/api/ai` passes the workspace actor to
   `guardedCloudAssistantTools` without an item/folder tool restriction. `postId`
   and `folderPath` are context selection, not a tool grant. Panel copy now says
