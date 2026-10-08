@@ -8431,11 +8431,13 @@ export async function readLegacyWorkspaceInventory(input: {
     id: posts.id, revision: posts.revision, document: posts.document,
     folderId: posts.folderId, slug: posts.slug, slugHistory: posts.slugHistory,
     visibility: posts.visibility, deletedAt: posts.deletedAt,
-    comments: sql<number>`(select count(*)::int from item_comments c where c.post_id = ${posts.id})`,
+    // Explicit outer qualification is required: Drizzle strips selected-column
+    // qualifiers, which would otherwise bind id to the inner comment/grant row.
+    comments: sql<number>`(select count(*)::int from item_comments c where c.post_id = "posts"."id")`,
     grants: sql<number>`(select count(*)::int from collaborators c where c.revoked_at is null and
-      ((c.scope_type = 'workspace' and c.scope_id = ${posts.blogId}) or
-       (c.scope_type = 'folder' and c.scope_id in (select f.id from folders f where f.blog_id = ${posts.blogId})) or
-       (c.scope_type = 'item' and c.scope_id = ${posts.id})))`,
+      ((c.scope_type = 'workspace' and c.scope_id = "posts"."blog_id") or
+       (c.scope_type = 'folder' and c.scope_id in (select f.id from folders f where f.blog_id = "posts"."blog_id")) or
+       (c.scope_type = 'item' and c.scope_id = "posts"."id")))`,
   }).from(posts).where(eq(posts.blogId, input.workspaceId)).limit(5001);
   if (rows.length > 5000) throw new Error("Reconciliation inventory exceeds 5000 items; use a bounded workspace export");
   return inventoryLegacyWorkspace({ ...input, legacy: rows.map((row) => ({
