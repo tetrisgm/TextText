@@ -40,8 +40,13 @@
   `/tmp/texttext-staging-proposal-final.log`,
   `/tmp/texttext-folder-staging-clients-tests.log`,
   `/tmp/texttext-staging-mac-bridge.log`.
-  Frozen release gates, real Postgres concurrent insert/audit acceptance and
-  installed-client retry verification remain before rollout.
+  Real local PostgreSQL acceptance passed: eight concurrent retries commit one
+  proposal and one audit, changed intent fails, original intent returns the
+  stored review without execution. Regression is included in `npm run test:db`:
+  `src/lib/ai/__tests__/proposal-staging.db.test.ts`. Receipt:
+  `/tmp/texttext-proposal-staging-postgres.log`; TypeScript passed.
+  Frozen release gates and installed-client retry verification remain before
+  rollout.
 
 - Mac 1197 installs durable native folder-catalog reconciliation. Frozen core
   (795 tests) and native gates passed. Live reviewed move
