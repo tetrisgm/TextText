@@ -1,3 +1,4 @@
+import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
 import { useEffect, useRef, useState } from "react";
 import { vaultRequest } from "./bridge";
 import { useEscapeLayer } from "./LocalKeyboard";
@@ -76,6 +77,7 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
   actions?: readonly VaultSearchAction[];
   namesOnly?: boolean;
 }) {
+  const shortcut = useShortcutLabel();
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<SearchPage>({ items: [] });
   const [error, setError] = useState("");
@@ -137,16 +139,16 @@ export function VaultSearch({ onClose, onOpen, onAction, actions = [], namesOnly
     }).finally(() => setActing(false));
   };
   return <div className="vault-search-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} className="vault-template-dialog vault-search" role="dialog" aria-modal="true" aria-label="Search and actions">
-    <header><span className="vault-command-mark" aria-hidden="true">⌘</span><h2>{showShortcuts ? "Keyboard shortcuts" : "TextText Command"}</h2>{showShortcuts && <button ref={shortcutsBack} className="vault-command-back" onClick={() => setShowShortcuts(false)} aria-label="Back to commands">Back</button>}<button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
+    <header><span className="vault-command-mark" aria-hidden="true">{shortcut("⌘").replace(/\+$/, "")}</span><h2>{showShortcuts ? "Keyboard shortcuts" : "TextText Command"}</h2>{showShortcuts && <button ref={shortcutsBack} className="vault-command-back" onClick={() => setShowShortcuts(false)} aria-label="Back to commands">Back</button>}<button disabled={acting} onClick={onClose} aria-label="Close command menu">Esc</button></header>
     {!showShortcuts && <input ref={searchInput} autoFocus type="search" role="combobox" aria-expanded={choices.length > 0} aria-controls="vault-command-results" aria-activedescendant={choices[selectedIndex]?.id} aria-label="Search workspace" placeholder="" value={query} onChange={(event) => { latest.current = event.target.value.trim(); setQuery(event.target.value); setResult({ items: [] }); setBusy(Boolean(event.target.value.trim())); setError(""); setActiveIndex(0); }} onKeyDown={(event) => {
       if (event.key === "ArrowDown" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + 1) % choices.length); }
       if (event.key === "ArrowUp" && choices.length) { event.preventDefault(); setActiveIndex((selectedIndex + choices.length - 1) % choices.length); }
       if (event.key === "Enter" && choices.length) { event.preventDefault(); choices[selectedIndex].run(); }
     }} maxLength={500} />}
     {!showShortcuts && namesOnly && <p>Searches filenames and folder paths in this workspace.</p>}
-    {showShortcuts ? <div ref={shortcutList} className="vault-shortcuts-list" aria-label="Available keyboard shortcuts">{actions.filter(action => action.shortcut).map(action => <div key={action.id}><span>{action.label}</span><kbd>{action.shortcut}</kbd></div>)}</div> : <div ref={results} id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3 className="ac-sr-only">Actions</h3><div>{visibleActions.map((action, index) => <button
+    {showShortcuts ? <div ref={shortcutList} className="vault-shortcuts-list" aria-label="Available keyboard shortcuts">{actions.filter(action => action.shortcut).map(action => <div key={action.id}><span>{action.label}</span><kbd>{shortcut(action.shortcut)}</kbd></div>)}</div> : <div ref={results} id="vault-command-results" role="listbox">{!!visibleActions.length && <section aria-label="Actions"><h3 className="ac-sr-only">Actions</h3><div>{visibleActions.map((action, index) => <button
       id={`action:${action.id}`} key={action.id} role="option" aria-selected={selectedIndex === index} aria-label={action.label} disabled={acting} onMouseEnter={() => setActiveIndex(index)} onClick={() => runAction(action)}>
-      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}{matchingAlias(action, query) && <em> ({matchingAlias(action, query)})</em>}</strong><span className="ac-sr-only">{action.description}</span>{action.shortcut && <kbd aria-label={`${action.shortcut} shortcut`}>{action.shortcut}</kbd>}
+      <i className="vault-command-icon" aria-hidden="true">{actionIcons[action.id] || (action.id.startsWith("go-to-folder:") ? "▱" : "·")}</i><strong>{action.label}{matchingAlias(action, query) && <em> ({matchingAlias(action, query)})</em>}</strong><span className="ac-sr-only">{action.description}</span>{action.shortcut && <kbd aria-label={`${shortcut(action.shortcut)} shortcut`}>{shortcut(action.shortcut)}</kbd>}
     </button>)}</div></section>}
     {busy && <p role="status">Searching…</p>}{error && <p role="alert">{error}</p>}
     {!busy && query.trim() && !result.items.length && !visibleActions.length && !error && <p>No matching files or actions.</p>}
