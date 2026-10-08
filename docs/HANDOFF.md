@@ -36,6 +36,12 @@
   light/dark browser checks passed; this follow-up is not installed/deployed.
   [Cold loading receipt](verification/2026-10-08-home-cold-loading.md).
   [Preview receipt](verification/2026-10-08-home-preview-labels.md).
+- Windows candidate matching Mac 1208 is now building from frozen source
+  `9a38e556` in `C:\Users\Shokunin\dev\texttext-client-9a38e556`.
+  Live exec handle `58943`; log `/tmp/texttext-windows-9a38e556-build.log`.
+  Fresh source directory, existing official embedded Codex runtime copied from
+  the earlier candidate. Explicit build only; no install/job or old-process
+  termination. Poll the existing handle rather than restarting after timeout.
 - Install verified Windows candidate when the old process closes, then verify
   startup, existing notes, search, save/reopen, Gallery metadata and live sync.
 - Finish automatic reconnect/failure acceptance and canonical sharing with a
