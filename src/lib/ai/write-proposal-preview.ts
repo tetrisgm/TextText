@@ -21,7 +21,7 @@ export type FrozenItemPreview = {
    *  a different decision from approving a draft. */
   visibility: "public" | "private";
   /** The optimistic-lock token at staging time. Drift means refuse. */
-  revision: number | null;
+  revision: string | number | null;
   desiredStatus?: "draft" | "published";
   restore?: true;
   /** Set when the item could not be resolved at staging at all. */
@@ -63,7 +63,7 @@ export function describeFrozenPreview(preview: FrozenProposalPreview): string {
   const status = present[0]?.desiredStatus;
   const lines = [
     !status && present[0]?.restore
-      ? (present.length === 1 ? `Restore "${present[0].title}" from Trash. It will return to its previous location and status.` : `Restore ${present.length} items from Trash.`)
+      ? (present.length === 1 ? `Restore "${present[0].title}" from Trash. It will be restored privately.` : `Restore ${present.length} items from Trash.`)
       : null,
     status
       ? `${present.length === 1 ? "Change" : "Change the status of "}${present.length === 1 ? `\"${present[0].title}\"` : `${present.length} items`} to ${status === "published" ? "published" : "draft"}.`
@@ -98,7 +98,7 @@ export function driftedItems(
   frozen: FrozenProposalPreview,
   now: Map<
     string,
-    { title: string; folderPath: string; visibility: string; revision: number | null }
+    { title: string; folderPath: string; visibility: string; revision: string | number | null }
   >,
 ): string[] {
   if (frozen.kind !== "items") return [];

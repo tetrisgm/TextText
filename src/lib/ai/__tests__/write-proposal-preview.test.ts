@@ -55,14 +55,14 @@ describe("what the owner is shown before approving a deletion", () => {
 });
 
 describe("what the owner is shown before restoring", () => {
-  it("explains that restore returns the item to its previous state", () => {
+  it("explains that restore is private", () => {
     const restore: FrozenProposalPreview = {
       kind: "items",
       tool: "restore_item",
       items: [{ id: "a", title: "Old note", folderPath: "notes", visibility: "private", revision: 4, restore: true }],
     };
     expect(describeFrozenPreview(restore)).toContain('Restore "Old note" from Trash');
-    expect(describeFrozenPreview(restore)).toContain("previous location and status");
+    expect(describeFrozenPreview(restore)).toContain("restored privately");
     expect(describeFrozenPreview(restore)).not.toContain("Move");
   });
 });

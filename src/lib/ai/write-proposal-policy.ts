@@ -6,6 +6,8 @@ import {
   type WorkspaceToolName,
 } from "@/lib/ai/tools";
 
+import { VAULT_TOOL_NAMES, vaultToolDefinitions } from "@/lib/mcp/vault-contract";
+
 const MAX_WRITE_PROPOSAL_ARGUMENT_BYTES = 1_050_000;
 export const WRITE_PROPOSAL_TTL_MS = 15 * 60 * 1_000;
 export const MAX_WRITE_PROPOSAL_TTL_MS = 30 * 60 * 1_000;
@@ -24,26 +26,18 @@ export class WriteProposalValidationError extends Error {
   }
 }
 
-/**
- * Confirmation-gated commands are admitted individually with an owner preview.
- * Item, audience and Trash previews use the established service; folder, asset
- * removal and look retirement freeze their target state separately. URL-fetch
- * tools remain excluded: approving a proposal does not make a fetch safe.
- */
-const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_item", "delete_items", "set_item_status", "restore_item", "empty_trash", "set_access", "revoke_access"];
-
-export const STATE_PREVIEW_TOOLS: readonly WorkspaceToolName[] = [
-  "delete_folder", "restore_folder", "remove_item_asset", "retire_document_template",
-];
+/** Only canonical file commands may enter the durable approval queue. */
+const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_item", "restore_item"];
 
 export function isProposableWorkspaceWrite(
   name: WorkspaceToolName,
 ): boolean {
+  if (!(VAULT_TOOL_NAMES as readonly string[]).includes(name)) return false;
   const definition = WORKSPACE_TOOL_DEFINITIONS[name];
   if (definition.mutability !== "write") return false;
   if (definition.annotations.openWorldHint) return false;
   if (definition.confirmation === "none") return true;
-  return PREVIEWABLE_DESTRUCTIVE.includes(name) || STATE_PREVIEW_TOOLS.includes(name);
+  return PREVIEWABLE_DESTRUCTIVE.includes(name);
 }
 
 /** Whether staging this command must freeze a preview of what it will do. */
@@ -76,6 +70,12 @@ export function validateWorkspaceWriteProposal(
     );
   }
 
+  const schema = vaultToolDefinitions().find((tool) => tool.name === name)!.inputSchema;
+  if (!input || typeof input !== "object" || Array.isArray(input) ||
+      Object.keys(input).some((key) => !Object.hasOwn(schema.properties ?? {}, key)) ||
+      (schema.required ?? []).some((key) => !Object.hasOwn(input, key))) {
+    throw new WriteProposalValidationError("Those file action arguments are invalid.", "arguments_invalid");
+  }
   let parsed: unknown;
   try {
     parsed = parseWorkspaceToolInput(name, input);

@@ -1,6 +1,30 @@
+import * as fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { buildTextpack } from "@/lib/github/textpack";
+import { emptyDocumentSnapshot } from "@/lib/documents/model";
+import { writeVaultTextpack, readVaultTextpack } from "@/sync/engine/store";
+import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
+const access = vi.hoisted(() => ({ allowed: true }));
+vi.mock("@/lib/store", async () => {
+  const engine = await import("@/sync/engine/store");
+  return {
+    getUserIdBySub: async () => access.allowed ? "user-1" : null,
+    getOwnedBlog: async () => ({ handle: "alpha", name: "Files" }),
+    getBlog: async () => ({ handle: "alpha", name: "Files" }),
+    getBlogEditRecord: async () => ({ id: "blog-1", ownerId: "user-1", handle: "alpha" }),
+    readVaultTextpackIdentity: engine.readVaultTextpackIdentity,
+    readVaultTextpack: engine.readVaultTextpack,
+    listVaultTrash: engine.listVaultTrash,
+    mutateVaultDocument: (input: Parameters<typeof engine.mutateVaultDocument>[0] & { actorUserId: string }) => engine.mutateVaultDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
+  };
+});
+vi.mock("@/auth", () => ({ auth: vi.fn(), isAuthConfigured: () => false }));
+vi.mock("@/lib/mcp/vault-agent-presence", () => ({ withVaultAgentPresence: async (_context: unknown, action: () => Promise<unknown>) => action() }));
 import { describe, expect, it, vi } from "vitest";
 import {
   createWorkspaceWriteProposal,
+  resolveProposalItems,
   getWorkspaceWriteProposalForReview,
   decideWorkspaceWriteProposal,
   type StoredWorkspaceWriteProposal,
@@ -180,51 +204,14 @@ describe("workspace write proposals", () => {
     expect(repository.rows.get(proposal.id)?.status).toBe("completed");
   });
 
-  it("rereads and retries an approved append once after a no-write hash conflict", async () => {
+  it("refuses a stale approved append without silently rebasing or executing it again", async () => {
     const { dependencies, execute, repository } = harness();
-    const oldHash = "a".repeat(64);
-    const newHash = "b".repeat(64);
-    const proposal = await createWorkspaceWriteProposal({
-      actor: owner,
-      tool: "append_to_item",
-      arguments: { id: "item-1", markdown: "Agent line.", if_match_hash: oldHash },
-    }, dependencies);
-    execute.mockImplementationOnce(async () => ({
-      isError: true,
-      content: [{ type: "text", text: 'Conflict: "Test" changed since it was read (its hash is now newer).' }],
-    }));
-    execute.mockImplementationOnce(async () => ({
-      structuredContent: { item: { id: "item-1", hash: newHash }, markdown: "Human line.\n" },
-    }));
-    const result = await decideWorkspaceWriteProposal(
-      { actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies,
-    );
-    expect(result.status).toBe("completed");
-    expect(repository.rows.get(proposal.id)?.status).toBe("completed");
-    expect(execute).toHaveBeenCalledTimes(3);
-    expect(execute.mock.calls[1][0]).toBe("read_item");
-    expect(execute.mock.calls[2][1]).toEqual({ id: "item-1", markdown: "Agent line.", if_match_hash: newHash });
-  });
-
-  it("never repeats an approved append whose fragment is already present", async () => {
-    const { dependencies, execute, repository } = harness();
-    const proposal = await createWorkspaceWriteProposal({
-      actor: owner,
-      tool: "append_to_item",
-      arguments: { id: "item-1", markdown: "Agent line.", if_match_hash: "a".repeat(64) },
-    }, dependencies);
-    execute.mockImplementationOnce(async () => ({
-      isError: true,
-      content: [{ type: "text", text: 'Conflict: "Test" changed since it was read (its hash is now newer).' }],
-    }));
-    execute.mockImplementationOnce(async () => ({
-      structuredContent: { item: { id: "item-1", hash: "b".repeat(64) }, markdown: "Human line.\nAgent line.\n" },
-    }));
-    const result = await decideWorkspaceWriteProposal(
-      { actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies,
-    );
-    expect(result).toMatchObject({ status: "failed", message: expect.stringContaining("already present") });
-    expect(execute).toHaveBeenCalledTimes(2);
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "append_to_item",
+      arguments: { id: "item-1", markdown: "Agent line.", if_match_hash: "a".repeat(64) } }, dependencies);
+    execute.mockResolvedValueOnce({ isError: true, content: [{ type: "text", text: "Conflict: file changed since it was read." }] });
+    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("failed");
+    await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies);
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(repository.rows.get(proposal.id)?.status).toBe("failed");
   });
 
@@ -372,36 +359,29 @@ describe("owner review of externally staged writes", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each(["delete_folder", "restore_folder", "remove_item_asset", "retire_document_template"])("freezes and approves %s once", async (tool) => {
+  it.each(["delete_folder", "restore_folder", "remove_item_asset", "retire_document_template", "set_access", "revoke_access", "empty_trash", "delete_items"])("rejects unsupported legacy command %s before persistence", async (tool) => {
     const { dependencies, execute, repository } = harness();
-    dependencies.resolveConfirmationState = async () => ({ summary: "Exact target", fingerprint: "v1" });
-    const args = tool.endsWith("folder") ? { folder_id: "folder-1" }
-      : tool === "remove_item_asset" ? { id: "item-1", asset_url: "https://example.com/a.png" }
-      : { template_id: "custom-look" };
-    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool, arguments: args }, dependencies);
-    expect(repository.rows.get(proposal.id)?.metadata?.state).toEqual({ summary: "Exact target", fingerprint: "v1" });
+    await expect(createWorkspaceWriteProposal({ actor: owner, tool, arguments: {} }, dependencies)).rejects.toThrow("cannot be staged");
+    expect(repository.rows.size).toBe(0);
     expect(execute).not.toHaveBeenCalled();
-    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
-    await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies);
-    expect(execute).toHaveBeenCalledExactlyOnceWith(tool, args, expect.objectContaining(owner));
   });
 
-  it.each(["changed", "missing", "unreadable"])("fails closed when the staged target is %s", async (state) => {
-    const { dependencies, execute, repository } = harness();
-    dependencies.resolveConfirmationState = async () => ({ summary: "Blog", fingerprint: "v1" });
-    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_folder", arguments: { folder_id: "folder-1" } }, dependencies);
-    if (state === "missing") repository.rows.get(proposal.id)!.metadata = null;
-    else if (state === "changed") dependencies.resolveConfirmationState = async () => ({ summary: "Blog", fingerprint: "v2" });
-    else dependencies.resolveConfirmationState = async () => { throw new Error("Not found"); };
+  it.each(["changed", "missing"])("refuses a canonical file whose access or hash is %s", async (state) => {
+    const { dependencies, execute } = harness();
+    const item = { title: "Note", folderPath: "Notes", visibility: "private" as const, revision: "a".repeat(64) };
+    dependencies.resolveItems = async () => new Map([["item-1", item]]);
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_item", arguments: {
+      id: "item-1", path: "Notes/Note.textpack", if_match_hash: item.revision, idempotency_key: "delete-note",
+    } }, dependencies);
+    dependencies.resolveItems = async () => state === "missing" ? new Map() : new Map([["item-1", { ...item, revision: "b".repeat(64) }]]);
     expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("failed");
-    expect(repository.rows.get(proposal.id)?.status).toBe("failed");
     expect(execute).not.toHaveBeenCalled();
   });
 
   it("single deletion uses its frozen item preview and preserves its hash guard", async () => {
     const { dependencies, execute } = harness();
-    dependencies.resolveItems = async () => new Map([["item-1", { title: "My article", folderPath: "blog", visibility: "private", revision: 4 }]]);
-    const args = { id: "item-1", if_match_hash: "sha256:" + "a".repeat(64) };
+    dependencies.resolveItems = async () => new Map([["item-1", { title: "My article", folderPath: "blog", visibility: "private", revision: "a".repeat(64) }]]);
+    const args = { id: "item-1", path: "blog/My article.textpack", if_match_hash: "a".repeat(64), idempotency_key: "delete-article" };
     const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_item", arguments: args }, dependencies);
     expect(proposal.summary).toContain("My article");
     expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
@@ -410,22 +390,35 @@ describe("owner review of externally staged writes", () => {
 });
 
 
-describe("access proposals routed from hosted MCP", () => {
-  it("approves a new workspace grant with an owner-bound access preview", async () => {
-    const { dependencies, execute } = harness();
-    dependencies.resolveAccess = vi.fn(async () => []);
-    const args = { scope_type: "workspace", email: "reader@example.com", role: "guest" };
-    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "set_access", arguments: args }, dependencies);
-    expect(dependencies.resolveAccess).toHaveBeenCalledWith("workspace", "blog-1");
-    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
-    expect(execute).toHaveBeenCalledWith("set_access", args, expect.objectContaining(owner));
-  });
 
-  it("does not read another workspace's item access list when staging", async () => {
-    const { dependencies, repository } = harness();
-    dependencies.resolveAccess = vi.fn(async () => []);
-    await expect(createWorkspaceWriteProposal({ actor: owner, tool: "revoke_access", arguments: { scope_type: "item", scope_id: "foreign-item", access_id: "foreign-share" } }, dependencies)).rejects.toThrow("Item not found");
-    expect(dependencies.resolveAccess).not.toHaveBeenCalled();
-    expect(repository.rows.size).toBe(0);
+describe("canonical files through the public proposal lifecycle", () => {
+  it("stages, approves and replays without a SQL item; rejects stale hashes and revoked identity", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-file-proposal-"));
+    vi.stubEnv("TEXTTEXT_VAULT_ROOT", root);
+    access.allowed = true;
+    try {
+      const id = "33333333-3333-4333-8333-333333333333";
+      const location = { root, workspaceId: "blog-1", itemId: id };
+      const document = emptyDocumentSnapshot(); document.content.title = "Canonical only"; document.content.body = "Original body";
+      const initial = await writeVaultTextpack({ ...location, operationId: "seed", relativePath: "Notes/Canonical.textpack", baseRevision: null,
+        bytes: buildTextpack("Canonical only", { document, markdown: `---\ntextTextId: ${id}\n---\n\nOriginal body` }) });
+      const { dependencies } = harness();
+      dependencies.execute = runWorkspaceToolForSession;
+      dependencies.resolveItems = resolveProposalItems;
+      let counter = 0; dependencies.randomId = () => `44444444-4444-4444-8444-${String(++counter).padStart(12, "0")}`;
+      const args = { id, markdown: "Approved once", if_match_hash: initial.revision };
+      const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "append_to_item", arguments: args }, dependencies);
+      expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
+      const saved = await readVaultTextpack(location);
+      expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
+      expect((await readVaultTextpack(location))?.revision).toBe(saved?.revision);
+      const stale = await createWorkspaceWriteProposal({ actor: owner, tool: "append_to_item", arguments: args }, dependencies);
+      expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: stale.id, decision: "approve" }, dependencies)).status).toBe("failed");
+      const deletion = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_item", arguments: { id, path: "Notes/Canonical.textpack", if_match_hash: saved!.revision, idempotency_key: "delete" } }, dependencies);
+      expect(deletion.summary).toContain("Canonical only");
+      access.allowed = false;
+      expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: deletion.id, decision: "approve" }, dependencies)).status).toBe("failed");
+      expect((await readVaultTextpack(location))?.revision).toBe(saved?.revision);
+    } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
   });
 });

@@ -6,7 +6,6 @@ import { auditCteFrom, auditInsertQuery } from "@/lib/audit";
 import { db, executeAtomicBatch } from "@/lib/db/client";
 import { aiWriteProposals } from "@/lib/db/schema";
 import {
-  STATE_PREVIEW_TOOLS,
   MAX_WRITE_PROPOSAL_TTL_MS,
   WRITE_PROPOSAL_TTL_MS,
   validateWorkspaceWriteProposal,
@@ -21,10 +20,7 @@ import {
 } from "@/lib/ai/write-proposal-preview";
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
-import { getFolders, getPostById, getTrashedFolders, getTrashedPosts } from "@/lib/store";
 import { getBlogEditRecord } from "@/lib/store";
-import { listScopeShares } from "@/lib/shares";
-import { resolveConfirmationState, type ConfirmationState } from "./write-proposal-state.server";
 
 export type WorkspaceWriteProposalActor = {
   sub: string;
@@ -153,11 +149,10 @@ export type WorkspaceWriteProposalDependencies = {
   resolveItems(
     handle: string,
     ids: readonly string[],
+    actor?: WorkspaceWriteProposalActor,
   ): Promise<
-    Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }>
+    Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null }>
   >;
-  resolveConfirmationState?(handle: string, name: WorkspaceToolName, args: Record<string, unknown>): Promise<ConfirmationState>;
-  resolveAccess?(scopeType: string, scopeId: string): Promise<Array<{ id: string; email: string; role: string }>>;
 };
 
 type WorkspaceWriteProposalDecision =
@@ -382,8 +377,6 @@ const defaultDependencies: WorkspaceWriteProposalDependencies = {
   now: () => new Date(),
   randomId: randomUUID,
   resolveItems: resolveProposalItems,
-  resolveConfirmationState,
-  resolveAccess: async (scopeType, scopeId) => listScopeShares(scopeType as never, scopeId),
 };
 
 async function proposalBinding(
@@ -428,34 +421,13 @@ export async function createWorkspaceWriteProposal(
   // the world still matches.
   let preview: FrozenProposalPreview | null = null;
   if (requiresFrozenPreview(validated.name)) {
-    if (validated.name === "empty_trash") {
-      const [posts, folders] = await Promise.all([
-        getTrashedPosts(owner.workspace.handle),
-        getTrashedFolders(owner.workspace.handle),
-      ]);
-      preview = { kind: "trash", tool: validated.name, trashCount: posts.length + folders.length };
-    } else if (validated.name === "set_access" || validated.name === "revoke_access") {
-      const a = validated.arguments as { scope_type: string; scope_id: string; email?: string; role?: string; access_id?: string };
-      // Establish ownership before reading an access list for a model-supplied id.
-      if (a.scope_type === "item" && !(await dependencies.resolveItems(owner.workspace.handle, [a.scope_id])).has(a.scope_id)) {
-        throw new Error("Item not found.");
-      }
-      if (a.scope_type === "folder" && !(await getFolders(owner.workspace.handle)).some((folder) => folder.id === a.scope_id)) {
-        throw new Error("Folder not found.");
-      }
-      if (!dependencies.resolveAccess) throw new Error("Access preview unavailable.");
-      const scopeId = a.scope_type === "workspace" ? owner.workspace.id : a.scope_id;
-      const shares = await dependencies.resolveAccess(a.scope_type, scopeId);
-      const target = a.access_id ? shares.find((s) => s.id === a.access_id) : shares.find((s) => s.email.toLowerCase() === a.email?.toLowerCase());
-      preview = { kind: "access", tool: validated.name, scopeType: a.scope_type, scopeId, email: a.email ?? target?.email, role: a.role, accessId: a.access_id ?? target?.id, currentRole: target?.role, fingerprint: JSON.stringify(shares.map((s) => [s.id, s.email, s.role])) };
-    } else {
     const singleId = (validated.arguments as { id?: unknown }).id;
     const ids = typeof singleId === "string"
       ? [singleId]
       : Array.isArray((validated.arguments as { ids?: unknown }).ids)
       ? ((validated.arguments as { ids: string[] }).ids as string[])
       : [];
-    const current = await dependencies.resolveItems(owner.workspace.handle, ids);
+    const current = await dependencies.resolveItems(owner.workspace.handle, ids, input.actor);
     preview = {
       kind: "items",
       tool: validated.name,
@@ -483,13 +455,6 @@ export async function createWorkspaceWriteProposal(
             };
       }),
     };
-    }
-  }
-  const state = STATE_PREVIEW_TOOLS.includes(validated.name)
-    ? await dependencies.resolveConfirmationState?.(owner.workspace.handle, validated.name, validated.arguments)
-    : undefined;
-  if (STATE_PREVIEW_TOOLS.includes(validated.name) && !state) {
-    throw new Error("This action needs a current review preview.");
   }
   await dependencies.repository.create({
     id,
@@ -500,7 +465,6 @@ export async function createWorkspaceWriteProposal(
     arguments: validated.arguments,
     metadata: {
       ...(preview ? { preview } : {}),
-      ...(state ? { state } : {}),
       ...(input.origin ? { origin: input.origin } : {}),
       agentConnectionId: input.actor.connectionId ?? `assistant:${input.actor.userId}`,
       agentActorType: input.actor.actorType ?? "ai",
@@ -515,7 +479,7 @@ export async function createWorkspaceWriteProposal(
     status: "pending",
     tool: validated.name,
     title: WORKSPACE_TOOL_DEFINITIONS[validated.name].title,
-    summary: state ? state.summary : preview
+    summary: preview
       ? describeFrozenPreview(preview)
       : workspaceWriteProposalSummary(validated.name, validated.arguments),
     arguments: validated.arguments,
@@ -641,20 +605,6 @@ export async function decideWorkspaceWriteProposal(
     };
   }
 
-  if (STATE_PREVIEW_TOOLS.includes(validated.name)) {
-    const frozenState = claimed.metadata?.state as ConfirmationState | undefined;
-    let currentState: ConfirmationState | undefined;
-    try {
-      currentState = await dependencies.resolveConfirmationState?.(owner.workspace.handle, validated.name, validated.arguments);
-    } catch {
-      // A removed or unreadable target cannot leave an approval in flight.
-    }
-    if (!frozenState || !currentState || frozenState.fingerprint !== currentState.fingerprint) {
-      await dependencies.repository.fail(input.proposalId, owner.binding, "state_drifted", dependencies.now());
-      return { status: "failed", proposalId: input.proposalId, message: "The target changed since this proposal was offered. Ask again to review its current state." };
-    }
-  }
-
   // Approving a preview of five drafts must not delete five things that are
   // now published, or five that someone has edited since. Ask whether the
   // world still matches what the person was shown, and drop what moved: the
@@ -666,7 +616,7 @@ export async function decideWorkspaceWriteProposal(
   // Fails closed. A command that must be shown before it runs, arriving with
   // no preview or an unreadable one, was simply skipping the check: the drift
   // block only ran when the metadata happened to parse.
-  if (requiresFrozenPreview(validated.name) && frozen?.kind !== "items" && frozen?.kind !== "access" && frozen?.kind !== "trash") {
+  if (requiresFrozenPreview(validated.name) && (frozen?.kind !== "items" || frozen.tool !== validated.name || !Array.isArray(frozen.items) || frozen.items.length !== 1 || frozen.items[0].id !== validated.arguments.id)) {
     await dependencies.repository.fail(
       input.proposalId,
       owner.binding,
@@ -680,31 +630,14 @@ export async function decideWorkspaceWriteProposal(
         "That change cannot be approved because what it would do was not recorded when it was offered. Ask again.",
     };
   }
-  if (frozen?.kind === "access") {
-    const a = validated.arguments as { scope_type: string; scope_id: string; access_id?: string; email?: string };
-    const scopeId = a.scope_type === "workspace" ? owner.workspace.id : a.scope_id;
-    const shares = await (dependencies.resolveAccess?.(a.scope_type, scopeId) ?? []);
-    const fingerprint = JSON.stringify(shares.map((s) => [s.id, s.email, s.role]));
-    const target = a.access_id ? shares.find((s) => s.id === a.access_id) : shares.find((s) => s.email.toLowerCase() === a.email?.toLowerCase());
-    if (fingerprint !== frozen.fingerprint || (frozen.tool === "revoke_access" && !target) || (frozen.tool === "set_access" && target?.role !== frozen.currentRole)) {
-      await dependencies.repository.fail(input.proposalId, owner.binding, "state_drifted", dependencies.now());
-      return { status: "failed", proposalId: input.proposalId, message: "The access list changed since approval was offered, so nothing was changed. Ask again to review the current access." };
+  if (frozen?.kind === "items") {
+    let current: Awaited<ReturnType<WorkspaceWriteProposalDependencies["resolveItems"]>>;
+    try {
+      current = await dependencies.resolveItems(owner.workspace.handle, frozen.items.map((item) => item.id), input.actor);
+    } catch {
+      await dependencies.repository.fail(input.proposalId, owner.binding, "preview_unavailable", dependencies.now());
+      return { status: "failed", proposalId: input.proposalId, message: "The file could not be checked. Nothing was changed. Ask again to review it." };
     }
-  } else if (frozen?.kind === "trash") {
-    const [posts, folders] = await Promise.all([
-      getTrashedPosts(owner.workspace.handle),
-      getTrashedFolders(owner.workspace.handle),
-    ]);
-    const count = posts.length + folders.length;
-    if (count !== frozen.trashCount) {
-      await dependencies.repository.fail(input.proposalId, owner.binding, "state_drifted", dependencies.now());
-      return { status: "failed", proposalId: input.proposalId, message: "Trash changed since approval was offered, so nothing was permanently deleted. Ask again to review the current Trash." };
-    }
-  } else if (frozen?.kind === "items") {
-    const current = await dependencies.resolveItems(
-      owner.workspace.handle,
-      frozen.items.map((item) => item.id),
-    );
     const drifted = new Set(driftedItems(frozen, current));
     const stillAgreed = frozen.items
       .filter(
@@ -732,28 +665,13 @@ export async function decideWorkspaceWriteProposal(
           "Nothing in that change is still as it was when you saw it, so nothing was done. Ask again to see where things stand now.",
       };
     }
-    // Re-validated even though it is built from already-validated data and a
-    // server-side comparison. The narrowing is the only place the payload
-    // changes after the claim, and the whole point of this path is that only a
-    // payload that passes validation can execute.
-    // Carry the revisions the owner was shown, so what runs is exactly what
-    // they approved. Checking here and letting the executor re-read left a gap
-    // in between where a change could become the version deleted.
-    const expected: Record<string, number> = {};
-    for (const item of frozen.items) {
-      if (stillAgreed.includes(item.id) && item.revision !== null) {
-        expected[item.id] = item.revision;
-      }
-    }
-    // Remember what was dropped, so the receipt can account for every item the
-    // person approved rather than only the ones that survived. Approving five
-    // and reading about three is its own kind of silence.
+    // Preserve the originally approved hash/path for the executor's atomic check.
     droppedFromApproval = frozen.items
       .filter((item) => !item.missing && !stillAgreed.includes(item.id))
       .map((item) => item.title || item.id);
     approvedArguments = validateWorkspaceWriteProposal(validated.name, {
       ...validated.arguments,
-      ...(validated.name === "delete_items" ? { ids: stillAgreed, ...(Object.keys(expected).length ? { expected_revisions: expected } : {}) } : { id: stillAgreed[0] }),
+      id: stillAgreed[0],
     }).arguments;
   }
 
@@ -762,36 +680,11 @@ export async function decideWorkspaceWriteProposal(
       actorType: claimed.metadata?.agentActorType === "external_agent" ? "external_agent" as const : "ai" as const,
       connectionId: typeof claimed.metadata?.agentConnectionId === "string"
         ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` };
-    let result = await dependencies.execute(
+    const result = await dependencies.execute(
       validated.name,
       approvedArguments,
       executionActor,
     );
-    // An append can become stale while its review card waits for the owner.
-    // The hash rejection made no write. Read with the same authorized actor,
-    // then retry once against that exact version if the fragment is absent.
-    if (validated.name === "append_to_item" && result.isError &&
-        /^Conflict: .* changed since it was read/.test(resultText(result))) {
-      const itemId = approvedArguments.id;
-      const fragment = approvedArguments.markdown ?? approvedArguments.markdown_fragment;
-      if (typeof itemId === "string" && typeof fragment === "string") {
-        const latest = await dependencies.execute("read_item", { id: itemId }, executionActor);
-        const entry = latest.structuredContent?.item;
-        const markdown = latest.structuredContent?.markdown;
-        const hash = entry && typeof entry === "object" && !Array.isArray(entry)
-          ? (entry as Record<string, unknown>).hash : undefined;
-        if (!latest.isError && typeof markdown === "string" && markdown.includes(fragment.trim())) {
-          result = { isError: true, content: [{ type: "text", text: "The requested text is already present. Nothing was appended again." }] };
-        } else if (!latest.isError && typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash) &&
-                   typeof markdown === "string") {
-          const retryArguments = validateWorkspaceWriteProposal(validated.name, {
-            ...approvedArguments,
-            if_match_hash: hash,
-          }).arguments;
-          result = await dependencies.execute(validated.name, retryArguments, executionActor);
-        }
-      }
-    }
     const text = resultText(result);
     if (result.isError) {
       await dependencies.repository.fail(
@@ -878,35 +771,30 @@ export async function decideWorkspaceWriteProposal(
  * whether the world still matches it. One function so the two answers cannot
  * be computed differently.
  */
-async function resolveProposalItems(
+export async function resolveProposalItems(
   handle: string,
   ids: readonly string[],
-): Promise<
-  Map<
-    string,
-    { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }
-  >
-> {
-  const resolved = new Map<
-    string,
-    { title: string; folderPath: string; visibility: "public" | "private"; revision: number | null }
-  >();
-  if (!ids.length) return resolved;
-  // getFolders, not getAccessibleFolders: that one returns nothing at all for
-  // a null user, so every folder in a frozen preview was blank and the owner
-  // read "from " with a gap where the folder should be. Ownership is already
-  // established before this runs, so there is nothing to filter against.
-  const folders = await getFolders(handle);
-  const trashed = await getTrashedPosts(handle);
-  for (const itemId of ids) {
-    const post = await getPostById(handle, itemId) ?? trashed.find((candidate) => candidate.id === itemId);
-    if (!post) continue;
-    resolved.set(itemId, {
-      title: post.title,
-      folderPath:
-        folders.find((folder) => folder.id === post.folderId)?.path ?? "",
-      visibility: post.status === "published" ? "public" : "private",
-      revision: post.revision ?? null,
+  actor?: WorkspaceWriteProposalActor,
+): Promise<Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null }>> {
+  const resolved = new Map<string, { title: string; folderPath: string; visibility: "public" | "private"; revision: string | number | null }>();
+  if (!actor?.userId || actor.handle !== handle || !ids.length) return resolved;
+  let trash: Array<Record<string, unknown>> | undefined;
+  for (const id of ids) {
+    const result = await runWorkspaceToolForSession("read_item", { id }, actor);
+    let item = !result.isError ? result.structuredContent?.item as Record<string, unknown> | undefined : undefined;
+    if (!item) {
+      if (!trash) {
+        const result = await runWorkspaceToolForSession("list_trash", {}, actor);
+        trash = !result.isError && Array.isArray(result.structuredContent?.items) ? result.structuredContent.items : [];
+      }
+      item = trash.find((entry) => entry.id === id);
+    }
+    if (!item || typeof item.path !== "string" || typeof item.hash !== "string" || !/^[a-f0-9]{64}$/.test(item.hash)) continue;
+    resolved.set(id, {
+      title: typeof item.title === "string" ? item.title : item.path.split("/").at(-1)!.replace(/\.textpack$/, ""),
+      folderPath: item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")) : "",
+      visibility: item.status === "published" ? "public" : "private",
+      revision: item.hash,
     });
   }
   return resolved;
@@ -924,11 +812,10 @@ export async function getWorkspaceWriteProposalForReview(
   if (!stored || stored.proposalKind !== "workspace") return null;
   const validated = validateWorkspaceWriteProposal(stored.toolName, stored.arguments);
   const preview = stored.metadata?.preview as FrozenProposalPreview | undefined;
-  const state = stored.metadata?.state as ConfirmationState | undefined;
   return {
     id: stored.id,
     title: WORKSPACE_TOOL_DEFINITIONS[validated.name].title,
-    summary: state?.summary ?? (preview ? describeFrozenPreview(preview) : workspaceWriteProposalSummary(validated.name, validated.arguments)),
+    summary: preview ? describeFrozenPreview(preview) : workspaceWriteProposalSummary(validated.name, validated.arguments),
     arguments: validated.arguments,
     status: stored.status === "pending" && stored.expiresAt <= dependencies.now() ? "expired" : stored.status,
     origin: stored.metadata?.origin as { surface: string; connectionName: string } | undefined,

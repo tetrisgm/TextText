@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { WORKSPACE_TOOL_DEFINITIONS, WORKSPACE_TOOL_NAMES } from "@/lib/ai/tools";
+import { WORKSPACE_TOOL_NAMES } from "@/lib/ai/tools";
 const mocks = vi.hoisted(() => ({
   execute: vi.fn(), approvedExecute: vi.fn(), insert: vi.fn(), audit: vi.fn(),
   getOwnedBlog: vi.fn(), getBlogEditRecord: vi.fn(), batch: vi.fn(),
@@ -58,10 +58,22 @@ describe("hosted MCP durable proposal boundary", () => {
     expect(mocks.insert).not.toHaveBeenCalled();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
-  it.each(risky)("refuses unsupported %s without creating a SQL proposal", async (name, args) => {
+  it("stages a complete canonical deletion for owner confirmation without executing it", async () => {
+    const hash = "a".repeat(64);
+    mocks.approvedExecute.mockResolvedValue({ structuredContent: { item: { id: "item-1", path: "Notes/Note.textpack", hash, title: "Canonical note", status: "draft" } } });
+    const args = { id: "item-1", path: "Notes/Note.textpack", if_match_hash: hash, idempotency_key: "delete-note" };
+    const response = await callTool("delete_item", args, context);
+    expect(response.isError).not.toBe(true);
+    expect(response.structuredContent).toMatchObject({ approvalRequired: true, proposal: { arguments: args, summary: expect.stringContaining("Canonical note") } });
+    expect(mocks.insert).toHaveBeenCalledOnce();
+    expect(mocks.approvedExecute).toHaveBeenCalledExactlyOnceWith("read_item", { id: "item-1" }, expect.objectContaining({ sub: "apple-sub", userId: "user-1" }));
+    expect(mocks.execute).not.toHaveBeenCalled();
+    expect(mocks.getPostById).not.toHaveBeenCalled();
+  });
+  it.each(risky)("refuses unsupported or incomplete %s without creating a SQL proposal", async (name, args) => {
     const result = await callTool(name, args, context);
     expect(result.isError).toBe(true);
-    expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
+    if (name !== "delete_item") expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
     expect(mocks.insert).not.toHaveBeenCalled(); expect(mocks.batch).not.toHaveBeenCalled();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
@@ -97,7 +109,8 @@ describe("hosted MCP durable proposal boundary", () => {
       "remove_item_asset", "retire_document_template", "set_item_status",
     ]);
     for (const name of staged) {
-      expect(listTools().find((tool) => tool.name === name)).toBeUndefined();
+      if (name === "delete_item") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
+      else expect(listTools().find((tool) => tool.name === name)).toBeUndefined();
     }
     for (const name of ["restore_item", "restore_folder", "set_access", "revoke_access", "update_item"] as const) {
       expect(hostedToolNeedsProposal(name, { status: "draft" }), name).toBe(false);

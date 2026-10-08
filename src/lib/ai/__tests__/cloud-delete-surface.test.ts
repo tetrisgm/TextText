@@ -15,7 +15,8 @@ describe("what the browser assistant is offered", () => {
   const full = cloudAssistantToolNames("full");
 
   it("can delete", () => {
-    expect(full).toContain("delete_items");
+    expect(full).toContain("delete_item");
+    expect(full).not.toContain("delete_items");
   });
 
   it("still cannot share or fetch a chosen URL", () => {
