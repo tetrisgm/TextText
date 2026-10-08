@@ -88,6 +88,9 @@ final class DocumentStoreTests: XCTestCase {
             canonicalMarkdown: "---\ntextTextId: \"source-id\"\ntextTextKind: \"note\"\n---\n\nOld text.",
             documentJSON: nil, assets: [asset], sourceURL: "https://example.com/original", in: temporary)
         try Data([9, 0, 255]).write(to: package.url.appendingPathComponent("opaque.bin"))
+        let receipts = package.url.appendingPathComponent("net.texttext.mutations")
+        try FileManager.default.createDirectory(at: receipts, withIntermediateDirectories: true)
+        try Data("{\"fingerprint\":\"original\"}".utf8).write(to: receipts.appendingPathComponent("inherited.json"))
         let info = package.url.appendingPathComponent("info.json")
         var metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: info)) as? [String: Any])
         metadata["customMetadata"] = ["owner": "external tool"]
@@ -117,8 +120,9 @@ final class DocumentStoreTests: XCTestCase {
         let clone = try files.clone(path: "Source.textpack", sourceHash: original.hash, newPath: "Copies/Saved.textpack")
         let destination = try files.url(for: clone.path)
         let after = try entries(destination)
-        XCTAssertEqual(Set(before.keys), Set(after.keys))
-        for (name, bytes) in before where !name.hasSuffix("/text.md") && name != "text.md" {
+        XCTAssertEqual(Set(before.keys.filter { !$0.contains("/net.texttext.mutations/") }), Set(after.keys))
+        XCTAssertFalse(after.keys.contains { $0.contains("/net.texttext.mutations/") })
+        for (name, bytes) in before where !name.hasSuffix("/text.md") && name != "text.md" && !name.contains("/net.texttext.mutations/") {
             XCTAssertEqual(after[name], bytes, "Changed opaque entry: \(name)")
         }
         XCTAssertTrue(clone.contents.markdown.contains("Old text."))

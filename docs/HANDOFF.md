@@ -27,6 +27,12 @@
 
 ## Current work and next checks
 
+- Mac 1208 reusable agent design → Save as look → New from template → saved
+  item passed. Package inspection found copied identity-specific mutation
+  receipts. Native clone fix and 53 storage/remote tests passed, not installed;
+  equivalent Windows/web paths remain to inspect.
+  [Acceptance and fix receipt](verification/2026-10-08-reusable-template-1208.md).
+
 - Oracle candidate `af65cbc6` deployed successfully after matching core/native
   sync gates (828 core tests, all native regressions). All 13 live checks passed.
   [Deployment receipt](verification/2026-10-08-oracle-folder-agent.md).

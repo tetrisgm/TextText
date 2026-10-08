@@ -391,6 +391,7 @@ public struct LocalVaultDocumentStore: Sendable {
     /// Clone the exact observed archive, changing only its embedded identity.
     /// Opaque entries and metadata survive because this never rematerializes
     /// the package from the subset of fields understood by the current app.
+    /// Mutation receipts belong to the old identity and must not be inherited.
     public func clone(path: String, sourceHash: String? = nil, newPath: String) throws -> Document {
         let source = try sourceHash.map { try readRevision(path: path, hash: $0) } ?? read(path: path)
         let destination = try url(for: newPath)
@@ -409,6 +410,10 @@ public struct LocalVaultDocumentStore: Sendable {
             let archive = try Archive(url: packed, accessMode: .update)
             let entry = try canonicalMarkdownEntry(archive)
             let entryPath = entry.path
+            let prefix = String(entryPath.dropLast("text.md".count))
+            let inheritedReceipts = archive.filter { $0.path.hasPrefix(prefix + "net.texttext.mutations/") }.map(\.path)
+            // Removing an entry shifts archive offsets; resolve each entry anew.
+            for path in inheritedReceipts { if let receipt = archive[path] { try archive.remove(receipt) } }
             var original = Data()
             _ = try archive.extract(entry) { original.append($0) }
             guard let markdown = String(data: original, encoding: .utf8) else { throw Failure.invalidPath }
@@ -417,7 +422,8 @@ public struct LocalVaultDocumentStore: Sendable {
                 itemId: UUID().uuidString.lowercased(), folderId: nil, kind: identity?.kind)
             let replacementURL = temporary.appendingPathComponent("text.md")
             try Data(replacement.utf8).write(to: replacementURL)
-            try archive.remove(entry)
+            guard let currentMarkdown = archive[entryPath] else { throw Failure.invalidPath }
+            try archive.remove(currentMarkdown)
             try archive.addEntry(with: entryPath, fileURL: replacementURL, compressionMethod: .deflate)
         }
         let handle = try FileHandle(forWritingTo: packed)
