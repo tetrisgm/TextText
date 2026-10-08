@@ -482,6 +482,11 @@ and actions, with a personal per-device/workspace preference.
 - Approval-to-TextPack regression coverage now includes gallery, cover and body placement. It reads the committed archive through the actual pack reader, verifies exact original image bytes plus the preview, checks placement and retained title/body, and proves completion-receipt replay does not fetch or rewrite the image.
 - All 40 write-proposal tests and TypeScript passed. This is automated boundary evidence; live signed-in agent image creation/removal acceptance remains pending.
 
+## Interrupted move session reopening
+
+- Regression reproduced Windows reopening against a removed source path after durable move recovery. Session opening now follows only an exact retained move intent matching requested source, item identity and expected projection hash. Missing unrelated paths still fail closed.
+- Complete native file/durable sync suite passed on the Mac. Both before-move and after-move interruptions reopen the moved bytes with pending generation and batch identity intact. Logs: `/tmp/texttext-move-reopen-before.log` (reproduction), `/tmp/texttext-move-reopen-final.log` (passed). Not installed yet.
+
 ## Latest Windows recovery follow-up
 
 - Shared checkpoint recovery and session-open validation now hold the same file-store mutation lock through materialization, checkpoint inspection and session registration. Collaboration lease acquisition remains outside the file lock. This closes the remaining reopen race with concurrent file mutations.

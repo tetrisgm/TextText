@@ -101,7 +101,13 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
             ObjectDisposedException.ThrowIf(disposed,this);
             foreach(var token in sessions.Where(x=>x.Value.ItemId==itemId).Select(x=>x.Key).ToArray())CloseInternal(token);
             var lease=await sync.AcquireCollaborationAsync(itemId,ct);
-            try {return store.WithExclusiveMutation(() => {var cp=Recover(itemId);var file=store.Describe(path);if(file.ItemId!=itemId || (file.Hash!=expectedHash && file.Hash!=cp?.ProjectedHash))throw new FileChangedException();
+            try {return store.WithExclusiveMutation(() => {
+                // Only a retained move intent can attest the requested old path.
+                // Never substitute another checkpoint merely because a file is missing.
+                var move=Read<MoveIntent>(System.IO.Path.Combine(DirectoryFor(itemId),"move-intent.json"));
+                var cp=Recover(itemId);
+                if(move!=null&&move.SourcePath==path&&move.Checkpoint.ItemId==itemId&&cp?.Path==move.Checkpoint.Path&&expectedHash==move.Checkpoint.ProjectedHash)path=cp.Path;
+                var file=store.Describe(path);if(file.ItemId!=itemId || (file.Hash!=expectedHash && file.Hash!=cp?.ProjectedHash))throw new FileChangedException();
                 if(cp!=null&&file.Hash!=cp.ProjectedHash){var directory=DirectoryFor(itemId);if(cp.Pending||cp.RetiredReason!=null){cp=cp with{RetiredReason="The file changed outside shared editing. Its saved shared edits are retained for recovery."};Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);}else{Save(System.IO.Path.Combine(directory,"archived-"+Guid.NewGuid().ToString("N")+".json"),cp);File.Delete(System.IO.Path.Combine(directory,"checkpoint.json"));cp=null;}}
                 var token=Guid.NewGuid().ToString();sessions[token]=new(itemId,path,lease);return new SharedSession(token,file,cp);
             });}catch{lease.Dispose();throw;}

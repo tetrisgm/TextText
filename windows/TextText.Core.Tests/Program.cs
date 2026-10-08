@@ -112,11 +112,16 @@ static class Test
  File.WriteAllText(Path.Combine(movingDirectory,"checkpoint.json"),JsonSerializer.Serialize(movingCheckpoint));
  foreach(var crashAfterMove in new[]{false,true}) {
    var target=crashAfterMove?"Archive/Again/Moving.textpack":"Archive/Moving.textpack";
+   var sourcePath=JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(movingDirectory,"checkpoint.json")))!.Path;
    try{SharedEditingStore.RebaseProjection(movingStore,"test-1",target,interruptAfterIntent:!crashAfterMove,interruptAfterMove:crashAfterMove);throw new Exception("move interruption missing");}catch(IOException){}
-   var recovered=SharedEditingStore.RebaseProjection(movingStore,"test-1",target);
+   using var openingMoved=new SharedEditingStore(movingStore,new SyncEngine(movingStore,new Fake()));
+   var reopenedMove=await openingMoved.OpenAsync("test-1",sourcePath,movingFile.Hash);
+   Assert(reopenedMove.Document.Path==target&&reopenedMove.Document.Hash==movingFile.Hash,"session reopen follows interrupted durable move");
+   var recovered=reopenedMove.Checkpoint!;
    Assert(recovered.Path==target&&recovered.Pending&&recovered.JournalGeneration==7,"shared move crash recovery retains pending generation");
    using var journal=JsonDocument.Parse(recovered.Journal);Assert(journal.RootElement.GetProperty("batch").GetProperty("operationId").GetString()=="retained-operation","shared move retains exact batch identity");
    Assert(movingStore.Describe(target).Hash==movingFile.Hash,"shared move preserves all archive bytes");
+   try{await openingMoved.OpenAsync("test-1","Notes/UnrelatedMissing.textpack",movingFile.Hash);throw new Exception("unattested missing path accepted");}catch(IOException){Console.WriteLine("PASS missing path cannot borrow another checkpoint relocation");}
  }
  var occupied=movingStore.Write("Archive/Occupied.textpack",Pack("other document","other-id"));
  try{SharedEditingStore.RebaseProjection(movingStore,"test-1",occupied.Path);throw new Exception("occupied destination accepted");}catch(FileChangedException){}
