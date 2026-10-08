@@ -1,3 +1,4 @@
+import { readRequestSignal, waitForReadPoll } from "@/sync/engine/read-drain";
 // Near-instant sync: long-poll for workspace changes.
 //
 //   GET /api/sync/v1/changes                 -> immediate {cursor}
@@ -25,8 +26,6 @@ const POLL_INTERVAL_MS = 750;
 // File Provider from being a steady stream of Neon queries.
 const POLL_MAX_INTERVAL_MS = 5000;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 export async function GET(request: Request) {
   try {
     const workspace = await resolveSyncWorkspace(request);
@@ -45,12 +44,14 @@ export async function GET(request: Request) {
       return Response.json({ cursor, changed: since ? cursor !== since : false });
     }
 
+    const signal = readRequestSignal(request.signal);
     const deadline = Date.now() + wait * 1000;
     let interval = POLL_INTERVAL_MS;
     while (cursor === since && Date.now() < deadline) {
       // Stop burning cycles for a client that already went away.
-      if (request.signal?.aborted) break;
-      await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
+      if (signal.aborted) break;
+      await waitForReadPoll(Math.min(interval, Math.max(deadline - Date.now(), 0)), signal);
+      if (signal.aborted) break;
       cursor = await workspaceChangeCursor(blog.handle);
       interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
     }

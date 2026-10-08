@@ -1,3 +1,4 @@
+import { readRequestSignal, waitForReadPoll } from "@/sync/engine/read-drain";
 // Session-authed workspace change feed for the in-app workspace view.
 //
 // The Mac native sync engine long-polls /api/sync/v1/changes (bearer wsk_
@@ -29,8 +30,6 @@ const BUILD =
   process.env.VERCEL_DEPLOYMENT_ID ??
   process.env.VERCEL_GIT_COMMIT_SHA ??
   "dev";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function ownerHistoryVersion(isOwner: boolean, blogId: string | null | undefined) {
   if (!isOwner || !blogId) return undefined;
@@ -80,12 +79,13 @@ export async function GET(request: Request) {
     );
   }
 
+  const signal = readRequestSignal(request.signal);
   const deadline = Date.now() + wait * 1000;
   let interval = POLL_INTERVAL_MS;
   while (cursor === since && Date.now() < deadline) {
-    if (request.signal?.aborted) break;
-    await sleep(Math.min(interval, Math.max(deadline - Date.now(), 0)));
-    if (request.signal?.aborted) break;
+    if (signal.aborted) break;
+    await waitForReadPoll(Math.min(interval, Math.max(deadline - Date.now(), 0)), signal);
+    if (signal.aborted) break;
     interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
     cursor = await workspaceChangeCursor(handle);
   }

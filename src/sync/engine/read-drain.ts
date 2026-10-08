@@ -15,3 +15,16 @@ export function installReadDrain(): void {
   process.once("SIGINT", drain);
 }
 export function readDrainSignal(): AbortSignal { return state().controller.signal; }
+export function readRequestSignal(request?: AbortSignal): AbortSignal {
+  return AbortSignal.any([readDrainSignal(), ...(request ? [request] : [])]);
+}
+/** Interrupt only read waits. Mutations retain their normal durable completion. */
+export function waitForReadPoll(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted || ms <= 0) return Promise.resolve();
+  return new Promise(resolve => {
+    const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", finish); resolve(); };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
+    if (signal.aborted) finish();
+  });
+}

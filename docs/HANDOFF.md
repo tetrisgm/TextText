@@ -46,7 +46,10 @@
   additional 18 folder tests passed on the PC; installation awaits the running
   older app being saved/closed. Live active-editor acceptance remains pending.
   Oracle stop again hit its 30-second timeout before restart; investigate the
-  actual production request drain rather than treating deploy success as proof. Stable staging retry identity and Oracle timeout remain open.
+  actual production request drain rather than treating deploy success as proof.
+  Source follow-up extends shutdown cancellation to the three legacy read-poll
+  routes. Subprocess regressions and TypeScript pass; not deployed. This closes
+  an observed coverage gap, not a proven explanation of the Oracle timeout. Stable staging retry identity and Oracle timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript

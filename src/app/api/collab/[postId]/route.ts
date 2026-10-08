@@ -1,3 +1,4 @@
+import { readRequestSignal } from "@/sync/engine/read-drain";
 import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 // Realtime co-editing relay for one post.
 //
@@ -198,20 +199,22 @@ export async function GET(
 
   let updates = await collabUpdatesSince(postId, since, epoch);
   if (updates.length === 0 && wait > 0) {
+    const signal = readRequestSignal(request.signal);
     const deadline = Date.now() + wait * 1000;
     // Back off the inner DB poll during the wait: snappy for the first checks
     // (a real co-edit still lands in well under a second) then slower while idle,
     // so a long-lived open editor is not a steady stream of Neon queries.
     let interval = POLL_INTERVAL_MS;
     while (updates.length === 0 && Date.now() < deadline) {
-      if (request.signal?.aborted) break;
+      if (signal.aborted) break;
       // Wake on the write itself when it happened on this instance, and on the
       // timer otherwise. The timer is unchanged, so this can only be faster.
       await waitForCollabUpdate(
         postId,
         Math.min(interval, Math.max(deadline - Date.now(), 0)),
-        request.signal ?? undefined,
+        signal,
       );
+      if (signal.aborted) break;
       updates = await collabUpdatesSince(postId, since, epoch);
       interval = Math.min(Math.round(interval * 1.6), POLL_MAX_INTERVAL_MS);
     }
