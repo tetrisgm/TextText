@@ -51,8 +51,12 @@
   native gates. Local production shutdown passed in 6.058 seconds, but an
   explicit restart of the new Oracle process still timed out at 30.197 seconds.
   The fix is insufficient to explain the timeout. All services recovered. Next
-  reproduce/trace the Linux packaged runtime in isolation; avoid more blind
-  live restarts. Stable staging retry identity and Oracle timeout remain open.
+  trace live request/connection draining; avoid more blind live restarts.
+  The actual Linux package exits idle in 283 ms. An intercepted diagnostic
+  request before Next initialization does not install instrumentation, so that
+  cold probe is not representative. Warming `/signin` first installs the drain
+  and wakes the 25-second diagnostic poll: exit 143 in 6.016 seconds. Evidence:
+  `/tmp/texttext-linux-shutdown-warm-probe.log`. Live timeout remains unresolved. Stable staging retry identity and Oracle timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
