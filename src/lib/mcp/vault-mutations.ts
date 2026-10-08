@@ -9,6 +9,7 @@ import { buildTextpack } from "@/lib/github/textpack";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 
 export type VaultMutationContext = {
+  receiptOnly?: boolean;
   root: string; workspaceId: string; actorUserId: string; actorType?: "human" | "external_agent";
   authorize: (itemId: string, path: string, creating: boolean) => Promise<void>;
 };
@@ -18,7 +19,7 @@ function only(args: Record<string, unknown>, keys: readonly string[]) {
   if (unsupported.length) throw new Error(`Unsupported file command fields: ${unsupported.join(", ")}`);
 }
 export async function mutateVaultTool(name: string, args: Record<string, unknown>, context: VaultMutationContext) {
-  const location = { root: context.root, workspaceId: context.workspaceId };
+  const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId };
   const operationId = typeof args.idempotency_key === "string"
     ? digest(`${context.actorUserId}:${name}:${args.idempotency_key}`) : randomUUID();
   if (name === "create_item") {

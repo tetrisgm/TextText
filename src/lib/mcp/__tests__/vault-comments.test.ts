@@ -32,10 +32,15 @@ it("real TextPack comment store replays lost acknowledgement once and resolves a
   const args=parseWorkspaceToolInput("add_comment",{id:"item",body:"Agent thought",idempotency_key:"public-event"});
   const first=await executeVaultCommentTool("add_comment",args,input);
   expect(await executeVaultCommentTool("add_comment",args,{...input,operationId:"44444444-4444-4444-8444-444444444444"})).toEqual(first);
+  expect(await executeVaultCommentTool("add_comment",args,{...input,receiptOnly:true})).toEqual(first);
+  const resolve=parseWorkspaceToolInput("set_comment_resolved",{id:"item",comment_id:"commentId" in first ? first.commentId : "invalid",resolved:false,idempotency_key:"already-open"});
+  const unchanged=await executeVaultCommentTool("set_comment_resolved",resolve,input);
+  expect("status" in unchanged && unchanged.status).toBe("unchanged");
+  expect(await executeVaultCommentTool("set_comment_resolved",resolve,{...input,receiptOnly:true})).toEqual(unchanged);
   const listed=await executeVaultCommentTool("list_comments",{id:"item",state:"all"},input);expect("comments" in listed&&listed.comments).toHaveLength(1);
   expect("comments" in listed&&listed.comments[0].authorActorType).toBe("external_agent");
   if(!("commentId" in first))throw Error("Missing comment receipt");
-  await executeVaultCommentTool("set_comment_resolved",{id:"item",comment_id:first.commentId,resolved:true},{...input,operationId:"33333333-3333-4333-8333-333333333333"});
+  await executeVaultCommentTool("set_comment_resolved",{id:"item",comment_id:"commentId" in first ? first.commentId : "invalid",resolved:true},{...input,operationId:"33333333-3333-4333-8333-333333333333"});
   const open=await executeVaultCommentTool("list_comments",{id:"item",state:"open"},input);expect("comments" in open&&open.comments).toEqual([]);
  }finally{await rm(root,{recursive:true,force:true});}
 });

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { listVaultItemComments, mutateVaultItemComments } from "@/lib/store";
 import type { VaultCommentMutation, VaultItemComment } from "@/lib/vault/item-comments";
 export type VaultCommentContext = {
+  receiptOnly?: boolean;
   root: string; workspaceId: string; actorUserId: string; actorName: string;
   actorType?: "human" | "external_agent";
   /** Stable UUID from the authenticated request, reused on retry. */
@@ -10,12 +11,12 @@ export type VaultCommentContext = {
 };
 export async function executeVaultCommentTool(name: string, args: Record<string, unknown>, context: VaultCommentContext) {
   if (!["list_comments", "add_comment", "set_comment_resolved"].includes(name)) throw new Error("Unsupported comment command");
-  const keys = name === "list_comments" ? ["id", "state"] : name === "add_comment" ? ["id", "body", "parent_comment_id", "idempotency_key"] : ["id", "comment_id", "resolved"];
+  const keys = name === "list_comments" ? ["id", "state"] : name === "add_comment" ? ["id", "body", "parent_comment_id", "idempotency_key"] : ["id", "comment_id", "resolved", "idempotency_key"];
   if (Object.keys(args).some(key => !keys.includes(key))) throw new Error("File comments do not support these fields or quote anchors");
   if (typeof args.id !== "string") throw new Error("Item not found");
   const itemId = args.id, write = name !== "list_comments";
   await context.authorize(itemId, "", write);
-  const location = { root: context.root, workspaceId: context.workspaceId, itemId };
+  const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId, itemId };
   if (!write) {
     if (args.state !== undefined && !["open", "resolved", "all"].includes(String(args.state))) throw new Error("Invalid comment state");
     const comments: VaultItemComment[] = [];

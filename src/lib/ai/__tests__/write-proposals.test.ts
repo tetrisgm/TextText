@@ -14,13 +14,13 @@ vi.mock("@/lib/store", async () => {
     getBlog: async () => ({ handle: "alpha", name: "Files" }),
     getBlogEditRecord: async () => ({ id: "blog-1", ownerId: "user-1", handle: "alpha" }),
     readVaultTextpackIdentity: engine.readVaultTextpackIdentity,
+    readVaultCollaboration: engine.readVaultCollaboration, joinVaultPresence: engine.joinVaultPresence, leaveVaultPresence: engine.leaveVaultPresence, updateVaultPresence: engine.updateVaultPresence,
     readVaultTextpack: engine.readVaultTextpack,
     listVaultTrash: engine.listVaultTrash,
     mutateVaultDocument: (input: Parameters<typeof engine.mutateVaultDocument>[0] & { actorUserId: string }) => engine.mutateVaultDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
   };
 });
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAuthConfigured: () => false }));
-vi.mock("@/lib/mcp/vault-agent-presence", () => ({ withVaultAgentPresence: async (_context: unknown, action: () => Promise<unknown>) => action() }));
 import { describe, expect, it, vi } from "vitest";
 import {
   createWorkspaceWriteProposal,
@@ -198,8 +198,8 @@ describe("workspace write proposals", () => {
     });
     expect(execute).toHaveBeenCalledWith(
       "create_item",
-      { capture: "A durable private note" },
-      { ...owner, connectionId: "assistant:user-1", runId: proposal.id, actorType: "ai" },
+      { capture: "A durable private note", idempotency_key: `proposal:${proposal.id}` },
+      { ...owner, receiptOnly: false, connectionId: "assistant:user-1", runId: proposal.id, actorType: "ai" },
     );
     expect(repository.rows.get(proposal.id)?.status).toBe("completed");
   });
@@ -209,10 +209,10 @@ describe("workspace write proposals", () => {
     const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "append_to_item",
       arguments: { id: "item-1", markdown: "Agent line.", if_match_hash: "a".repeat(64) } }, dependencies);
     execute.mockResolvedValueOnce({ isError: true, content: [{ type: "text", text: "Conflict: file changed since it was read." }] });
-    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("failed");
+    expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("ambiguous");
     await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies);
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(repository.rows.get(proposal.id)?.status).toBe("failed");
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(repository.rows.get(proposal.id)?.status).toBe("completed");
   });
 
   it("reports a successful mutation truthfully when receipt storage fails", async () => {
@@ -228,12 +228,13 @@ describe("workspace write proposals", () => {
       message: expect.stringMatching(/change completed.*verify the result/i),
     });
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(repository.rows.get(proposal.id)?.status).toBe("failed");
+    expect(repository.rows.get(proposal.id)?.status).toBe("executing");
+    repository.rejectCompletion = false;
     await expect(decideWorkspaceWriteProposal(
       { actor: owner, proposalId: proposal.id, decision: "approve" },
       dependencies,
-    )).resolves.toMatchObject({ status: "ambiguous" });
-    expect(execute).toHaveBeenCalledTimes(1);
+    )).resolves.toMatchObject({ status: "completed" });
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it("returns the authoritative receipt to a stale approval or denial", async () => {
@@ -385,13 +386,49 @@ describe("owner review of externally staged writes", () => {
     const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_item", arguments: args }, dependencies);
     expect(proposal.summary).toContain("My article");
     expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
-    expect(execute).toHaveBeenCalledWith("delete_item", args, expect.objectContaining(owner));
+    expect(execute).toHaveBeenCalledWith("delete_item", { ...args, idempotency_key: `proposal:${proposal.id}` }, expect.objectContaining(owner));
   });
 });
 
 
 
 describe("canonical files through the public proposal lifecycle", () => {
+  it("recovers claimed and committed operations exactly once, including expired receipt-only recovery", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-approved-recovery-")); vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true;
+    try {
+      const id = "33333333-3333-4333-8333-333333333333", location = { root, workspaceId: "blog-1", itemId: id };
+      const document = emptyDocumentSnapshot(); document.content.body = "Original";
+      const seed = await writeVaultTextpack({ ...location, operationId: "seed", relativePath: "Notes/Recovery.textpack", baseRevision: null,
+        bytes: buildTextpack("Recovery", { document, markdown: `---\ntextTextId: ${id}\n---\n\nOriginal` }) });
+      const h = harness(); h.dependencies.execute = runWorkspaceToolForSession; h.dependencies.resolveItems = resolveProposalItems;
+      let counter = 0; h.dependencies.randomId = () => `55555555-5555-4555-8555-${String(++counter).padStart(12, "0")}`;
+      const create = (hash: string, text: string) => createWorkspaceWriteProposal({ actor: owner, tool: "append_to_item", arguments: { id, markdown: text, if_match_hash: hash } }, h.dependencies);
+      const approve = (proposalId: string) => decideWorkspaceWriteProposal({ actor: owner, proposalId, decision: "approve" }, h.dependencies);
+      const first = await create(seed.revision!, "Once after claim");
+      await h.repository.claim(first.id, { blogId: "blog-1", actorUserId: "user-1" }, h.dependencies.now()); // Crash before file execution.
+      const concurrent = await Promise.all([approve(first.id), approve(first.id)]);
+      expect(concurrent.every(result => result.status === "completed"), JSON.stringify(concurrent)).toBe(true);
+      const saved = (await readVaultTextpack(location))!;
+      const { openPack } = await import("@/local-vault/pack"); const { readDocument } = await import("@/local-vault/model");
+      const body = () => readDocument(openPack(saved.bytes, saved.relativePath, saved.revision).file).content.body;
+      expect(body().split("Once after claim")).toHaveLength(2);
+      const second = await create(saved.revision, "Once before receipt"); h.repository.rejectCompletion = true;
+      expect((await approve(second.id)).status).toBe("ambiguous");
+      const committed = (await readVaultTextpack(location))!;
+      h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+      const resolver = h.dependencies.resolveWorkspace; h.dependencies.resolveWorkspace = async () => null;
+      expect((await approve(second.id)).status).toBe("not_found"); // Revoked authority cannot reveal a receipt.
+      h.dependencies.resolveWorkspace = resolver;
+      expect((await approve(second.id)).status).toBe("completed");
+      expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
+      const third = await create(committed.revision, "Must not run expired");
+      await h.repository.claim(third.id, { blogId: "blog-1", actorUserId: "user-1" }, h.dependencies.now()); h.advance(16 * 60_000);
+      expect((await approve(third.id)).status).toBe("expired");
+      expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
+      h.repository.rows.get(third.id)!.metadata = {};
+      expect((await approve(third.id)).status).toBe("already_used");
+    } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("stages, approves and replays without a SQL item; rejects stale hashes and revoked identity", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-file-proposal-"));
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", root);
@@ -413,7 +450,7 @@ describe("canonical files through the public proposal lifecycle", () => {
       expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies)).status).toBe("completed");
       expect((await readVaultTextpack(location))?.revision).toBe(saved?.revision);
       const stale = await createWorkspaceWriteProposal({ actor: owner, tool: "append_to_item", arguments: args }, dependencies);
-      expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: stale.id, decision: "approve" }, dependencies)).status).toBe("failed");
+      expect((await decideWorkspaceWriteProposal({ actor: owner, proposalId: stale.id, decision: "approve" }, dependencies)).status).toBe("ambiguous");
       const deletion = await createWorkspaceWriteProposal({ actor: owner, tool: "delete_item", arguments: { id, path: "Notes/Canonical.textpack", if_match_hash: saved!.revision, idempotency_key: "delete" } }, dependencies);
       expect(deletion.summary).toContain("Canonical only");
       access.allowed = false;

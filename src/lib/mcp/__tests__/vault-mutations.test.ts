@@ -36,6 +36,15 @@ async function body() {
   const doc = new Y.Doc(); try { Y.applyUpdate(doc, Buffer.from(state!.update, "base64")); return documentSnapshotFromYDoc(doc).content.body; } finally { doc.destroy(); }
 }
 describe("durable file MCP commands through public input schemas", () => {
+  it.each(["create_item", "update_item"])("reads only a matching completed %s receipt without starting new writes", async name => {
+    const args = name === "create_item" ? { title: "Receipt", body: "Once", idempotency_key: "receipt" } : { id: itemId, body: "Changed once", if_match_hash: revision, idempotency_key: "receipt" };
+    await expect(mutateVaultTool(name, args, { ...context(), receiptOnly: true })).rejects.toThrow("No completed receipt");
+    const result = await mutateVaultTool(name, args, context());
+    expect(await mutateVaultTool(name, args, { ...context(), receiptOnly: true })).toEqual(result);
+    await expect(mutateVaultTool(name, { ...args, body: "Different" }, { ...context(), receiptOnly: true })).rejects.toThrow("Operation id was reused");
+    authorize.mockRejectedValueOnce(new Error("revoked"));
+    await expect(mutateVaultTool(name, args, { ...context(), receiptOnly: true })).rejects.toThrow("revoked");
+  });
   it("routes documented public append through the canonical executor to a real file", async () => {
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", root);
     const { executeMcpTool } = await import("../tools");

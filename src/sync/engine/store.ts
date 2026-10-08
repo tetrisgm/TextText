@@ -20,6 +20,8 @@ import { changeVaultPublicationInPack, samePublicationEntries } from "@/lib/vaul
  * workspace before calling this store. Pack bytes, including assets, are saved
  * unchanged. No database content is read or written here. */
 export interface VaultLocation {
+  /** Internal approval reconciliation: validate fingerprint and authority, never start a mutation. */
+  receiptOnly?: boolean;
   root: string;
   workspaceId: string;
   /** Required when replaying a mutation containing an audit actor. The durable
@@ -497,7 +499,7 @@ async function mutateVaultEntry(input: VaultEntryMutation, kind: "move" | "delet
   const requestHash = hash(json([kind, input.itemId, input.basePath, relativePath, input.baseRevision, input.audit ?? null]));
   const layout = await setup(input);
   return locked(layout, async () => {
-    await recover(layout);
+    if (!input.receiptOnly) await recover(layout);
     input.signal?.throwIfAborted();
     const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
     if (saved) {
@@ -505,9 +507,10 @@ async function mutateVaultEntry(input: VaultEntryMutation, kind: "move" | "delet
       if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
       await input.beforeCommit?.(receipt.result.relativePath);
       input.signal?.throwIfAborted();
-      await deliverReceipt(layout, receipt);
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
       return receipt.result;
     }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     if (kind === "move") {
       for (const name of await fs.readdir(layout.items)) {
         const raw = await maybeRead(path.join(layout.items, name));
@@ -612,15 +615,16 @@ export async function restoreVaultTextpack(input: VaultEntryMutation & { relativ
   const layout = await setup(input);
   const requestHash = hash(json(["restore", input.itemId, input.basePath, input.relativePath, input.baseRevision, input.audit ?? null]));
   return locked(layout, async () => {
-    await recover(layout);
+    if (!input.receiptOnly) await recover(layout);
     const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
     if (saved) {
       const receipt = JSON.parse(saved.toString()) as Receipt<VaultEntryResult>;
       if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
       await input.beforeCommit?.(receipt.result.relativePath);
-      await deliverReceipt(layout, receipt);
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
       return receipt.result;
     }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     await input.beforeCommit?.(input.basePath);
     input.signal?.throwIfAborted();
     const raw = await maybeRead(path.join(layout.items, `${input.itemId}.json`));
@@ -677,7 +681,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     ...(input.liveReconcile ? ["local-file"] : []), ...(input.audit ? [input.audit] : [])]));
   const layout = await setup(input);
   return locked(layout, async () => {
-    await recover(layout);
+    if (!input.receiptOnly) await recover(layout);
     input.signal?.throwIfAborted();
     const receipt = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
     if (receipt) {
@@ -685,9 +689,10 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
       if (saved.requestHash !== requestHash) throw new Error("Operation id was reused with different content");
       await input.beforeCommit?.(saved.result.relativePath);
       input.signal?.throwIfAborted();
-      await deliverReceipt(layout, saved);
+      if (!input.receiptOnly) await deliverReceipt(layout, saved);
       return saved.result;
     }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     // Identity is stable independently of title. Moves require a separate operation.
     let deletedRevision: string | undefined;
     for (const item of await fs.readdir(layout.items)) {
@@ -1176,7 +1181,7 @@ export async function mutateVaultDocument(input: VaultLocation & {
   if (json(input.mutation).length > 2 * 1024 * 1024) throw new Error("Document command exceeds limits");
   const layout = await setup(input);
   return locked(layout, async () => {
-    await recover(layout);
+    if (!input.receiptOnly) await recover(layout);
     input.signal?.throwIfAborted();
     const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
     if (saved) {
@@ -1189,9 +1194,10 @@ export async function mutateVaultDocument(input: VaultLocation & {
       }
       await input.beforeCommit?.(receipt.result.relativePath);
       input.signal?.throwIfAborted();
-      await deliverReceipt(layout, receipt);
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
       return receipt.result;
     }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     const item = await collaborationItem(layout, input.itemId);
     if (!item) throw new Error("Collaboration file is missing or deleted");
     if (input.presentation?.source) {
@@ -1253,7 +1259,7 @@ export async function mutateVaultItemComments(input: VaultLocation & {
     input.actor.type, input.actor.authorType ?? input.actor.type]));
   const layout = await setup(input);
   return locked(layout, async () => {
-    await recover(layout);
+    if (!input.receiptOnly) await recover(layout);
     input.signal?.throwIfAborted();
     const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
     if (saved) {
@@ -1263,17 +1269,21 @@ export async function mutateVaultItemComments(input: VaultLocation & {
       if (!current) throw new Error("Comment file is missing or deleted");
       await input.beforeCommit?.(current.relativePath);
       input.signal?.throwIfAborted();
-      await deliverReceipt(layout, receipt);
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
       return { ...receipt.result, commentId: input.mutation.kind === "create" ? input.operationId : input.mutation.commentId };
     }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
     const item = await collaborationItem(layout, input.itemId);
     if (!item) throw new Error("Comment file is missing or deleted");
     const baseline = await collaborationCheckpoint(layout, input.itemId, item);
     const next = mutateVaultItemCommentsInPack(item.bytes, input.itemId, input.operationId, input.mutation, input.actor);
     await input.beforeCommit?.(item.relativePath);
     input.signal?.throwIfAborted();
-    if (!next.changed) return { status: "unchanged", itemId: input.itemId, relativePath: item.relativePath,
-      revision: item.revision, commentId: next.commentId };
+    if (!next.changed) {
+      const result = { status: "unchanged" as const, itemId: input.itemId, relativePath: item.relativePath, revision: item.revision };
+      await atomicWrite(path.join(layout.receipts, `${input.operationId}.json`), json({ requestHash, result }));
+      return { ...result, commentId: next.commentId };
+    }
     validatePack(next.bytes, input.itemId);
     const revision = hash(next.bytes);
     const pendingDir = await directory(layout.pending, input.operationId);

@@ -3,7 +3,7 @@ export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "list_items", 
 const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
   add_comment: ["id", "body", "parent_comment_id", "idempotency_key"],
   create_item: ["capture", "markdown", "title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key"],
-  update_item: ["id", "title", "body", "excerpt", "tags", "section", "expected_section_body", "if_match_hash"],
+  update_item: ["id", "title", "body", "excerpt", "tags", "section", "expected_section_body", "if_match_hash", "idempotency_key"],
 };
 const descriptions: Partial<Record<WorkspaceToolName, string>> = {
   list_document_templates: "List validated built-in presentation templates and accessible Templates/*.textpack look definitions. Custom looks include source_item_id and source_hash; pin those when applying. This command does not edit or create templates.",

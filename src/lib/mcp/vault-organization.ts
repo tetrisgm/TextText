@@ -20,7 +20,7 @@ export async function organizeVaultItem(name: "move_item" | "delete_item" | "res
     if (name !== "delete_item") await context.authorize(id, destination, true);
   };
   await authorize();
-  const input = { root: context.root, workspaceId: context.workspaceId, itemId: id, basePath: path, baseRevision: revision,
+  const input = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId, itemId: id, basePath: path, baseRevision: revision,
     operationId: createHash("sha256").update(JSON.stringify([context.actorUserId, name, key])).digest("hex"),
     actorUserId: context.actorUserId, actorType: context.actorType ?? "external_agent" as const,
     beforeCommit: authorize };

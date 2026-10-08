@@ -23,6 +23,7 @@ import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import { getBlogEditRecord } from "@/lib/store";
 
 export type WorkspaceWriteProposalActor = {
+  receiptOnly?: boolean;
   sub: string;
   userId: string | null;
   handle: string;
@@ -395,6 +396,12 @@ async function proposalBinding(
   };
 }
 
+const DURABLE_PROPOSAL_TOOLS = new Set(["create_item", "update_item", "append_to_item", "move_item", "delete_item", "restore_item", "set_item_template", "add_comment", "set_comment_resolved"]);
+function recoverable(proposal: StoredWorkspaceWriteProposal): boolean {
+  return proposal.metadata?.durableCommandVersion === 1 && DURABLE_PROPOSAL_TOOLS.has(proposal.toolName) &&
+    proposal.arguments.idempotency_key === `proposal:${proposal.id}`;
+}
+
 export async function createWorkspaceWriteProposal(
   input: {
     actor: WorkspaceWriteProposalActor;
@@ -407,7 +414,7 @@ export async function createWorkspaceWriteProposal(
 ): Promise<WorkspaceWriteProposalPreview> {
   const owner = await proposalBinding(input.actor, dependencies);
   if (!owner) throw new Error("Only the workspace owner can stage a write.");
-  const validated = validateWorkspaceWriteProposal(input.tool, input.arguments);
+  const requested = validateWorkspaceWriteProposal(input.tool, input.arguments);
   const now = dependencies.now();
   const ttl = Math.min(
     Math.max(1_000, input.ttlMs ?? WRITE_PROPOSAL_TTL_MS),
@@ -415,6 +422,8 @@ export async function createWorkspaceWriteProposal(
   );
   const expiresAt = new Date(now.getTime() + ttl);
   const id = dependencies.randomId();
+  if (!DURABLE_PROPOSAL_TOOLS.has(requested.name)) throw new Error("This command has no durable approval receipt.");
+  const validated = validateWorkspaceWriteProposal(requested.name, { ...requested.arguments, idempotency_key: `proposal:${id}` });
   // Freeze what this will do, while the person is looking at it. Ids are not
   // something anyone can approve; titles, folders and whether a thing is
   // public are. The revision travels with each one so approval can ask whether
@@ -466,6 +475,7 @@ export async function createWorkspaceWriteProposal(
     metadata: {
       ...(preview ? { preview } : {}),
       ...(input.origin ? { origin: input.origin } : {}),
+      durableCommandVersion: 1,
       agentConnectionId: input.actor.connectionId ?? `assistant:${input.actor.userId}`,
       agentActorType: input.actor.actorType ?? "ai",
     },
@@ -567,11 +577,22 @@ export async function decideWorkspaceWriteProposal(
         );
   }
 
-  const claimed = await dependencies.repository.claim(
+  let claimed = await dependencies.repository.claim(
     input.proposalId,
     owner.binding,
     now,
   );
+  let recovering = false;
+  let receiptOnly = false;
+  if (!claimed) {
+    const current = await dependencies.repository.get(input.proposalId, owner.binding);
+    if (current?.status === "executing" && recoverable(current)) {
+      if (current.expiresAt <= now) {
+        receiptOnly = true;
+      }
+      claimed = current; recovering = true;
+    }
+  }
   if (!claimed) {
     return unavailableDecision(
       input.proposalId,
@@ -630,7 +651,7 @@ export async function decideWorkspaceWriteProposal(
         "That change cannot be approved because what it would do was not recorded when it was offered. Ask again.",
     };
   }
-  if (frozen?.kind === "items") {
+  if (!recovering && frozen?.kind === "items") {
     let current: Awaited<ReturnType<WorkspaceWriteProposalDependencies["resolveItems"]>>;
     try {
       current = await dependencies.resolveItems(owner.workspace.handle, frozen.items.map((item) => item.id), input.actor);
@@ -676,7 +697,7 @@ export async function decideWorkspaceWriteProposal(
   }
 
   try {
-    const executionActor = { ...input.actor, runId: claimed.id,
+    const executionActor = { ...input.actor, receiptOnly, runId: claimed.id,
       actorType: claimed.metadata?.agentActorType === "external_agent" ? "external_agent" as const : "ai" as const,
       connectionId: typeof claimed.metadata?.agentConnectionId === "string"
         ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` };
@@ -687,17 +708,12 @@ export async function decideWorkspaceWriteProposal(
     );
     const text = resultText(result);
     if (result.isError) {
-      await dependencies.repository.fail(
-        input.proposalId,
-        owner.binding,
-        "command_failed",
-        dependencies.now(),
-      );
-      return {
-        status: "failed",
-        proposalId: input.proposalId,
-        message: text || "The approved workspace change failed.",
-      };
+      if (receiptOnly) return { status: "expired", proposalId: input.proposalId };
+      const stored = await dependencies.repository.state(input.proposalId, owner.binding);
+      if (stored?.status === "completed" && stored.receipt) return { status: "completed", receipt: stored.receipt as WorkspaceWriteReceipt };
+      // An adapter error may follow the durable file commit. Keep the approved
+      // operation replayable rather than falsely asserting that nothing changed.
+      return { status: "ambiguous", proposalId: input.proposalId, message: text || "The approved change could not be confirmed. Retry this same proposal." };
     }
     const completedAt = dependencies.now();
     const receipt: WorkspaceWriteReceipt = {
@@ -727,20 +743,8 @@ export async function decideWorkspaceWriteProposal(
         completedAt,
       );
     } catch {
-      // The canonical command has already returned success. Never collapse a
-      // receipt-storage failure into an ordinary execution error because that
-      // invites a retry of a mutation that may already be visible.
-      try {
-        await dependencies.repository.fail(
-          input.proposalId,
-          owner.binding,
-          "receipt_recording_failed_after_success",
-          dependencies.now(),
-        );
-      } catch {
-        // The truthful response below matters even if the status write also
-        // fails. The one-time claim still prevents this process from replaying.
-      }
+      const stored = await dependencies.repository.state(input.proposalId, owner.binding).catch(() => null);
+      if (stored?.status === "completed" && stored.receipt) return { status: "completed", receipt: stored.receipt as WorkspaceWriteReceipt };
       return {
         status: "ambiguous",
         proposalId: input.proposalId,
@@ -750,17 +754,9 @@ export async function decideWorkspaceWriteProposal(
     }
     return { status: "completed", receipt };
   } catch {
-    await dependencies.repository.fail(
-      input.proposalId,
-      owner.binding,
-      "execution_error",
-      dependencies.now(),
-    );
-    return {
-      status: "failed",
-      proposalId: input.proposalId,
-      message: "The approved workspace change failed.",
-    };
+    const stored = await dependencies.repository.state(input.proposalId, owner.binding).catch(() => null);
+    if (stored?.status === "completed" && stored.receipt) return { status: "completed", receipt: stored.receipt as WorkspaceWriteReceipt };
+    return { status: "ambiguous", proposalId: input.proposalId, message: "The approved change could not be confirmed. Retry this same proposal." };
   }
 }
 

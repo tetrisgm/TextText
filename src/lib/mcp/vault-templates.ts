@@ -3,13 +3,14 @@ import { listVaultTextpacks, readVaultTemplate, mutateVaultDocument } from "@/li
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 export type VaultTemplateContext = {
+  receiptOnly?: boolean;
   root: string; workspaceId: string; actorUserId: string; actorType: "human" | "external_agent";
   authorize: (itemId: string, path: string, write: boolean) => Promise<void>;
 };
 export async function executeVaultTemplateTool(name: string, args: Record<string, unknown>, context: VaultTemplateContext) {
   if (args.template_id !== undefined && (typeof args.template_id !== "string" || !args.template_id.length)) throw new Error("Invalid template identifier");
   if (args.template_version !== undefined && (typeof args.template_version !== "number" || !Number.isSafeInteger(args.template_version) || args.template_version < 1)) throw new Error("Invalid template version");
-  const location = { root: context.root, workspaceId: context.workspaceId };
+  const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId };
   if (name === "list_document_templates") {
     if (Object.keys(args).some(key => key !== "template_id")) throw new Error("Unsupported template listing fields");
     const builtins = BUILTIN_TEMPLATES.filter(template => !args.template_id || template.id === args.template_id).map(definition => ({ definition, scope: "texttext" }));

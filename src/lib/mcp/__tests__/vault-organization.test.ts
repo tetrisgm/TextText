@@ -82,3 +82,15 @@ it("moves to workspace root and retries same-path moves without changing content
   expect(await organizeVaultItem("move_item", same, context())).toEqual(result);
   expect((await readVaultTextpack({ ...location(), itemId }))?.revision).toBe(revision);
 });
+
+it("reads a completed delete receipt without a live file and never starts a missing operation", async () => {
+  const input = args();
+  await expect(organizeVaultItem("delete_item", input, { ...context(), receiptOnly: true })).rejects.toThrow("No completed receipt");
+  const result = await organizeVaultItem("delete_item", input, context());
+  expect(await readVaultTextpack({ ...location(), itemId })).toBeNull();
+  const auditCount = state.receipts.length;
+  expect(await organizeVaultItem("delete_item", input, { ...context(), receiptOnly: true })).toEqual(result);
+  expect(state.receipts).toHaveLength(auditCount);
+  authorize.mockRejectedValueOnce(new Error("revoked"));
+  await expect(organizeVaultItem("delete_item", input, { ...context(), receiptOnly: true })).rejects.toThrow("revoked");
+});

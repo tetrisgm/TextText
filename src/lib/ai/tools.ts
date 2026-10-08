@@ -329,6 +329,7 @@ const fieldValues = z
 const updateItemInput = z
   .object({
     id,
+    idempotency_key: z.string().trim().min(1).max(500).optional(),
     title: z.string().trim().min(1).max(300).optional(),
     excerpt: z.string().max(2_000).nullable().optional(),
     body: z.string().max(1_000_000).optional(),
@@ -1067,6 +1068,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         id,
         comment_id: z.string().trim().min(1).max(128),
         resolved: z.boolean(),
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
       })
       .strict(),
     mutability: "write",

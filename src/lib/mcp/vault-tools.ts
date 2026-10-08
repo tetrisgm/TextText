@@ -38,7 +38,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   if (!blog) return error("Workspace not found.");
   const identity = await getBlogEditRecord(blog.handle);
   if (!identity) return error("Workspace not found.");
-  const location = { root, workspaceId: identity.id };
+  const location = { root, workspaceId: identity.id, receiptOnly: auth?.extra?.receiptOnly === true };
   const owner = identity.ownerId === userId;
   const grants = owner ? [] : await activeVaultGrants({ ...location, userId });
   const allowed = (item: { itemId: string; relativePath: string }) =>
@@ -68,7 +68,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
     try {
       const { executeVaultTemplateTool } = await import("./vault-templates");
       const action = () => executeVaultTemplateTool(name, args, { ...location, actorUserId: userId, actorType, authorize });
-      if (name === "list_document_templates" || actorType === "human") return json(await action());
+      if (name === "list_document_templates" || actorType === "human" || location.receiptOnly) return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
       return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId,
         connectionName: typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent",
@@ -93,7 +93,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
         ? (typeof auth?.extra?.name === "string" ? auth.extra.name : typeof auth?.extra?.email === "string" ? auth.extra.email : "TextText user")
         : typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent";
       const action = () => executeVaultCommentTool(name, args, { ...location, actorUserId: userId, actorType, actorName: connectionName, operationId: randomUUID(), authorize });
-      if (name === "list_comments" || actorType === "human") return json(await action());
+      if (name === "list_comments" || actorType === "human" || location.receiptOnly) return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
       return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId, connectionName,
         connectionId: typeof auth?.extra?.connectionId === "string" ? auth.extra.connectionId : undefined,
@@ -123,6 +123,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
       const action = async () => {
         const receipt = await mutateVaultTool(name, args, { ...location, actorUserId: userId, actorType, authorize });
         if (receipt.status === "conflict") throw new Error("The item changed. Read it again before editing.");
+        if (location.receiptOnly) return receipt;
         const current = await readVaultTextpack({ ...location, itemId: receipt.itemId });
         if (!current || !await allowedNow({ itemId: receipt.itemId, relativePath: current.relativePath })) throw new Error("Item not found.");
         const document = readDocument(openPack(current.bytes, current.relativePath, current.revision, receipt.itemId).file);
@@ -130,7 +131,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
         const item = summary(receipt.itemId, current.relativePath, current.revision, document.content.title, document, Boolean(readVaultPublicationFromPack(current.bytes)));
         return { ...receipt, item, ...(name === "create_item" ? { receipt: { item_id: item.id, kind: item.kind, saved_to: item.folder_path, title: item.title, path: item.path } } : {}) };
       };
-      if (name === "create_item" || actorType === "human") return json(await action());
+      if (name === "create_item" || actorType === "human" || location.receiptOnly) return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
       return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId,
         connectionName: typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent",
