@@ -121,6 +121,27 @@ static class Test
  var occupied=movingStore.Write("Archive/Occupied.textpack",Pack("other document","other-id"));
  try{SharedEditingStore.RebaseProjection(movingStore,"test-1",occupied.Path);throw new Exception("occupied destination accepted");}catch(FileChangedException){}
  Assert(movingStore.Describe(occupied.Path).Hash==occupied.Hash,"shared move cannot overwrite destination");
+ var sessionRebaseStore=new TextPackStore(Path.Combine(temp,"active-shared-move"),Path.Combine(temp,"active-shared-move-device"));
+ var sessionRebaseFile=sessionRebaseStore.Write("Notes/Active.textpack",Pack());var sessionRebaseRemote=new Fake();var sessionRebaseEngine=new SyncEngine(sessionRebaseStore,sessionRebaseRemote);await sessionRebaseEngine.SyncAsync();
+ using(var editingMove=new SharedEditingStore(sessionRebaseStore,sessionRebaseEngine)) {
+   var session=await editingMove.OpenAsync("test-1",sessionRebaseFile.Path,sessionRebaseFile.Hash);
+   var pendingBytes=Pack("Pending across move");var pendingHash=TextPackStore.Hash(pendingBytes);
+   var journal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=sessionRebaseFile.Hash,relativePath=sessionRebaseFile.Path,update="AAA=",pending=new[]{"AAA="}});
+   var cp=new SharedCheckpoint("test-1",sessionRebaseFile.Path,pendingHash,sessionRebaseFile.Hash,1,0,1,journal,true);
+   await editingMove.CheckpointAsync(session.SessionToken,sessionRebaseFile.Hash,pendingBytes,cp);
+   sessionRebaseRemote.Item=sessionRebaseRemote.Item! with{RelativePath="Archive/Active.textpack"};
+   await sessionRebaseEngine.SyncAsync();Assert(sessionRebaseEngine.Status.Error==null&&!File.Exists(sessionRebaseStore.Resolve(sessionRebaseFile.Path)),"active shared projection follows remote path without releasing session");
+   var nextBytes=Pack("Saved again after move");var nextJournal=System.Text.Json.Nodes.JsonNode.Parse(journal)!;nextJournal["journalGeneration"]=2;
+   var next=await editingMove.CheckpointAsync(session.SessionToken,pendingHash,nextBytes,cp with{ProjectedHash=TextPackStore.Hash(nextBytes),JournalGeneration=2,Journal=nextJournal.ToJsonString()});
+   Assert(next.Path=="Archive/Active.textpack"&&next.Hash==TextPackStore.Hash(nextBytes),"same session saves pending edits after path rebase");
+   Assert(sessionRebaseRemote.UploadCount==1,"pending active journal never becomes a snapshot upload");
+ }
+ using(var reopenedMove=new SharedEditingStore(sessionRebaseStore,new SyncEngine(sessionRebaseStore,sessionRebaseRemote))) {
+   var movedProjection=sessionRebaseStore.Describe("Archive/Active.textpack");
+   var reopened=await reopenedMove.OpenAsync("test-1",movedProjection.Path,movedProjection.Hash);
+   Assert(reopened.Checkpoint?.Pending==true&&reopened.Checkpoint.JournalGeneration==2,"pending session move survives restart at its new path");
+   Assert(TextPackStore.Markdown(sessionRebaseStore.Read(movedProjection.Path)).Contains("Saved again after move"),"reopened moved projection retains subsequent writing");
+ }
  var sharedTransport=new Fake();var sharedFiles=new TextPackStore(Path.Combine(temp,"shared"),Path.Combine(temp,"shared-device"));var initial=sharedFiles.Write("Notes/Shared.textpack",Pack());var sharedSync=new SyncEngine(sharedFiles,sharedTransport);await sharedSync.SyncAsync();
  using(var shared=new SharedEditingStore(sharedFiles,sharedSync)) {
  var firstSession=await shared.OpenAsync("test-1",initial.Path,sharedFiles.Describe(initial.Path).Hash);var secondSession=await shared.OpenAsync("test-1",initial.Path,firstSession.Document.Hash);shared.Close(firstSession.SessionToken);

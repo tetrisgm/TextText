@@ -111,17 +111,33 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         await gate.WaitAsync(ct);try {
             ObjectDisposedException.ThrowIf(disposed,this);
             if(!sessions.TryGetValue(sessionToken,out var session))throw new SharedSessionClosedException();
-            Validate(store,checkpoint);if(checkpoint.ItemId!=session.ItemId||checkpoint.Path!=session.Path||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
-            var prior=Recover(session.ItemId);var current=store.Describe(session.Path);
-            if(prior!=null) {
-                if(prior.RetiredReason!=null||checkpoint.JournalGeneration<prior.JournalGeneration||prior.Pending&&checkpoint.Epoch!=prior.Epoch)throw new InvalidOperationException("Newer or protected shared edits are retained.");
-                if(checkpoint.JournalGeneration==prior.JournalGeneration){if(checkpoint!=prior||current.Hash!=prior.ProjectedHash)throw new InvalidOperationException("Conflicting checkpoint generation.");return current;}
-            }
-            if(current.Hash!=expectedHash)throw new FileChangedException();
-            var directory=DirectoryFor(session.ItemId);var intent=new Intent(1,expectedHash,Convert.ToBase64String(textPack),checkpoint);
-            if(!checkpoint.Pending)Save(System.IO.Path.Combine(directory,"acknowledge.json"),checkpoint);
-            Save(System.IO.Path.Combine(directory,"intent.json"),intent);var result=Finish(intent,directory);
-            if(!checkpoint.Pending){await sync.AcknowledgeCheckpointAsync(session.ItemId,session.Path,result.Hash,checkpoint.AcknowledgedRevision,ct);File.Delete(System.IO.Path.Combine(directory,"acknowledge.json"));}
+            string? acknowledgedDirectory=null;
+            var result=store.WithExclusiveMutation(() => {
+                var prior=Recover(session.ItemId);
+                if(checkpoint.Path!=session.Path&&checkpoint.Path!=prior?.Path)throw new InvalidDataException("Checkpoint identity mismatch.");
+                // A sync pass may relocate the durable projection while this
+                // browser request is still prepared against the old path.
+                if(prior is {RetiredReason:null} && prior.Path!=session.Path) {
+                    if(checkpoint.Path!=session.Path&&checkpoint.Path!=prior.Path)throw new InvalidDataException("Checkpoint identity mismatch.");
+                    session=session with{Path=prior.Path};sessions[sessionToken]=session;
+                }
+                if(checkpoint.Path!=session.Path) {
+                    var journal=System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal)!;journal["relativePath"]=session.Path;
+                    checkpoint=checkpoint with{Path=session.Path,Journal=journal.ToJsonString()};
+                }
+                Validate(store,checkpoint);if(checkpoint.ItemId!=session.ItemId||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
+                var current=store.Describe(session.Path);
+                if(prior!=null) {
+                    if(prior.RetiredReason!=null||checkpoint.JournalGeneration<prior.JournalGeneration||prior.Pending&&checkpoint.Epoch!=prior.Epoch)throw new InvalidOperationException("Newer or protected shared edits are retained.");
+                    if(checkpoint.JournalGeneration==prior.JournalGeneration){if(checkpoint!=prior||current.Hash!=prior.ProjectedHash)throw new InvalidOperationException("Conflicting checkpoint generation.");return current;}
+                }
+                if(current.Hash!=expectedHash)throw new FileChangedException();
+                var directory=DirectoryFor(session.ItemId);var intent=new Intent(1,expectedHash,Convert.ToBase64String(textPack),checkpoint);
+                if(!checkpoint.Pending){Save(System.IO.Path.Combine(directory,"acknowledge.json"),checkpoint);acknowledgedDirectory=directory;}
+                Save(System.IO.Path.Combine(directory,"intent.json"),intent);return Finish(intent,directory);
+            });
+            // Never wait for the sync gate while holding the filesystem lock.
+            if(acknowledgedDirectory!=null){await sync.AcknowledgeCheckpointAsync(session.ItemId,session.Path,result.Hash,checkpoint.AcknowledgedRevision,ct);File.Delete(System.IO.Path.Combine(acknowledgedDirectory,"acknowledge.json"));}
             return result;
         }finally{gate.Release();}
     }

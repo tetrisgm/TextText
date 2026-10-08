@@ -28,16 +28,16 @@
 
 ## Current work
 
-- Windows shared projection store now has the equivalent recoverable move
-  intent, retaining pending updates, batch operation identity and generation.
-  Both interruption windows and occupied-destination refusal pass the full
-  Windows Core executable regression suite on Mac
-  (`/tmp/texttext-windows-rebase-core.log`). This is not yet wired into the
-  Windows sync loop. Before enabling it, serialize checkpoint materialization
-  and relocation with the store mutation lock without awaiting the sync gate
-  under that lock, update active session paths from recovered checkpoints,
-  and verify active save/reopen plus actual Windows execution. Move intents
-  fence readiness until recovery completes.
+- Windows recoverable move is now wired into the protected sync path.
+  Checkpoints and moves serialize through the store mutation lock; the lock
+  is released before awaiting the sync gate. A session rebases from its
+  recovered checkpoint, while acknowledgement resolves the current bounded
+  baseline location. Full Windows Core regression suite passed on Mac:
+  same-token save after remote move, pending updates without snapshot upload,
+  reopen at new path, both move interruption windows and occupied destination
+  refusal (`/tmp/texttext-windows-active-rebase-core.log`). Actual PC execution
+  and integrated UI/native acceptance remain pending. Live sessions before
+  their first checkpoint still need explicit handling on both desktops.
 
 - Shared UI now relocates selected items only by a unique stable identity,
   preserving the editor boundary and drafts when paths move. Local read

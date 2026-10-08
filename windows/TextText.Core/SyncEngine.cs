@@ -37,8 +37,16 @@ public sealed class SyncEngine
     public async Task AcknowledgeCheckpointAsync(string itemId,string path,string hash,string revision,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try {
             if(!collaborating.Contains(itemId))throw new InvalidOperationException("An active collaboration fence is required.");
-            var current=store.Describe(path);if(current.ItemId!=itemId || current.Hash!=hash)throw new FileChangedException();
-            var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file changes must synchronize before joining collaboration.");
+            var state=Load();
+            var candidates=new[]{state.Items.GetValueOrDefault(itemId)?.Path,path}.Where(value=>value!=null).Distinct().ToArray();
+            PackFile? current=null;
+            foreach(var candidate in candidates) {
+                if(!File.Exists(store.Resolve(candidate!)))continue;
+                var observed=store.Describe(candidate!);
+                if(observed.ItemId==itemId&&observed.Hash==hash){current=observed;break;}
+            }
+            if(current==null)throw new FileChangedException();path=current.Path;
+            if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file changes must synchronize before joining collaboration.");
             state.Items[itemId]=new(path,hash,revision,Lifecycle:state.Items.GetValueOrDefault(itemId)?.Lifecycle);Save(state);
         }finally{gate.Release();}
     }
@@ -96,7 +104,17 @@ public sealed class SyncEngine
             var folderError=false;
             foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
             foreach(var pair in state.Items.ToArray()) {
-                cancellation.ThrowIfCancellationRequested();var id=pair.Key;if(IsEditing(id)||Blocked(state,id))continue;var baseline=pair.Value;var intent=store.Intent(id);
+                cancellation.ThrowIfCancellationRequested();var id=pair.Key;
+                if(IsEditing(id)) {
+                    if(!Blocked(state,id)&&state.PendingPull?.ItemId!=id&&remote.TryGetValue(id,out var relocated)&&!relocated.Deleted&&
+                       local.TryGetValue(id,out var projection)&&projection.Path!=relocated.RelativePath&&SharedEditingStore.HasReadyCheckpoint(store,id)) {
+                        var moved=SharedEditingStore.RebaseProjection(store,id,relocated.RelativePath);
+                        state.Items[id]=pair.Value with{Path=moved.Path};Save(state);store.ClearIntent(id);
+                        local[id]=store.Describe(moved.Path);
+                    }
+                    continue;
+                }
+                if(Blocked(state,id))continue;var baseline=pair.Value;var intent=store.Intent(id);
                 local.TryGetValue(id,out var file); remote.TryGetValue(id,out var server);
                 if(intent?.Kind=="delete" && file==null) {
                     if(File.Exists(store.Resolve(intent.Path)))continue;
