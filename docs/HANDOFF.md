@@ -31,6 +31,16 @@
 
 ## Current work
 
+- Oracle shutdown diagnostics are ready in source, not deployed. The entry point
+  uses Node HTTP diagnostic channels to report fixed request categories/counts/
+  ages and inbound socket counts at shutdown, with no private request data and
+  no cancellation or exit changes. Real HTTP regression proves unfinished versus
+  idle distinction, response completion cleanup and observer disposal. Oracle
+  suite passed 23 tests, one environment-dependent restore test skipped
+  (`/tmp/texttext-shutdown-diagnostics-tests.log`). Next normal rollout must
+  install this, then inspect its evidence on a subsequent shutdown; do not
+  interpret this instrumentation as a production fix.
+
 - Windows explicit recovery now serializes verified-copy checks and journal
   release under the same store mutation lock as checkpointing/relocation.
   Interrupted move intents are archived byte-for-byte and removed before the

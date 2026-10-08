@@ -109,7 +109,7 @@ export function packageBuild({ projectRoot = root, distDirectory = ".next", migr
     assertLinuxArmRuntime(app);
     restoreExternalPackageAliases(app, dist);
     mkdirSync(join(app, "release/oracle"), { recursive: true });
-    for (const name of ["entrypoint.mjs", "start.mjs", "backup.mjs", "restore-drill.mjs", "bootstrap-database.mjs", "smoke.mjs", "texttext-backup.service"]) cpSync(join(projectRoot, "release/oracle", name), join(app, "release/oracle", name));
+    for (const name of ["entrypoint.mjs", "start.mjs", "shutdown-diagnostics.mjs", "backup.mjs", "restore-drill.mjs", "bootstrap-database.mjs", "smoke.mjs", "texttext-backup.service"]) cpSync(join(projectRoot, "release/oracle", name), join(app, "release/oracle", name));
     copyWithoutSecrets(resolve(migrationsDirectory), join(app, "release/oracle/migrations"));
     mkdirSync(join(app, "scripts/lib"), { recursive: true });
     cpSync(join(projectRoot, "scripts/verify-production-database.mjs"), join(app, "scripts/verify-production-database.mjs"));

@@ -10,6 +10,38 @@ import { localDatabase, protectedEnvironment, runtimeEnvironment } from "./start
 import { backupConnection, createBackup, retainedArchives } from "./backup.mjs";
 import { verifyPackage } from "./verify-package.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
+import { installShutdownDiagnostics } from "./shutdown-diagnostics.mjs";
+import { createServer, get, Agent } from "node:http";
+import { EventEmitter, once } from "node:events";
+
+test("shutdown diagnostics identify unfinished HTTP without logging private request data", async () => {
+  const signals = new EventEmitter(), logs = [];
+  const diagnostics = installShutdownDiagnostics({ signals, log: text => logs.push(text), delays: [] });
+  const agent = new Agent({ keepAlive: true });
+  let response;
+  const server = createServer((request, outgoing) => { response = outgoing; });
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    const pending = new Promise((resolve, reject) => {
+      get({ host: '127.0.0.1', port: server.address().port, path: '/api/vault/private-workspace/items?token=private-secret', headers: { authorization: 'private-credential' }, agent }, incoming => {
+        incoming.resume(); incoming.once('end', resolve);
+      }).once('error', reject);
+    });
+    await once(server, 'request');
+    assert.equal(diagnostics.snapshot().active['GET:manifest'].count, 1);
+    signals.emit('SIGTERM');
+    assert.equal(logs.length, 1);
+    for (const privateValue of ['private-workspace', 'private-secret', 'private-credential', 'token', 'authorization']) assert.ok(!logs[0].includes(privateValue));
+    assert.ok(!response.writableEnded, 'diagnostics must not cancel a request or write');
+    response.end('saved'); await pending;
+    assert.deepEqual(diagnostics.snapshot().active, {});
+    assert.ok(diagnostics.snapshot().sockets > 0, 'idle socket is distinguished from unfinished request');
+  } finally {
+    agent.destroy(); await new Promise(resolve => server.close(resolve)); diagnostics.dispose();
+  }
+  assert.deepEqual(diagnostics.snapshot(), { sockets: 0, active: {} });
+  assert.equal(signals.listenerCount('SIGTERM'), 0);
+});
 
 function temporary(t) {
   const directory = mkdtempSync(join(tmpdir(), "texttext-oracle-test-"));
