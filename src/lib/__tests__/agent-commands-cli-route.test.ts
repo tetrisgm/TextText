@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const verifyTextTextApiToken = vi.fn();
 const runWorkspaceToolForAuth = vi.fn();
@@ -38,7 +38,9 @@ function command(
 }
 
 describe("POST /api/agent/commands", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
+    vi.stubEnv("TEXTTEXT_VAULT_ROOT", "");
     vi.clearAllMocks();
     verifyTextTextApiToken.mockResolvedValue({
       token: "",
@@ -52,16 +54,19 @@ describe("POST /api/agent/commands", () => {
     });
   });
 
-  // The owner's own description of what agents are for: "if I say I want you or
-  // Codex to work on a note, you need to be able to do all these actions."
-  // Five commands could not do them. These are the verbs that were missing.
+  it.each(["proposal:update_item", "move_item"])("rejects %s before legacy dispatch for a file workspace", async name => {
+    vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/fixture");
+    const response = await POST(command(name, { id: "item-1" }));
+    expect(response.status).toBe(400);
+    expect(runWorkspaceToolForAuth).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ["move_item", { id: "item-1", folder_path: "notes" }],
-    ["add_comment", { id: "item-1", body: "Worth expanding this." }],
-    ["set_comment_resolved", { id: "item-1", comment_id: "c-1", resolved: true }],
-    ["create_folder", { path: "recipes", name: "Recipes" }],
-    ["set_folder_template", { folder_path: "notes", template_id: "t-1" }],
-    ["list_items", { folder_path: "notes" }],
+    ["get_workspace", {}],
+    ["list_folders", {}],
+    ["create_item", { title: "New note", kind: "note" }],
+    ["append_to_item", { id: "item-1", markdown: "More", if_match_hash: "hash" }],
+    ["list_items", { folder_path: "Notes" }],
   ])("lets an agent on this Mac call %s", async (name, args) => {
     const response = await POST(command(name, args));
     expect(response.status).toBe(200);
@@ -101,7 +106,7 @@ describe("POST /api/agent/commands", () => {
     const listed = await POST(command("list_items", { folder_path: "notes" }));
     expect(listed.status).toBe(200);
 
-    const moved = await POST(command("move_item", { id: "item-1", folder_path: "notes" }));
+    const moved = await POST(command("update_item", { id: "item-1", body: "New body", if_match_hash: "hash" }));
     expect(moved.status).toBe(403);
   });
 
@@ -109,7 +114,7 @@ describe("POST /api/agent/commands", () => {
     const response = await POST(
       command(
         "update_item",
-        { id: "item-1", markdown: "# Updated", if_match_hash: "hash-1" },
+        { id: "item-1", body: "# Updated", if_match_hash: "hash-1" },
         {
           "X-TextText-Agent-Name": "Codex",
           "X-TextText-Agent-Intent": "Tighten the introduction",
@@ -120,7 +125,7 @@ describe("POST /api/agent/commands", () => {
     expect(response.status).toBe(200);
     expect(runWorkspaceToolForAuth).toHaveBeenCalledWith(
       "update_item",
-      { id: "item-1", markdown: "# Updated", if_match_hash: "hash-1" },
+      { id: "item-1", body: "# Updated", if_match_hash: "hash-1" },
       {
         authInfo: expect.objectContaining({
           clientId: "user-1",

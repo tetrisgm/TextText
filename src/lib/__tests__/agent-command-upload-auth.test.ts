@@ -56,7 +56,7 @@ it("refuses proposal staging after mid-upload revocation", async () => {
 
 it.each(["update_item", "proposal:update_item"])("applies reduced scopes to %s after upload", async (name) => {
   const pending = await upload(name); current = { ...current!, scopes: "read" };
-  expect((await pending.finish()).status).toBe(403);
+  expect((await pending.finish()).status).toBe(name.startsWith("proposal:") ? 400 : 403);
   expect(m.execute).not.toHaveBeenCalled(); expect(m.stage).not.toHaveBeenCalled();
 });
 
@@ -71,14 +71,13 @@ it("dispatches allowed reads with the refreshed scopes and actor metadata", asyn
   });
 });
 
-it("constructs proposal actors from the refreshed identity", async () => {
+it("never stages a legacy SQL proposal after refreshing identity", async () => {
   const pending = await upload("proposal:update_item");
   current = { ...current!, userId: "current-owner", sub: "current-sub", id: "current-connection" };
-  expect((await pending.finish()).status).toBe(202);
-  expect(m.blog).toHaveBeenCalledExactlyOnceWith("current-sub");
-  expect(m.stage).toHaveBeenCalledWith(expect.objectContaining({ actor: {
-    userId: "current-owner", sub: "current-sub", connectionId: "current-connection", handle: "workspace", actorType: "external_agent",
-  } }));
+  expect((await pending.finish()).status).toBe(400);
+  expect(m.resolve).toHaveBeenCalledTimes(2);
+  expect(m.blog).not.toHaveBeenCalled();
+  expect(m.stage).not.toHaveBeenCalled();
 });
 
 it("rejects an invalid token without waiting for an open body", async () => {

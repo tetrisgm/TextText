@@ -1,3 +1,4 @@
+import { VAULT_TOOL_NAMES } from "@/lib/mcp/vault-contract";
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { LOCAL_AGENT_COMMANDS, LOCAL_AGENT_READ_ONLY_COMMANDS } from "@/lib/agent-command-access";
 import { modelMapper, runFreeTextCommand } from "@/lib/ai/free-text-command.server";
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
   if (!blog) return noStore({ error: "Workspace not found" }, 404);
   const candidates = [...LOCAL_AGENT_COMMANDS].filter((name) => {
     if (name === "run_command") return false;
+    if (!(VAULT_TOOL_NAMES as readonly string[]).includes(name)) return false;
     if (scope === "full") return true;
     return LOCAL_AGENT_READ_ONLY_COMMANDS.has(name) && WORKSPACE_TOOL_DEFINITIONS[name].requiredScope !== "sync";
   });

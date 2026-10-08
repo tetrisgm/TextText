@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   verifyTextTextApiToken: vi.fn(),
@@ -31,7 +31,9 @@ function request(): Request {
  * thing and did another.
  */
 describe("GET /api/agent/commands", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
+    vi.stubEnv("TEXTTEXT_VAULT_ROOT", "");
     vi.clearAllMocks();
     mocks.verifyTextTextApiToken.mockResolvedValue({
       token: "",
@@ -47,9 +49,9 @@ describe("GET /api/agent/commands", () => {
       commands?: Array<{ name: string; mutability: string }>;
     };
     const names = (body.commands ?? []).map((entry) => entry.name);
-    expect(names).toContain("move_item");
-    expect(names).toContain("update_item_type");
-    expect(names).toContain("add_comment");
+    expect(names).toContain("create_item");
+    expect(names).toContain("update_item");
+    expect(names).toContain("list_folders");
   });
 
   it("never names a command the route would refuse", async () => {
@@ -80,6 +82,14 @@ describe("GET /api/agent/commands", () => {
       expect(definition.mutability).toBe("read");
       expect(definition.requiredScope).not.toBe("sync");
     }
+  });
+
+  it("advertises only canonical file commands and their actual schemas", async () => {
+    vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/fixture");
+    const body = await (await GET(request())).json();
+    expect(body.commands.map((entry: { name: string }) => entry.name)).toEqual(expect.arrayContaining(["read_item", "create_item", "append_to_item"]));
+    expect(body.commands.map((entry: { name: string }) => entry.name)).not.toContain("move_item");
+    expect(body.commands.find((entry: { name: string }) => entry.name === "append_to_item").inputSchema.required).toContain("if_match_hash");
   });
 
   it("refuses without a token", async () => {

@@ -1,3 +1,4 @@
+import { VAULT_TOOL_NAMES, vaultToolDefinitions } from "@/lib/mcp/vault-contract";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
   type WorkspaceToolName,
@@ -12,7 +13,6 @@ import {
   runWorkspaceToolForAuth,
   type ToolContext,
 } from "@/lib/mcp/tools";
-import { getOwnedBlog } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +97,9 @@ export async function GET(request: Request) {
   // declares it, so offering it here promised something the executor then
   // refused. A discovery list that names commands the caller cannot run is
   // worse than no list: it sends an agent to be rejected.
+  const fileDefinitions = vaultToolDefinitions();
   const available = [...LOCAL_AGENT_COMMANDS].filter((name) => {
+    if (fileDefinitions && !fileDefinitions.some(definition => definition.name === name)) return false;
     if (scopeAccess === "full") return true;
     if (!LOCAL_AGENT_READ_ONLY_COMMANDS.has(name)) return false;
     return WORKSPACE_TOOL_DEFINITIONS[name].requiredScope !== "sync";
@@ -106,7 +108,8 @@ export async function GET(request: Request) {
     commands: available.map((name) => ({
       name,
       title: WORKSPACE_TOOL_DEFINITIONS[name].title,
-      description: WORKSPACE_TOOL_DEFINITIONS[name].description,
+      description: fileDefinitions?.find(definition => definition.name === name)?.description ?? WORKSPACE_TOOL_DEFINITIONS[name].description,
+      ...(fileDefinitions ? { inputSchema: fileDefinitions.find(definition => definition.name === name)?.inputSchema } : {}),
       mutability: WORKSPACE_TOOL_DEFINITIONS[name].mutability,
     })),
     note:
@@ -146,30 +149,10 @@ export async function POST(request: Request) {
   const rawName = typeof body.name === "string" ? body.name : "";
   const proposalMode = body.mode === "proposal" || rawName.startsWith("proposal:");
   const name = rawName.startsWith("proposal:") ? rawName.slice("proposal:".length) : rawName;
-  if (proposalMode) {
-    if (resolveMcpScopeAccess(auth.scopes) !== "full") {
-      return noStore({ error: "A full sync connection is required to stage changes" }, 403);
-    }
-    const args = body.arguments;
-    if (!args || typeof args !== "object" || Array.isArray(args)) {
-      return noStore({ error: "Proposal arguments must be an object" }, 400);
-    }
-    try {
-      const { createWorkspaceWriteProposal } = await import("@/lib/ai/write-proposals.server");
-      const userId = typeof auth.extra?.userId === "string" ? auth.extra.userId : auth.clientId;
-      const sub = typeof auth.extra?.sub === "string" ? auth.extra.sub : userId;
-      const blog = await getOwnedBlog(sub);
-      if (!blog) return noStore({ error: "Workspace not found" }, 404);
-      const proposal = await createWorkspaceWriteProposal({
-        actor: { sub, userId, handle: blog.handle, actorType: "external_agent",
-          connectionId: typeof auth.extra?.connectionId === "string" ? auth.extra.connectionId : undefined },
-        tool: name,
-        arguments: args,
-      });
-      return noStore({ proposal, message: "Staged for owner approval in TextText." }, 202);
-    } catch (error) {
-      return noStore({ error: error instanceof Error ? error.message : "Unable to stage proposal" }, 400);
-    }
+  if (proposalMode || !(VAULT_TOOL_NAMES as readonly string[]).includes(name)) {
+    return noStore({ error: proposalMode
+      ? "File commands are applied directly. Use a supported command with its current revision."
+      : "That command is not available for file workspaces yet." }, 400);
   }
   if (!LOCAL_AGENT_COMMANDS.has(name as WorkspaceToolName)) {
     return noStore(
