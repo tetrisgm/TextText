@@ -49,6 +49,15 @@
 
 ## Current work and next checks
 
+- Both shared editor modes now prepare saved-look metadata through
+  `src/local-vault/saved-look.ts`. Complete validated snapshots, independent
+  template identity and retained editable blueprint provenance are prepared
+  before the existing atomic clone. Source title/body/fields/theme are preserved.
+  Three transport/preparation suites: 48 tests passed; additional provenance
+  regression passed (all three preparation tests); TypeScript passed. Logs
+  `/tmp/texttext-shared-look-{tests,provenance,types-final}.log`. Source only;
+  native agent-library commands are still unfinished.
+
 - Mac 1214 candidate build and installation completed with exit 0. The build
   and installer handles `26612`/`71689` are terminal; do not resume or restart.
   See the installed acceptance receipt above. Runtime health remains

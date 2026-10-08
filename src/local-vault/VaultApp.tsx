@@ -15,8 +15,7 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState, type Reac
 import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
-import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
-import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
+import { prepareSavedLook } from "./saved-look";
 import { noteIcon } from "@/lib/note-icons";
 import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
@@ -358,18 +357,9 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
   const saveLook = async (name: string) => {
     if (!await flush()) return { ok: false, message: "Save this item before keeping its look." };
     const original = readTemplate(file.current, current.current);
-    const identity = { id: `local.${crypto.randomUUID()}`, version: 1 };
-    let template = validateTemplateDefinition({ ...original, ...identity, name, experience: templateExperience(original) ?? undefined });
-    let sourceJSON: string | null = null;
-    if (file.current.templateAuthoringSourceJSON) {
-      const source = authoringSourceSchema.parse(JSON.parse(file.current.templateAuthoringSourceJSON));
-      source.blueprint.name = name;
-      template = validateTemplateDefinition({ ...compileItemTypeBlueprint(source.blueprint, identity), experience: templateExperience(original) ?? undefined });
-      sourceJSON = JSON.stringify(source);
-    }
-    const snapshot = { ...current.current, presentation: { ...current.current.presentation, template: identity } };
+    const metadata = prepareSavedLook(current.current, original, name, file.current.templateAuthoringSourceJSON);
     const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash,
-      documentJSON: JSON.stringify(snapshot), templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: sourceJSON });
+      ...metadata });
     onChanged();
     return { ok: true, message: `Saved in ${fresh.path}` };
   };
