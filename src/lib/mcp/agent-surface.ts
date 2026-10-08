@@ -6,20 +6,23 @@ import { runWorkspaceToolForAuth, type ToolContext } from "./tools";
 
 const AGENT_GUIDE = `# TextText agent guide
 
-TextText is a workspace of portable documents. Use the tools exposed by this
-server for every read and mutation. Do not construct private storage URLs or
-write directly to the database.
+TextText is a workspace of portable TextPack files. These tools read and edit
+those same documents through the shared sync system. Agents with authorized
+local filesystem access can also edit the files directly. For server access,
+use the exposed tools; do not construct private storage URLs or write directly
+to the database.
 
 ## Reliable automation
 
-- For a raw thought, passage, transcript, or URL, call create_item with capture
-  instead of making the user choose a folder or document kind. TextText routes
-  text to Notes and URLs to Bookmarks and returns a receipt.
+- Create a file with create_item using title, body and kind. Use kind note for
+  a thought, passage or transcript. Use list_folders to discover exact folder
+  paths; preserve their spelling and case. Follow the exposed tool schema.
 - Pass a stable idempotency_key to create_item. Derive it from the durable
   identity of the source, such as a repository URL or project slug.
 - Pass a stable idempotency_key to append_to_item. Derive it from the source
   event, such as a commit SHA, release version, or conversation message ID.
-- Reuse the same key after a timeout. A successful retry returns replayed: true.
+- After a timeout, retry exactly the same arguments and key, including the
+  original if_match_hash. The saved result is returned without a second edit.
 - Read an item before changing it and pass if_match_hash to guarded mutations.
 - Treat conflicts as a request to read, merge, and retry.
 
@@ -123,7 +126,7 @@ export function registerAgentSurface(server: CapabilityCollector): void {
     new ResourceTemplate("texttext://items/{id}"),
     {
       title: "TextText item",
-      description: "One item, including its Markdown, metadata, and assets.",
+      description: "One file, including its Markdown body, document metadata, path, and revision.",
       mimeType: "application/json",
     },
     async (uri, variables, extra) => {
@@ -159,7 +162,7 @@ export function registerAgentSurface(server: CapabilityCollector): void {
         folder_path: z
           .string()
           .optional()
-          .describe('Destination folder path. Defaults to "notes".'),
+          .describe('Destination folder path. Defaults to "Notes".'),
         namespace: z
           .string()
           .optional()
@@ -177,7 +180,7 @@ export function registerAgentSurface(server: CapabilityCollector): void {
 Projects:
 ${projects}
 
-Destination: ${folder_path || "notes"}
+Destination: ${folder_path || "Notes"}
 Namespace: ${namespace || "projects"}
 
 For each project, call create_item with a stable idempotency_key in the form
@@ -205,7 +208,7 @@ Do not publish, share, or delete anything without explicit confirmation.`,
         folder_path: z
           .string()
           .optional()
-          .describe('Destination folder path. Defaults to "notes".'),
+          .describe('Destination folder path. Defaults to "Notes".'),
         source_id: z
           .string()
           .min(1)
@@ -222,7 +225,7 @@ Do not publish, share, or delete anything without explicit confirmation.`,
 
 Title: ${title}
 Goal: ${goal}
-Destination: ${folder_path || "notes"}
+Destination: ${folder_path || "Notes"}
 Stable source ID: ${source_id}
 
 Search for the existing item first. If it does not exist, call create_item once
@@ -262,7 +265,7 @@ not publish, share, delete, or change access without explicit confirmation.`,
           content: {
             type: "text",
             text: `Create a draft TextText item titled "${title}" in
-"${folder_path || "notes"}". Preserve useful prompts, answers, decisions, and
+"${folder_path || "Notes"}". Preserve useful prompts, answers, decisions, and
 source context as readable Markdown. Use create_item with idempotency_key
 "conversation:${source_id}". Do not publish it.
 
@@ -294,7 +297,8 @@ ${conversation}`,
             type: "text",
             text: `Read TextText item ${item_id}. Append a dated Markdown release
 section for version ${version} containing the changes below. Use append_to_item
-with idempotency_key "release:${item_id}:${version}". Do not publish or change
+with the current if_match_hash from that read and idempotency_key
+"release:${item_id}:${version}". Do not publish or change
 access without explicit confirmation.
 
 Changes:

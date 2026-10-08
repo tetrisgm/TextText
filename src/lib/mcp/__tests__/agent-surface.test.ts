@@ -1,5 +1,7 @@
 import type { CapabilityCollector } from "@/lib/mcp/types";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+const runTool = vi.hoisted(() => vi.fn(async (name: string) => ({ content: [{ type: "text", text: JSON.stringify({ tool: name }) }] })));
+vi.mock("@/lib/mcp/tools", () => ({ runWorkspaceToolForAuth: runTool }));
 import { registerAgentSurface } from "@/lib/mcp/agent-surface";
 
 type ResourceRegistration = {
@@ -47,6 +49,26 @@ describe("MCP agent surface", () => {
     ]);
     expect(String(resources[0]?.target)).toBe("texttext://agent-guide");
     expect(String(resources[1]?.target)).toBe("texttext://workspace");
+  });
+
+  it("reads resource content through the same authenticated command dispatcher", async () => {
+    runTool.mockClear();
+    const { resources } = registrations();
+    const context = { authInfo: { clientId: "agent", scopes: ["read"], extra: { sub: "actor" } } };
+    await resources[1]!.callback(new URL("texttext://workspace"), context);
+    expect(runTool).toHaveBeenCalledWith("get_workspace", {}, context);
+    expect(runTool).toHaveBeenCalledWith("list_folders", {}, context);
+    await resources[2]!.callback(new URL("texttext://items/item-id"), { id: "item-id" }, context);
+    expect(runTool).toHaveBeenCalledWith("read_item", { id: "item-id" }, context);
+  });
+
+  it("teaches exact retry arguments and uses canonical folder casing", async () => {
+    const { resources, prompts } = registrations();
+    const guide = await resources[0]!.callback(new URL("texttext://agent-guide"), {}) as { contents: { text: string }[] };
+    expect(guide.contents[0].text).toContain("original if_match_hash");
+    expect(guide.contents[0].text).not.toContain("replayed: true");
+    const prompt = await prompts[0].callback({ projects: "Example" });
+    expect(JSON.stringify(prompt)).toContain("Destination: Notes");
   });
 
   it("publishes reusable project, live canvas, conversation, and release prompts", () => {
