@@ -477,6 +477,10 @@ and actions, with a personal per-device/workspace preference.
   found. Do not create a duplicate. Standalone CLI receipt:
   [current CLI](verification/2026-10-07-standalone-cli-current.md).
 
+## Live image command acceptance
+
+- Dedicated CLI image-add/remove proposals completed through actual signed-in Safari on Oracle. Mac 1201 rendered the embedded image, then refreshed removal automatically; image bytes remained inside the iCloud TextPack for recovery. [Receipt](verification/2026-10-08-live-agent-image-roundtrip.md). Windows rendering and autonomous model tool selection remain unverified.
+
 ## Agent image placement verification
 
 - Approval-to-TextPack regression coverage now includes gallery, cover and body placement. It reads the committed archive through the actual pack reader, verifies exact original image bytes plus the preview, checks placement and retained title/body, and proves completion-receipt replay does not fetch or rewrite the image.
