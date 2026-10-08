@@ -485,7 +485,7 @@ and actions, with a personal per-device/workspace preference.
 ## Current PC verification and candidate build
 
 - Actual Windows PC full native file/durable sync suite passed against `dbea2f59`, including interrupted move reopening and journal replay/recovery follow-ups. Receipt: `/tmp/texttext-recovery-dbea2f59-pc.log`.
-- A full replacement candidate build is running from `C:\Users\Shokunin\dev\texttext-recovery-dbea2f59`; local SSH process handle `49719`, log `/tmp/texttext-windows-dbea2f59-build.log`. Revalidate the live handle and log before continuing; do not restart merely on timeout. Candidate acceptance is not yet attested.
+- Full replacement candidate build completed successfully from `dbea2f59`: `C:\Users\Shokunin\dev\texttext-recovery-dbea2f59\windows\build\candidate-d789b71104cb45658a8952900b9c961c`. Native Core/Agent, 326 shared-client tests, TypeScript, publish and actual desktop editor/close/activation smoke passed. Receipts: `windows/build/smoke-receipts-9df746c88eb74967be09f6e7577d6fbb` under that source directory; log `/tmp/texttext-windows-dbea2f59-build.log`. Candidate is verified but not installed.
 - Installed PC process 44968 remains running at the standard installed path with an empty window title. Unsaved state is unknown; installation remains pending the already requested save/close. No process was killed or client replaced.
 
 ## Interrupted move session reopening
