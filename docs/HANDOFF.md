@@ -11,7 +11,11 @@
   app remains running with unknown unsaved state.
   [Candidate receipt](verification/2026-10-08-windows-folder-inventory.md).
 
-- Mac `/Applications/TextText.app`: **0.204 (1216)**, source `1ae33f20`.
+- Mac `/Applications/TextText.app`: **0.204 (1217)**, source `4c84df44`.
+  Reference-picker concurrency correction installed; startup, user-package
+  preservation, save, search invalidation and reopen passed.
+  [Current receipt](verification/2026-10-08-mac-1217.md).
+  Previous **0.204 (1216)**, source `1ae33f20`:
   Source/provenance corrections installed; account/iCloud startup, baseline
   content preservation, save, search invalidation and reopen passed.
   [1216 receipt](verification/2026-10-08-mac-1216.md).
@@ -73,7 +77,7 @@
 - Shared parent/document picker now preserves concurrent selection changes
   during delayed identity resolution and ignores obsolete contexts. Browser
   race regressions, full note-template browser checks, ten relevant unit tests
-  and TypeScript passed. Not delivered in installed artifacts yet.
+  and TypeScript passed. Installed in Mac 1217; Oracle and Windows delivery remain.
   [Receipt](verification/2026-10-08-reference-selection-concurrency.md).
 
 - Windows empty folders now enter the native manifest through the same
