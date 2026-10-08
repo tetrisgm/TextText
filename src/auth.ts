@@ -1,7 +1,8 @@
 import NextAuth from "next-auth";
 import type { NextAuthConfig, Profile } from "next-auth";
 import { cookies } from "next/headers";
-import { LINK_INTENT_COOKIE, verifyLinkIntent } from "@/lib/link-intent";
+import { LINK_INTENT_COOKIE } from "@/lib/link-intent";
+import { completeOAuthAccountLink } from "@/lib/oauth-account-link";
 import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
@@ -250,34 +251,24 @@ const authConfig = {
       // they were, with one more way to be them.
       const oauthSubject = account && account.type !== "email" ? oauthSubjectFor(account.provider, account.providerAccountId, profile) : null;
       if (account && account.type !== "email" && oauthSubject) {
-        try {
-          const secret =
-            process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
-          const jar = await cookies();
-          const intentUserId = secret
-            ? verifyLinkIntent(jar.get(LINK_INTENT_COOKIE)?.value, secret)
-            : null;
-          if (
-            intentUserId &&
-            typeof token.userId === "string" &&
-            token.userId === intentUserId
-          ) {
+        const jar = await cookies();
+        const intent = jar.get(LINK_INTENT_COOKIE)?.value;
+        if (intent !== undefined) {
+          // Never turn a failed explicit link into an unrelated sign-in.
+          try {
+            const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+            if (!secret) throw new Error("Auth is not configured");
             const { linkIdentityToUser } = await import("@/lib/store");
-            const outcome = await linkIdentityToUser(intentUserId, oauthSubject);
-            jar.delete(LINK_INTENT_COOKIE);
-            if (outcome === "taken") {
-              // That provider already belongs to another account. Refusing is
-              // the only safe answer: linking would merge strangers, and
-              // switching would silently sign the person out of the account
-              // they pressed Connect from.
-              console.warn("connect refused: subject belongs to another account");
-            }
+            const entries = jar.getAll();
+            const linkedSession = await completeOAuthAccountLink({ intent, secret,
+              cookieHeader: entries.map(({ name, value }) => `${name}=${value}`).join("; "),
+              secure: entries.some(({ name }) => name === "__Secure-authjs.session-token" || name.startsWith("__Secure-authjs.session-token.")),
+              subject: oauthSubject, link: linkIdentityToUser });
             await rememberLastUsedProvider(account.provider);
-            return token;
+            return linkedSession;
+          } finally {
+            jar.delete(LINK_INTENT_COOKIE);
           }
-        } catch (error) {
-          // Fall through to a plain sign-in; never break auth over linking.
-          console.warn("link intent check failed", error);
         }
       }
       if (account?.type === "email") {

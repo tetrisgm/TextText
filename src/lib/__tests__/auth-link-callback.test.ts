@@ -1,0 +1,26 @@
+import { encode } from "@auth/core/jwt";
+import { afterEach, expect, it, vi } from "vitest";
+import { LINK_INTENT_COOKIE, mintLinkIntent } from "../link-intent";
+const mocks=vi.hoisted(()=>({init:vi.fn(),cookies:vi.fn(),link:vi.fn()}));
+vi.mock("next-auth",()=>({default:mocks.init}));
+vi.mock("next/headers",()=>({cookies:mocks.cookies}));
+vi.mock("@/lib/db/client",()=>({db:null}));
+vi.mock("@/lib/store",()=>({linkIdentityToUser:mocks.link}));
+vi.mock("@/lib/auth-email",()=>({createAuthAdapter:vi.fn(),sendTextTextVerificationRequest:vi.fn()}));
+afterEach(()=>vi.unstubAllEnvs());
+it("actual jwt callback links using incoming cookie despite fresh Auth.js token and fails closed",async()=>{
+  vi.stubEnv("AUTH_SECRET","callback-link-fixture");
+  mocks.init.mockReturnValue({handlers:{},auth:vi.fn(),signIn:vi.fn(),signOut:vi.fn()});
+  const name="__Secure-authjs.session-token";
+  const entries=[{name,value:await encode({secret:"callback-link-fixture",salt:name,token:{sub:"apple-original",userId:"owner",email:"owner@example.test"}})}];
+  const jar={get:vi.fn((key:string)=>key===LINK_INTENT_COOKIE?{value:mintLinkIntent("owner","callback-link-fixture")}:undefined),getAll:()=>entries,delete:vi.fn(),set:vi.fn()};
+  mocks.cookies.mockResolvedValue(jar);mocks.link.mockResolvedValue("linked");
+  await import("@/auth");
+  const jwt=mocks.init.mock.calls[0][0]().callbacks.jwt;
+  const args={token:{sub:"new-provider",name:"Provider name"},user:{id:"new-provider"},account:{type:"oauth",provider:"google",providerAccountId:"new-provider"},profile:{sub:"new-provider"}};
+  const result=await jwt(args);
+  expect(result.sub).toBe("apple-original");expect(result.userId).toBe("owner");
+  expect(mocks.link).toHaveBeenCalledWith("owner","google:new-provider");expect(jar.delete).toHaveBeenCalledWith(LINK_INTENT_COOKIE);
+  entries.length=0;mocks.link.mockClear();
+  await expect(jwt(args)).rejects.toThrow("original account");expect(mocks.link).not.toHaveBeenCalled();
+});
