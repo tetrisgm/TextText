@@ -12,7 +12,7 @@ export const SELECTION_INVALID_ERROR =
 export const selectionEnvelopeSchema = z.object({
   itemId: z.string().min(1).max(128),
   field: z.enum(["title", "excerpt", "body"]),
-  revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  revision: z.union([z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), z.string().regex(/^[a-f0-9]{64}$/)]),
   start: z.number().int().nonnegative().max(1_000_000),
   end: z.number().int().nonnegative().max(1_000_000),
   text: z.string().max(MAX_SELECTION_CHARS),
@@ -24,7 +24,7 @@ export const selectionEnvelopeSchema = z.object({
 export type SelectionEnvelope = z.infer<typeof selectionEnvelopeSchema>;
 type Selection = Pick<SelectionEnvelope, "field" | "start" | "end" | "text">;
 type ItemText = {
-  revision?: number;
+  revision?: number | string;
   title: string;
   excerpt?: string | null;
   body: string;
@@ -91,7 +91,7 @@ export async function createSelectionEnvelope(
 ): Promise<SelectionEnvelope | undefined> {
   if (!selection) return undefined;
   if (selection.text.length > MAX_SELECTION_CHARS) throw new Error(SELECTION_BUDGET_ERROR);
-  if (!Number.isSafeInteger(item.revision) || item.revision! < 0) throw new Error(SELECTION_STALE_ERROR);
+  if (!(typeof item.revision === "string" ? /^[a-f0-9]{64}$/.test(item.revision) : Number.isSafeInteger(item.revision) && item.revision! >= 0)) throw new Error(SELECTION_STALE_ERROR);
   const value = { field: selection.field, start: selection.start, end: selection.end, text: selection.text,
     itemId, revision: item.revision!,
     ...(bindSource ? { sourceHash: await sourceHash(item[selection.field] ?? "") } : {}),

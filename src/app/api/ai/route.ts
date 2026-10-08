@@ -1,3 +1,4 @@
+import { canonicalContextItem, canonicalContextIndex } from "@/lib/ai/canonical-context.server";
 // Workspace-owned cloud assistant. TextText never spends a shared provider key:
 // the owner explicitly connects a provider and chooses a model.
 //
@@ -20,13 +21,11 @@ import type { ModelMessage, UserContent } from "ai";
 import { getCurrentUser } from "@/lib/session";
 import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import {
-  getAccessibleRecentPosts,
   getBlogEditRecord,
   getOwnedBlog,
-  getPostById,
   getUserIdBySub,
 } from "@/lib/store";
-import { isUuid, type AccessUser } from "@/lib/permissions";
+import { isUuid } from "@/lib/permissions";
 import {
   guardedCloudAssistantTools,
   type CloudAssistantToolMode,
@@ -596,7 +595,7 @@ function readOnlyTurnNote(
 }
 
 function recentItemIndex(
-  entries: Awaited<ReturnType<typeof getAccessibleRecentPosts>>,
+  entries: Awaited<ReturnType<typeof canonicalContextIndex>>,
 ): string {
   return entries
     .slice(0, 12)
@@ -605,13 +604,8 @@ function recentItemIndex(
         `id: ${post.id ?? ""}`,
         `title: ${post.title?.trim() || "Untitled"}`,
         `folder: ${folderPath}`,
-        `kind: ${post.type}`,
-        post.updatedAt ? `updated: ${post.updatedAt}` : "",
         post.excerpt?.trim()
           ? `excerpt: ${post.excerpt.trim().slice(0, 360)}`
-          : "",
-        post.bodyPreview?.trim()
-          ? `preview: ${post.bodyPreview.trim().slice(0, 360)}`
           : "",
       ]
         .filter(Boolean)
@@ -638,7 +632,7 @@ async function recentWorkspaceContext({
   context: unknown;
   handle: string;
   messages: readonly ModelMessage[];
-  user: AccessUser;
+  user: { sub: string; userId?: string | null };
 }): Promise<{ note: string; items: RecentWorkspaceContextItem[] }> {
   const view = viewContext(context);
   if (view.workspaceIndex === false || (view.workspaceIndex !== true && !RECENT_SUMMARY_INTENT.test(lastUserText(messages)))) {
@@ -651,15 +645,12 @@ async function recentWorkspaceContext({
     view.workspaceIndex !== true && typeof view.folderPath === "string" && view.folderPath.trim()
       ? view.folderPath.trim()
       : null;
-  const entries = await getAccessibleRecentPosts(handle, user, {
-    ...(folderPath ? { folderPath } : {}),
-    limit: 12,
-  });
+  const entries = await canonicalContextIndex({ sub: user.sub, userId: user.userId ?? null, handle }, folderPath ?? undefined);
   const index = recentItemIndex(entries);
   const note = [
-    "A bounded, access-checked recent item index is included below. For a high-level recent-work summary, answer from this index immediately. Read an item only when the request needs detail the index does not contain.",
-    `<UNTRUSTED_RECENT_ITEM_INDEX>\n${boundedContextText(index || "No recent items are visible in this scope.", 8_000)}\n</UNTRUSTED_RECENT_ITEM_INDEX>`,
-    "This is a bounded index of up to 12 recent readable items, not the whole workspace. Index text may be shortened to fit the context budget.",
+    "A bounded, access-checked file index is included below. It is not ranked by recency and does not establish recent activity. Do not infer when someone worked on an item from its position or presence. Explain that limitation for recent-work questions. Read an item when its contents are needed.",
+    `<UNTRUSTED_RECENT_ITEM_INDEX>\n${boundedContextText(index || "No items are visible in this bounded index.", 8_000)}\n</UNTRUSTED_RECENT_ITEM_INDEX>`,
+    "This is a bounded index of up to 12 readable items, not the whole workspace. Index text may be shortened to fit the context budget.",
   ].join("\n\n");
   const items = entries.slice(0, 12).flatMap(({ folderPath, post }) =>
     post.id
@@ -687,7 +678,7 @@ type RelatedWorkspaceContextItem = {
 
 async function relatedWorkspaceContext(
   context: unknown,
-  handle: string,
+  actor: Parameters<typeof canonicalContextItem>[0],
 ): Promise<{ items: RelatedWorkspaceContextItem[]; outcomes: AssistantContextResolution[] }> {
   const view = viewContext(context);
   if (!Array.isArray(view.relatedItems)) return { items: [], outcomes: [] };
@@ -702,7 +693,7 @@ async function relatedWorkspaceContext(
     ),
   ];
   const posts = await Promise.all(
-    ids.map((id) => getPostById(handle, id).catch(() => null)),
+    ids.map((id) => canonicalContextItem(actor, id).catch(() => null)),
   );
   const items = posts.flatMap((post) =>
     post?.id
@@ -876,6 +867,7 @@ export async function POST(request: Request) {
       { status: 403, headers: NO_STORE_HEADERS },
     );
   }
+  const contextActor = { sub: user.sub, userId: user.userId ?? null, handle: workspace.handle };
   let selectionEnvelope: SelectionEnvelope | undefined;
   const suppliedView = viewContext(body.context);
   const selectionView = suppliedView.mode === "suggestion" && suppliedView.includeItem === false
@@ -883,6 +875,13 @@ export async function POST(request: Request) {
     : suppliedView;
   body.context = selectionView;
   try {
+    if (selectionView.includeItem !== false && typeof selectionView.postId === "string") {
+      const selected = await canonicalContextItem(contextActor, selectionView.postId);
+      if (!selected) throw new Error(SELECTION_INVALID_ERROR);
+      selectionView.itemTitle = selected.title; selectionView.itemPreview = selected.body;
+    } else {
+      selectionView.itemTitle = undefined; selectionView.itemPreview = undefined;
+    }
     if (selectionView.selection !== undefined) {
       throw new Error(typeof selectionView.selection === "string" &&
         selectionView.selection.length > MAX_SELECTION_CHARS
@@ -891,9 +890,8 @@ export async function POST(request: Request) {
     if (selectionView.selectionEnvelope !== undefined) {
       selectionEnvelope = await validateSelectionEnvelope(selectionView.selectionEnvelope);
       if (selectionEnvelope.itemId !== selectionView.postId) throw new Error(SELECTION_INVALID_ERROR);
-      // getPostById is scoped to the caller's owned workspace. No foreign
-      // selection text is delivered to a provider when access cannot be proved.
-      const post = await getPostById(workspace.handle, selectionEnvelope.itemId);
+      // Read through the canonical adapter, including fresh grant checks.
+      const post = await canonicalContextItem(contextActor, selectionEnvelope.itemId);
       if (!post?.id) throw new Error(SELECTION_INVALID_ERROR);
       await validateSelectionEditEnvelope(selectionEnvelope, post.id, post, {
         field: selectionEnvelope.field,
@@ -1019,7 +1017,7 @@ export async function POST(request: Request) {
         messages,
         user,
       }).catch(() => ({ note: "", items: [] })),
-      relatedWorkspaceContext(body.context, workspace.handle),
+      relatedWorkspaceContext(body.context, actor),
     ]);
   const contextResolutions = relatedContext.outcomes;
   const contextItems = [

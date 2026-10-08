@@ -653,7 +653,7 @@ export async function applyLiveDocumentMutation(
         update.length <= MAX_UPDATE_CHARS ? update : chunks.map((chunk) => Buffer.from(chunk).toString("base64")),
         loaded.epoch,
         audit,
-        source?.revision ?? checkedRevision,
+        typeof source?.revision === "number" ? source.revision : checkedRevision,
         {
           expectedVersion: loaded.mutationVersion,
           changes: agentTextChanges(beforeSnapshot, documentSnapshotFromYDoc(loaded.document)),
