@@ -18,7 +18,7 @@ type Status = { state: AgentState; message?: string; accountEmail?: string; diag
 type Message = { id: number; role: "user" | "assistant"; text: string };
 type AgentEvent = Partial<Status> & { proposals?: AssistantWriteProposal[]; type: string; taskId?: string; text?: string; tool?: string; path?: string };
 export type NativeAssistantRequest =
-  | { type: "agent"; requestId: number; root: string; target: string; suggestedPrompt?: string }
+  | { type: "agent"; requestId: number; root: string; target: string; suggestedPrompt?: string; imageAssetId?: string }
   | { type: "customize"; requestId: number; taskId: string; root: string; path: string };
 type ActiveTurnFence = { type: "agent" | "customize"; taskId: string; root: string; target: string };
 const MAX_MESSAGES = 50, MAX_TEXT = 24_000, MAX_TOTAL = 120_000;
@@ -82,7 +82,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
     taskRef.current = value;
     setTask(value);
   }, []);
-  const changeTask = useCallback((fence: AgentTaskFence, change: Partial<Pick<AgentTask, "prompt" | "phase">>) => {
+  const changeTask = useCallback((fence: AgentTaskFence, change: Partial<Pick<AgentTask, "prompt" | "phase" | "imageAssetId">>) => {
     try {
       const next = updateAgentTask(localStorage, fence, change);
       if (next && agentTaskMatches(taskRef.current, fence)) acceptTask(next);
@@ -142,7 +142,9 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
       if (!targetPath || request.root !== root || request.target !== targetPath) return;
       try {
         activeTaskFence.current = null;
-        const next = resumeAgentTask(localStorage, root, targetPath, () => crypto.randomUUID());
+        let next = resumeAgentTask(localStorage, root, targetPath, () => crypto.randomUUID());
+        if (request.imageAssetId && next.prompt && next.imageAssetId !== request.imageAssetId) throw new Error("Your previous task for this item is kept. Finish or clear it before describing another photo.");
+        if (request.imageAssetId) next = updateAgentTask(localStorage, next, { imageAssetId: request.imageAssetId, prompt: next.prompt || request.suggestedPrompt || "" }) ?? next;
         acceptTask(next); setCustomizing(null); setCustomizationTaskId(null); setPrompt(next.prompt || request.suggestedPrompt || ""); changeProposal(null);
         setNotice(next.phase === "submitted"
           ? "This task may already have started before TextText closed. It was not sent again. Check the item before sending it again."
@@ -304,6 +306,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
       const refinement = proposal ? `\n\nRefine this pending design for the same file. It has not been saved. Baseline hash: ${proposal.hash}\nPending templateJSON: ${proposal.templateJSON}\nPending templateAuthoringSourceJSON: ${proposal.templateAuthoringSourceJSON ?? "none"}` : "";
       if (selectedPath && !webAssistant) void presence.current?.start(selectedPath, turnFence.taskId);
       await vaultRequest("agentSend", { prompt: text + refinement, scope: "item", customizing: !!customizing,
+        ...(taskFence && taskRef.current?.imageAssetId ? { imageAssetId: taskRef.current.imageAssetId } : {}),
         taskId: turnFence.taskId, ...(selectedPath ? { path: selectedPath } : {}) });
     } catch (error) {
       presence.current?.stop();

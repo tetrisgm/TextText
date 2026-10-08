@@ -1,4 +1,6 @@
 import type { VaultTransport } from "./bridge";
+import type { VaultFile } from "./bridge";
+import { galleryAgentImage } from "./gallery-agent-image";
 
 /** HTTPS adapter for the shared assistant surface with explicit proposal review. No native OAuth is used. */
 export function createWebAssistant(handle: string, read: VaultTransport, fetcher: typeof fetch = fetch,
@@ -28,13 +30,15 @@ export function createWebAssistant(handle: string, read: VaultTransport, fetcher
       const turn = { taskId: params.taskId, controller: new AbortController() }; active = turn;
       const send = (event: Record<string, unknown>) => { if (!closed && active === turn) emit({ ...event, taskId: turn.taskId }); };
       try {
-        const file = await read("read", { path: params.path }, turn.controller.signal) as { markdown: string };
+        const file = await read("read", { path: params.path }, turn.controller.signal) as VaultFile;
         const { packIdentity } = await import("./pack");
         if (closed || active !== turn || turn.controller.signal.aborted) return {};
         const id = packIdentity(file.markdown); if (!id) throw new Error("This item is unavailable.");
+        const attachments = params.imageAssetId === undefined ? undefined : [await galleryAgentImage(file, params.imageAssetId)];
+        if (closed || active !== turn || turn.controller.signal.aborted) return {};
         const response = await fetcher("/api/ai", { method: "POST", credentials: "same-origin", signal: turn.controller.signal,
           headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceHandle: handle, stream: true,
-            messages: [...history, { role: "user", content: prompt }], context: { postId: id, includeItem: true, mode: reviewWrites ? "workspace_review" : "read_only" } }) });
+            messages: [...history, { role: "user", content: prompt }], context: { postId: id, includeItem: true, mode: reviewWrites ? "workspace_review" : "read_only", ...(attachments ? { attachments } : {}) } }) });
         if (!response.ok || !response.body) throw new Error("The workspace assistant could not start. Check its provider connection.");
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "", total = 0, complete = false;
         try {

@@ -2047,6 +2047,9 @@ try {
   assert.ok(galleryTask.includes(JSON.stringify(editedGallery.content.assets[0].id)));
   assert.ok(galleryTask.includes("asset_metadata"));
   assert.ok(galleryTask.includes("do not invent"));
+  const savedPhotoTask = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("texttext:agent-task:")).map(key => JSON.parse(localStorage.getItem(key))).find(task => task.target === "Gallery/Pair.textpack"));
+  assert.equal(savedPhotoTask.imageAssetId, editedGallery.content.assets[0].id);
+  assert.equal(savedPhotoTask.prompt, galleryTask);
   assert.equal(agentSendCount, sendsBeforeGalleryTask);
   assert.equal(await collected.count(), 0);
   await page.getByRole("button", { name: "Close assistant" }).click();

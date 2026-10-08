@@ -31,6 +31,21 @@
 
 ## Current work
 
+- Hosted Gallery tasks now pass the exact selected embedded image through the
+  existing AI attachment input. A bounded JPEG preview is prepared without
+  fetching source URLs or changing original bytes. Missing/ambiguous images
+  fail explicitly, and cancellation during decode cannot send a request.
+  Selected photo ID and suggested prompt persist in the item task through
+  restart/phase changes; a different photo cannot overwrite an existing draft.
+  Seventeen unit tests, TypeScript, the full rebuilt offline UI fixture and
+  Gallery browser gate passed. Browser conversion verifies the selected blue
+  image rather than its red neighbor, width 1600, byte bound, preserved source
+  and cancelled-decode fencing. Logs: `/tmp/texttext-gallery-vision-unit.log`,
+  `/tmp/texttext-gallery-vision-context-browser.log`,
+  `/tmp/texttext-gallery-vision-browser-gate.log`. Source changes remain
+  uninstalled/undeployed. Actual configured-provider generation and approval
+  still require end-to-end acceptance; these tests do not prove model output.
+
 - Gallery inspector now has Describe with agent. It closes the viewer and
   opens an editable task for that TextPack and exact stable photo asset ID,
   preserving neighboring assets and requiring actual visual inspection before

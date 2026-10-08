@@ -80,7 +80,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   onCreateCard?: (title: string, body: string, tags: string[], images: File[], color: NoteColor, onCreated: () => void, icon?: string) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   onAskBookmarkAgent?: (path: string, question: string) => void;
-  onAskGalleryAgent?: (path: string, task: string) => void;
+  onAskGalleryAgent?: (path: string, task: string, imageAssetId?: string) => void;
   folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
 }) {
   const [page, setPage] = useState(0);

@@ -12,7 +12,7 @@ export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sha
   onCreateNote?: (pastedText?: string) => void;
   onCreateCard?: (title: string, body: string, tags: string[], images: File[], color: NoteColor, onCreated: () => void, icon?: string) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
-  onAskBookmarkAgent?: (path: string, question: string) => void; onAskGalleryAgent?: (path: string, task: string) => void;
+  onAskBookmarkAgent?: (path: string, question: string) => void; onAskGalleryAgent?: (path: string, task: string, imageAssetId?: string) => void;
   onCustomize?: (path: string) => void;
   onCloseDesign?: () => void;
 }) {

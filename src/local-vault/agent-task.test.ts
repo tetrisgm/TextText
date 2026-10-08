@@ -54,6 +54,13 @@ describe("local item agent task", () => {
 });
 
 import { agentTaskTitle } from "./agent-task";
+it("restores the selected photo with its item task and preserves it through phase changes", () => {
+  const storage = memoryStorage(), task = createAgentTask("/Photos", "Gallery/A.textpack", "photo-task");
+  writeAgentTask(storage, { ...task, imageAssetId: "selected-photo", prompt: "Describe it" });
+  expect(resumeAgentTask(storage, task.root, task.target, () => "new")).toMatchObject({ imageAssetId: "selected-photo", prompt: "Describe it" });
+  expect(updateAgentTask(storage, task, { phase: "submitted" })).toMatchObject({ imageAssetId: "selected-photo" });
+  expect(readAgentTask(storage, "/Other", task.target)).toBeNull();
+});
 it("uses saved target title without relabeling a running task after selection changes", () => {
   expect(agentTaskTitle("Notes/Untitled5.textpack", { path: "Notes/Untitled5.textpack", title: "Saved note title" })).toBe("Saved note title");
   expect(agentTaskTitle("Notes/Untitled5.textpack", { path: "Notes/Other.textpack", title: "Other saved title" })).toBe("Untitled5");

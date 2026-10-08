@@ -6,6 +6,7 @@ const PREFIX = "texttext:agent-task:";
 
 export type AgentTaskPhase = "draft" | "connecting" | "submitted";
 export type AgentTask = {
+  imageAssetId?: string;
   version: 1;
   taskId: string;
   root: string;
@@ -32,10 +33,11 @@ function cleanTask(value: unknown, root: string, target: string): AgentTask | nu
   const savedRoot = boundedText(candidate.root, 4096);
   const savedTarget = boundedText(candidate.target, 4096);
   const prompt = boundedText(candidate.prompt, MAX_AGENT_TASK_LENGTH);
+  if (candidate.imageAssetId !== undefined && (typeof candidate.imageAssetId !== "string" || !candidate.imageAssetId || candidate.imageAssetId.length > 120)) return null;
   if (candidate.version !== 1 || !taskId || savedRoot !== root || savedTarget !== target || prompt === null ||
       !["draft", "connecting", "submitted"].includes(candidate.phase ?? "") ||
       typeof candidate.updatedAt !== "number" || !Number.isFinite(candidate.updatedAt)) return null;
-  return { version: 1, taskId, root, target, prompt, phase: candidate.phase as AgentTaskPhase, updatedAt: candidate.updatedAt };
+  return { version: 1, taskId, root, target, prompt, phase: candidate.phase as AgentTaskPhase, updatedAt: candidate.updatedAt, ...(candidate.imageAssetId ? { imageAssetId: candidate.imageAssetId } : {}) };
 }
 
 export function readAgentTask(storage: Pick<Storage, "getItem">, root: string, target: string): AgentTask | null {
@@ -78,7 +80,7 @@ export function agentTaskMatches(task: AgentTask | null, fence: AgentTaskFence):
 export function updateAgentTask(
   storage: Pick<Storage, "getItem" | "setItem">,
   fence: AgentTaskFence,
-  change: Partial<Pick<AgentTask, "prompt" | "phase">>,
+  change: Partial<Pick<AgentTask, "prompt" | "phase" | "imageAssetId">>,
   updatedAt = Date.now(),
 ): AgentTask | null {
   const current = readAgentTask(storage, fence.root, fence.target);
