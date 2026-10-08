@@ -75,3 +75,20 @@ core assertions: `/tmp/texttext-queued-move-native-gate.log`. The store-mode
 Swift run regenerated `Package.resolved` without Sparkle; that generated change
 was restored to the recorded release dependency file. This is working-tree
 verification, not a frozen release attestation.
+
+## Active shared editor orderings
+
+Additional source regressions verify that a remote move never relocates or
+snapshot-uploads a file owned by an active shared editor. Windows acknowledges
+its projected edit at the old local path, releases the editor, then adopts the
+remote path with no duplicate upload, including after restart. The Mac retains
+an unacknowledged shared projection at its original local path across closing
+and restart; only its explicit shared acknowledgement permits subsequent path
+adoption. Another restart preserves the acknowledged bytes and convergence.
+A separate clean Mac editor ownership test also passes.
+
+Verified on the Mac: 32 sync tests (`/tmp/texttext-active-move-mac.log`),
+14 shared-editing tests (`/tmp/texttext-active-move-shared-mac.log`), and
+174 portable Windows core assertions (`/tmp/texttext-active-move-windows.log`).
+These use real native local journals/stores with fixture transports. Live server
+sessions, platform installs and shared folder controls remain unverified.

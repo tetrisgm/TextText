@@ -584,6 +584,34 @@ final class LocalVaultSyncTests: XCTestCase {
     func testQueuedMoveDefersUntilFreshPermissionReturns() async throws { try await verifyQueuedMoveOrdering("denied") }
     func testQueuedMoveReplaysLostAcknowledgement() async throws { try await verifyQueuedMoveOrdering("lost-ack") }
 
+    func testRemoteMoveDefersWhileSharedEditorOwnsFile() async throws {
+        let original = try pack("Initial")
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        let session = try await sync.beginSharedEditing(itemId: itemId, path: path,
+            expectedHash: TextTextStableDigest.sha256Hex(original))
+        let movedPath = "Archive/Active/Note.textpack"
+        _ = try await transport.rename(itemId: itemId, from: path, to: movedPath,
+            baseRevision: TextTextStableDigest.sha256Hex(original), operationId: UUID().uuidString)
+        let before = await transport.operations().count
+        let held = try await sync.sync()
+        XCTAssertTrue(held.errors.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(movedPath).path))
+        let during = await transport.operations().count
+        XCTAssertEqual(during, before)
+        try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let released = try await sync.sync()
+        XCTAssertTrue(released.errors.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(movedPath)), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        _ = try await engine(transport).sync()
+        let after = await transport.operations().count
+        XCTAssertEqual(after, before)
+    }
+
     func testRemoteDeletionCannotEraseAnOfflineEdit() async throws {
         let original = try pack("Initial")
         let edited = try pack("Offline edit")

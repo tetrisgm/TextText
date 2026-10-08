@@ -156,6 +156,15 @@ static class Test
   else if(ordering=="permission-revoked")Assert(qEngine.Status.Pending==1&&File.Exists(qStore.Resolve(qFile.Path))&&qRemote.UploadCount==1,"queued move waits when fresh permissions deny the upload");
   else Assert(qEngine.Status.Pending==0&&qEngine.Status.Error==null&&File.Exists(qStore.Resolve("After/Note.textpack"))&&!File.Exists(qStore.Resolve(qFile.Path))&&TextPackStore.Markdown(qRemote.Data).Contains("Queued edit"),"queued move converges after "+ordering);
  }
+ var activeMoveStore=new TextPackStore(Path.Combine(temp,"active-remote-move"),Path.Combine(temp,"active-remote-move-state"));var activeFile=activeMoveStore.Write("Before/Active.textpack",Pack("baseline","active-move"));var activeRemote=new Fake();var activeEngine=new SyncEngine(activeMoveStore,activeRemote);await activeEngine.SyncAsync();
+ using(var lease=await activeEngine.AcquireCollaborationAsync(activeFile.ItemId)) {
+  activeRemote.Item=activeRemote.Item! with{RelativePath="After/Active.textpack"};
+  var projected=activeMoveStore.UpdateMarkdown(activeFile.Path,TextPackStore.Markdown(activeMoveStore.Read(activeFile.Path))+"\nShared edit",activeMoveStore.Describe(activeFile.Path).Hash);
+  await activeEngine.SyncAsync();Assert(activeRemote.UploadCount==1&&File.Exists(activeMoveStore.Resolve(activeFile.Path))&&!File.Exists(activeMoveStore.Resolve("After/Active.textpack")),"remote move does not relocate or upload active shared editor projection");
+  activeRemote.Data=activeMoveStore.Read(activeFile.Path);activeRemote.Item=activeRemote.Item with{Revision=projected.Hash};await activeEngine.AcknowledgeCheckpointAsync(activeFile.ItemId,activeFile.Path,projected.Hash,projected.Hash);
+ }
+ await activeEngine.SyncAsync();Assert(activeRemote.UploadCount==1&&File.Exists(activeMoveStore.Resolve("After/Active.textpack"))&&TextPackStore.Markdown(activeMoveStore.Read("After/Active.textpack")).Contains("Shared edit")&&!File.Exists(activeMoveStore.Resolve(activeFile.Path)),"acknowledged shared edit adopts moved path after editor release without duplicate upload");
+ await new SyncEngine(activeMoveStore,activeRemote).SyncAsync();Assert(activeRemote.UploadCount==1,"released shared editor move stays converged across restart");
  var crashMoveStore=new TextPackStore(Path.Combine(temp,"remote-move-crash"),Path.Combine(temp,"remote-move-crash-state"));var crashMoveFile=crashMoveStore.Write("Before/Note.textpack",Pack("baseline","move-crash"));var crashMoveRemote=new Fake();await new SyncEngine(crashMoveStore,crashMoveRemote).SyncAsync();
  crashMoveRemote.Item=crashMoveRemote.Item! with{RelativePath="After/Note.textpack"};crashMoveStore.UpdateMarkdown(crashMoveFile.Path,TextPackStore.Markdown(crashMoveStore.Read(crashMoveFile.Path))+"\nDurable edit",crashMoveStore.Describe(crashMoveFile.Path).Hash);
  crashMoveStore.Rename(crashMoveFile.Path,"After/Note.textpack",crashMoveStore.Describe(crashMoveFile.Path).Hash);

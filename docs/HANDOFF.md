@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Active-editor remote-move regressions passed: 32 Mac sync tests, 14 Mac
+  shared-editing tests and 174 Windows core assertions. Pending shared projection
+  remains protected across restart; acknowledged bytes adopt the remote path
+  after editor release without duplicate upload. Source fixtures only. Shared
+  folder controls, frozen builds and live multi-client acceptance remain next.
+  [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+
 - Mac persisted uploads now adopt path-only remote moves with bounded identity
   indexing, fresh permission and base/lifecycle checks, preserving staged
   attribution and later edits under a new operation identity. All 31 sync tests
