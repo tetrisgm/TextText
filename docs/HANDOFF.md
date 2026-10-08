@@ -44,6 +44,10 @@
   mixed item/folder/photo/customization requests, and exposes creation tools
   within that boundary. All 16 controller tests passed; log
   `/tmp/texttext-explicit-agent-folder.log`. UI/Windows wiring is pending.
+  Shared draft storage now separates item/folder scope, preserves root-folder
+  drafts and fences late updates by scope; 7 regressions and TypeScript passed
+  (`/tmp/texttext-agent-task-scope.log`, `/tmp/texttext-agent-task-scope-types.log`).
+  Folder action/send wiring and Windows folder tools are still pending.
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.

@@ -10,6 +10,21 @@ function memoryStorage() {
 }
 
 describe("local item agent task", () => {
+  it("separates folder drafts from item drafts and preserves the workspace-root folder", () => {
+    const storage = memoryStorage();
+    const item = createAgentTask("/Workspace", "Notes", "item");
+    const folder = createAgentTask("/Workspace", "Notes", "folder", 1, "folder");
+    writeAgentTask(storage, { ...item, prompt: "Edit this item" });
+    writeAgentTask(storage, { ...folder, prompt: "Create notes here" });
+    expect(readAgentTask(storage, item.root, item.target)?.prompt).toBe("Edit this item");
+    expect(resumeAgentTask(storage, folder.root, folder.target, () => "other", "folder")).toMatchObject({ taskId: "folder", prompt: "Create notes here", scope: "folder" });
+    expect(agentTaskMatches(folder, { ...folder, scope: "item" })).toBe(false);
+    expect(updateAgentTask(storage, { ...folder, scope: "item" }, { prompt: "wrong scope" })).toBeNull();
+    expect(updateAgentTask(storage, folder, { imageAssetId: "item-photo" })).toBeNull();
+    const root = createAgentTask("/Workspace", "", "root-folder", 1, "folder");
+    writeAgentTask(storage, root);
+    expect(readAgentTask(storage, root.root, "", "folder")?.taskId).toBe("root-folder");
+  });
   it("keeps each draft fenced by workspace, target, and task id", () => {
     const storage = memoryStorage();
     const first = createAgentTask("/Writing", "Notes/One.textpack", "task-one", 1);
