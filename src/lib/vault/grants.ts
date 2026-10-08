@@ -1,10 +1,10 @@
 // File-vault authorization metadata. Legacy collaborators.scope_id points to
 // database posts/folders; it must never authorize a portable TextPack identity.
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { auditValues } from "@/lib/audit";
 import { db } from "@/lib/db/client";
-import { actionAudit, users, vaultGrants } from "@/lib/db/schema";
+import { actionAudit, blogs, collaborators, users, vaultGrants } from "@/lib/db/schema";
 import { isItemShareRole, isUuid, normalizeAccessEmail, isValidAccessEmail, type ItemShareRole } from "@/lib/permissions";
 import { validVaultFolderPath, validVaultItemId, vaultFolderSignature } from "./folder-identity";
 
@@ -68,6 +68,24 @@ export async function candidateVaultSharedWorkspaces(userId: string): Promise<st
     .where(and(isNull(vaultGrants.revokedAt), identity)).limit(101);
   if (rows.length > 100) throw new Error("Too many shared workspaces to list");
   return rows.map(row => row.workspaceId);
+}
+
+/** Candidate identities only; each must still pass fresh workspace authorization.
+ * Include full memberships and every owned workspace, not just file invitations. */
+export async function candidateVaultAccountWorkspaces(userId: string): Promise<{ owned: string[]; shared: string[] }> {
+  if (!db || !isUuid(userId)) return { owned: [], shared: [] };
+  const [account] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!account) return { owned: [], shared: [] };
+  const email = account.email ? normalizeAccessEmail(account.email) : "";
+  const identity = email ? or(eq(collaborators.userId, userId), and(isNull(collaborators.userId), eq(collaborators.invitedEmail, email)))
+    : eq(collaborators.userId, userId);
+  const owned = await db.select({ id: blogs.id }).from(blogs)
+    .where(and(eq(blogs.ownerId, userId), isNull(blogs.deletedAt))).orderBy(asc(blogs.createdAt), asc(blogs.id)).limit(101);
+  const memberships = await db.selectDistinct({ id: collaborators.scopeId }).from(collaborators)
+    .where(and(eq(collaborators.scopeType, "workspace"), isNull(collaborators.revokedAt), identity)).limit(101);
+  const shared = [...new Set([...memberships.map(row => row.id), ...await candidateVaultSharedWorkspaces(userId)])];
+  if (owned.length > 100 || shared.length > 100) throw new Error("Too many workspaces to list");
+  return { owned: owned.map(row => row.id), shared };
 }
 
 export function roleForVaultItem(grants: readonly ActiveVaultGrant[], itemId: string, relativePath: string): ItemShareRole | null {

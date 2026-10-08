@@ -89,4 +89,24 @@ describe.skipIf(!enabled)("file-vault grants against local Postgres", () => {
     ));
     expect(rows.map(row => row.actionName)).toEqual(["vault.share.invite", "vault.share.role", "vault.share.revoke"]);
   });
+
+  it("discovers the owned workspace and only current account workspace invitations", async () => {
+    const membership = randomUUID();
+    try {
+      expect((await grants.candidateVaultAccountWorkspaces(ownerId)).owned).toEqual([workspaceId]);
+      expect((await grants.candidateVaultAccountWorkspaces(memberId)).shared).not.toContain(otherWorkspaceId);
+      await db.insert(schema.collaborators).values({ id: membership, scopeType: "workspace", scopeId: otherWorkspaceId,
+        invitedEmail: email, role: "member", invitedById: otherOwnerId });
+      expect((await grants.candidateVaultAccountWorkspaces(memberId)).shared).toContain(otherWorkspaceId);
+      // A claimed invitation cannot be discovered using a different account's email.
+      await db.update(schema.collaborators).set({ userId: ownerId }).where(eq(schema.collaborators.id, membership));
+      expect((await grants.candidateVaultAccountWorkspaces(memberId)).shared).not.toContain(otherWorkspaceId);
+      expect((await grants.candidateVaultAccountWorkspaces(ownerId)).shared).toContain(otherWorkspaceId);
+      await db.update(schema.collaborators).set({ revokedAt: new Date() }).where(eq(schema.collaborators.id, membership));
+      expect((await grants.candidateVaultAccountWorkspaces(ownerId)).shared).not.toContain(otherWorkspaceId);
+      expect((await grants.candidateVaultAccountWorkspaces(memberId)).shared).not.toContain(itemId);
+    } finally {
+      await db.delete(schema.collaborators).where(eq(schema.collaborators.id, membership));
+    }
+  });
 });
