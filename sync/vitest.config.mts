@@ -4,6 +4,7 @@ import base from '../vitest.config';
 export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
+    "src/local-vault/reference-choices.test.ts",
     'src/components/document/__tests__/field-input-advanced.test.tsx',
     "src/lib/__tests__/agent-command-access.test.ts",
     "src/lib/__tests__/agent-commands-cli-route.test.ts",
