@@ -1201,7 +1201,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
           {selected && <div className="vault-editor-actions workspace-action-bar-host">
             <div className="workspace-action-bar-slot is-right" />
           </div>}
-          {selected && allowFolderPicker && <LocalParticipantsRow postId={selected.path} />}
+          {selected && (allowFolderPicker || webAssistant) && <LocalParticipantsRow postId={selected.path} />}
           {selected && !selectedStory && canOpenComments && <button ref={commentsButton} type="button" aria-expanded={commentsOpen} aria-controls="vault-comments-panel"
             disabled={busy} onClick={() => setCommentsOpen(value => !value)}>Comments</button>}
           {canShare && sharingWorkspaceId && (selected || destinationFolder.trim()) && !selectedStory && <button disabled={busy} onClick={shareCurrent}>Share</button>}
@@ -1386,7 +1386,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         onEditNote={canCreate ? (path) => void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true) : undefined}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
-        onAskBookmarkAgent={allowFolderPicker ? askBookmarkAgent : undefined}
+        onAskBookmarkAgent={allowFolderPicker || webAssistant ? askBookmarkAgent : undefined}
         designOpen={folderDesignOpen}
         onCustomize={allowFolderPicker ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}
