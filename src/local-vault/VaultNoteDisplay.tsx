@@ -1,6 +1,6 @@
-import { NoteIcon } from "@/components/document/NoteIconControl";
 "use client";
 
+import { NoteIcon } from "@/components/document/NoteIconControl";
 import { useLayoutEffect, useRef, useState } from "react";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { noteCardIdFromHref } from "@/lib/note-card-links";
