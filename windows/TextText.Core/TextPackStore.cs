@@ -34,6 +34,19 @@ public sealed class TextPackStore
         if (!full.StartsWith(Root.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new IOException("Path leaves workspace.");
         CheckLinks(full); return full;
     }
+    // Manifest directories are additive; omitted directories and their contents remain.
+    public void EnsureFolders(IReadOnlyList<string> folders) {
+        if(folders.Count>20000)throw new IOException("Too many workspace folders.");
+        lock(gate)foreach(var path in folders) {
+            if(path.Length>1024||path.Split('/').Any(p=>p.StartsWith('.')||p.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase)))throw new IOException("Invalid workspace folder.");
+            _=Resolve(path);var current=Root;
+            foreach(var part in path.Split('/')) {
+                current=System.IO.Path.Combine(current,part);CheckLinks(current);
+                if(File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(current)!,"."+part+".icloud")))throw new IOException("Folder is awaiting download.");
+                Directory.CreateDirectory(current);CheckLinks(current);
+            }
+        }
+    }
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     public byte[] Read(string path) { lock(gate) return File.ReadAllBytes(Resolve(path)); }
     public PackFile Describe(string path) { var bytes = Read(path); return new(path, Hash(bytes), Identity(bytes)); }

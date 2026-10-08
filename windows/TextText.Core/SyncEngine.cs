@@ -4,6 +4,7 @@ public sealed record RemoteItem(string ItemId,string RelativePath,string Revisio
 public sealed record RemotePack(byte[] Data,string RelativePath,string Revision);
 public interface ISyncTransport
 {
+    IReadOnlyList<string> Folders => [];
     Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default);
     Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default);
     Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default);
@@ -65,6 +66,9 @@ public sealed class SyncEngine
             if(localChangesOnly&&!HasLocalWork(state,local)) {Report(false,StateError(state),state.Outbox.Count);return;}
             await Drain(state,cancellation);
             var remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);
+            if(transport.Folders.Count>20000)throw new IOException("Too many workspace folders.");
+            var folderError=false;
+            foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
             foreach(var pair in state.Items.ToArray()) {
                 cancellation.ThrowIfCancellationRequested();var id=pair.Key;if(IsEditing(id)||Blocked(state,id))continue;var baseline=pair.Value;var intent=store.Intent(id);
                 local.TryGetValue(id,out var file); remote.TryGetValue(id,out var server);
@@ -97,7 +101,7 @@ public sealed class SyncEngine
             }
             foreach(var item in remote.Values.Where(x=>!store.LastScanErrors.Any(e=>e.ItemId==x.ItemId||e.Path=="."||e.Path==x.RelativePath||x.RelativePath.StartsWith(e.Path+"/",StringComparison.OrdinalIgnoreCase)) && !IsEditing(x.ItemId) && !Blocked(state,x.ItemId) && !x.Deleted && !local.ContainsKey(x.ItemId) && !state.Items.ContainsKey(x.ItemId))) await Pull(state,item.ItemId,null,cancellation);
             foreach(var pending in state.Items.Where(x=>x.Value.Refresh).ToArray()) { if(IsEditing(pending.Key)||Blocked(state,pending.Key))continue;var current=store.Describe(pending.Value.Path); if(current.Hash==pending.Value.Hash) await Pull(state,pending.Key,current,cancellation); }
-            Report(false,StateError(state),state.Outbox.Count);
+            Report(false,StateError(state)??(folderError?"A workspace folder could not be opened. Other files continue syncing.":null),state.Outbox.Count);
         } catch(Exception error) { Report(false,error.Message,state?.Outbox.Count??0);throw; } finally {gate.Release();}
     }
     string? StateError(State state)=>state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;

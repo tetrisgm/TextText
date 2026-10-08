@@ -27,11 +27,13 @@ public sealed class HttpSyncTransport : ISyncTransport
         using var output=new MemoryStream();using var input=await response.Content.ReadAsStreamAsync(ct);var buffer=new byte[65536];int count;
         while((count=await input.ReadAsync(buffer,ct))>0){if(output.Length+count>64*1024*1024)throw new InvalidDataException("Remote file too large.");output.Write(buffer,0,count);}return output.ToArray();
     }
-    sealed record Manifest(RemoteItem[] Items,RemoteItem[]? Tombstones);
+    public IReadOnlyList<string> Folders {get;private set;}=[];
+    sealed record Manifest(RemoteItem[] Items,RemoteItem[]? Tombstones,string[]? Folders);
     public async Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default) {
         using var response=await Send(()=>{var r=new HttpRequestMessage(HttpMethod.Get,endpoint);if(etag!=null)r.Headers.TryAddWithoutValidation("If-None-Match",etag);return r;},cancellation);
         if(response.StatusCode==HttpStatusCode.NotModified)return cached;
         var manifest=JsonSerializer.Deserialize<Manifest>(await Bytes(response,cancellation),Json)??throw new InvalidDataException("Invalid manifest.");
+        Folders=manifest.Folders??[];
         cached=manifest.Items.Concat((manifest.Tombstones??[]).Select(x=>x with{Deleted=true})).ToArray();etag=response.Headers.ETag?.ToString();return cached;
     }
     Uri Item(string id)=>new(endpoint+"/"+Uri.EscapeDataString(id));

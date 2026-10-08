@@ -37,11 +37,14 @@ public enum LocalVaultSyncFailure: Error, LocalizedError {
 
 public protocol LocalVaultSyncTransport: Sendable {
     func manifest() async throws -> [LocalVaultRemoteItem]
+    func folders() async -> [String]
     func download(itemId: String) async throws -> LocalVaultRemotePack
     func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String
     func rename(itemId: String, from: String, to: String, baseRevision: String, operationId: String) async throws -> String
     func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws
 }
+
+public extension LocalVaultSyncTransport { func folders() async -> [String] { [] } }
 
 /// Bearer credentials live only in this transport, never in vault files.
 public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
@@ -49,6 +52,8 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private var token: String
     private let session: URLSession
     private var manifestETag: String?
+    private var cachedFolders: [String] = []
+    public func folders() -> [String] { cachedFolders }
     private var cachedManifest: [LocalVaultRemoteItem] = []
 
     public init(origin: URL, workspaceId: String, token: String, session: URLSession = .shared) throws {
@@ -81,6 +86,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         struct Manifest: Decodable {
             let items: [LocalVaultRemoteItem]
             let tombstones: [LocalVaultRemoteItem]?
+            let folders: [String]?
         }
         var url = endpoint
         if wait {
@@ -97,7 +103,9 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         let manifest = (decoded.items + (decoded.tombstones ?? []).map {
             LocalVaultRemoteItem(itemId: $0.itemId, relativePath: $0.relativePath, revision: $0.revision, deleted: true)
         }).sorted { $0.itemId < $1.itemId }
-        let changed = manifest != cachedManifest
+        let folders = (decoded.folders ?? []).sorted()
+        let changed = manifest != cachedManifest || folders != cachedFolders
+        cachedFolders = folders
         cachedManifest = manifest
         manifestETag = response.value(forHTTPHeaderField: "ETag")
         return changed

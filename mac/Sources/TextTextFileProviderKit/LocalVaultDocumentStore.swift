@@ -67,6 +67,28 @@ public struct LocalVaultDocumentStore: Sendable {
         return target
     }
 
+    /// Add manifest directories only; absence is never a deletion instruction.
+    public func ensureFolders(_ folders: [String]) throws {
+        guard folders.count <= 20_000 else { throw Failure.invalidPath }
+        for path in folders {
+            let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+            guard !parts.isEmpty, path.utf8.count <= 1024,
+                  parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") && !$0.contains(":") && !$0.hasSuffix(" ") && !$0.hasSuffix(".") && !$0.lowercased().hasSuffix(".textpack") }) else { throw Failure.invalidPath }
+            var current = root
+            for part in parts {
+                current.appendPathComponent(String(part), isDirectory: true)
+                let placeholder = current.deletingLastPathComponent().appendingPathComponent(".\(part).icloud")
+                guard !FileManager.default.fileExists(atPath: placeholder.path) else { throw Failure.invalidPath }
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: current.path) {
+                    guard attrs[.type] as? FileAttributeType == .typeDirectory else { throw Failure.invalidPath }
+                } else {
+                    try FileManager.default.createDirectory(at: current, withIntermediateDirectories: false)
+                }
+                guard current.standardizedFileURL.resolvingSymlinksInPath().path == current.standardizedFileURL.path else { throw Failure.invalidPath }
+            }
+        }
+    }
+
     public func list() throws -> [String] {
         let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
         guard let enumerator = FileManager.default.enumerator(at: root,

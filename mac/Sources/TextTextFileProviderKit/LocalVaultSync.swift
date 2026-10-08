@@ -521,6 +521,12 @@ public actor LocalVaultSync {
             catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
         }
         let manifest = try await transport.manifest()
+        let folders = await transport.folders()
+        guard folders.count <= 20_000 else { throw LocalVaultSyncFailure.invalidResponse }
+        for folder in folders {
+            do { try LocalVaultDocumentStore(root: root).ensureFolders([folder]) }
+            catch { report.errors.append("A workspace folder could not be opened. Other files continue syncing.") }
+        }
         var remoteByID: [String: LocalVaultRemoteItem] = [:]
         var remotePaths = Set<String>()
         for item in manifest {

@@ -11,6 +11,31 @@ final class LocalVaultSyncTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
+    func testRemoteEmptyFoldersAreAdditiveAndRejectUnsafePaths() async throws {
+        let transport = FakeVaultTransport()
+        await transport.setFolders(["Feeds", "Research/Empty"])
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Research/Empty").path))
+        await transport.setFolders([])
+        _ = try await sync.sync()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Feeds").path))
+        let store = LocalVaultDocumentStore(root: root)
+        for path in ["../escape", ".texttext/cache", "Notes//bad", "Fake.textpack/child"] { XCTAssertThrowsError(try store.ensureFolders([path])) }
+        try Data("keep".utf8).write(to: root.appendingPathComponent("Occupied"))
+        XCTAssertThrowsError(try store.ensureFolders(["Occupied/child"]))
+        await transport.setFolders(["Occupied/child", "Another empty"])
+        await transport.set(itemId: itemId, path: path, data: try pack("remote survives folder collision"))
+        let collisionReport = try await sync.sync()
+        XCTAssertFalse(collisionReport.errors.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Another empty").path))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Linked"), withDestinationURL: root.appendingPathComponent("Feeds"))
+        XCTAssertThrowsError(try store.ensureFolders(["Linked/child"]))
+        try Data().write(to: root.appendingPathComponent(".Pending.icloud"))
+        XCTAssertThrowsError(try store.ensureFolders(["Pending"]))
+    }
+
     private func pack(_ body: String) throws -> Data {
         let temporary = root.appendingPathComponent(".fixture-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
@@ -436,6 +461,9 @@ final class LocalVaultSyncTests: XCTestCase {
 }
 
 private actor FakeVaultTransport: LocalVaultSyncTransport {
+    private var remoteFolders: [String] = []
+    func folders() -> [String] { remoteFolders }
+    func setFolders(_ value: [String]) { remoteFolders = value }
     private var items: [String: LocalVaultRemotePack] = [:]
     private var receipts: [String: String] = [:]
     private var tombstones: [String: LocalVaultRemoteItem] = [:]
