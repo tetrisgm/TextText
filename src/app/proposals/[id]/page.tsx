@@ -41,11 +41,11 @@ export default async function ProposalReviewPage({ params }: { params: Promise<{
         <h1 className="connect-title">{proposal.title}</h1>
         {proposal.origin?.surface === "hosted_mcp" && <p>Requested by connected agent: {proposal.origin.connectionName}</p>}
         <p>{proposal.summary}</p>
-        <details open>
-          <summary>Exact proposed change</summary>
+        <p role="status">{proposal.status === "completed" ? "Change applied." : proposal.status === "pending" ? "Waiting for your approval. Nothing has been changed." : proposal.status === "denied" ? "Change dismissed." : proposal.status === "expired" ? "This proposal has expired. Ask your agent for a new proposal." : proposal.status === "executing" ? "Applying your change." : "This change could not be applied."}</p>
+        <details>
+          <summary>Technical details</summary>
           <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: "50vh", overflow: "auto" }}>{JSON.stringify(proposal.arguments, null, 2)}</pre>
         </details>
-        <p role="status">{proposal.status === "completed" ? "Change applied." : proposal.status === "pending" ? "Waiting for your approval. Nothing has been changed." : `Proposal status: ${proposal.status}.`}</p>
         {proposal.status !== "completed" && proposal.receipt && <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{proposal.receipt.text}</pre>}
         {proposal.status === "pending" && (
           <div style={{ display: "flex", gap: 8 }}>

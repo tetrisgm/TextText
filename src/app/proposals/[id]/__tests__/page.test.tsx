@@ -38,10 +38,23 @@ describe("owner proposal review page", () => {
     const tree = await Page({ params });
     const html = renderToStaticMarkup(tree);
     expect(html).toContain('role="status">Change applied.</p>');
-    expect(html).toContain("Exact proposed change");
+    expect(html).toContain("Technical details");
+    expect(html).not.toContain("<details open");
     expect(html).toContain("Approved text");
     for (const internal of ["internal-item-id", "Notes/internal.textpack", "internal-revision-hash", "Proposal status: completed", "written"]) expect(html).not.toContain(internal);
     expect(forms(tree)).toHaveLength(0);
+  });
+  it.each([
+    ["denied", "Change dismissed."],
+    ["expired", "This proposal has expired. Ask your agent for a new proposal."],
+    ["executing", "Applying your change."],
+    ["failed", "This change could not be applied."],
+  ])("explains %s without internal status terminology", async (status, message) => {
+    mocks.read.mockResolvedValue({ id, title: "Update item", summary: "Review replacement", arguments: {}, status });
+    const html = renderToStaticMarkup(await Page({ params }));
+    expect(html).toContain(message);
+    expect(html).not.toContain("Proposal status:");
+    expect(forms(await Page({ params }))).toHaveLength(0);
   });
   it("requires sign-in before revealing any review data", async () => {
     mocks.user.mockResolvedValue(null);
