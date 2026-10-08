@@ -7,6 +7,21 @@ import TextTextFileProviderKit
 
 final class LocalVaultWindowTests: XCTestCase {
     @MainActor
+    func testSelectingEmptyAccountFolderDoesNotSeedLocalTemplatesOrDocuments() throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-no-local-seed-\(UUID().uuidString)")
+        let root = temporary.appendingPathComponent("Workspace")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let entry = temporary.appendingPathComponent("index.html")
+        try Data("<!doctype html><p>Fixture</p>".utf8).write(to: entry)
+        let controller = LocalVaultWindowController(entry: entry, root: root,
+            websiteDataStore: .nonPersistent(), credentials: { nil })
+        defer { controller.close() }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [],
+            "Folder selection waits for authoritative account provisioning, even when offline.")
+    }
+
+    @MainActor
     func testBundledEditorReadsWritesAndObservesRealFilesWithoutServer() async throws {
         _ = NSApplication.shared
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -21,7 +36,6 @@ final class LocalVaultWindowTests: XCTestCase {
         let files = DocumentStore(root: root)
         let target = try files.create(title: "Integration", body: "Original body.")
         let controller = LocalVaultWindowController(entry: entry, root: root,
-            starterTemplates: repository.appendingPathComponent("presets/builtin"),
             websiteDataStore: .nonPersistent(),
             credentials: { nil })
         defer { controller.close() }

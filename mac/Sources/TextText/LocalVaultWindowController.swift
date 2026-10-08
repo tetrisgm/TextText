@@ -28,19 +28,16 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
     private var agent: LocalVaultAgentController?
-    private let starterTemplates: URL?
     var onSelectedFolder: (() -> Void)?
     var onSignIn: (() -> Void)?
     var onSignOut: (() -> Void)?
     var onSettings: (() -> Void)?
 
     init(entry: URL, root initialRoot: URL? = nil,
-         starterTemplates: URL? = Bundle.main.url(forResource: "StarterTemplates", withExtension: nil),
          websiteDataStore: WKWebsiteDataStore = .default(),
          collaboration: LocalVaultCollaboration? = nil,
          credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil }) {
         self.entry = entry
-        self.starterTemplates = starterTemplates
         self.credentials = credentials
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = websiteDataStore
@@ -199,10 +196,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         scoped = url.startAccessingSecurityScopedResource()
         root = url
         guard FileManager.default.isReadableFile(atPath: url.path) else { throw CocoaError(.fileReadNoPermission) }
-        if try LocalVaultStarter.needsSeeding(root: url) {
-            guard let presets = starterTemplates else { throw VaultBridgeError("Starter templates are missing from this app. Reinstall TextText.") }
-            try io.sync { _ = try LocalVaultStarter.seed(root: url, presets: presets) }
-        }
+        // Account workspaces are provisioned once by the server. Selecting a
+        // folder must not create another set of local starter identities.
         openError = nil
         window?.title = url.lastPathComponent + " · TextText"
         watcher = WorkspaceFolderWatcher(path: url.path, queue: .main, latency: 0.5) { [weak self] in
