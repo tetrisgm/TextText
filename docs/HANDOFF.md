@@ -2,9 +2,9 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1191)**, source `f3167c4b`.
-  Preserved account/iCloud workspace, note save/relaunch and search freshness passed.
-  [Receipt](verification/2026-10-08-account-proposals-1191.md).
+- Mac `/Applications/TextText.app`: **0.204 (1192)**, source `4e1c218b`.
+  Preserved account/iCloud workspace and existing note at startup. Live asset
+  checks pending. [Receipt](verification/2026-10-08-assets-cohort-1192.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
 - Oracle: **texttext-oracle-20261008T090012Z-f3167c4b**, thirteen live checks passed.
@@ -49,9 +49,10 @@
   the TextPack for recovery. Web image approval support is in progress.
 - Candidate 1192 freezes `4e1c218b`: image import approvals, asset removal,
   web folder customization and concise proposal completion. Exact-source gate
-  is running. Initial `4df98955` gate caught an obsolete tool-exclusion assertion;
+  passed 737 tests, TypeScript and required native checks. Initial `4df98955` gate caught an obsolete tool-exclusion assertion;
   the correction tests proposal-only execution with no fetch before approval.
-  Installed/live clients remain 1191 until final gates pass.
+  Mac 1192 installed; Oracle deployment underway. Windows candidate passed but
+  installation awaits PC SSH recovery; existing Windows app remains 1191.
 - Durable folder move/rename is being implemented with filesystem recovery and
   coordinated grant migration. Legacy SQL folder commands remain unavailable to
   canonical agents until this is complete; do not compose partial per-item moves.
