@@ -14,8 +14,10 @@
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
   save/reopen passed in 1206; 1207 startup, existing note, home navigation and
   saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
-- Oracle: **texttext-oracle-20261008-af65cbc6-folder**. Thirteen live checks
-  passed; [current receipt](verification/2026-10-08-oracle-folder-agent.md).
+- Oracle: **texttext-oracle-20261008-e4ae9937-copy**. Thirteen live checks
+  passed; [current receipt](verification/2026-10-08-oracle-copy-receipts.md).
+  Shared identity-copy receipt isolation and web loading/provider labels deployed.
+  Actual Safari copy acceptance remains.
   Prior preview verification: actual Safari editor reads the Mac photo metadata.
   [Deployment and live reconnect receipt](verification/2026-10-08-oracle-preview-1207.md).
   Graceful shutdown exited 143 without timeout/SIGKILL. The additive systemd
