@@ -24,20 +24,21 @@
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
   save/reopen passed in 1206; 1207 startup, existing note, home navigation and
   saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
-- Oracle: **texttext-oracle-20261008-e4ae9937-copy**. Thirteen live checks
-  passed; [current receipt](verification/2026-10-08-oracle-copy-receipts.md).
+- Oracle: **texttext-oracle-20261008-cce4206c-atomic**. Thirteen live checks
+  passed; [current receipt](verification/2026-10-08-oracle-atomic-look.md).
   Shared identity-copy receipt isolation and web loading/provider labels deployed.
-  Actual Safari copy acceptance remains.
+  Actual Safari atomic Save as look and local iCloud delivery passed; source
+  hash/content unchanged and new matching template identity verified.
   Prior preview verification: actual Safari editor reads the Mac photo metadata.
   [Deployment and live reconnect receipt](verification/2026-10-08-oracle-preview-1207.md).
   Graceful shutdown exited 143 without timeout/SIGKILL. The additive systemd
   override accepts 130/143; ordinary 1207 rollout attested successful exit
   classification. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
 - Windows installed source remains `f3167c4b`.
-  Verified candidate **acc63214** passed actual PC native suites, 332 shared-client
+  Verified candidate **cce4206c** passed actual PC native suites, 334 shared-client
   tests, TypeScript, packaging and desktop smoke. Installation awaits closure
   of the old app with unknown unsaved state; save-and-close request is pending.
-  [Candidate and paths](verification/2026-10-08-windows-acc63214-candidate.md).
+  [Candidate and paths](verification/2026-10-08-windows-cce4206c-candidate.md).
 - Current iCloud workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Workspace ID `be28ae03-c64e-4695-80af-04f048f86f37`.
@@ -52,8 +53,9 @@
   remain covered. Seven native recovery tests, 17 shared-editing tests, 333 shared
   tests (before the additional Windows-specific test), 46 targeted transport tests,
   TypeScript and focused browser Save as look acceptance passed. Source only;
-  Windows/web delivery and actual Safari acceptance remain. Native installed
-  1213 atomic save and library discovery passed. Logs
+  Windows installation remains; verified candidate cce4206c includes the fix.
+  Native installed 1213 save/library discovery and deployed Safari save with
+  local iCloud arrival passed. Logs
   `/tmp/texttext-atomic-look-{native,shared-editing,client-all,transports,types,browser}.log`.
 
 - Mac agent creation now rejects invalid explicit item types before publication,
