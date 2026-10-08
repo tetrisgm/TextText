@@ -62,6 +62,12 @@
   existing item/cancel/login/process checks on the Mac .NET runtime; log
   `/tmp/texttext-windows-folder-dispatch.log`. TypeScript passed. Actual PC build
   and UI acceptance remain pending; no installed folder support is claimed.
+  Hosted scope audit: `/api/ai` passes the workspace actor to
+  `guardedCloudAssistantTools` without an item/folder tool restriction. `postId`
+  and `folderPath` are context selection, not a tool grant. Panel copy now says
+  workspace changes need approval, matching the actual surface. Before exposing
+  a hosted folder action, enforce the folder boundary for reads and staged
+  writes server-side, including proposal approval after intervening moves.
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.

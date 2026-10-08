@@ -361,7 +361,7 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
     {itemTask && <div className="vault-assistant-setup" role="group" aria-label="Agent task target">
       <strong>{itemTask.scope === "folder" ? itemTask.target || "Workspace" : agentTaskTitle(itemTask.target, targetTitle)}</strong>
-      <p>{itemTask.scope === "folder" ? "This folder · Create, read and edit" : webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
+      <p>{itemTask.scope === "folder" ? "This folder · Create, read and edit" : webAssistant ? "Workspace · Changes need approval" : "This item · Read and edit"}</p>
       <small>{itemTask.target}</small>
     </div>}
     {accountLabel && !webAssistant && <div className="vault-assistant-account" role="group" aria-label="Codex account">
@@ -382,7 +382,7 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
     </div>
     {webAssistant && path && <AssistantWriteProposals key={`${root}:${path}`} root={root} path={path} proposals={writeProposals.path === path ? writeProposals.items : []} beforeApprove={beforeSend} />}
     {(itemTask || customizing) && <form onSubmit={(event) => { event.preventDefault(); void send(); }}>
-      <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : itemTask?.scope === "folder" ? "This folder · Create, read and edit" : webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
+      <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : itemTask?.scope === "folder" ? "This folder · Create, read and edit" : webAssistant ? "Workspace · Changes need approval" : "This item · Read and edit"}</p>
       <label><span>{customizing ? "Design request" : "Task"}</span><textarea ref={composer} aria-label="Message assistant" value={prompt} maxLength={12000} rows={4}
         placeholder={customizing ? "Describe how this item should look" : "What should the agent do?"}
         onChange={(event) => {
