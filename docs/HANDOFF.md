@@ -5,8 +5,9 @@
 - Mac `/Applications/TextText.app`: **0.204 (1205)**, source `c3c3ed2d`.
   Signed build/install, account/iCloud startup and saved Gallery model metadata
   reopening passed. [Current Mac receipt](verification/2026-10-08-mac-1205.md).
-  Real native Gallery image description and metadata write passed; live Safari
-  rejected an edit opening the same item. Root cause remains unresolved.
+  Real native Gallery image description and metadata write passed. The Safari
+  checkpoint rejection is fixed and live reopening passed.
+  [Web follow-up](verification/2026-10-08-gallery-web-checkpoint.md).
   [Current acceptance and failure](verification/2026-10-08-gallery-agent-1204.md).
   Exact-source core/native gates, signed build and observed account/iCloud/note
   startup passed. [1203 receipt](verification/2026-10-08-mac-1203.md).
@@ -53,9 +54,14 @@
   The copied production checkpoint now reads with the same epoch/sequence.
   Thirty-seven focused tests passed, including persisted checkpoint reopening
   with unchanged file bytes. Logs: `/tmp/texttext-gallery-optional-store-tests.log`,
-  `/tmp/texttext-gallery-optional-checkpoint-types.log`. Not installed/deployed.
-  The earlier `10735a38` Oracle package is stale and must not be deployed as the
-  fix. Build/deploy this correction and repeat actual Safari acceptance.
+  `/tmp/texttext-gallery-optional-checkpoint-types.log`. Installed in Mac 1205
+  and deployed to Oracle; actual Safari editor and saved model summary reopened
+  without rejection. [Live receipt](verification/2026-10-08-gallery-web-checkpoint.md).
+
+- Oracle connection-retirement correction `75cdd6a3` is undergoing deployment.
+  Preserve active writes while retiring keep-alive responses during drain.
+  Detailed Gallery photo resizing `250fd4cd` is tested but not installed or
+  deployed. [Photo input receipt](verification/2026-10-08-gallery-photo-input-budget.md).
 
 - Native Gallery photo input is now wired in source for Mac and Windows. The
   shared UI reads the exact selected embedded asset and prepares the existing
