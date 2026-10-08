@@ -10,12 +10,14 @@ static string S(JsonElement value,string key) => value.TryGetProperty(key,out va
 static async Task Fake(bool login)
 {
     Console.InputEncoding = new UTF8Encoding(false); Console.OutputEncoding = new UTF8Encoding(false);
-    var logged = !login; var unicode = false;
+    var logged = !login; var unicode = false; var retry=false; var toolResponses=0;
     const string Unicode = "“Café” 日本語 🧪";
     async Task Send(object value) { await Console.Out.WriteLineAsync(JsonSerializer.Serialize(value,new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping })); await Console.Out.FlushAsync(); }
     while(await Console.In.ReadLineAsync() is { } line) {
         var data = JsonDocument.Parse(line).RootElement; var method = S(data,"method");
-        if(method == "") { if(data.TryGetProperty("result",out var result)) { var success = result.GetProperty("success").GetBoolean(); await Send(new { method = "item/completed",@params = new { threadId = "thread",item = new { type = "agentMessage",phase = "final_answer",text = unicode ? (result.GetProperty("contentItems")[0].GetProperty("text").GetString() == Unicode ? Unicode : "unicode-return-corrupted") : success ? "tool-accepted" : "tool-denied" } } }); await Send(new { method = "turn/completed",@params = new { threadId = "thread",turn = new { status = "completed" } } }); } continue; }
+        if(method == "") { if(data.TryGetProperty("result",out var result)) {
+            if(retry && ++toolResponses==1) {await Send(new {id=42,method="item/tool/call",@params=new {threadId="thread",@namespace="texttext",tool="create_file",arguments=new {folder="Notes",title="New",body="Keep"}}});continue;}
+            var success = result.GetProperty("success").GetBoolean(); await Send(new { method = "item/completed",@params = new { threadId = "thread",item = new { type = "agentMessage",phase = "final_answer",text = unicode ? (result.GetProperty("contentItems")[0].GetProperty("text").GetString() == Unicode ? Unicode : "unicode-return-corrupted") : success ? "tool-accepted" : "tool-denied" } } }); await Send(new { method = "turn/completed",@params = new { threadId = "thread",turn = new { status = "completed" } } }); } continue; }
         if(!data.TryGetProperty("id",out var id)) continue;
         var p = data.GetProperty("params");
         switch(method) {
@@ -33,7 +35,7 @@ static async Task Fake(bool login)
             if(S(p,"sandbox") != "read-only" || p.GetProperty("dynamicTools")[0].GetProperty("name").GetString() != "texttext" || p.GetProperty("config").GetProperty("mcp_servers").GetProperty("unexpected").GetProperty("enabled").GetBoolean()) throw new Exception("Unsafe thread config");
             await Send(new { id,result = new { thread = new { id = "thread" } } }); break;
           case "turn/start":
-            var prompt = p.GetProperty("input")[0].GetProperty("text").GetString(); unicode = prompt == Unicode;
+            var prompt = p.GetProperty("input")[0].GetProperty("text").GetString(); unicode = prompt == Unicode;retry=prompt=="folder-retry";toolResponses=0;
             var input = p.GetProperty("input");
             if(prompt == "accept" && (input.GetArrayLength() != 2 || S(input[1],"type") != "image" || S(input[1],"url") != "data:image/jpeg;base64,/9j/AA==")) throw new Exception("Selected photo input missing or changed");
             if(prompt != "accept" && input.GetArrayLength() != 1) throw new Exception("Photo leaked into another task");
@@ -66,9 +68,10 @@ var processName = Path.GetFileNameWithoutExtension(executable);
 var originalProcesses = Process.GetProcessesByName(processName).Length;
 string[] Prefix(bool login = false) => (Path.GetFileNameWithoutExtension(executable) == "dotnet" ? new[] { typeof(WindowsAgent).Assembly.Location,"--fake" } : new[] { "--fake" }).Concat(login ? new[]{"--login"} : []).ToArray();
 try {
-  foreach(var scenario in new[]{"deny","accept","cancel","unicode","folder-accept","folder-deny","folder-search"}) {
-    var events = new ConcurrentQueue<JsonElement>(); var writes = 0; var searches = 0; var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    using var agent = new WindowsAgent(scratch,"fixture",(_,value) => { events.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },async (_,_,tool,arguments,ct) => {
+  foreach(var scenario in new[]{"deny","accept","cancel","unicode","folder-accept","folder-deny","folder-search","folder-retry"}) {
+    var events = new ConcurrentQueue<JsonElement>(); var writes = 0; var searches = 0; var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var creationOperations=new ConcurrentQueue<string>();
+    using var agent = new WindowsAgent(scratch,"fixture",(_,value) => { events.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },async (_,_,tool,arguments,operationId,ct) => {
+      if(tool=="create_file") {Check(Guid.TryParseExact(operationId,"D",out _),"Creation did not receive a host operation identity");creationOperations.Enqueue(operationId);}
       if(tool == "search_files") { Check(scenario == "folder-search" && S(arguments,"query") == "match","Search dispatch lost arguments"); Interlocked.Increment(ref searches); }
       if(tool is "write_file" or "create_file") { entered.TrySetResult(); if(scenario == "cancel") await Task.Delay(1000,ct); ct.ThrowIfCancellationRequested(); Interlocked.Increment(ref writes); } if(scenario=="unicode" && tool=="write_file") { Check(S(arguments,"markdown")=="“Café” 日本語 🧪","Literal UTF8 tool arguments corrupted"); return "“Café” 日本語 🧪"; } return "ok";
     },executable,Prefix());
@@ -86,7 +89,13 @@ try {
     }
     await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new { taskId = scenario,scope = scenario.StartsWith("folder-") ? "folder" : "item",folderPath = "Notes",path = scenario.StartsWith("folder-") ? "" : "Note.textpack",prompt = scenario=="unicode" ? "“Café” 日本語 🧪" : scenario,imageUrl = scenario == "accept" ? "data:image/jpeg;base64,/9j/AA==" : "" }),default);
     if(scenario=="cancel") { await entered.Task.WaitAsync(TimeSpan.FromSeconds(2)); await agent.DispatchAsync("agentCancel",JsonSerializer.SerializeToElement(new { taskId = scenario }),default); await Task.Delay(100); Check(writes==0,"Late write escaped cancellation"); }
-    else { await Until(() => events.Any(e => S(e,"type")=="turn-completed")); Check(writes==(scenario is not ("deny" or "folder-deny" or "folder-search") ? 1 : 0),"Scope failed"); Check(events.Any(e => S(e,"text")== (scenario=="unicode"?"“Café” 日本語 🧪":scenario is "accept" or "folder-accept" or "folder-search" ? "tool-accepted":"tool-denied")),"Tool acknowledgement missing"); }
+    else { await Until(() => events.Any(e => S(e,"type")=="turn-completed")); Check(writes==(scenario=="folder-retry" ? 2 : scenario is not ("deny" or "folder-deny" or "folder-search") ? 1 : 0),"Scope failed"); Check(events.Any(e => S(e,"text")== (scenario=="unicode"?"“Café” 日本語 🧪":scenario is "accept" or "folder-accept" or "folder-search" or "folder-retry" ? "tool-accepted":"tool-denied")),"Tool acknowledgement missing"); }
+    if(scenario=="folder-retry") {
+      var previous=creationOperations.ToArray();Check(previous.Length==2&&previous[0]==previous[1],"Repeated model call received another creation identity");
+      await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new {taskId=scenario,scope="folder",folderPath="Notes",path="",prompt=scenario}),default);
+      await Until(()=>events.Count(e=>S(e,"type")=="turn-completed")==2);
+      var current=creationOperations.ToArray();Check(current.Length==4&&current[2]==current[3]&&current[0]!=current[2],"New turn with reused UI task identity reused a previous creation");
+    }
     Check(searches == (scenario == "folder-search" ? 1 : 0),"Search scope failed");
     Check(!events.Any(e => S(e,"text")=="stale-leak"),"Stale task notification escaped");
     await agent.DispatchAsync("agentDisconnect",JsonSerializer.SerializeToElement(new {}),default);
@@ -94,7 +103,7 @@ try {
     Console.WriteLine("PASS agent "+scenario);
   }
   var loginEvents = new ConcurrentQueue<JsonElement>(); var browserLaunches = 0;
-  using(var agent = new WindowsAgent(scratch,"fixture-login",(_,value) => { loginEvents.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },(_,_,_,_,_) => Task.FromResult("ok"),executable,Prefix(true),_ => Interlocked.Increment(ref browserLaunches))) {
+  using(var agent = new WindowsAgent(scratch,"fixture-login",(_,value) => { loginEvents.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },(_,_,_,_,_,_) => Task.FromResult("ok"),executable,Prefix(true),_ => Interlocked.Increment(ref browserLaunches))) {
     await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
     await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="disconnected","Signed-out restoration should remain disconnected");

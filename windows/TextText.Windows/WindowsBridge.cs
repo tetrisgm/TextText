@@ -161,6 +161,22 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                         if (TextPackStore.Identity(data) != Required(p, "itemId")) throw new InvalidDataException("Document identity does not match.");
                         return Result(files.WriteIdempotent(Required(p, "path"), data, Optional(p, "expectedHash"), Required(p, "operationId")));
                     }
+                    case "files.creationResume":
+                    case "files.creationWrite": {
+                        var scope=Required(p,"creationScope");
+                        if(scope.Length>0) _=files.Resolve(scope);
+                        var capabilities=await sync.CapabilitiesAsync(ct);
+                        var permissions=await sync.FilePermissionsAsync(files.Scan(),context.Access=="owner",ct);
+                        void Authorize(PackFile file,bool existing) {
+                            if(scope.Length>0 && !file.Path.StartsWith(scope+"/",StringComparison.Ordinal)) throw new UnauthorizedAccessException("The created file moved outside this task's folder.");
+                            var allowed=existing ? permissions.TryGetValue(file.ItemId,out var editable) && editable : capabilities?.CanCreate(file.Path) ?? context.Access=="owner";
+                            if(!allowed) throw new UnauthorizedAccessException("Editing access is unavailable.");
+                        }
+                        var created=files.CreateIdempotent(Required(p,"creationOperationId"),Required(p,"creationIntent"),Authorize,
+                            method=="files.creationWrite" ? Required(p,"path") : null,
+                            method=="files.creationWrite" ? Convert.FromBase64String(Required(p,"data")) : null);
+                        return created is null ? null : new {path=created.Path,hash=created.Hash,itemId=created.ItemId};
+                    }
                     case "files.rename": {
                         var file = Find(Required(p, "itemId")); var path = Required(p, "path");
                         files.Rename(file.Path, path, Required(p, "expectedHash")); return Result(files.Describe(path));
@@ -191,7 +207,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         } finally { requests.Release(); }
     }
 
-    async Task<string> ExecuteAgentTool(string path, bool folder, string tool, JsonElement args, CancellationToken ct)
+    async Task<string> ExecuteAgentTool(string path, bool folder, string tool, JsonElement args, string operationId, CancellationToken ct)
     {
         if (folder) { if(path.Length > 0) _ = files.Resolve(path); } else _ = files.Resolve(path);
         if (!folder && Required(args, "path") != path) throw new InvalidDataException("The agent can only access its selected item.");
@@ -201,7 +217,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(60));
         try {
-            await context.Emit("texttext:windows-agent-tool", new { requestId = id, selectedPath = path, folderScope = folder, tool, arguments = args });
+            await context.Emit("texttext:windows-agent-tool", new { requestId = id, selectedPath = path, folderScope = folder, tool, arguments = args, operationId });
             return await pending.Task.WaitAsync(timeout.Token);
         } finally {
             agentTools.TryRemove(id, out _);

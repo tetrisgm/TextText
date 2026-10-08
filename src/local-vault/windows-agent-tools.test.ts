@@ -19,6 +19,36 @@ function fixture() {
   return { request, file: () => file, writes: () => writes };
 }
 describe("Windows selected-item agent tools", () => {
+  it("reuses a durable creation after a lost response without rebuilding the package or overwriting later work", async () => {
+    const operationId = "11111111-1111-4111-8111-111111111111";
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    let committed: VaultFile | null = null;
+    let intent = "";
+    const request: VaultTransport = async (method, params) => {
+      calls.push({method, params});
+      if (method === "list") return {folders: ["Notes"], items: []};
+      if (method === "creationResume") {
+        if (intent && params.creationIntent !== intent) throw new Error("Different creation intent");
+        return committed;
+      }
+      if (method === "folderViews") return {files: []};
+      if (method === "create") {
+        expect(params.creationOperationId).toBe(operationId);
+        expect(params.creationIntent).toMatch(/^[a-f0-9]{64}$/);
+        expect(params.creationScope).toBe("Notes");
+        intent = String(params.creationIntent);
+        committed = {path: "Notes/Moved.textpack", hash: "later-human-revision", markdown: "later human content"};
+        throw new Error("Native response lost");
+      }
+      throw new Error("Unexpected operation " + method);
+    };
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {title: "New", body: "Original"}, undefined, operationId)).rejects.toThrow("Native response lost");
+    expect(JSON.parse(await executeWindowsFolderAgentTool(request, "Notes", "create_file", {body: "Original", title: "New"}, undefined, operationId))).toEqual({path: "Notes/Moved.textpack", hash: "later-human-revision"});
+    expect(calls.filter(call => call.method === "create")).toHaveLength(1);
+    expect(calls.filter(call => call.method === "folderViews")).toHaveLength(1);
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {title: "New", body: "Changed"}, undefined, operationId)).rejects.toThrow("Different creation intent");
+    expect(committed).toMatchObject({markdown: "later human content"});
+  });
   it("creates custom metadata in one package and refuses mismatched content before writing", async () => {
     const template = {...BUILTIN_TEMPLATES.find(value => value.id === "texttext.note")!, id: "local.research", name: "Research"};
     const document = emptyDocumentSnapshot({id: template.id, version: template.version});

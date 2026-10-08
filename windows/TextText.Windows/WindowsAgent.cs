@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 
 namespace TextText.Windows;
 
@@ -11,7 +12,7 @@ public sealed class WindowsAgent : IDisposable
 {
     private readonly string root, workspaceId;
     private readonly Func<string,object?,Task> emit;
-    private readonly Func<string,bool,string,JsonElement,CancellationToken,Task<string>> tools;
+    private readonly Func<string,bool,string,JsonElement,string,CancellationToken,Task<string>> tools;
     private readonly SemaphoreSlim write = new(1), commands = new(1);
     private readonly ConcurrentDictionary<string,TaskCompletionSource<JsonElement>> pending = new();
     private readonly CancellationTokenSource lifetime = new();
@@ -19,13 +20,14 @@ public sealed class WindowsAgent : IDisposable
     private CancellationTokenSource? taskCancellation;
     private string state = "disconnected", message = "", email = "", taskId = "", selectedPath = "", threadId = "", turnId = "", loginId = "";
     private long generation;
+    private string taskInstanceId = "";
     private bool folderTask, customizing, restoreAttempted;
     private readonly ConcurrentDictionary<string,TaskCompletionSource<bool>> proposals = new();
     private int disposed, activeNotifications;
     private readonly string runtime;
     private readonly string[] runtimePrefix;
     private readonly Action<Uri> openBrowser;
-    public WindowsAgent(string root,string workspaceId,Func<string,object?,Task> emit,Func<string,bool,string,JsonElement,CancellationToken,Task<string>> executeTool,string? runtimePath = null,string[]? runtimePrefixArguments = null,Action<Uri>? launchBrowser = null)
+    public WindowsAgent(string root,string workspaceId,Func<string,object?,Task> emit,Func<string,bool,string,JsonElement,string,CancellationToken,Task<string>> executeTool,string? runtimePath = null,string[]? runtimePrefixArguments = null,Action<Uri>? launchBrowser = null)
     { openBrowser = launchBrowser ?? (uri => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })); runtime = runtimePath ?? Path.Combine(AppContext.BaseDirectory,"Runtime","bin","codex.exe"); runtimePrefix = runtimePrefixArguments ?? []; this.root = Path.GetFullPath(root); this.workspaceId = workspaceId; this.emit = emit; tools = executeTool; }
     public object Status => new { state, message, accountEmail = string.IsNullOrEmpty(email) ? null : email, available = File.Exists(runtime) };
     private async Task Update(string next,string text = "") { state = next; message = text; await emit("texttext:vault-agent",new { type = "status",state,message,accountEmail = email }); }
@@ -122,9 +124,9 @@ public sealed class WindowsAgent : IDisposable
         var full = Path.GetFullPath(Path.Combine(root,path));
         if(!(requestedFolder && full == Path.GetFullPath(root)) && !full.StartsWith(root + Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase) || path.Contains('\\') || path.Split('/').Any(segment => segment is ".." or ".")) throw new InvalidOperationException("Invalid item path.");
         // Resolve through the same scope-validating store as tool calls before asking a model anything.
-        await tools(path,requestedFolder,requestedFolder ? "list_files" : "read_file",JsonSerializer.SerializeToElement(new { path }),ct);
+        await tools(path,requestedFolder,requestedFolder ? "list_files" : "read_file",JsonSerializer.SerializeToElement(new { path }),"",ct);
         folderTask = requestedFolder;
-        selectedPath = path; taskId = id; threadId = ""; turnId = "";
+        selectedPath = path; taskId = id; taskInstanceId = Guid.NewGuid().ToString(); threadId = ""; turnId = "";
         customizing = parameters.TryGetProperty("customizing",out var custom) && custom.GetBoolean();
         taskCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); taskCancellation.CancelAfter(TimeSpan.FromMinutes(10));
         var token = taskCancellation.Token; var fence = Interlocked.Increment(ref generation);
@@ -210,7 +212,8 @@ public sealed class WindowsAgent : IDisposable
                     await emit("texttext:vault-agent",new { type = "tool-call",taskId = id,tool,path = selectedPath });
                     try {
                         token.ThrowIfCancellationRequested();
-                        text = await tools(selectedPath,folderTask,tool,args,token);
+                        var operationId = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(workspaceId+":"+taskInstanceId+":"+callId.ToString()))[..16]).ToString();
+                        text = await tools(selectedPath,folderTask,tool,args,operationId,token);
                         token.ThrowIfCancellationRequested(); success = true;
                         if(tool == "propose_template") {
                             var proposalId = Guid.NewGuid().ToString(); var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously); proposals[proposalId] = completion;

@@ -8,7 +8,7 @@ import { VaultError, type VaultFile, type VaultTransport, type VaultListing } fr
 import { readDocument, readTemplate, writePayload } from "./model";
 
 /** Folder tools use the same transport and permission checks as ordinary creation. */
-export async function executeWindowsFolderAgentTool(request: VaultTransport, folder: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal) {
+export async function executeWindowsFolderAgentTool(request: VaultTransport, folder: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal, operationId?: string) {
   const valid = (path: string) => !path || !path.split("/").some(part => !part || part.startsWith(".") || /[\\:\x00-\x1f]/.test(part));
   const inside = (path: string) => valid(path) && (!folder || path.startsWith(folder + "/"));
   if (!valid(folder)) throw new Error("Invalid folder scope.");
@@ -32,13 +32,22 @@ export async function executeWindowsFolderAgentTool(request: VaultTransport, fol
     if (destination && !listing.folders?.includes(destination)) throw new Error("Choose an existing folder.");
     if (typeof args.title !== "string" || !args.title.trim() || args.title.length > 240 || typeof args.body !== "string" || args.body.length > 2_000_000) throw new Error("Provide a title and body.");
     if (args.kind !== undefined && !["note", "article", "bookmark", "gallery", "talk"].includes(String(args.kind))) throw new Error("Choose a supported item type.");
+    let creation: Record<string, unknown> = {};
+    if (operationId !== undefined) {
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(operationId)) throw new Error("Invalid creation operation.");
+      const intent = JSON.stringify({ folder, tool, arguments: Object.fromEntries(Object.keys(args).sort().map(key => [key, args[key]])) });
+      const creationIntent = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(intent)))].map(value => value.toString(16).padStart(2, "0")).join("");
+      creation = { creationOperationId: operationId, creationIntent, creationScope: folder };
+      const resumed = await request("creationResume", creation, signal) as VaultFile | null;
+      if (resumed) return JSON.stringify({ path: resumed.path, hash: resumed.hash });
+    }
     if (args.documentJSON !== undefined || args.templateJSON !== undefined) {
       if (typeof args.documentJSON !== "string" || typeof args.templateJSON !== "string" || args.documentJSON.length > 2_000_000 || args.templateJSON.length > 2_000_000) throw new Error("Provide a complete matching snapshot and template.");
       const document = validateDocumentSnapshot(JSON.parse(args.documentJSON));
       const template = validateTemplateDefinition(JSON.parse(args.templateJSON));
       if (document.presentation.template.id !== template.id || document.presentation.template.version !== template.version || document.content.title !== args.title || document.content.body !== args.body || document.content.assets.length) throw new Error("Custom creation must match title/body and cannot reference assets it has not imported.");
       if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
-      const saved = await request("importPack", { title: args.title, folder: destination, data: encodeBase64(newItemPack(document, { template })) }, signal) as VaultFile;
+      const saved = await request("importPack", { title: args.title, folder: destination, data: encodeBase64(newItemPack(document, { template })), ...creation }, signal) as VaultFile;
       return JSON.stringify({ path: saved.path, hash: saved.hash });
     }
     if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
@@ -49,8 +58,8 @@ export async function executeWindowsFolderAgentTool(request: VaultTransport, fol
       const document = emptyDocumentSnapshot({ id: chosen.template.id, version: chosen.template.version });
       document.content = { ...document.content, ...folderStarter(chosen.template, { title: args.title, body: args.body }) };
       const data = encodeBase64(newItemPack(document, { template: chosen.template, sourceJSON: chosen.authoringSource ? JSON.stringify(chosen.authoringSource) : null }));
-      saved = await request("importPack", { title: args.title, folder: destination, data }, signal) as VaultFile;
-    } else saved = await request("create", { title: args.title, body: args.body, folder: destination, ...(args.kind ? { kind: args.kind } : {}) }, signal) as VaultFile;
+      saved = await request("importPack", { title: args.title, folder: destination, data, ...creation }, signal) as VaultFile;
+    } else saved = await request("create", { title: args.title, body: args.body, folder: destination, ...(args.kind ? { kind: args.kind } : {}), ...creation }, signal) as VaultFile;
     return JSON.stringify({ path: saved.path, hash: saved.hash });
   }
   if (!["read_file", "write_file"].includes(tool) || typeof args.path !== "string" || !inside(args.path)) throw new Error("This task can only access its selected folder.");

@@ -141,8 +141,20 @@ export async function createWindowsVaultTransport(view: NativeView) {
       throw error;
     }
   };
-  const shared = createWebVaultTransport(status.workspaceId, status.name, nativeFetch);
+  const shared = createWebVaultTransport(status.workspaceId, status.name, nativeFetch, async (path, data, params, signal) => {
+    const saved = await rpc.request<{ itemId: string }>("files.creationWrite", {
+      path, data: base64(data), creationOperationId: params.creationOperationId,
+      creationIntent: params.creationIntent, creationScope: params.creationScope,
+    }, signal);
+    return (await read(saved.itemId, signal)).file;
+  });
   const transport: VaultTransport = async (method, params, signal) => {
+    if (method === "creationResume") {
+      const saved = await rpc.request<{ itemId: string } | null>("files.creationResume", params, signal);
+      if (!saved) return null;
+      await shared.refresh();
+      return (await read(saved.itemId, signal)).file;
+    }
     if (method === "workspacesList" || method === "workspaceOpen") return rpc.request(`native.${method}`, params, signal);
     if (method.startsWith("agent")) return rpc.request(method, params, signal);
     if (method === "connection") return { ...await rpc.request<Status>("native.status"), ...await rpc.request<Record<string, unknown>>("files.connection"), webURL: `https://texttext.app/vault/${status.workspaceId}` };
@@ -238,7 +250,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
     const value = (event as CustomEvent).detail;
     if (!value || typeof value.requestId !== "string" || typeof value.selectedPath !== "string") return;
     const controller = new AbortController(); agentTools.set(value.requestId, controller);
-    void (value.folderScope === true ? executeWindowsFolderAgentTool : executeWindowsAgentTool)(transport, value.selectedPath, value.tool, value.arguments, controller.signal)
+    void (value.folderScope === true ? executeWindowsFolderAgentTool(transport, value.selectedPath, value.tool, value.arguments, controller.signal, value.operationId ?? "") : executeWindowsAgentTool(transport, value.selectedPath, value.tool, value.arguments, controller.signal))
       .then(result => rpc.request("agentToolResult", { requestId: value.requestId, result }))
       .catch(error => rpc.request("agentToolResult", { requestId: value.requestId, error: error instanceof Error ? error.message : "Tool failed" }).catch(() => {}))
       .finally(() => agentTools.delete(value.requestId));

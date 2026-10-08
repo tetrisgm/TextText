@@ -46,7 +46,8 @@ function addedAssets(value: unknown): PackAssetAddition[] {
   });
 }
 
-export function createWebVaultTransport(workspaceId: string, name = "Workspace", request: typeof fetch = fetch): { request: VaultTransport; refresh: () => Promise<boolean>; wait: (signal: AbortSignal) => Promise<boolean>; destroy: () => void } {
+export function createWebVaultTransport(workspaceId: string, name = "Workspace", request: typeof fetch = fetch,
+  nativeCreation?: (path: string, bytes: Uint8Array, params: Record<string, unknown>, signal?: AbortSignal) => Promise<VaultFile>): { request: VaultTransport; refresh: () => Promise<boolean>; wait: (signal: AbortSignal) => Promise<boolean>; destroy: () => void } {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workspaceId)) throw new Error("Invalid workspace identifier.");
   const base = `/api/vault/${encodeURIComponent(workspaceId)}/items`;
   let manifest: Manifest | null = null;
@@ -522,7 +523,13 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
         file = { path, hash: "", markdown: `---\ntextTextId: ${JSON.stringify(id)}\n---\n\n`, documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template) };
         file = { ...file, ...writePayload(file, document) };
       }
-      return commit(id, path, encodePack(pack, file), null);
+      const data = encodePack(pack, file);
+      if (nativeCreation && params.creationOperationId !== undefined) {
+        const saved = await nativeCreation(path, data, params, signal);
+        manifest = null;
+        return saved;
+      }
+      return commit(id, path, data, null);
     }
     throw new Error(`Unsupported workspace operation: ${method}`);
   };

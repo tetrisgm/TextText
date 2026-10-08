@@ -10,6 +10,42 @@ static class Test
  static async Task Main(){var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  {
+ var creationStore=new TextPackStore(Path.Combine(temp,"creation"),Path.Combine(temp,"creation-device"));
+ var operation=Guid.NewGuid().ToString();var intent=TextPackStore.Hash(Encoding.UTF8.GetBytes("original creation intent"));var identity=Guid.NewGuid().ToString();
+ var prepared=Pack("original prepared content",identity);var calls=0;
+ void Interrupted(PackFile file,bool existing){if(++calls==2)throw new IOException("interrupted before publication");}
+ Throws<IOException>(()=>creationStore.CreateIdempotent(operation,intent,Interrupted,"Notes/Original.textpack",prepared),"creation intent is persisted before interrupted publication");
+ Assert(creationStore.Scan().Count==0,"interrupted preparation publishes no blank file");
+ var restarted=new TextPackStore(creationStore.Root,creationStore.StateDirectory);
+ var result=restarted.CreateIdempotent(operation,intent,(_,_)=>{},"Notes/Original 2.textpack",Pack("newly generated retry bytes",Guid.NewGuid().ToString()))!;
+ Assert(result.Path=="Notes/Original.textpack"&&result.ItemId==identity&&restarted.Read(result.Path).SequenceEqual(prepared)&&restarted.Scan().Count==1,"restarted creation reuses original identity path and exact prepared bytes");
+ var journal=Path.Combine(creationStore.StateDirectory,"creation-"+operation+".json");
+ var record=JsonSerializer.Deserialize<FileCreationReceipt>(File.ReadAllBytes(journal))!;
+ Assert(record.Data.Length==0,"completed creation compacts the extra prepared ZIP");
+ restarted.Rename(result.Path,"Notes/Moved.textpack",result.Hash);var moved=restarted.Describe("Notes/Moved.textpack");
+ restarted.UpdateMarkdown(moved.Path,TextPackStore.Markdown(restarted.Read(moved.Path))+"\nlater human edit",moved.Hash);
+ var replay=restarted.CreateIdempotent(operation,intent,(_,_)=>{})!;
+ Assert(replay.Path==moved.Path&&TextPackStore.Markdown(restarted.Read(replay.Path)).Contains("later human edit"),"creation response retry follows moved identity and preserves human edits");
+ TextPackStore.AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(record with{Data=Convert.ToBase64String(prepared)}));
+ Assert(restarted.CreateIdempotent(operation,intent,(_,_)=>{})==replay,"interrupted receipt compaction does not reapply old creation bytes");
+ var mutationJournal=Path.Combine(restarted.StateDirectory,"mutation-"+operation+".json");var mutationReceipt=File.ReadAllBytes(mutationJournal);File.Delete(mutationJournal);
+ Throws<InvalidDataException>(()=>restarted.CreateIdempotent(operation,intent,(_,_)=>{}),"matching identity alone cannot attest a compact creation receipt");
+ Assert(TextPackStore.Hash(restarted.Read(replay.Path))==replay.Hash,"missing completion receipt preserves existing item");
+ TextPackStore.AtomicWrite(mutationJournal,mutationReceipt);
+ Throws<InvalidDataException>(()=>restarted.CreateIdempotent(operation,new string('a',64),(_,_)=>{}),"creation identity refuses changed request intent");
+ Throws<UnauthorizedAccessException>(()=>restarted.CreateIdempotent(operation,intent,(_,_)=>throw new UnauthorizedAccessException()),"creation retry rechecks authorization");
+ restarted.Delete(replay.Path,replay.Hash);
+ Throws<FileChangedException>(()=>restarted.CreateIdempotent(operation,intent,(_,_)=>{}),"creation retry cannot resurrect a deleted item");
+ var originalReceipt=File.ReadAllBytes(journal);var unsupported=JsonSerializer.SerializeToUtf8Bytes(record with{Version=999});TextPackStore.AtomicWrite(journal,unsupported);
+ Throws<InvalidDataException>(()=>restarted.CreateIdempotent(operation,intent,(_,_)=>{}),"future creation receipt fails closed");
+ Assert(File.ReadAllBytes(journal).SequenceEqual(unsupported),"future creation receipt is retained unchanged");
+ TextPackStore.AtomicWrite(journal,originalReceipt);
+ var denied=Guid.NewGuid().ToString();
+ Throws<UnauthorizedAccessException>(()=>restarted.CreateIdempotent(denied,intent,(_,_)=>throw new UnauthorizedAccessException(),"Notes/Denied.textpack",Pack("denied",Guid.NewGuid().ToString())),"denied creation writes no intent or file");
+ Assert(!File.Exists(Path.Combine(restarted.StateDirectory,"creation-"+denied+".json"))&&restarted.Scan().Count==0,"denied creation leaves no committed data");
+ var missing=Guid.NewGuid().ToString();Assert(restarted.CreateIdempotent(missing,intent,(_,_)=>{}) is null,"unknown creation resume does not create an item");
+ }
+ {
  var mutationStore=new TextPackStore(Path.Combine(temp,"mutations"),Path.Combine(temp,"mutation-device"));
  var operation=Guid.NewGuid().ToString();var mutationBytes=Pack("created","mutation-one");
  var created=mutationStore.WriteIdempotent("Notes/Created.textpack",mutationBytes,null,operation);

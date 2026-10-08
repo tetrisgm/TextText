@@ -9,6 +9,7 @@ public sealed record ScanError(string Path,string Reason,string? ItemId=null);
 public sealed record PackFile(string Path, string Hash, string ItemId);
 public sealed record FileIntent(string Kind, string ItemId, string Path, string Hash, string? Destination = null);
 public sealed record FileMutationReceipt(int Version, string Fingerprint, string ItemId, string Path, string Hash, bool Committed);
+public sealed record FileCreationReceipt(int Version, string Intent, string ItemId, string Path, string Hash, string Data);
 public sealed class FileChangedException() : IOException("The file changed. Reload its current contents before writing.");
 public sealed class TextPackStore
 {
@@ -202,6 +203,57 @@ public sealed class TextPackStore
                 throw new FileChangedException();
             var result=Write(path,bytes,expectedHash);
             AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(receipt with { Committed=true }));
+            return result;
+        }
+    }
+    // Freeze the creation result before publishing it. Renderer restarts can
+    // otherwise generate a different identity, ZIP or collision suffix.
+    // Completed records retain only attestation, not a second permanent ZIP.
+    public PackFile? CreateIdempotent(string operationId, string intent, Action<PackFile,bool> authorize, string? path=null, byte[]? bytes=null)
+    {
+        if(!Guid.TryParseExact(operationId,"D",out _) || !Regex.IsMatch(intent,"^[a-f0-9]{64}$"))
+            throw new InvalidDataException("Invalid creation identity.");
+        var journal=System.IO.Path.Combine(StateDirectory,"creation-"+operationId.ToLowerInvariant()+".json");
+        CheckLinks(journal); CheckLinks(journal+".lock");
+        lock(gate) {
+            using var fence=new FileStream(journal+".lock",FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+            FileCreationReceipt receipt;
+            if(File.Exists(journal)) {
+                if(new FileInfo(journal).Length>45*1024*1024) throw new InvalidDataException("Invalid creation receipt.");
+                receipt=JsonSerializer.Deserialize<FileCreationReceipt>(File.ReadAllBytes(journal)) ?? throw new InvalidDataException("Invalid creation receipt.");
+                if(receipt.Version!=1 || receipt.Intent!=intent || receipt.Data is null || receipt.Path is null || receipt.Hash is null || !Guid.TryParseExact(receipt.ItemId,"D",out _) || !Regex.IsMatch(receipt.Hash,"^[a-f0-9]{64}$"))
+                    throw new InvalidDataException("The creation identity belongs to another request or unsupported receipt.");
+                _=Resolve(receipt.Path);
+            } else {
+                if(path is null || bytes is null) return null;
+                if(bytes.Length>32*1024*1024) throw new InvalidDataException("The TextPack exceeds the creation limit.");
+                var id=Identity(bytes); _=Resolve(path);
+                if(!Guid.TryParseExact(id,"D",out _)) throw new InvalidDataException("Invalid new document identity.");
+                authorize(new(path,Hash(bytes),id),false);
+                receipt=new(1,intent,id,path,Hash(bytes),Convert.ToBase64String(bytes));
+                AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(receipt));
+            }
+            var matches=Scan().Where(file=>file.ItemId==receipt.ItemId).ToArray();
+            if(matches.Length>1 || LastScanErrors.Any(error=>error.ItemId==receipt.ItemId)) throw new FileChangedException();
+            authorize(matches.SingleOrDefault() ?? new(receipt.Path,receipt.Hash,receipt.ItemId),matches.Length==1);
+            if(receipt.Data.Length==0) {
+                // A compact receipt is meaningful only with a matching durable
+                // committed mutation. Never infer success from identity alone.
+                var mutation=System.IO.Path.Combine(StateDirectory,"mutation-"+operationId.ToLowerInvariant()+".json");
+                CheckLinks(mutation);
+                if(!File.Exists(mutation) || new FileInfo(mutation).Length>4096) throw new InvalidDataException("Creation completion is unavailable.");
+                var completed=JsonSerializer.Deserialize<FileMutationReceipt>(File.ReadAllBytes(mutation));
+                var fingerprint=Hash(JsonSerializer.SerializeToUtf8Bytes(new {Root,path=receipt.Path,expectedHash=(string?)null,hash=receipt.Hash,id=receipt.ItemId}));
+                if(completed is null || completed.Version!=1 || !completed.Committed || completed.Fingerprint!=fingerprint || completed.ItemId!=receipt.ItemId || completed.Path!=receipt.Path || completed.Hash!=receipt.Hash)
+                    throw new InvalidDataException("Creation completion could not be verified.");
+                if(matches.Length!=1) throw new FileChangedException();
+                return matches[0];
+            }
+            var prepared=Convert.FromBase64String(receipt.Data);
+            if(prepared.Length>32*1024*1024 || Identity(prepared)!=receipt.ItemId || Hash(prepared)!=receipt.Hash)
+                throw new InvalidDataException("The prepared creation is invalid.");
+            var result=WriteIdempotent(receipt.Path,prepared,null,operationId);
+            AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(receipt with {Data=""}));
             return result;
         }
     }

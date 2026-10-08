@@ -4,7 +4,8 @@ import { strToU8, strFromU8, unzipSync } from "fflate";
 import { createNativeRPC, createWindowsVaultTransport } from "./windows-transport";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { emptyPack, encodePack, openPack } from "./pack";
+import { emptyPack, encodePack, openPack, packIdentity } from "./pack";
+import { executeWindowsFolderAgentTool } from "./windows-agent-tools";
 import { readDocument, writePayload } from "./model";
 import type { VaultFile } from "./bridge";
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -33,12 +34,28 @@ async function fixture() {
   let ready = true; let checkpoint: Record<string, unknown> | undefined;
   let loseWriteResponse = false;
   const committedOperations = new Set<string>();
+  const creations = new Map<string, {intent: string; itemId: string}>();
   const view = native((method, p) => {
     if (method === "native.status") return { root: "C:\\Users\\Person\\TextText\\workspace", workspaceId: "workspace", name: "Workspace", available: true, connected: true };
     if (method === "native.recovery") return null;
     if (method === "files.connection") return { onlineReady: ready };
     if (method === "files.ready") return { ready };
     if (method === "files.list") { const items = [...files].map(([itemId, file]) => ({ itemId, relativePath: file.path, revision: digest(file.bytes) })); return { items, revision: JSON.stringify(items), folders: ["Notes"] }; }
+    if (method === "files.creationResume" || method === "files.creationWrite") {
+      let receipt = creations.get(String(p.creationOperationId));
+      if (receipt && receipt.intent !== p.creationIntent) throw new Error("Different creation intent");
+      if (!receipt && method === "files.creationResume") return null;
+      if (!receipt) {
+        const bytes = new Uint8Array(Buffer.from(String(p.data), "base64"));
+        receipt = {intent: String(p.creationIntent), itemId: packIdentity(openPack(bytes, String(p.path), digest(bytes)).file.markdown)!};
+        files.set(receipt.itemId, {path: String(p.path), bytes});
+        creations.set(String(p.creationOperationId), receipt);
+        if (loseWriteResponse) {loseWriteResponse = false; throw new Error("Lost native response");}
+      }
+      const current = files.get(receipt.itemId);
+      if (!current) throw new Error("Created file no longer exists");
+      return {path: current.path, hash: digest(current.bytes), itemId: receipt.itemId};
+    }
     const file = files.get(String(p.itemId));
     if (method === "files.text") { if (!file) throw Object.assign(new Error("Missing"), { code: "not_found" }); return openPack(file.bytes, file.path, digest(file.bytes), String(p.itemId)).file; }
     if (method === "files.read") { if (!file) throw Object.assign(new Error("Missing"), { code: "not_found" }); return { path: file.path, hash: digest(file.bytes), data: Buffer.from(file.bytes).toString("base64") }; }
@@ -69,6 +86,29 @@ describe("Windows native RPC", () => {
   });
 });
 describe("Windows shared transport", () => {
+  it("resumes host agent creation across a renderer restart, returning moved and edited content", async () => {
+    const f = await fixture();
+    const operationId = "11111111-1111-4111-8111-111111111111";
+    const args = {title: "Agent creation", body: "Original", kind: "note"};
+    let restarted: Awaited<ReturnType<typeof createWindowsVaultTransport>> | undefined;
+    try {
+      f.loseNextWriteResponse();
+      await expect(executeWindowsFolderAgentTool(f.transport.request, "Notes", "create_file", args, undefined, operationId)).rejects.toThrow("Lost native response");
+      const [id, file] = [...f.files].find(([id]) => id !== f.itemId)!;
+      const pack = openPack(file.bytes, "Notes/Moved.textpack", digest(file.bytes), id);
+      const document = readDocument(pack.file); document.content.body += "\nlater human edit";
+      f.files.set(id, {path: "Notes/Moved.textpack", bytes: encodePack(pack, writePayload(pack.file, document))});
+      f.transport.destroy();
+      restarted = await createWindowsVaultTransport(f.view);
+      const result = JSON.parse(await executeWindowsFolderAgentTool(restarted.request, "Notes", "create_file", args, undefined, operationId));
+      expect(result.path).toBe("Notes/Moved.textpack");
+      expect(readDocument(await restarted.request("read", {path: result.path}) as VaultFile).content.body).toBe("Original\nlater human edit");
+      expect(f.files.size).toBe(2);
+      expect(f.view.messages.filter(message => message.method === "files.creationWrite")).toHaveLength(1);
+      expect(f.view.messages.some(message => message.method === "files.write" || message.method === "native.http")).toBe(false);
+      await expect(executeWindowsFolderAgentTool(restarted.request, "Notes", "create_file", {...args, body: "Different"}, undefined, operationId)).rejects.toThrow("Different creation intent");
+    } finally {restarted?.destroy(); f.transport.destroy();}
+  });
   it("replays a lost native save response with the same operation and follows later rename/edit", async () => {
     const f = await fixture();
     try {
