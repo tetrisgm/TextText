@@ -104,6 +104,23 @@ static class Test
  using(var lease=await fe.AcquireCollaborationAsync("test-1")){var updated=fenced.UpdateMarkdown(ff.Path,TextPackStore.Markdown(fenced.Read(ff.Path))+" collaborative",fenced.Describe(ff.Path).Hash);await fe.SyncAsync();Assert(ft.UploadCount==1,"active collaboration fences file upload");ft.Data=fenced.Read(ff.Path);ft.Item=ft.Item! with{Revision=updated.Hash};await fe.AcknowledgeCheckpointAsync("test-1",ff.Path,updated.Hash,updated.Hash);}
  await fe.SyncAsync();Assert(ft.UploadCount==1,"acknowledged checkpoint avoids duplicate upload");
  var encoded=Pack();using(var ms=new MemoryStream()) {using(var z=new ZipArchive(ms,ZipArchiveMode.Create,true))using(var original=new ZipArchive(new MemoryStream(encoded)))foreach(var e in original.Entries.Reverse()){var copy=z.CreateEntry(e.FullName,CompressionLevel.NoCompression);using var dst=copy.Open();using var src=e.Open();src.CopyTo(dst);}Assert(TextPackStore.Equivalent(encoded,ms.ToArray()),"ZIP encoding changes preserve logical equality");}
+ var movingStore=new TextPackStore(Path.Combine(temp,"shared-move"),Path.Combine(temp,"shared-move-device"));
+ var movingFile=movingStore.Write("Notes/Moving.textpack",Pack("pending move"));
+ var movingDirectory=Path.Combine(movingStore.StateDirectory,"shared-editing","test-1");Directory.CreateDirectory(movingDirectory);
+ var movingJournal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=7,revision=movingFile.Hash,relativePath=movingFile.Path,update="AAA=",pending=new[]{"AAA="},batch=new{operationId="retained-operation",updates=new[]{"AAA="}}});
+ var movingCheckpoint=new SharedCheckpoint("test-1",movingFile.Path,movingFile.Hash,movingFile.Hash,1,0,7,movingJournal,true);
+ File.WriteAllText(Path.Combine(movingDirectory,"checkpoint.json"),JsonSerializer.Serialize(movingCheckpoint));
+ foreach(var crashAfterMove in new[]{false,true}) {
+   var target=crashAfterMove?"Archive/Again/Moving.textpack":"Archive/Moving.textpack";
+   try{SharedEditingStore.RebaseProjection(movingStore,"test-1",target,interruptAfterIntent:!crashAfterMove,interruptAfterMove:crashAfterMove);throw new Exception("move interruption missing");}catch(IOException){}
+   var recovered=SharedEditingStore.RebaseProjection(movingStore,"test-1",target);
+   Assert(recovered.Path==target&&recovered.Pending&&recovered.JournalGeneration==7,"shared move crash recovery retains pending generation");
+   using var journal=JsonDocument.Parse(recovered.Journal);Assert(journal.RootElement.GetProperty("batch").GetProperty("operationId").GetString()=="retained-operation","shared move retains exact batch identity");
+   Assert(movingStore.Describe(target).Hash==movingFile.Hash,"shared move preserves all archive bytes");
+ }
+ var occupied=movingStore.Write("Archive/Occupied.textpack",Pack("other document","other-id"));
+ try{SharedEditingStore.RebaseProjection(movingStore,"test-1",occupied.Path);throw new Exception("occupied destination accepted");}catch(FileChangedException){}
+ Assert(movingStore.Describe(occupied.Path).Hash==occupied.Hash,"shared move cannot overwrite destination");
  var sharedTransport=new Fake();var sharedFiles=new TextPackStore(Path.Combine(temp,"shared"),Path.Combine(temp,"shared-device"));var initial=sharedFiles.Write("Notes/Shared.textpack",Pack());var sharedSync=new SyncEngine(sharedFiles,sharedTransport);await sharedSync.SyncAsync();
  using(var shared=new SharedEditingStore(sharedFiles,sharedSync)) {
  var firstSession=await shared.OpenAsync("test-1",initial.Path,sharedFiles.Describe(initial.Path).Hash);var secondSession=await shared.OpenAsync("test-1",initial.Path,firstSession.Document.Hash);shared.Close(firstSession.SessionToken);

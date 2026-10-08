@@ -16,6 +16,7 @@ public sealed class TextPackStore
     public IReadOnlyList<ScanError> LastScanErrors {get;private set;}=[];
     public event Action? Changed;
     readonly object gate = new();
+    internal T WithExclusiveMutation<T>(Func<T> action) { lock(gate) return action(); }
     public TextPackStore(string root, string? stateDirectory = null)
     {
         Root = System.IO.Path.GetFullPath(root); Directory.CreateDirectory(Root); CheckLinks(Root);

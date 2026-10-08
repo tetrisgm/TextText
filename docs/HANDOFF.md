@@ -28,6 +28,17 @@
 
 ## Current work
 
+- Windows shared projection store now has the equivalent recoverable move
+  intent, retaining pending updates, batch operation identity and generation.
+  Both interruption windows and occupied-destination refusal pass the full
+  Windows Core executable regression suite on Mac
+  (`/tmp/texttext-windows-rebase-core.log`). This is not yet wired into the
+  Windows sync loop. Before enabling it, serialize checkpoint materialization
+  and relocation with the store mutation lock without awaiting the sync gate
+  under that lock, update active session paths from recovered checkpoints,
+  and verify active save/reopen plus actual Windows execution. Move intents
+  fence readiness until recovery completes.
+
 - Shared UI now relocates selected items only by a unique stable identity,
   preserving the editor boundary and drafts when paths move. Local read
   recovery follows the same identity before treating a missing path as

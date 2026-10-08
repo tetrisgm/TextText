@@ -6,6 +6,7 @@ public sealed record SharedSession(string SessionToken,PackFile Document,SharedC
 public sealed class SharedSessionClosedException() : InvalidOperationException("This editing session is no longer active.");
 public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : IDisposable
 {
+    sealed record MoveIntent(int Version,string SourcePath,SharedCheckpoint Checkpoint);
     sealed record Intent(int Version,string BeforeHash,string Payload,SharedCheckpoint Checkpoint);
     sealed record Active(string ItemId,string Path,IDisposable Lease);
     readonly Dictionary<string,Active> sessions=[];readonly SemaphoreSlim gate=new(1,1);bool disposed;
@@ -26,14 +27,14 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
     public static bool HasProtectedState(string stateDirectory,string itemId) {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid remote identity.");
         var directory=System.IO.Path.Combine(stateDirectory,"shared-editing",itemId);
-        if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"acknowledge.json")))return true;
+        if(File.Exists(System.IO.Path.Combine(directory,"move-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"acknowledge.json")))return true;
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
         return cp!=null&&(cp.Version!=1||cp.Pending||cp.RetiredReason!=null);
     }
     internal static bool HasReadyCheckpoint(TextPackStore store,string itemId) {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))return false;
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
-        if(File.Exists(System.IO.Path.Combine(directory,"intent.json")))return false;
+        if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json")))return false;
         try {
             var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
             if(cp==null||cp.ItemId!=itemId||cp.RetiredReason!=null)return false;
@@ -51,8 +52,40 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
             state.Items[cp.ItemId]=new(cp.Path,cp.ProjectedHash,cp.AcknowledgedRevision);completed.Add(file);
         }return completed;
     }
+    public static SharedCheckpoint RebaseProjection(TextPackStore store,string itemId,string newPath,
+        bool interruptAfterIntent=false,bool interruptAfterMove=false) => store.WithExclusiveMutation(() => {
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");
+        var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
+        RecoverMove(store,directory,itemId);
+        if(File.Exists(System.IO.Path.Combine(directory,"intent.json")))throw new IOException("A shared checkpoint is still being recovered.");
+        var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"))??throw new InvalidOperationException("No shared projection is available.");
+        Validate(store,cp);if(cp.ItemId!=itemId||cp.RetiredReason!=null)throw new InvalidDataException("Shared identity mismatch.");
+        if(cp.Path==newPath)return cp;
+        var source=store.Describe(cp.Path);
+        if(source.ItemId!=itemId||source.Hash!=cp.ProjectedHash||File.Exists(store.Resolve(newPath)))throw new FileChangedException();
+        var journal=System.Text.Json.Nodes.JsonNode.Parse(cp.Journal)!;journal["relativePath"]=newPath;
+        var target=cp with{Path=newPath,Journal=journal.ToJsonString()};Validate(store,target);
+        var intent=new MoveIntent(1,cp.Path,target);Save(System.IO.Path.Combine(directory,"move-intent.json"),intent);
+        if(interruptAfterIntent)throw new IOException("Interrupted before shared move.");
+        return FinishMove(store,directory,intent,interruptAfterMove);
+    });
+    static void RecoverMove(TextPackStore store,string directory,string itemId) {
+        var intent=Read<MoveIntent>(System.IO.Path.Combine(directory,"move-intent.json"));
+        if(intent!=null){if(intent.Checkpoint.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");FinishMove(store,directory,intent);}
+    }
+    static SharedCheckpoint FinishMove(TextPackStore store,string directory,MoveIntent intent,bool interruptAfterMove=false) {
+        var cp=intent.Checkpoint;Validate(store,cp);
+        if(intent.Version!=1||intent.SourcePath==cp.Path)throw new InvalidDataException("Invalid shared move.");
+        if(File.Exists(store.Resolve(intent.SourcePath))) {
+            var current=store.Describe(intent.SourcePath);if(current.ItemId!=cp.ItemId||current.Hash!=cp.ProjectedHash)throw new FileChangedException();
+            store.Rename(intent.SourcePath,cp.Path,current.Hash);
+            if(interruptAfterMove)throw new IOException("Interrupted after shared move.");
+        }
+        var moved=store.Describe(cp.Path);if(moved.ItemId!=cp.ItemId||moved.Hash!=cp.ProjectedHash)throw new FileChangedException();
+        Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);File.Delete(System.IO.Path.Combine(directory,"move-intent.json"));return cp;
+    }
     SharedCheckpoint? Recover(string itemId) {
-        var directory=DirectoryFor(itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
+        var directory=DirectoryFor(itemId);store.WithExclusiveMutation(()=>{RecoverMove(store,directory,itemId);return true;});var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
         if(intent!=null) {if(intent.Version!=1)throw new InvalidDataException("Unsupported shared intent.");Finish(intent,directory);}
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
     }
