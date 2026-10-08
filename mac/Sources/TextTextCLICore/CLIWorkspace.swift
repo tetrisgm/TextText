@@ -341,8 +341,9 @@ public enum CLIWorkspace: Sendable {
     ) async throws -> CLIDocumentReference {
         switch self {
         case .local(let store):
-            guard idempotencyKey == nil else {
-                throw TextTextCLIError.invalidDocument("retry-safe local creation is not available yet; no file was created")
+            if let key = idempotencyKey {
+                return .local(try store.createWithRetryKey(title: title, body: body,
+                                                          folder: folder, kind: kind, key: key))
             }
             return .local(
                 try store.create(
@@ -362,13 +363,17 @@ public enum CLIWorkspace: Sendable {
     ) async throws -> CLICaptureResult {
         switch self {
         case .local(let store):
-            guard idempotencyKey == nil else {
-                throw TextTextCLIError.invalidDocument("retry-safe local capture is not available yet; no file was created")
-            }
-            let url = try store.create(
+            let url: URL
+            if let key = idempotencyKey {
+                url = try store.createWithRetryKey(title: input.title, body: input.body,
+                    folder: folder ?? input.folder, kind: input.kind,
+                    sourceURL: input.sourceURL, key: key)
+            } else {
+                url = try store.create(
                 title: input.title, body: input.body,
                 folder: folder ?? input.folder, kind: input.kind,
                 sourceURL: input.sourceURL)
+            }
             let reference = CLIDocumentReference.local(url)
             let relative = store.relativePath(of: url)
             return CLICaptureResult(

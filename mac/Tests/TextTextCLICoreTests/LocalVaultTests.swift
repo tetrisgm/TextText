@@ -3,21 +3,86 @@ import XCTest
 @testable import TextTextCLICore
 
 final class LocalVaultTests: XCTestCase {
-    func testLocalCreationNeverSilentlyIgnoresRetryKey() async throws {
+    func testLocalCreationRetrySurvivesRenameAndEditAndRejectsDeletion() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let workspace = CLIWorkspace.local(DocumentStore(root: root))
+        let store = DocumentStore(root: root)
+        let workspace = CLIWorkspace.local(store)
+        _ = try await workspace.create(title: "Retry", body: "Original", idempotencyKey: "key")
+        let original = root.appendingPathComponent("Retry.textpack")
+        let moved = root.appendingPathComponent("Moved.textpack")
+        try FileManager.default.moveItem(at: original, to: moved)
+        try store.writeMarkdown(try store.readMarkdown(at: moved) + "\nLater edit.\n", to: moved)
+        _ = try await workspace.create(title: "Retry", body: "Original", idempotencyKey: "key")
+        XCTAssertTrue(try store.readMarkdown(at: moved).contains("Later edit."))
+        XCTAssertEqual(try store.list(), ["Moved.textpack"])
+        do {
+            _ = try await workspace.create(title: "Retry", body: "Changed", idempotencyKey: "key")
+            XCTFail("different payload must reject")
+        } catch { XCTAssertTrue(String(describing: error).contains("different request")) }
+        try FileManager.default.removeItem(at: moved)
         do {
             _ = try await workspace.create(title: "Retry", body: "Original", idempotencyKey: "key")
-            XCTFail("unsupported retry key must not be silently ignored")
-        } catch { XCTAssertTrue(String(describing: error).contains("no file was created")) }
-        let capture = try XCTUnwrap(AgentCaptureInput(value: "Capture this note"))
+            XCTFail("deleted file must never be recreated")
+        } catch { XCTAssertTrue(String(describing: error).contains("no replacement")) }
+        XCTAssertTrue(try store.list().isEmpty)
+    }
+
+    func testLocalCaptureRetryAndDuplicateIdentityFence() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DocumentStore(root: root)
+        let workspace = CLIWorkspace.local(store)
+        let input = try XCTUnwrap(AgentCaptureInput(value: "Capture this note"))
+        let first = try await workspace.capture(input, rawValue: "Capture this note", folder: "", idempotencyKey: "capture")
+        let second = try await workspace.capture(input, rawValue: "Capture this note", folder: "", idempotencyKey: "capture")
+        XCTAssertEqual(first.receipt.itemId, second.receipt.itemId)
+        let path = try XCTUnwrap(store.list().first)
+        try FileManager.default.copyItem(at: root.appendingPathComponent(path),
+                                         to: root.appendingPathComponent("Duplicate.textpack"))
         do {
-            _ = try await workspace.capture(capture, rawValue: "Capture this note", idempotencyKey: "key")
-            XCTFail("capture must not silently ignore a retry key")
-        } catch { XCTAssertTrue(String(describing: error).contains("no file was created")) }
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+            _ = try await workspace.capture(input, rawValue: "Capture this note", folder: "", idempotencyKey: "capture")
+            XCTFail("duplicate identity must reject")
+        } catch { XCTAssertTrue(String(describing: error).contains("multiple files")) }
+        XCTAssertEqual(try store.list().count, 2)
+    }
+
+    func testCreationResumesPreparedIntentWithoutNewIdentity() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DocumentStore(root: root)
+        let target = try store.createWithRetryKey(title: "Resume", body: "Body", folder: nil, kind: nil, key: "resume")
+        let id = try XCTUnwrap(store.itemId(at: target))
+        // Reconstruct the durable state immediately before create-only publication.
+        let stage = root.appendingPathComponent(".texttext/cli-creations/" + id + ".textpack")
+        try FileManager.default.moveItem(at: target, to: stage)
+        let resumed = try store.createWithRetryKey(title: "Resume", body: "Body", folder: nil, kind: nil, key: "resume")
+        XCTAssertEqual(resumed, target)
+        XCTAssertEqual(store.itemId(at: resumed), id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stage.path))
+        XCTAssertEqual(try store.list(), ["Resume.textpack"])
+    }
+
+    func testConcurrentKeyedCreationPublishesOneIdentity() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DocumentStore(root: root)
+        let paths = try await withThrowingTaskGroup(of: URL.self) { group in
+            for _ in 0..<4 {
+                group.addTask {
+                    try store.createWithRetryKey(title: "One", body: "Once", folder: nil, kind: nil, key: "same")
+                }
+            }
+            var results: [URL] = []
+            for try await result in group { results.append(result) }
+            return results
+        }
+        XCTAssertEqual(Set(paths).count, 1)
+        XCTAssertEqual(try store.list(), ["One.textpack"])
     }
 
     func testLocalAppendReceiptSurvivesReopenAndLaterEdits() async throws {
