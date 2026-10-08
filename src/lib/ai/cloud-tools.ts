@@ -1,3 +1,4 @@
+import { FOLDER_AGENT_TOOLS } from "./folder-agent-boundary";
 // AI SDK tool adapter for the cloud assistant rung. Each workspace command is
 // exposed to the cloud model as a tool whose execute() delegates to
 // runWorkspaceToolForSession, i.e. the exact same server executor the MCP server
@@ -25,6 +26,7 @@ import type { OutboundMcpProposalPreview } from "@/lib/ai/outbound-proposals.ser
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 
 type CloudAssistantActor = {
+  folderAgentPath?: string;
   sub: string;
   userId: string | null;
   handle: string;
@@ -120,6 +122,7 @@ export function cloudAssistantTools(
 ): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
   for (const name of cloudAssistantToolNames(mode)) {
+    if (actor.folderAgentPath !== undefined && !FOLDER_AGENT_TOOLS.has(name)) continue;
     const contract = cloudAssistantToolContract(name);
     tools[name] = tool({
       description: contract.description,
@@ -173,6 +176,7 @@ export function guardedCloudAssistantTools(
 ): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
   for (const name of cloudAssistantToolNames(mode)) {
+    if (actor.folderAgentPath !== undefined && !FOLDER_AGENT_TOOLS.has(name)) continue;
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     if (
       definition.mutability === "write" &&

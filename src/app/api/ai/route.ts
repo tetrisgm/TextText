@@ -1,3 +1,4 @@
+import { validFolderAgentPath } from "@/lib/ai/folder-agent-boundary";
 import { readDrainSignal } from "@/sync/engine/read-drain";
 import { VaultAgentPresenceAuthorizationError } from "@/lib/mcp/vault-agent-presence";
 import { startCloudTurnPresence } from "@/lib/ai/cloud-turn-presence.server";
@@ -165,6 +166,7 @@ function coerceMessages(value: unknown): ModelMessage[] {
 
 
 type AssistantViewContext = {
+  agentScope?: unknown;
   level?: unknown;
   folderPath?: unknown;
   postId?: unknown;
@@ -641,6 +643,7 @@ async function recentWorkspaceContext({
   user: { sub: string; userId?: string | null };
 }): Promise<{ note: string; items: RecentWorkspaceContextItem[] }> {
   const view = viewContext(context);
+  if (view.agentScope === "folder") return { note: "", items: [] };
   if (view.workspaceIndex === false || (view.workspaceIndex !== true && !RECENT_SUMMARY_INTENT.test(lastUserText(messages)))) {
     return { note: "", items: [] };
   }
@@ -873,9 +876,14 @@ export async function POST(request: Request) {
       { status: 403, headers: NO_STORE_HEADERS },
     );
   }
-  const contextActor = { sub: user.sub, userId: user.userId ?? null, handle: workspace.handle };
-  let selectionEnvelope: SelectionEnvelope | undefined;
   const suppliedView = viewContext(body.context);
+  const folderTask = suppliedView.agentScope === "folder";
+  if (folderTask && (!validFolderAgentPath(suppliedView.folderPath) || suppliedView.postId !== undefined || suppliedView.selectionEnvelope !== undefined || suppliedView.attachments !== undefined || !["read_only", "workspace_review"].includes(String(suppliedView.mode)))) {
+    return Response.json({ error: "Choose a valid folder for this task." }, { status: 400, headers: NO_STORE_HEADERS });
+  }
+  const folderAgentPath = folderTask ? suppliedView.folderPath as string : undefined;
+  const contextActor = { sub: user.sub, userId: user.userId ?? null, handle: workspace.handle, folderAgentPath };
+  let selectionEnvelope: SelectionEnvelope | undefined;
   const selectionView = suppliedView.mode === "suggestion" && suppliedView.includeItem === false
     ? { ...suppliedView, relatedItems: [], workspaceIndex: false, itemTitle: undefined, itemPreview: undefined }
     : suppliedView;
@@ -939,6 +947,7 @@ export async function POST(request: Request) {
     sub: user.sub,
     userId: userId ?? null,
     handle: workspace.handle,
+    folderAgentPath,
   };
   const provider = cloudProviderLabel(config.provider);
   // A turn may deliberately choose another model from the already-connected
@@ -1076,6 +1085,7 @@ export async function POST(request: Request) {
     maxRetries: 0,
     system:
       buildSystem(body.context, relatedContext.items, recentContext.note) +
+      (folderAgentPath !== undefined ? `\n\nThis task is restricted to folder ${JSON.stringify(folderAgentPath)} and its descendants. Always supply that folder or a descendant as folder_path when creating items. Changes require owner approval. Do not request tools outside this folder.` : "") +
       (contextResolutions.some((entry) => entry.status === "unavailable")
         ? `\n\nChosen context sources unavailable: ${contextResolutions.filter((entry) => entry.status === "unavailable").map((entry) => entry.id).join(", ")}. These sources could not be read. Do not infer their content or claim to have used them; explain when this limits the answer.` : "") +
       (workspaceAgentPrompt ? `\n\n${workspaceAgentPrompt}` : "") +

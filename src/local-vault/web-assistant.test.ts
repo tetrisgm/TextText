@@ -3,6 +3,20 @@ import { createWebAssistant } from "./web-assistant";
 const id="4c417b9d-f935-40c4-a537-7cb70658f898";
 const read=vi.fn(async()=>({markdown:`---\ntextTextId: "${id}"\n---\nBody`}));
 describe("web assistant transport",()=>{
+  it("starts folder tasks without an item read and isolates target histories",async()=>{
+    const bodies: {context:Record<string,unknown>;messages:unknown[]}[]=[];
+    const readFolder=vi.fn();
+    const fetcher=vi.fn(async(_url:unknown,init?:RequestInit)=>{bodies.push(JSON.parse(String(init?.body)));return new Response(JSON.stringify({type:"complete",text:"Folder answer"})+"\n")});
+    const adapter=createWebAssistant("test",readFolder,fetcher as typeof fetch,()=>{},true);
+    await adapter.request("agentSend",{taskId:"one",scope:"folder",folderPath:"Notes",prompt:"Create"});
+    expect(bodies[0].context).toEqual({agentScope:"folder",folderPath:"Notes",includeItem:false,workspaceIndex:false,mode:"workspace_review"});
+    await adapter.request("agentSend",{taskId:"two",scope:"folder",folderPath:"",prompt:"Root"});
+    expect(bodies[1].messages).toEqual([{role:"user",content:"Root"}]);
+    expect(readFolder).not.toHaveBeenCalled();
+    await expect(adapter.request("agentSend",{taskId:"bad",scope:"folder",folderPath:"../Other",prompt:"Create"})).rejects.toThrow("Choose");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("cancels a running request and fences late responses after workspace destruction",async()=>{
     for(const destroy of [false,true]){
       const events:Record<string,unknown>[]=[];let resolve!:(r:Response)=>void;let signal:AbortSignal|undefined;

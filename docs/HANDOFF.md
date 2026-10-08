@@ -92,8 +92,10 @@
   Hosted folder boundary is implemented at the canonical file adapter and
   durable proposal stage/approval, with 56 tests and TypeScript passing.
   [Receipt and remaining wiring](verification/2026-10-08-hosted-folder-boundary.md).
-  `/api/ai` and web transport still need to issue the selected-folder grant;
-  template-library commands require explicit cross-library rules before inclusion.
+  `/api/ai`, web transport and shared folder menu now issue the selected-folder
+  grant. Transport/catalog/adapter tests passed (29), TypeScript and rebuilt
+  desktop folder-agent browser regression passed. Live hosted task/approval and
+  Oracle rollout remain; template-library commands require cross-library rules.
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.

@@ -49,6 +49,15 @@ describe("guarded cloud assistant tools", () => {
     });
   });
 
+  it("offers only explicitly folder-authorized tools for a folder task", () => {
+    const tools = guardedCloudAssistantTools({...actor, folderAgentPath: "Notes"}, vi.fn());
+    expect(tools).toHaveProperty("read_item");
+    expect(tools).toHaveProperty("create_item");
+    expect(tools).not.toHaveProperty("get_workspace");
+    expect(tools).not.toHaveProperty("create_item_type");
+    expect(tools).not.toHaveProperty("move_folder_tree");
+  });
+
   it("records a failed command with the executor's own message", async () => {
     // The failure used to be thrown and forgotten. Nothing reached the client,
     // so the turn was labelled Done and the only account of the failure on

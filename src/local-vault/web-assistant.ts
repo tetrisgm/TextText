@@ -1,3 +1,4 @@
+import { validFolderAgentPath } from "@/lib/ai/folder-agent-boundary";
 import type { VaultTransport } from "./bridge";
 import type { VaultFile } from "./bridge";
 import { galleryAgentImage } from "./gallery-agent-image";
@@ -23,22 +24,32 @@ export function createWebAssistant(handle: string, read: VaultTransport, fetcher
         return { state: status.enabled ? "ready" : "disconnected", message: status.enabled ? `${status.provider} · ${reviewWrites ? "Changes need approval" : "Read only"}` : "Connect a workspace AI provider to use the web assistant. Desktop ChatGPT sign-in is separate." };
       }
       if (method !== "agentSend") throw new Error("This action is not available in the web assistant.");
-      if (active || typeof params.taskId !== "string" || typeof params.path !== "string" || typeof params.prompt !== "string" || (params.customizing && !reviewWrites)) throw new Error("Open an item with proposal review to customize its design.");
-      if (historyPath !== params.path) { historyPath = params.path; history = []; }
+      const folderTask = params.scope === "folder";
+      const target = folderTask ? `folder:${params.folderPath}` : params.path;
+      if (folderTask && (!validFolderAgentPath(params.folderPath) || params.customizing || params.imageAssetId !== undefined)) throw new Error("Choose a folder for this task.");
+      if (active || typeof params.taskId !== "string" || (!folderTask && typeof params.path !== "string") || typeof params.prompt !== "string" || (params.customizing && !reviewWrites)) throw new Error("Open an item with proposal review to customize its design.");
+      if (historyPath !== target) { historyPath = String(target); history = []; }
       const request = params.prompt.slice(0, 12000);
       const prompt = params.customizing ? `Customize the selected file's presentation while preserving all writing and assets. Read its current hash and list validated templates. If its document fields explicitly mark texttextFolderView as v1, customize the template collection layout for the containing folder, preserve the folder marker and pinned default-item metadata, and never change sibling items. Do not confuse set_folder_template (future item defaults) with the folder collection design. Propose set_item_template for an existing built-in or pinned custom template. For a new design, propose create_item_type or update_item_type first; saving that reusable template does not apply it. Wait for that approval, then read the saved source and propose set_item_template in a separate turn with separate approval. Never claim an unapplied design changed this file.\n\nDesign request: ${request}` : request;
       const turn = { taskId: params.taskId, controller: new AbortController() }; active = turn;
       const send = (event: Record<string, unknown>) => { if (!closed && active === turn) emit({ ...event, taskId: turn.taskId }); };
       try {
-        const file = await read("read", { path: params.path }, turn.controller.signal) as VaultFile;
-        const { packIdentity } = await import("./pack");
-        if (closed || active !== turn || turn.controller.signal.aborted) return {};
-        const id = packIdentity(file.markdown); if (!id) throw new Error("This item is unavailable.");
-        const attachments = params.imageAssetId === undefined ? undefined : [await galleryAgentImage(file, params.imageAssetId)];
+        let context: Record<string, unknown>;
+        if (folderTask) {
+          context = { agentScope: "folder", folderPath: params.folderPath, includeItem: false,
+            workspaceIndex: false, mode: reviewWrites ? "workspace_review" : "read_only" };
+        } else {
+          const file = await read("read", { path: params.path }, turn.controller.signal) as VaultFile;
+          const { packIdentity } = await import("./pack");
+          if (closed || active !== turn || turn.controller.signal.aborted) return {};
+          const id = packIdentity(file.markdown); if (!id) throw new Error("This item is unavailable.");
+          const attachments = params.imageAssetId === undefined ? undefined : [await galleryAgentImage(file, params.imageAssetId)];
+          context = { postId: id, includeItem: true, mode: reviewWrites ? "workspace_review" : "read_only", ...(attachments ? { attachments } : {}) };
+        }
         if (closed || active !== turn || turn.controller.signal.aborted) return {};
         const response = await fetcher("/api/ai", { method: "POST", credentials: "same-origin", signal: turn.controller.signal,
           headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceHandle: handle, stream: true,
-            messages: [...history, { role: "user", content: prompt }], context: { postId: id, includeItem: true, mode: reviewWrites ? "workspace_review" : "read_only", ...(attachments ? { attachments } : {}) } }) });
+            messages: [...history, { role: "user", content: prompt }], context }) });
         if (!response.ok || !response.body) throw new Error("The workspace assistant could not start. Check its provider connection.");
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "", total = 0, complete = false;
         try {
@@ -57,7 +68,7 @@ export function createWebAssistant(handle: string, read: VaultTransport, fetcher
                   if (!reviewWrites || event.writeProposals.some((proposal: {kind?:string}) => proposal.kind !== "workspace")) throw new Error("These proposals cannot be reviewed here.");
                   send({type:"write-proposals", proposals:event.writeProposals});
                 } send({ type: "final-text", text: event.text });
-                if (active === turn && historyPath === params.path) history = [...history, { role: "user" as const, content: prompt }, { role: "assistant" as const, content: String(event.text).slice(0, 12000) }].slice(-8);
+                if (active === turn && historyPath === target) history = [...history, { role: "user" as const, content: prompt }, { role: "assistant" as const, content: String(event.text).slice(0, 12000) }].slice(-8);
                 complete = true; }
             }
           }
