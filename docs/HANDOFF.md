@@ -9,9 +9,9 @@
   [Receipt](verification/2026-10-08-parent-native-contract.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T121823Z-94cef4ea**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T130323Z-121e95fc**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T121947Z-ecc4fb6c.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T130430Z-f6dc73b6.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -41,8 +41,12 @@
   cached manifest identities in listings without reading every document.
   Frozen 804-test core and native gates passed. Mac 1198 is installed; live
   folder move preserved bytes/empty child, removed the old tree, followed the
-  selected folder and closed the stale dialog without an alert. Web deployment,
-  Windows installation and live active-editor acceptance remain pending. Stable staging retry identity and Oracle timeout remain open.
+  selected folder and closed the stale dialog without an alert. Oracle deployed
+  the shared fix with live checks passing. Windows 121e95fc candidate and
+  additional 18 folder tests passed on the PC; installation awaits the running
+  older app being saved/closed. Live active-editor acceptance remains pending.
+  Oracle stop again hit its 30-second timeout before restart; investigate the
+  actual production request drain rather than treating deploy success as proof. Stable staging retry identity and Oracle timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
