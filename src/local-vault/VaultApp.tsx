@@ -1,5 +1,6 @@
 "use client";
 import { createVaultDocumentReferences, vaultReferenceChoices } from "./reference-choices";
+import { FolderMoveDialog } from "./FolderMoveDialog";
 import { newItemPack } from "./new-item-pack";
 import { loadFolderItemDefault, folderStarter } from "./folder-item-default";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
@@ -582,6 +583,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const [imageCaptureOpen, setImageCaptureOpen] = useState(false);
   const [feedSubscribeOpen, setFeedSubscribeOpen] = useState(false);
   const [folderDesignOpen, setFolderDesignOpen] = useState(false);
+  const [movingFolder, setMovingFolder] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [recovery, setRecovery] = useState<{ path?: string } | null>(null);
   const [sharing, setSharing] = useState<VaultShareScope | null>(null);
@@ -985,6 +987,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     assistantReturnFocus.current = null;
   }, []);
   const activeWorkspaceRoot = listing?.root ?? "";
+  useEffect(() => { setMovingFolder(null); }, [activeWorkspaceRoot, destinationFolder, selected?.path]);
   const activeItemPath = selected?.path ?? "";
   const beginAddAgent = useCallback(() => {
     if (!activeWorkspaceRoot || !activeItemPath) return;
@@ -1267,6 +1270,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
                   <input list="vault-folders" aria-label="Current folder" value={destinationFolder} placeholder="Workspace root"
                     onChange={(event) => { setDestinationFolder(event.target.value); setFolderDesignOpen(false); }} />
                 </label>}
+                {canManageFiles && destinationFolder.trim() && <button disabled={busy} onClick={() => { closeMoreActions(); void operate(async () => setMovingFolder(destinationFolder.trim())); }}>Rename or move folder</button>}
                 {canCreate && <button disabled={busy} onClick={openFolderDesign}>Choose folder design</button>}
                 {(allowFolderPicker || webAssistant) && canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); void operate(customizeCurrent); }}>Customize folder</button>}
                 {canOpenRecovery && <button disabled={busy} onClick={() => openRecovery()}>Trash and recovery</button>}
@@ -1348,6 +1352,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         } : undefined}
         onSaveStoryDetails={selectedStory ? details => saveStoryDetailsRef.current(details) : undefined}
         onClose={() => setPublishing(null)} />}
+      {movingFolder && <FolderMoveDialog source={movingFolder} native={allowFolderPicker} onClose={() => setMovingFolder(null)} />}
       {captureMode && <CaptureDialog bookmarkOnly={captureMode === "bookmark"} onClose={() => { setCaptureMode(null); setPendingCreationLook(null); }} onSave={async (input) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before capturing another item.");
         let created = await vaultRequest<VaultFile>("create", { ...input, folder: input.sourceURL ? "Bookmarks" : destinationFolder.trim() || "Notes" });

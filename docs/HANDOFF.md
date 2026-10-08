@@ -28,6 +28,15 @@
 
 ## Current work
 
+- Shared folder dialog is wired into the folder More menu for file managers.
+  It validates destinations, stages the canonical reviewed move and opens an
+  owner review link, using the native workspace origin on desktop. Folder or
+  workspace departure closes stale UI. Nine focused tests, TypeScript and a
+  full-app Chromium fixture passed, including light/dark visual inspection.
+  Mandatory core/browser suites include the new checks. No actual install or
+  live folder move is claimed. Pending-edit readiness, frozen gates and live
+  native/web review acceptance remain before shipping.
+
 - Desktop folder-review transport is wired: Mac uses a bound authenticated
   request builder with exact source/destination keys and a bounded response;
   Windows reuses the shared web transport through workspace-restricted native

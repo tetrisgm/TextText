@@ -794,3 +794,6 @@
 .tt-note-template-picker input { font: inherit; color: inherit; background: transparent; border: 1px solid #8886; border-radius: 5px; padding: 6px; }
 .tt-note-template-picker p { font-size: .85rem; opacity: .8; }
 .tt-note-template-picker button { margin: 3px; }
+
+.vault-folder-move{width:min(480px,calc(100vw - 32px));height:auto;max-height:calc(100vh - 48px);padding:24px}.vault-folder-move header{display:flex;align-items:center;justify-content:space-between;gap:16px}.vault-folder-move h2{margin:0;font-size:22px}.vault-folder-move label{display:grid;gap:8px}.vault-folder-move input{width:100%;padding:10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}.vault-folder-move a{color:var(--tt-accent)}.vault-folder-move p{line-height:1.5}.vault-folder-move form>button{background:var(--selection)}
+.vault-app .vault-folder-move{inset:10vh auto auto 50%;transform:translateX(-50%);width:min(480px,calc(100vw - 32px));height:auto;max-height:calc(80vh);padding:24px}
