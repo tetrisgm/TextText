@@ -49,6 +49,13 @@
 
 ## Current work and next checks
 
+- Matching native snapshot/template validation now lives in the shared
+  `BuiltinTextPackDocument.validateMetadata`, consumed by the agent and by the
+  actual custom creation store. Direct store callers cannot bypass metadata,
+  title/body and unimported-asset checks. Agent, local-vault and local/remote
+  document suites passed; `/tmp/texttext-custom-create-store-validation.log`.
+  Source only, not installed. Reusable-library authoring still remains.
+
 - Desktop folder-agent `create_file` now accepts complete matching custom
   snapshot/template JSON. Native packages prepare metadata before publication
   through the checksum-pinned creation journal, including metadata in retry

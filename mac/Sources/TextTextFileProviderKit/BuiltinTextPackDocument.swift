@@ -6,6 +6,26 @@ public struct BuiltinTextPackDocument: Sendable {
     public let documentJSON: String
     public let templateJSON: String
 
+    public static func validateMetadata(snapshot: String?, template: String?) throws {
+        guard let snapshot, let template, snapshot.utf8.count <= 2_000_000, template.utf8.count <= 2_000_000,
+              let document = try JSONSerialization.jsonObject(with: Data(snapshot.utf8)) as? [String: Any],
+              document["schemaVersion"] as? Int == 1,
+              let content = document["content"] as? [String: Any],
+              content["title"] is String, content["body"] is String,
+              content["fields"] is [String: Any], content["tags"] is [String], content["assets"] is [[String: Any]],
+              let presentation = document["presentation"] as? [String: Any],
+              let reference = presentation["template"] as? [String: Any],
+              let definition = try JSONSerialization.jsonObject(with: Data(template.utf8)) as? [String: Any],
+              definition["schemaVersion"] as? Int == 1, definition["engineVersion"] as? Int == 1,
+              let id = definition["id"] as? String, !id.isEmpty,
+              let version = definition["version"] as? Int, version > 0,
+              reference["id"] as? String == id, reference["version"] as? Int == version,
+              definition["item"] is [String: Any], definition["collection"] is [String: Any],
+              definition["fields"] is [[String: Any]] else {
+            throw TextTextTextBundleError.invalidPackage("The snapshot and template must be matching schema-v1 JSON objects.")
+        }
+    }
+
     public static func create(title: String, body: String, kind: String = "note",
                               sourceURL: String? = nil) throws -> Self {
         let definitions = try JSONSerialization.jsonObject(with: Data(GeneratedBuiltinTemplates.json.utf8)) as? [[String: Any]]

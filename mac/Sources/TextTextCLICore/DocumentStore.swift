@@ -328,6 +328,15 @@ public struct DocumentStore: Sendable {
         let folderDefault = kind == nil && customDocumentJSON == nil ? try LocalVaultFolderDefault.read(root: root, folder: destination) : nil
         let effectiveKind = kind ?? "note"
         let body = body ?? folderDefault?.body ?? ""
+        if let customDocumentJSON {
+            try BuiltinTextPackDocument.validateMetadata(snapshot: customDocumentJSON, template: customTemplateJSON)
+            let snapshot = try JSONSerialization.jsonObject(with: Data(customDocumentJSON.utf8)) as! [String: Any]
+            let content = snapshot["content"] as! [String: Any]
+            guard content["title"] as? String == title, content["body"] as? String == body,
+                  (content["assets"] as? [[String: Any]])?.isEmpty == true else {
+                throw TextTextCLIError.invalidDocument("custom creation must match title/body and contain no unimported assets")
+            }
+        }
         let name = DocumentCreation.filename(for: title)
         let url = destination.appendingPathComponent("\(name).textpack")
         guard !fileManager.fileExists(atPath: url.path) else {

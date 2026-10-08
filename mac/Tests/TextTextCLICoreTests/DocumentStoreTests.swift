@@ -19,6 +19,14 @@ final class DocumentStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
+    func testCustomCreationValidationCannotBeBypassedThroughTheStore() throws {
+        for snapshot in ["{}", "[]", "not JSON"] {
+            XCTAssertThrowsError(try store.createWithRetryKey(title: "Invalid", body: "Body", folder: nil, kind: nil,
+                key: "invalid-" + snapshot, customDocumentJSON: snapshot, customTemplateJSON: "{}"))
+            XCTAssertTrue(try store.list().isEmpty)
+        }
+    }
+
     func testPreparedCreationKeepsIdentityWithoutPublishingDestination() throws {
         let journal = root.appendingPathComponent(".creation-fixture", isDirectory: true)
         try FileManager.default.createDirectory(at: journal, withIntermediateDirectories: true)
