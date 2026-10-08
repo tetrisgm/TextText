@@ -676,6 +676,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         value["items"] = (listing["items"] as? [[String: Any]] ?? []).map { row in
             var row = row
             row["canEditContent"] = (row["path"] as? String).map { capability?.canEdit(path: $0) ?? false } ?? false
+            if let path = row["path"] as? String, let identity = capability?.pathIdentities?[path] {
+                row["itemId"] = identity
+            }
             return row
         }
         return value

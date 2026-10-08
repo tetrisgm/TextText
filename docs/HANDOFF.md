@@ -36,8 +36,12 @@
   Live acceptance exposed a shared UI defect: `VaultApp.refresh` replaces the
   listing without reconciling `destinationFolder`, so the selected old folder
   remains and FolderPresentation shows a missing-path error after a move.
-  Fix selection reconciliation across refreshed listings, preserving any active
-  editor. Stable staging retry identity and Oracle shutdown timeout remain open.
+  Source follow-up reconciles folder navigation using stable descendant IDs,
+  with surviving-parent fallback and no editor replacement. Mac now includes
+  cached manifest identities in listings without reading every document.
+  Eighteen focused checks, full-app move fixture, TypeScript, six connection
+  tests and the real HTTP contract passed. Install/live navigation acceptance
+  remains pending. Stable staging retry identity and Oracle timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript

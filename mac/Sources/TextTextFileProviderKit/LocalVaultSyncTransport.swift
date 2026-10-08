@@ -46,6 +46,7 @@ public struct LocalVaultSyncCapabilities: Sendable, Codable, Equatable {
     public let writableItems: Set<String>
     public var knownPaths: Set<String> = []
     public var writablePaths: Set<String> = []
+    public var pathIdentities: [String: String]? = nil
     public func canEdit(path: String) -> Bool {
         if knownPaths.contains(path) { return writablePaths.contains(path) }
         return canCreateContent || writableFolders.contains { path.hasPrefix($0 + "/") }
@@ -98,6 +99,8 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
             writableFolders: writableFolders, writableItems: Set(cachedManifest.filter { $0.canEditContent == true }.map(\.itemId)))
         value.knownPaths = Set(cachedManifest.map(\.relativePath))
         value.writablePaths = Set(cachedManifest.filter { $0.canEditContent == true }.map(\.relativePath))
+        value.pathIdentities = Dictionary(grouping: cachedManifest.filter { $0.deleted != true }, by: \.relativePath)
+            .compactMapValues { $0.count == 1 ? $0[0].itemId : nil }
         return value
     }
     public func canWrite(itemId: String, path: String, existing: Bool) async -> Bool {

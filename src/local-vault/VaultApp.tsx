@@ -1,6 +1,7 @@
 "use client";
 import { createVaultDocumentReferences, vaultReferenceChoices } from "./reference-choices";
 import { FolderMoveDialog } from "./FolderMoveDialog";
+import { reconcileFolderLocation } from "./folder-location";
 import { newItemPack } from "./new-item-pack";
 import { loadFolderItemDefault, folderStarter } from "./folder-item-default";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
@@ -542,6 +543,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [sidebarOpen, setSidebarVisible]);
   const [listing, setListing] = useState<VaultListing | null>(null);
+  const listingRef = useRef<VaultListing | null>(null);
+  listingRef.current = listing;
   const [selected, setSelectedState] = useState<VaultFile | null>(null);
   const [liveTitle, setLiveTitle] = useState<{ path: string; title: string } | null>(null);
   const updateSelectedTitle = useCallback((path: string, title: string) => {
@@ -731,7 +734,11 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const refresh = useCallback(() => {
     const request = ++listingRequest.current;
     return vaultRequest<VaultListing>("list")
-      .then(value => { if (request === listingRequest.current) setListing(value); })
+      .then(value => { if (request === listingRequest.current) {
+        const previous = listingRef.current;
+        setDestinationFolder(folder => reconcileFolderLocation(folder, previous, value));
+        setListing(value);
+      } })
       .catch((error: Error) => { if (request === listingRequest.current) setError(error.message); });
   }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);
