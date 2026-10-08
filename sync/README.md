@@ -58,6 +58,9 @@ fake credentials and local HTTP fixtures; no production account or vault is used
 `recovery.test.ts` uses reproducible seeds for mixed writers, reordered delivery,
 external file replacement and lost acknowledgements. Existing suites include
 actual child-process termination and a native-to-TypeScript HTTP contract.
+The core gate also runs hosted file-agent commands, comment operations and agent
+presence: lost acknowledgements, reused operation keys, commit-time authority,
+comment replay/attribution, cleanup, and expiry use the production file store.
 A failed rerun invalidates the earlier receipt before tests start. A source change
 during execution prevents a receipt. Source, tests, package lock and gate code
 are fingerprinted, including additions and deletions. Prose is excluded.
