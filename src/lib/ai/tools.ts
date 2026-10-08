@@ -646,13 +646,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     title: "Create item type",
     description:
       "Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's default. Existing items change only when apply_to_existing is explicitly true.\n\n" +
-      // Worked example rather than more rules. A type designed with no fields
-      // at all was the most common failure, and a request for a year grid of
-      // runs produced exactly that: the model reached for a layout and forgot
-      // that a layout needs data underneath it.
-      "Every type needs fields a person will actually fill in. This is the shape to aim for, from the built-in Tasks type:\n" +
-      '{"name":"Tasks","description":"A focused list of things to finish.","fields":[{"id":"area","label":"Area","type":"enum","options":[{"value":"work"},{"value":"personal"}]},{"id":"items","label":"Items","type":"rows","fields":[{"id":"task","type":"text"},{"id":"done","type":"boolean"},{"id":"when","type":"date"},{"id":"priority","type":"enum"}]}],"collection":{"layout":"list"}}\n' +
-      "Three to seven fields. A board needs a single-select enum to group by, and a calendar or heatmap needs a date field to place items on: declare that field, or choose a layout the fields you have can support. Never return a type with no fields.",
+      "Use the document's existing title, body and assets before adding custom fields. Notes and blog articles can use fields: [] with showBody: true. Do not add Area, Description or other metadata merely to fill a quota. Add fields only when the requested workflow needs them.\n" +
+      '{"name":"Blog","styleReference":"Medium","fields":[],"item":{"shape":"article","showBody":true,"showMetadata":false},"collection":{"layout":"list"}}\n' +
+      "A board needs a single-select enum to group by, and a calendar or heatmap needs a date field to place items on: declare that field, or choose a layout the available content supports. Respect the requested reading and editing experience.",
     inputSchema: z
       .object({
         blueprint: itemTypeBlueprintSchema,

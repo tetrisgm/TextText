@@ -35,6 +35,12 @@
 
 ## Current work and next checks
 
+- Agent blueprint instructions now allow plain notes/articles without invented
+  fields, using existing title/body/assets and a minimal Medium-like Blog example.
+  Tool/generation/blueprint suites: 62 tests passed; TypeScript passed.
+  Source only; native reusable-library tools and hosted library grant remain.
+  Logs `/tmp/texttext-template-minimal-fields{,-types}.log`.
+
 - Mac 1209 runtime Save as look failed before destination creation. Fixed stale
   ZIP offset use when receipt removal precedes Markdown extraction. Regression
   now places Markdown after receipts; 53 storage/remote tests passed. Mac 1210
