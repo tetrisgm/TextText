@@ -26,6 +26,16 @@
 
 ## Current work and next checks
 
+- Oracle candidate source `af65cbc6` built and packaged in clean snapshot
+  `/private/tmp/texttext-candidate-1195-5ELVuo`; archive
+  `.texttext/oracle/texttext-af65cbc6-folder.tar.gz` (304 MB).
+  Logs `/tmp/texttext-folder-oracle-{build,package,deploy}.log`.
+  Deployment stopped before changes: `test:sync:check` requires a fresh core
+  receipt for this snapshot. Required `npm run test:sync` is running in exec
+  session **99082**, log `/tmp/texttext-folder-required-sync.log`; poll the
+  existing handle. Once passed, retry the same `ship.sh --web-only --skip-tests`
+  with the verified artifact. Oracle remains on the recorded 1207 deployment.
+
 - Local CLI keyed creation/capture now uses a durable prepared-package journal.
   Rename/edit retries, deletion/duplicate fences, capture retry, prepared-intent
   resumption and concurrent local creation passed in 64 native tests.
