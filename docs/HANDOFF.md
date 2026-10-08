@@ -2,7 +2,7 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1198)**, source `121e95fc`.
+- Mac `/Applications/TextText.app`: **0.204 (1199)**, source `9b9a218e`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
@@ -49,8 +49,14 @@
   and native sync gates. Exact-source receipts are in the clean candidate at
   `/private/tmp/texttext-candidate-1195-5ELVuo/.texttext/sync/`; log:
   `/tmp/texttext-staging-frozen-9b9a218e-gates.log`.
-  Mac 0.204 (1199) build is running (session 47779), log
-  `/tmp/texttext-mac1199-build.log`. It is not installed yet. Installed-client
+  Mac 0.204 (1199) built and installed from `9b9a218e`: signed bundle and all
+  three extensions validate. Actual startup preserves signed-in account,
+  iCloud workspace and existing note; workspace search finds its current path,
+  Escape dismisses the palette and returns to the note. Runtime health report
+  remains unreadable to the unentitled installer, so UI proof is recorded.
+  Logs: `/tmp/texttext-mac1199-build.log`, `/tmp/texttext-mac1199-install.log`.
+  Web package is running (session 45721), log
+  `/tmp/texttext-staging-web-package.log`; not deployed yet. Installed-client
   retry verification and Oracle rollout remain. PC process 44968 still runs;
   unsaved state has not been established.
 
