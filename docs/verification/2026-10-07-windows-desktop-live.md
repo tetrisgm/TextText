@@ -213,8 +213,26 @@ close/activation assertions. Sealed candidate:
 The preceding candidate `e060104a879043709020b285be6ba09d` was deliberately
 not installed because its build used the older dependency tree.
 
-Immediately after the final successful build, both documented PC SSH routes
-reset/closed before command execution. Installation of `699cd...` is not
-confirmed; inspect the current process/installed receipt before retrying.
-Actual Explorer activation, final account identity and close/reopen checks
-remain pending. No additional rebuild is needed for the sealed candidate.
+After PC SSH recovered, the installed reader was checked first: no active
+editor, all previous markers and the new Mac 1177 account-verification marker
+were visible. Normal close succeeded. Candidate `699cd68d717142d0bbcbae3efd8c0eb5`
+was verified twice and installed, preserving
+`TextText-previous-20261007T184113-1f330807`.
+
+Actual installed shared Settings showed `ramine@ramine.net`, its correct
+workspace and Apple Connected through the live Oracle account endpoint. Body
+search again returned the correct note/path. Passing a real same-workspace
+TextPack path to a second native process forwarded to the existing window;
+the second process exited 0 and the original PID remained the sole instance.
+Interactive-user registry inspection confirmed TextText in OpenWithProgids and
+no `.textpack` default override. Pending-edit activation safety was tested in
+the mandatory real MainWindow smoke; this live check used a saved reader.
+
+Normal close/reopen passed, restoring the account and selected note. Measured
+reopen: shell 796 ms, reader 1,754 ms. Disk confirmed all nine markers exactly
+once, outbox 0, no pending pull and an acknowledged archive SHA-256:
+`2e8b78392fb98d4311317bcd130f30f97e6158ae178e2ce617cdf47c3279b1b5`.
+Final installed DLL SHA-256:
+`69c6ea7916780cc963d3289dd699502e6df66b8623975456f7ad33f5fe641947`;
+EXE SHA-256 remains the apphost hash recorded above. The installed app remains
+open on the saved verification note. No additional user files were changed.
