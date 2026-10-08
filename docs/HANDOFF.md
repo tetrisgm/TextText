@@ -96,7 +96,13 @@
   (`/tmp/texttext-local-create-key-guard.log`). This temporary safety guard is
   not installed and is not the final creation-retry feature. Required design:
   durable workspace-level creation intent, payload binding, coordinated commit
-  and identity-based recovery after rename/edit/interruption. Keyed append now
+  and identity-based recovery after rename/edit/interruption.
+  CLI creation publication now synchronizes its staged TextPack, coordinates
+  the create-only move and fsyncs the destination directory. Sixty local/remote
+  DocumentStore and LocalVault tests passed, including a concurrent same-name
+  create proving one winner, no overwrite and no staging debris
+  (`/tmp/texttext-cli-create-publication.log`). Source only; journal/retry
+  implementation and installed acceptance are still pending. Keyed append now
   commits its receipt in the same TextPack replacement; reopen/later-edit retry
   and payload mismatch regression passed. Web package rebuild, Windows core
   rewrite and shared server/agent mutation receipt preservation regressions

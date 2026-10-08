@@ -461,6 +461,25 @@ final class DocumentStoreTests: XCTestCase {
         }
     }
 
+    func testConcurrentCreatePublishesOneCompletePackageWithoutOverwrite() async throws {
+        let documents = try XCTUnwrap(store)
+        let wins = await withTaskGroup(of: Bool.self) { group in
+            for body in ["First writer", "Second writer"] {
+                group.addTask {
+                    do { _ = try documents.create(title: "Concurrent", body: body); return true }
+                    catch { return false }
+                }
+            }
+            var successes = 0
+            for await success in group { if success { successes += 1 } }
+            return successes
+        }
+        XCTAssertEqual(wins, 1)
+        let saved = try documents.readMarkdown(at: root.appendingPathComponent("Concurrent.textpack"))
+        XCTAssertTrue(saved.contains("First writer") != saved.contains("Second writer"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["Concurrent.textpack"])
+    }
+
     func testCreateLeavesNoTemporaryDebrisBehind() throws {
         _ = try store.create(title: "Tidy", body: "body")
         let leftovers = try FileManager.default

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import TextTextWorkspaceCore
 import TextTextFileProviderKit
 
@@ -350,13 +351,33 @@ public struct DocumentStore: Sendable {
         let staging = destination.appendingPathComponent(".texttext-\(UUID().uuidString).tmp")
         try fileManager.copyItem(at: packed, to: staging)
         defer { try? fileManager.removeItem(at: staging) }
-        if let folderDefault {
-            let latest = try LocalVaultFolderDefault.read(root: root, folder: destination)
-            guard latest?.sourceHash == folderDefault.sourceHash, latest?.sourcePath == folderDefault.sourcePath else {
-                throw TextTextCLIError.documentChanged(folderDefault.sourcePath)
+        // Flush the complete package before publishing it. A create-only rename
+        // and file coordination give file observers one complete TextPack.
+        let handle = try FileHandle(forWritingTo: staging)
+        try handle.synchronize(); try handle.close()
+        var coordinationError: NSError?
+        var published: Result<Void, Error>?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) { target in
+            published = Result {
+                guard contains(target), target.standardizedFileURL == url.standardizedFileURL else {
+                    throw TextTextCLIError.invalidDocument("the creation target changed outside the workspace")
+                }
+                if let folderDefault {
+                    let latest = try LocalVaultFolderDefault.read(root: root, folder: destination)
+                    guard latest?.sourceHash == folderDefault.sourceHash, latest?.sourcePath == folderDefault.sourcePath else {
+                        throw TextTextCLIError.documentChanged(folderDefault.sourcePath)
+                    }
+                }
+                try fileManager.moveItem(at: staging, to: target)
+                let descriptor = Darwin.open(target.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+                guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+                defer { Darwin.close(descriptor) }
+                guard Darwin.fsync(descriptor) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
             }
         }
-        try fileManager.moveItem(at: staging, to: url)
+        if let coordinationError { throw coordinationError }
+        guard let published else { throw CocoaError(.fileWriteUnknown) }
+        try published.get()
         return url
     }
 
