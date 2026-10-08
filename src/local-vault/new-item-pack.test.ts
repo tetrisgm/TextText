@@ -1,11 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { requireBuiltinTemplate } from "@/lib/presentation/templates";
+import { BUILTIN_TEMPLATES, requireBuiltinTemplate } from "@/lib/presentation/templates";
 import { newItemPack } from "./new-item-pack";
 import { openPack, replacePackIdentity } from "./pack";
 import { readDocument } from "./model";
 
 describe("complete new-item import", () => {
+  it("creates current Notes with stable parent identities and retains historical Note versions", () => {
+    const template = BUILTIN_TEMPLATES.find(value => value.id === "texttext.note")!;
+    expect(template.version).toBe(2);
+    const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
+    document.content.title = "Child note";
+    document.content.body = "Keep this writing";
+    document.content.fields.parents = ["parent-one", "parent-two"];
+    const pack = openPack(newItemPack(document, {template}), "Notes/Child.textpack", "revision");
+    expect(readDocument(pack.file).content.fields.parents).toEqual(["parent-one", "parent-two"]);
+    expect(readDocument(pack.file).presentation.template).toEqual({id:"texttext.note",version:2});
+    const oldTemplate = requireBuiltinTemplate("texttext.note", 1);
+    const old = emptyDocumentSnapshot({id:oldTemplate.id,version:1});
+    old.content.body = "Existing note";
+    const historical = openPack(newItemPack(old, {template:oldTemplate}), "Notes/Old.textpack", "old");
+    expect(readDocument(historical.file).presentation.template.version).toBe(1);
+    expect(readDocument(historical.file).content.body).toBe("Existing note");
+  });
+
   it("contains writing, template and assets before the first filesystem write", () => {
     const template = requireBuiltinTemplate("texttext.note");
     const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
