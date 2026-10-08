@@ -39,7 +39,7 @@ public enum LocalVaultSyncFailure: Error, LocalizedError {
     }
 }
 
-public struct LocalVaultSyncCapabilities: Sendable, Codable {
+public struct LocalVaultSyncCapabilities: Sendable, Codable, Equatable {
     public let fullAccess: Bool
     public let canCreateContent: Bool
     public let writableFolders: [String]

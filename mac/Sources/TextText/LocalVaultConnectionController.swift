@@ -171,8 +171,10 @@ final class LocalVaultConnectionController {
             _ = try await transport.manifest()
             var value = await transport.capabilities()
             value.knownPaths.formUnion(await engine.knownLocalPaths())
+            let changed = capabilities != value
             capabilities = value
             try? LocalVaultCapabilityCache.write(value, root: root, binding: binding)
+            if changed { onChange?(status, true) }
         }
         if startSync { activate() }
         onlineReady = false
@@ -273,15 +275,20 @@ final class LocalVaultConnectionController {
         DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay, execute: work)
         retryDelay = min(retryDelay * 2, 60)
     }
+    private func notifyCompletedSync(downloaded: Int, capabilityChanged: Bool) {
+        onChange?(status, downloaded > 0 || capabilityChanged)
+    }
     private func run() {
         guard !stopped, let engine, running == nil else { return }
         running = Task { [weak self, engine] in
             do {
                 let report = try await engine.sync()
                 guard let self else { return }
+                var capabilityChanged = false
                 if let transport = self.transport {
                     var value = await transport.capabilities()
                     value.knownPaths.formUnion(await engine.knownLocalPaths())
+                    capabilityChanged = self.capabilities != value
                     self.capabilities = value
                     if let binding = self.binding { try? LocalVaultCapabilityCache.write(value, root: self.root, binding: binding) }
                 }
@@ -289,7 +296,7 @@ final class LocalVaultConnectionController {
                 self.onlineReady = report.errors.isEmpty && report.conflicts.isEmpty
                 if !report.conflicts.isEmpty { self.recordSyncMessage("Conflicting edits were kept in this folder's recovery copies.") }
                 else { self.recordSyncMessage(report.errors.first) }
-                self.onChange?(self.status, report.downloaded > 0)
+                self.notifyCompletedSync(downloaded: report.downloaded, capabilityChanged: capabilityChanged)
                 self.running = nil
                 if !report.errors.isEmpty { self.retry(); return }
                 self.retryDelay = 2

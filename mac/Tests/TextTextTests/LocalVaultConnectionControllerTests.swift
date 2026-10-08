@@ -25,6 +25,29 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testCapabilityOnlyCompletionRefreshesListingWithoutDownloads() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [NotificationProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let connection = LocalVaultConnectionController(root: root, workspaceId: "shared", session: session,
+            credentials: { (URL(string: "https://notification.test")!, "fixture") })
+        defer { connection.stop() }
+        _ = try await connection.connect(startSync: false)
+        XCTAssertFalse(try XCTUnwrap(connection.capabilities).canCreateContent)
+        let changed = expectation(description: "permission-only listing refresh")
+        connection.onChange = { _, filesChanged in if filesChanged { changed.fulfill() } }
+        connection.schedule()
+        await fulfillment(of: [changed], timeout: 3)
+        connection.onChange = nil
+        XCTAssertTrue(try XCTUnwrap(connection.capabilities).canCreateContent)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).list(), [])
+    }
+
+    @MainActor
     func testSharedWorkspacePreparationUsesSelectedIdentityAndCanRemainDormant() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -174,6 +197,20 @@ private final class CapabilityProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let writable = request.url?.query?.contains("wait=") == true
+        let body = "{\"items\":[],\"fullAccess\":true,\"canCreateContent\":\(writable ? "true" : "false"),\"writableFolders\":[]}"
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private final class NotificationProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var requests = 0
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "notification.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); Self.requests += 1; let writable = Self.requests > 2; Self.lock.unlock()
         let body = "{\"items\":[],\"fullAccess\":true,\"canCreateContent\":\(writable ? "true" : "false"),\"writableFolders\":[]}"
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
