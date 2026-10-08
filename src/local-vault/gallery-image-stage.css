@@ -1,0 +1,7 @@
+.vault-app .vault-gallery-image-stage { display:block; overflow:hidden; }
+.vault-gallery-image-viewport { position:absolute; inset:30px 30px 66px; display:flex; align-items:center; justify-content:center; overflow:hidden; outline-offset:-3px; }
+.vault-gallery-image-viewport[data-zoomed="true"] { cursor:grab; touch-action:none; }
+.vault-gallery-image-viewport[data-dragging="true"] { cursor:grabbing; }
+.vault-app .vault-gallery-image-viewport img { flex:none; min-width:0; max-width:none; max-height:none; object-fit:contain; user-select:none; transition:none; }
+.vault-gallery-image-viewport:focus-visible { outline:2px solid var(--accent, #387acc); }
+@media(max-width:740px) { .vault-gallery-image-viewport { inset:18px 10px 66px; } }
