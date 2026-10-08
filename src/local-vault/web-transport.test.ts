@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { strToU8, strFromU8, unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { createWebVaultTransport } from "./web-transport";
@@ -578,4 +578,13 @@ it("restores Trash with caller retry identity and invalidates the same-item mani
   expect(await transport.request("trashRestore",payload)).toMatchObject({status:"restored",itemId:"same-item"});
   expect(requests.map(request=>request.body)).toEqual([payload,payload]);
   expect(requests.every(request=>request.url==="/api/vault/workspace/trash")).toBe(true);
+});
+
+it("releases a stalled manifest request even when fetch ignores abort",async()=>{
+ vi.useFakeTimers();try {
+  const request=vi.fn().mockImplementationOnce(()=>new Promise(()=>{})).mockResolvedValue(new Response(JSON.stringify({revision:"next",items:[],folders:[]})));
+  const transport=createWebVaultTransport("workspace","Fixture",request);
+  const first=expect(transport.request("list",{})).rejects.toMatchObject({code:"408"});await vi.runAllTimersAsync();await first;
+  expect(await transport.request("list",{})).toMatchObject({items:[]});expect(request).toHaveBeenCalledTimes(2);
+ }finally{vi.useRealTimers();}
 });

@@ -7,7 +7,7 @@ export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
     'sync/{boundary,compatibility,shared-ui}.test.ts',
-    'src/local-vault/{collaboration-client,web-transport,web-watch,template-starter,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
+    'src/local-vault/{collaboration-client,web-transport,web-watch,bootstrap-retry,template-starter,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
     'src/lib/vault/{collaboration,reconcile,pack-reconcile}.test.ts',
     'src/app/api/vault/{auth,scoped-auth,collaboration-auth}.test.ts',
     'src/lib/__tests__/request-origin.test.ts',

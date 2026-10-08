@@ -1,5 +1,6 @@
 "use client";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
+import { retryBootstrap, isTransientBootstrapError } from "./bootstrap-retry";
 import { templateStarterDocument } from "./template-starter";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 
@@ -360,13 +361,14 @@ function VaultEditor({ initial, root, onChanged, onRemoved, onTitleChange, regis
   }} />} focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled} collab={{ postId: initial.path, userName: "You", color: "#3970c5", canEdit: true }} onDocumentChange={change} onDone={async () => { if (await flush() && (experience === "note" || experience === "article")) { setExternal(current.current); setReading(true); } }} />}</section>;
 }
 
-function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; onSharedMode?: () => void }) {
+export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; onSharedMode?: () => void }) {
   const { root, initial, awaitSharedMode, onSharedMode, registerFlush } = props;
   const path = initial.path;
   const markdown = initial.markdown;
   const [mode, setMode] = useState<VaultCollaborationConfig | "local" | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [retryable, setRetryable] = useState(false);
   const [promoting, setPromoting] = useState(false);
   const [sharedInitial, setSharedInitial] = useState<VaultFile | null>(null);
   const [resumeBody, setResumeBody] = useState<{ selection: { anchor: number; head: number } | null } | null>(null);
@@ -380,6 +382,7 @@ function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; 
   }, [registerFlush]);
   useEffect(() => {
     let stopped = false;
+    const controller = new AbortController();
     const cacheKey = `texttext:collaboration-config:${root}:${packIdentity(markdown)}`;
     const draftKey = `texttext:vault-draft:${root}:${path}`;
     // Finish a recoverable file draft before switching its persistence mechanism.
@@ -387,8 +390,9 @@ function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; 
       queueMicrotask(() => { if (!stopped) setMode("local"); });
       return () => { stopped = true; };
     }
-    void vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path }).then(async config => {
+    void retryBootstrap(signal => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path }, signal), controller.signal).then(async config => {
       if (stopped) return;
+      setError(""); setRetryable(false);
       if (config) {
         if (awaitSharedMode) {
           const ready = await prepareSharedNote({ path, candidate: config,
@@ -421,10 +425,16 @@ function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: boolean; 
     }).catch(reason => {
       if (stopped) return;
       if (awaitSharedMode) setMode("local");
-      else setError(reason instanceof Error ? reason.message : "Could not open this document.");
+      else { setRetryable(isTransientBootstrapError(reason)); setError(reason instanceof Error ? reason.message : "Could not open this document."); }
     });
-    return () => { stopped = true; };
+    return () => { stopped = true; controller.abort(); };
   }, [root, path, markdown, retry, awaitSharedMode]);
+  useEffect(() => {
+    if (!retryable) return;
+    const recover = () => { setRetryable(false); setError(""); setRetry(value => value + 1); };
+    window.addEventListener("online", recover); window.addEventListener("focus", recover);
+    return () => { window.removeEventListener("online", recover); window.removeEventListener("focus", recover); };
+  }, [retryable]);
   useEffect(() => {
     if (mode !== "local" || !awaitSharedMode) return;
     let stopped = false, running = false, rerun = false;

@@ -88,7 +88,7 @@
     "test:web-session:browser": "node src/local-vault/__tests__/web-session.browser.mjs",
     "test:document-layout:browser": "node src/local-vault/__tests__/document-layout.browser.mjs",
     "test:gallery:browser": "node src/local-vault/__tests__/gallery-image-stage.browser.mjs && node src/local-vault/__tests__/gallery-comments.browser.mjs",
-    "test:web-assistant:browser": "node src/local-vault/__tests__/assistant-proposals.browser.mjs && node src/local-vault/__tests__/verify-web-browser.mjs"
+    "test:web-assistant:browser": "node src/local-vault/__tests__/bootstrap-recovery.browser.mjs && node src/local-vault/__tests__/assistant-proposals.browser.mjs && node src/local-vault/__tests__/verify-web-browser.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.15",

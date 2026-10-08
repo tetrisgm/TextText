@@ -1,3 +1,4 @@
+import { boundedBootstrapRead } from "./bootstrap-retry";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { VaultError, type VaultFile, type VaultListing, type VaultTransport } from "./bridge";
@@ -73,7 +74,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   const listing = async (): Promise<VaultListing> => {
     if (listingRequest) return listingRequest;
     listingRequest = (async () => {
-      const response = await request(base, { credentials: "same-origin", cache: "no-store", headers: manifest ? { "If-None-Match": `"${manifest.revision}"` } : {} });
+      const response = await boundedBootstrapRead(signal => request(base, { signal, credentials: "same-origin", cache: "no-store", headers: manifest ? { "If-None-Match": `"${manifest.revision}"` } : {} }), new AbortController().signal);
       if (response.status !== 304) {
         if (!response.ok) throw await failure(response);
         manifest = await response.json() as Manifest;

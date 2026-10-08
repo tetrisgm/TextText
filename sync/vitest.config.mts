@@ -5,7 +5,7 @@ export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
     'sync/**/*.test.ts',
-    'src/local-vault/{collaboration-client,web-transport,web-assistant,web-watch,template-starter,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
+    'src/local-vault/{collaboration-client,web-transport,web-assistant,web-watch,bootstrap-retry,template-starter,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
     'src/lib/vault/{server-collaboration,server-store,server-trash,collaboration,reconcile,pack-reconcile,server-presence,server-item-comments}.test.ts',
     // Hosted agents mutate the same durable files and must pass the sync gate.
     'src/lib/mcp/__tests__/vault-{tools,mutations,organization,templates,comments,agent-presence,folders}.test.ts',
