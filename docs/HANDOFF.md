@@ -2,10 +2,10 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1217)**, source `4c84df44`.
+- Mac `/Applications/TextText.app`: **0.204 (1218)**, source `6e1a9ee7`.
   Startup, preserved content, save, search invalidation and reopen passed.
-  [Installed receipt](verification/2026-10-08-mac-1217.md).
-- Oracle: **texttext-oracle-20261008-0fad4045-parents**, deployed successfully;
+  [Installed receipt](verification/2026-10-08-mac-1218.md).
+- Oracle: **texttext-oracle-20261008-6e1a9ee7-pdf-parents**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services stayed
   active; HAProxy unchanged. [Parent delivery](verification/2026-10-08-notes-parent-menu.md).
 - Windows installed source remains `f3167c4b`. Current verified candidate source
@@ -21,7 +21,8 @@
 - Source `6e1a9ee7`: bounded PDF text capture and plain-template Parent editing.
   Shared capture/enrichment regressions (31 tests), real PDF workers, browser
   note/parent regressions, and TypeScript passed. Standalone traced PDF worker
-  executed successfully before the footer-only follow-up. Preparing delivery.
+  executed successfully before the footer-only follow-up. Mac installed and Oracle deployed;
+  real Oracle PDF capture acceptance remains.
   [PDF receipt](verification/2026-10-08-pdf-capture.md).
 - Live Safari created `Notes/Parent menu live verification 1218.textpack` via
   Parent in the insertion menu. Search focused, selected existing stable ID,
@@ -30,8 +31,9 @@
   the Parent menu; `381e89d3` fixes this without altering its template.
   `6e1a9ee7` keeps controls inside the card footer; both themes inspected.
 - Clean artifact clone: `/private/tmp/texttext-candidate-1195-5ELVuo`.
-  Current web build handle `63251`, log `/tmp/texttext-web-pdf-6e1a9ee7-build.log`.
-  Revalidate that handle before waiting or restarting. No persistent build job.
+  Web and Mac builds finished successfully. Logs:
+  `/tmp/texttext-web-pdf-6e1a9ee7-build.log`, `/tmp/texttext-mac1218-build.log`.
+  No build/deploy process remains running. No persistent build job.
 - Latest product acceptance for reusable templates: real Mac generation,
   refinement, retained editable blueprint, Save as look, immutable version
   creation/retry, picker reuse and Safari-to-Mac save convergence passed.
