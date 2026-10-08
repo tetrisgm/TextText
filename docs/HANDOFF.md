@@ -2,7 +2,10 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1212)**, source `d04342d5`.
+- Mac `/Applications/TextText.app`: **0.204 (1213)**, source `b2bc3856`.
+  Actual atomic Save as look and library discovery passed; original fixture
+  hash/content unchanged, new matching identity and opaque entries retained.
+  [1213 receipt](verification/2026-10-08-mac-1213.md).
   Actual folder agent inherited its custom default; ZIP identity/content,
   editor save, saved-body search and reopen passed.
   [1211 receipt](verification/2026-10-08-mac-1211.md).
@@ -49,12 +52,13 @@
   remain covered. Seven native recovery tests, 17 shared-editing tests, 333 shared
   tests (before the additional Windows-specific test), 46 targeted transport tests,
   TypeScript and focused browser Save as look acceptance passed. Source only;
-  install/deployment and actual native/Safari acceptance remain. Logs
+  Windows/web delivery and actual Safari acceptance remain. Native installed
+  1213 atomic save and library discovery passed. Logs
   `/tmp/texttext-atomic-look-{native,shared-editing,client-all,transports,types,browser}.log`.
 
 - Mac agent creation now rejects invalid explicit item types before publication,
   matching Windows. All 15 agent-file tests passed, including each supported
-  type and invalid string/non-string refusal with no draft. Source only.
+  type and invalid string/non-string refusal with no draft. Installed in 1213.
   Log `/tmp/texttext-agent-kind-parity.log`.
 
 - Mac agentStatus now checks retained runtime authorization once on first use.
