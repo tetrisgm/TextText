@@ -1,3 +1,5 @@
+import { VaultAgentPresenceAuthorizationError } from "@/lib/mcp/vault-agent-presence";
+import { startCloudTurnPresence } from "@/lib/ai/cloud-turn-presence.server";
 import { canonicalContextItem, canonicalContextIndex } from "@/lib/ai/canonical-context.server";
 // Workspace-owned cloud assistant. TextText never spends a shared provider key:
 // the owner explicitly connects a provider and chooses a model.
@@ -356,6 +358,7 @@ function assistantStreamResponse(
     onFailure,
     onSuccess,
     onCancel,
+    onFinish,
   }: {
     provider: string;
     model: string;
@@ -371,6 +374,7 @@ function assistantStreamResponse(
     onFailure: (failure: AiFailure) => Promise<void>;
     onSuccess: () => Promise<void>;
     onCancel: () => void;
+    onFinish: () => Promise<void>;
   },
 ): Response {
   const encoder = new TextEncoder();
@@ -512,6 +516,7 @@ function assistantStreamResponse(
           });
         }
       } finally {
+        await onFinish();
         if (!cancelled) controller.close();
       }
     },
@@ -1055,6 +1060,15 @@ export async function POST(request: Request) {
   };
   const streamCancellation = new AbortController();
   const generationSignal = AbortSignal.any([request.signal, streamCancellation.signal, AbortSignal.timeout(55_000)]);
+  let presence: Awaited<ReturnType<typeof startCloudTurnPresence>>;
+  try {
+    presence = await startCloudTurnPresence({ ...actor, itemId: requestView.postId,
+      signal: generationSignal, onAuthorizationLost: () => streamCancellation.abort(),
+    });
+  } catch (error) {
+    if (error instanceof VaultAgentPresenceAuthorizationError) return Response.json({ error: "This item is unavailable for the assistant." }, { status: 403, headers: NO_STORE_HEADERS });
+    presence = null; // Transient presence failure must not disable the authorized assistant.
+  }
   const modelRequest = {
     model,
     abortSignal: generationSignal,
@@ -1081,6 +1095,7 @@ export async function POST(request: Request) {
     body.stream === true ||
     request.headers.get("accept")?.includes("text/event-stream") === true;
   if (wantsStream) {
+    try {
     const streamed = streamText({
       ...modelRequest,
       abortSignal: generationSignal,
@@ -1106,8 +1121,13 @@ export async function POST(request: Request) {
         await recordWorkspaceAiResult(config, failure, selectedModel);
       },
       onSuccess: () => recordWorkspaceAiResult(config, null, selectedModel),
-      onCancel: () => streamCancellation.abort(),
+      onCancel: () => { streamCancellation.abort(); void presence?.close(); },
+      onFinish: async () => { await presence?.close(); },
     });
+    } catch (error) {
+      await presence?.close();
+      return failedResponse(classifyAiFailure(error, requestId));
+    }
   }
 
   try {
@@ -1170,5 +1190,5 @@ export async function POST(request: Request) {
       }, { headers: responseHeaders });
     }
     return failedResponse(failure);
-  }
+  } finally { await presence?.close(); }
 }

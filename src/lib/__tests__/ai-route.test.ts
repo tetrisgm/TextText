@@ -1,3 +1,4 @@
+import { VaultAgentPresenceAuthorizationError } from "@/lib/mcp/vault-agent-presence";
 import { createSelectionEnvelope, SELECTION_BUDGET_ERROR } from "@/lib/ai/selection-envelope";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,6 +21,8 @@ type MockRemoteToolsResult = {
   ttlMs: number | null;
 };
 
+const turnPresence = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
+vi.mock("@/lib/ai/cloud-turn-presence.server", () => ({ startCloudTurnPresence: turnPresence.start }));
 const mocks = vi.hoisted(() => ({
   generateText: vi.fn(),
   streamText: vi.fn(),
@@ -174,6 +177,8 @@ let currentUser = user;
 
 describe("/api/ai cloud assistant route", () => {
   beforeEach(() => {
+    turnPresence.close.mockReset().mockResolvedValue(undefined);
+    turnPresence.start.mockReset().mockResolvedValue({ close: turnPresence.close });
     vi.clearAllMocks();
     currentUser = { ...user, sub: `${user.sub}-${++userSequence}` };
     mocks.getCurrentUser.mockResolvedValue(currentUser);
@@ -590,6 +595,7 @@ describe("/api/ai cloud assistant route", () => {
       }),
     );
     expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(turnPresence.close).toHaveBeenCalledOnce();
   });
 
   it("does not turn a failed stream into an empty successful completion", async () => {
@@ -622,6 +628,7 @@ describe("/api/ai cloud assistant route", () => {
     expect(events).not.toContainEqual(
       expect.objectContaining({ type: "complete" }),
     );
+    expect(turnPresence.close).toHaveBeenCalledOnce();
   });
 
   it("keeps an interrupted partial stream out of successful connection evidence", async () => {
@@ -650,9 +657,29 @@ describe("/api/ai cloud assistant route", () => {
     const signal = mocks.streamText.mock.calls.at(-1)![0].abortSignal as AbortSignal;
     await res.body!.cancel();
     expect(signal.aborted).toBe(true);
+    expect(turnPresence.close).toHaveBeenCalled();
     release();
     await hold;
     expect(mocks.recordWorkspaceAiResult).not.toHaveBeenCalled();
+  });
+
+  it("aborts an active model stream when its presence authority is revoked", async () => {
+    let release!: () => void;
+    const hold = new Promise<void>(resolve => { release = resolve; });
+    mocks.streamText.mockReturnValue({ fullStream: (async function* () { await hold; yield { type: "finish" }; })() });
+    const response = await POST(post({ ...turn, stream: true, context: { postId: "canonical-file" } }));
+    const signal = mocks.streamText.mock.calls.at(-1)![0].abortSignal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    turnPresence.start.mock.calls.at(-1)![0].onAuthorizationLost();
+    expect(signal.aborted).toBe(true);
+    release(); await response.text(); expect(turnPresence.close).toHaveBeenCalled();
+  });
+  it("continues through transient presence failure but denies a revoked presence grant", async () => {
+    turnPresence.start.mockRejectedValueOnce(new Error("temporary storage failure"));
+    expect((await POST(post(turn))).status).toBe(200);
+    mocks.generateText.mockClear();
+    turnPresence.start.mockRejectedValueOnce(new VaultAgentPresenceAuthorizationError("denied"));
+    expect((await POST(post(turn))).status).toBe(403); expect(mocks.generateText).not.toHaveBeenCalled();
   });
 
   it("keeps every outbound MCP tool available only as a proposal", async () => {

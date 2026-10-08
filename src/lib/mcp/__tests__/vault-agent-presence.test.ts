@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const store=vi.hoisted(()=>({joinVaultPresence:vi.fn(),leaveVaultPresence:vi.fn(),readVaultCollaboration:vi.fn(),updateVaultPresence:vi.fn()}));
 vi.mock("@/lib/store",()=>store);
-import { withVaultAgentPresence } from "../vault-agent-presence";
+import { startVaultAgentPresence, VaultAgentPresenceAuthorizationError, withVaultAgentPresence } from "../vault-agent-presence";
 import { decodePresenceAwareness } from "@/lib/collab/presence-awareness";
 const context=()=>({root:"/fixture",workspaceId:"workspace",itemId:"item",actorUserId:"trusted-owner",connectionName:"Codex",connectionId:"authenticated-connection",ownerDisplayName:"Owner",authorize:vi.fn().mockResolvedValue(undefined)});
 beforeEach(()=>{vi.clearAllMocks();store.readVaultCollaboration.mockResolvedValue({epoch:4,relativePath:"Notes/Item.textpack"});store.joinVaultPresence.mockResolvedValue({});store.updateVaultPresence.mockResolvedValue({});store.leaveVaultPresence.mockResolvedValue({});});
@@ -9,7 +9,7 @@ afterEach(()=>vi.useRealTimers());
 it("joins attributed agent awareness before mutation and leaves on success",async()=>{
  const input=context();await expect(withVaultAgentPresence(input,async()=>{expect(store.updateVaultPresence).toHaveBeenCalledTimes(1);return "saved";})).resolves.toBe("saved");
  const join=store.joinVaultPresence.mock.calls[0][0];expect(join).toMatchObject({epoch:4,role:"editor"});expect(join.principal).toContain("trusted-owner");expect(join.sessionExpiresAt).toBeGreaterThan(Date.now());
- const awareness=decodePresenceAwareness(store.updateVaultPresence.mock.calls[0][0].awareness);expect(awareness.state?.user).toMatchObject({participantType:"agent",provider:"codex"});expect(join.userName).toContain("Owner");expect(store.leaveVaultPresence).toHaveBeenCalledWith(join);
+ const awareness=decodePresenceAwareness(store.updateVaultPresence.mock.calls[0][0].awareness);expect(awareness.state?.user).toMatchObject({participantType:"agent",provider:"codex"});expect(join.userName).toContain("Owner");expect(store.leaveVaultPresence).toHaveBeenCalledWith({ ...join, beforeCommit: undefined });
 });
 it("cleans up failed mutations and does not mask successful writes when leave fails",async()=>{
  await expect(withVaultAgentPresence(context(),async()=>{throw Error("mutation failed");})).rejects.toThrow("mutation failed");expect(store.leaveVaultPresence).toHaveBeenCalledTimes(1);
@@ -18,7 +18,7 @@ it("cleans up failed mutations and does not mask successful writes when leave fa
 it("reauthorizes bounded heartbeats, stops on revocation, and cancels timers after completion",async()=>{
  vi.useFakeTimers();const input=context();let finish!:()=>void;const run=withVaultAgentPresence(input,()=>new Promise<void>(resolve=>{finish=resolve;}));await vi.advanceTimersByTimeAsync(0);
  await vi.advanceTimersByTimeAsync(10_000);expect(store.updateVaultPresence).toHaveBeenCalledTimes(2);
- input.authorize.mockRejectedValue(Error("revoked"));await vi.advanceTimersByTimeAsync(30_000);expect(store.updateVaultPresence).toHaveBeenCalledTimes(2);finish();await run;expect(vi.getTimerCount()).toBe(0);
+ input.authorize.mockRejectedValue(new VaultAgentPresenceAuthorizationError("revoked"));await vi.advanceTimersByTimeAsync(30_000);expect(store.updateVaultPresence).toHaveBeenCalledTimes(2);finish();await run;expect(vi.getTimerCount()).toBe(0);
 });
 it("parallel commands cannot remove each other's sessions",async()=>{
  await Promise.all([withVaultAgentPresence(context(),async()=>1),withVaultAgentPresence(context(),async()=>2)]);
@@ -39,4 +39,24 @@ it("exposes agent attribution through the real presence store and expires abando
   const realNow=Date.now;const now=realNow();const spy=vi.spyOn(Date,"now").mockReturnValue(now+31_000);
   try{expect((await engine.readVaultPresence(input))?.presence).toHaveLength(0);}finally{spy.mockRestore();}
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+it("keeps a viewer agent throughout a turn and removes it immediately on abort", async () => {
+ vi.useFakeTimers(); const controller = new AbortController();
+ const lease = await startVaultAgentPresence({...context(),connectionName:"TextText assistant",role:"viewer",signal:controller.signal});
+ expect(store.joinVaultPresence.mock.calls[0][0].role).toBe("viewer");
+ expect(decodePresenceAwareness(store.updateVaultPresence.mock.calls[0][0].awareness).state?.user).toMatchObject({participantType:"agent",name:"TextText assistant · working for Owner",provider:"agent"});
+ await vi.advanceTimersByTimeAsync(20_000); expect(store.updateVaultPresence).toHaveBeenCalledTimes(3);
+ controller.abort(); await lease.close(); expect(store.leaveVaultPresence).toHaveBeenCalledTimes(1); expect(vi.getTimerCount()).toBe(0);
+});
+it("stops generation and removes the server-owned peer after authority is revoked", async () => {
+ vi.useFakeTimers(); const input=context(), lost=vi.fn();const lease=await startVaultAgentPresence({...input,onAuthorizationLost:lost});
+ input.authorize.mockRejectedValue(new VaultAgentPresenceAuthorizationError("revoked"));await vi.advanceTimersByTimeAsync(10_000);await lease.close();
+ expect(lost).toHaveBeenCalledOnce();expect(store.leaveVaultPresence).toHaveBeenCalledOnce();expect(store.leaveVaultPresence.mock.calls[0][0].beforeCommit).toBeUndefined();expect(vi.getTimerCount()).toBe(0);
+});
+
+it("does not abort a turn for a transient heartbeat failure and retries boundedly", async () => {
+ vi.useFakeTimers();const lost=vi.fn();const lease=await startVaultAgentPresence({...context(),onAuthorizationLost:lost});
+ store.updateVaultPresence.mockRejectedValueOnce(Error("temporary disk error"));await vi.advanceTimersByTimeAsync(10_000);expect(lost).not.toHaveBeenCalled();
+ await vi.advanceTimersByTimeAsync(10_000);expect(store.updateVaultPresence).toHaveBeenCalledTimes(3);await lease.close();expect(vi.getTimerCount()).toBe(0);
 });
