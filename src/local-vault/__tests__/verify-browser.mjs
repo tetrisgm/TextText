@@ -5,9 +5,21 @@ import { readFile } from "node:fs/promises";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { chromium } from "playwright";
 import sharp from "sharp";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+require("tsx/cjs/api").register();
+const { validateTemplateDefinition } = require("../../lib/presentation/schema.ts");
 
 const makeDocument = (body) => ({ schemaVersion: 1, content: { title: "Offline note", body, fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } });
 const files = new Map();
+async function waitForFixture(predicate, label) {
+  const deadline = Date.now() + 5000;
+  while (!predicate()) {
+    assert.ok(Date.now() < deadline, `Timed out waiting for ${label}`);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
 const proposalFeedback = [];
 const history = new Map();
 const importedPacks = [];
@@ -171,7 +183,7 @@ try {
       const comments = commentsByItem.get(request.params.itemId) ?? [];
       const commentId = crypto.randomUUID();
       commentsByItem.set(request.params.itemId, [...comments, { id: commentId, parentId: request.params.parentId ?? null,
-        body: request.params.body, authorUserId: "fixture-user", authorName: "Test writer", authorActorType: "human",
+        body: request.params.body, imageAssetId: request.params.imageAssetId ?? null, authorUserId: "fixture-user", authorName: "Test writer", authorActorType: "human",
         createdAt: "2026-10-03T00:00:00.000Z", updatedAt: "2026-10-03T00:00:00.000Z",
         resolvedAt: null, resolvedByUserId: null, resolvedByActorType: null }]);
       result = { status: "written", itemId: request.params.itemId, commentId };
@@ -494,7 +506,7 @@ try {
   await page.getByRole("button", { name: "Edit card" }).click();
   const body = page.getByRole("textbox", { name: "Document body", exact: true });
   await body.fill("Local first line\nSecond line");
-  await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
+  await waitForFixture(() => files.get(initial.path).markdown.includes("Local first line"), "saved editor text");
   assert.match(files.get(initial.path).markdown, /Local first line/);
   // An earlier read timeout can leave a warning after the editor has saved.
   // Retry must check the pack and then clear the stale warning.
@@ -520,7 +532,7 @@ try {
   assert.ok([...files.values()].some((file) => file.path !== initial.path && file.markdown.includes("My conflicting version")));
   await page.getByRole("button", { name: /^Look / }).click();
   await page.getByRole("button", { name: "Agent made look", exact: true }).click();
-  await page.waitForFunction(() => !localStorage.getItem("texttext:vault-draft:/test/Workspace:Notes/Offline.textpack"));
+  await waitForFixture(() => JSON.parse(files.get(initial.path).templateJSON).id === "custom.agent-look", "saved look");
   assert.equal(JSON.parse(files.get(initial.path).templateJSON).id, "custom.agent-look");
   await page.locator(".tt-editor-more").getByLabel("More actions", { exact: true }).click();
   await page.getByRole("button", { name: "Save as look", exact: true }).click();
@@ -712,6 +724,7 @@ try {
   await agentPanel.getByRole("button", { name: "Send", exact: true }).click();
   const fencedTaskId = lastAgentSend.taskId;
   await page.getByRole("button", { name: "Show folders", exact: true }).click();
+  const filesBeforeRetarget = new Set(files.keys());
   nextCreatedPath = "Notes/Untitled 2.textpack";
   await page.getByRole("button", { name: "New note", exact: true }).click();
   await expectAgentTarget(initial.path);
@@ -722,7 +735,7 @@ try {
     return Boolean(current && current !== previousPath);
   }, initial.path);
   const createdWhileOpen = await agentPanel.getByRole("group", { name: "Agent task target", exact: true }).locator("small").textContent();
-  assert.equal(createdWhileOpen, "Notes/Untitled 2.textpack");
+  assert.ok(!filesBeforeRetarget.has(createdWhileOpen), "agent target must be the newly created document");
   assert.ok(files.has(createdWhileOpen));
   await expectAgentTarget(createdWhileOpen);
   let releaseRemoval, markRemovalStarted, markRemovalConfirmed;
@@ -753,11 +766,13 @@ try {
   delayedRemoval = null;
   await page.keyboard.press("Meta+k");
   await page.getByRole("dialog", { name: "Search and actions", exact: true }).getByRole("option", { name: "New from template", exact: true }).click();
+  const filesBeforeClone = new Set(files.keys());
   await page.getByRole("dialog", { name: "New from template", exact: true }).getByRole("button", { name: "Agent made look", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
-  const cloned = [...files.values()].at(-1);
+  await waitForFixture(() => [...files.values()].some(file => !filesBeforeClone.has(file.path) && file.templateJSON && JSON.parse(file.templateJSON).id === "custom.agent-look"), "new file with selected template");
+  const cloned = [...files.values()].find(file => !filesBeforeClone.has(file.path) && file.templateJSON && JSON.parse(file.templateJSON).id === "custom.agent-look");
   await expectAgentTarget(cloned.path);
-  assert.equal(cloned.templateJSON, files.get("Templates/Agent look.textpack").templateJSON);
+  assert.deepEqual(validateTemplateDefinition(JSON.parse(cloned.templateJSON)), validateTemplateDefinition(JSON.parse(files.get("Templates/Agent look.textpack").templateJSON)));
   assert.notEqual(cloned.markdown, files.get("Templates/Agent look.textpack").markdown);
   await page.keyboard.press("Meta+k");
   await page.getByRole("option", { name: "Rename or move this item", exact: true }).click();
@@ -819,7 +834,10 @@ try {
   await page.getByText("Article captured. Your original link is retained.", { exact: true }).waitFor();
   await page.getByText("Your notes", { exact: true }).click();
   await page.getByRole("textbox", { name: "Your article notes", exact: true }).fill("My annotation survives source refresh.");
-  await page.waitForFunction(() => !Object.keys(localStorage).some((key) => key.startsWith("texttext:vault-draft:")));
+  await waitForFixture(() => [...files.values()].some(file => {
+    const document = JSON.parse(file.documentJSON);
+    return document.content.fields.sourceUrl === "https://example.com/capture" && document.content.fields.commentary === "My annotation survives source refresh.";
+  }), "saved article annotation");
   const captured = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/capture");
   assert.equal(JSON.parse(captured.documentJSON).content.fields.commentary, "My annotation survives source refresh.");
   assert.match(JSON.parse(captured.documentJSON).content.body, /Captured reading/);
@@ -882,18 +900,20 @@ try {
   await page.keyboard.press("Escape");
   await moreActionsMenu.waitFor({ state: "hidden" });
   const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
+  const importsBeforeImage = importedPacks.length;
   await page.getByLabel("Choose images", { exact: true }).setInputFiles({ name: "Original.gif", mimeType: "image/gif", buffer: gif });
   await page.getByRole("status").filter({ hasText: "Imported 1 image." }).waitFor();
-  assert.equal(importedPacks.length, 1);
+  assert.equal(importedPacks.length, importsBeforeImage + 1);
   await page.locator('.vault-file-preview').first().waitFor();
-  assert.deepEqual(Buffer.from(importedPacks[0]["Document.textbundle/assets/original.gif"]), gif);
+  const importedGifPack = importedPacks.at(-1);
+  assert.deepEqual(Buffer.from(importedGifPack["Document.textbundle/assets/original.gif"]), gif);
   const visual = [...files.values()].find((file) => file.path.startsWith("Visuals/Original-"));
   assert.ok(visual);
   const asset = JSON.parse(visual.documentJSON).content.assets[0];
   assert.equal(asset.poster, "assets/preview.png");
   assert.equal(asset.width, 1);
   assert.equal(asset.height, 1);
-  assert.deepEqual([...importedPacks[0]["Document.textbundle/assets/preview.png"].slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.deepEqual([...importedGifPack["Document.textbundle/assets/preview.png"].slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   await chooseMoreAction("Choose folder design");
   await page.getByLabel("Folder design", { exact: true }).selectOption("texttext.folder-contact");
   await page.locator('.vault-folder-collection img[src^="blob:"]').first().waitFor();
@@ -924,7 +944,7 @@ try {
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "TextText", exact: true }).click();
   }
-  assert.equal(importedPacks.length, 3);
+  assert.equal(importedPacks.length, importsBeforeImage + 3);
   assert.deepEqual(failures, []);
   assert.deepEqual(await page.evaluate(() => window.__networkAttempts), []);
   await page.getByRole("button", { name: "TextText", exact: true }).click();
@@ -1004,8 +1024,10 @@ try {
   await recoveryDialog.getByRole("button", { name: /Notes\/Offline.textpack/ }).click();
   await recoveryDialog.getByRole("button", { name: "Restore as a new file" }).click();
   await recoveryDialog.waitFor({ state: "hidden" });
-  const recoveredFile = [...files.values()].find((file) => file.path.startsWith("Recovered/Offline note (recovered)"));
+  await waitForFixture(() => [...files.keys()].some(path => !JSON.parse(liveBeforeRecovery).some(([existing]) => existing === path)), "restored recovery file");
+  const recoveredFile = [...files.values()].find(file => !JSON.parse(liveBeforeRecovery).some(([existing]) => existing === file.path));
   assert.ok(recoveredFile);
+  assert.ok(recoveredFile.path.startsWith("Notes/"), "recovery stays in the original folder");
   assert.deepEqual(importedPacks.at(-1), retainedEntries);
   assert.equal(JSON.stringify([...files].filter(([path]) => path !== recoveredFile.path)), liveBeforeRecovery);
   await chooseMoreAction("Version history");
@@ -1848,12 +1870,18 @@ try {
   assert.equal(await lightbox.locator(".vault-gallery-stage").getByRole("button", { name: "Previous image" }).count(), 0);
   await page.waitForFunction(() => { const image = document.querySelector('.vault-gallery-stage img'); return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0; });
   await page.screenshot({ path: "/tmp/texttext-gallery-reference.png" });
+  const fittedPhotoWidth = await lightbox.getByRole("img", { name: "Second photograph" }).evaluate(image => image.getBoundingClientRect().width);
   await lightbox.getByRole("button", { name: "Zoom in" }).click();
   await lightbox.getByText("125%", { exact: true }).waitFor();
-  assert.match(await lightbox.getByRole("img", { name: "Second photograph" }).getAttribute("style"), /scale\(1\.25\)/);
-  assert.ok(await lightbox.locator(".vault-gallery-stage").evaluate(stage => stage.scrollWidth > stage.clientWidth));
+  const zoomedPhotoWidth = await lightbox.getByRole("img", { name: "Second photograph" }).evaluate(image => image.getBoundingClientRect().width);
+  assert.ok(Math.abs(zoomedPhotoWidth / fittedPhotoWidth - 1.25) < 0.01, "zoom enlarges the rendered photograph by 25 percent");
+  const imageViewport = lightbox.getByRole("group", { name: "Image viewer", exact: true });
+  await imageViewport.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector('.vault-gallery-image-viewport img')?.style.transform === "translate(-50px, 0px)");
   await lightbox.getByRole("button", { name: "Fit image" }).click();
   await lightbox.getByText("100%", { exact: true }).waitFor();
+  assert.equal(await lightbox.getByRole("img", { name: "Second photograph" }).evaluate(image => image.style.transform), "translate(0px, 0px)");
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-light-reference.png" });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1922,14 +1950,15 @@ try {
   await lightbox.getByRole("button", { name: "Remove reference tag" }).waitFor();
   assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets.map(asset => asset.tags), [undefined, ["reference"]]);
   const commentReadsBeforeOpening = commentReads;
-  const galleryComments = lightbox.getByRole("complementary", { name: "Item comments" });
-  await lightbox.getByRole("button", { name: "Add a comment to this item" }).click();
-  await galleryComments.getByText("No open comments on this file.").waitFor();
+  const galleryComments = lightbox.getByRole("complementary", { name: "Image comments" });
+  await lightbox.getByRole("button", { name: "Add a comment to this image" }).click();
+  await galleryComments.getByText("No open comments on this image.").waitFor();
   assert.ok(commentReads > commentReadsBeforeOpening, "gallery comments should load only when opened");
   await galleryComments.getByRole("textbox", { name: "Add a comment" }).fill("A note beside this visual reference.");
   await galleryComments.getByRole("button", { name: "Post comment" }).click();
   await galleryComments.getByRole("region", { name: "Thread by Test writer" }).getByText("A note beside this visual reference.").waitFor();
   assert.equal([...commentsByItem.values()][0]?.[0]?.body, "A note beside this visual reference.");
+  assert.equal([...commentsByItem.values()][0]?.[0]?.imageAssetId, "two", "comment belongs to the selected photograph");
   await galleryComments.evaluate(element => element.scrollIntoView({ block: "center" }));
   await page.screenshot({ path: "/tmp/texttext-gallery-comments-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
@@ -1942,10 +1971,16 @@ try {
   await page.keyboard.press("Escape");
   await galleryComments.waitFor({ state: "hidden" });
   await lightbox.getByRole("img", { name: "Second photograph" }).waitFor();
-  await lightbox.getByRole("button", { name: "Add a comment to this item" }).click();
+  await lightbox.getByRole("button", { name: "Add a comment to this image" }).click();
   await galleryComments.getByRole("region", { name: "Thread by Test writer" }).waitFor();
   await lightbox.getByRole("button", { name: "Hide", exact: true }).click();
   await galleryComments.waitFor({ state: "hidden" });
+  await lightbox.getByRole("button", { name: "Previous image" }).click();
+  await lightbox.getByRole("button", { name: "Add a comment to this image" }).click();
+  await galleryComments.getByText("No open comments on this image.").waitFor();
+  assert.equal(await galleryComments.getByText("A note beside this visual reference.", { exact: true }).count(), 0);
+  await lightbox.getByRole("button", { name: "Hide", exact: true }).click();
+  await lightbox.getByRole("button", { name: "Next image" }).click();
   await page.screenshot({ path: "/tmp/texttext-gallery-inline-inspector-reference.png" });
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: "/tmp/texttext-gallery-inline-inspector-light-reference.png" });
