@@ -90,6 +90,19 @@ final class LocalVaultCollaborationTests: XCTestCase {
         try save()
         XCTAssertFalse(try LocalVaultSync.collaborationReady(root: root, path: "Note.textpack", itemId: "item", localHash: hash))
     }
+    func testFolderReviewUsesBoundEndpointAndCannotSupplyApproval() throws {
+        let params: [String: Any] = ["source": "Notes", "destination": "Archive/Notes"]
+        let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "folderMoveReview", params: params)
+        XCTAssertEqual(request.url?.absoluteString, "https://texttext.app/api/vault/workspace/folder-moves")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: String])
+        XCTAssertEqual(body, ["source": "Notes", "destination": "Archive/Notes"])
+        XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "folderMoveReview", params: ["source": "Notes", "destination": "Archive/Notes", "approved": true]))
+    }
+
     func testReadBuildsOnlyBoundEndpointAndCursor() throws {
         let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture-token",
             method: "collaborationRead", params: ["itemId": "item-1", "epoch": 3, "seq": 4, "waitMs": 25_000])

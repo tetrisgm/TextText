@@ -343,7 +343,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             }
             return
         }
-        if ["trashList", "trashRestore", "accountRead", "collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel", "collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover", "presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave", "shareList", "shareInvite", "shareRole", "shareRevoke", "commentsRead", "commentsAdd", "commentsResolve", "publicationRead", "publicationSet", "feedDiscover", "feedRead", "feedEntry"].contains(method) {
+        if ["folderMoveReview", "trashList", "trashRestore", "accountRead", "collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel", "collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover", "presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave", "shareList", "shareInvite", "shareRole", "shareRevoke", "commentsRead", "commentsAdd", "commentsResolve", "publicationRead", "publicationSet", "feedDiscover", "feedRead", "feedEntry"].contains(method) {
             if method == "collaborationCancel" {
                 if let requestId = params["requestId"] as? String, requestId.count <= 100 { collaboration?.cancel(requestId) }
                 reply(id, result: .success([:])); return

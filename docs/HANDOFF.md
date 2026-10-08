@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Desktop folder-review transport is wired: Mac uses a bound authenticated
+  request builder with exact source/destination keys and a bounded response;
+  Windows reuses the shared web transport through workspace-restricted native
+  HTTP. Mac request/collaboration suite passed 16 tests, Windows transport
+  passed 11 tests and TypeScript passed. Source-only. Shared folder dialog,
+  pending-edit readiness checks and live review/install remain pending.
+
 - Owner folder-move staging API and web transport are implemented. The route
   requires fresh owner authorization and a trusted app/session capability;
   generic sync tokens cannot use this human action. It accepts source/destination

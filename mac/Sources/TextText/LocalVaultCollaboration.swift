@@ -75,6 +75,20 @@ final class LocalVaultCollaboration {
             if method == "trashRestore" { request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: params) }
             return request
         }
+        if method == "folderMoveReview" {
+            guard identifier(workspaceId), Set(params.keys) == ["source", "destination"],
+                  let source = params["source"] as? String, let destination = params["destination"] as? String,
+                  !source.isEmpty, !destination.isEmpty, source.utf8.count <= 256, destination.utf8.count <= 256 else {
+                throw LocalVaultCollaborationError(code: "400", message: "Choose a source folder and destination.")
+            }
+            var request = URLRequest(url: origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("folder-moves"), timeoutInterval: 35)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: params)
+            return request
+        }
         if method == "accountRead" {
             guard identifier(workspaceId), params.isEmpty else {
                 throw LocalVaultCollaborationError(code: "400", message: "Invalid account request.")
@@ -479,7 +493,7 @@ final class LocalVaultCollaboration {
                         request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin")
                     }
                 }
-                let maxBytes = method == "accountRead" ? 64 * 1024 : method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
+                let maxBytes = method == "folderMoveReview" ? 2_100_000 : method == "accountRead" ? 64 * 1024 : method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
                 var (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
                 try Task.checkCancellation()
                 // A response can arrive after credential renewal. Retry only

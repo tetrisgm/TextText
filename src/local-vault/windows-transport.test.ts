@@ -180,3 +180,20 @@ it("discovers folder markers beyond 2048 siblings and caches only metadata by cu
     expect(renamed.files.map(file => file.path)).toEqual(["Notes/Renamed.textpack"]);
   } finally { f.transport.destroy(); }
 });
+
+it("routes folder reviews through the bound native HTTP adapter without writing local files", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const view = native((method, params) => {
+    if (method === "native.status") return { root: "C:\\TextText", workspaceId: "workspace", name: "Workspace", connected: true, available: true };
+    if (method === "native.http") {
+      expect(params).toMatchObject({ path: "/api/vault/workspace/folder-moves", method: "POST" });
+      return { status: 201, headers: { "Content-Type": "application/json" }, body: Buffer.from(JSON.stringify({ reviewPath: "/proposals/review" })).toString("base64") };
+    }
+    throw new Error(`Unexpected ${method}`);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  expect(await transport.request("folderMoveReview", { source: "Notes", destination: "Archive/Notes" })).toEqual({ reviewPath: "/proposals/review" });
+  expect(view.messages.filter(message => message.method === "native.http")).toHaveLength(1);
+  expect(view.messages.some(message => message.method.startsWith("files."))).toBe(false);
+  transport.destroy();
+});
