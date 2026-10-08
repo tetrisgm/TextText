@@ -2,7 +2,7 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1197)**, source `edab387f`.
+- Mac `/Applications/TextText.app`: **0.204 (1198)**, source `121e95fc`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
@@ -39,9 +39,10 @@
   Source follow-up reconciles folder navigation using stable descendant IDs,
   with surviving-parent fallback and no editor replacement. Mac now includes
   cached manifest identities in listings without reading every document.
-  Eighteen focused checks, full-app move fixture, TypeScript, six connection
-  tests and the real HTTP contract passed. Install/live navigation acceptance
-  remains pending. Stable staging retry identity and Oracle timeout remain open.
+  Frozen 804-test core and native gates passed. Mac 1198 is installed; live
+  folder move preserved bytes/empty child, removed the old tree, followed the
+  selected folder and closed the stale dialog without an alert. Web deployment,
+  Windows installation and live active-editor acceptance remain pending. Stable staging retry identity and Oracle timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
