@@ -63,7 +63,7 @@ Completed source changes, not yet deployed:
   empty; explicit template creation remains available.
 - `f57677a9`: file command engine uses the existing durable intent/receipt
   transaction; lost-response append retry returns exactly once. 28 focused
-  tests and TypeScript passed. Hosted dispatch/catalog wiring is in progress.
+  tests and TypeScript passed. Public dispatch is now file-only (`88c5a359`).
 
 - `a1a818f3`: hosted agent presence has independent command sessions,
   reauthorized heartbeats and crash expiry; six tests passed.
@@ -71,16 +71,16 @@ Completed source changes, not yet deployed:
   contract; CLI cannot stage SQL proposals. Resource tests, 36 CLI/auth tests
   and scoped lint passed.
 
-Current work: finish unconditional hosted file dispatch and source-bound gates.
-The file agent catalog currently exposes eight commands (workspace/folders,
-list/read/search, create/update/append). The other tools in the old registry
-remain feature-parity work, not completed features: sharing/comments, file and
-folder operations, templates, assets, reading and change history. Do not call
-the reduced catalog full agent parity. Capture/full-Markdown creation support
-is being restored on the file path. Next are exact-source gates, builds and deployment. The broader suite passed 4,413
-checks with 149 skips; its only two failures were then-in-progress mutation
-mocks, subsequently replaced and passing in the focused run above. `a04be655`
-wires the canonical adapter; unconditional dispatch is under final test.
+Current work: freeze the source, run exact-source gates, then build/install both
+clients and deploy Oracle. `88c5a359` removes public SQL fallback; missing file
+storage fails closed. `2ce56ca3` restores capture and full-Markdown creation on
+the file path. `f4352d53` adds durable file comments and public retry keys;
+its public adapter integration is being verified. `48ac492a` adds agent mutation,
+comment and presence regressions to the mandatory sync core gate.
+Remaining agent capabilities are explicit in [the backend inventory](agent-file-backend.md).
+The broader suite passed 4,413 checks with 149 skips; its only two failures were
+then-in-progress mutation mocks, subsequently replaced and passing in focused
+checks. The subsequent MCP suite passed 153 tests across 15 files.
 The prior export/inventory helpers never migrated production content.
 
 Windows startup regression `033231ae` is fixed in the installed candidate:
