@@ -139,13 +139,43 @@ export async function createWindowsVaultTransport(view: NativeView) {
       const value = await shared.request("list", params, signal) as VaultListing;
       const local = await list(); return { ...value, root: status.root, folders: local.folders };
     }
+    if (method === "keptFeedEntries" || method === "readFeedEntries") {
+      const history = method === "readFeedEntries";
+      const candidates = (await list()).items.filter(item => item.relativePath.startsWith(history ? "Feeds/History/" : "Bookmarks/"));
+      if (candidates.length > 2048) throw new Error("Too many saved stories to read at once.");
+      const records = new Map<string, Record<string, string>>();
+      let inspected = 0;
+      for (const item of candidates) {
+        const file = await rpc.request<VaultFile>("files.text", { itemId: item.itemId }, signal);
+        inspected += (file.documentJSON?.length ?? 0) * 2;
+        if (inspected > 64 * 1024 * 1024) throw new Error("Saved story metadata exceeds the read limit.");
+        const document = readDocument(file), fields = document.content.fields;
+        const hash = fields.feedEntryHash;
+        if (fields[history ? "texttextFeedHistoryEntry" : "texttextFeedEntry"] !== "v1" || typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash)) continue;
+        const text = (value: unknown, limit: number) => typeof value === "string" ? value.slice(0, limit) : "";
+        const date = history ? fields.viewedAt ?? fields.readAt : fields.keptAt;
+        if (history && (typeof date !== "string" || !date)) continue;
+        const dateKey = history ? "viewedAt" : "keptAt";
+        const entry: Record<string, string> = { hash, path: file.path, title: text(document.content.title, 300), source: text(fields.feedTitle, 160), [dateKey]: text(date, 32) };
+        if (history) entry.revision = file.hash;
+        const readAt = fields[history ? "readAt" : "texttextBookmarkReadAt"];
+        if (typeof readAt === "string" && readAt) entry.readAt = text(readAt, 32);
+        if (typeof fields.feedTopic === "string" && fields.feedTopic.trim()) entry.topic = fields.feedTopic.trim().slice(0, 100);
+        const progress = fields.texttextFeedReadingProgress;
+        if (typeof progress === "number" && Number.isInteger(progress) && progress >= 0 && progress <= 100) entry.progress = String(progress);
+        if (!records.has(hash) || entry[dateKey] > records.get(hash)![dateKey]) records.set(hash, entry);
+      }
+      const dateKey = history ? "viewedAt" : "keptAt";
+      const entries = [...records.values()].sort((a, b) => a[dateKey] === b[dateKey] ? a.path.localeCompare(b.path) : a[dateKey] > b[dateKey] ? -1 : 1);
+      return { hashes: [...records.keys()].sort(), entries };
+    }
     if (method === "search") {
       const query = String(params.query ?? "").trim().toLocaleLowerCase();
       if (query.length > 500) throw new Error("Enter a shorter search.");
       const matches = []; let skippedCount = 0;
       for (const item of query ? (await list()).items : []) {
         if (signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
-        if (params.folder === "Bookmarks" && !item.relativePath.startsWith("Bookmarks/")) continue;
+        if (typeof params.folder === "string" && params.folder && !item.relativePath.startsWith(params.folder.replace(/\/+$/, "") + "/")) continue;
         try {
           let cached = searchCache.get(item.itemId);
           if (!cached || cached.revision !== item.revision) {

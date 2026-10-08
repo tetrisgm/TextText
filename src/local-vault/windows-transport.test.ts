@@ -61,6 +61,37 @@ describe("Windows native RPC", () => {
   });
 });
 describe("Windows shared transport", () => {
+  it("scopes Notes search before the result cap without reading unrelated packs", async () => {
+    const f = await fixture();
+    try {
+      const original = f.files.get(f.itemId)!; f.files.delete(f.itemId);
+      for (let index = 0; index < 105; index++) f.files.set(`other-${index}`, { ...original, path: `Bookmarks/needle-${index}.textpack` });
+      f.files.set(f.itemId, original);
+      expect(await f.transport.request("search", { query: "needle", folder: "Notes" })).toMatchObject({ items: [{ path: f.path }], truncated: false });
+      expect(f.view.messages.filter(call => call.method === "files.text").map(call => call.params.itemId)).toEqual([f.itemId]);
+    } finally { f.transport.destroy(); }
+  });
+  it("reads pending local saved stories and history offline with canonical metadata and deduplication", async () => {
+    const f = await fixture();
+    const add = (id: string, path: string, fields: Record<string, string | number>) => {
+      const doc = emptyDocumentSnapshot({ id: "texttext.article", version: 1 });
+      doc.content.title = id; doc.content.fields = fields;
+      f.files.set(id, { path, bytes: encodePack(emptyPack(), writePayload({ path, hash: "", markdown: `---\ntextTextId: "${id}"\n---\n\n` }, doc)) });
+    };
+    try {
+      const hash = "a".repeat(64), historyHash = "b".repeat(64);
+      add("old", "Bookmarks/Old.textpack", { texttextFeedEntry: "v1", feedEntryHash: hash, keptAt: "2026-01-01" });
+      add("new", "Bookmarks/New.textpack", { texttextFeedEntry: "v1", feedEntryHash: hash, keptAt: "2026-02-01", feedTitle: "Publisher", feedTopic: " Design ", texttextBookmarkReadAt: "2026-02-02", texttextFeedReadingProgress: 45 });
+      add("history", "Feeds/History/Read.textpack", { texttextFeedHistoryEntry: "v1", feedEntryHash: historyHash, readAt: "2026-03-01", texttextFeedReadingProgress: 100 });
+      add("invalid", "Bookmarks/Invalid.textpack", { texttextFeedEntry: "v1", feedEntryHash: "invalid" });
+      add("wrong-folder", "Notes/Ignore.textpack", { texttextFeedEntry: "v1", feedEntryHash: "c".repeat(64) });
+      expect(await f.transport.request("keptFeedEntries", {})).toEqual({ hashes: [hash], entries: [{ hash, path: "Bookmarks/New.textpack", title: "new", source: "Publisher", keptAt: "2026-02-01", topic: "Design", readAt: "2026-02-02", progress: "45" }] });
+      expect(await f.transport.request("readFeedEntries", {})).toEqual({ hashes: [historyHash], entries: [{ hash: historyHash, path: "Feeds/History/Read.textpack", title: "history", source: "", viewedAt: "2026-03-01", readAt: "2026-03-01", progress: "100", revision: digest(f.files.get("history")!.bytes) }] });
+      f.files.delete("new");
+      expect(await f.transport.request("keptFeedEntries", {})).toMatchObject({ entries: [{ path: "Bookmarks/Old.textpack" }] });
+      expect(f.view.messages.some(call => call.method === "native.http")).toBe(false);
+    } finally { f.transport.destroy(); }
+  });
   it("opens only native recovery copies without forwarding a renderer-controlled path", async () => {
     const f = await fixture();
     try {
