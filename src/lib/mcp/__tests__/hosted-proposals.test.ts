@@ -58,22 +58,12 @@ describe("hosted MCP durable proposal boundary", () => {
     expect(mocks.insert).not.toHaveBeenCalled();
     expect(mocks.execute).not.toHaveBeenCalled();
   });
-  it.each(risky)("stages %s through the real proposal service without executing", async (name, args) => {
+  it.each(risky)("refuses unsupported %s without creating a SQL proposal", async (name, args) => {
     const result = await callTool(name, args, context);
-    expect(result.isError, JSON.stringify(result)).not.toBe(true);
-    const data = result.structuredContent!;
-    expect(data).toMatchObject({ approvalRequired: true, proposalId: expect.any(String), reviewUrl: expect.stringContaining(`/proposals/${data.proposalId}`) });
-    expect(mocks.getOwnedBlog).toHaveBeenCalledWith("apple-sub");
-    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
-      id: data.proposalId, blogId: "blog-1", actorUserId: "user-1", proposalKind: "workspace",
-      toolName: name, arguments: args, status: "pending", connectionId: null,
-      metadata: expect.objectContaining({ origin: { surface: "hosted_mcp", connectionName: "Research agent" } }),
-    }));
-    const row = mocks.insert.mock.calls[0][0];
-    expect(row.expiresAt.getTime() - row.createdAt.getTime()).toBe(15 * 60_000);
-    expect(mocks.batch).toHaveBeenCalledTimes(1);
-    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: "user-1", actionName: "ai.write_proposed", targetId: data.proposalId }), expect.anything());
-    expect(mocks.execute).not.toHaveBeenCalled(); expect(mocks.approvedExecute).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
+    expect(mocks.getOwnedBlog).not.toHaveBeenCalled();
+    expect(mocks.insert).not.toHaveBeenCalled(); expect(mocks.batch).not.toHaveBeenCalled();
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
   it.each([
     ["read_item", { id: "item-1" }], ["list_items", {}],
@@ -92,11 +82,13 @@ describe("hosted MCP durable proposal boundary", () => {
     ["revoke_access", { scope_type: "item", scope_id: "item-1", access_id: "share-1" }],
     ["update_item", { id: "item-1", body: "Replacement", if_match_hash: hash }],
     ["update_item", { id: "item-1", markdown: "# Replacement", if_match_hash: hash }],
-  ] as Array<[string, Record<string, unknown>]>)("keeps ordinary %s direct", async (name, args) => {
-    expect(await callTool(name, args, context)).toEqual({ content: [{ type: "text", text: "direct" }] });
-    expect(mocks.execute).toHaveBeenCalledWith(name, args, context); expect(mocks.insert).not.toHaveBeenCalled();
+  ] as Array<[string, Record<string, unknown>]>)("routes supported %s directly and rejects unavailable operations", async (name, args) => {
+    const result = await callTool(name, args, context);
+    if (listTools().some((tool) => tool.name === name)) expect(result).toEqual({ content: [{ type: "text", text: "direct" }] });
+    else { expect(result.isError).toBe(true); expect(mocks.execute).not.toHaveBeenCalled(); }
+    if (listTools().some((tool) => tool.name === name)) expect(mocks.execute).toHaveBeenCalledWith(name, args, context); expect(mocks.insert).not.toHaveBeenCalled();
   });
-  it("stages exactly the destructive and publishing commands and advertises owner review", () => {
+  it("keeps legacy proposal policy separate from the canonical catalog and advertises owner review", () => {
     const staged = WORKSPACE_TOOL_NAMES.filter((name) =>
       hostedToolNeedsProposal(name, { status: "published" }),
     );
@@ -105,7 +97,7 @@ describe("hosted MCP durable proposal boundary", () => {
       "remove_item_asset", "retire_document_template", "set_item_status",
     ]);
     for (const name of staged) {
-      expect(listTools().find((tool) => tool.name === name)?.description).toContain("owner review");
+      expect(listTools().find((tool) => tool.name === name)).toBeUndefined();
     }
     for (const name of ["restore_item", "restore_folder", "set_access", "revoke_access", "update_item"] as const) {
       expect(hostedToolNeedsProposal(name, { status: "draft" }), name).toBe(false);

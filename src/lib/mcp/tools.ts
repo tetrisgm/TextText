@@ -847,11 +847,16 @@ async function executeWorkspaceCommand(
     );
   }
 
-  if (process.env.TEXTTEXT_VAULT_ROOT) {
-    const { executeVaultReadTool } = await import("./vault-tools");
-    return executeVaultReadTool(name, args as Record<string, unknown>, extra.authInfo);
-  }
+  const { executeVaultReadTool } = await import("./vault-tools");
+  return executeVaultReadTool(name, args as Record<string, unknown>, extra.authInfo);
+}
 
+/** Retained only while obsolete SQL tools are removed. No public entry calls this. */
+async function executeLegacyWorkspaceCommand(
+  name: WorkspaceToolName,
+  args: WorkspaceToolInput<WorkspaceToolName>,
+  extra: ToolContext,
+): Promise<CallToolResult> {
   switch (name) {
     case "list_agent_changes":
     case "revert_agent_change": {
