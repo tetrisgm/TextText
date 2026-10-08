@@ -11,9 +11,10 @@
   search freshness: [1202 receipt](verification/2026-10-08-mac-1202.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T155231Z-0533908b**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T161732Z-c58114ad**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T155439Z-9fb8b835.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T161944Z-5cb58e6f.dump`.
+  [Current deployment and unresolved shutdown receipt](verification/2026-10-08-oracle-c58114ad.md).
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
