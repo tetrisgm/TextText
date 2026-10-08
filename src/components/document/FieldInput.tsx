@@ -380,6 +380,8 @@ function DocumentReferenceInput({ field, value, choices, source, disabled, onCha
   const picker = useRef<HTMLDetailsElement>(null);
   const [query, setQuery] = useState("");
   const selected = [...new Set((Array.isArray(value) ? value : value == null ? [] : [value]).filter((entry): entry is string => typeof entry === "string"))];
+  const currentSelection = useRef({ selected, source, disabled, onChange, fieldId: field.id, multiple: field.multiple });
+  currentSelection.current = { selected, source, disabled, onChange, fieldId: field.id, multiple: field.multiple };
   const [resolved, setResolved] = useState<WorkspaceReferenceChoice[]>([]);
   const [results, setResults] = useState<WorkspaceReferenceChoice[]>([]);
   const [loading, setLoading] = useState(false);
@@ -430,9 +432,12 @@ function DocumentReferenceInput({ field, value, choices, source, disabled, onCha
         try {
           const resolvedChoice = source ? await source.resolve(choice.id, request.signal) : choice;
           if (lifetime.current?.signal.aborted || request.signal.aborted) return;
-          if (selected.includes(resolvedChoice.id)) throw new Error("This item is already selected.");
+          const current = currentSelection.current;
+          if (current.source !== source || current.disabled || current.fieldId !== field.id || current.multiple !== field.multiple) return;
+          if (!field.multiple && JSON.stringify(current.selected) !== JSON.stringify(selected)) throw new Error("This selection changed. Choose the item again.");
+          if (current.selected.includes(resolvedChoice.id)) throw new Error("This item is already selected.");
           setResolved(previous => [...previous, resolvedChoice]);
-          onChange(field.multiple ? [...selected, resolvedChoice.id] : resolvedChoice.id);
+          current.onChange(field.multiple ? [...current.selected, resolvedChoice.id] : resolvedChoice.id);
           setQuery(""); picker.current?.removeAttribute("open"); picker.current?.querySelector("summary")?.focus();
         } catch (reason) { if (!lifetime.current?.signal.aborted && !request.signal.aborted) setError(reason instanceof Error ? reason.message : "This item could not be selected."); }
         finally { if (!lifetime.current?.signal.aborted && selectionRequest.current === request) setBusy(false); }

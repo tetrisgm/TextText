@@ -70,6 +70,12 @@
 
 ## Current work and next checks
 
+- Shared parent/document picker now preserves concurrent selection changes
+  during delayed identity resolution and ignores obsolete contexts. Browser
+  race regressions, full note-template browser checks, ten relevant unit tests
+  and TypeScript passed. Not delivered in installed artifacts yet.
+  [Receipt](verification/2026-10-08-reference-selection-concurrency.md).
+
 - Windows empty folders now enter the native manifest through the same
   traversal as documents, with folder-aware revision and cache invalidation.
   Native sync regressions, shell compilation and actual PC packaging passed;
