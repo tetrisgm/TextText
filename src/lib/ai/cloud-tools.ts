@@ -79,11 +79,12 @@ export function cloudAssistantToolNames(
       return false;
     }
     // Exclude open-world tools that fetch a model-chosen URL
-    // (add_item_asset, recapture_bookmark). Running headless with no
+    // (for example recapture_bookmark). Approved image import freezes the
+    // exact URL and target before fetching. Other tools running with no
     // confirmation, they are an outbound exfiltration channel a prompt injection
     // could steer (the fetched URL leaks item content in its query string). They
     // stay available on the confirmed native and MCP rungs.
-    if (definition.annotations.openWorldHint) return false;
+    if (definition.annotations.openWorldHint && name !== "add_item_asset") return false;
     return true;
   });
 }

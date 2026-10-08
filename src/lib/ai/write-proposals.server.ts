@@ -452,6 +452,7 @@ export async function createWorkspaceWriteProposal(
               folderPath: found.folderPath,
               visibility: found.visibility,
               revision: found.revision,
+              ...(validated.name === "add_item_asset" ? { imageImport: { sourceUrl: validated.arguments.source_url as string, placement: validated.arguments.placement as string } } : {}),
               ...(asset ? { asset: { id: asset.id, label: asset.title || asset.alt || asset.src.split("/").at(-1)!, src: asset.src } } : {}),
               ...("status" in validated.arguments ? { desiredStatus: (validated.arguments as { status: "draft" | "published" }).status } : {}),
               ...(validated.name === "restore_item" ? { restore: true as const } : {}),
@@ -655,6 +656,7 @@ export async function decideWorkspaceWriteProposal(
         "That change cannot be approved because what it would do was not recorded when it was offered. Ask again.",
     };
   }
+  if (validated.name === "add_item_asset" && (frozen?.kind !== "items" || frozen.items[0]?.imageImport?.sourceUrl !== validated.arguments.source_url || frozen.items[0]?.imageImport?.placement !== validated.arguments.placement)) throw new Error("The approved image request does not match this command.");
   if (validated.name === "remove_item_asset" && (frozen?.kind !== "items" || frozen.items[0]?.asset?.id !== validated.arguments.asset_id)) throw new Error("The approved asset does not match this command.");
   if (!recovering && frozen?.kind === "items") {
     let current: Awaited<ReturnType<WorkspaceWriteProposalDependencies["resolveItems"]>>;

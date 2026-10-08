@@ -25,6 +25,7 @@ export type FrozenItemPreview = {
   desiredStatus?: "draft" | "published";
   restore?: true;
   asset?: { id: string; label: string; src: string };
+  imageImport?: { sourceUrl: string; placement: string };
   /** Set when the item could not be resolved at staging at all. */
   missing?: true;
 };
@@ -60,6 +61,7 @@ export function describeFrozenPreview(preview: FrozenProposalPreview): string {
   }
   const present = preview.items.filter((item) => !item.missing);
   const missing = preview.items.filter((item) => item.missing);
+  if (preview.tool === "add_item_asset") return present.length === 1 && present[0].imageImport ? `Fetch an image from ${present[0].imageImport.sourceUrl} and add it to "${present[0].title}" as ${present[0].imageImport.placement === "body_end" ? "a body image" : present[0].imageImport.placement === "cover" ? "the cover" : "a gallery image"}. The source website will receive this request after approval.` : "The image destination could not be found. This change cannot be approved.";
   if (preview.tool === "remove_item_asset") return present.length === 1 && present[0].asset ? `Remove "${present[0].asset.label}" from "${present[0].title}". The image will no longer appear in this item; its file is retained for recovery.` : "The asset could not be found. This change cannot be approved.";
   if (preview.tool === "retire_document_template") {
     return present.length === 1

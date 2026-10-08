@@ -21,6 +21,7 @@ const HOSTED_STAGED_TOOLS: ReadonlySet<WorkspaceToolName> = new Set<WorkspaceToo
   "delete_folder",
   "empty_trash",
   "remove_item_asset",
+  "add_item_asset",
   "retire_document_template",
 ]);
 

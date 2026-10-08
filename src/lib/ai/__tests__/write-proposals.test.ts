@@ -5,6 +5,8 @@ import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { writeVaultTextpack, readVaultTextpack } from "@/sync/engine/store";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
+const imagePreparation = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/vault/image-fetch", () => ({ preparePublicImage: imagePreparation }));
 const access = vi.hoisted(() => ({ allowed: true }));
 vi.mock("@/lib/store", async () => {
   const engine = await import("@/sync/engine/store");
@@ -321,7 +323,7 @@ describe("workspace write proposals", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each(["recapture_bookmark", "add_item_asset"])(
+  it.each(["recapture_bookmark"])(
     "never stages excluded %s actions",
     async (tool) => {
       const { dependencies, execute } = harness();
@@ -609,5 +611,28 @@ it("freezes the exact asset for explicit removal and recovers an expired complet
   h.advance(16 * 60_000); h.repository.rejectCompletion = false;
   access.allowed = false; expect((await approve()).status).not.toBe("completed"); access.allowed = true;
   expect((await approve()).status).toBe("completed"); expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
+ } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+it("does not fetch an image until explicit approval and replays the same completed import without fetching again", async () => {
+ const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-image-proposal-")); vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true; imagePreparation.mockReset();
+ try {
+  const sharp = (await import("sharp")).default; const { prepareVisualAsset } = await import("@/lib/visual-assets");
+  const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
+  imagePreparation.mockResolvedValue(await prepareVisualAsset({ name: "image.png", size: bytes.length, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) as ArrayBuffer }));
+  const document = emptyDocumentSnapshot(); document.content.title = "Research"; document.content.body = "Keep";
+  const location = { root, workspaceId: "blog-1", itemId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" };
+  const saved = await writeVaultTextpack({ ...location, operationId: "seed", relativePath: "Notes/Research.textpack", baseRevision: null, bytes: buildTextpack("Research", { document, markdown: `---\ntextTextId: ${location.itemId}\n---\n\nKeep` }) });
+  const h = harness(); h.dependencies.execute = runWorkspaceToolForSession; h.dependencies.resolveItems = resolveProposalItems;
+  let sequence = 0; h.dependencies.randomId = () => `cccccccc-cccc-4ccc-8ccc-${String(++sequence).padStart(12, "0")}`;
+  const stage = () => createWorkspaceWriteProposal({ actor: owner, tool: "add_item_asset", arguments: { id: location.itemId, source_url: "https://example.com/image.png", placement: "gallery", if_match_hash: saved.revision, idempotency_key: "image" } }, h.dependencies);
+  const denied = await stage();
+  expect(denied.summary).toContain("https://example.com/image.png"); expect(denied.summary).toContain("gallery image"); expect(imagePreparation).not.toHaveBeenCalled();
+  await decideWorkspaceWriteProposal({ actor: owner, proposalId: denied.id, decision: "deny" }, h.dependencies); expect(imagePreparation).not.toHaveBeenCalled();
+  const proposal = await stage(); const approve = () => decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, h.dependencies);
+  h.repository.rejectCompletion = true; expect((await approve()).status).toBe("ambiguous"); expect(imagePreparation).toHaveBeenCalledOnce();
+  const committed = (await readVaultTextpack(location))!; h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+  access.allowed = false; expect((await approve()).status).not.toBe("completed"); access.allowed = true;
+  expect((await approve()).status).toBe("completed"); expect(imagePreparation).toHaveBeenCalledOnce(); expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
  } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
 });

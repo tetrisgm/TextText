@@ -30,8 +30,8 @@ describe("cloudAssistantToolNames", () => {
     expect(() => cloudAssistantToolContract("empty_trash")).toThrow("File command unavailable");
   });
 
-  it("excludes open-world fetch tools (outbound exfiltration channel)", () => {
-    expect(names).not.toContain("add_item_asset");
+  it("only exposes the image fetch command with a durable explicit approval path", () => {
+    expect(names).toContain("add_item_asset");
     expect(names).not.toContain("recapture_bookmark");
   });
 
