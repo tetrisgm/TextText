@@ -90,14 +90,31 @@ describe("guarded cloud assistant tools", () => {
     );
   });
 
-  it("stages previewable edits and confirmations but omits open-world writes", () => {
+  it("stages previewable edits and confirmations but omits unbounded open-world writes", () => {
     const tools = guardedCloudAssistantTools(actor, vi.fn());
     expect(tools).toHaveProperty("create_item");
     expect(tools).toHaveProperty("read_item");
     expect(tools).toHaveProperty("update_item");
     expect(tools).toHaveProperty("delete_item");
     expect(tools).not.toHaveProperty("set_item_status");
-    expect(tools).not.toHaveProperty("add_item_asset");
+    expect(tools).toHaveProperty("add_item_asset");
+    expect(tools).not.toHaveProperty("recapture_item");
+  });
+
+  it("stages image imports for explicit approval without executing or fetching", async () => {
+    const onProposal = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const args = { id: "item-1", source_url: "https://texttext.app/image.png", placement: "gallery", if_match_hash: "abc", idempotency_key: "image-1" };
+    mocks.createProposal.mockResolvedValueOnce({ id: "proposal-image", tool: "add_item_asset", status: "pending", arguments: args });
+    try {
+      const tools = guardedCloudAssistantTools(actor, onProposal);
+      const output = await executeTool(tools.add_item_asset, args);
+      expect(mocks.createProposal).toHaveBeenCalledWith({ actor, tool: "add_item_asset", arguments: args });
+      expect(onProposal).toHaveBeenCalledWith(expect.objectContaining({ tool: "add_item_asset", status: "pending" }));
+      expect(String(output)).toContain('"approval_required":true');
+      expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally { fetchSpy.mockRestore(); }
   });
 
   it("turns a write tool call into a pending proposal without executing", async () => {
