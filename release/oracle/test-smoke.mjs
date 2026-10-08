@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import pg from "pg";
-import { smoke, smokeOrigin } from "./smoke.mjs";
+import { createHash, randomUUID } from "node:crypto";
+import * as fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { smoke, smokeOrigin, removeScratchFiles } from "./smoke.mjs";
 import { localDatabase } from "./start.mjs";
 
 test("smoke accepts only loopback HTTP port 3400 without URL credentials or suffixes", () => {
@@ -27,19 +31,39 @@ test("a failed HTTP check removes its committed scratch account and suppresses r
   localDatabase(process.env.DATABASE_URL);
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-smoke-cleanup-"));
+  await fs.mkdir(path.join(root, "keep"));
   try {
     const scratchCount = async () => Number((await client.query(
       "SELECT count(*) FROM users WHERE username LIKE 'scratch-oracle-smoke-%'",
     )).rows[0].count);
     const before = await scratchCount();
     let contactedApp = false;
-    await assert.rejects(smoke({ scratch: true, fetchImpl: async () => {
+    await assert.rejects(smoke({ scratch: true, environment: { ...process.env, TEXTTEXT_VAULT_ROOT: root }, fetchImpl: async (_url, options) => {
       contactedApp = true;
+      const token = options.headers.Authorization.slice("Bearer ".length);
+      const { rows } = await client.query("SELECT blogs.id FROM blogs JOIN api_tokens ON blogs.owner_id=api_tokens.user_id WHERE api_tokens.token_hash=$1", [createHash("sha256").update(token).digest("hex")]);
+      assert.equal(rows.length, 1);
+      await fs.mkdir(path.join(root, rows[0].id, ".texttext"), { recursive: true });
+      await fs.writeFile(path.join(root, rows[0].id, ".texttext", "fixture"), "only scratch");
       throw new Error("Raw transport diagnostics must not escape.");
     } }), error => error.message === "Loopback request failed: /api/app/session.");
     assert.equal(contactedApp, true, "Scratch setup must commit before simulating the HTTP failure.");
     assert.equal(await scratchCount(), before, "Failure left a scratch account in PostgreSQL.");
+    assert.deepEqual(await fs.readdir(root), ["keep"], "Cleanup must remove only the scratch file workspace.");
   } finally {
     await client.end();
+    await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+
+test("scratch file cleanup rejects traversal and symlink workspace roots", async () => {
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),"texttext-smoke-path-"));const id=randomUUID();
+ try {
+  await assert.rejects(removeScratchFiles(root,"../other"),/Invalid/);
+  await fs.mkdir(path.join(root,"keep"));await fs.symlink(path.join(root,"keep"),path.join(root,id));
+  await assert.rejects(removeScratchFiles(root,id),/ordinary directory/);
+  assert.ok((await fs.stat(path.join(root,"keep"))).isDirectory());
+ } finally { await fs.rm(root,{recursive:true,force:true}); }
 });
