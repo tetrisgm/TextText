@@ -2,15 +2,17 @@
 
 ## Installed and live
 
-- Mac: `/Applications/TextText.app` **0.204 (1178)**, source `889bac73`.
-  Native Apple sign-in, three extensions, account and iCloud workspace preserved.
-  Save, normal quit/reopen, search and real account Settings passed.
-  [Receipt](verification/2026-10-07-mac-1178-provider-management.md).
-- Oracle: **`texttext-oracle-20261008T020052Z-889bac73`**. Account Settings
-  verified in actual Safari and Mac. Backup `texttext-20261008T020156Z-3323c000.dump`;
-  authenticated read/write/audit smoke passed. Algorave remains active; HAProxy
-  unchanged. Hosting/storage remain Oracle; no public desktop release.
-  [Receipt](verification/2026-10-07-reconnect-account-management.md).
+- Mac: `/Applications/TextText.app` **0.204 (1179)**, source `3ff475d9`.
+  Account, iCloud workspace, native Apple sign-in and three extensions preserved.
+  Startup, search, gallery zoom/comments display and normal close/reopen passed.
+  [Receipt](verification/2026-10-07-mac-1179-gallery-workspace.md).
+- Oracle: **`texttext-oracle-20261008T023523Z-3ff475d9`**. Exact-source
+  sync core (244 checks) and native gates passed. Authenticated session,
+  origin enforcement, read/create/edit and audit smoke passed; scratch removed.
+  Backup `texttext-20261008T023609Z-b45886d3.dump`; prior release retained.
+  TextText and all three Algorave services active; HAProxy mtime unchanged.
+  Logs: `/tmp/texttext-quiet-sync-core.log`, `/tmp/texttext-quiet-sync-native.log`,
+  `/tmp/texttext-quiet-deploy.log`. No public desktop release.
 - Windows: installed candidate **`c69bcd6c9a17491db56c038836e963a0`**, source
   `889bac73`, at `C:\Users\Shokunin\AppData\Local\Programs\TextText`.
   Account Settings, body search, actual single-instance file opening and normal
@@ -22,7 +24,17 @@
 
 ## Current follow-up
 
-Account-management rollout passed on installed Mac/Windows, Oracle and actual Safari; see [reconnect/account receipt](verification/2026-10-07-reconnect-account-management.md).
+Windows startup regression fixed in `033231ae`: WebView2 must enter the live
+visual tree before initialization. The production startup/rollback gate now
+covers it. Working candidate `c69bcd...` was restored and opened successfully.
+Final candidate `b4ba548f662943ec9b70749f58f7442f` passed all gates; installation
+and actual folder-picker switch/back await PC SSH recovery. Do not rebuild.
+See [Windows receipt](verification/2026-10-07-windows-desktop-live.md).
+
+Shared inactivity now pauses quietly; reconnect revalidates authority before
+sending journaled edits (`3ff475d9`, 49 focused tests). This change is installed on Mac and live on Oracle. Windows final candidate
+contains it but remains pending installation. Actual Safari interaction checks
+for this final patch remain pending; prior account acceptance is recorded below.
 
 ## Changes and durable checks
 
@@ -44,12 +56,17 @@ Account-management rollout passed on installed Mac/Windows, Oracle and actual Sa
 - Settings now exposes account-bound sign-in management. Google is not configured
   on Oracle; commercial ChatGPT sign-in requires OpenAI registration, which the
   owner lacks. No real additional provider was linked during verification.
-- Windows arbitrary-workspace file opening, per-image gallery comment anchors,
-  and full reference-service visual parity remain beyond this completed batch.
+- Current-workspace folder relocation and portable identity are implemented on
+  Windows; final installed picker verification is pending as above. Selecting a
+  different cloud workspace still needs an account workspace-discovery flow.
+- Per-image gallery anchors and zoom/pan are implemented with integrated browser
+  regression coverage in default tests. Full reference-service visual parity
+  remains unproven; see [audit](design/template-reference-parity.md).
 - Second physical Apple-device iCloud delivery, Windows provider eviction and
   hardware power-loss behavior are not live-certified.
 - Existing `Shoku's Space/My Notes/TextText Changelog.textpack` was not found;
-  no duplicate was created. Standalone CLI remains older build1158.
+  no duplicate was created. Standalone CLI updated to source `d52a9eef`;
+  [receipt](verification/2026-10-07-standalone-cli-current.md).
 - Preserve unrelated worker edits: `src/components/workspace/assistant/attachments.ts`,
   `src/lib/workspace/__tests__/tabs.test.ts`, `scripts/.probe-editor.ts`.
 - Local installs and needed Oracle deployments are authorized; public desktop
