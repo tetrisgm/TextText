@@ -96,6 +96,19 @@ final class DocumentStoreTests: XCTestCase {
         metadata["customMetadata"] = ["owner": "external tool"]
         try JSONSerialization.data(withJSONObject: metadata).write(to: info)
         let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: temporary)
+        // A rewritten real package can place receipts before Markdown. Moving
+        // Markdown last makes offset invalidation during receipt removal visible.
+        do {
+            let archive = try Archive(url: packed, accessMode: .update)
+            let entry = try XCTUnwrap(archive.first { $0.path.hasSuffix("/text.md") })
+            let path = entry.path
+            var bytes = Data()
+            _ = try archive.extract(entry) { bytes.append($0) }
+            let text = temporary.appendingPathComponent("reordered.md")
+            try bytes.write(to: text)
+            try archive.remove(entry)
+            try archive.addEntry(with: path, fileURL: text, compressionMethod: .deflate)
+        }
         let source = root.appendingPathComponent("Source.textpack")
         try FileManager.default.copyItem(at: packed, to: source)
         let files = LocalVaultDocumentStore(root: root)

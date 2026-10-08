@@ -30,6 +30,12 @@
 
 ## Current work and next checks
 
+- Mac 1209 runtime Save as look failed before destination creation. Fixed stale
+  ZIP offset use when receipt removal precedes Markdown extraction. Regression
+  now places Markdown after receipts; 53 storage/remote tests passed. Rebuild
+  and install this follow-up, then repeat actual clone acceptance.
+  [Runtime finding](verification/2026-10-08-mac-1209.md).
+
 - Mac 1208 reusable agent design → Save as look → New from template → saved
   item passed. Package inspection found copied identity-specific mutation
   receipts. Native clone fix and 53 storage/remote tests passed, not installed.

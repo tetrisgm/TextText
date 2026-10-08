@@ -410,12 +410,12 @@ public struct LocalVaultDocumentStore: Sendable {
             let archive = try Archive(url: packed, accessMode: .update)
             let entry = try canonicalMarkdownEntry(archive)
             let entryPath = entry.path
+            var original = Data()
+            _ = try archive.extract(entry) { original.append($0) }
             let prefix = String(entryPath.dropLast("text.md".count))
             let inheritedReceipts = archive.filter { $0.path.hasPrefix(prefix + "net.texttext.mutations/") }.map(\.path)
             // Removing an entry shifts archive offsets; resolve each entry anew.
             for path in inheritedReceipts { if let receipt = archive[path] { try archive.remove(receipt) } }
-            var original = Data()
-            _ = try archive.extract(entry) { original.append($0) }
             guard let markdown = String(data: original, encoding: .utf8) else { throw Failure.invalidPath }
             let identity = MarkdownIdentityCodec.extract(from: markdown)
             let replacement = MarkdownIdentityCodec.inject(into: markdown,
