@@ -17,6 +17,18 @@ describe("textpack", () => {
     expect(Object.keys(unzipSync(bytes)).sort()).toEqual(["hi.textbundle/document.json", "hi.textbundle/info.json", "hi.textbundle/template.json", "hi.textbundle/text.md"]);
   });
 
+  it("preserves local mutation receipts through a web edit and bundle rename", () => {
+    const receiptPath = "net.texttext.mutations/" + "a".repeat(64) + ".json";
+    const receipt = strToU8(JSON.stringify({ fingerprint: "b".repeat(64) }));
+    const original = buildTextpack("original", { ...parts, files: { [receiptPath]: receipt } });
+    const read = parseTextpack(original);
+    const edited = buildTextpack("renamed", { ...read, markdown: read.markdown + "Later edit.\n" });
+    const reopened = parseTextpack(edited);
+    expect(reopened.files?.[receiptPath]).toEqual(receipt);
+    expect(unzipSync(edited)["renamed.textbundle/" + receiptPath]).toEqual(receipt);
+    expect(reopened.markdown).toContain("Later edit.");
+  });
+
   it("round-trips the editable template source only alongside its compiled template", () => {
     const templateAuthoringSource = { kind: "item-type-blueprint", schemaVersion: 1, blueprint: { name: "Hi" } };
     const bytes = buildTextpack("hi", { ...parts, templateAuthoringSource });

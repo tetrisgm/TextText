@@ -5,7 +5,8 @@ key. It now commits a payload fingerprint receipt and content in the same
 coordinated, synchronized TextPack replacement. There is no separate receipt
 write after the content commit.
 
-Receipts are opaque ZIP entries under `net.texttext.mutations/`, keyed by SHA-256
+Receipts are opaque ZIP entries under the canonical bundle root's
+`net.texttext.mutations/`, keyed by SHA-256
 of the supplied key. They contain a fingerprint, not the key or appended text.
 Ordinary native writes preserve these entries. A matching retry returns the
 current document before checking its old hash; a changed payload using the same
@@ -31,3 +32,14 @@ unfinished. Receipt preservation through web/shared-editor reconstruction and
 Windows writes needs explicit verification; do not infer cross-platform
 exactly-once behavior from the local regression. Manually removing receipts or
 restoring an older package also removes the corresponding retry history.
+
+Follow-up: receipt placement was corrected before installation to live inside
+the canonical TextBundle root. The web parser/rebuilder uses root-relative opaque
+files, so an archive-root receipt was incompatible with a renamed web rebuild.
+The web package rename/edit regression passed (11 package tests;
+`/tmp/texttext-receipt-web-package.log`). Windows `WithDocument` preservation
+regression and native durable-sync suite passed on the Mac .NET runtime
+(`/tmp/texttext-receipt-windows-core.log`); this is not a PC-installed check.
+Mac CLI/import tests passed 17 tests after the placement change
+(`/tmp/texttext-receipt-bundle-root.log`). Server checkpoint/MCP replacement
+paths still need receipt-preservation acceptance before broader claims.

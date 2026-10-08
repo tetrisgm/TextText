@@ -496,8 +496,10 @@ public struct LocalVaultDocumentStore: Sendable {
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordinationError) { coordinated in
             outcome = Result {
                 let current = try readUncoordinated(path: path, url: coordinated)
-                let receiptPath = mutationKey.map {
-                    "net.texttext.mutations/" + TextTextStableDigest.sha256Hex(Data($0.utf8)) + ".json"
+                let receiptPath = try mutationKey.map {
+                    let archive = try Archive(url: coordinated, accessMode: .read)
+                    let prefix = String(try canonicalMarkdownEntry(archive).path.dropLast("text.md".count))
+                    return prefix + "net.texttext.mutations/" + TextTextStableDigest.sha256Hex(Data($0.utf8)) + ".json"
                 }
                 if let receiptPath {
                     let existingArchive = try Archive(url: coordinated, accessMode: .read)
@@ -510,7 +512,8 @@ public struct LocalVaultDocumentStore: Sendable {
                         }
                         return current
                     }
-                    guard existingArchive.filter({ $0.path.hasPrefix("net.texttext.mutations/") }).count < 4096 else {
+                    let receiptDirectory = (receiptPath as NSString).deletingLastPathComponent + "/"
+                    guard existingArchive.filter({ $0.path.hasPrefix(receiptDirectory) }).count < 4096 else {
                         throw TextTextTextBundleError.invalidPackage("Document mutation receipt limit reached")
                     }
                 }

@@ -79,6 +79,14 @@ static class Test
  Throws<FileChangedException>(()=>store.Write(first.Path,Pack("overwrite"),"stale"),"stale write rejected");
  var changed=store.UpdateMarkdown(first.Path,"---\ntextTextId: \"test-1\"\n---\nmodified",first.Hash);
  using(var zip=new ZipArchive(new MemoryStream(store.Read(first.Path))))using(var reader=new StreamReader(zip.GetEntry("unknown.bin")!.Open()))Assert(reader.ReadToEnd()=="opaque-original","opaque assets preserved");
+ var receiptEntry="net.texttext.mutations/"+new string('a',64)+".json";
+ using(var receiptPack=new MemoryStream()) {
+     receiptPack.Write(Pack());
+     using(var zip=new ZipArchive(receiptPack,ZipArchiveMode.Update,true))using(var writer=new StreamWriter(zip.CreateEntry(receiptEntry).Open()))writer.Write("{\"fingerprint\":\"retained\"}");
+     var edited=TextPackStore.WithDocument(receiptPack.ToArray(),"---\ntextTextId: \"test-1\"\n---\nLater edit","{\"schemaVersion\":1,\"content\":{\"title\":\"Saved\"}}");
+     using var zipRead=new ZipArchive(new MemoryStream(edited));using var reader=new StreamReader(zipRead.GetEntry(receiptEntry)!.Open());
+     Assert(reader.ReadToEnd()=="{\"fingerprint\":\"retained\"}","Windows document edits preserve mutation receipts");
+ }
  var transport=new Fake();var engine=new SyncEngine(store,transport);await engine.SyncAsync();Assert(transport.UploadCount==1,"initial upload");await engine.SyncAsync();Assert(transport.UploadCount==1,"idle pass has no uploads");
  var current=store.Describe(first.Path);store.UpdateMarkdown(first.Path,TextPackStore.Markdown(store.Read(first.Path))+"\nexternal",current.Hash);
  transport.FailAfterCommit=true;try{await engine.SyncAsync();throw new Exception("expected lost ACK");}catch(HttpRequestException){}
