@@ -62,6 +62,21 @@ async function removeScratch(client, { userId, blogId, folderId, handle }) {
   }
 }
 
+export async function verifyScratchFolder({ command, request, client, fixture }) {
+  const args = { parent_path: "", name: "Empty folder verification", idempotency_key: `folder-${randomUUID()}` };
+  const created = await command("create_folder", args);
+  assert.equal(created.status, "folder_created");
+  assert.equal(created.relativePath, args.name);
+  assert.deepEqual(await command("create_folder", args), created, "Folder retry changed its durable receipt.");
+  const response = await request(`/api/vault/${fixture.blogId}/items`);
+  assert.equal(response.status, 200, "Folder manifest read failed.");
+  const manifest = await response.json();
+  assert.equal(manifest.folders.filter(path => path === args.name).length, 1, "Empty folder is missing or duplicated.");
+  assert.ok(!manifest.items.some(item => item.relativePath.startsWith(`${args.name}/`)), "Folder creation added unexpected content.");
+  const audit = await client.query("SELECT actor_type FROM action_audit WHERE actor_user_id = $1 AND target_id = $2 AND action_name = 'vault.folder.create'", [fixture.userId, `${fixture.blogId}:${args.name}`]);
+  assert.deepEqual(audit.rows, [{ actor_type: "human" }], "Folder retry must produce exactly one human audit receipt.");
+}
+
 export async function smoke({ scratch = false, environment = process.env, origin, fetchImpl = fetch } = {}) {
   if (!scratch) throw new Error("Pass --scratch to authorize the temporary workspace and its cleanup.");
   const base = smokeOrigin(origin);
@@ -145,6 +160,9 @@ export async function smoke({ scratch = false, environment = process.env, origin
     const workspaceData = await workspace.json();
     assert.deepEqual(workspaceData.items, [], "Scratch file workspace is not empty.");
     checks.push("authenticated file workspace read");
+
+    await verifyScratchFolder({ command, request, client, fixture });
+    checks.push("empty folder creation and durable retry");
 
     const body = "A deployment check must persist this note.";
     const appended = "The edited paragraph must persist too.";

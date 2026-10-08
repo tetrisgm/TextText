@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { smoke, smokeOrigin, removeScratchFiles } from "./smoke.mjs";
+import { smoke, smokeOrigin, removeScratchFiles, verifyScratchFolder } from "./smoke.mjs";
 import { localDatabase } from "./start.mjs";
 
 test("smoke accepts only loopback HTTP port 3400 without URL credentials or suffixes", () => {
@@ -66,4 +66,18 @@ test("scratch file cleanup rejects traversal and symlink workspace roots", async
   await assert.rejects(removeScratchFiles(root,id),/ordinary directory/);
   assert.ok((await fs.stat(path.join(root,"keep"))).isDirectory());
  } finally { await fs.rm(root,{recursive:true,force:true}); }
+});
+
+
+test("folder smoke uses one stable authenticated command and rejects duplicate audits", async () => {
+  for (const duplicate of [false, true]) {
+    const calls=[];
+    const command=async (name,args)=>{ calls.push({name,args});return {status:"folder_created",relativePath:args.name}; };
+    const fixture={blogId:randomUUID(),userId:randomUUID()};
+    const request=async url=>{assert.equal(url,`/api/vault/${fixture.blogId}/items`);return Response.json({folders:["Empty folder verification"],items:[]});};
+    const client={query:async (_sql,params)=>{assert.deepEqual(params,[fixture.userId,`${fixture.blogId}:Empty folder verification`]);return {rows:Array.from({length:duplicate?2:1},()=>({actor_type:"human"}))};}};
+    const run=verifyScratchFolder({command,request,client,fixture});
+    if(duplicate)await assert.rejects(run,/exactly one human audit/);else await run;
+    assert.equal(calls.length,2);assert.equal(calls[0].name,"create_folder");assert.deepEqual(calls[0],calls[1]);
+  }
 });
