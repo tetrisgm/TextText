@@ -36,8 +36,14 @@ This is source evidence. Installed Mac/Windows remain 1189; no new live claim.
 - Gate integrity: four tests passed after adding metadata discovery to the
   required core and shared-client test lists.
 
-The native discovery scale equivalent and combined exact-source gate are still
-pending. Before installation, the existing app was inspected: 0.204 (1189),
+Native scale equivalent `163b9a02` passed 17 focused tests. The combined clean
+source `5254ff85` then passed 662 core tests, TypeScript, and required native
+sync plus 40 local/remote CLI creation tests. Gate `5254ff85` now requires both
+creation suites and refuses a zero-test match. Exact-source receipts were saved;
+log `/tmp/texttext-sync-5254ff85.log`. Build 1190 is in preparation, not yet
+accepted as installed.
+
+Before installation, the existing app was inspected: 0.204 (1189),
 signed in at the intended iCloud workspace. Its open dedicated verification
 note and saved TextPack contain both 1189 platform markers exactly once and
 retain the four original headings. No user content was changed for this check.

@@ -29,12 +29,14 @@
   retirement are committed in `197c7552`; local/remote CLI parity is covered by
   `eaf1c25e`, `5f74d92a` and `af658589`. These changes are not installed yet.
   Explicit template choices override defaults; existing items retain their design.
-- Before the next build: remove the ordinary-folder scan ceiling and cache only
-  bounded metadata across server, Windows and Mac. Verify external edits,
-  replacement, rename and duplicate definitions invalidate cached discovery.
-  This prevents a large collection from blocking generic item creation.
-  Server/Windows fix `a0d9391b` passes 26 tests; native equivalent is pending.
+- Candidate source `5254ff85` passed 662 core tests, TypeScript and native
+  sync/creation suites. Mac 1190 and matching Windows builds are underway.
+  Server/Windows `a0d9391b` and native `163b9a02` remove aggregate folder scan
+  limits, cache bounded metadata, and test external change/rename invalidation.
   [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
+- Next agent gap: canonical updates cannot yet edit existing custom item fields.
+  Implementation is separate from the frozen 1190 candidate.
+
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
   Agent template creation and durable template/folder approvals
