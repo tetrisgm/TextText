@@ -75,7 +75,7 @@
   remain explicitly unverified; this evaluator does not certify those features.
   Rerun the required full release gate on the committed candidate before delivery.
 
-- Candidate `36c91bd2` is running the required full release gate (`65788`), log
+- Candidate `36c91bd2` failed the required full release gate (`65788`), log
   `/tmp/texttext-current-browser-contract-release-gates.log`. Preceding gates
   exposed stale fixtures: missing TextPack identity, removed web assistant prop,
   and omitted folder-review staging key. All focused fixes passed. Reader parsing
@@ -86,6 +86,12 @@
   `/tmp/texttext-web-assistant-current-contract.log`. No delivery is implied.
   The candidate directory below now contains `36c91bd2`; its earlier packaged
   archive remains older source and must not be deployed as this candidate.
+  The final unit failures exposed a missing native assistant folder-move handler
+  and stale asset-import expectations. Folder moves now stage the canonical
+  owner review with a stable retry key; they never silently execute a move.
+  All 33 targeted tests and TypeScript passed. Logs:
+  `/tmp/texttext-native-folder-review-tools.log`,
+  `/tmp/texttext-folder-review-types.log`. Full release checks must be rerun.
 
 - Oracle template delivery candidate is clean source `223954b8` in
   `/private/tmp/texttext-candidate-1195-5ELVuo`. Exact core gates passed
