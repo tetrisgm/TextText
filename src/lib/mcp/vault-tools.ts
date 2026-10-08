@@ -1,6 +1,6 @@
 import type { AuthInfo, CallToolResult } from "./types";
 import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-agent-access";
-import { getOwnedBlog, getBlog, getBlogEditRecord, getUserIdBySub, listVaultTextpacks, readVaultTextpack, readVaultTextpackIdentity } from "@/lib/store";
+import { getOwnedBlog, getBlog, getBlogEditRecord, getUserIdBySub, listVaultTextpacks, readVaultTextpack, readVaultTextpackIdentity, readVaultPreview, searchVaultTextpacks } from "@/lib/store";
 import { activeVaultGrants, roleForVaultItem } from "@/lib/vault/grants";
 import { openPack } from "@/local-vault/pack";
 import { readDocument } from "@/local-vault/model";
@@ -34,18 +34,27 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   const grants = owner ? [] : await activeVaultGrants({ ...location, userId });
   const allowed = (item: { itemId: string; relativePath: string }) =>
     (!itemScope || itemScope.itemId === item.itemId) && (owner || Boolean(roleForVaultItem(grants, item.itemId, item.relativePath)));
+  async function allowedNow(item: { itemId: string; relativePath: string }) {
+    if (itemScope && itemScope.itemId !== item.itemId) return false;
+    const currentUser = await getUserIdBySub(sub as string);
+    if (!currentUser || currentUser !== userId) return false;
+    const currentWorkspace = await getBlogEditRecord(blog!.handle);
+    if (!currentWorkspace || currentWorkspace.id !== location.workspaceId) return false;
+    return currentWorkspace.ownerId === currentUser || Boolean(roleForVaultItem(await activeVaultGrants({ ...location, userId: currentUser }), item.itemId, item.relativePath));
+  }
   if (!owner && !grants.length) return error("Workspace not found.");
   if (name === "get_workspace") return json({ workspace: { id: identity.id, handle: blog.handle, name: blog.name }, access: { owner, canEdit: false }, capabilities: { tools: reads, fileBased: true, writes: false } });
   let bytesRead = 0;
   async function read(item: { itemId: string; relativePath: string }) {
     // Check current identity/path again: a folder move can revoke a folder grant.
     const current = await readVaultTextpackIdentity({ ...location, itemId: item.itemId });
-    if (!current || !allowed(current)) return null;
+    if (!current || !await allowedNow(current)) return null;
     const pack = await readVaultTextpack({ ...location, itemId: item.itemId });
     if (!pack || !allowed({ itemId: item.itemId, relativePath: pack.relativePath })) return null;
     bytesRead += pack.bytes.byteLength;
     if (bytesRead > 64 * 1024 * 1024) throw new Error("File read budget exceeded; narrow the folder or query.");
     const document = readDocument(openPack(pack.bytes, pack.relativePath, pack.revision, item.itemId).file);
+    if (!await allowedNow({ itemId: item.itemId, relativePath: pack.relativePath })) return null;
     return { id: item.itemId, path: pack.relativePath, hash: pack.revision, title: document.content.title, body: document.content.body, document };
   }
   if (name === "read_item") {
@@ -62,15 +71,30 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   const terms = typeof args.query === "string" ? args.query.toLocaleLowerCase().split(/\s+/).filter(Boolean) : [];
   if (name === "search" && !terms.length) return error("Enter a search query.");
   const items = [];
+  if (name === "search") {
+    const found = await searchVaultTextpacks(location, visible, String(args.query));
+    for (const hit of found.items) {
+      const entry = visible.find((item) => item.relativePath === hit.path);
+      if (!entry) continue;
+      const current = await readVaultTextpackIdentity({ ...location, itemId: entry.itemId });
+      if (!current || current.relativePath !== hit.path || current.revision !== entry.revision || !await allowedNow(current)) continue;
+      items.push({ id: entry.itemId, ...hit, hash: current.revision });
+      if (items.length >= limit) break;
+    }
+    return json({ items, truncated: found.truncated || found.items.length > limit });
+  }
   let scanned = 0;
   for (const entry of visible) {
-    if (folder !== null && entry.relativePath.slice(0, entry.relativePath.lastIndexOf("/")) !== folder) continue;
+    const slash = entry.relativePath.lastIndexOf("/");
+    const parent = slash < 0 ? "" : entry.relativePath.slice(0, slash);
+    if (folder !== null && parent !== folder) continue;
     if (++scanned > 500) break;
-    const item = await read(entry);
-    if (!item) continue;
-    if (name === "search" && !terms.every((term) => `${item.title}\n${item.body}`.toLocaleLowerCase().includes(term))) continue;
-    items.push({ id: item.id, path: item.path, hash: item.hash, title: item.title, excerpt: item.body.slice(0, 400) });
+    if (!await allowedNow(entry)) continue;
+    const preview = await readVaultPreview({ ...location, itemId: entry.itemId, metadataOnly: true });
+    const current = await readVaultTextpackIdentity({ ...location, itemId: entry.itemId });
+    if (!preview || !current || current.relativePath !== entry.relativePath || current.revision !== entry.revision || !await allowedNow(current)) continue;
+    items.push({ id: entry.itemId, path: current.relativePath, hash: current.revision, title: preview.title, excerpt: preview.excerpt });
     if (items.length >= limit) break;
   }
-  return json({ items, truncated: scanned > 500 || items.length >= limit, ...(owner ? { problems: manifest.problems } : {}) });
+  return json({ items, truncated: scanned > 500 || items.length >= limit });
 }

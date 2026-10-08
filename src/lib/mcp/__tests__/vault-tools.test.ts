@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-const mock = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), identity: vi.fn(), grants: vi.fn(), user: vi.fn(), owner: vi.fn() }));
-vi.mock("@/lib/store", () => ({ getUserIdBySub: mock.user, getOwnedBlog: async () => ({ handle: "owner", name: "Files" }), getBlog: async () => ({ handle: "owner", name: "Files" }), getBlogEditRecord: mock.owner, listVaultTextpacks: mock.list, readVaultTextpack: mock.read, readVaultTextpackIdentity: mock.identity }));
+const mock = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), identity: vi.fn(), grants: vi.fn(), user: vi.fn(), owner: vi.fn(), preview: vi.fn(), search: vi.fn() }));
+vi.mock("@/lib/store", () => ({ getUserIdBySub: mock.user, getOwnedBlog: async () => ({ handle: "owner", name: "Files" }), getBlog: async () => ({ handle: "owner", name: "Files" }), getBlogEditRecord: mock.owner, listVaultTextpacks: mock.list, readVaultTextpack: mock.read, readVaultTextpackIdentity: mock.identity, readVaultPreview: mock.preview, searchVaultTextpacks: mock.search }));
 vi.mock("@/lib/vault/grants", () => ({ activeVaultGrants: mock.grants, roleForVaultItem: (grants: { id: string }[], id: string) => grants.some((g) => g.id === id) ? "viewer" : null }));
 import { executeVaultReadTool } from "../vault-tools";
 const id = "11111111-1111-4111-8111-111111111111", secret = "22222222-2222-4222-8222-222222222222";
@@ -13,6 +13,8 @@ beforeEach(() => {
   mock.user.mockResolvedValue("owner"); mock.owner.mockResolvedValue({ id: "workspace", ownerId: "owner" }); mock.grants.mockResolvedValue([]);
   mock.list.mockResolvedValue({ items: [{ itemId: id, relativePath: "Notes/Note.textpack", revision: "hash" }, { itemId: secret, relativePath: "Private/Secret.textpack", revision: "hash" }], problems: [] });
   mock.identity.mockImplementation(async ({ itemId }) => ({ itemId, relativePath: itemId === id ? "Notes/Note.textpack" : "Private/Secret.textpack", revision: "hash" }));
+  mock.preview.mockResolvedValue({ title: "Real file", excerpt: "File body needle" });
+  mock.search.mockImplementation(async (_location, entries) => ({ items: entries.map((entry: { relativePath: string }) => ({ path: entry.relativePath, title: "Real file", snippet: "needle" })), truncated: false }));
   mock.read.mockImplementation(async ({ itemId }) => {
     const document = emptyDocumentSnapshot(); document.content.title = itemId === id ? "Real file" : "Private"; document.content.body = "File body needle";
     return { relativePath: itemId === id ? "Notes/Note.textpack" : "Private/Secret.textpack", revision: "hash", bytes: buildTextpack("Note", { document, markdown: `---\ntextTextId: ${itemId}\n---\n\nFile body needle` }) };
@@ -29,7 +31,7 @@ describe("canonical file MCP read adapter", () => {
     const response = await executeVaultReadTool("list_items", {}, auth);
     expect(result(response).items).toHaveLength(1);
     expect(JSON.stringify(response)).not.toContain("Secret");
-    expect(mock.read).toHaveBeenCalledTimes(1);
+    expect(mock.preview).toHaveBeenCalledTimes(1);
     expect((await executeVaultReadTool("read_item", { id: secret }, auth)).isError).toBe(true);
   });
   it("restricts item tokens before enumeration and rejects malformed mixed scopes", async () => {
@@ -39,6 +41,20 @@ describe("canonical file MCP read adapter", () => {
     expect((await executeVaultReadTool("read_item", { id: secret }, token)).isError).toBe(true);
     expect((await executeVaultReadTool("read_item", { id }, { ...token, scopes: [...token.scopes, "sync"] })).isError).toBe(true);
     expect(result(await executeVaultReadTool("read_item", { id }, token)).item.id).toBe(id);
+  });
+  it("rechecks revoked grants after reading metadata and uses shared search", async () => {
+    mock.user.mockResolvedValue("guest"); mock.grants.mockResolvedValue([{ id }]);
+    mock.preview.mockImplementation(async () => { mock.grants.mockResolvedValue([]); return { title: "secret", excerpt: "secret" }; });
+    expect(result(await executeVaultReadTool("list_items", {}, auth)).items).toEqual([]);
+    mock.user.mockResolvedValue("owner");
+    await executeVaultReadTool("search", { query: "needle" }, auth);
+    expect(mock.search).toHaveBeenCalled();
+    expect(mock.read).not.toHaveBeenCalled();
+  });
+  it("handles root-level item folder without truncating its filename", async () => {
+    mock.list.mockResolvedValue({ items: [{ itemId: id, relativePath: "Note.textpack", revision: "hash" }], problems: [] });
+    mock.identity.mockResolvedValue({ itemId: id, relativePath: "Note.textpack", revision: "hash" });
+    expect(result(await executeVaultReadTool("list_items", { folder_path: "" }, auth)).items).toHaveLength(1);
   });
   it("fails closed with missing storage, revoked access or unsupported mutation", async () => {
     expect((await executeVaultReadTool("create_item", {}, { ...auth, scopes: ["sync"] })).isError).toBe(true);

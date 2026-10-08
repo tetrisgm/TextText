@@ -1,3 +1,5 @@
+import * as Y from "yjs";
+import { applyDocumentMutation, type DocumentMutation } from "@/lib/collab/document";
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { watch, constants } from "node:fs";
@@ -998,6 +1000,60 @@ export async function pushVaultCollaboration(input: VaultLocation & {
     const baseline = await collaborationCheckpoint(layout, input.itemId, item);
     if (baseline.epoch !== input.epoch) throw new VaultCollaborationEpochError(baseline.epoch);
     const next = applyVaultCollaboration(baseline, item.bytes, input.updates, item.relativePath);
+    validatePack(next.bytes, input.itemId);
+    await input.beforeCommit?.(item.relativePath);
+    input.signal?.throwIfAborted();
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), next.bytes);
+    const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
+      relativePath: item.relativePath, baseRevision: item.revision, revision: next.state.revision,
+      requestHash, workspaceId: input.workspaceId, audit: input.audit, collaboration: next.state };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return apply(layout, intent, pendingDir);
+  });
+}
+
+/** Atomic agent command: replay receipt before stale-revision checks. */
+export async function mutateVaultDocument(input: VaultLocation & {
+  itemId: string; operationId: string; expectedRevision: string; mutation: DocumentMutation;
+  audit: NonNullable<VaultWrite["audit"]>;
+  beforeCommit?: (relativePath: string) => Promise<void>;
+  signal?: AbortSignal;
+}): Promise<VaultWriteResult> {
+  segment(input.itemId); segment(input.operationId);
+  if (!input.audit || !input.onReceipt) throw new Error("Vault collaboration requires its audit sink");
+  const requestHash = hash(json(["document-command", input.itemId, input.expectedRevision, input.mutation, input.audit]));
+  if (json(input.mutation).length > 2 * 1024 * 1024) throw new Error("Document command exceeds limits");
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    input.signal?.throwIfAborted();
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      await input.beforeCommit?.(receipt.result.relativePath);
+      input.signal?.throwIfAborted();
+      await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    const item = await collaborationItem(layout, input.itemId);
+    if (!item) throw new Error("Collaboration file is missing or deleted");
+    const baseline = await collaborationCheckpoint(layout, input.itemId, item);
+    if (baseline.revision !== input.expectedRevision) throw new Error("The item changed. Read it again before editing.");
+    const doc = new Y.Doc();
+    let next: ReturnType<typeof applyVaultCollaboration>;
+    try {
+      Y.applyUpdate(doc, Buffer.from(baseline.update, "base64"));
+      const vector = Y.encodeStateVector(doc);
+      applyDocumentMutation(doc, input.mutation);
+      // File commands keep exactly-once state in durable receipts. The legacy
+      // SQL mutator adds a document-root operation map outside the file schema.
+      doc.getMap("document").delete("agentOperations");
+      const update = Buffer.from(Y.encodeStateAsUpdate(doc, vector)).toString("base64");
+      next = applyVaultCollaboration(baseline, item.bytes, [update], item.relativePath);
+    } finally { doc.destroy(); }
     validatePack(next.bytes, input.itemId);
     await input.beforeCommit?.(item.relativePath);
     input.signal?.throwIfAborted();

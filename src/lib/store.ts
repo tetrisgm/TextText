@@ -15,6 +15,7 @@ import {
   updateVaultPresence as updateDirectoryPresence,
   leaveVaultPresence as leaveDirectoryPresence,
   pushVaultCollaboration as pushDirectoryCollaboration,
+  mutateVaultDocument as mutateDirectoryDocument,
   waitVaultCollaboration as waitDirectoryCollaboration,
   readVaultTemplate as readDirectoryTemplate,
   listVaultRecovery as listDirectoryRecovery,
@@ -8434,3 +8435,13 @@ export async function readLegacyWorkspaceInventory(input: {
   })) });
 }
 export { inventoryLegacyWorkspace, legacyInventoryDigest } from "./vault/legacy-inventory";
+
+export function mutateVaultDocument(input: Omit<VaultLocation, "onReceipt"> & {
+  itemId: string; operationId: string; expectedRevision: string;
+  mutation: import("./collab/document").DocumentMutation;
+  actorUserId: string; actorType: "human" | "external_agent";
+  beforeCommit?: (relativePath: string) => Promise<void>;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return mutateDirectoryDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
