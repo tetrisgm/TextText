@@ -48,7 +48,8 @@ export default async function ProposalReviewPage({ params }: { params: Promise<{
           <p>These people will also have access through the destination folder:</p>
           <ul>{proposal.additionalAccess.map((access, index) => <li key={`${access.email}:${access.via}:${index}`}>{access.email}: {access.role}</li>)}</ul>
         </section>}
-        <p role="status">{proposal.status === "completed" ? "Change applied." : proposal.status === "pending" ? "Waiting for your approval. Nothing has been changed." : proposal.status === "denied" ? "Change dismissed." : proposal.status === "expired" ? "This proposal has expired. Ask your agent for a new proposal." : proposal.status === "executing" ? "Applying your change." : "This change could not be applied."}</p>
+        <p role="status">{proposal.status === "completed" ? "Change applied." : proposal.status === "pending" ? "Waiting for your approval. Nothing has been changed." : proposal.status === "denied" ? "Change dismissed." : proposal.status === "expired" ? "This proposal has expired. Ask your agent for a new proposal." : proposal.status === "executing" ? "Your change has been approved, but its result has not been confirmed yet." : "This change could not be applied."}</p>
+        {proposal.canResume && <form action={approve}><button className="ac-btn ac-btn-gray" type="submit">Check approved change</button><p>This checks the same approved operation. It does not submit another change.</p></form>}
         <p><Link href={proposal.workspaceUrl} prefetch={false}>Back to workspace</Link></p>
         <details>
           <summary>Technical details</summary>

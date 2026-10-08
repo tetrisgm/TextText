@@ -49,7 +49,7 @@ describe("owner proposal review page", () => {
   it.each([
     ["denied", "Change dismissed."],
     ["expired", "This proposal has expired. Ask your agent for a new proposal."],
-    ["executing", "Applying your change."],
+    ["executing", "Your change has been approved, but its result has not been confirmed yet."],
     ["failed", "This change could not be applied."],
   ])("explains %s without internal status terminology", async (status, message) => {
     mocks.read.mockResolvedValue({ id, workspaceUrl: "/vault/owner-workspace", title: "Update item", summary: "Review replacement", arguments: {}, status });
@@ -62,6 +62,15 @@ describe("owner proposal review page", () => {
     mocks.user.mockResolvedValue(null);
     await expect(Page({ params })).rejects.toThrow("redirect:/api/auth/signin?callbackUrl=");
     expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it("resumes only a server-attested recoverable approved operation", async () => {
+    mocks.read.mockResolvedValue({ id, workspaceUrl: "/vault/owner-workspace", title: "Move folder", summary: "Move folder", status: "executing", canResume: true, arguments: {} });
+    const tree = await Page({ params });
+    expect(renderToStaticMarkup(tree)).toContain("Check approved change");
+    const actions = forms(tree);
+    expect(actions).toHaveLength(1);
+    await expect(actions[0]()).rejects.toThrow(`redirect:/proposals/${id}`);
+    expect(mocks.decide).toHaveBeenCalledWith({ actor: { sub: "apple-sub", userId: "user-1", handle: "alpha" }, proposalId: id, decision: "approve" });
   });
   it("hides absent or foreign-owner proposals", async () => {
     mocks.read.mockResolvedValue(null);

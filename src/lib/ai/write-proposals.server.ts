@@ -904,6 +904,7 @@ export async function getWorkspaceWriteProposalForReview(
     summary: preview ? describeFrozenPreview(preview) : workspaceWriteProposalSummary(validated.name, validated.arguments),
     arguments: validated.arguments,
     status: stored.status === "pending" && stored.expiresAt <= dependencies.now() ? "expired" : stored.status,
+    canResume: stored.status === "executing" && recoverable(stored),
     origin: stored.metadata?.origin as { surface: string; connectionName: string } | undefined,
     receipt: stored.receipt ?? null,
     additionalAccess: preview?.kind === "folder_move" ? preview.plan.addedAccess : [],

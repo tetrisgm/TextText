@@ -434,6 +434,17 @@ describe("workspace write proposals", () => {
 
 
 describe("owner review of externally staged writes", () => {
+  it("offers recovery only for the existing durable approved operation", async () => {
+    const { dependencies, execute, repository } = harness();
+    const proposal = await createCapture(dependencies);
+    const stored = repository.rows.get(proposal.id)!;
+    expect((await getWorkspaceWriteProposalForReview(owner, proposal.id, dependencies))?.canResume).toBe(false);
+    stored.status = "executing";
+    expect((await getWorkspaceWriteProposalForReview(owner, proposal.id, dependencies))?.canResume).toBe(true);
+    stored.arguments.idempotency_key = "different-operation";
+    expect((await getWorkspaceWriteProposalForReview(owner, proposal.id, dependencies))?.canResume).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+  });
   it("returns exact stored arguments only to the bound owner and never executes on read", async () => {
     const { dependencies, execute, repository } = harness();
     const args = { id: "item-1", body: "Exact replacement", if_match_hash: "sha256:" + "a".repeat(64) };

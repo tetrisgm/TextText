@@ -2,7 +2,7 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1199)**, source `9b9a218e`.
+- Mac `/Applications/TextText.app`: **0.204 (1200)**, source `a65465b8`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
@@ -27,6 +27,23 @@
   Only dedicated verification notes changed during acceptance.
 
 ## Current work
+
+- Installed Mac 1200 recovered the retained verification note at its 1199
+  location. Live pending-edit move proposal
+  `01ce878c-5874-4c9a-8e11-c54b932aa872` remains unconfirmed; the editor still
+  retains original text and `Active editor move verification 1200.` at the
+  old path. Do not close or replace this editor before saving/verifying its
+  draft. The review incorrectly implied ongoing work without a confirmed
+  live execution. Source now describes an unconfirmed result and offers
+  recovery only for a server-attested durable operation, using the same
+  stored proposal and idempotency key. 56 focused proposal/review tests and
+  TypeScript passed. Oracle deployment and live recovery remain pending.
+  Exact-source `a65465b8` gates passed 811 tests plus native checks; Mac build
+  and install logs: `/tmp/texttext-mac1200-build.log`,
+  `/tmp/texttext-mac1200-install.log`. Windows candidate from the same source
+  passed the actual PC build/smoke workflow (325 shared tests plus native
+  suites); not installed while old process 44968 has unverified unsaved state.
+  Log: `/tmp/texttext-windows-a65465b8-build.log`.
 
 - Actual PC native acceptance passed for source `adf8d21a`, using the existing
   TextTextBuild SDK in isolated directory
