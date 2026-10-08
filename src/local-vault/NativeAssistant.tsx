@@ -2,7 +2,8 @@ import { agentTaskTitle } from "./agent-task";
 import { AssistantWriteProposals, type AssistantWriteProposal } from "./AssistantWriteProposals";
 import { AgentPresenceClient } from "./agent-presence-client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { vaultRequest } from "./bridge";
+import { vaultRequest, type VaultFile } from "./bridge";
+import { galleryAgentImage } from "./gallery-agent-image";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
 import { TemplatePreview } from "./TemplatePreview";
@@ -298,15 +299,22 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
         activeTaskFence.current = null; setActiveTurn(null);
         setNotice("Save or resolve the current item before asking the assistant to edit it."); return;
       }
+      const selectedPath = customizing ?? taskFence?.target;
+      const imageAssetId = taskFence?.imageAssetId;
+      const image = !webAssistant && imageAssetId && selectedPath
+        ? await galleryAgentImage(await vaultRequest<VaultFile>("read", { path: selectedPath }), imageAssetId)
+        : undefined;
+      // File reads and image decoding may outlive a close or target change.
+      if (activeTaskFence.current?.taskId !== turnFence.taskId ||
+          taskFence && !agentTaskMatches(taskRef.current, taskFence)) return;
       replyId.current = null;
       setMessages((previous) => bounded([...previous, { id: ++sequence.current, role: "user", text }]));
       setPrompt(""); setStatus((current) => ({ ...current, state: "working" }));
       requested.current = text;
-      const selectedPath = customizing ?? taskFence?.target;
       const refinement = proposal ? `\n\nRefine this pending design for the same file. It has not been saved. Baseline hash: ${proposal.hash}\nPending templateJSON: ${proposal.templateJSON}\nPending templateAuthoringSourceJSON: ${proposal.templateAuthoringSourceJSON ?? "none"}` : "";
       if (selectedPath && !webAssistant) void presence.current?.start(selectedPath, turnFence.taskId);
       await vaultRequest("agentSend", { prompt: text + refinement, scope: "item", customizing: !!customizing,
-        ...(taskFence && taskRef.current?.imageAssetId ? { imageAssetId: taskRef.current.imageAssetId } : {}),
+        ...(imageAssetId ? { imageAssetId } : {}), ...(image ? { imageUrl: image.dataUrl } : {}),
         taskId: turnFence.taskId, ...(selectedPath ? { path: selectedPath } : {}) });
     } catch (error) {
       presence.current?.stop();

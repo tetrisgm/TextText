@@ -2052,6 +2052,18 @@ try {
   assert.equal(savedPhotoTask.prompt, galleryTask);
   assert.equal(agentSendCount, sendsBeforeGalleryTask);
   assert.equal(await collected.count(), 0);
+  const originalPhotoBytes = files.get("Gallery/Pair.textpack").assets.map(asset => asset.data);
+  const connectPhotoAgent = page.getByRole("button", { name: "Connect Codex", exact: true });
+  if (await connectPhotoAgent.isVisible()) await connectPhotoAgent.click();
+  await page.getByRole("button", { name: "Start task", exact: true }).click();
+  await waitForFixture(() => agentSendCount === sendsBeforeGalleryTask + 1, "native Gallery image send");
+  assert.equal(lastAgentSend.path, "Gallery/Pair.textpack");
+  assert.equal(lastAgentSend.imageAssetId, editedGallery.content.assets[0].id);
+  assert.ok(lastAgentSend.imageUrl.startsWith("data:image/jpeg;base64,"));
+  assert.ok(lastAgentSend.imageUrl.length <= 1_000_000);
+  const preparedPhoto = await sharp(Buffer.from(lastAgentSend.imageUrl.split(",")[1], "base64")).metadata();
+  assert.ok(preparedPhoto.width <= 1600 && preparedPhoto.height <= 1600);
+  assert.deepEqual(files.get("Gallery/Pair.textpack").assets.map(asset => asset.data), originalPhotoBytes);
   await page.getByRole("button", { name: "Close assistant" }).click();
   await page.getByRole("button", { name: "Open Two color studies" }).click();
   await page.getByRole("region", { name: "Two color studies" }).getByRole("img", { name: "Second photograph" }).waitFor();

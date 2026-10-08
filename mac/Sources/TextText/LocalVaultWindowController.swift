@@ -391,7 +391,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case "agentDisconnect": try agent?.disconnect()
                 case "agentSend": try agent?.send(taskID: Self.string(params, "taskId"),
                     prompt: Self.string(params, "prompt"), path: params["path"] as? String,
-                    customizing: params["customizing"] as? Bool ?? false)
+                    customizing: params["customizing"] as? Bool ?? false,
+                    imageURL: params["imageUrl"] as? String)
                 case "agentProposalResult":
                     guard let valid = params["valid"] as? Bool else { throw VaultBridgeError("Provide the template validation result.") }
                     try agent?.proposalResult(taskID: Self.string(params, "taskId"),

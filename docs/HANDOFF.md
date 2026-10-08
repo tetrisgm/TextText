@@ -33,6 +33,21 @@
 
 ## Current work
 
+- Native Gallery photo input is now wired in source for Mac and Windows. The
+  shared UI reads the exact selected embedded asset and prepares the existing
+  bounded JPEG input; closing or retargeting during decode fences the send.
+  Controllers validate embedded JPEG shape/size and attach it only to that turn.
+  Mac's fourteen controller tests and Windows agent tests passed, including
+  external/malformed/oversized refusal and exact image attachment. TypeScript
+  and the rebuilt offline browser fixture passed; the latter actually sends a
+  Gallery photo through the native bridge and checks original bytes unchanged.
+  Logs: `/tmp/texttext-native-photo-swift.log`,
+  `/tmp/texttext-native-photo-windows.log`, `/tmp/texttext-native-photo-ui-send.log`.
+  The shared suggested task also explains native read_file/write_file metadata
+  updates with exact hash fencing. These native changes are not installed yet;
+  actual configured-provider generation, metadata writing and sync acceptance
+  remain required.
+
 - Hosted Gallery tasks now pass the exact selected embedded image through the
   existing AI attachment input. A bounded JPEG preview is prepared without
   fetching source URLs or changing original bytes. Missing/ambiguous images

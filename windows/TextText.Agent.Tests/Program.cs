@@ -34,6 +34,9 @@ static async Task Fake(bool login)
             await Send(new { id,result = new { thread = new { id = "thread" } } }); break;
           case "turn/start":
             var prompt = p.GetProperty("input")[0].GetProperty("text").GetString(); unicode = prompt == Unicode;
+            var input = p.GetProperty("input");
+            if(prompt == "accept" && (input.GetArrayLength() != 2 || S(input[1],"type") != "image" || S(input[1],"url") != "data:image/jpeg;base64,/9j/AA==")) throw new Exception("Selected photo input missing or changed");
+            if(prompt != "accept" && input.GetArrayLength() != 1) throw new Exception("Photo leaked into another task");
             await Send(new { id,result = new { turn = new { id = "turn" } } });
             await Send(new { method = "item/completed",@params = new { threadId = "obsolete",item = new { type = "agentMessage",phase = "final_answer",text = "stale-leak" } } });
             await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "write_file",arguments = new { path = prompt == "deny" ? "Other.textpack" : "Note.textpack",hash = "hash",markdown = unicode ? Unicode : "new" } } }); break;
@@ -70,7 +73,15 @@ try {
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="ready","Saved account was not restored by status");
     await agent.DispatchAsync("agentConnect",JsonSerializer.SerializeToElement(new {}),default);
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="ready","Connection failed");
-    await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new { taskId = scenario,path = "Note.textpack",prompt = scenario=="unicode" ? "“Café” 日本語 🧪" : scenario }),default);
+    if(scenario == "accept") {
+      foreach(var invalid in new[] { "https://example.test/image.jpg", "data:image/jpeg;base64,bm90LWpwZWc=", "data:image/jpeg;base64," + new string('A',1_000_000) }) {
+        var rejected = false;
+        try { await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new { taskId = "bad",path = "Note.textpack",prompt = "accept",imageUrl = invalid }),default); }
+        catch(InvalidOperationException) { rejected = true; }
+        Check(rejected,"Unbounded or external photo accepted");
+      }
+    }
+    await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new { taskId = scenario,path = "Note.textpack",prompt = scenario=="unicode" ? "“Café” 日本語 🧪" : scenario,imageUrl = scenario == "accept" ? "data:image/jpeg;base64,/9j/AA==" : "" }),default);
     if(scenario=="cancel") { await entered.Task.WaitAsync(TimeSpan.FromSeconds(2)); await agent.DispatchAsync("agentCancel",JsonSerializer.SerializeToElement(new { taskId = scenario }),default); await Task.Delay(100); Check(writes==0,"Late write escaped cancellation"); }
     else { await Until(() => events.Any(e => S(e,"type")=="turn-completed")); Check(writes==(scenario!="deny"?1:0),"Scope failed"); Check(events.Any(e => S(e,"text")== (scenario=="unicode"?"“Café” 日本語 🧪":scenario=="accept"?"tool-accepted":"tool-denied")),"Tool acknowledgement missing"); }
     Check(!events.Any(e => S(e,"text")=="stale-leak"),"Stale task notification escaped");

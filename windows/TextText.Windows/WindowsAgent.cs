@@ -106,6 +106,16 @@ public sealed class WindowsAgent : IDisposable
     {
         if(state != "ready") throw new InvalidOperationException("Connect Codex before starting a task.");
         string path = Get(parameters,"path"), prompt = Get(parameters,"prompt"), id = Get(parameters,"taskId");
+        string imageUrl = Get(parameters,"imageUrl");
+        if(imageUrl.Length > 0) {
+            const string prefix = "data:image/jpeg;base64,";
+            if(imageUrl.Length > 1_000_000 || !imageUrl.StartsWith(prefix,StringComparison.Ordinal)) throw new InvalidOperationException("The selected photo could not be prepared.");
+            byte[] image;
+            try { image = Convert.FromBase64String(imageUrl[prefix.Length..]); }
+            catch(FormatException) { throw new InvalidOperationException("The selected photo could not be prepared."); }
+            if(image.Length < 3 || image[0] != 0xff || image[1] != 0xd8 || image[2] != 0xff) throw new InvalidOperationException("The selected photo could not be prepared.");
+            if(parameters.TryGetProperty("customizing",out var imageCustom) && imageCustom.GetBoolean()) throw new InvalidOperationException("Choose an item photo task first.");
+        }
         if(path.Length == 0 || path.Length > 1024 || id.Length == 0 || id.Length > 128 || prompt.Length == 0 || prompt.Length > 16000) throw new InvalidOperationException("Choose an item and a task.");
         var full = Path.GetFullPath(Path.Combine(root,path));
         if(!full.StartsWith(root + Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase) || path.Contains('\\') || path.Split('/').Any(segment => segment is ".." or ".")) throw new InvalidOperationException("Invalid item path.");
@@ -130,7 +140,9 @@ public sealed class WindowsAgent : IDisposable
                 config = new { mcp_servers = servers,features,agents = new { enabled = false },tools = new { view_image = false },web_search = "disabled",project_doc_max_bytes = 0 } },token);
             token.ThrowIfCancellationRequested(); if(fence != generation) return;
             threadId = result.GetProperty("thread").GetProperty("id").GetString()!;
-            var turn = await Call("turn/start",new { threadId,input = new[] { new { type = "text",text = prompt } },approvalPolicy = "never" },token);
+            var input = new List<object> { new { type = "text",text = prompt } };
+            if(imageUrl.Length > 0) input.Add(new { type = "image",url = imageUrl });
+            var turn = await Call("turn/start",new { threadId,input,approvalPolicy = "never" },token);
             if(fence == generation && turn.TryGetProperty("turn",out var started)) turnId = Get(started,"id");
         } catch { if(fence == generation) { await emit("texttext:vault-agent",new { type = "error",taskId = id,message = "The task could not start. Your files are preserved." }); await Update("ready"); } throw; }
     }

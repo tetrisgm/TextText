@@ -61,6 +61,7 @@ final class LocalVaultAgentController {
         let taskID: String
         let diagnosticID: String
         let prompt: String
+        let imageURL: String?
         let access: LocalVaultAgentAccess
         let fileFence: LocalVaultAgentCancellation
         var threadID: String?
@@ -176,7 +177,7 @@ final class LocalVaultAgentController {
         }
     }
 
-    func send(taskID: String, prompt: String, path: String? = nil, customizing: Bool = false) throws {
+    func send(taskID: String, prompt: String, path: String? = nil, customizing: Bool = false, imageURL: String? = nil) throws {
         guard server != nil, let disabledMCPServers, !busy else {
             throw VaultAgentError("Connect the agent and wait for its current reply first.")
         }
@@ -186,6 +187,14 @@ final class LocalVaultAgentController {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 32_000 else { throw VaultAgentError("Enter a message of up to 32,000 characters.") }
         if customizing && path == nil { throw VaultAgentError("Choose a document to customize first.") }
+        if let imageURL {
+            guard path != nil, !customizing, imageURL.utf8.count <= 1_000_000,
+                  imageURL.hasPrefix("data:image/jpeg;base64,"),
+                  let bytes = Data(base64Encoded: String(imageURL.dropFirst(23))),
+                  bytes.starts(with: [0xff, 0xd8, 0xff]) else {
+                throw VaultAgentError("The selected photo could not be prepared. Reopen it and try again.")
+            }
+        }
         let access = try resolveAccess(path: path, customizing: customizing)
         var context = customizing ? "Presentation customization mode: propose a template preview for the current document. Do not write or create files. If content.fields.texttextFolderView is v1, this is the containing folder's design: customize template.collection and preview its immediate members. Preserve the marker and all member files. Supported folder layouts are cards, list and index (a reference table); use supported collection bindings.\n" : ""
         if let path {
@@ -193,7 +202,7 @@ final class LocalVaultAgentController {
         }
         let task = ActiveTask(instanceID: UUID(), taskID: taskID,
             diagnosticID: Self.makeDiagnosticID(),
-            prompt: context + trimmed, access: access,
+            prompt: context + trimmed, imageURL: imageURL, access: access,
             fileFence: LocalVaultAgentCancellation())
         activeTask = task
         busy = true; phases.removeAll(); update("working")
@@ -223,8 +232,10 @@ final class LocalVaultAgentController {
     }
 
     private func startTurn(task: ActiveTask, prompt: String, threadID: String) throws {
+        var input: [[String: Any]] = [["type": "text", "text": prompt]]
+        if let imageURL = task.imageURL { input.append(["type": "image", "url": imageURL]) }
         try request("turn/start", ["threadId": threadID,
-            "input": [["type": "text", "text": prompt]], "approvalPolicy": "never"], task: task)
+            "input": input, "approvalPolicy": "never"], task: task)
     }
 
     private func resolveAccess(path: String?, customizing: Bool) throws -> LocalVaultAgentAccess {

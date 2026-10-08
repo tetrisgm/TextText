@@ -80,6 +80,27 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     private struct Timeout: Error {}
 
     @MainActor
+    func testSelectedPhotoInputIsBoundedAndAttachedToItsTurn() async throws {
+        let (root, controller, server) = try await fixture()
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Photo", "body": "Keep"],
+            root: root, access: .folder(path: ""))
+        for url in ["https://example.test/photo.jpg", "data:image/jpeg;base64,bm90LWpwZWc=",
+                    "data:image/jpeg;base64," + String(repeating: "A", count: 1_000_000)] {
+            XCTAssertThrowsError(try controller.send(taskID: "invalid", prompt: "Describe", path: "Photo.textpack", imageURL: url))
+        }
+        XCTAssertTrue(server.requests("thread/start").isEmpty)
+        let url = "data:image/jpeg;base64,/9j/AA=="
+        try controller.send(taskID: "photo", prompt: "Describe", path: "Photo.textpack", imageURL: url)
+        server.emitResponse(try XCTUnwrap(server.requests("thread/start").first), result: ["thread": ["id": "photo-thread"]])
+        try await eventually { server.requests("turn/start").count == 1 }
+        let input = try XCTUnwrap(server.requests("turn/start").first?.params["input"] as? [[String: Any]])
+        XCTAssertEqual(input.count, 2)
+        XCTAssertEqual(input[1]["type"] as? String, "image")
+        XCTAssertEqual(input[1]["url"] as? String, url)
+    }
+
+    @MainActor
     private func fixture(ownsProfile: Bool = false, accountEmail: String? = "writer@example.com",
                          cancellationTimeout: TimeInterval = 15) async throws
         -> (URL, LocalVaultAgentController, VaultAgentTestServer) {
