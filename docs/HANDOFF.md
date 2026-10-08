@@ -44,9 +44,15 @@
 - `2d258ef7` bounds stalled collaboration requests and repairs interrupted
   startup recovery; 53 client tests passed, including same-operation write retry.
   Awaiting combined gates, client installation and Oracle deployment.
-- Server shutdown investigation reproduced a 25-second read poll plus HTTP
-  keep-alive exceeding the 30-second stop limit. A graceful read-drain fix is
-  underway; this is a separate cause from client recovery.
+- `96982b41` fixes graceful read draining. Actual production transport exited
+  cleanly in 6.047 seconds versus 30.025 seconds before the fix.
+  [Shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
+- Final candidate `98bb52b5` includes document bootstrap recovery and full
+  manifest-body deadlines. All 500 core tests, TypeScript and native gates
+  passed in the clean frozen clone. Windows candidate and Oracle local package
+  are building; installed clients and live Oracle remain the versions above.
+  Logs: `/tmp/texttext-sync-98bb52b5.log`,
+  `/tmp/texttext-oracle-98bb52b5-build.log`.
 - `30726329` offers the latest version of each template for creation while
   retaining older pinned definitions. Focused and browser checks passed.
 - `b54dd129` adds immutable template-version updates; 31 focused checks passed,
