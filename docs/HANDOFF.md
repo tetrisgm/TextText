@@ -14,11 +14,12 @@
   TextText and all three Algorave services active; HAProxy mtime unchanged.
   Logs: `/tmp/texttext-home-sync-core.log`, exact-source Node 22 native receipt
   from the Mac snapshot, `/tmp/texttext-home-deploy.log`. No public desktop release.
-- Windows: installed candidate **`c69bcd6c9a17491db56c038836e963a0`**, source
-  `889bac73`, at `C:\Users\Shokunin\AppData\Local\Programs\TextText`.
-  Account Settings, body search, actual single-instance file opening and normal
-  close/reopen passed. Nine markers preserved, outbox empty; reader reopened in
-  1.599 seconds. [Receipt](verification/2026-10-07-windows-desktop-live.md).
+- Windows: source **`160a74ba`**, sealed candidate
+  `2ceb30aa87be49b0a9a70919f50a6fcd`, installed in the existing location.
+  Full build/native startup gates, account, List/Cards persistence, normal
+  close/reopen and all nine sync markers passed; outbox empty. Live folder
+  picker switch/back deferred while the owner was using the PC.
+  [Receipt](verification/2026-10-07-windows-desktop-live.md).
 - Active Mac workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Preserve existing files. Only dedicated verification notes changed during tests.
@@ -31,40 +32,25 @@ dark and narrow checked. Actual Safari `/start?to=home` now opens the canonical
 workspace, both layouts retain 16 items, and List survives reload. Screenshot:
 `/tmp/texttext-home-list-safari.png`. No document mutations during acceptance.
 
-Remaining home reconciliation: old `/@ramine` still reads SQL posts while
-`/vault` reads folder TextPacks. Existing legacy links remain accessible.
-Do not blanket-redirect that route or overwrite files. A lossless migration
-needs a revision-checked/idempotent ID ledger, preserved assets/templates,
-comment/anchor and permission adapters, old URL aliases and epoch fencing.
-`renderSyncDocumentFile`/`buildTextpack` export documents but omit SQL comments;
-legacy collaborators and vault grants are separate. Inventory through store.ts
-before migration. Explicit template entry still creates a legacy document.
+The owner explicitly dropped old-data migration as a requirement. Do not spend
+further work on a lossless SQL-to-TextPack migration. The target is one file
+content system and the same UI/editor/sync implementation on Mac, Windows and
+web, with narrow native filesystem, credential and OS integration adapters.
+No deletion has been performed or is required to stop exposing the old paths.
 
-Reconciliation preparation is committed, not deployed/cut over:
-- `8eda3d86`: bounded read-only store inventory, supplied vault snapshot, separate
-  revisions/digests, duplicate and divergent IDs, conservative grants/comments
-  and missing-asset blockers. Eight tests and TypeScript passed.
-- `a7bd430d`, `f910d38f`: deterministic export with original UUID, full snapshot,
-  resolved template/assets and exact body whitespace through the actual file
-  reader. Sixteen export tests pass; combined comparator run 22 tests passed,
-  TypeScript and scoped ESLint passed. Unsupported inline media/comments block
-  export. This is preparation only, no production data has been migrated.
-- Next: capture actual source inventory, implement revision/epoch-fenced
-  idempotent cutover and compatibility for comments/grants/old URLs. Never infer
-  authorization to overwrite from an equal content digest.
+Current work: route authenticated owner legacy home entry into `/vault`, route
+new template creation through the shared file UI, and add a shared-client
+architecture regression gate. Existing export/inventory helpers are preparation
+only and have never migrated production content. References: `a7bd430d`,
+`f910d38f`, `8eda3d86`; real local-Postgres regression/fix `9ef750e0`.
 
-
-Windows startup regression fixed in `033231ae`: WebView2 must enter the live
-visual tree before initialization. The production startup/rollback gate now
-covers it. Working candidate `c69bcd...` was restored and opened successfully.
-Final candidate `b4ba548f662943ec9b70749f58f7442f` passed all gates; installation
-and actual folder-picker switch/back await PC SSH recovery. Do not rebuild.
-See [Windows receipt](verification/2026-10-07-windows-desktop-live.md).
+Windows startup regression `033231ae` is fixed in the installed candidate:
+WebView2 enters the live visual tree before initialization. Actual installed
+startup is verified, not pending PC connectivity.
 
 Shared inactivity now pauses quietly; reconnect revalidates authority before
 sending journaled edits (`3ff475d9`, 49 focused tests). This change is installed
-on Mac and live on Oracle. Windows final candidate contains it but remains
-pending installation. Actual Safari opened the dedicated note on this
+on Mac and live on Oracle. Windows installed candidate contains it as well. Actual Safari opened the dedicated note on this
 deployment, showed the signed-in account and Mac presence, and retained all
 nine markers after switching away
 and back without a false Offline/Retry banner. No content was edited.
