@@ -25,7 +25,8 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     readonly Task worker;
     readonly System.Threading.Timer notification;
     readonly SemaphoreSlim requests = new(1, 1);
-    IReadOnlyList<PackFile>? inventory;
+    WorkspaceInventory? inventory;
+    long inventoryVersion;
     string? lastStatus;
     int permissionsChanged;
     long durabilityVersion, notifiedDurabilityVersion;
@@ -54,14 +55,20 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         // Temporary atomic-write entries are ignored. A directory rename still invalidates the index.
         if (!e.FullPath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) Changed();
     }
-    void Changed() { Volatile.Write(ref inventory, null); changes.Writer.TryWrite(true); if (!lifetime.IsCancellationRequested) notification.Change(200, Timeout.Infinite); }
+    void Changed() { Interlocked.Increment(ref inventoryVersion); Volatile.Write(ref inventory, null); changes.Writer.TryWrite(true); if (!lifetime.IsCancellationRequested) notification.Change(200, Timeout.Infinite); }
     // Record durable state transitions, then notify readiness only after the
     // sync pass completes. Never feed acknowledgements back into Changed:
     // doing that would wake another cloud request after every acknowledgement.
     void PermissionStateChanged() => Interlocked.Exchange(ref permissionsChanged,1);
     void SyncStateChanged() => Interlocked.Increment(ref durabilityVersion);
-    IReadOnlyList<PackFile> Inventory() => Volatile.Read(ref inventory) ?? (inventory = files.Scan());
-    PackFile Find(string id) => Inventory().SingleOrDefault(file => file.ItemId == id) ?? throw new FileNotFoundException("Document is not available on this device.");
+    WorkspaceInventory Inventory() {
+        var cached=Volatile.Read(ref inventory);if(cached is not null)return cached;
+        var version=Volatile.Read(ref inventoryVersion);var scanned=files.ScanInventory();
+        Volatile.Write(ref inventory,scanned);
+        if(version!=Volatile.Read(ref inventoryVersion))Volatile.Write(ref inventory,null);
+        return scanned;
+    }
+    PackFile Find(string id) => Inventory().Files.SingleOrDefault(file => file.ItemId == id) ?? throw new FileNotFoundException("Document is not available on this device.");
     static string Required(JsonElement p, string key) => p.GetProperty(key).GetString() ?? throw new InvalidDataException("Missing " + key);
     static string? Optional(JsonElement p, string key) => p.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     static object Result(PackFile file) => new { path = file.Path, hash = file.Hash };
@@ -131,16 +138,14 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     case "files.ready": return new { ready = await sync.IsReadyAsync(Required(p, "itemId"), ct) };
                     case "files.list": {
                         var capabilities = await sync.CapabilitiesAsync(ct);
-                        var items = Inventory();
+                        var snapshot = Inventory();
+                        var items = snapshot.Files;
                         var permissions = await sync.FilePermissionsAsync(items,context.Access == "owner",ct);
-                        var folders = items.SelectMany(f => {
-                            var parts = f.Path.Split('/');
-                            return Enumerable.Range(1, parts.Length - 1).Select(n => string.Join('/', parts.Take(n)));
-                        }).Distinct().Order().ToArray();
+                        var folders = snapshot.Folders;
                         return (object)new { root = context.Root, name = Path.GetFileName(context.Root), folders,
                             fullAccess=capabilities?.FullAccess ?? context.Access == "owner",canCreateContent=capabilities?.CanCreateContent ?? context.Access == "owner",writableFolders=capabilities?.WritableFolders ?? [],
                             items = items.Select(f => new { canEditContent=permissions[f.ItemId],itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
-                            revision = TextPackStore.Hash(Encoding.UTF8.GetBytes(string.Join('\n', items.OrderBy(f => f.Path).Select(f => f.Path + ":" + f.Hash)))) };
+                            revision = TextPackStore.Hash(Encoding.UTF8.GetBytes(string.Join('\n', folders.Select(folder => "folder:"+folder).Concat(items.OrderBy(f => f.Path).Select(f => f.Path + ":" + f.Hash))))) };
                     }
                     case "files.read": {
                         var file = Find(Required(p, "itemId")); var data = files.Read(file.Path);

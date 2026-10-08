@@ -74,6 +74,16 @@ static class Test
  }
  Throws<IOException>(()=>store.Resolve("../outside.textpack"),"reject traversal");Throws<IOException>(()=>store.Resolve("Notes/a.textpack:stream"),"reject alternate data streams");
  var folderStore=new TextPackStore(Path.Combine(temp,"folders"),Path.Combine(temp,"folder-device"));
+ folderStore.EnsureFolders(["Empty/Nested","Notes"]);
+ var initialFolders=folderStore.ScanInventory();
+ Assert(initialFolders.Files.Count==0&&initialFolders.Folders.SequenceEqual(new[]{"Empty","Empty/Nested","Notes"}),"empty nested folders are listed without documents");
+ Directory.Move(Path.Combine(folderStore.Root,"Empty"),Path.Combine(folderStore.Root,"Renamed"));
+ var renamedFolders=new TextPackStore(folderStore.Root,folderStore.StateDirectory).ScanInventory();
+ Assert(renamedFolders.Folders.Contains("Renamed/Nested")&&!renamedFolders.Folders.Contains("Empty"),"restart lists directory rename without stale paths");
+ Directory.Delete(Path.Combine(folderStore.Root,"Renamed","Nested"));
+ Assert(!folderStore.ScanInventory().Folders.Contains("Renamed/Nested"),"removed empty child disappears from inventory");
+ Directory.CreateDirectory(Path.Combine(folderStore.Root,".private","Hidden"));
+ Assert(!folderStore.ScanInventory().Folders.Any(path=>path.StartsWith(".private")),"private folders stay out of inventory");
  var folderRemote=new Fake{Folders=["Feeds","Research/Empty"]};
  await new SyncEngine(folderStore,folderRemote).SyncAsync();
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"Research","Empty")),"sync materializes empty remote folders");
@@ -99,6 +109,7 @@ static class Test
  foreach(var unsafePath in new[]{"../escape",".texttext/cache","Notes//bad","Fake.textpack/child"})Throws<IOException>(()=>folderStore.EnsureFolders([unsafePath]),"remote folder rejects "+unsafePath);
  File.WriteAllText(Path.Combine(folderStore.Root,"Occupied"),"keep");Throws<IOException>(()=>folderStore.EnsureFolders(["Occupied/child"]),"remote folder preserves existing file");
  Directory.CreateSymbolicLink(Path.Combine(folderStore.Root,"Linked"),Path.Combine(folderStore.Root,"Feeds"));Throws<IOException>(()=>folderStore.EnsureFolders(["Linked/child"]),"remote folder rejects symlink");
+ Assert(!folderStore.ScanInventory().Folders.Contains("Linked")&&folderStore.LastScanErrors.Any(error=>error.Path=="Linked"),"unsafe linked folder is excluded and preserved");
  File.WriteAllText(Path.Combine(folderStore.Root,".Pending.icloud"),"");Throws<IOException>(()=>folderStore.EnsureFolders(["Pending"]),"remote folder respects placeholder");
  folderRemote.Folders=["Occupied/child","Another empty"];folderRemote.Data=Pack("remote","folder-proof");folderRemote.Item=new("folder-proof","Notes/Folder-proof.textpack",TextPackStore.Hash(folderRemote.Data));
  var collisionSync=new SyncEngine(folderStore,folderRemote);await collisionSync.SyncAsync();Assert(File.Exists(folderStore.Resolve("Notes/Folder-proof.textpack"))&&Directory.Exists(Path.Combine(folderStore.Root,"Another empty"))&&collisionSync.Status.Error!=null,"folder collision does not block unrelated document convergence");

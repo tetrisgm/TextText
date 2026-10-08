@@ -7,6 +7,7 @@ namespace TextText.Core;
 
 public sealed record ScanError(string Path,string Reason,string? ItemId=null);
 public sealed record PackFile(string Path, string Hash, string ItemId);
+public sealed record WorkspaceInventory(IReadOnlyList<PackFile> Files, IReadOnlyList<string> Folders);
 public sealed record FileIntent(string Kind, string ItemId, string Path, string Hash, string? Destination = null);
 public sealed record FileMutationReceipt(int Version, string Fingerprint, string ItemId, string Path, string Hash, bool Committed);
 public sealed record FileCreationReceipt(int Version, string Intent, string ItemId, string Path, string Hash, string Data);
@@ -123,14 +124,16 @@ public sealed class TextPackStore
         foreach(var entry in a.Entries){var other=b.GetEntry(entry.FullName);if(other==null || entry.Length!=other.Length)return false;using var x=entry.Open();using var y=other.Open();var xb=new byte[8192];var yb=new byte[8192];while(true){var xn=x.Read(xb);if(xn==0){if(y.ReadByte()!=-1)return false;break;}y.ReadExactly(yb.AsSpan(0,xn));if(!xb.AsSpan(0,xn).SequenceEqual(yb.AsSpan(0,xn)))return false;}}
         return true;
     }
-    public IReadOnlyList<PackFile> Scan()
+    public IReadOnlyList<PackFile> Scan() => ScanInventory().Files;
+    public WorkspaceInventory ScanInventory()
     {
-        var found = new Dictionary<string,PackFile>();var duplicated=new HashSet<string>();var errors=new List<ScanError>();
+        var folders=new List<string>();var found = new Dictionary<string,PackFile>();var duplicated=new HashSet<string>();var errors=new List<ScanError>();
         string Relative(string path)=>System.IO.Path.GetRelativePath(Root,path).Replace('\\','/');
         void Error(string path,string reason,string? id=null){if(errors.Count<1000)errors.Add(new(Relative(path),reason,id));}
         void Visit(string directory) {
             string[] entries;
             try {CheckLinks(directory);entries=Directory.GetFileSystemEntries(directory);}catch(Exception error)when(error is IOException or UnauthorizedAccessException){Error(directory,"Folder is temporarily unavailable.");return;}
+            if(directory!=Root)folders.Add(Relative(directory));
             foreach(var path in entries) {
                 if(System.IO.Path.GetFileName(path).StartsWith('.'))continue;
                 try {
@@ -144,7 +147,7 @@ public sealed class TextPackStore
                 }catch(Exception error)when(error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or DecoderFallbackException){Error(path,"File is invalid or temporarily unavailable. Its contents have been preserved.");}
             }
         }
-        lock(gate){CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return found.Values.ToArray();
+        lock(gate){CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
     }
 
     public static void AtomicWrite(string path, byte[] bytes, bool overwrite = true)

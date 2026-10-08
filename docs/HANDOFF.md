@@ -60,6 +60,11 @@
 
 ## Current work and next checks
 
+- Windows empty folders now enter the native manifest through the same
+  traversal as documents, with folder-aware revision and cache invalidation.
+  Native sync regressions and shell compilation passed; source only.
+  [Folder inventory receipt](verification/2026-10-08-windows-folder-inventory.md).
+
 - Windows agent creation now freezes original intent, identity, path and package
   before publication, then compacts completed records. Actual PC packaging,
   native regressions, renderer-restart/lost-response transport tests and shell
