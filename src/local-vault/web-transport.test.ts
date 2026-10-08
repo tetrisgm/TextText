@@ -478,6 +478,13 @@ describe("web file vault transport", () => {
     const note = await test.transport.request("create", { title: "Thought", body: "Keep this entire note." }) as VaultFile;
     expect(readDocument(note).content.body).toBe("Keep this entire note.");
     expect(JSON.parse(note.templateJSON!).id).toBe("texttext.note");
+    for (const kind of ["article", "gallery", "talk"]) {
+      const created = await test.transport.request("create", { title: kind, body: "Agent-created content", kind }) as VaultFile;
+      expect(readDocument(created).content.body).toBe("Agent-created content");
+      expect(readDocument(created).presentation.template.id).toBe(`texttext.${kind}`);
+      expect(JSON.parse(created.templateJSON!).id).toBe(`texttext.${kind}`);
+    }
+    await expect(test.transport.request("create", { title: "Unsupported", kind: "unknown" })).rejects.toThrow("Unsupported item type");
     await expect(test.transport.request("create", { title: "Invalid", sourceURL: "file:///etc/passwd" })).rejects.toThrow("HTTP or HTTPS");
   });
   it("renames and deletes with observed revisions, preserving cloned starter content and identity", async () => {

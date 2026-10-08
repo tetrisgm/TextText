@@ -8,14 +8,14 @@ export function folderStarter(template: TemplateDefinition | undefined, explicit
   return { title: explicit.title ?? template?.starter?.title ?? "", body: explicit.body ?? template?.starter?.body ?? "", fields: { ...template?.starter?.fields, ...explicit.fields } };
 }
 /** Resolve before creating anything, so malformed or retired defaults cannot leave a draft. */
-export async function loadFolderItemDefault(folder: string, listing: VaultListing | null, request: VaultTransport = vaultRequest) {
-  const { files } = await request("folderViews", { folder }) as { files: FolderViewMetadata[] };
+export async function loadFolderItemDefault(folder: string, listing: VaultListing | null, request: VaultTransport = vaultRequest, signal?: AbortSignal) {
+  const { files } = await request("folderViews", { folder }, signal) as { files: FolderViewMetadata[] };
   const chosen = readFolderItemDefault(resolveFolderView(files, folder));
   if (!chosen) return null;
   const records = listing?.items.filter(item => isTemplateRetirementPath(item.path)) ?? [];
   if (records.length > 256) throw new Error("Template retirement list exceeds limits");
   for (const item of records) {
-    const file = await request("read", { path: item.path }) as VaultFile;
+    const file = await request("read", { path: item.path }, signal) as VaultFile;
     const document = readDocument(file);
     if (document.content.fields.texttextRecordType !== "template-retirement") throw new Error("Invalid template retirement record");
     if (parseTemplateRetirement(document.content.body).templateId === chosen.template.id) throw new Error("This folder's default template is retired. Choose another template.");

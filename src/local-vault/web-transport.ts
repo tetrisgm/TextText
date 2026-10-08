@@ -495,7 +495,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       } else {
         pack = emptyPack();
         const kind = String(params.kind ?? "note");
-        if (kind !== "note" && kind !== "bookmark") throw new Error("Unsupported capture type.");
+        if (!["note", "article", "bookmark", "gallery", "talk"].includes(kind)) throw new Error("Unsupported item type.");
         const template = BUILTIN_TEMPLATES.find((item) => item.id === `texttext.${kind}`)!;
         const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
         document.content.title = title; document.content.body = String(params.body ?? "");

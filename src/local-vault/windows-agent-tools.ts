@@ -33,7 +33,7 @@ export async function executeWindowsFolderAgentTool(request: VaultTransport, fol
     if (typeof args.title !== "string" || !args.title.trim() || args.title.length > 240 || typeof args.body !== "string" || args.body.length > 2_000_000) throw new Error("Provide a title and body.");
     if (args.kind !== undefined && !["note", "article", "bookmark", "gallery", "talk"].includes(String(args.kind))) throw new Error("Choose a supported item type.");
     if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
-    const chosen = args.kind === undefined ? await loadFolderItemDefault(destination, listing, request) : null;
+    const chosen = args.kind === undefined ? await loadFolderItemDefault(destination, listing, request, signal) : null;
     if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
     let saved: VaultFile;
     if (chosen) {

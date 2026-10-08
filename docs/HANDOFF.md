@@ -35,6 +35,13 @@
 
 ## Current work and next checks
 
+- Shared transport now accepts explicit Article/Gallery/Talk creation, matching
+  the Windows agent advertised types. Package regressions prove content and
+  template identity; unsupported types still refuse. Folder-default loading
+  carries cancellation and stopped tasks do not publish. All 332 shared-client
+  tests across 38 files and TypeScript passed. Source only, not delivered.
+  Logs `/tmp/texttext-template-inheritance-{client,types}.log`.
+
 - Windows folder-agent creation now resolves the same validated folder default
   as human creation when kind is omitted, publishing one complete TextPack.
   Explicit built-in kind keeps its override. Regression proves template/content

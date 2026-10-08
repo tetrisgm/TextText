@@ -55,6 +55,22 @@ describe("Windows selected-item agent tools", () => {
     await expect(executeWindowsFolderAgentTool(request, "Blog", "create_file", { title: "Blocked", body: "Keep" })).rejects.toThrow();
     expect(creates).toHaveLength(1);
   });
+  it("cancels template resolution before publishing an agent-created file", async () => {
+    const controller = new AbortController();
+    let writes = 0;
+    const request: VaultTransport = async (method, _params, signal) => {
+      if (method === "list") return { folders: ["Notes"], items: [] };
+      if (method === "folderViews") {
+        expect(signal).toBe(controller.signal);
+        controller.abort();
+        return { files: [] };
+      }
+      writes++;
+      throw new Error("Creation must not run after cancellation");
+    };
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", { title: "Stopped", body: "Keep" }, controller.signal)).rejects.toThrow("Task stopped");
+    expect(writes).toBe(0);
+  });
   it("searches the folder and excludes sibling and traversal results", async () => {
     const calls: Record<string, unknown>[] = [];
     const request: VaultTransport = async (method, params) => {
