@@ -2,48 +2,38 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1184)**, source `98bb52b5`.
-  Startup, note icon, search cache invalidation, save and normal reopen passed.
-  [Receipt](verification/2026-10-07-recovery-templates-1184.md).
-- Windows: product source **98bb52b5**, installed in the existing location.
-  Build, actual startup/search freshness, Research v2 starter creation and
-  save/reopen passed. [Receipt](verification/2026-10-07-windows-shared-1184.md).
-- Oracle: **texttext-oracle-20261008T060605Z-98bb52b5**. All thirteen production
-  HTTP smoke checks passed. Algorave services and shared proxy were preserved.
-- Actual Mac deletion/restoration, same-ID Safari reading, direct CLI editing,
-  web editing and passive Windows convergence passed without manual refresh.
-  [Combined receipt](verification/2026-10-07-live-restore-1182.md).
+- Mac `/Applications/TextText.app`: **0.204 (1185)**, source `68eaaf80`.
+- Windows: same source `68eaaf80`, installed in the existing location.
+- Oracle: **texttext-oracle-20261008T063810Z-68eaaf80**, thirteen live checks passed.
+- Accounts, existing notes, saved edits and search freshness passed on installed
+  clients. Agent-created template item arrived on both desktops automatically;
+  Safari opened the same item with Mac/Windows presence.
+  [Combined receipt](verification/2026-10-07-shared-templates-performance-1185.md),
+  [Windows receipt](verification/2026-10-07-windows-shared-1185.md).
 - Mac folder:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Only dedicated verification notes changed during acceptance.
 
 ## Current work
 
-- `98bb52b5` passed 500 core tests, TypeScript and native gates. Mac1184 is
-  installed and Oracle deployed with 13 live smoke checks. Actual save/search,
-  template version creation and retry, starter content, normal relaunch, direct
-  file editing and Safari convergence passed.
-  [Current receipt](verification/2026-10-07-recovery-templates-1184.md).
-- Automatic recovery now bounds complete requests, preserves operation IDs,
-  handles interrupted startup, and retries transient document bootstrap failures.
-  Graceful server shutdown wakes read polls while preserving writes; the fresh
-  compiled production probe exited cleanly in 6.043 seconds.
-  [Shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
-- Shared reader fastpath `428fa881` removes a measured plain-paragraph parser
-  hotspot; component checks passed. Integrated route remeasurement awaits the
-  next build. Status/presence-driven rendering is being checked separately.
+- Source `68eaaf80` passed 541 core tests, TypeScript, native gates and relevant
+  browser checks. Agent template creation and durable template/folder approvals
+  now use canonical file operations and retry receipts.
+- Shared reader optimizations reduced the bounded 525 KiB note open from
+  1.5–1.6 seconds to 170 ms; cached reopen measured 254 ms. Unchanged
+  status/presence no longer reparses Markdown. Actual edits still invalidate.
   [Performance evidence](verification/2026-10-07-file-vault-bounded-performance.md).
-- Web Add agent/bookmark entrypoints are fixed in `2be649c8` with browser
-  targeting/no-auto-send checks. These changes are not installed/deployed yet.
-- Agent create-from-template is in progress. Web approval currently rejects
-  template create/update because durable tool registration and canonical parser
-  defaults disagree; a separate fix and receipt-recovery tests are in progress.
-- Standalone CLI `ccf675f8` remains installed; 106 tests passed. Real account
-  commands and live template create/update/retry work while local reads remain
-  offline. [CLI receipt](verification/2026-10-07-cli-account-commands.md).
-- Shared provider Settings and attributed agent presence are implemented.
-  No web provider is configured,
-  so live model execution is not attested.
+- Shared visual previews for template proposals are in progress. Keep must
+  approve the persisted command, never bypass it with a direct archive write.
+- Home List accessibility labels and agent task labels are being corrected to
+  use saved titles. The visible List title was already correct.
+- Automatic request/bootstrap recovery and graceful read-poll shutdown are
+  installed. [Recovery receipt](verification/2026-10-07-recovery-templates-1184.md),
+  [shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
+- Standalone CLI `ccf675f8` remains installed; real account commands and template
+  create/update/retry work while local reads stay offline.
+  [CLI receipt](verification/2026-10-07-cli-account-commands.md).
+- No web provider is configured; live model execution is not attested.
 
 Keep one canonical file system and shared UI/editor/sync implementation across
 Mac, Windows and web. Native adapters handle filesystem, credentials and OS
