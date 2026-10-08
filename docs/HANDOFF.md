@@ -477,6 +477,11 @@ and actions, with a personal per-device/workspace preference.
   found. Do not create a duplicate. Standalone CLI receipt:
   [current CLI](verification/2026-10-07-standalone-cli-current.md).
 
+## Agent image placement verification
+
+- Approval-to-TextPack regression coverage now includes gallery, cover and body placement. It reads the committed archive through the actual pack reader, verifies exact original image bytes plus the preview, checks placement and retained title/body, and proves completion-receipt replay does not fetch or rewrite the image.
+- All 40 write-proposal tests and TypeScript passed. This is automated boundary evidence; live signed-in agent image creation/removal acceptance remains pending.
+
 ## Latest Windows recovery follow-up
 
 - Shared checkpoint recovery and session-open validation now hold the same file-store mutation lock through materialization, checkpoint inspection and session registration. Collaboration lease acquisition remains outside the file lock. This closes the remaining reopen race with concurrent file mutations.

@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { buildTextpack } from "@/lib/github/textpack";
+import { buildTextpack, parseTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { writeVaultTextpack, readVaultTextpack } from "@/sync/engine/store";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
@@ -717,7 +717,7 @@ it("freezes the exact asset for explicit removal and recovers an expired complet
  } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
-it("does not fetch an image until explicit approval and replays the same completed import without fetching again", async () => {
+it.each(["gallery", "cover", "body_end"] as const)("imports a %s image only after approval and preserves its bytes through receipt replay", async (placement) => {
  const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-image-proposal-")); vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true; imagePreparation.mockReset();
  try {
   const sharp = (await import("sharp")).default; const { prepareVisualAsset } = await import("@/lib/visual-assets");
@@ -728,13 +728,26 @@ it("does not fetch an image until explicit approval and replays the same complet
   const saved = await writeVaultTextpack({ ...location, operationId: "seed", relativePath: "Notes/Research.textpack", baseRevision: null, bytes: buildTextpack("Research", { document, markdown: `---\ntextTextId: ${location.itemId}\n---\n\nKeep` }) });
   const h = harness(); h.dependencies.execute = runWorkspaceToolForSession; h.dependencies.resolveItems = resolveProposalItems;
   let sequence = 0; h.dependencies.randomId = () => `cccccccc-cccc-4ccc-8ccc-${String(++sequence).padStart(12, "0")}`;
-  const stage = () => createWorkspaceWriteProposal({ actor: owner, tool: "add_item_asset", arguments: { id: location.itemId, source_url: "https://example.com/image.png", placement: "gallery", if_match_hash: saved.revision, idempotency_key: "image" } }, h.dependencies);
+  const stage = () => createWorkspaceWriteProposal({ actor: owner, tool: "add_item_asset", arguments: { id: location.itemId, source_url: "https://example.com/image.png", placement, if_match_hash: saved.revision, idempotency_key: "image" } }, h.dependencies);
   const denied = await stage();
-  expect(denied.summary).toContain("https://example.com/image.png"); expect(denied.summary).toContain("gallery image"); expect(imagePreparation).not.toHaveBeenCalled();
+  expect(denied.summary).toContain("https://example.com/image.png"); expect(denied.summary).toContain(placement === "gallery" ? "gallery image" : placement === "cover" ? "the cover" : "a body image"); expect(imagePreparation).not.toHaveBeenCalled();
   await decideWorkspaceWriteProposal({ actor: owner, proposalId: denied.id, decision: "deny" }, h.dependencies); expect(imagePreparation).not.toHaveBeenCalled();
   const proposal = await stage(); const approve = () => decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, h.dependencies);
   h.repository.rejectCompletion = true; expect((await approve()).status).toBe("ambiguous"); expect(imagePreparation).toHaveBeenCalledOnce();
-  const committed = (await readVaultTextpack(location))!; h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+  const committed = (await readVaultTextpack(location))!;
+  const { readDocument } = await import("@/local-vault/model"); const { openPack } = await import("@/local-vault/pack");
+  const attached = readDocument(openPack(committed.bytes, committed.relativePath, committed.revision).file);
+  expect(attached.content.title).toBe("Research");
+  expect(attached.content.assets).toHaveLength(1);
+  const asset = attached.content.assets[0];
+  expect(asset.sourceUrl).toBe("https://example.com/image.png");
+  const parts = parseTextpack(committed.bytes);
+  expect(Buffer.from(parts.files![asset.src])).toEqual(bytes);
+  expect(parts.files![asset.poster!].byteLength).toBeGreaterThan(0);
+  if (placement === "cover") expect(attached.content.fields.cover).toBe(asset.src);
+  if (placement === "body_end") expect(attached.content.body).toContain(`![Image](${asset.src})`);
+  else expect(attached.content.body).toBe("Keep");
+  h.advance(16 * 60_000); h.repository.rejectCompletion = false;
   access.allowed = false; expect((await approve()).status).not.toBe("completed"); access.allowed = true;
   expect((await approve()).status).toBe("completed"); expect(imagePreparation).toHaveBeenCalledOnce(); expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
  } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
