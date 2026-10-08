@@ -49,6 +49,20 @@
 
 ## Current work and next checks
 
+- Oracle template delivery candidate is clean source `223954b8` in
+  `/private/tmp/texttext-candidate-1195-5ELVuo`. Exact core gates passed
+  (837 tests, 87 files), native sync gates passed, and the production web
+  build and immutable packaging completed successfully. Logs:
+  `/tmp/texttext-oracle-template-gates.log`,
+  `/tmp/texttext-template-native-gates.log`,
+  `/tmp/texttext-oracle-template-build.log`, `/tmp/texttext-template-package.log`.
+  Full required release checks are running through handle `99704`, log
+  `/tmp/texttext-template-release-gates.log`; resume that handle before
+  starting another run. Oracle remains on `cce4206c`, unchanged. Preflight
+  verified 27 GB free, recent backups and all TextText/Algorave services active.
+  Candidate archive:
+  `.texttext/oracle/texttext-223954b8-templates.tar.gz` in that clean clone.
+
 - Matching native snapshot/template validation now lives in the shared
   `BuiltinTextPackDocument.validateMetadata`, consumed by the agent and by the
   actual custom creation store. Direct store callers cannot bypass metadata,
