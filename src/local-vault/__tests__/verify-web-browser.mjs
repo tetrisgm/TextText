@@ -68,6 +68,11 @@ try {
       await route.fulfill({ json: { url: "https://vault.test/signin" } }); return;
     }
     if (url.pathname === "/signin") { await route.fulfill({ body: "Signed out", contentType: "text/html" }); return; }
+    if (url.pathname === "/api/vault/workspaces") {
+      assert.equal(request.method(), "GET");
+      await route.fulfill({ json: { defaultWorkspaceId: "workspace", workspaces: [{ id: "workspace", name: "Web test workspace", access: "owner" }] } });
+      return;
+    }
     if (url.pathname === "/api/vault/workspace/account") { await route.fulfill({json:{email:"test@example.com",name:"Test account",identities:[],workspaceName:"Web test workspace"}}); return; }
     if (url.pathname === "/api/vault/workspace/access") {
       await route.fulfill({ json: { fullAccess: true, isOwner: true, canEditContent: true, canComment: true, canManageShares: true, grants: [] } }); return;

@@ -28,6 +28,15 @@
 
 ## Current work
 
+- Clean candidate `/private/tmp/texttext-candidate-1195-5ELVuo` at `81f767b6`
+  passed 795 core tests in 84 files plus TypeScript. Its browser cohort passed
+  folder move/customize, bootstrap and proposal flows, then caught a stale full
+  web fixture missing `/api/vault/workspaces`. The fixture now models account
+  discovery; focused full web interaction passes. Update candidate to this
+  committed fixture fix before recording final exact-source gates/builds.
+  Logs: `/tmp/texttext-candidate1195-core.log`,
+  `/tmp/texttext-candidate1195-browser.log`, `/tmp/texttext-web-workspace-fixture-fix.log`.
+
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
   (`/tmp/texttext-folder-integrated-core.log`). Unrelated working edits were
   present, so this is not a frozen release receipt. Follow-up closes a gate
