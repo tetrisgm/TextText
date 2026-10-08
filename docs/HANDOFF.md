@@ -477,18 +477,19 @@ and actions, with a personal per-device/workspace preference.
   found. Do not create a duplicate. Standalone CLI receipt:
   [current CLI](verification/2026-10-07-standalone-cli-current.md).
 
-## Oracle shutdown candidate in progress
+## Oracle shutdown candidate deployed
 
 - Clean source `0533908b` at `/private/tmp/texttext-candidate-1195-5ELVuo` passed all 817 core tests, TypeScript and required native sync gates. Receipts `/tmp/texttext-oracle-drain-core.log`, `/tmp/texttext-oracle-drain-clean-types.log`, `/tmp/texttext-oracle-drain-native.log`.
 - Verified artifact: `/private/tmp/texttext-candidate-1195-5ELVuo/.texttext/oracle/texttext-20261008T155231Z-0533908b.tar.gz`, deployment identity `texttext-oracle-20261008T155231Z-0533908b`. Packaging completed; production read drain passed against the actual standalone build: 25-second vault poll woke on SIGTERM, HTTP closed, exit143 in 6007ms without SIGKILL. Logs `/tmp/texttext-oracle-drain-package.log`, `/tmp/texttext-oracle-drain-production.log`.
-- Authorized web-only deployment reusing this verified artifact is running, local process handle `99522`, log `/tmp/texttext-oracle-drain-deploy.log`. Revalidate handle/log before continuing. Do not assume deployment complete; await all live checks and inspect service shutdown journal. The old live source lacks the assistant drain fix.
+- Authorized web-only deployment completed with all 13 live checks passing. Live release `/home/ubuntu/texttext/releases/20261008T155415Z-texttext-oracle-20261008T155231Z-0533908b-305b2a`, PID 3674852, active. Previous rollback retained; fresh backup `texttext-20261008T155439Z-9fb8b835.dump`. Log `/tmp/texttext-oracle-drain-deploy.log`. All three Algorave services remained active.
+- Shutdown of the previous `da36425d` process 3672086 again exceeded 30 seconds and systemd used SIGKILL. It lacked the assistant drain fix. Do not claim production shutdown fixed: the new source passed isolated production read drain but its own real-traffic shutdown is not yet observed. Avoid an extra blind live restart.
 - Oracle preflight: current remains `20261008T144740Z-texttext-oracle-20261008T144520Z-da36425d-d4f6ee`; 15 GB free; TextText plus all three Algorave services active; proxy mtime unchanged October 1; latest backup `texttext-20261008T144805Z-34f4f839.dump`. Recheck before deployment.
 
 ## Assistant shutdown drain follow-up
 
 - Cloud assistant generation now receives the existing server lifecycle drain signal as well as request cancellation and its 55-second deadline. Previously an active assistant response could exceed Oracle’s 30-second service stop window even when vault polls drained. This cancels generation, not durable file-store transactions.
 - Added route regression: a stalled model stream wakes on drain, closes presence/response and never records a successful partial answer. All 58 assistant route tests and TypeScript passed. Logs `/tmp/texttext-ai-drain-tests.log`, `/tmp/texttext-ai-drain-types.log`.
-- Not deployed. This removes a concrete shutdown gap but does not prove the cause of the observed Oracle timeout; isolated production and actual rollout drain acceptance remain necessary.
+- Deployed as `texttext-oracle-20261008T155231Z-0533908b`; isolated production read drain passed. This removes a concrete shutdown gap but does not prove the cause of the observed Oracle timeout; new-version shutdown under real traffic remains unverified.
 
 ## Live image command acceptance
 
