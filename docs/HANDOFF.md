@@ -21,10 +21,13 @@
 
 ## Current work
 
-- Next agent slice: canonical `remix_item_type`, copying validated definitions
-  into a new template identity with source/hash authorization and durable retry.
-  Implementation in progress; not shipped. Folder defaults require shared UI
-  and canonical creation to honor them, beyond writing a folder-view file.
+- Canonical `remix_item_type` is committed as `626ee884`, with pinned source
+  authorization and durable retries; not shipped. Focused suites passed 56
+  tests, with a final 21-test recheck and TypeScript.
+  [Receipt](verification/2026-10-08-agent-template-remix.md).
+- In progress: folder defaults that shared UI and canonical item creation both
+  honor. Collection layout and new-item defaults must remain distinct; explicit
+  template choices override defaults and existing items remain unchanged.
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
   Agent template creation and durable template/folder approvals
