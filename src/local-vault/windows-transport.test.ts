@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { strToU8, strFromU8, unzipSync } from "fflate";
 import { createNativeRPC, createWindowsVaultTransport } from "./windows-transport";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { emptyPack, encodePack, openPack } from "./pack";
 import { readDocument, writePayload } from "./model";
@@ -146,11 +147,16 @@ describe("Windows shared transport", () => {
     const f = await fixture();
     try {
       const pack = openPack(f.initial, f.path, digest(f.initial), f.itemId), document = readDocument(pack.file); document.content.body = "checkpoint edit";
-      const payload = writePayload(pack.file, document);
-      await f.transport.request("collaborationCheckpoint", { itemId: f.itemId, sessionToken: "session", ...payload, journal: "journal" });
+      const template = { ...requireBuiltinTemplate("texttext.note"), id: "custom.remote" };
+      document.presentation.template = { id: template.id, version: template.version };
+      const metadata = { templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: null };
+      const payload = writePayload({ ...pack.file, ...metadata }, document);
+      const journal = JSON.stringify({ presentation: metadata });
+      await f.transport.request("collaborationCheckpoint", { itemId: f.itemId, sessionToken: "session", ...payload, journal });
       const entries = unzipSync(Buffer.from(String(f.checkpoint()!.data), "base64"));
       expect(entries[pack.prefix + "assets/opaque.bin"]).toEqual(new Uint8Array([0, 2, 255])); expect(strFromU8(entries[pack.prefix + "agent.json"])).toBe('{"preserve":true}');
-      expect(f.checkpoint()).toMatchObject({ journal: "journal", sessionToken: "session" });
+      expect(f.checkpoint()).toMatchObject({ journal, sessionToken: "session" });
+      expect(JSON.parse(strFromU8(entries[pack.prefix + "template.json"])).id).toBe(template.id);
       await expect(f.transport.request("collaborationCheckpoint", { itemId: f.itemId, ...payload, hash: "stale" })).rejects.toMatchObject({ code: "local_changed" });
     } finally { f.transport.destroy(); }
   });

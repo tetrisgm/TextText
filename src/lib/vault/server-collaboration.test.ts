@@ -246,7 +246,7 @@ describe("durable file collaboration", () => {
       requestHash: hash(JSON.stringify(["collaboration", itemId, state.epoch, updates, audit])) }));
     if (written) await fs.writeFile(path.join(root, workspaceId, relativePath), next.bytes);
     const recovered = (await readVaultCollaboration(location()))!;
-    expect(recovered).toEqual({ ...next.state, relativePath });
+    expect(recovered).toEqual({ ...next.state, relativePath, presentation: { templateJSON: null, templateAuthoringSourceJSON: null } });
     expect((await readVaultTextpack(location()))!.bytes).toEqual(Buffer.from(next.bytes));
     await push(operationId, state, update);
     expect(await readVaultCollaboration(location())).toEqual(recovered);

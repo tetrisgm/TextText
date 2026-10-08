@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
+import { openPack, encodePack } from "./pack";
+import { readDocument, readTemplate, writePayload } from "./model";
 import { DetachedFileSaveProof } from "./detached-file-save";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { documentText } from "@/lib/collab/document";
+import * as Y from "yjs";
+import { applyDocumentSnapshot, documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, seedVaultCollaboration } from "@/lib/vault/collaboration";
 import { FileCollaborationClient, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, selectFileCollaborationJournal, createFileCollaborationOwnership } from "./collaboration-client";
 
@@ -54,6 +58,55 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
+  it("delivers custom presentation before checkpoint and retains it through offline reopen", async () => {
+    const server = new Server(), journal = new Journal();
+    const original = openPack(server.bytes, "Shared.textpack", server.state.revision);
+    const template = { ...requireBuiltinTemplate("texttext.note"), id: "custom.live" };
+    const snapshot = emptyDocumentSnapshot({ id: template.id, version: template.version }); snapshot.content.body = "Remote custom body";
+    const metadata = { templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: null };
+    const responseMetadata: { current?: typeof metadata } = {};
+    let saved: Uint8Array = server.bytes;
+    const seen: string[] = [];
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: async () => ({ ...server.response(), ...(responseMetadata.current ? { presentation: responseMetadata.current } : {}) }),
+      checkpoint: async ({ journal: entry, document }) => {
+        const current = openPack(saved, "Shared.textpack", "a".repeat(64));
+        saved = encodePack(current, writePayload({ ...current.file, ...entry.presentation }, document));
+      },
+      onChange: (document, presentation) => { seen.push(readTemplate({ ...original.file, ...presentation }, document).id); },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    server.bytes = encodePack(original, { ...original.file, ...metadata });
+    const remoteDoc = new Y.Doc(); Y.applyUpdate(remoteDoc, Buffer.from(server.state.update, "base64"));
+    const vector = Y.encodeStateVector(remoteDoc); applyDocumentSnapshot(remoteDoc, snapshot, "remote-template");
+    const applied = applyVaultCollaboration({ ...server.state, revision: (await import("node:crypto")).createHash("sha256").update(server.bytes).digest("hex") }, server.bytes, [Buffer.from(Y.encodeStateAsUpdate(remoteDoc, vector)).toString("base64")]);
+    server.state = applied.state; server.bytes = applied.bytes; remoteDoc.destroy(); responseMetadata.current = metadata;
+    await vi.advanceTimersByTimeAsync(250); await editor.flushLocal();
+    expect(seen.at(-1)).toBe(template.id);
+    const reopenedPack = openPack(saved, "Shared.textpack", "a".repeat(64));
+    expect(readTemplate(reopenedPack.file, readDocument(reopenedPack.file)).id).toBe(template.id);
+    editor.mutate(doc => documentText(doc, "body").insert(0, "Pending "));
+    await editor.flushLocal(); editor.destroy();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, active: false,
+      request: async (method, params, signal) => method === "read" ? ({ ...server.response(), presentation: { templateJSON: JSON.stringify(requireBuiltinTemplate("texttext.note")), templateAuthoringSourceJSON: null } }) : server.request(method, params, signal),
+      onChange: (document, presentation) => { expect(readTemplate({ ...original.file, ...presentation }, document).id).toBe(template.id); },
+    });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.recoveryJournal?.presentation).toEqual(metadata);
+    expect(reopened.hasPendingChanges).toBe(true);
+    reopened.setActive(true); await vi.advanceTimersByTimeAsync(1);
+    expect(reopened.recoveryJournal?.presentation).toEqual(metadata);
+    expect(reopened.status).not.toBe("error");
+  });
+  it("rejects invalid remote template metadata without replacing the retained definition", async () => {
+    const server = new Server(), metadata = { templateJSON: JSON.stringify(requireBuiltinTemplate("texttext.note")), templateAuthoringSourceJSON: null };
+    let invalid = false;
+    const editor = client(server, new Journal(), async () => ({ ...server.response(), presentation: invalid ? { ...metadata, templateJSON: "{}" } : metadata }));
+    await editor.start(); const retained = editor.recoveryJournal;
+    invalid = true; await vi.advanceTimersByTimeAsync(1);
+    expect(editor.recoveryJournal?.presentation).toEqual(metadata);
+    expect(editor.recoveryJournal?.update).toBe(retained?.update);
+  });
   it("backs off failed uploads even while reads succeed", async () => {
     const server = new Server(); const attempts: number[] = []; let unavailable = true;
     const request: FileCollaborationRequest = async (method, params, signal) => {

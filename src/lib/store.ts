@@ -8450,6 +8450,8 @@ export { inventoryLegacyWorkspace, legacyInventoryDigest } from "./vault/legacy-
 export function mutateVaultDocument(input: Omit<VaultLocation, "onReceipt"> & {
   itemId: string; operationId: string; expectedRevision: string;
   mutation: import("./collab/document").DocumentMutation;
+  presentation?: { definition?: unknown; authoringSource?: unknown; source?: { itemId: string; revision: string; templateId: string; templateVersion?: number } };
+  beforeTemplateRead?: (itemId: string, relativePath: string) => Promise<void>;
   actorUserId: string; actorType: "human" | "external_agent";
   beforeCommit?: (relativePath: string) => Promise<void>;
 }) {

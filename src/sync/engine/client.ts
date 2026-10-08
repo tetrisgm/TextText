@@ -1,6 +1,9 @@
 import * as Y from "yjs";
 import { documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
 import type { DocumentSnapshot } from "@/lib/documents/model";
+import { getBuiltinTemplate } from "@/lib/presentation/templates";
+import { validateTemplateDefinition } from "@/lib/presentation/schema";
+import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 
 const REMOTE = Symbol("file-collaboration-remote");
@@ -9,10 +12,19 @@ export type FileCollaborationStatus = "ready" | "saving" | "paused" | "reconnect
 export type FileCollaborationRequest = (method: "read" | "push", params: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
 export interface FileCollaborationJournalStore { load(key: string): string | null; save(key: string, value: string): void; remove(key: string): void }
 type Batch = { operationId: string; updates: string[]; acknowledged?: boolean; revision?: string };
+export type FileCollaborationPresentation = { templateJSON: string | null; templateAuthoringSourceJSON: string | null };
+function presentation(value: unknown): FileCollaborationPresentation | undefined {
+  if (value === undefined) return undefined;
+  const data = value as FileCollaborationPresentation;
+  if (!data || ![data.templateJSON, data.templateAuthoringSourceJSON].every(entry => entry === null || (typeof entry === "string" && entry.length <= 1024 * 1024))) throw new Error("Invalid collaboration template metadata.");
+  if (data.templateJSON !== null) validateTemplateDefinition(JSON.parse(data.templateJSON));
+  if (data.templateAuthoringSourceJSON !== null) authoringSourceSchema.parse(JSON.parse(data.templateAuthoringSourceJSON));
+  return { templateJSON: data.templateJSON, templateAuthoringSourceJSON: data.templateAuthoringSourceJSON };
+}
 type Cursor = { epoch: number; seq: number; revision: string; relativePath: string };
-export type FileCollaborationJournal = Cursor & { version: 1; journalGeneration?: number; canEditContent?: boolean; canComment?: boolean; update: string; pending: string[]; batch: Batch | null; unqueuedDirty?: boolean; retired?: string };
+export type FileCollaborationJournal = Cursor & { version: 1; presentation?: FileCollaborationPresentation; journalGeneration?: number; canEditContent?: boolean; canComment?: boolean; update: string; pending: string[]; batch: Batch | null; unqueuedDirty?: boolean; retired?: string };
 export type FileCollaborationCheckpoint = { journal: FileCollaborationJournal; document: DocumentSnapshot };
-type StateResponse = Cursor & { update: string; canEditContent: boolean; canComment: boolean };
+type StateResponse = Cursor & { presentation?: FileCollaborationPresentation; update: string; canEditContent: boolean; canComment: boolean };
 export type FileCollaborationOptions = {
   server: string; workspaceId: string; itemId: string; request: FileCollaborationRequest;
   journal?: FileCollaborationJournalStore; active?: boolean; inactiveReason?: "paused" | "offline";
@@ -21,7 +33,7 @@ export type FileCollaborationOptions = {
   initialRetirement?: string;
   localRevision?: string;
   checkpoint?: (value: FileCollaborationCheckpoint) => Promise<void>;
-  onChange?: (snapshot: DocumentSnapshot) => void;
+  onChange?: (snapshot: DocumentSnapshot, presentation?: FileCollaborationPresentation) => void;
   onStatus?: (status: FileCollaborationStatus, detail?: string) => void;
 };
 function encode(bytes: Uint8Array): string {
@@ -45,6 +57,7 @@ function parseJournal(raw: string): FileCollaborationJournal {
   if (new TextEncoder().encode(raw).byteLength > LIMIT) throw new Error("Saved collaboration history exceeds its limit. It has been preserved for recovery.");
   const parsed = JSON.parse(raw) as FileCollaborationJournal;
   cursor(parsed);
+  presentation(parsed.presentation);
   const generation = parsed.journalGeneration ?? 0;
   if (!Number.isSafeInteger(generation) || generation < 0) throw new Error("Invalid saved journal generation.");
   if (parsed.version !== 1 || !Array.isArray(parsed.pending) || parsed.pending.length > 1024 || (parsed.retired !== undefined && typeof parsed.retired !== "string")) throw new Error("Invalid saved collaboration journal. It has been preserved.");
@@ -186,6 +199,7 @@ export class FileCollaborationClient {
   private failures = 0;
   private uploadFailures = 0;
   private journalGeneration = 0;
+  private presentation: FileCollaborationPresentation | undefined;
   private initialRetirement: string | null = null;
   private checkpointQueued: FileCollaborationCheckpoint | null = null;
   private checkpointRunning: Promise<void> | null = null;
@@ -218,10 +232,22 @@ export class FileCollaborationClient {
         (typeof snapshot.content.fields.cover === "string" && snapshot.content.fields.cover.startsWith("blob:"))) throw new Error("Invalid temporary asset URL in the shared document.");
     return snapshot;
   }
+  private adoptPresentation(value: unknown): void {
+    const incoming = presentation(value);
+    if (!incoming) return; // Compatible with older servers and retained journals.
+    const reference = this.snapshot().presentation.template;
+    const matches = (candidate: FileCollaborationPresentation | undefined) => {
+      if (!candidate?.templateJSON) return false;
+      const definition = validateTemplateDefinition(JSON.parse(candidate.templateJSON));
+      return definition.id === reference.id && definition.version === reference.version;
+    };
+    if (matches(incoming) || (!incoming.templateJSON && getBuiltinTemplate(reference.id, reference.version))) this.presentation = incoming;
+    else if (!matches(this.presentation)) throw new Error("The shared template definition does not match the document. Your journal is preserved.");
+  }
   private persist(retired?: string): void {
     if (!this.current) return;
     if (!Number.isSafeInteger(this.journalGeneration) || this.journalGeneration >= Number.MAX_SAFE_INTEGER) throw new Error("Collaboration journal generation limit reached.");
-    const saved: FileCollaborationJournal = { version: 1, journalGeneration: ++this.journalGeneration, ...this.current, canEditContent: this.canEdit, canComment: this.canComment, unqueuedDirty: this.unqueuedDirty, update: encode(Y.encodeStateAsUpdate(this.doc)), pending: [...this.pending], batch: this.batch ? { ...this.batch, updates: [...this.batch.updates] } : null,
+    const saved: FileCollaborationJournal = { version: 1, ...(this.presentation ? { presentation: this.presentation } : {}), journalGeneration: ++this.journalGeneration, ...this.current, canEditContent: this.canEdit, canComment: this.canComment, unqueuedDirty: this.unqueuedDirty, update: encode(Y.encodeStateAsUpdate(this.doc)), pending: [...this.pending], batch: this.batch ? { ...this.batch, updates: [...this.batch.updates] } : null,
       ...(retired || this.saved?.retired ? { retired: retired ?? this.saved?.retired } : {}) };
     this.saved = saved; // Keep recoverable in memory even when browser storage fails.
     const value = JSON.stringify(saved);
@@ -279,7 +305,7 @@ export class FileCollaborationClient {
     return !this.checkpointError && !this.unreadableJournal && this.checkpointSavedGeneration >= this.journalGeneration;
   }
   private notifyRecoverableSnapshot(): void {
-    try { this.options.onChange?.(this.snapshot()); }
+    try { this.options.onChange?.(this.snapshot(), this.presentation); }
     catch { /* Invalid document states still remain available in the recovery journal. */ }
   }
   private retire(reason: string): void {
@@ -306,7 +332,7 @@ export class FileCollaborationClient {
       else this.pending.push(encoded);
       this.unqueuedDirty = false;
       this.persist();
-      this.options.onChange?.(this.snapshot());
+      this.options.onChange?.(this.snapshot(), this.presentation);
       this.report(this.active ? "saving" : this.inactiveReason);
       this.schedulePush(250);
     } catch (error) { this.fatal(error); }
@@ -331,13 +357,14 @@ export class FileCollaborationClient {
     return parsed;
   }
   private restoreRetained(retained: FileCollaborationJournal): void {
+    this.presentation = presentation(retained.presentation);
     this.current = cursor(retained); this.pending = retained.pending; this.batch = retained.batch;
     this.unqueuedDirty = retained.unqueuedDirty === true; this.saved = retained;
     this.journalGeneration = retained.journalGeneration ?? 0;
     Y.applyUpdate(this.doc, decode(retained.update), REMOTE);
     const snapshot = this.snapshot();
     this.initialized = true; this.canEdit = retained.canEditContent === true; this.canComment = retained.canComment === true;
-    this.options.onChange?.(snapshot);
+    this.options.onChange?.(snapshot, this.presentation);
   }
   private async request(method: "read" | "push", params: Record<string, unknown>, poll = false): Promise<unknown> {
     const controller = new AbortController(); this.controllers.add(controller);
@@ -408,6 +435,7 @@ export class FileCollaborationClient {
       const value = await this.request("read", {});
       if (this.dead || !this.active || this.frozen) return;
       const remote = value as StateResponse; cursor(remote);
+      presentation(remote.presentation);
       if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
       this.current = cursor(remote);
       if (retained) {
@@ -417,9 +445,10 @@ export class FileCollaborationClient {
         }
       }
       Y.applyUpdate(this.doc, decode(remote.update), REMOTE);
+      this.adoptPresentation(remote.presentation);
       this.snapshot();
       this.current = cursor(remote); this.canEdit = remote.canEditContent; this.canComment = remote.canComment; this.initialized = true; this.authoritative = true;
-      this.persist(); this.failures = 0; this.options.onChange?.(this.snapshot());
+      this.persist(); this.failures = 0; this.options.onChange?.(this.snapshot(), this.presentation);
       this.report(this.pending.length || this.batch ? "saving" : "ready");
       if (this.pending.length || this.batch) this.schedulePush(0);
       this.schedulePoll(0);
@@ -482,7 +511,7 @@ export class FileCollaborationClient {
       if (this.canEdit && !remote.canEditContent) { this.retire("Editing access was removed. Your document is kept for recovery."); return; }
       this.canEdit = remote.canEditContent; this.canComment = remote.canComment;
       if (!remote.unchanged && remote.seq! >= this.current.seq) {
-        cursor(remote); Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.snapshot(); this.current = cursor(remote); this.persist(); this.options.onChange?.(this.snapshot());
+        cursor(remote); presentation(remote.presentation); Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.adoptPresentation(remote.presentation); this.snapshot(); this.current = cursor(remote); this.persist(); this.options.onChange?.(this.snapshot(), this.presentation);
       }
       this.authoritative = true; this.failures = 0; this.report(this.uploadFailures ? "offline" : this.pending.length || this.batch ? "saving" : "ready"); this.schedulePush(0); this.schedulePoll(250);
     } catch (error) { this.handleFailure(error); }
@@ -521,13 +550,14 @@ export class FileCollaborationClient {
         if (remote.epoch !== this.current!.epoch) { this.retire("This file changed after acknowledgement. Your document is kept for recovery."); return false; }
         if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
         if (!remote.canEditContent) { this.retire("Editing access was removed. Your document is kept for recovery."); return false; }
-        Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.snapshot();
+        presentation(remote.presentation);
+        Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.adoptPresentation(remote.presentation); this.snapshot();
         if (remote.seq >= this.current!.seq) this.current = cursor(remote);
         this.canComment = remote.canComment;
         const acknowledged = this.batch;
         this.batch = null;
         try { this.persist(); } catch (error) { this.batch = acknowledged; throw error; }
-        this.options.onChange?.(this.snapshot());
+        this.options.onChange?.(this.snapshot(), this.presentation);
         if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return false;
         this.uploadFailures = 0;
       }

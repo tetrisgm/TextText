@@ -37,6 +37,27 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testRemoteTemplateMetadataSurvivesInterruptedCheckpointAndReopen() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        var target = try checkpoint(original)
+        var definition = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(original.contents.templateJSON).utf8)) as? [String: Any])
+        definition["id"] = "custom.remote"
+        let template = String(decoding: try JSONSerialization.data(withJSONObject: definition), as: UTF8.self)
+        var snapshot = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(original.contents.documentJSON).utf8)) as? [String: Any])
+        var presentation = try XCTUnwrap(snapshot["presentation"] as? [String: Any])
+        presentation["template"] = ["id": "custom.remote", "version": 1]; snapshot["presentation"] = presentation
+        let document = String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self)
+        var journal = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any])
+        journal["presentation"] = ["templateJSON": template, "templateAuthoringSourceJSON": NSNull()]
+        target.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        XCTAssertThrowsError(try store.materialize(checkpoint: target, expectedHash: original.hash, markdown: original.contents.markdown, documentJSON: document, interruptAfterWrite: true))
+        let recovered = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertNil(recovered.retiredReason)
+        let reopened = try LocalVaultDocumentStore(root: root).read(path: path)
+        XCTAssertEqual(reopened.contents.templateJSON, template)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(reopened.contents.documentJSON).utf8)) as? NSDictionary, snapshot as NSDictionary)
+        XCTAssertEqual(reopened.contents.assets.first?.data, Data([1, 2, 255]))
+    }
     func testOfflineProjectionPreservesCompleteArchiveAndReplayAfterEitherCrashWindow() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
         let proposed = try changes(original, body: "Offline shared writing")

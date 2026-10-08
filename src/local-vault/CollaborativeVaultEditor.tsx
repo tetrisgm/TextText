@@ -142,7 +142,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       checkpoint: native ? async ({ journal, document: next }) => {
         const active = native;
         if (!active) throw new Error("The local shared file session has closed. Your journal is kept.");
-        const payload = writePayload(file.current, next);
+        const payload = writePayload({ ...file.current, ...journal.presentation }, next);
         const saved = await vaultRequest<{ path: string; hash: string }>("collaborationCheckpoint", {
           itemId: config.itemId, sessionToken: active.sessionToken, hash: file.current.hash,
           epoch: journal.epoch, seq: journal.seq, revision: journal.revision,
@@ -150,7 +150,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
           pending: Boolean(journal.batch || journal.pending.length || journal.unqueuedDirty),
           markdown: payload.markdown, documentJSON: payload.documentJSON,
         });
-        file.current = { ...file.current, ...saved, markdown: payload.markdown, documentJSON: payload.documentJSON };
+        file.current = { ...file.current, ...journal.presentation, ...saved, markdown: payload.markdown, documentJSON: payload.documentJSON };
       } : undefined,
       request: async (method, params, signal) => {
         try { return await vaultRequest(method === "read" ? "collaborationRead" : "collaborationPush", { ...params, itemId: config.itemId }, signal); }
@@ -159,7 +159,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
           throw error;
         }
       },
-      onChange: next => { if (!stopped) { latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
+      onChange: (next, presentation) => { if (!stopped) { if (presentation) { file.current = { ...file.current, ...presentation }; setOpened(file.current); } latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
       onStatus: (next, message) => { if (!stopped && shared) { setStatus(next); setDetail(message ?? ""); setCanEdit(shared.canEdit); setClient(shared); } },
     });
     detachedSaveRef.current.clear();

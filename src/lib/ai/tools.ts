@@ -780,6 +780,9 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         // wrong was a failed call rather than a sensible default.
         template_version: templateVersion.optional(),
         if_match_hash: ifMatchHash,
+        source_item_id: id.optional(),
+        source_hash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
       })
       .strict(),
     mutability: "write",

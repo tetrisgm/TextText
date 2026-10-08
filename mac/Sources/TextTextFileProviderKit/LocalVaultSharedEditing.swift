@@ -97,15 +97,34 @@ struct LocalVaultSharedEditingStore: Sendable {
         let hasBatch = journal["batch"] != nil && !(journal["batch"] is NSNull)
         guard checkpoint.pending || (pending.isEmpty && !hasBatch && journal["unqueuedDirty"] as? Bool != true) else { throw LocalVaultSharedFailure.invalid }
     }
+    private struct Presentation {
+        let templateJSON: String?
+        let templateAuthoringSourceJSON: String?
+    }
+    private func presentation(_ checkpoint: LocalVaultSharedCheckpoint) throws -> Presentation? {
+        let journal = try JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8)) as? [String: Any]
+        guard let raw = journal?["presentation"] else { return nil }
+        guard let fields = raw as? [String: Any], Set(fields.keys) == ["templateJSON", "templateAuthoringSourceJSON"] else { throw LocalVaultSharedFailure.invalid }
+        func field(_ key: String) throws -> String? {
+            if fields[key] is NSNull { return nil }
+            guard let value = fields[key] as? String, value.utf8.count <= 1024 * 1024,
+                  (try? JSONSerialization.jsonObject(with: Data(value.utf8))) is [String: Any] else { throw LocalVaultSharedFailure.invalid }
+            return value
+        }
+        return try Presentation(templateJSON: field("templateJSON"), templateAuthoringSourceJSON: field("templateAuthoringSourceJSON"))
+    }
     private func contentMatches(_ document: LocalVaultDocumentStore.Document, intent: Intent) -> Bool {
         guard document.contents.markdown == intent.markdown,
               let raw = document.contents.documentJSON,
               let actual = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? NSDictionary,
               let expected = try? JSONSerialization.jsonObject(with: Data(intent.documentJSON.utf8)) as? NSDictionary else { return false }
+        if let metadata = try? presentation(intent.checkpoint) {
+            guard document.contents.templateJSON == metadata.templateJSON, document.contents.templateAuthoringSourceJSON == metadata.templateAuthoringSourceJSON else { return false }
+        }
         return actual == expected
     }
     /// Digest unchanged archive entries, so a same-text external asset/metadata edit is never adopted as our write.
-    private func preservedEntries(_ bytes: Data) throws -> [String: String] {
+    private func preservedEntries(_ bytes: Data, replacingPresentation: Bool = false) throws -> [String: String] {
         let archive = try Archive(data: bytes, accessMode: .read)
         let canonical: String
         if archive["text.md"] != nil { canonical = "" }
@@ -121,7 +140,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         for entry in archive {
             count += 1; total += entry.uncompressedSize
             guard count <= 10000, total <= 64 * 1024 * 1024 else { throw LocalVaultSharedFailure.invalid }
-            if [canonical + "text.md", canonical + "document.json"].contains(entry.path) { continue }
+            if [canonical + "text.md", canonical + "document.json"].contains(entry.path) || (replacingPresentation && [canonical + "template.json", canonical + "template-source.json"].contains(entry.path)) { continue }
             guard result[entry.path] == nil else { throw LocalVaultSharedFailure.invalid }
             var data = Data(); _ = try archive.extract(entry) { data.append($0) }
             result[entry.path] = TextTextStableDigest.sha256Hex(data)
@@ -154,16 +173,17 @@ struct LocalVaultSharedEditingStore: Sendable {
         guard let original = try read(directory.appendingPathComponent("before.textpack"), limit: 64 * 1024 * 1024),
               TextTextStableDigest.sha256Hex(original) == intent.beforeHash else { throw LocalVaultSharedFailure.invalid }
         let current = try? store.read(path: intent.checkpoint.path)
+        let metadata = try presentation(intent.checkpoint)
         var checkpoint = intent.checkpoint
         let document: LocalVaultDocumentStore.Document
         if let current, current.hash == intent.beforeHash {
             document = try store.write(path: current.path, expectedHash: current.hash, markdown: intent.markdown,
-                documentJSON: intent.documentJSON, templateJSON: current.contents.templateJSON,
-                templateAuthoringSourceJSON: current.contents.templateAuthoringSourceJSON)
+                documentJSON: intent.documentJSON, templateJSON: metadata.map { $0.templateJSON } ?? current.contents.templateJSON,
+                templateAuthoringSourceJSON: metadata.map { $0.templateAuthoringSourceJSON } ?? current.contents.templateAuthoringSourceJSON)
             if interruptAfterWrite { throw LocalVaultSharedFailure.interrupted }
         } else if let current, contentMatches(current, intent: intent),
                   let bytes = try read(store.url(for: current.path), limit: 64 * 1024 * 1024),
-                  try preservedEntries(bytes) == preservedEntries(original) {
+                  try preservedEntries(bytes, replacingPresentation: metadata != nil) == preservedEntries(original, replacingPresentation: metadata != nil) {
             document = current
         } else {
             checkpoint.retiredReason = "The file changed outside shared editing. Its saved shared journal is available for recovery."
@@ -183,6 +203,7 @@ struct LocalVaultSharedEditingStore: Sendable {
     func materialize(checkpoint: LocalVaultSharedCheckpoint, expectedHash: String, markdown: String, documentJSON: String,
                      interruptAfterIntent: Bool = false, interruptAfterWrite: Bool = false) throws -> LocalVaultSharedMaterialization {
         try validate(checkpoint)
+        _ = try presentation(checkpoint)
         guard markdown.utf8.count <= 2 * 1024 * 1024, documentJSON.utf8.count <= 2 * 1024 * 1024,
               MarkdownIdentityCodec.extract(from: markdown)?.itemId == checkpoint.itemId,
               let snapshot = try JSONSerialization.jsonObject(with: Data(documentJSON.utf8)) as? [String: Any],

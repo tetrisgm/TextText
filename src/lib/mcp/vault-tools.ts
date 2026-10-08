@@ -14,7 +14,7 @@ function summary(id: string, path: string, hash: string, title: string, document
   const kind = template === "texttext.article" ? "article" : template === "texttext.bookmark" ? "bookmark" : template === "texttext.gallery" ? "media_post" : template === "texttext.talk" ? "talk" : "note";
   return { id, path, slug: id, hash, title, kind, status: published ? "published" : "draft", folder_path: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "" };
 }
-const reads = ["get_workspace", "list_folders", "list_items", "read_item", "search", "list_comments", "list_trash"] as const;
+const reads = ["get_workspace", "list_folders", "list_items", "read_item", "search", "list_comments", "list_trash", "list_document_templates"] as const;
 const json = (value: Record<string, unknown>): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 const error = (text: string): CallToolResult => ({ content: [{ type: "text", text }], isError: true });
 /** File-only backend. Never returns null to request a legacy SQL fallback.
@@ -55,6 +55,27 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
   const readOnly = scopes.some((scope) => /^(read|readonly|read-only)$/.test(scope.trim().toLowerCase()) || /(?:^|[:./_-])read(?:[-_]?only)?$/.test(scope.trim().toLowerCase()));
   const actorType = auth?.extra?.actorType === "human" ? "human" as const : "external_agent" as const;
   const canWrite = !readOnly && (itemScope?.role === "edit" || scopes.includes("sync"));
+  if (name === "list_document_templates" || name === "set_item_template") {
+    if (name === "set_item_template" && !canWrite) return error("This connection is read-only.");
+    const authorize = async (itemId: string, path: string, write: boolean) => {
+      const currentPath = path || (await readVaultTextpackIdentity({ ...location, itemId }))?.relativePath;
+      if (!currentPath || !await allowedNow({ itemId, relativePath: currentPath })) throw new Error("Item not found.");
+      if (write) {
+        const currentWorkspace = await getBlogEditRecord(blog.handle);
+        if (currentWorkspace?.id !== location.workspaceId || currentWorkspace.ownerId !== userId && roleForVaultItem(await activeVaultGrants({ ...location, userId }), itemId, currentPath) !== "editor") throw new Error("Item editing is not allowed.");
+      }
+    };
+    try {
+      const { executeVaultTemplateTool } = await import("./vault-templates");
+      const action = () => executeVaultTemplateTool(name, args, { ...location, actorUserId: userId, actorType, authorize });
+      if (name === "list_document_templates" || actorType === "human") return json(await action());
+      const { withVaultAgentPresence } = await import("./vault-agent-presence");
+      return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId,
+        connectionName: typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent",
+        connectionId: typeof auth?.extra?.connectionId === "string" ? auth.extra.connectionId : undefined,
+        authorize: path => authorize(String(args.id), path, true) }, action));
+    } catch (cause) { return error(cause instanceof Error ? cause.message : "Template command failed."); }
+  }
   if (["list_comments", "add_comment", "set_comment_resolved"].includes(name)) {
     if (name !== "list_comments" && !canWrite) return error("This connection is read-only.");
     const authorize = async (itemId: string, path: string, write: boolean) => {

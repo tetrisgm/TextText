@@ -1,12 +1,13 @@
 import * as Y from "yjs";
-import { applyDocumentMutation, type DocumentMutation } from "@/lib/collab/document";
+import { applyDocumentMutation, applyDocumentSnapshot, type DocumentMutation } from "@/lib/collab/document";
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { watch, constants } from "node:fs";
 import path from "node:path";
 import { hostname } from "node:os";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
-import { openPack } from "@/local-vault/pack";
+import { readDocument } from "@/local-vault/model";
+import { openPack, encodePack } from "@/local-vault/pack";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
 import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, type VaultCollaborationState } from "./collaboration";
@@ -863,7 +864,7 @@ type CachedCollaboration = {
   targetFingerprint: string;
   checkpointPath: string;
   checkpointFingerprint: string;
-  state: VaultCollaborationState & { relativePath: string };
+  state: VaultCollaborationState & { relativePath: string; presentation: { templateJSON: string | null; templateAuthoringSourceJSON: string | null } };
   weight: number;
 };
 const collaborationReadCache = new Map<string, CachedCollaboration>();
@@ -924,7 +925,9 @@ export async function readVaultCollaboration(input: VaultLocation & { itemId: st
     await recover(layout);
     const item = await collaborationItem(layout, input.itemId);
     if (!item) return null;
-    const state = { ...await collaborationCheckpoint(layout, input.itemId, item), relativePath: item.relativePath };
+    const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId).file;
+    const state = { ...await collaborationCheckpoint(layout, input.itemId, item), relativePath: item.relativePath,
+      presentation: { templateJSON: pack.templateJSON ?? null, templateAuthoringSourceJSON: pack.templateAuthoringSourceJSON ?? null } };
     const checkpointPath = path.join(layout.collaboration, `${input.itemId}.json`);
     const [metadataFingerprint, targetFingerprint, checkpointFingerprint] = await Promise.all([
       fingerprint(item.metadataPath),
@@ -933,7 +936,7 @@ export async function readVaultCollaboration(input: VaultLocation & { itemId: st
     ]);
     const cache = metadataFingerprint && targetFingerprint === item.targetFingerprint && checkpointFingerprint
       ? { metadataPath: item.metadataPath, metadataFingerprint, target: item.target, targetFingerprint,
-          checkpointPath, checkpointFingerprint, state, weight: state.update.length * 2 + 512 }
+          checkpointPath, checkpointFingerprint, state, weight: (state.update.length + JSON.stringify(state.presentation).length) * 2 + 512 }
       : null;
     return { state, cache };
   });
@@ -1157,12 +1160,19 @@ export async function pushVaultCollaboration(input: VaultLocation & {
 export async function mutateVaultDocument(input: VaultLocation & {
   itemId: string; operationId: string; expectedRevision: string; mutation: DocumentMutation;
   audit: NonNullable<VaultWrite["audit"]>;
+  presentation?: { definition?: unknown; authoringSource?: unknown; source?: { itemId: string; revision: string; templateId: string; templateVersion?: number } };
+  beforeTemplateRead?: (itemId: string, relativePath: string) => Promise<void>;
   beforeCommit?: (relativePath: string) => Promise<void>;
   signal?: AbortSignal;
 }): Promise<VaultWriteResult> {
   segment(input.itemId); segment(input.operationId);
   if (!input.audit || !input.onReceipt) throw new Error("Vault collaboration requires its audit sink");
-  const requestHash = hash(json(["document-command", input.itemId, input.expectedRevision, input.mutation, input.audit]));
+  let template = input.presentation?.definition !== undefined ? validateTemplateDefinition(input.presentation.definition) : null;
+  if (input.presentation && !template && !input.presentation.source) throw new Error("Template definition is required");
+  let authoring = template && input.presentation?.authoringSource !== undefined ? validatedLookSource(template, input.presentation.authoringSource) : null;
+  if (input.presentation?.authoringSource !== undefined && !authoring) throw new Error("Invalid template authoring source");
+  if (input.presentation && Object.keys(input.mutation).length) throw new Error("Apply templates separately from content edits");
+  const requestHash = hash(json(["document-command", input.itemId, input.expectedRevision, input.mutation, input.audit, ...(input.presentation ? [input.presentation] : [])]));
   if (json(input.mutation).length > 2 * 1024 * 1024) throw new Error("Document command exceeds limits");
   const layout = await setup(input);
   return locked(layout, async () => {
@@ -1172,6 +1182,11 @@ export async function mutateVaultDocument(input: VaultLocation & {
     if (saved) {
       const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
       if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      if (input.presentation?.source) {
+        const source = await collaborationItem(layout, input.presentation.source.itemId);
+        if (!source) throw new Error("Template source is unavailable");
+        await input.beforeTemplateRead?.(input.presentation.source.itemId, source.relativePath);
+      }
       await input.beforeCommit?.(receipt.result.relativePath);
       input.signal?.throwIfAborted();
       await deliverReceipt(layout, receipt);
@@ -1179,6 +1194,17 @@ export async function mutateVaultDocument(input: VaultLocation & {
     }
     const item = await collaborationItem(layout, input.itemId);
     if (!item) throw new Error("Collaboration file is missing or deleted");
+    if (input.presentation?.source) {
+      const source = await collaborationItem(layout, input.presentation.source.itemId);
+      if (!source || source.revision !== input.presentation.source.revision) throw new Error("Template source changed. List templates again.");
+      await input.beforeTemplateRead?.(input.presentation.source.itemId, source.relativePath);
+      const sourceFile = openPack(source.bytes, source.relativePath, source.revision, input.presentation.source.itemId).file;
+      if (!sourceFile.templateJSON) throw new Error("Template definition is missing");
+      template = validateTemplateDefinition(JSON.parse(sourceFile.templateJSON));
+      if (template.id !== input.presentation.source.templateId || input.presentation.source.templateVersion !== undefined && template.version !== input.presentation.source.templateVersion) throw new Error("Template source does not match requested template");
+      authoring = sourceFile.templateAuthoringSourceJSON ? validatedLookSource(template, JSON.parse(sourceFile.templateAuthoringSourceJSON)) : null;
+      if (sourceFile.templateAuthoringSourceJSON && !authoring) throw new Error("Invalid template authoring source");
+    }
     const baseline = await collaborationCheckpoint(layout, input.itemId, item);
     if (baseline.revision !== input.expectedRevision) throw new Error("The item changed. Read it again before editing.");
     const doc = new Y.Doc();
@@ -1186,12 +1212,18 @@ export async function mutateVaultDocument(input: VaultLocation & {
     try {
       Y.applyUpdate(doc, Buffer.from(baseline.update, "base64"));
       const vector = Y.encodeStateVector(doc);
-      applyDocumentMutation(doc, input.mutation);
+      let workingBytes: Uint8Array = item.bytes;
+      if (template) {
+        const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId);
+        const snapshot = readDocument(pack.file);
+        applyDocumentSnapshot(doc, { ...snapshot, presentation: { ...snapshot.presentation, template: { id: template.id, version: template.version } } }, "agent-template");
+        workingBytes = encodePack(pack, { ...pack.file, templateJSON: json(template), templateAuthoringSourceJSON: authoring ? json(authoring) : null });
+      } else applyDocumentMutation(doc, input.mutation);
       // File commands keep exactly-once state in durable receipts. The legacy
       // SQL mutator adds a document-root operation map outside the file schema.
       doc.getMap("document").delete("agentOperations");
       const update = Buffer.from(Y.encodeStateAsUpdate(doc, vector)).toString("base64");
-      next = applyVaultCollaboration(baseline, item.bytes, [update], item.relativePath);
+      next = applyVaultCollaboration({ ...baseline, revision: hash(workingBytes) }, workingBytes, [update], item.relativePath);
     } finally { doc.destroy(); }
     validatePack(next.bytes, input.itemId);
     await input.beforeCommit?.(item.relativePath);

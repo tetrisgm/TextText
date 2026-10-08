@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-const mock = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), identity: vi.fn(), grants: vi.fn(), user: vi.fn(), owner: vi.fn(), preview: vi.fn(), search: vi.fn(), comments: vi.fn(), commentWrite: vi.fn(), move: vi.fn(), remove: vi.fn(), trash: vi.fn(), restore: vi.fn() }));
-vi.mock("@/lib/store", () => ({ getUserIdBySub: mock.user, getOwnedBlog: async () => ({ handle: "owner", name: "Files" }), getBlog: async () => ({ handle: "owner", name: "Files" }), getBlogEditRecord: mock.owner, listVaultTextpacks: mock.list, readVaultTextpack: mock.read, readVaultTextpackIdentity: mock.identity, readVaultPreview: mock.preview, searchVaultTextpacks: mock.search, listVaultItemComments: mock.comments, mutateVaultItemComments: mock.commentWrite, moveVaultTextpack: mock.move, deleteVaultTextpack: mock.remove, listVaultTrash: mock.trash, restoreVaultTextpack: mock.restore }));
+const mock = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), identity: vi.fn(), grants: vi.fn(), user: vi.fn(), owner: vi.fn(), preview: vi.fn(), search: vi.fn(), comments: vi.fn(), commentWrite: vi.fn(), move: vi.fn(), remove: vi.fn(), trash: vi.fn(), restore: vi.fn(), template: vi.fn(), mutate: vi.fn() }));
+vi.mock("@/lib/store", () => ({ getUserIdBySub: mock.user, getOwnedBlog: async () => ({ handle: "owner", name: "Files" }), getBlog: async () => ({ handle: "owner", name: "Files" }), getBlogEditRecord: mock.owner, listVaultTextpacks: mock.list, readVaultTextpack: mock.read, readVaultTextpackIdentity: mock.identity, readVaultPreview: mock.preview, searchVaultTextpacks: mock.search, listVaultItemComments: mock.comments, mutateVaultItemComments: mock.commentWrite, moveVaultTextpack: mock.move, deleteVaultTextpack: mock.remove, listVaultTrash: mock.trash, restoreVaultTextpack: mock.restore, readVaultTemplate: mock.template, mutateVaultDocument: mock.mutate }));
 vi.mock("@/lib/vault/grants", () => ({ activeVaultGrants: mock.grants, roleForVaultFolder: (grants: { folder?: string; role?: string }[], folder: string) => grants.find(g => g.folder === folder)?.role ?? null, roleForVaultItem: (grants: { id: string; role?: string }[], id: string) => { const grant = grants.find(g => g.id === id); return grant ? grant.role ?? "viewer" : null; } }));
 vi.mock("../vault-agent-presence", () => ({ withVaultAgentPresence: async (context: {authorize: (path: string) => Promise<void>}, action: () => Promise<unknown>) => { await context.authorize("Notes/Note.textpack"); return action(); } }));
 vi.mock("@/auth", () => ({ auth: vi.fn(), isAuthConfigured: () => false }));
@@ -34,7 +34,7 @@ describe("canonical file MCP read adapter", () => {
     const { listTools, callTool } = await import("../registry");
     expect(result(await executeMcpTool("read_item", { id }, { authInfo: auth })).item.id).toBe(id);
     expect(result(await runWorkspaceToolForAuth("list_folders", {}, { authInfo: auth })).folders.map((folder: { path: string }) => folder.path)).toEqual(["Notes", "Private"]);
-    expect(listTools().map((tool) => tool.name)).toEqual(["get_workspace", "list_folders", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item"]);
+    expect(listTools().map((tool) => tool.name)).toEqual(["get_workspace", "list_folders", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template"]);
     expect((await callTool("delete_item", { id }, { authInfo: { ...auth, scopes: ["sync"] } })).isError).toBe(true);
     const update = listTools().find((tool) => tool.name === "update_item")!;
     expect(update.inputSchema.properties).not.toHaveProperty("markdown");
@@ -66,6 +66,19 @@ describe("canonical file MCP read adapter", () => {
     mock.move.mockImplementationOnce(async input => { mock.grants.mockResolvedValue([]); await input.beforeCommit(input.basePath); throw new Error("unreachable"); });
     expect((await executeMcpTool("move_item", input, { authInfo: editor })).isError).toBe(true);
     expect((await executeMcpTool("delete_item", { id, path: input.path, if_match_hash: input.if_match_hash, idempotency_key: "delete" }, { authInfo: { ...editor, scopes: [`item:${id}:edit`] } })).isError).toBe(true);
+  });
+  it("dispatches file template listing/apply and fences read-only callers", async () => {
+    const { executeMcpTool } = await import("../tools");
+    const list = await executeMcpTool("list_document_templates", {}, { authInfo: auth });
+    expect(list.isError, JSON.stringify(list)).not.toBe(true);
+    expect(result(list).templates.some((entry: { definition: { id: string } }) => entry.definition.id === "texttext.note")).toBe(true);
+    const input = { id, template_id: "texttext.note", if_match_hash: "a".repeat(64), idempotency_key: "template-once" };
+    expect((await executeMcpTool("set_item_template", input, { authInfo: auth })).isError).toBe(true);
+    expect(mock.mutate).not.toHaveBeenCalled();
+    mock.mutate.mockImplementation(async input => { await input.beforeCommit("Notes/Note.textpack"); return { status: "written", itemId: input.itemId }; });
+    const applied = await executeMcpTool("set_item_template", input, { authInfo: { ...auth, scopes: ["sync"], extra: { ...auth.extra, userId: "owner", connectionId: "connection" } } });
+    expect(applied.isError, JSON.stringify(applied)).not.toBe(true);
+    expect(mock.mutate.mock.calls[0][0]).toMatchObject({ expectedRevision: input.if_match_hash, presentation: { definition: { id: "texttext.note" } } });
   });
   it("lists current authorized tombstones and restores through the public catalog", async () => {
     const { executeMcpTool } = await import("../tools");

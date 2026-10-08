@@ -209,7 +209,8 @@ export async function createWindowsVaultTransport(view: NativeView) {
     if (method === "collaborationCheckpoint") {
       const pack = await read(String(params.itemId), signal);
       if (pack.file.hash !== params.hash) throw new VaultError("This file changed outside the editor.", "local_changed");
-      const data = base64(encodePack(pack, { ...pack.file, markdown: String(params.markdown), documentJSON: String(params.documentJSON) }));
+      const journal = JSON.parse(String(params.journal)) as { presentation?: { templateJSON: string | null; templateAuthoringSourceJSON: string | null } };
+      const data = base64(encodePack(pack, { ...pack.file, ...journal.presentation, markdown: String(params.markdown), documentJSON: String(params.documentJSON) }));
       return rpc.request("collaboration.checkpoint", { ...params, data }, signal);
     }
     if (["collaborationOpen", "collaborationClose", "collaborationRecover"].includes(method)) return rpc.request(`collaboration.${method.slice("collaboration".length).toLowerCase()}`, params, signal);
