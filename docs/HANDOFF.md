@@ -8,7 +8,7 @@
 - Windows: product source **04c265c7**, installed in the existing location.
   Build, actual startup/search, snippet save/insert/reopen and passive Mac edit
   delivery passed. [Receipt](verification/2026-10-07-windows-shared-1183.md).
-- Oracle: **texttext-oracle-20261008T053344Z-25e439c0**. All twelve production
+- Oracle: **texttext-oracle-20261008T054121Z-ccf675f8**. All thirteen production
   HTTP smoke checks passed. Algorave services and shared proxy were preserved.
 - Actual Mac deletion/restoration, same-ID Safari reading, direct CLI editing,
   web editing and passive Windows convergence passed without manual refresh.
@@ -33,13 +33,14 @@
   configured, so live model execution is not attested.
 - Duplicate-Yjs packaging root cause is fixed and deployed. Live alias and
   constructor identity passed; startup warning is absent.
-- `25e439c0` is deployed with the Yjs repair. Expanded folder smoke exposed the
-  native allowlist rejecting create_folder; `ef18a85f` fixes it with real route
-  regression. Failed smoke scratch cleanup was verified (zero scratch blogs).
-- `e758c989` implements agent template creation/save-look as validated TextPacks.
-  Frozen `ccf675f8` passed 475 core tests, TypeScript and native gates. Its Oracle
-  deployment is running: `/tmp/texttext-oracle-ccf675f8.log`; verify completion
-  and expanded live smoke before claiming these commands shipped.
+- Native folder-route correction is deployed and expanded live smoke passed,
+  including empty folder creation, durable retry and audit uniqueness.
+- `ccf675f8` is deployed: 475 core tests, TypeScript, native gates and 13 live
+  checks passed. CLI template creation and identical retry passed; Research note
+  synced into the Mac template picker. Creating an item from it omitted starter
+  text despite stored starter/example body. Shared creation fix is underway.
+- `b54dd129` adds immutable template-version updates; 31 focused checks passed,
+  not yet deployed. Preserve old pinned documents during updates.
 - Standalone CLI `ccf675f8` is installed; 106 tests passed. Real commands and
   get_workspace now work while local file reads remain unchanged.
   [Receipt](verification/2026-10-07-cli-account-commands.md).

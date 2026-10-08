@@ -71,3 +71,20 @@ Expanded scratch smoke from `2b2503d6` then exposed HTTP 400 for create_folder:
 the native route's allowlist still excludes the new command. This is an
 integration failure requiring correction, despite the passing engine tests.
 Log: `/tmp/texttext-folder-live-smoke.log`. No user document was involved.
+
+## Folder route and template authoring deployment
+
+Oracle `texttext-oracle-20261008T054121Z-ccf675f8` passed 13 live checks,
+including the expanded empty-folder creation/retry/audit check. Frozen source
+passed 475 core tests and native gates. Logs:
+`/tmp/texttext-sync-ccf675f8.log`, `/tmp/texttext-oracle-ccf675f8.log`.
+
+Installed CLI created Research note as template item
+`889cf205-c18e-4a67-8153-4be1d2576c98`, then returned an identical receipt on
+same-key retry. Its TextPack arrived on Mac, retaining template.json and
+template-source.json, and appeared in the actual New from template picker.
+
+Creating an item from it exposed missing starter text. The resulting dedicated
+`Notes/Untitled 4.textpack` is saved as Research template verification 1183;
+its body was not filled manually. This creation-flow defect remains open.
+Template creation is not claimed fully accepted until that path is repaired.
