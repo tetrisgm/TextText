@@ -23,6 +23,7 @@ export function planFolderMove(input: {
   grants: readonly FolderMoveGrant[];
 }) {
   const source = folder(input.source), destination = folder(input.destination);
+  const grants = input.grants.map(grant => ({ ...grant, email: grant.email.trim().toLowerCase() }));
   const canonical = (value: string) => value.normalize("NFC").toLowerCase();
   if (within(canonical(destination), canonical(source)) || canonical(source) === canonical(destination)) throw Error("Destination must be outside the source folder");
   if (!/^[a-f0-9]{64}$/.test(input.manifestRevision)) throw Error("Invalid manifest revision");
@@ -35,18 +36,18 @@ export function planFolderMove(input: {
   const items = input.items.filter(item => within(item.relativePath, source)).map(item => ({ ...item, destination: rebase(item.relativePath) })).sort((a,b) => a.itemId.localeCompare(b.itemId));
   // Descendant shares follow the same directory objects. Ancestor inheritance
   // is materialized on the moved root so moving out cannot remove access.
-  const movedGrants = input.grants.filter(grant => within(grant.path, source)).map(grant => ({ ...grant, destination: rebase(grant.path) }));
-  const sourceInherited = input.grants.filter(grant => grant.path !== source && within(source, grant.path));
+  const movedGrants = grants.filter(grant => within(grant.path, source)).map(grant => ({ ...grant, destination: rebase(grant.path) }));
+  const sourceInherited = grants.filter(grant => grant.path !== source && within(source, grant.path));
   const retainedAccess = new Map<string, FolderMoveGrant>();
-  for (const grant of [...sourceInherited, ...input.grants.filter(grant => grant.path === source)]) {
+  for (const grant of [...sourceInherited, ...grants.filter(grant => grant.path === source)]) {
     const old = retainedAccess.get(grant.email);
     if (!old || rank[old.role] < rank[grant.role]) retainedAccess.set(grant.email, grant);
   }
   const preserveInherited = sourceInherited.filter(grant => retainedAccess.get(grant.email)?.id === grant.id)
     .map(grant => ({ ...grant, destination }));
-  const addedAccess = input.grants.filter(grant => within(destination, grant.path) && !within(grant.path, source))
+  const addedAccess = grants.filter(grant => within(destination, grant.path) && !within(grant.path, source))
     .filter(grant => !retainedAccess.has(grant.email) || rank[retainedAccess.get(grant.email)!.role] < rank[grant.role])
     .map(grant => ({ email: grant.email, role: grant.role, via: grant.path }));
-  const grantsFingerprint = createHash("sha256").update(JSON.stringify([...input.grants].sort((a,b) => a.id.localeCompare(b.id)))).digest("hex");
+  const grantsFingerprint = createHash("sha256").update(JSON.stringify([...grants].sort((a,b) => a.id.localeCompare(b.id)))).digest("hex");
   return { source, destination, manifestRevision: input.manifestRevision, grantsFingerprint, folders, items, movedGrants, preserveInherited, addedAccess };
 }
