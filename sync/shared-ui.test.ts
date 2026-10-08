@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -19,8 +19,35 @@ function assertSharedEntry(source: string) {
   expect(entry.rendered).toContain("VaultApp");
   expect(entry.imports.filter(path => /(?:DocumentEditor|DocumentGrid|DocumentRenderer|StoryDisplay|NoteDisplay)$/.test(path))).toEqual([]);
 }
+function misplacedClientDirective(source: string) {
+  const file = ts.createSourceFile("component.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let inPrologue = true;
+  for (const statement of file.statements) {
+    const literal = ts.isExpressionStatement(statement) && ts.isStringLiteral(statement.expression)
+      ? statement.expression.text : null;
+    if (literal === "use client" && !inPrologue) return true;
+    if (literal === null) inPrologue = false;
+  }
+  return false;
+}
+function componentFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = `${directory}/${entry.name}`;
+    return entry.isDirectory() ? componentFiles(path) : /\.[jt]sx?$/.test(entry.name) ? [path] : [];
+  });
+}
 
 describe("shared product UI boundary", () => {
+  it("keeps shared components valid for Next as well as native bundlers", () => {
+    const invalid = ["src/local-vault", "src/components/document"].flatMap(componentFiles)
+      .filter(path => misplacedClientDirective(read(path)));
+    expect(invalid, "Client directives must precede imports, even when native bundling accepts them").toEqual([]);
+  });
+  it("detects the import-before-directive regression without rejecting comments or directive prologues", () => {
+    expect(misplacedClientDirective('import { Icon } from "./Icon"; "use client";')).toBe(true);
+    expect(misplacedClientDirective('// shared component\n"use strict"; "use client"; import { Icon } from "./Icon";')).toBe(false);
+    expect(misplacedClientDirective('const help = "use client";')).toBe(false);
+  });
   it.each(["main.tsx", "windows-main.tsx", "WebVault.tsx"])("%s mounts the common app, without a parallel product renderer", entry => {
     assertSharedEntry(read(`src/local-vault/${entry}`));
   });
