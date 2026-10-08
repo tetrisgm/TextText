@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Shared folder-control preparation: durable proposals now retain human versus
+  agent initiation through approval/retry; reviewed folder execution records
+  human actions correctly instead of always marking an external agent. Proposal
+  suite passed 35 tests, boundary attribution passed 3 and TypeScript passed.
+  The boundary test is included in the core gate. Folder menu/transport wiring
+  remains pending; no install/deployment is claimed.
+
 - Active-editor remote-move regressions passed: 32 Mac sync tests, 14 Mac
   shared-editing tests and 174 Windows core assertions. Pending shared projection
   remains protected across restart; acknowledged bytes adopt the remote path

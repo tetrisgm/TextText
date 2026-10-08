@@ -3,7 +3,7 @@ import { getBlogEditRecord, getUserIdBySub, moveVaultFolder, previewVaultFolderM
 import { validateFolderMoveReview } from "./folder-move-review";
 import type { FrozenFolderMovePreview } from "@/lib/ai/write-proposal-preview";
 
-type Actor = { sub: string; userId: string | null; handle: string; receiptOnly?: boolean };
+type Actor = { sub: string; userId: string | null; handle: string; receiptOnly?: boolean; actorType?: "human" | "ai" | "external_agent" };
 export type ApprovedFolderMove = { review: FrozenFolderMovePreview; accessAcknowledged: boolean };
 
 async function commandLocation(actor: Actor) {
@@ -34,7 +34,7 @@ export async function executeApprovedFolderMove(actor: Actor, args: Record<strin
   const location = await commandLocation(actor);
   return moveVaultFolder({ ...location, ...review,
     operationId: createHash("sha256").update(`${actor.userId}:move_folder_tree:${args.idempotency_key}`).digest("hex"),
-    actorType: "external_agent", reviewedAccessExpansion: approved.accessAcknowledged,
+    actorType: actor.actorType === "human" ? "human" : "external_agent", reviewedAccessExpansion: approved.accessAcknowledged,
     receiptOnly: actor.receiptOnly,
   });
 }

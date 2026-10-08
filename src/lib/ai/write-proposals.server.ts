@@ -34,7 +34,7 @@ export type WorkspaceWriteProposalActor = {
   handle: string;
   connectionId?: string;
   runId?: string;
-  actorType?: "ai" | "external_agent";
+  actorType?: "human" | "ai" | "external_agent";
 };
 
 type WorkspaceWriteProposalStatus =
@@ -176,10 +176,11 @@ function proposalAudit(
   actionName: string,
   proposalId: string,
   summary: string,
+  proposedActorType: "human" | "ai" | "external_agent" = "ai",
 ) {
   return {
     actorUserId,
-    actorType: actionName === "ai.write_proposed" ? "ai" as const : "human" as const,
+    actorType: actionName === "ai.write_proposed" ? proposedActorType : "human" as const,
     actionName,
     targetType: "mode" as const,
     targetId: proposalId,
@@ -248,6 +249,7 @@ export const databaseWorkspaceWriteProposalRepository: WorkspaceWriteProposalRep
           "ai.write_proposed",
           proposal.id,
           proposal.toolName,
+          proposal.metadata?.agentActorType === "human" ? "human" : proposal.metadata?.agentActorType === "external_agent" ? "external_agent" : "ai",
         ),
         database,
       ),
@@ -747,7 +749,7 @@ export async function decideWorkspaceWriteProposal(
 
   try {
     const executionActor = { ...input.actor, approvedFolderMove, receiptOnly, runId: claimed.id,
-      actorType: claimed.metadata?.agentActorType === "external_agent" ? "external_agent" as const : "ai" as const,
+      actorType: claimed.metadata?.agentActorType === "human" ? "human" as const : claimed.metadata?.agentActorType === "external_agent" ? "external_agent" as const : "ai" as const,
       connectionId: typeof claimed.metadata?.agentConnectionId === "string"
         ? claimed.metadata.agentConnectionId : `assistant:${claimed.actorUserId}` };
     const result = await dependencies.execute(

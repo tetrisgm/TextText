@@ -180,19 +180,20 @@ async function createCapture(
 }
 
 describe("workspace write proposals", () => {
-  it("stages the authoritative folder review and executes only that stored plan after acknowledgement", async () => {
+  it.each(["human", "ai", "external_agent"] as const)("preserves %s attribution and stages the authoritative folder review and executes only that stored plan after acknowledgement", async (actorType) => {
     const h = harness();
+    const initiatingActor = { ...owner, actorType };
     const review = freezeFolderMoveReview(planFolderMove({source:"Source",destination:"Archive/Moved",manifestRevision:"a".repeat(64),folders:["Source","Source/Empty","Archive"],items:[],grants:[{id:"destination",path:"Archive",signature:"folder",email:"editor@example.com",role:"editor"}]}));
     h.dependencies.resolveFolderMove = vi.fn(async () => review);
-    const proposal = await createWorkspaceWriteProposal({actor:owner,tool:"move_folder_tree",arguments:{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:"agent-key"}},h.dependencies);
-    expect(h.dependencies.resolveFolderMove).toHaveBeenCalledExactlyOnceWith(owner,{source:"Source",destination:"Archive/Moved"});
+    const proposal = await createWorkspaceWriteProposal({actor:initiatingActor,tool:"move_folder_tree",arguments:{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:"agent-key"}},h.dependencies);
+    expect(h.dependencies.resolveFolderMove).toHaveBeenCalledExactlyOnceWith(initiatingActor,{source:"Source",destination:"Archive/Moved"});
     expect(proposal.summary).toContain("editor@example.com (editor)");
     expect(h.execute).not.toHaveBeenCalled();
     expect(await getWorkspaceWriteProposalForReview(owner,proposal.id,h.dependencies)).toMatchObject({workspaceUrl:"/vault/blog-1",additionalAccess:review.plan.addedAccess});
     expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies)).toMatchObject({status:"failed"});
     expect(h.repository.rows.get(proposal.id)?.status).toBe("pending");
     expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve",acknowledgeAccessExpansion:true},h.dependencies)).toMatchObject({status:"completed"});
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith("move_folder_tree",{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:`proposal:${proposal.id}`},expect.objectContaining({approvedFolderMove:{review,accessAcknowledged:true},receiptOnly:false}));
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith("move_folder_tree",{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:`proposal:${proposal.id}`},expect.objectContaining({actorType,approvedFolderMove:{review,accessAcknowledged:true},receiptOnly:false}));
     expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies)).toMatchObject({status:"completed"});
     expect(h.execute).toHaveBeenCalledOnce();
   });
