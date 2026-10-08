@@ -45,8 +45,14 @@
   stored review without execution. Regression is included in `npm run test:db`:
   `src/lib/ai/__tests__/proposal-staging.db.test.ts`. Receipt:
   `/tmp/texttext-proposal-staging-postgres.log`; TypeScript passed.
-  Frozen release gates and installed-client retry verification remain before
-  rollout.
+  Frozen source `9b9a218e` passed all 809 core tests in 86 files, TypeScript
+  and native sync gates. Exact-source receipts are in the clean candidate at
+  `/private/tmp/texttext-candidate-1195-5ELVuo/.texttext/sync/`; log:
+  `/tmp/texttext-staging-frozen-9b9a218e-gates.log`.
+  Mac 0.204 (1199) build is running (session 47779), log
+  `/tmp/texttext-mac1199-build.log`. It is not installed yet. Installed-client
+  retry verification and Oracle rollout remain. PC process 44968 still runs;
+  unsaved state has not been established.
 
 - Mac 1197 installs durable native folder-catalog reconciliation. Frozen core
   (795 tests) and native gates passed. Live reviewed move
