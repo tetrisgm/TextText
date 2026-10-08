@@ -65,7 +65,19 @@ Completed source changes, not yet deployed:
   transaction; lost-response append retry returns exactly once. 28 focused
   tests and TypeScript passed. Hosted dispatch/catalog wiring is in progress.
 
-Current work: finish hosted agent dispatch, resources and attributed presence,
+- `a1a818f3`: hosted agent presence has independent command sessions,
+  reauthorized heartbeats and crash expiry; six tests passed.
+- `c4878255`, `1edeae85`: resource guidance and CLI discovery use the file
+  contract; CLI cannot stage SQL proposals. Resource tests, 36 CLI/auth tests
+  and scoped lint passed.
+
+Current work: finish unconditional hosted file dispatch and source-bound gates.
+The file agent catalog currently exposes eight commands (workspace/folders,
+list/read/search, create/update/append). The other tools in the old registry
+remain feature-parity work, not completed features: sharing/comments, file and
+folder operations, templates, assets, reading and change history. Do not call
+the reduced catalog full agent parity. Capture/full-Markdown creation support
+is being restored on the file path. Then
 then exact-source gates, builds and deployment. The broader suite passed 4,413
 checks with 149 skips; its only two failures were then-in-progress mutation
 mocks, subsequently replaced and passing in the focused run above. `d09bfdf4` is the read
