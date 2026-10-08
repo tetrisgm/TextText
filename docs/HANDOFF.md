@@ -29,13 +29,20 @@
   Graceful server shutdown wakes read polls while preserving writes; the fresh
   compiled production probe exited cleanly in 6.043 seconds.
   [Shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
-- Bounded performance diagnosis against current shared file-vault production
-  code is running. Preserve prior measurements and avoid legacy SQL UI harnesses.
+- Shared reader fastpath `428fa881` removes a measured plain-paragraph parser
+  hotspot; component checks passed. Integrated route remeasurement awaits the
+  next build. Status/presence-driven rendering is being checked separately.
+  [Performance evidence](verification/2026-10-07-file-vault-bounded-performance.md).
+- Web Add agent/bookmark entrypoints are fixed in `2be649c8` with browser
+  targeting/no-auto-send checks. These changes are not installed/deployed yet.
+- Agent create-from-template is in progress. Web approval currently rejects
+  template create/update because durable tool registration and canonical parser
+  defaults disagree; a separate fix and receipt-recovery tests are in progress.
 - Standalone CLI `ccf675f8` remains installed; 106 tests passed. Real account
   commands and live template create/update/retry work while local reads remain
   offline. [CLI receipt](verification/2026-10-07-cli-account-commands.md).
-- Canonical templates, shared provider Settings, attributed agent presence and
-  durable approval recovery are implemented. No web provider is configured,
+- Shared provider Settings and attributed agent presence are implemented.
+  No web provider is configured,
   so live model execution is not attested.
 
 Keep one canonical file system and shared UI/editor/sync implementation across
