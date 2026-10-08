@@ -70,6 +70,17 @@
   error. Opening the editor before approval may have created a competing local
   checkpoint/outbox, so inspect native pending-path reconciliation before UI-only
   changes. No unsaved text was typed in this check. Preserve the retained file.
+  Source trace: `LocalVaultSync.sharedProtection` returns true for a live session
+  or pending checkpoint, and the main item loop skips before remote-path
+  reconciliation. `VaultEditor` renders read-only when its selected old path
+  loses edit capability. A path-only UI patch cannot resolve the retained file.
+  Next implement identity-preserving session/file path rebasing in both native
+  adapters, keeping token, journal generation, pending update/receipt IDs and
+  content; then reconcile the selected editor path without losing draft state.
+  Cover clean and pending shared sessions, concurrent direct edits, duplicate
+  identity/destination collisions, restart recovery and permission revocation.
+  Private app-group sync state is unreadable from the unentitled shell; no
+  state files were changed or access protection bypassed during diagnosis.
   Installed-client retry verification remains. PC process 44968 still runs;
   unsaved state has not been established.
 
