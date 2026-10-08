@@ -2,7 +2,12 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1210)**, source `c32f920b`.
+- Mac `/Applications/TextText.app`: **0.204 (1211)**, source `626f965c`.
+  Actual folder agent inherited its custom default; ZIP identity/content,
+  editor save, saved-body search and reopen passed.
+  [1211 receipt](verification/2026-10-08-mac-1211.md).
+  Assistant retained authorization required clicking Connect Codex to discover
+  it; automatic startup discovery remains a follow-up.
   Actual Save as look now passes on a receipt-bearing note: exact content,
   fresh identity, no inherited receipts, original receipt retained.
   [1210 receipt](verification/2026-10-08-mac-1210.md).
