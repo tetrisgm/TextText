@@ -73,11 +73,13 @@ interface Intent {
   commentAction?: "vault.comment.create" | "vault.comment.reply" | "vault.comment.resolve" | "vault.comment.reopen";
   publicationAction?: "vault.publish" | "vault.unpublish";
 }
+export type VaultFolderResult = { status: "folder_created"; relativePath: string };
+interface FolderIntent { kind: "create_folder"; workspaceId: string; operationId: string; relativePath: string; requestHash: string; audit: NonNullable<VaultWrite["audit"]> }
 export interface VaultMutationReceipt {
   workspaceId: string; operationId: string;
   actorUserId: string; actorType: "human" | "external_agent";
   actionName?: Intent["commentAction"] | Intent["publicationAction"];
-  result: VaultWriteResult | VaultEntryResult;
+  result: VaultWriteResult | VaultEntryResult | VaultFolderResult;
 }
 interface Receipt<T = VaultWriteResult | VaultEntryResult> { requestHash: string; result: T; mutation?: VaultMutationReceipt }
 
@@ -390,7 +392,7 @@ async function apply(layout: Layout, intent: Intent, pendingDir: string): Promis
   return result;
 }
 
-async function deliverReceipt(layout: Layout, receipt: Receipt): Promise<void> {
+async function deliverReceipt(layout: Layout, receipt: Receipt<unknown>): Promise<void> {
   if (!receipt.mutation) return;
   if (!layout.onReceipt) throw new Error("Vault mutation requires its audit sink");
   await layout.onReceipt(receipt.mutation);
@@ -664,8 +666,9 @@ async function recover(layout: Layout): Promise<void> {
     const saved = await maybeRead(path.join(pendingDir, "intent.json"));
     // A payload without a committed intent never changed a visible document.
     if (!saved) { await fs.rm(pendingDir, { recursive: true }); continue; }
-    const intent = JSON.parse(saved.toString()) as Intent | EntryIntent | RestoreIntent;
-    if ("kind" in intent && intent.kind === "restore") await applyRestore(layout, intent, pendingDir);
+    const intent = JSON.parse(saved.toString()) as Intent | EntryIntent | RestoreIntent | FolderIntent;
+    if ("kind" in intent && intent.kind === "create_folder") await applyFolder(layout, intent, pendingDir);
+    else if ("kind" in intent && intent.kind === "restore") await applyRestore(layout, intent, pendingDir);
     else if ("kind" in intent) await applyEntry(layout, intent, pendingDir);
     else await apply(layout, intent, pendingDir);
   }
@@ -1704,6 +1707,73 @@ export async function readVaultTemplate(input: VaultLocation & { itemId: string 
     if (source) result.templateAuthoringSourceJSON = JSON.stringify(source);
   }
   return result;
+}
+
+/** Folder commands share the file engine lock, durable intent and audited receipt. */
+async function existingFolder(layout: Layout, relativePath: string): Promise<string> {
+  let current = layout.workspace;
+  for (const part of relativePath ? relativePath.split("/") : []) {
+    current = path.join(current, part);
+    const info = await fs.lstat(current);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Parent folder is unavailable");
+  }
+  return current;
+}
+async function applyFolder(layout: Layout, intent: FolderIntent, pendingDir: string): Promise<VaultFolderResult> {
+  const receiptPath = path.join(layout.receipts, `${segment(intent.operationId)}.json`);
+  const saved = await maybeRead(receiptPath);
+  if (saved) {
+    const receipt = JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;
+    if (receipt.requestHash !== intent.requestHash) throw new Error("Operation id was reused");
+    await deliverReceipt(layout, receipt);
+    await fs.rm(pendingDir, { recursive: true });
+    return receipt.result;
+  }
+  packPath(`${intent.relativePath}/placeholder.textpack`);
+  const slash = intent.relativePath.lastIndexOf("/");
+  const parent = await existingFolder(layout, slash < 0 ? "" : intent.relativePath.slice(0, slash));
+  const name = intent.relativePath.slice(slash + 1);
+  if ((await fs.readdir(parent)).some(entry => entry !== name && entry.normalize("NFC").toLowerCase() === name.normalize("NFC").toLowerCase())) throw new Error("Folder destination is occupied");
+  await directory(parent, name);
+  await syncDirectory(parent);
+  const result: VaultFolderResult = { status: "folder_created", relativePath: intent.relativePath };
+  const receipt: Receipt<VaultFolderResult> = { requestHash: intent.requestHash, result,
+    mutation: { workspaceId: intent.workspaceId, operationId: intent.operationId, ...intent.audit, result } };
+  await atomicWrite(receiptPath, json(receipt));
+  await deliverReceipt(layout, receipt);
+  await fs.rm(pendingDir, { recursive: true });
+  await syncDirectory(layout.pending);
+  return result;
+}
+export async function createVaultFolder(input: VaultLocation & { operationId: string; relativePath: string; audit: NonNullable<VaultWrite["audit"]>; beforeCommit: (path: string) => Promise<void> }): Promise<VaultFolderResult> {
+  if (!input.onReceipt) throw new Error("Vault mutation requires its audit sink");
+  segment(input.operationId); packPath(`${input.relativePath}/placeholder.textpack`);
+  if (input.relativePath.split("/").some(part => part.toLowerCase().endsWith(".textpack") || /[?*"<>|]/.test(part) || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw new Error("Invalid folder path");
+  const requestHash = hash(json(["create_folder", input.relativePath, input.audit]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    // Authorization precedes replay as well as any new directory mutation.
+    await input.beforeCommit(input.relativePath);
+    if (!input.receiptOnly) await recover(layout);
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
+    const slash = input.relativePath.lastIndexOf("/");
+    const parent = await existingFolder(layout, slash < 0 ? "" : input.relativePath.slice(0, slash));
+    const name = input.relativePath.slice(slash + 1);
+    if ((await fs.readdir(parent)).some(entry => entry.normalize("NFC").toLowerCase() === name.normalize("NFC").toLowerCase())) throw new Error("Folder destination is occupied");
+    await input.beforeCommit(input.relativePath);
+    const pendingDir = await directory(layout.pending, input.operationId);
+    const intent: FolderIntent = { kind: "create_folder", workspaceId: input.workspaceId, operationId: input.operationId, relativePath: input.relativePath, requestHash, audit: input.audit };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return applyFolder(layout, intent, pendingDir);
+  });
 }
 
 /** Provision ordinary empty directories without replacing existing content. */

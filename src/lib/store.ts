@@ -4,6 +4,7 @@ import { searchVaultPack } from "./vault/pack-search.server";
 // Fresh file vault access shares the application's content boundary. Callers
 // must authorize the workspace and supply its trusted server root first.
 import {
+  createVaultFolder as createDirectoryFolder,
   readVaultTextpack as readDirectoryTextpack,
   readVaultTextpackPath as readDirectoryTextpackPath,
   readVaultTextpackIdentity as readDirectoryTextpackIdentity,
@@ -65,11 +66,11 @@ async function recordVaultReceipt(receipt: VaultMutationReceipt): Promise<void> 
     id,
     actorUserId: receipt.actorUserId,
     actorType: receipt.actorType,
-    actionName: receipt.actionName ?? ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete", restored: "vault.restore" })[receipt.result.status],
-    targetType: "item",
-    targetId: receipt.actionName ? `${receipt.workspaceId}:${receipt.result.itemId}` : receipt.result.itemId,
+    actionName: receipt.actionName ?? ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete", restored: "vault.restore", folder_created: "vault.folder.create" })[receipt.result.status],
+    targetType: receipt.result.status === "folder_created" ? "folder" : "item",
+    targetId: receipt.result.status === "folder_created" ? `${receipt.workspaceId}:${receipt.result.relativePath}` : receipt.actionName ? `${receipt.workspaceId}:${receipt.result.itemId}` : receipt.result.itemId,
     inputSummary: `operation ${receipt.operationId}`,
-    outputSummary: `revision ${receipt.result.revision ?? "none"}`,
+    outputSummary: receipt.result.status === "folder_created" ? `folder ${receipt.result.relativePath}` : `revision ${receipt.result.revision ?? "none"}`,
   }).onConflictDoNothing({ target: actionAudit.id });
 }
 
@@ -8457,4 +8458,9 @@ export function mutateVaultDocument(input: Omit<VaultLocation, "onReceipt"> & {
 }) {
   if (!db) throw new Error(NO_DATABASE);
   return mutateDirectoryDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
+
+export function createVaultFolder(input: Omit<Parameters<typeof createDirectoryFolder>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return createDirectoryFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
 }

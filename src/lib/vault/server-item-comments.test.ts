@@ -16,7 +16,7 @@ describe("file-backed vault comments", () => {
   let root: string;
   const workspaceId = "workspace-1", itemId = "item-1", relativePath = "Notes/Shared.textpack";
   const actor = { userId: randomUUID(), name: "Ava", type: "human" as const };
-  const onReceipt = vi.fn(async (receipt: VaultMutationReceipt) => { expect(receipt.result.itemId).toBe(itemId); });
+  const onReceipt = vi.fn(async (receipt: VaultMutationReceipt) => { expect("itemId" in receipt.result && receipt.result.itemId).toBe(itemId); });
   const location = () => ({ root, workspaceId, itemId, onReceipt });
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-vault-comments-"));

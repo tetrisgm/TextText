@@ -1081,7 +1081,8 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
       "Create a subfolder under an existing folder path; it inherits the parent's mode and privacy.",
     inputSchema: z
       .object({
-        parent_path: folderPath.describe("The existing parent folder path."),
+        parent_path: z.union([folderPath, z.literal("")]).describe("The existing parent folder path."),
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
         name: z
           .string()
           .trim()

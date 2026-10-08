@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AuthInfo, CallToolResult } from "./types";
 import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-agent-access";
 import { getOwnedBlog, getBlog, getBlogEditRecord, getUserIdBySub, listVaultTextpacks, readVaultTextpack, readVaultTextpackIdentity, readVaultPreview, searchVaultTextpacks, listVaultTrash } from "@/lib/store";
@@ -116,6 +116,25 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
       if (role !== "editor") throw new Error("Item editing is not allowed.");
     };
     try {
+      if (name === "create_folder") {
+        const { createVaultFolder } = await import("@/lib/store");
+        const parent = typeof args.parent_path === "string" ? args.parent_path : "";
+        const name = typeof args.name === "string" ? args.name : "";
+        if (!name || /[\\/\x00-\x1f:*?"<>|]/.test(name) || name.startsWith(".") || name.endsWith(".") || name.endsWith(" ") || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)) throw new Error("Invalid folder name.");
+        if (typeof args.idempotency_key !== "string" || !args.idempotency_key) throw new Error("A stable idempotency_key is required.");
+        const relativePath = parent ? `${parent}/${name}` : name;
+        const authorizeFolder = async () => {
+          if (itemScope) throw new Error("This connection can only access its granted item.");
+          const currentUser = await getUserIdBySub(sub as string);
+          const workspace = await getBlogEditRecord(blog.handle);
+          if (currentUser !== userId || workspace?.id !== location.workspaceId) throw new Error("Workspace access changed.");
+          if (workspace.ownerId !== currentUser && roleForVaultFolder(await activeVaultGrants({ ...location, userId }), parent) !== "editor") throw new Error("Folder editing is not allowed.");
+        };
+        await authorizeFolder();
+        return json(await createVaultFolder({ ...location, relativePath,
+          operationId: createHash("sha256").update(`${userId}:create_folder:${args.idempotency_key}`).digest("hex"),
+          actorUserId: userId, actorType, beforeCommit: authorizeFolder }));
+      }
       if (name === "move_item" || name === "delete_item" || name === "restore_item") {
         const { organizeVaultItem } = await import("./vault-organization");
         return json(await organizeVaultItem(name, args, { ...location, actorUserId: userId, actorType, authorize }));

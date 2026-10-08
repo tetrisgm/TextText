@@ -12,7 +12,7 @@ This is an intermediate backend, not completion of all agent functionality. Thes
 - Templates: `remix_item_type`, `create_item_type`, `update_item_type`, `save_item_as_look`, `set_folder_template`, `retire_document_template`.
 - History, publication and organization: `list_agent_changes`, `revert_agent_change`, `set_item_status`, `organize_items`, `delete_items`, `empty_trash`.
 - Assets and discussion: `add_item_asset`, `remove_item_asset`, `recapture_bookmark`, `list_responses`.
-- Folders and sharing: `create_folder`, `rename_folder`, `move_folder`, `delete_folder`, `restore_folder`, `list_access`, `set_access`, `revoke_access`.
+- Folders and sharing: `rename_folder`, `move_folder`, `delete_folder`, `restore_folder`, `list_access`, `set_access`, `revoke_access`.
 
 The narrowed schema also identifies the supported fields on implemented commands. Adding an operation requires the file store/audit boundary, current grant checks, concurrency and retry tests, then a catalog change. SQL-only fixtures are not evidence of file-backend parity.
 
@@ -37,3 +37,5 @@ Restore safety uses a reserved `texttext-lifecycle.json` archive entry plus its 
 Template listing reads built-ins and authorized `Templates/*.textpack` definitions. Applying a template requires the target hash and stable idempotency key; custom definitions additionally pin the source file identity/hash. The engine changes only presentation in the existing full-document Yjs session, preserves opaque entries, and rechecks target/source access under commit. Collaboration carries the validated definition in its durable journal so native checkpoints and offline reopening retain custom looks. Creating/remixing template definitions remains outside the hosted tool catalog.
 
 Approval recovery persists a server-generated command key with immutable arguments before execution. Only versioned canonical commands can resume an already-approved operation; pending/denied and older unversioned proposals never auto-execute. Concurrent recovery reuses the engine receipt and SQL completion only transitions the matching executing proposal. After expiry, recovery validates the exact command fingerprint and current authority in receipt-only mode; it never starts a new write. Missing receipts return expired. Adapter/receipt transport failures remain uncertain and retryable with the same proposal ID, because a file commit may already be durable.
+
+`create_folder` creates one filesystem directory under an existing parent (empty `parent_path` means workspace root). It requires a stable idempotency key, fresh parent editing authority, and the shared durable journal/audit receipt. Replaying a completed operation never recreates a subsequently removed directory. Folder metadata, rename and deletion remain outside the catalog.
