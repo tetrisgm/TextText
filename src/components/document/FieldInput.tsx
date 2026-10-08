@@ -13,20 +13,21 @@
 // case added here and nowhere else.
 
 import { MarkdownSurface, type SurfaceSelection } from "./MarkdownSurface";
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { DocumentFieldRow, DocumentFieldValue } from "@/lib/documents/model";
 import type {
   DocumentFieldDefinition,
   RowSubFieldDefinition,
 } from "@/lib/presentation/schema";
 import { statusWorkflowOptions } from "@/lib/presentation/workflow";
-import type { WorkspaceReferenceChoice } from "@/lib/presentation/workspace-reference-choices";
+import type { DocumentReferenceSource, WorkspaceReferenceChoice } from "@/lib/presentation/workspace-reference-choices";
 
 type FieldInputProps = {
   field: DocumentFieldDefinition;
   value: DocumentFieldValue | undefined;
   onChange: (value: DocumentFieldValue) => void;
   referenceChoices?: readonly WorkspaceReferenceChoice[];
+  documentReferences?: DocumentReferenceSource;
   onOpenReference?: (id: string) => void;
   disabled?: boolean;
   embedded?: boolean;
@@ -45,6 +46,7 @@ export function FieldInput({
   value,
   onChange,
   referenceChoices = [],
+  documentReferences,
   onOpenReference,
   disabled,
   embedded = false,
@@ -298,7 +300,7 @@ export function FieldInput({
           />
         );
       case "reference":
-        if (field.target === "document") return <DocumentReferenceInput field={field} value={value} choices={referenceChoices} disabled={disabled} onChange={onChange} onOpenReference={onOpenReference} />;
+        if (field.target === "document") return <DocumentReferenceInput field={field} value={value} choices={referenceChoices} source={documentReferences} disabled={disabled} onChange={onChange} onOpenReference={onOpenReference} />;
         // References store document/folder ids. A picker is a follow-up; the
         // id input keeps the value editable rather than trapped.
         return (
@@ -366,7 +368,8 @@ export function FieldInput({
   );
 }
 
-function DocumentReferenceInput({ field, value, choices, disabled, onChange, onOpenReference }: {
+function DocumentReferenceInput({ field, value, choices, source, disabled, onChange, onOpenReference }: {
+  source?: DocumentReferenceSource;
   onOpenReference?: (id: string) => void;
   field: Extract<DocumentFieldDefinition, { type: "reference" }>;
   value: DocumentFieldValue | undefined;
@@ -377,17 +380,65 @@ function DocumentReferenceInput({ field, value, choices, disabled, onChange, onO
   const picker = useRef<HTMLDetailsElement>(null);
   const [query, setQuery] = useState("");
   const selected = [...new Set((Array.isArray(value) ? value : value == null ? [] : [value]).filter((entry): entry is string => typeof entry === "string"))];
-  const byId = new Map(choices.map(choice => [choice.id, choice]));
-  const available = choices.filter(choice => !selected.includes(choice.id) && choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).slice(0, 50);
+  const [resolved, setResolved] = useState<WorkspaceReferenceChoice[]>([]);
+  const [results, setResults] = useState<WorkspaceReferenceChoice[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const lifetime = useRef<AbortController | null>(null);
+  const selectionRequest = useRef<AbortController | null>(null);
+  useEffect(() => { const controller = new AbortController(); lifetime.current = controller; return () => { controller.abort(); selectionRequest.current?.abort(); }; }, []);
+  const selectedKey = JSON.stringify(selected);
+  useEffect(() => {
+    if (!source) return;
+    const controller = new AbortController();
+    setResolved([]);
+    void (async () => {
+      const ids = JSON.parse(selectedKey) as string[];
+      for (let start = 0; start < Math.min(ids.length, 50); start += 4) {
+        const choices = await Promise.all(ids.slice(start, Math.min(start + 4, 50)).map(id => source.resolve(id, controller.signal).catch(() => null)));
+        if (controller.signal.aborted) return;
+        setResolved(previous => [...previous, ...choices.filter((choice): choice is WorkspaceReferenceChoice => choice !== null)]);
+      }
+    })();
+    return () => controller.abort();
+  }, [source, selectedKey]);
+  useEffect(() => {
+    if (!source || !query.trim()) { setResults([]); setLoading(false); return; }
+    const controller = new AbortController();
+    setLoading(true); setResults([]); setError("");
+    const timer = setTimeout(() => {
+      void source.search(query, controller.signal).then(value => { if (!controller.signal.aborted) setResults(value); })
+        .catch(() => { if (!controller.signal.aborted) setError("Items could not be searched. Try again."); })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 100);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [source, query]);
+  const byId = new Map([...choices, ...resolved].map(choice => [choice.id, choice]));
+  const available = (source ? results : choices).filter(choice => !selected.includes(choice.id) && choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).slice(0, 50);
   return <div className="tt-document-reference-input">
     {selected.map(id => <div key={id} className="tt-reference-selected">
       {byId.has(id) && onOpenReference ? <button type="button" onClick={() => onOpenReference(id)}>{byId.get(id)!.label}</button> : <span>{byId.get(id)?.label ?? "Unavailable item"}</span>}
       <button type="button" disabled={disabled} aria-label={`Remove ${byId.get(id)?.label ?? "unavailable item"}`} onClick={() => onChange(field.multiple ? selected.filter(value => value !== id) : null)}>Remove</button>
     </div>)}
-    <details ref={picker} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); picker.current?.removeAttribute("open"); picker.current?.querySelector("summary")?.focus(); setQuery(""); } }}><summary>{field.id === "parents" ? "Add parent" : "Choose item"}</summary>
+    <details ref={picker} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); selectionRequest.current?.abort(); setBusy(false); picker.current?.removeAttribute("open"); picker.current?.querySelector("summary")?.focus(); setQuery(""); } }}><summary>{field.id === "parents" ? "Add parent" : "Choose item"}</summary>
       <input type="search" aria-label="Find item" placeholder="Find an item" value={query} disabled={disabled} onChange={event => setQuery(event.target.value)} />
-      {available.map(choice => <button key={choice.id} type="button" disabled={disabled} onClick={() => { onChange(field.multiple ? [...selected, choice.id] : choice.id); setQuery(""); picker.current?.removeAttribute("open"); picker.current?.querySelector("summary")?.focus(); }}>{choice.label}</button>)}
-      {!available.length && <p>No matching items</p>}
+      {available.map(choice => <button key={choice.id} type="button" disabled={disabled || busy} onClick={() => { void (async () => {
+        selectionRequest.current?.abort();
+        const request = new AbortController(); selectionRequest.current = request;
+        setBusy(true); setError("");
+        try {
+          const resolvedChoice = source ? await source.resolve(choice.id, request.signal) : choice;
+          if (lifetime.current?.signal.aborted || request.signal.aborted) return;
+          if (selected.includes(resolvedChoice.id)) throw new Error("This item is already selected.");
+          setResolved(previous => [...previous, resolvedChoice]);
+          onChange(field.multiple ? [...selected, resolvedChoice.id] : resolvedChoice.id);
+          setQuery(""); picker.current?.removeAttribute("open"); picker.current?.querySelector("summary")?.focus();
+        } catch (reason) { if (!lifetime.current?.signal.aborted && !request.signal.aborted) setError(reason instanceof Error ? reason.message : "This item could not be selected."); }
+        finally { if (!lifetime.current?.signal.aborted && selectionRequest.current === request) setBusy(false); }
+      })(); }}>{choice.label}</button>)}
+      {loading ? <p role="status">Searching…</p> : !available.length && <p>{source && !query.trim() ? "Search for an item" : "No matching items"}</p>}
+      {error && <p role="alert">{error}</p>}
     </details>
   </div>;
 }

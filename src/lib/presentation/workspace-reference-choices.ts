@@ -4,6 +4,12 @@ export type WorkspaceReferenceChoice = {
   description?: string;
 };
 
+/** Search tokens become durable identities only after fresh resolution. */
+export type DocumentReferenceSource = {
+  search(query: string, signal: AbortSignal): Promise<WorkspaceReferenceChoice[]>;
+  resolve(token: string, signal: AbortSignal): Promise<WorkspaceReferenceChoice>;
+};
+
 type WorkspaceItemChoiceSource = {
   id: string;
   title: string;
@@ -30,4 +36,3 @@ export function workspaceReferenceChoices(
     }))
     .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
 }
-

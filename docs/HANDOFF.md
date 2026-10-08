@@ -27,6 +27,13 @@
 
 ## Current work
 
+- Live Mac 1193 acceptance found an empty parent picker: native listings provide
+  paths, not document IDs/titles. The shared picker now uses bounded search and
+  freshly resolves only the selected TextPack before saving its stable identity.
+  Existing references resolve saved titles on reopen. Ten focused tests,
+  TypeScript and both browser flows passed, including the path-only full-app
+  fixture. This follow-up is not installed or deployed yet.
+
 - Frozen candidate `8621dd0c` passed 759 core tests, TypeScript, required native
   suites, 16 proposal-review tests and both Note browser flows. It contains the
   versioned Note parent picker/navigation and preset-generation build guard.
