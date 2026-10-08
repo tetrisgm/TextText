@@ -25,7 +25,15 @@ now cancels the fetch/parser. PDF text is escaped as inert Markdown.
 - Logs: `/tmp/texttext-pdf-capture-tests.log`,
   `/tmp/texttext-pdf-parent-types.log`.
 
-Pending standalone packaging/runtime and live reader acceptance. No deployment
-of this change is claimed here. This extracts embedded text; it does not perform
+Source `6e1a9ee7` deployed on Oracle. Real Safari capture failed, despite a
+working traced-source worker: Turbopack spreads typed-array workerData into a
+plain object. The bundled parser therefore received an empty byte array.
+`b0f15c7b` sends `{ bytes }`, fixes cleanup to PDF.js loadingTask.destroy, and
+adds an actual compiled-worker packaging gate. That gate fails the original
+production bundle. Source parsing/lifecycle/endpoint suites (20 tests), Oracle
+packaging tests (16) and TypeScript passed for the fix; rebuilt bundled-worker
+and live Safari acceptance remain.
+
+ This extracts embedded text; it does not perform
 OCR, preserve the original PDF as a TextPack attachment, or provide transcripts
 or automatic AI summaries. Empty/image-only PDFs leave the saved link usable.

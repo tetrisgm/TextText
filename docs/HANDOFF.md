@@ -3,7 +3,8 @@
 ## Authoritative delivery
 
 - Mac `/Applications/TextText.app`: **0.204 (1218)**, source `6e1a9ee7`.
-  Startup, preserved content, save, search invalidation and reopen passed.
+  Startup, existing saved content, search and reopen passed. Fresh saved-body
+  cache invalidation on 1218 remains; see the scoped receipt.
   [Installed receipt](verification/2026-10-08-mac-1218.md).
 - Oracle: **texttext-oracle-20261008-6e1a9ee7-pdf-parents**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services stayed
@@ -18,11 +19,13 @@
 
 ## Current candidate / immediate work
 
-- Source `6e1a9ee7`: bounded PDF text capture and plain-template Parent editing.
+- Delivered source `6e1a9ee7`: bounded PDF text capture and plain-template Parent editing.
   Shared capture/enrichment regressions (31 tests), real PDF workers, browser
   note/parent regressions, and TypeScript passed. Standalone traced PDF worker
   executed successfully before the footer-only follow-up. Mac installed and Oracle deployed;
-  real Oracle PDF capture acceptance remains.
+  Live PDF capture failed: Turbopack spread the binary worker input and the
+  parser received no bytes. `b0f15c7b` fixes the envelope and cleanup, and adds
+  a bundled-worker packaging gate. The old compiled worker fails this gate.
   [PDF receipt](verification/2026-10-08-pdf-capture.md).
 - Live Safari created `Notes/Parent menu live verification 1218.textpack` via
   Parent in the insertion menu. Search focused, selected existing stable ID,
@@ -30,10 +33,16 @@
   confirmed exact title/body/parent. Reopen found the older plain Note look hid
   the Parent menu; `381e89d3` fixes this without altering its template.
   `6e1a9ee7` keeps controls inside the card footer; both themes inspected.
+  Full plain-template Parent menu and focused search now passed actual Mac
+  1218 and fresh deployed Safari acceptance.
 - Clean artifact clone: `/private/tmp/texttext-candidate-1195-5ELVuo`.
   Web and Mac builds finished successfully. Logs:
   `/tmp/texttext-web-pdf-6e1a9ee7-build.log`, `/tmp/texttext-mac1218-build.log`.
-  No build/deploy process remains running. No persistent build job.
+  Current source `701a2bec` also fixes false recovery for clean retained native
+  epochs. 345 shared tests and TypeScript passed. Web build handle `30508`,
+  Windows build handle `93940`; revalidate before waiting. Logs
+  `/tmp/texttext-web-clean-epochs-701a2bec-build.log`,
+  `/tmp/texttext-windows-701a2bec-build.log`. No persistent build job.
 - Latest product acceptance for reusable templates: real Mac generation,
   refinement, retained editable blueprint, Save as look, immutable version
   creation/retry, picker reuse and Safari-to-Mac save convergence passed.
@@ -42,7 +51,10 @@
 
 ## Remaining acceptance and product work
 
-- Install verified Windows candidate after safe closure, then check account,
+- Prioritize Windows false recovery and install current candidate after safe
+  closure. The reported 1185 note has zero pending updates but an old retired
+  journal. [Root-cause evidence](verification/2026-10-08-clean-epoch-recovery.md).
+  Then check account,
   existing notes, search, save/reopen, live sync and actual agent/template creation.
 - Finish fresh-principal sharing and automatic reconnect/failure acceptance.
   Preserve independently tested sync/epoch/outbox/receipt behavior and direct
