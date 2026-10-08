@@ -113,10 +113,20 @@ enum GeneratedBuiltinTemplates {
     "schemaVersion": 1,
     "engineVersion": 1,
     "id": "texttext.note",
-    "version": 1,
+    "version": 2,
     "name": "Note",
     "description": "A quick private note with no ceremony.",
-    "fields": [],
+    "fields": [
+      {
+        "id": "parents",
+        "label": "Parents",
+        "required": false,
+        "visibility": "public",
+        "type": "reference",
+        "target": "document",
+        "multiple": true
+      }
+    ],
     "item": {
       "type": "stack",
       "direction": "vertical",

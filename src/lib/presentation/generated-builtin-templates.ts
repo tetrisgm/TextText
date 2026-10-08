@@ -111,10 +111,20 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
     "schemaVersion": 1,
     "engineVersion": 1,
     "id": "texttext.note",
-    "version": 1,
+    "version": 2,
     "name": "Note",
     "description": "A quick private note with no ceremony.",
-    "fields": [],
+    "fields": [
+      {
+        "id": "parents",
+        "label": "Parents",
+        "required": false,
+        "visibility": "public",
+        "type": "reference",
+        "target": "document",
+        "multiple": true
+      }
+    ],
     "item": {
       "type": "stack",
       "direction": "vertical",
@@ -1742,6 +1752,77 @@ export const GENERATED_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
       "surface": "paper",
       "titleScale": "standard",
       "bodyScale": "standard",
+      "alignment": "start"
+    }
+  }
+];
+export const HISTORICAL_BUILTIN_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
+  {
+    "schemaVersion": 1,
+    "engineVersion": 1,
+    "id": "texttext.note",
+    "version": 1,
+    "name": "Note",
+    "description": "A quick private note with no ceremony.",
+    "fields": [],
+    "item": {
+      "type": "stack",
+      "direction": "vertical",
+      "gap": "sm",
+      "align": "stretch",
+      "children": [
+        {
+          "type": "text",
+          "bind": "content.title",
+          "role": "title",
+          "fallback": "Untitled"
+        },
+        {
+          "showWhen": "content.subtitle",
+          "type": "text",
+          "bind": "content.subtitle",
+          "role": "subtitle"
+        },
+        {
+          "type": "prose",
+          "bind": "content.body"
+        }
+      ]
+    },
+    "collection": {
+      "layout": "list",
+      "columns": 1,
+      "gap": "sm",
+      "sort": [
+        {
+          "field": "updatedAt",
+          "direction": "desc"
+        }
+      ],
+      "filters": [],
+      "views": [],
+      "item": {
+        "type": "stack",
+        "direction": "vertical",
+        "gap": "xs",
+        "align": "stretch",
+        "children": [
+          {
+            "type": "text",
+            "bind": "content.title",
+            "role": "heading",
+            "fallback": "Untitled"
+          },
+          {
+            "type": "prose",
+            "bind": "content.body"
+          }
+        ]
+      }
+    },
+    "theme": {
+      "typography": "system",
+      "measure": "reading",
       "alignment": "start"
     }
   }

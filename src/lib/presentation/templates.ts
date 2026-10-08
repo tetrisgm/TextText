@@ -1,4 +1,4 @@
-import { GENERATED_BUILTIN_TEMPLATES } from "./generated-builtin-templates";
+import { GENERATED_BUILTIN_TEMPLATES, HISTORICAL_BUILTIN_TEMPLATES } from "./generated-builtin-templates";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 
@@ -2568,10 +2568,10 @@ export const BUILTIN_TEMPLATES: readonly TemplateDefinition[] =
  * anything that checks rendering has to walk these, not just the catalogue.
  */
 export const ALL_RESOLVABLE_TEMPLATES: readonly TemplateDefinition[] =
-  Object.freeze([...activeDefinitions, ...retiredGeneratedDefinitions, ...legacyDefinitions]);
+  Object.freeze([...activeDefinitions, ...retiredGeneratedDefinitions, ...legacyDefinitions, ...HISTORICAL_BUILTIN_TEMPLATES]);
 
 const templatesByKey = new Map(
-  [...activeDefinitions, ...retiredGeneratedDefinitions, ...legacyDefinitions].map((template) => [
+  [...activeDefinitions, ...retiredGeneratedDefinitions, ...legacyDefinitions, ...HISTORICAL_BUILTIN_TEMPLATES].map((template) => [
     `${template.id}@${template.version}`,
     template,
   ]),
@@ -2583,9 +2583,9 @@ export function templateKey(id: string, version: number): string {
 
 export function getBuiltinTemplate(
   id: string,
-  version = 1,
+  version?: number,
 ): TemplateDefinition | null {
-  return templatesByKey.get(templateKey(id, version)) ?? null;
+  return version === undefined ? activeDefinitions.find(template => template.id === id) ?? [...templatesByKey.values()].find(template => template.id === id) ?? null : templatesByKey.get(templateKey(id, version)) ?? null;
 }
 
 function sameTemplateValue(left: unknown, right: unknown): boolean {
@@ -2618,7 +2618,7 @@ export function styleTemplateIdFor(template: TemplateDefinition): string {
 
 export function requireBuiltinTemplate(
   id: string,
-  version = 1,
+  version?: number,
 ): TemplateDefinition {
   const template = getBuiltinTemplate(id, version);
   if (!template) throw new Error(`Unknown built-in template ${id}@${version}`);

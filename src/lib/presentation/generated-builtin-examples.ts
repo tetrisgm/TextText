@@ -32,7 +32,7 @@ export const GENERATED_BUILTIN_EXAMPLES: ReadonlyArray<DocumentSnapshot> = [
     "presentation": {
       "template": {
         "id": "texttext.note",
-        "version": 1
+        "version": 2
       },
       "theme": {}
     }

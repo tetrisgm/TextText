@@ -47,7 +47,7 @@ describe("built-in templates", () => {
     }
   });
 
-  it("offers only the focused catalog at version 1", () => {
+  it("offers the focused catalog with the current Note version", () => {
     expect(BUILTIN_TEMPLATES).toHaveLength(6);
     expect(BUILTIN_TEMPLATES.map((template) => template.name)).toEqual([
       "Blog post",
@@ -65,9 +65,16 @@ describe("built-in templates", () => {
       expect(template.description ?? "").not.toMatch(borrowed);
     }
     for (const template of BUILTIN_TEMPLATES) {
-      expect(template.version).toBe(1);
+      expect(template.version).toBe(template.id === "texttext.note" ? 2 : 1);
       expect(template.id.startsWith("texttext.")).toBe(true);
     }
+  });
+
+  it("offers parent references for new Notes without changing version 1", () => {
+    const current = requireBuiltinTemplate("texttext.note");
+    expect(current.version).toBe(2);
+    expect(current.fields).toContainEqual({ id: "parents", label: "Parents", type: "reference", target: "document", multiple: true, required: false, visibility: "public" });
+    expect(requireBuiltinTemplate("texttext.note", 1).fields.some(field => field.id === "parents")).toBe(false);
   });
 
   it("keeps retired templates resolvable without offering them in the gallery", () => {
