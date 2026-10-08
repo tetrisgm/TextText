@@ -35,6 +35,7 @@ final class DocumentCreationTests: XCTestCase {
         let view = root.appendingPathComponent("Notes/View.textpack")
         try FileManager.default.copyItem(at: packed, to: view)
         let original = try Data(contentsOf: view)
+        try Data("not a zip".utf8).write(to: root.appendingPathComponent("Notes/Unrelated broken.textpack"))
         let made = try store.create(title: "Research", folder: "Notes")
         let result = try LocalVaultDocumentStore(root: root).readMetadata(path: "Notes/Research.textpack", includeTemplate: true)
         XCTAssertTrue(result.contents.markdown.contains("Starter research"))
@@ -64,12 +65,18 @@ final class DocumentCreationTests: XCTestCase {
         try FileManager.default.createDirectory(at: retirementFolder, withIntermediateDirectories: true)
         var retiredDocument = try JSONSerialization.jsonObject(with: Data(builtin.documentJSON.utf8)) as! [String: Any]
         retiredDocument["content"] = ["title": "Retired", "body": "{\"format\":\"texttext-template-retirement\",\"version\":1,\"templateId\":\"local.research\"}", "fields": ["texttextRecordType": "template-retirement"], "tags": [], "assets": []] as [String: Any]
-        let retiredPackage = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "Retired", documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: retiredDocument), as: UTF8.self), templateJSON: builtin.templateJSON, assets: [], sourceURL: nil, in: scratch)
+        let retiredPackage = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntitle: Retired\n---\n\n" + ((retiredDocument["content"] as! [String: Any])["body"] as! String), documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: retiredDocument), as: UTF8.self), templateJSON: builtin.templateJSON, assets: [], sourceURL: nil, in: scratch)
         let retiredPack = try TextTextTextBundlePackage.zipToTextPack(packageURL: retiredPackage.url, in: scratch)
         try FileManager.default.copyItem(at: retiredPack, to: retirementFolder.appendingPathComponent("retired.textpack"))
         XCTAssertThrowsError(try store.create(title: "Retired rejected", folder: "Notes"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Notes/Retired rejected.textpack").path))
         _ = try store.create(title: "Explicit after retirement", folder: "Notes", kind: "note")
+        let editedBody = "{\"format\":\"texttext-template-retirement\",\"version\":1,\"templateId\":\"local.other\"}"
+        let editedPackage = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntitle: Retired\n---\n\n" + editedBody, documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: retiredDocument), as: UTF8.self), templateJSON: builtin.templateJSON, assets: [], sourceURL: nil, in: scratch)
+        let editedPack = try TextTextTextBundlePackage.zipToTextPack(packageURL: editedPackage.url, in: scratch)
+        try Data(contentsOf: editedPack).write(to: retirementFolder.appendingPathComponent("retired.textpack"), options: .atomic)
+        _ = try store.create(title: "Markdown authority", folder: "Notes")
+
 
     }
 

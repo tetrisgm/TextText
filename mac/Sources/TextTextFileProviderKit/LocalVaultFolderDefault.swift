@@ -1,4 +1,5 @@
 import Foundation
+import TextTextWorkspaceCore
 
 /// Reads only immediate, explicitly marked folder views. The source file remains
 /// untouched; the selected definition is embedded in the newly created pack.
@@ -31,7 +32,7 @@ public struct LocalVaultFolderDefault {
             scanned += info.fileSize ?? 0
             guard scanned <= 256 * 1024 * 1024 else { throw invalid() }
             let relative = relativeFolder.isEmpty ? url.lastPathComponent : relativeFolder + "/" + url.lastPathComponent
-            let file = try store.readMetadata(path: relative, includeTemplate: true)
+            guard let file = try? store.readMetadata(path: relative, includeTemplate: true) else { continue }
             guard let text = file.contents.documentJSON,
                   let doc = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
                   let content = doc["content"] as? [String: Any],
@@ -66,7 +67,9 @@ public struct LocalVaultFolderDefault {
         }
         guard let chosen else { return nil }
         let retired = root.appendingPathComponent("Templates/Retired")
-        if manager.fileExists(atPath: retired.path) {
+        let templateNames = try manager.contentsOfDirectory(atPath: root.path)
+        let hasCanonicalRetirement = try templateNames.contains("Templates") && manager.contentsOfDirectory(atPath: root.appendingPathComponent("Templates").path).contains("Retired")
+        if hasCanonicalRetirement {
             guard try retired.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw invalid() }
             let records = try manager.contentsOfDirectory(at: retired, includingPropertiesForKeys: nil).filter { $0.pathExtension == "textpack" }
             guard records.count <= 1000 else { throw invalid() }
@@ -77,13 +80,17 @@ public struct LocalVaultFolderDefault {
                       let doc = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
                       let content = doc["content"] as? [String: Any],
                       (content["fields"] as? [String: Any])?["texttextRecordType"] as? String == "template-retirement",
-                      let body = content["body"] as? String, body.utf8.count <= 2048,
-                      let value = try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any],
+                      let value = try Self.retirementBody(file.contents.markdown),
                       value["format"] as? String == "texttext-template-retirement", value["version"] as? Int == 1 else { throw invalid() }
                 if value["templateId"] as? String == chosen.templateId { throw TextTextTextBundleError.invalidPackage("The folder default template is retired. Choose another template.") }
             }
         }
         return chosen
+    }
+    private static func retirementBody(_ markdown: String) throws -> [String: Any]? {
+        let body = MarkdownIdentityCodec.body(from: markdown)
+        guard body.utf8.count <= 2048 else { throw invalid() }
+        return try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any]
     }
     private static func json(_ value: Any) throws -> String { String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self) }
 }

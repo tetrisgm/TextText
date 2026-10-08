@@ -95,6 +95,15 @@ public enum MarkdownIdentityCodec {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// Canonical text.md body, preserving authored whitespace after the single separator line.
+    public static func body(from text: String) -> String {
+        guard let split = splitFrontmatter(text), let newline = split.bodyWithDelimiter.firstIndex(of: "\n") else { return text }
+        var body = String(split.bodyWithDelimiter[split.bodyWithDelimiter.index(after: newline)...])
+        if body.hasPrefix("\r\n") { body.removeFirst(2) }
+        else if body.hasPrefix("\n") { body.removeFirst() }
+        return body
+    }
+
     private static func splitFrontmatter(_ text: String) -> (frontmatter: String, bodyWithDelimiter: String)? {
         let normalizedStart = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
         guard normalizedStart.hasPrefix("---\n") || normalizedStart.hasPrefix("---\r\n") else { return nil }
