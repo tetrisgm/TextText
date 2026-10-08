@@ -1,3 +1,4 @@
+import { buildVaultTemplateArtifact, type VaultTemplateCreation } from "@/lib/presentation/vault-template-authoring";
 import * as Y from "yjs";
 import { applyDocumentMutation, applyDocumentSnapshot, type DocumentMutation } from "@/lib/collab/document";
 import { createHash, randomUUID } from "node:crypto";
@@ -1165,6 +1166,57 @@ export async function pushVaultCollaboration(input: VaultLocation & {
 }
 
 /** Atomic agent command: replay receipt before stale-revision checks. */
+/** Create immutable library artifacts through the same durable file intent as ordinary documents. */
+export async function createVaultTemplate(input: VaultLocation & {
+  itemId: string; operationId: string; creation: VaultTemplateCreation;
+  audit: NonNullable<VaultWrite["audit"]>;
+  beforeCommit: (relativePath: string) => Promise<void>;
+  beforeSourceRead: (itemId: string, relativePath: string) => Promise<void>;
+}): Promise<VaultWriteResult> {
+  segment(input.itemId); segment(input.operationId);
+  if (!input.onReceipt) throw new Error("Vault mutation requires its audit sink");
+  if (json(input.creation).length > 1_000_000) throw new Error("Template exceeds limits");
+  if ("sourceItemId" in input.creation) {
+    segment(input.creation.sourceItemId);
+    if (!/^[a-f0-9]{64}$/.test(input.creation.sourceHash) || !input.creation.name.trim() || input.creation.name.length > 160) throw new Error("Read the source and provide its hash and a look name");
+  }
+  const relativePath = `Templates/${input.itemId}.textpack`;
+  const requestHash = hash(json(["create-template", input.itemId, input.creation, input.audit]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await input.beforeCommit(relativePath);
+    if (!input.receiptOnly) await recover(layout);
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    let source: Awaited<ReturnType<typeof collaborationItem>> = null;
+    if ("sourceItemId" in input.creation) {
+      source = await collaborationItem(layout, input.creation.sourceItemId);
+      if (!source) throw new Error("Template source is unavailable");
+      await input.beforeSourceRead(input.creation.sourceItemId, source.relativePath);
+    }
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      if (!input.receiptOnly) await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
+    if ("sourceHash" in input.creation && source?.revision !== input.creation.sourceHash) throw new Error("Template source changed. Read it again before saving its look.");
+    if (await maybeRead(path.join(layout.items, `${input.itemId}.json`))) throw new Error("Template identity is already in use");
+    const built = buildVaultTemplateArtifact(input.itemId, input.creation, source ?? undefined);
+    validatePack(built.bytes, input.itemId);
+    if (await maybeRead(await targetPath(layout, relativePath))) throw new Error("Template destination is occupied");
+    await input.beforeCommit(relativePath);
+    if ("sourceItemId" in input.creation && source) await input.beforeSourceRead(input.creation.sourceItemId, source.relativePath);
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), built.bytes);
+    const intent: Intent = { itemId: input.itemId, operationId: input.operationId, relativePath, baseRevision: null,
+      revision: hash(built.bytes), requestHash, workspaceId: input.workspaceId, audit: input.audit };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return apply(layout, intent, pendingDir);
+  });
+}
+
 export async function mutateVaultDocument(input: VaultLocation & {
   itemId: string; operationId: string; expectedRevision: string; mutation: DocumentMutation;
   audit: NonNullable<VaultWrite["audit"]>;

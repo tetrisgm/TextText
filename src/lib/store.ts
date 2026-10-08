@@ -4,6 +4,7 @@ import { searchVaultPack } from "./vault/pack-search.server";
 // Fresh file vault access shares the application's content boundary. Callers
 // must authorize the workspace and supply its trusted server root first.
 import {
+  createVaultTemplate as createDirectoryTemplate,
   createVaultFolder as createDirectoryFolder,
   readVaultTextpack as readDirectoryTextpack,
   readVaultTextpackPath as readDirectoryTextpackPath,
@@ -8463,4 +8464,9 @@ export function mutateVaultDocument(input: Omit<VaultLocation, "onReceipt"> & {
 export function createVaultFolder(input: Omit<Parameters<typeof createDirectoryFolder>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
   return createDirectoryFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
+
+export function createVaultTemplate(input: Omit<Parameters<typeof createDirectoryTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return createDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
 }

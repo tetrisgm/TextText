@@ -648,6 +648,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         blueprint: itemTypeBlueprintSchema,
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
         folder_path: folderPath.optional(),
         apply_to_existing: z
           .boolean()
@@ -718,6 +719,8 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
     inputSchema: z
       .object({
         id,
+        if_match_hash: ifMatchHash,
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
         name: z
           .string()
           .trim()
