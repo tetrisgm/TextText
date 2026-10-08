@@ -69,7 +69,7 @@ it("catalog requires replay and concurrency inputs without claiming restore supp
     const definition = vaultToolDefinitions().find(tool => tool.name === name)!;
     expect(definition.inputSchema.required).toEqual(expect.arrayContaining(["path", "if_match_hash", "idempotency_key"]));
   }
-  expect(vaultToolDefinitions().some(tool => String(tool.name) === "restore_item")).toBe(false);
+  expect(vaultToolDefinitions().some(tool => String(tool.name) === "restore_item")).toBe(true);
 });
 
 it("moves to workspace root and retries same-path moves without changing contents", async () => {

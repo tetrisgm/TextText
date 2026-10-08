@@ -27,6 +27,8 @@ import {
   waitVaultTextpacks as waitDirectoryTextpacks,
   moveVaultTextpack as moveDirectoryTextpack,
   deleteVaultTextpack as deleteDirectoryTextpack,
+  restoreVaultTextpack as restoreDirectoryTextpack,
+  listVaultTrash as listDirectoryTrash,
   writeVaultTextpack as writeDirectoryTextpack,
   type VaultLocation,
   type VaultWrite,
@@ -63,7 +65,7 @@ async function recordVaultReceipt(receipt: VaultMutationReceipt): Promise<void> 
     id,
     actorUserId: receipt.actorUserId,
     actorType: receipt.actorType,
-    actionName: receipt.actionName ?? ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete" })[receipt.result.status],
+    actionName: receipt.actionName ?? ({ written: "vault.write", conflict: "vault.preserve_conflict", moved: "vault.move", deleted: "vault.delete", restored: "vault.restore" })[receipt.result.status],
     targetType: "item",
     targetId: receipt.actionName ? `${receipt.workspaceId}:${receipt.result.itemId}` : receipt.result.itemId,
     inputSummary: `operation ${receipt.operationId}`,
@@ -280,6 +282,15 @@ export function moveVaultTextpack(input: AuditedVaultEntry & { relativePath: str
 export function deleteVaultTextpack(input: AuditedVaultEntry) {
   if (!db) throw new Error(NO_DATABASE);
   return deleteDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
+}
+
+export function listVaultTrash(input: Omit<VaultLocation, "onReceipt">) {
+  if (!db) throw new Error(NO_DATABASE);
+  return listDirectoryTrash({ ...input, onReceipt: recordVaultReceipt });
+}
+export function restoreVaultTextpack(input: AuditedVaultEntry & { relativePath: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  return restoreDirectoryTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, onReceipt: recordVaultReceipt });
 }
 
 import {

@@ -5,7 +5,7 @@ import * as fs from "node:fs/promises";
 import { watch, constants } from "node:fs";
 import path from "node:path";
 import { hostname } from "node:os";
-import { unzipSync, strFromU8 } from "fflate";
+import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { openPack } from "@/local-vault/pack";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
@@ -41,7 +41,7 @@ export type VaultWriteResult =
   | { status: "written"; itemId: string; relativePath: string; revision: string }
   | { status: "conflict"; itemId: string; relativePath: string; revision: string | null; conflictPath: string; deleted?: true };
 export type VaultEntryResult =
-  | { status: "moved" | "deleted"; itemId: string; relativePath: string; revision: string }
+  | { status: "moved" | "deleted" | "restored"; itemId: string; relativePath: string; revision: string }
   | { status: "conflict"; itemId: string; relativePath: string; revision: string | null; deleted?: true };
 export interface VaultEntryMutation extends VaultLocation {
   beforeCommit?: (relativePath: string) => Promise<void>;
@@ -55,12 +55,17 @@ interface EntryIntent {
   audit?: VaultWrite["audit"];
 }
 
+interface RestoreIntent {
+  kind: "restore"; workspaceId: string; itemId: string; operationId: string; basePath: string; baseRevision: string; relativePath: string; revision: string; requestHash: string; epoch: number; audit?: VaultWrite["audit"];
+}
+
 interface Intent {
   itemId: string; operationId: string; relativePath: string;
   baseRevision: string | null; revision: string; requestHash: string;
   workspaceId: string;
   audit?: VaultWrite["audit"];
   deletedRevision?: string;
+  lifecycleMismatch?: boolean;
   collaboration?: VaultCollaborationState;
   commentAction?: "vault.comment.create" | "vault.comment.reply" | "vault.comment.resolve" | "vault.comment.reopen";
   publicationAction?: "vault.publish" | "vault.unpublish";
@@ -345,7 +350,7 @@ async function apply(layout: Layout, intent: Intent, pendingDir: string): Promis
   const current = await maybeRead(target);
   const revision = current ? hash(current) : null;
   let result: VaultWriteResult;
-  if (intent.deletedRevision || (revision !== intent.baseRevision && revision !== intent.revision)) {
+  if (intent.deletedRevision || intent.lifecycleMismatch || (revision !== intent.baseRevision && revision !== intent.revision)) {
     const conflictPath = `.texttext/conflicts/${intent.operationId}.textpack`;
     await atomicWrite(path.join(layout.workspace, conflictPath), bytes);
     result = { status: "conflict", itemId: intent.itemId, relativePath: intent.relativePath,
@@ -533,6 +538,118 @@ export function deleteVaultTextpack(input: VaultEntryMutation) {
   return mutateVaultEntry(input, "delete", input.basePath);
 }
 
+/** Current tombstones only, unlike recovery history which also includes prior revisions. */
+export async function listVaultTrash(input: VaultLocation) {
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    const names = await recoveryNames(layout.items, 5000);
+    const items: { itemId: string; relativePath: string; revision: string }[] = [];
+    for (const name of names.names) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.json$/.test(name)) continue;
+      const raw = await maybeRead(path.join(layout.items, name));
+      if (!raw || raw.length > 1024 * 1024) throw new Error("Invalid item metadata");
+      const item = JSON.parse(raw.toString());
+      if (!item.deleted) continue;
+      segment(item.itemId); packPath(item.relativePath);
+      if (!/^[a-f0-9]{64}$/.test(item.revision)) throw new Error("Invalid deleted revision");
+      items.push({ itemId: item.itemId, relativePath: item.relativePath, revision: item.revision });
+    }
+    return { items, truncated: names.truncated };
+  });
+}
+
+async function applyRestore(layout: Layout, intent: RestoreIntent, pendingDir: string): Promise<VaultEntryResult> {
+  const saved = await maybeRead(path.join(layout.receipts, `${intent.operationId}.json`));
+  if (saved) {
+    const receipt = JSON.parse(saved.toString()) as Receipt<VaultEntryResult>;
+    if (receipt.requestHash !== intent.requestHash) throw new Error("Operation id was reused");
+    await deliverReceipt(layout, receipt);
+    await fs.rm(pendingDir, { recursive: true });
+    await syncDirectory(layout.pending);
+    return receipt.result;
+  }
+  const payload = await maybeRead(path.join(pendingDir, "payload.textpack"));
+  if (!payload || hash(payload) !== intent.revision) throw new Error("Invalid restore payload");
+  validatePack(payload, intent.itemId);
+  const target = await targetPath(layout, intent.relativePath);
+  const current = await maybeRead(target);
+  const metadataPath = path.join(layout.items, `${intent.itemId}.json`);
+  const raw = await maybeRead(metadataPath);
+  const item = raw ? JSON.parse(raw.toString()) : null;
+  const alreadyRestored = item && !item.deleted && item.relativePath === intent.relativePath && item.revision === intent.revision;
+  const tombstone = item?.deleted && item.relativePath === intent.basePath && item.revision === intent.baseRevision;
+  let result: VaultEntryResult;
+  if ((!tombstone && !alreadyRestored) || (current && hash(current) !== intent.revision)) {
+    result = { status: "conflict", itemId: intent.itemId, relativePath: item?.relativePath ?? intent.basePath, revision: item?.revision ?? null };
+  } else {
+    const marker = unzipSync(payload, { filter: entry => entry.name === "texttext-lifecycle.json" })["texttext-lifecycle.json"];
+    if (!marker) throw new Error("Missing restore lifecycle");
+    // Fence old archive uploads before exposing the restored file. The intent
+    // persists until every step and its audit receipt are durable.
+    await atomicWrite(path.join(await directory(layout.control, "lifecycles"), `${intent.itemId}.json`), json({ marker: strFromU8(marker), lifecycle: intent.operationId, restoreFromRevision: intent.baseRevision }));
+    const state = seedVaultCollaboration(payload, intent.itemId, intent.epoch);
+    await atomicWrite(path.join(layout.collaboration, `${intent.itemId}.json`), json(state));
+    await atomicWrite(path.join(await directory(layout.history, intent.itemId), `${intent.revision}.textpack`), payload);
+    if (!current && !await createExclusive(target, payload)) throw new VaultBusyError();
+    await atomicWrite(metadataPath, json({ itemId: intent.itemId, relativePath: intent.relativePath, revision: intent.revision }));
+    result = { status: "restored", itemId: intent.itemId, relativePath: intent.relativePath, revision: intent.revision };
+  }
+  const receipt: Receipt<VaultEntryResult> = { requestHash: intent.requestHash, result, ...(intent.audit ? { mutation: { workspaceId: intent.workspaceId, operationId: intent.operationId, ...intent.audit, result } } : {}) };
+  await atomicWrite(path.join(layout.receipts, `${intent.operationId}.json`), json(receipt));
+  await deliverReceipt(layout, receipt);
+  await fs.rm(pendingDir, { recursive: true });
+  await syncDirectory(layout.pending);
+  return result;
+}
+
+/** Same identity restore with a new archive lifecycle and collaboration epoch. */
+export async function restoreVaultTextpack(input: VaultEntryMutation & { relativePath: string }): Promise<VaultEntryResult> {
+  segment(input.itemId); segment(input.operationId); packPath(input.basePath); packPath(input.relativePath);
+  if (!/^[a-f0-9]{64}$/.test(input.baseRevision)) throw new Error("Invalid deleted revision");
+  if (input.audit && !input.onReceipt) throw new Error("Vault mutation requires its audit sink");
+  const layout = await setup(input);
+  const requestHash = hash(json(["restore", input.itemId, input.basePath, input.relativePath, input.baseRevision, input.audit ?? null]));
+  return locked(layout, async () => {
+    await recover(layout);
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultEntryResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      await input.beforeCommit?.(receipt.result.relativePath);
+      await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    await input.beforeCommit?.(input.basePath);
+    input.signal?.throwIfAborted();
+    const raw = await maybeRead(path.join(layout.items, `${input.itemId}.json`));
+    const item = raw ? JSON.parse(raw.toString()) : null;
+    if (!item?.deleted || item.relativePath !== input.basePath || item.revision !== input.baseRevision) throw new Error("The deleted file changed. Refresh Trash before restoring it.");
+    for (const name of await fs.readdir(layout.items)) {
+      const indexed = JSON.parse((await fs.readFile(path.join(layout.items, name))).toString());
+      if (!indexed.deleted && indexed.relativePath.normalize("NFC").toLowerCase() === input.relativePath.normalize("NFC").toLowerCase()) throw new Error("Restore destination is occupied");
+    }
+    if (await maybeRead(await targetPath(layout, input.relativePath))) throw new Error("Restore destination is occupied");
+    const retained = await maybeRead(path.join(layout.history, input.itemId, `${input.baseRevision}.textpack`));
+    if (!retained || hash(retained) !== input.baseRevision) throw new Error("Deleted file recovery is unavailable");
+    validatePack(retained, input.itemId);
+    const files = unzipSync(retained);
+    files["texttext-lifecycle.json"] = strToU8(json({ version: 1, generation: input.operationId }));
+    // Restoring content must never silently restore public audience access.
+    for (const name of Object.keys(files)) if (name === "publication.json" || name.endsWith("/publication.json")) delete files[name];
+    const payload = zipSync(files);
+    const checkpoint = await maybeRead(path.join(layout.collaboration, `${input.itemId}.json`));
+    const previousEpoch = checkpoint ? (JSON.parse(checkpoint.toString()) as VaultCollaborationState).epoch : 0;
+    if (!Number.isSafeInteger(previousEpoch) || previousEpoch < 0 || previousEpoch >= Number.MAX_SAFE_INTEGER - 1) throw new Error("Invalid collaboration epoch");
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), payload);
+    const intent: RestoreIntent = { kind: "restore", workspaceId: input.workspaceId, itemId: input.itemId, operationId: input.operationId, basePath: input.basePath, baseRevision: input.baseRevision, relativePath: input.relativePath, revision: hash(payload), requestHash, epoch: previousEpoch + 1, ...(input.audit ? { audit: input.audit } : {}) };
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return applyRestore(layout, intent, pendingDir);
+  });
+}
+
 async function recover(layout: Layout): Promise<void> {
   for (const name of await fs.readdir(layout.pending)) {
     segment(name);
@@ -542,8 +659,9 @@ async function recover(layout: Layout): Promise<void> {
     const saved = await maybeRead(path.join(pendingDir, "intent.json"));
     // A payload without a committed intent never changed a visible document.
     if (!saved) { await fs.rm(pendingDir, { recursive: true }); continue; }
-    const intent = JSON.parse(saved.toString()) as Intent | EntryIntent;
-    if ("kind" in intent) await applyEntry(layout, intent, pendingDir);
+    const intent = JSON.parse(saved.toString()) as Intent | EntryIntent | RestoreIntent;
+    if ("kind" in intent && intent.kind === "restore") await applyRestore(layout, intent, pendingDir);
+    else if ("kind" in intent) await applyEntry(layout, intent, pendingDir);
     else await apply(layout, intent, pendingDir);
   }
 }
@@ -582,11 +700,21 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
       if (saved.itemId === input.itemId && saved.relativePath !== input.relativePath) throw new Error("Use a move operation to change a TextPack path");
       if (saved.itemId !== input.itemId && saved.relativePath.normalize("NFC").toLowerCase() === input.relativePath.normalize("NFC").toLowerCase()) throw new Error("TextPack path belongs to another item");
     }
+    // A restored file is a new lifecycle. Never merge a pre-delete archive into it.
+    const lifecycleFile = path.join(layout.control, "lifecycles", `${input.itemId}.json`);
+    const lifecycle = await maybeRead(lifecycleFile);
+    let lifecycleMismatch = false;
+    if (lifecycle) {
+      const expected = JSON.parse(lifecycle.toString()) as { marker: string };
+      const marker = unzipSync(input.bytes, { filter: entry => entry.name === "texttext-lifecycle.json" })["texttext-lifecycle.json"];
+      if (typeof expected.marker !== "string") throw new Error("Invalid file lifecycle");
+      lifecycleMismatch = !marker || strFromU8(marker) !== expected.marker;
+    }
     // Compare against the exact last shared archive, including assets. Resolve
     // the merge before committing the intent so restart replay is deterministic.
     let committedBytes = input.bytes;
     let committedBase = input.baseRevision;
-    if (input.baseRevision !== null && !deletedRevision) {
+    if (input.baseRevision !== null && !deletedRevision && !lifecycleMismatch) {
       const target = await targetPath(layout, input.relativePath);
       const current = await maybeRead(target);
       if (current && hash(current) !== input.baseRevision && hash(current) !== revision) {
@@ -605,7 +733,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     // Compare the resolved merge, so an offline edit may safely preserve a
     // marker published since its baseline without being allowed to forge one.
     const current = await maybeRead(await targetPath(layout, input.relativePath));
-    if (!samePublicationEntries(current, committedBytes)) throw new Error("Use Publish or Unpublish to change public visibility");
+    if (!lifecycleMismatch && !samePublicationEntries(current, committedBytes)) throw new Error("Use Publish or Unpublish to change public visibility");
     await input.beforeCommit?.(input.relativePath);
     input.signal?.throwIfAborted();
     const pendingDir = await directory(layout.pending, input.operationId);
@@ -613,7 +741,8 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
       relativePath: input.relativePath, baseRevision: committedBase, revision: hash(committedBytes), requestHash,
       workspaceId: input.workspaceId, ...(input.audit ? { audit: input.audit } : {}) };
-    if (input.liveReconcile && input.baseRevision !== null && current && committedBase === hash(current) &&
+    if (lifecycleMismatch) intent.lifecycleMismatch = true;
+    if (!lifecycleMismatch && input.liveReconcile && input.baseRevision !== null && current && committedBase === hash(current) &&
         intent.revision !== committedBase) {
       const checkpoint = await maybeRead(path.join(layout.collaboration, `${input.itemId}.json`));
       if (checkpoint) {
@@ -1545,8 +1674,8 @@ export async function ensureVaultFolders(input: VaultLocation, folders: readonly
 
 export async function listVaultTextpacks(input: VaultLocation): Promise<{
   folders: string[];
-  items: { itemId: string; relativePath: string; revision: string }[];
-  tombstones: { itemId: string; relativePath: string; revision: string; deleted: true }[];
+  items: { itemId: string; relativePath: string; revision: string; lifecycle?: string; restoreFromRevision?: string }[];
+  tombstones: { itemId: string; relativePath: string; revision: string; deleted: true; lifecycle?: string; restoreFromRevision?: string }[];
   revision: string;
   problems: { relativePath: string; reason: string }[];
 }> {
@@ -1556,15 +1685,23 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
     const folders: string[] = [];
     const problems = await discoverFiles(layout, folders);
     folders.sort();
-    const items: { itemId: string; relativePath: string; revision: string }[] = [];
-    const tombstones: { itemId: string; relativePath: string; revision: string; deleted: true }[] = [];
+    const items: { itemId: string; relativePath: string; revision: string; lifecycle?: string; restoreFromRevision?: string }[] = [];
+    const tombstones: { itemId: string; relativePath: string; revision: string; deleted: true; lifecycle?: string; restoreFromRevision?: string }[] = [];
     for (const name of (await fs.readdir(layout.items)).sort()) {
       const raw = await maybeRead(path.join(layout.items, name));
       if (!raw) continue;
       const item = JSON.parse(raw.toString()) as { itemId: string; relativePath: string; revision?: string; fingerprint?: string; deleted?: boolean };
       segment(item.itemId);
+      const lifecycleRaw = await maybeRead(path.join(layout.control, "lifecycles", `${item.itemId}.json`));
+      let generation: { lifecycle?: string; restoreFromRevision?: string } = {};
+      if (lifecycleRaw) {
+        const saved = JSON.parse(lifecycleRaw.toString());
+        segment(saved.lifecycle);
+        if (!/^[a-f0-9]{64}$/.test(saved.restoreFromRevision)) throw new Error("Invalid restore lifecycle");
+        generation = { lifecycle: saved.lifecycle, restoreFromRevision: saved.restoreFromRevision };
+      }
       if (item.deleted && item.revision) {
-        tombstones.push({ itemId: item.itemId, relativePath: item.relativePath, revision: item.revision, deleted: true });
+        tombstones.push({ itemId: item.itemId, relativePath: item.relativePath, revision: item.revision, deleted: true, ...generation });
         continue;
       }
       const target = await targetPath(layout, item.relativePath);
@@ -1572,7 +1709,7 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
       if (!signature) {
         await observeCollaborationRevision(layout, item.itemId, null);
         if (item.revision) {
-          const tombstone = { itemId: item.itemId, relativePath: item.relativePath, revision: item.revision, deleted: true as const };
+          const tombstone = { itemId: item.itemId, relativePath: item.relativePath, revision: item.revision, deleted: true as const, ...generation };
           await atomicWrite(path.join(layout.items, name), json(tombstone));
           tombstones.push(tombstone);
         }
@@ -1591,7 +1728,7 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
         // reads and hashes of every asset in the workspace.
         await atomicWrite(path.join(layout.items, name), json({ ...item, revision, fingerprint: signature }));
       }
-      items.push({ itemId: item.itemId, relativePath: item.relativePath, revision });
+      items.push({ itemId: item.itemId, relativePath: item.relativePath, revision, ...generation });
     }
     return { items, tombstones, folders, problems, revision: hash(json([items, tombstones, folders, problems])) };
   });

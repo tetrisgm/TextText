@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AuthInfo, CallToolResult } from "./types";
 import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-agent-access";
-import { getOwnedBlog, getBlog, getBlogEditRecord, getUserIdBySub, listVaultTextpacks, readVaultTextpack, readVaultTextpackIdentity, readVaultPreview, searchVaultTextpacks } from "@/lib/store";
+import { getOwnedBlog, getBlog, getBlogEditRecord, getUserIdBySub, listVaultTextpacks, readVaultTextpack, readVaultTextpackIdentity, readVaultPreview, searchVaultTextpacks, listVaultTrash } from "@/lib/store";
 import { activeVaultGrants, roleForVaultItem, roleForVaultFolder } from "@/lib/vault/grants";
 import { openPack } from "@/local-vault/pack";
 import { readVaultPublicationFromPack } from "@/lib/vault/publication";
@@ -14,7 +14,7 @@ function summary(id: string, path: string, hash: string, title: string, document
   const kind = template === "texttext.article" ? "article" : template === "texttext.bookmark" ? "bookmark" : template === "texttext.gallery" ? "media_post" : template === "texttext.talk" ? "talk" : "note";
   return { id, path, slug: id, hash, title, kind, status: published ? "published" : "draft", folder_path: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "" };
 }
-const reads = ["get_workspace", "list_folders", "list_items", "read_item", "search", "list_comments"] as const;
+const reads = ["get_workspace", "list_folders", "list_items", "read_item", "search", "list_comments", "list_trash"] as const;
 const json = (value: Record<string, unknown>): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 const error = (text: string): CallToolResult => ({ content: [{ type: "text", text }], isError: true });
 /** File-only backend. Never returns null to request a legacy SQL fallback.
@@ -95,7 +95,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
       if (role !== "editor") throw new Error("Item editing is not allowed.");
     };
     try {
-      if (name === "move_item" || name === "delete_item") {
+      if (name === "move_item" || name === "delete_item" || name === "restore_item") {
         const { organizeVaultItem } = await import("./vault-organization");
         return json(await organizeVaultItem(name, args, { ...location, actorUserId: userId, actorType, authorize }));
       }
@@ -119,6 +119,14 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
     catch (cause) { return error(cause instanceof Error ? cause.message : "The file command failed."); }
   }
   if (name === "get_workspace") return json({ workspace: { id: identity.id, handle: blog.handle, name: blog.name }, access: { owner, canEdit: owner && canWrite }, capabilities: { tools: VAULT_TOOL_NAMES, fileBased: true, writes: canWrite, publication: false, memberManagement: false, agentChangeRevert: false } });
+  if (name === "list_trash") {
+    try {
+      const trash = await listVaultTrash(location);
+      const items = [];
+      for (const item of trash.items) if (await allowedNow(item)) items.push({ id: item.itemId, path: item.relativePath, hash: item.revision });
+      return json({ items, truncated: trash.truncated });
+    } catch (cause) { return error(cause instanceof Error ? cause.message : "Could not read Trash."); }
+  }
   let bytesRead = 0;
   async function read(item: { itemId: string; relativePath: string }) {
     // Check current identity/path again: a folder move can revoke a folder grant.

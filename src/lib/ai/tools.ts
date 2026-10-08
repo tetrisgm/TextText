@@ -954,8 +954,8 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   }),
   restore_item: defineTool("restore_item", {
     title: "Restore item",
-    description: "Restore one item from Trash with its previous status.",
-    inputSchema: z.object({ id }).strict(),
+    description: "Restore a deleted file privately with the same identity.",
+    inputSchema: z.object({ id, path: z.string().min(1).max(1000).optional(), if_match_hash: ifMatchHash, idempotency_key: z.string().trim().min(1).max(500).optional(), folder_path: z.union([folderPath, z.literal("")]).optional() }).strict(),
     mutability: "write",
     confirmation: "audience",
     idempotent: true,
