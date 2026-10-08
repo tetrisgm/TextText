@@ -24,6 +24,12 @@ describe("owner folder move staging", () => {
       tool: "move_folder_tree", arguments: expect.objectContaining({ source_path: "Notes", destination_path: "Archive/Notes" }),
     }));
   });
+  it("forwards the stable staging key and execution intent on retries", async () => {
+    const value = {...body,stagingKey:"same-retry-123456789"};
+    await POST(request(value),context); await POST(request(value),context);
+    for (const [input] of mocks.stage.mock.calls) expect(input).toMatchObject({stagingKey:value.stagingKey,arguments:{idempotency_key:value.stagingKey}});
+    expect(mocks.stage.mock.calls[0][0]).toEqual(mocks.stage.mock.calls[1][0]);
+  });
   it("rejects generic tokens and non-owners before staging", async () => {
     mocks.authorize.mockResolvedValue({ canManageShares: false });
     expect((await POST(request(body), context)).status).toBe(403);

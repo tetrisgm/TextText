@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
 const folder = z.string().min(1).max(256).refine(validVaultFolderPath);
-const bodySchema = z.object({ source: folder, destination: folder }).strict();
+const bodySchema = z.object({ source: folder, destination: folder, stagingKey: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/).optional() }).strict();
 const fail = (status: number, error: string) => Response.json({ error }, { status, headers });
 
 /** First-party menu action. Staging freezes the server's plan; only the existing
@@ -27,7 +27,8 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
       actor: { sub: access.actorSub, userId: access.actorUserId, handle: access.workspaceHandle,
         actorType: "human", connectionId: `app:${access.actorUserId}` },
       tool: "move_folder_tree",
-      arguments: { source_path: body.data.source, destination_path: body.data.destination, idempotency_key: crypto.randomUUID() },
+      ...(body.data.stagingKey ? { stagingKey: body.data.stagingKey } : {}),
+      arguments: { source_path: body.data.source, destination_path: body.data.destination, idempotency_key: body.data.stagingKey ?? crypto.randomUUID() },
     });
     return Response.json({ proposal, reviewPath: `/proposals/${proposal.id}` }, { status: 201, headers });
   } catch {

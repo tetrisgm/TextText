@@ -181,8 +181,9 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   const transport: VaultTransport = async (method, params, signal) => {
     if (destroyed) throw new Error("This workspace has closed.");
     if (method === "folderMoveReview") {
-      if (Object.keys(params).some(key => key !== "source" && key !== "destination") ||
-          typeof params.source !== "string" || typeof params.destination !== "string") {
+      if (Object.keys(params).some(key => key !== "source" && key !== "destination" && key !== "stagingKey") ||
+          typeof params.source !== "string" || typeof params.destination !== "string" ||
+          (params.stagingKey !== undefined && (typeof params.stagingKey !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(params.stagingKey)))) {
         throw new Error("Choose a source folder and destination.");
       }
       const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/folder-moves`, {

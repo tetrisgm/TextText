@@ -76,7 +76,8 @@ final class LocalVaultCollaboration {
             return request
         }
         if method == "folderMoveReview" {
-            guard identifier(workspaceId), Set(params.keys) == ["source", "destination"],
+            guard identifier(workspaceId), Set(params.keys).isSubset(of: ["source", "destination", "stagingKey"]),
+                  params["stagingKey"] == nil || (params["stagingKey"] as? String)?.range(of: "^[A-Za-z0-9_-]{16,128}$", options: .regularExpression) != nil,
                   let source = params["source"] as? String, let destination = params["destination"] as? String,
                   !source.isEmpty, !destination.isEmpty, source.utf8.count <= 256, destination.utf8.count <= 256 else {
                 throw LocalVaultCollaborationError(code: "400", message: "Choose a source folder and destination.")

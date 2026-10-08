@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { vaultRequest } from "./bridge";
 
@@ -10,9 +10,9 @@ export function folderMoveDestination(source: string, destination: string): stri
   if (path.startsWith(source + "/")) throw new Error("A folder cannot move inside itself.");
   return path;
 }
-export async function prepareFolderMoveReview(source: string, destination: string, native: boolean): Promise<string> {
+export async function prepareFolderMoveReview(source: string, destination: string, native: boolean, stagingKey?: string): Promise<string> {
   const path = folderMoveDestination(source, destination);
-  const result = await vaultRequest<{ reviewPath: string }>("folderMoveReview", { source, destination: path });
+  const result = await vaultRequest<{ reviewPath: string }>("folderMoveReview", { source, destination: path, ...(stagingKey ? { stagingKey } : {}) });
   if (!/^\/proposals\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.reviewPath)) throw new Error("The folder review could not be opened.");
   if (!native) return result.reviewPath;
   const connection = await vaultRequest<{ webURL?: string }>("connection");
@@ -23,6 +23,7 @@ export async function prepareFolderMoveReview(source: string, destination: strin
 }
 
 export function FolderMoveDialog({ source, native, onClose }: { source: string; native: boolean; onClose: () => void }) {
+  const retry = useRef<{ source: string; destination: string; key: string } | null>(null);
   const [destination, setDestination] = useState(source);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -34,7 +35,9 @@ export function FolderMoveDialog({ source, native, onClose }: { source: string; 
     {review ? <><p>The move is ready to review. Your files stay where they are until you approve.</p>
       <a href={review} target="_blank" rel="noopener noreferrer">Review folder move</a></> :
       <form onSubmit={event => { event.preventDefault(); if (busy) return; setBusy(true); setError("");
-        void prepareFolderMoveReview(source, destination, native).then(setReview)
+        const normalized = destination.trim();
+        if (retry.current?.source !== source || retry.current.destination !== normalized) retry.current = { source, destination: normalized, key: crypto.randomUUID() };
+        void prepareFolderMoveReview(source, destination, native, retry.current.key).then(setReview)
           .catch(reason => setError(reason instanceof Error ? reason.message : "The folder review could not be prepared."))
           .finally(() => setBusy(false)); }}>
         <label>New folder path<input autoFocus value={destination} disabled={busy} onChange={event => setDestination(event.target.value)} /></label>

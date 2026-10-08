@@ -15,6 +15,13 @@ describe("shared folder move review", () => {
     expect(await prepareFolderMoveReview("Notes", " Archive/Notes ", false)).toBe(reviewPath);
     expect(request).toHaveBeenCalledExactlyOnceWith("folderMoveReview", { source: "Notes", destination: "Archive/Notes" });
   });
+  it("carries one intent key across a failed request and its retry", async () => {
+    request.mockRejectedValueOnce(new Error("Connection interrupted")).mockResolvedValueOnce({reviewPath});
+    await expect(prepareFolderMoveReview("Notes","Archive/Notes",false,"retry-key-123456789")).rejects.toThrow("interrupted");
+    expect(await prepareFolderMoveReview("Notes","Archive/Notes",false,"retry-key-123456789")).toBe(reviewPath);
+    expect(request.mock.calls[0]).toEqual(request.mock.calls[1]);
+    expect(request.mock.calls[1][1]).toMatchObject({stagingKey:"retry-key-123456789"});
+  });
   it("uses the desktop's authenticated workspace origin for its review link", async () => {
     request.mockResolvedValueOnce({ reviewPath }).mockResolvedValueOnce({ webURL: "https://texttext.test/vault/workspace" });
     expect(await prepareFolderMoveReview("Notes", "Archive/Notes", true)).toBe(`https://texttext.test${reviewPath}`);

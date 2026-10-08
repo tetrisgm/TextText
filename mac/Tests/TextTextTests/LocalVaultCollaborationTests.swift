@@ -103,6 +103,17 @@ final class LocalVaultCollaborationTests: XCTestCase {
             method: "folderMoveReview", params: ["source": "Notes", "destination": "Archive/Notes", "approved": true]))
     }
 
+    func testFolderReviewRetainsRetryIdentityAndRejectsInvalidKeys() throws {
+        let params: [String: Any] = ["source": "Notes", "destination": "Archive/Notes", "stagingKey": "retry-key-123456789"]
+        let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture", method: "folderMoveReview", params: params)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: String])
+        XCTAssertEqual(body["stagingKey"], "retry-key-123456789")
+        for invalid in ["short", "invalid/key-123456789"] {
+            var changed = params; changed["stagingKey"] = invalid
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture", method: "folderMoveReview", params: changed))
+        }
+    }
+
     @MainActor
     func testFolderReviewRelayAcceptsCreatedAndRetainsConflictFailure() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

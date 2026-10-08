@@ -28,19 +28,20 @@
 
 ## Current work
 
-- Proposal service now accepts an optional durable staging key. Owner/workspace
-  identity determines one proposal ID; stored intent rejects key reuse for a
-  different change. Concurrent insert conflicts return the original frozen
-  preview without refreshing expiry or duplicating its audit. Reviewed/expired
-  keys fail closed. Folder dialog and native/web transports still need to carry
-  the key; this service change is not deployed or claimed as end-to-end complete.
-  Proposal tests: 37 passed; TypeScript passed. Receipts:
-  `/tmp/texttext-proposal-staging-retry-tests.log`,
-  `/tmp/texttext-proposal-staging-retry-types.log`.
-  Additional proposal suites: assistant/outbound 13 passed. The old bulk
-  `delete-items-proposal` suite has nine failures because it still stages retired
-  `delete_items`; canonical policy rejects that tool before the new staging code.
-  Reconcile this obsolete suite before pushing the staging work.
+- Folder staging retry identity is wired through shared dialog, web/Windows
+  transport and Mac bridge. An unchanged retry returns one owner-bound frozen
+  proposal; changed intent or expired/reviewed keys fail closed. The dialog
+  retains its key across failed preparation. Backward-compatible requests
+  without a key remain accepted for older clients.
+  51 proposal tests, 61 shared-client/route tests, 18 Mac collaboration tests
+  and TypeScript passed. The obsolete database bulk-deletion suite is replaced
+  by an explicit retired-command guard; canonical frozen deletion/drift tests
+  remain in `write-proposals.test.ts`. Receipts:
+  `/tmp/texttext-staging-proposal-final.log`,
+  `/tmp/texttext-folder-staging-clients-tests.log`,
+  `/tmp/texttext-staging-mac-bridge.log`.
+  Frozen release gates, real Postgres concurrent insert/audit acceptance and
+  installed-client retry verification remain before rollout.
 
 - Mac 1197 installs durable native folder-catalog reconciliation. Frozen core
   (795 tests) and native gates passed. Live reviewed move
