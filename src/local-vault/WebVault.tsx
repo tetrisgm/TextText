@@ -6,33 +6,68 @@ import { WebAccount } from "./WebAccount";
 import { setVaultTransport } from "./bridge";
 import { createWebVaultTransport } from "./web-transport";
 import { watchWebWorkspace } from "./web-watch";
+import { claimWebSession, renameWebSession } from "./web-session";
 
 export function WebVault({ workspaceId, name, accountEmail, accountName }: { workspaceId: string; name: string; accountEmail: string | null; accountName: string | null }) {
-  const [ready, setReady] = useState(false);
+  const [initial] = useState({ workspaceId, name });
+  const [session, setSession] = useState<{ workspaceId: string; name: string; remounted?: boolean } | null>(null);
+  const [switchError, setSwitchError] = useState("");
   useEffect(() => {
-    const transport = createWebVaultTransport(workspaceId, name);
-    const release = setVaultTransport(transport.request);
+    const owned = claimWebSession(initial.workspaceId, initial.name);
+    if (owned.workspaceId !== initial.workspaceId) {
+      // The previous editor is already gone. Do not mistake a fresh editor's
+      // empty flush guard for acknowledgement of that editor's pending work.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSession({ ...owned, remounted: true });
+      return;
+    }
+    const transport = createWebVaultTransport(owned.workspaceId, owned.name);
+    const release = setVaultTransport(async (method, params, signal) => {
+      const result = await transport.request(method, params, signal);
+      return (method === "list" || method === "open") && result && typeof result === "object" ? { ...result, name: owned.name } : result;
+    });
     const watcher = watchWebWorkspace({
       visible: () => document.visibilityState === "visible" && navigator.onLine,
       wait: transport.wait, refresh: transport.refresh,
       changed: () => window.dispatchEvent(new Event("texttext:vault-changed")),
     });
     const visibility = watcher.visibilityChanged;
-    // Mount children only after the external transport has been registered.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReady(true);
+    setSession({ ...owned });
     window.addEventListener("focus", visibility);
     window.addEventListener("online", visibility);
     window.addEventListener("offline", visibility);
     document.addEventListener("visibilitychange", visibility);
     return () => {
-      watcher.dispose();
-      release(); transport.destroy();
+      watcher.dispose(); release(); transport.destroy();
       window.removeEventListener("focus", visibility);
       window.removeEventListener("online", visibility);
       window.removeEventListener("offline", visibility);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [workspaceId, name]);
-  return ready ? <VaultApp allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /> : <p>Opening workspace…</p>;
+  }, [initial]);
+  useEffect(() => {
+    if (!session || session.remounted || !renameWebSession(workspaceId, name)) return;
+    window.dispatchEvent(new Event("texttext:vault-changed"));
+  }, [session, workspaceId, name]);
+  useEffect(() => {
+    if (!session || session.remounted || session.workspaceId === workspaceId) return;
+    let active = true;
+    void (async () => {
+      const flush = (window as Window & { texttextFlushForSignOut?: () => Promise<boolean> }).texttextFlushForSignOut;
+      try {
+        if (!flush || !await flush()) throw new Error("Finish saving your changes before opening another workspace.");
+        if (active) {
+          const path = `/vault/${encodeURIComponent(workspaceId)}`;
+          // A router transition retains the global bridge realm and is unsafe here.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.assign(path + (window.location.pathname === path ? window.location.search : ""));
+        }
+      } catch {
+        if (active) setSwitchError("Your current workspace is still open. Finish saving your changes, then open the other workspace again.");
+      }
+    })();
+    return () => { active = false; };
+  }, [session, workspaceId]);
+  if (session?.remounted) return <section><p>Open this workspace in a new page.</p><a href={`/vault/${encodeURIComponent(workspaceId)}`}>Open workspace</a><p><a href={`/vault/${encodeURIComponent(session.workspaceId)}`}>Return to previous workspace</a></p></section>;
+  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /></> : <p>Opening workspace…</p>;
 }
