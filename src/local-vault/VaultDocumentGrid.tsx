@@ -1,3 +1,4 @@
+import { previewLabels, rememberPreviewLabel } from "./preview-labels";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { DocumentCollectionRenderer } from "@/components/document/DocumentRenderer";
@@ -96,7 +97,8 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     return () => observer.disconnect();
   }, [folder]);
   const [gallerySearchOpen, setGallerySearchOpen] = useState(false);
-  const [previews, setPreviews] = useState<Record<string, FolderPreview>>({});
+  const [previewState, setPreviewState] = useState(() => ({ listing, values: previewLabels(listing) }));
+  const previews = previewState.listing === listing ? previewState.values : previewLabels(listing);
   const [query, setQuery] = useState<{ key: string; listing?: VaultListing; previews: Record<string, FolderPreview>; done: boolean; error?: string }>({ key: "", previews: {}, done: false });
   const template = useMemo(() => folderTemplate ? { ...folderTemplate, collection: selectCollectionView(folderTemplate.collection, view || folderTemplate.collection.defaultView || "") } : undefined, [folderTemplate, view]);
   const members = useMemo(() => collectionMembers(listing.items, folder, Boolean(template), excludedPath), [listing, folder, template, excludedPath]);
@@ -449,7 +451,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     let active = true;
     void Promise.resolve().then(async () => {
       if (!active) return;
-      setPreviews({});
+      setPreviewState({ listing, values: previewLabels(listing) });
       const batchSize = folder === "Gallery" ? 4 : 1;
       for (let start = 0; start < visible.length && active; start += batchSize) {
         await Promise.all(visible.slice(start, start + batchSize).map(async item => {
@@ -466,15 +468,19 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
                 }
               } catch { /* Keep the card readable with the standard look. */ }
             }
-            if (active && preview) setPreviews((previous) => ({ ...previous, [item.path]: preview }));
+            if (active && preview) {
+              rememberPreviewLabel(listing, item.path, preview);
+              setPreviewState(previous => ({ listing, values: { ...(previous.listing === listing ? previous.values : previewLabels(listing)), [item.path]: preview } }));
+            }
           } catch { /* The original stays accessible when its preview cannot be read. */ }
         }));
       }
     });
     return () => { active = false; };
-    // Key tracks the listing revision and visible paths; query results create fresh arrays.
+    // Listing identity changes on file/permission notifications even when paths
+    // are unchanged. The visible key also tracks pagination/query results.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, visibleKey, folder]);
+  }, [busy, listing, visibleKey, folder]);
   const requestedLayout = template?.collection.layout || "cards";
   const supported = ["cards", "list", "index"].includes(requestedLayout);
   const layout = supported ? requestedLayout : "list";

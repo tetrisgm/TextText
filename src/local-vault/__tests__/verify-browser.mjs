@@ -29,6 +29,7 @@ let feedHasNewStory = false;
 const searchQueries = [];
 const commentsByItem = new Map();
 let commentReads = 0;
+let previewBarrier = null;
 let revision = 1;
 let connected = false, openedWeb = false, agentState = "signed-out", agentSendCount = 0, agentDisconnectCount = 0, lastAgentSend = null, lastAgentCancel = null, holdAgentTurn = false;
 let nextCreatedPath = null, delayedRemoval = null;
@@ -147,6 +148,7 @@ try {
       files.set(result.path, result);
     }
     else if (request.method === "preview") {
+      if (previewBarrier) await previewBarrier;
       const file = files.get(request.params.path);
       if (!file) error = { message: "File not found" };
       else {
@@ -283,6 +285,36 @@ try {
   };
   const folderNavigation = page.getByRole("navigation", { name: "Folders", exact: true });
   const chooseFolder = async (name) => folderNavigation.locator("summary").filter({ hasText: name }).first().click();
+  if (process.argv.includes("--preview-labels-only")) {
+    const home = page.getByRole("button", { name: "TextText", exact: true });
+    const savedLabel = page.getByRole("button", { name: "Offline note Notes Open →", exact: true });
+    await savedLabel.waitFor();
+    await savedLabel.click();
+    await page.getByRole("heading", { name: "Offline note", exact: true }).first().waitFor();
+    let release;
+    previewBarrier = new Promise(resolve => { release = resolve; });
+    await home.click();
+    await page.getByRole("heading", { name: "All files", exact: true }).waitFor();
+    assert.equal(await savedLabel.count(), 1, "return home must use saved title before preview reads finish");
+    release(); previewBarrier = null;
+    await savedLabel.click();
+    await page.getByRole("heading", { name: "Offline note", exact: true }).first().waitFor();
+    await home.click();
+    await savedLabel.waitFor();
+    previewBarrier = new Promise(resolve => { release = resolve; });
+    const changed = JSON.parse(initial.documentJSON);
+    changed.content.title = "Externally renamed note";
+    files.set(initial.path, { ...initial, hash: String(++revision), documentJSON: JSON.stringify(changed), markdown: initial.markdown.replace('title: "Offline note"', 'title: "Externally renamed note"') });
+    await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+    await savedLabel.waitFor({ state: "detached" });
+    release(); previewBarrier = null;
+    await page.getByRole("button", { name: "Externally renamed note Notes Open →", exact: true }).waitFor();
+    assert.deepEqual(failures, []);
+    console.log("Home saved labels survive remount and invalidate after external edits.");
+    await page.close();
+    await browser.close();
+    process.exit(0);
+  }
   if (process.argv.includes("--bookmark-conflict-only")) {
     const fixturePath = "Bookmarks/Summary.textpack";
     const document = makeDocument("Saved article text.");

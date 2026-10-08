@@ -25,10 +25,10 @@
 
 - Home List/Cards toggles and navigation persistence passed in actual Mac and
   Safari. [Receipt](verification/2026-10-08-home-layouts-live.md).
-  Returning home briefly shows filename titles before serialized preview reads
-  finish. Investigate shared grid preview loading without stale caches.
-  `VaultListing` currently carries no per-file revision; web manifest has one
-  but does not expose it through the shared listing. No cache fix implemented.
+  Shared source now retains bounded saved-title labels during return navigation,
+  and fixes preview invalidation on same-path external edits. Unit and rebuilt
+  browser regressions passed. Not installed/deployed yet.
+  [Preview receipt](verification/2026-10-08-home-preview-labels.md).
 - Install verified Windows candidate when the old process closes, then verify
   startup, existing notes, search, save/reopen, Gallery metadata and live sync.
 - Finish automatic reconnect/failure acceptance and canonical sharing with a
