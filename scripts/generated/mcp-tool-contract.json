@@ -41,6 +41,7 @@
     "create_folder",
     "rename_folder",
     "move_folder",
+    "move_folder_tree",
     "delete_folder",
     "restore_folder",
     "set_access",

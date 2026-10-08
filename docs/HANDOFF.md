@@ -56,9 +56,11 @@
   `/tmp/texttext-oracle-template-gates.log`,
   `/tmp/texttext-template-native-gates.log`,
   `/tmp/texttext-oracle-template-build.log`, `/tmp/texttext-template-package.log`.
-  Full required release checks are running through handle `99704`, log
-  `/tmp/texttext-template-release-gates.log`; resume that handle before
-  starting another run. Oracle remains on `cce4206c`, unchanged. Preflight
+  Full required release checks stopped at stale generated MCP documentation
+  (handle `99704` is terminal). Log `/tmp/texttext-template-release-gates.log`.
+  Regenerated tool contract and docs now pass `sync-tool-docs.ts --check`;
+  update the clean candidate to the corrective commit before resuming checks.
+  Oracle remains on `cce4206c`, unchanged. Preflight
   verified 27 GB free, recent backups and all TextText/Algorave services active.
   Candidate archive:
   `.texttext/oracle/texttext-223954b8-templates.tar.gz` in that clean clone.

@@ -13,7 +13,7 @@ agents used with that channel connect through this hosted endpoint instead. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/ai/tools.ts` is the source of truth for the 51 tool
+`src/lib/ai/tools.ts` is the source of truth for the 52 tool
 names, schemas, mutability, confirmation requirements, and MCP
 annotations. The MCP adapter registers those definitions in
 `src/lib/mcp/tools.ts`.
@@ -110,7 +110,7 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 | Scope | Access |
 |-------|--------|
 | `read` | Call the 15 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `review_brief_sources`, `open_item`, `search`, `list_trash`, `list_comments`, `list_responses`, `list_document_templates`, `list_agent_changes`, `list_reading_sources`, `search_reading`, `run_command`. |
-| `sync` | Call all 51 tools, including the 36 that mutate content or read administration data. It also grants every `read` operation. |
+| `sync` | Call all 52 tools, including the 37 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,7 +140,7 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (51)
+## Tools (52)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
@@ -157,7 +157,7 @@ or workspace selector that could cross that boundary.
 | `list_access` | `sync` | List who can access the workspace, one folder, or one item, and their role. |
 | `list_document_templates` | `read` or `sync` | List the kinds of item this workspace has: the built-in ones and any designed here. Each entry says what it is for, what fields it holds, and how a folder of them is laid out. Types under `editable` were designed from a blueprint and can be changed with update_item_type. For a source-less workspace look, request its full definition with template_id, then change that validated definition. A built-in must first be copied with remix_item_type. `needsMigration` and `unreadable` retain their old rendering and cannot be edited here. Call this first whenever someone wants a kind of item to be different. Supply template_id to inspect one complete render definition before editing it. |
 | `remix_item_type` | `sync` | Copy one exact built-in or workspace item type into a new personal type. The copy keeps its fields, item layout, folder layout, theme, and example. It is a separate type with a new id; the source and items using it are unchanged. Use this before modifying a built-in. Then inspect the copy with list_document_templates(template_id) and change it with update_item_type. |
-| `create_item_type` | `sync` | Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's default. Existing items change only when apply_to_existing is explicitly true. Every type needs fields a person will actually fill in. This is the shape to aim for, from the built-in Tasks type: {"name":"Tasks","description":"A focused list of things to finish.","fields":[{"id":"area","label":"Area","type":"enum","options":[{"value":"work"},{"value":"personal"}]},{"id":"items","label":"Items","type":"rows","fields":[{"id":"task","type":"text"},{"id":"done","type":"boolean"},{"id":"when","type":"date"},{"id":"priority","type":"enum"}]}],"collection":{"layout":"list"}} Three to seven fields. A board needs a single-select enum to group by, and a calendar or heatmap needs a date field to place items on: declare that field, or choose a layout the fields you have can support. Never return a type with no fields. |
+| `create_item_type` | `sync` | Create one reusable item type from a complete blueprint. The blueprint defines the fields, the item page, the folder layout, example content, and safe theme tokens together. Use this when someone asks for a new kind of thing, such as a Medium-like blog, a Notion-like task board, or Apple Notes-like notes. If folder_path is supplied, the new type becomes that folder's default. Existing items change only when apply_to_existing is explicitly true. Use the document's existing title, body and assets before adding custom fields. Notes and blog articles can use fields: [] with showBody: true. Do not add Area, Description or other metadata merely to fill a quota. Add fields only when the requested workflow needs them. {"name":"Blog","styleReference":"Medium","fields":[],"item":{"shape":"article","showBody":true,"showMetadata":false},"collection":{"layout":"list"}} A board needs a single-select enum to group by, and a calendar or heatmap needs a date field to place items on: declare that field, or choose a layout the available content supports. Respect the requested reading and editing experience. |
 | `update_item_type` | `sync` | Change a workspace item type: another field, a different folder view, a bigger title, or a new accent. For blueprint-authored types, send the whole edited blueprint from list_document_templates. For an assembled or remixed workspace type, request list_document_templates with its template_id and send the whole edited definition. Only one of blueprint or definition is allowed. Definitions are validated render data, never HTML, CSS, JavaScript, or component names. Send base_version exactly as reported so an edit made against a stale copy is refused. Keep the definition id and version unchanged in the request; the save creates a new immutable version. The old version is kept and the items already using it keep rendering as they were. Use save_scope to name the selected folder or the exact listed usages, or to save only a version. Calls without save_scope save only a version unless apply is explicitly true. Only items pinned to that exact base reference are restyled. Existing field ids, storage kinds and enum values must stay compatible; change enum labels to rename options. Built-in types cannot be changed in place; first make a copy with remix_item_type. A type with an unreadable or outdated source needs manual recovery before editing. |
 | `save_item_as_look` | `sync` | Take the way one item currently renders and save it as a reusable look, under a name. The look then appears in the look pickers and can be applied to other items or given to a folder with set_folder_template. This replaced an operations-based authoring API: shape a document the ordinary way, with update_item and the item's own theme, then save what you made. It never changes the item. |
 | `set_folder_template` | `sync` | Choose a folder default type. Existing items retain their pinned types. Set apply_to_existing true only when the user explicitly asks to migrate existing items. |
@@ -174,15 +174,16 @@ or workspace selector that could cross that boundary.
 | `delete_item` | `sync` | Move one item to Trash. It stays restorable; this never permanently deletes. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `delete_items` | `sync` | Move several items to Trash in one go. They stay restorable; this never permanently deletes. Use this when someone asks to get rid of more than one thing. Name every item explicitly by id: there is no "everything matching" form, because a request to delete has to say what it is deleting. Each item is handled on its own. One that has changed since you read it, or that has already gone, is reported and the rest still go. The answer says what happened to each. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `empty_trash` | `sync` | Permanently delete every item and folder currently in Trash. This cannot be undone and always requires owner approval. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
-| `restore_item` | `sync` | Restore one item from Trash with its previous status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
-| `add_item_asset` | `sync` | Import one public image or video URL into TextText and attach it as cover, body, or gallery. |
+| `restore_item` | `sync` | Restore a deleted file privately with the same identity. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
+| `add_item_asset` | `sync` | Import one public image URL into TextText and attach it as cover, body, or gallery. |
 | `remove_item_asset` | `sync` | Remove references to one asset URL from an item's cover, body, and gallery. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `recapture_bookmark` | `sync` | Re-fetch one bookmark from its saved URL. The current capture stays visible until the new one lands. |
-| `add_comment` | `sync` | Add a comment or reply on one item, optionally anchored to an exact quote. |
+| `add_comment` | `sync` | Add a comment or reply on one item, optionally anchored to an exact quote. Pass a stable idempotency_key for safe retries. |
 | `set_comment_resolved` | `sync` | Resolve or reopen one comment thread. |
 | `create_folder` | `sync` | Create a subfolder under an existing folder path; it inherits the parent's mode and privacy. |
 | `rename_folder` | `sync` | Rename one folder. Its id and path do not change. |
 | `move_folder` | `sync` | Move a folder and its descendants under another folder, or to the workspace root. Preserves items and RSS subscriptions. Built-in root folders cannot move. |
+| `move_folder_tree` | `sync` | Move or rename an ordinary folder tree to an exact workspace-relative destination path. Stages a review of every file, folder and inherited access before execution. File contents and identities are preserved. Requires a stable idempotency key. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `delete_folder` | `sync` | Move one folder subtree to Trash. Restorable; never permanently deleted. This changes or removes existing workspace state. Obtain explicit human confirmation immediately before calling it. |
 | `restore_folder` | `sync` | Restore one folder subtree from Trash. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
 | `set_access` | `sync` | Grant or change one person's role by email: member or guest on a workspace; editor, commenter, or viewer on a folder or item. Item and workspace invitations report email delivery status. This can change what readers can see. Obtain explicit human confirmation immediately before calling it. |
