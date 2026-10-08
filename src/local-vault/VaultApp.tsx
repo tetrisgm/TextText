@@ -953,14 +953,31 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     restoreDialogFocus(feedSubscribeReturnFocus.current, feedSubscribeButton.current, searchButton.current);
     feedSubscribeReturnFocus.current = null;
   }, []);
+  const [folderAssistantTarget, setFolderAssistantTarget] = useState<{ path: string; folder: string; root: string; requestId: number; taskId: string } | null>(null);
   const beginCustomize = useCallback((path: string) => {
+    setAssistantTargetPath(null);
+    const requestId = ++assistantRequestId.current, taskId = crypto.randomUUID();
+    setFolderAssistantTarget(selected ? null : { path, folder: destinationFolder, root: listing?.root ?? "", requestId, taskId });
     assistantReturnFocus.current = focusedControl();
     if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
-    setAssistantRequest({ type: "customize", requestId: ++assistantRequestId.current, taskId: crypto.randomUUID(), path });
+    setAssistantRequest({ type: "customize", requestId, taskId, root: listing?.root ?? "", path });
     setAssistantOpen(true);
-  }, [setSidebarVisible]);
+  }, [setSidebarVisible, selected, destinationFolder, listing?.root]);
+  const folderTargetMatches = !!folderAssistantTarget && !selected && folderAssistantTarget.folder === destinationFolder && folderAssistantTarget.root === listing?.root && folderAssistantTarget.requestId === assistantRequest?.requestId && assistantRequest.type === "customize" && folderAssistantTarget.taskId === assistantRequest.taskId;
+  useEffect(() => {
+    if (!folderAssistantTarget || folderTargetMatches) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setFolderAssistantTarget(null);
+      setAssistantRequest(current => current?.requestId === folderAssistantTarget.requestId ? null : current);
+    });
+    return () => { active = false; };
+  }, [folderAssistantTarget, folderTargetMatches]);
   const closeAssistant = useCallback(() => {
     setAssistantOpen(false);
+    setFolderAssistantTarget(null);
+    setAssistantRequest(null);
     setAssistantTargetPath(null);
     restoreDialogFocus(assistantReturnFocus.current, searchButton.current);
     assistantReturnFocus.current = null;
@@ -1034,7 +1051,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   if (canSubscribeFeed) commandActions.push({ id: "subscribe-feed", label: "Add source", description: "Follow a site in Feeds.", shortcut: "F", keywords: ["rss", "atom", "news", "feed"] });
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "import-file", label: "Import file", description: `Add a file to ${commandLocation}.`, shortcut: "P", keywords: ["textpack", "document"] });
   if (!selected && canCreate) commandActions.push({ id: "folder-design", label: "Choose folder design", description: `Change how ${commandLocation} is presented.`, shortcut: "V", keywords: ["view", "layout", "gallery", "table"] });
-  if ((allowFolderPicker || (webAssistant && selected)) && listing?.root) commandActions.push({
+  if ((allowFolderPicker || webAssistant) && listing?.root && (selected ? canEditSelected : canCreate)) commandActions.push({
     id: "customize",
     label: selected ? "Customize this item" : "Customize this folder",
     description: selected ? "Change how the open item looks." : `Change how ${commandLocation} looks.`,
@@ -1249,7 +1266,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
                     onChange={(event) => { setDestinationFolder(event.target.value); setFolderDesignOpen(false); }} />
                 </label>}
                 {canCreate && <button disabled={busy} onClick={openFolderDesign}>Choose folder design</button>}
-                {allowFolderPicker && <button disabled={busy} onClick={() => { closeMoreActions(); void operate(customizeCurrent); }}>Customize folder</button>}
+                {(allowFolderPicker || webAssistant) && canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); void operate(customizeCurrent); }}>Customize folder</button>}
                 {canOpenRecovery && <button disabled={busy} onClick={() => openRecovery()}>Trash and recovery</button>}
                 {allowFolderPicker && <button disabled={busy} onClick={openWorkspaceFolder}>Open another folder…</button>}
               </>}
@@ -1406,7 +1423,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
         onAskBookmarkAgent={allowFolderPicker || webAssistant ? askBookmarkAgent : undefined}
         designOpen={folderDesignOpen}
-        onCustomize={allowFolderPicker ? beginCustomize : undefined}
+        onCustomize={(allowFolderPicker || webAssistant) && canCreate ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}
         onRevealBookmark={(path) => void operate(async () => { setSelected(null); setPreferredBookmarkPath(path); setDestinationFolder("Bookmarks"); }, true)}
         onOpen={(path) => void operate(async () => { setNoteEditPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)} /></div> : <div className="vault-empty">
@@ -1417,6 +1434,6 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess}
       onClose={() => { setImportedGalleryPath(null); refresh(); }}
       onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
-    {(allowFolderPicker || webAssistant) && <NativeAssistant targetTitle={selected ? { path: selected.path, title: contextTitle } : undefined} webAssistant={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
+    {(allowFolderPicker || webAssistant) && <NativeAssistant targetTitle={selected ? { path: selected.path, title: contextTitle } : undefined} webAssistant={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path ?? (folderTargetMatches ? folderAssistantTarget?.path : undefined)} request={folderAssistantTarget && !folderTargetMatches ? null : assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
   </div>;
 }

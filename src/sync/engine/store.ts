@@ -3,7 +3,7 @@ import { assetCommandPayload, type VaultAssetAttachment } from "@/lib/vault/asse
 import { extractFolderViewMetadata, FolderViewMetadataCache } from "@/local-vault/folder-view-metadata";
 import { buildTemplateRetirement, templateRetirementIdentity } from "@/lib/presentation/vault-template-retirement";
 import { isTemplateRetirementPath, parseTemplateRetirement } from "@/lib/presentation/template-retirement";
-import { createFolderViewPack, readFolderView, readFolderItemDefault, folderViewPath, FOLDER_DEFAULT_FIELD, FOLDER_STANDARD_LAYOUT_FIELD } from "@/local-vault/folder-view";
+import { createFolderViewPack, readFolderView, readFolderItemDefault, folderViewPath, FOLDER_VIEW_FIELD, FOLDER_DEFAULT_FIELD, FOLDER_STANDARD_LAYOUT_FIELD } from "@/local-vault/folder-view";
 import { readDrainSignal } from "./read-drain";
 import { buildVaultTemplateArtifact, type VaultTemplateCreation } from "@/lib/presentation/vault-template-authoring";
 import * as Y from "yjs";
@@ -1602,6 +1602,9 @@ export async function mutateVaultDocument(input: VaultLocation & {
       } else if (template) {
         const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId);
         const snapshot = readDocument(pack.file);
+        // An explicitly applied collection design replaces the standard-layout fallback,
+        // while the pinned default for future items remains independent.
+        if (snapshot.content.fields[FOLDER_VIEW_FIELD] === "v1") delete snapshot.content.fields[FOLDER_STANDARD_LAYOUT_FIELD];
         applyDocumentSnapshot(doc, { ...snapshot, presentation: { ...snapshot.presentation, template: { id: template.id, version: template.version } } }, "agent-template");
         workingBytes = encodePack(pack, { ...pack.file, templateJSON: json(template), templateAuthoringSourceJSON: authoring ? json(authoring) : null });
       } else {

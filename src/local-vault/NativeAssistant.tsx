@@ -19,7 +19,7 @@ type Message = { id: number; role: "user" | "assistant"; text: string };
 type AgentEvent = Partial<Status> & { proposals?: AssistantWriteProposal[]; type: string; taskId?: string; text?: string; tool?: string; path?: string };
 export type NativeAssistantRequest =
   | { type: "agent"; requestId: number; root: string; target: string; suggestedPrompt?: string }
-  | { type: "customize"; requestId: number; taskId: string; path: string };
+  | { type: "customize"; requestId: number; taskId: string; root: string; path: string };
 type ActiveTurnFence = { type: "agent" | "customize"; taskId: string; root: string; target: string };
 const MAX_MESSAGES = 50, MAX_TEXT = 24_000, MAX_TOTAL = 120_000;
 function bounded(messages: Message[]): Message[] {
@@ -130,6 +130,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
       if (!active) return;
       handledRequestId.current = request.requestId;
       if (request.type === "customize") {
+        if (request.root !== root || (webAssistant && request.path !== path)) return;
         customizationRoot.current = root;
         activeTaskFence.current = null;
         acceptTask(null); setPrompt(""); setCustomizing(request.path); setCustomizationTaskId(request.taskId); changeProposal(null);

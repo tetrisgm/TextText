@@ -63,6 +63,8 @@ it("customization uses explicit proposal review and never approves either design
     expect(body.context).toEqual({ postId: id, includeItem: true, mode: "workspace_review" });
     expect(body.messages.at(-1).content).toContain("set_item_template");
     expect(body.messages.at(-1).content).toContain("separate approval");
+    expect(body.messages.at(-1).content).toContain("template collection layout");
+    expect(body.messages.at(-1).content).toContain("never change sibling items");
     expect(body.messages.at(-1).content).toContain("Make it readable");
     return new Response(JSON.stringify({type:"complete",text:"Review design"}) + "\n");
   });

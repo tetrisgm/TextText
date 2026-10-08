@@ -269,3 +269,22 @@ it("retires through the public external-agent dispatcher and hides every version
   expect((await readVaultTextpack({ ...location(), itemId: source }))!.revision).toBe(sourceRevision);
   expect((await executeMcpTool("retire_document_template", args, { authInfo: { ...authInfo, scopes: ["readonly"] } })).isError).toBe(true);
 });
+
+it("applying a folder design activates its collection without changing pinned defaults or children", async () => {
+  const beforeChild = await readVaultTextpack({ ...location(), itemId: target });
+  const folderId = "33333333-3333-4333-8333-333333333333";
+  const template = requireBuiltinTemplate("texttext.note");
+  const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
+  document.content.fields = { texttextFolderView: "v1", texttextFolderStandardLayout: "v1", texttextFolderDefault: "pinned unchanged" };
+  const bytes = buildTextpack("Folder", { document, template, markdown: `---\ntextTextId: ${folderId}\n---\n\n` });
+  const saved = await writeVaultTextpack({ ...location(), itemId: folderId, operationId: "folder-create", relativePath: "Notes/Folder view.textpack", baseRevision: null, bytes });
+  await executeVaultTemplateTool("set_item_template", { ...input(), id: folderId, if_match_hash: saved.revision, idempotency_key: "folder-design" }, context());
+  const result = (await readVaultTextpack({ ...location(), itemId: folderId }))!;
+  const file = openPack(result.bytes, result.relativePath, result.revision).file;
+  const changed = readDocument(file);
+  expect(changed.content.fields.texttextFolderStandardLayout).toBeUndefined();
+  expect(changed.content.fields.texttextFolderView).toBe("v1");
+  expect(changed.content.fields.texttextFolderDefault).toBe("pinned unchanged");
+  expect(readTemplate(file, changed).id).toBe(custom.id);
+  expect((await readVaultTextpack({ ...location(), itemId: target }))!.revision).toBe(beforeChild!.revision);
+});
