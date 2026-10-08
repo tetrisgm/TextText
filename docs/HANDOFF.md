@@ -2,7 +2,9 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1204)**, source `10735a38`.
+- Mac `/Applications/TextText.app`: **0.204 (1205)**, source `c3c3ed2d`.
+  Signed build/install, account/iCloud startup and saved Gallery model metadata
+  reopening passed. [Current Mac receipt](verification/2026-10-08-mac-1205.md).
   Real native Gallery image description and metadata write passed; live Safari
   rejected an edit opening the same item. Root cause remains unresolved.
   [Current acceptance and failure](verification/2026-10-08-gallery-agent-1204.md).
