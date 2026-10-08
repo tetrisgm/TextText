@@ -73,9 +73,16 @@ Native command compatibility and the outdated SQL deployment smoke are fixed
 contract and checks canonical file persistence, audit and durable retry. The
 initial failed deployment rolled back correctly; the corrected deployment passed.
 
-Next: extend the canonical agent backend beyond its current eleven tools,
-starting with audited item move/trash operations. Keep shared UI and sync gates
-mandatory; full capability and reference-template parity remain unfinished.
+Source follow-up since the installed/deployed baseline:
+- `65681044`, `54999aa6`: human comment attribution stays human; canonical
+  move/delete commands use original path/hash and stable operation keys with
+  commit-time source/destination grants. 32 focused tests passed, TypeScript
+  and scoped lint passed. Organization tests are mandatory in the sync gate.
+- `89aa390c`: native remote CLI consumes validated authoritative file paths.
+  All 22 focused Swift tests passed. Not installed yet.
+- In progress: tombstone-aware Trash listing/restoration, and the shared Note
+  Icon creation/edit/read flow. Keep full identity and retry semantics.
+  Neither these source changes nor the current UI work is deployed yet.
 
 File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
 (`f4352d53`, `1ccb5163`) and expanded sync gate (`48ac492a`) are committed.
