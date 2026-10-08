@@ -16,6 +16,8 @@ vi.mock("@/lib/store", async () => {
     readVaultTextpackIdentity: engine.readVaultTextpackIdentity,
     readVaultCollaboration: engine.readVaultCollaboration, joinVaultPresence: engine.joinVaultPresence, leaveVaultPresence: engine.leaveVaultPresence, updateVaultPresence: engine.updateVaultPresence,
     readVaultTextpack: engine.readVaultTextpack,
+    createVaultFolder: (input: Parameters<typeof engine.createVaultFolder>[0] & { actorUserId: string }) => engine.createVaultFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
+    createVaultTemplate: (input: Parameters<typeof engine.createVaultTemplate>[0] & { actorUserId: string }) => engine.createVaultTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
     listVaultTrash: engine.listVaultTrash,
     mutateVaultDocument: (input: Parameters<typeof engine.mutateVaultDocument>[0] & { actorUserId: string }) => engine.mutateVaultDocument({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
   };
@@ -458,4 +460,66 @@ describe("canonical files through the public proposal lifecycle", () => {
       expect((await readVaultTextpack(location))?.revision).toBe(saved?.revision);
     } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
   });
+});
+
+describe("canonical template approval durability", () => {
+  it("creates and updates through public approvals, recovering expired lost responses without another write", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-template-proposal-"));
+    vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true;
+    try {
+      const h = harness(); h.dependencies.execute = runWorkspaceToolForSession;
+      let counter = 0; h.dependencies.randomId = () => `66666666-6666-4666-8666-${String(++counter).padStart(12, "0")}`;
+      const blueprint = { name: "Research", fields: [], collection: { layout: "list" } };
+      const stage = (tool: string, args: Record<string, unknown>) => createWorkspaceWriteProposal({ actor: owner, tool, arguments: { ...args, idempotency_key: "caller" } }, h.dependencies);
+      const approve = (id: string) => decideWorkspaceWriteProposal({ actor: owner, proposalId: id, decision: "approve" }, h.dependencies);
+      const engine = await import("@/sync/engine/store");
+      const location = { root, workspaceId: "blog-1" };
+      for (const updating of [false, true]) {
+        const existing = (await engine.listVaultTextpacks(location)).items;
+        const source = existing[0];
+        const metadata = source ? await engine.readVaultTemplate({ ...location, itemId: source.itemId }) : null;
+        const definition = metadata ? JSON.parse(metadata.templateJSON!) : null;
+        const proposal = await stage(updating ? "update_item_type" : "create_item_type", updating
+          ? { template_id: definition.id, base_version: 1, source_item_id: source.itemId, source_hash: source.revision, blueprint: { ...blueprint, name: "Research revised" } }
+          : { blueprint });
+        expect(proposal.arguments).not.toHaveProperty("apply_to_existing");
+        await h.repository.claim(proposal.id, { blogId: "blog-1", actorUserId: "user-1" }, h.dependencies.now());
+        h.repository.rejectCompletion = true;
+        expect((await approve(proposal.id)).status).toBe("ambiguous");
+        const committed = (await engine.listVaultTextpacks(location)).items;
+        expect(committed).toHaveLength(updating ? 2 : 1);
+        h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+        access.allowed = false;
+        expect((await approve(proposal.id)).status).not.toBe("completed");
+        access.allowed = true;
+        expect((await Promise.all([approve(proposal.id), approve(proposal.id)])).every(result => result.status === "completed")).toBe(true);
+        expect((await engine.listVaultTextpacks(location)).items).toEqual(committed);
+      }
+      const folder = await stage("create_folder", { name: "Approved folder", parent_path: "" });
+      h.repository.rejectCompletion = true;
+      expect((await approve(folder.id)).status).toBe("ambiguous");
+      h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+      access.allowed = false;
+      expect((await approve(folder.id)).status).not.toBe("completed");
+      access.allowed = true;
+      expect((await approve(folder.id)).status).toBe("completed");
+      expect((await engine.listVaultTextpacks(location)).folders).toContain("Approved folder");
+      const expired = await stage("create_item_type", { blueprint });
+      await h.repository.claim(expired.id, { blogId: "blog-1", actorUserId: "user-1" }, h.dependencies.now());
+      h.advance(16 * 60_000);
+      expect((await approve(expired.id)).status).toBe("expired");
+      expect((await engine.listVaultTextpacks(location)).items).toHaveLength(2);
+      await expect(stage("create_item_type", { blueprint, apply_to_existing: false })).rejects.toThrow("arguments are invalid");
+    } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+});
+
+it("offers only writes with durable proposal recovery", async () => {
+  const { cloudAssistantToolNames } = await import("@/lib/ai/cloud-tools");
+  const { DURABLE_PROPOSAL_TOOLS, isProposableWorkspaceWrite } = await import("@/lib/ai/write-proposal-policy");
+  const { WORKSPACE_TOOL_DEFINITIONS } = await import("@/lib/ai/tools");
+  for (const name of cloudAssistantToolNames()) if (WORKSPACE_TOOL_DEFINITIONS[name].mutability === "write") {
+    expect(isProposableWorkspaceWrite(name)).toBe(true);
+    expect(DURABLE_PROPOSAL_TOOLS.has(name)).toBe(true);
+  }
 });

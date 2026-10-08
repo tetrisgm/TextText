@@ -6,6 +6,7 @@ import { auditCteFrom, auditInsertQuery } from "@/lib/audit";
 import { db, executeAtomicBatch } from "@/lib/db/client";
 import { aiWriteProposals } from "@/lib/db/schema";
 import {
+  DURABLE_PROPOSAL_TOOLS,
   MAX_WRITE_PROPOSAL_TTL_MS,
   WRITE_PROPOSAL_TTL_MS,
   validateWorkspaceWriteProposal,
@@ -396,7 +397,6 @@ async function proposalBinding(
   };
 }
 
-const DURABLE_PROPOSAL_TOOLS = new Set(["create_item", "update_item", "append_to_item", "move_item", "delete_item", "restore_item", "set_item_template", "add_comment", "set_comment_resolved"]);
 function recoverable(proposal: StoredWorkspaceWriteProposal): boolean {
   return proposal.metadata?.durableCommandVersion === 1 && DURABLE_PROPOSAL_TOOLS.has(proposal.toolName) &&
     proposal.arguments.idempotency_key === `proposal:${proposal.id}`;
@@ -418,7 +418,8 @@ export async function createWorkspaceWriteProposal(
   const now = dependencies.now();
   const ttl = Math.min(
     Math.max(1_000, input.ttlMs ?? WRITE_PROPOSAL_TTL_MS),
-    MAX_WRITE_PROPOSAL_TTL_MS,
+    DURABLE_PROPOSAL_TOOLS,
+  MAX_WRITE_PROPOSAL_TTL_MS,
   );
   const expiresAt = new Date(now.getTime() + ttl);
   const id = dependencies.randomId();

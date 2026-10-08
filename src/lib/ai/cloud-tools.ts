@@ -4,13 +4,8 @@
 // uses. The cloud loop is therefore the third consumer of the one command
 // surface, inheriting every privacy, audit, and permission invariant.
 //
-// MVP safety boundary: the cloud loop runs tools SERVER-side, without the
-// interactive confirmation the native (in-page) agent shows before a destructive
-// action. So it is given only the tools the workspace already classifies as
-// needing no confirmation. Trash, delete, empty-trash, restore, sharing, and
-// publish (everything with a confirmation gate) are withheld until an
-// interactive confirmation flow is wired for the web path. This only narrows
-// what the model may call; the executor still enforces every invariant.
+// Guarded cloud writes use explicit durable approval proposals. Unsupported
+// recovery commands and open-world fetches remain outside that surface.
 
 import { jsonSchema, tool, type Tool } from "ai";
 import type { JSONSchema7 } from "json-schema";
@@ -71,6 +66,7 @@ export function cloudAssistantToolNames(
   return VAULT_TOOL_NAMES.filter((name) => {
     const definition = WORKSPACE_TOOL_DEFINITIONS[name];
     if (mode === "read_only" && definition.mutability !== "read") return false;
+    if (definition.mutability === "write" && !isProposableWorkspaceWrite(name)) return false;
     // Confirmation-gated tools are offered only when a proposal can genuinely
     // stand in for the confirmation: the owner shown what will happen in words
     // they recognise, and approval failing closed if the world has moved. That

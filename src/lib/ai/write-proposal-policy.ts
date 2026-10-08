@@ -27,12 +27,14 @@ export class WriteProposalValidationError extends Error {
 }
 
 /** Only canonical file commands may enter the durable approval queue. */
+export const DURABLE_PROPOSAL_TOOLS: ReadonlySet<string> = new Set(["create_folder", "create_item", "update_item", "append_to_item", "move_item", "delete_item", "restore_item", "set_item_template", "add_comment", "set_comment_resolved", "create_item_type", "update_item_type", "save_item_as_look"]);
+
 const PREVIEWABLE_DESTRUCTIVE: readonly WorkspaceToolName[] = ["delete_item", "restore_item"];
 
 export function isProposableWorkspaceWrite(
   name: WorkspaceToolName,
 ): boolean {
-  if (!(VAULT_TOOL_NAMES as readonly string[]).includes(name)) return false;
+  if (!(VAULT_TOOL_NAMES as readonly string[]).includes(name) || !DURABLE_PROPOSAL_TOOLS.has(name)) return false;
   const definition = WORKSPACE_TOOL_DEFINITIONS[name];
   if (definition.mutability !== "write") return false;
   if (definition.annotations.openWorldHint) return false;
@@ -100,7 +102,10 @@ export function validateWorkspaceWriteProposal(
       "arguments_too_large",
     );
   }
-  return { name, arguments: parsed as Record<string, unknown> };
+  // Caller keys were checked above. Drop only defaults injected by the broader
+  // parser for legacy capabilities absent from this canonical contract.
+  const canonical = Object.fromEntries(Object.entries(parsed).filter(([key]) => Object.hasOwn(schema.properties ?? {}, key)));
+  return { name, arguments: canonical };
 }
 
 function argumentTarget(args: Record<string, unknown>): string | null {
