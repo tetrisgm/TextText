@@ -353,6 +353,16 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       return response.json();
     }
     if (method === "list" || method === "open") return listing();
+    if (method === "trashReconcile") { manifest = null; return null; }
+    if (method === "trashList" || method === "trashRestore") {
+      const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/trash`, {
+        method: method === "trashList" ? "GET" : "POST", credentials: "same-origin", cache: "no-store", signal,
+        ...(method === "trashRestore" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(params) } : {}),
+      });
+      if (!response.ok) throw await failure(response);
+      if (method === "trashRestore") manifest = null;
+      return response.json();
+    }
     if (method === "recoveryList" || method === "recoveryRead") {
       const query = new URLSearchParams();
       if (method === "recoveryRead") query.set("id", String(params.id));

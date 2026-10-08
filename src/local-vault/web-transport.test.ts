@@ -564,3 +564,18 @@ describe("account profile transport", () => {
   expect(await transport.request("list", {})).toMatchObject({ folders: ["Feeds", "Notes/Research"], items: [] });
   transport.destroy();
 });
+
+it("restores Trash with caller retry identity and invalidates the same-item manifest", async () => {
+  const payload = { itemId: "same-item", operationId: "retry-operation", basePath: "Notes/Deleted.textpack", baseRevision: "a".repeat(64), relativePath: "Notes/Deleted.textpack" };
+  const requests: Array<{url: string; body: unknown}> = [];
+  let restored = false;
+  const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {
+    requests.push({url:String(url),body:init?.body ? JSON.parse(String(init.body)) : null});
+    if(String(url).endsWith("/trash")) { if(init?.method === "POST") { if(!restored){restored=true;throw Error("Lost response");} return Response.json({status:"restored",itemId:payload.itemId,relativePath:payload.relativePath,revision:"b".repeat(64)}); } return Response.json({items:[]}); }
+    return Response.json({items:[],revision:"r"});
+  });
+  await expect(transport.request("trashRestore",payload)).rejects.toThrow("Lost response");
+  expect(await transport.request("trashRestore",payload)).toMatchObject({status:"restored",itemId:"same-item"});
+  expect(requests.map(request=>request.body)).toEqual([payload,payload]);
+  expect(requests.every(request=>request.url==="/api/vault/workspace/trash")).toBe(true);
+});

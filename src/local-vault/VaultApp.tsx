@@ -1264,7 +1264,16 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         key={`${sharingWorkspaceId}:${selectedItemId}`} itemId={selectedItemId} path={selected.path}
         canComment={commentCapabilities.canComment} canResolve={commentCapabilities.canResolve}
         onClose={() => { setCommentsOpen(false); commentsButton.current?.focus(); }} /></div>}
-      {recovery && <RecoveryDialog key={`recovery:${listing?.root}:${recovery.path ?? "trash"}`} path={recovery.path} onClose={() => setRecovery(null)} onRestore={async (file, folder) => {
+      {recovery && <RecoveryDialog key={`recovery:${listing?.root}:${recovery.path ?? "trash"}`} path={recovery.path} onClose={() => setRecovery(null)} onRestoreDeleted={async (request) => {
+        if (!await flushRef.current()) throw new Error("Save the current document before restoring an item.");
+        const { itemId, operationId, basePath, baseRevision, relativePath } = request;
+        const restored = await vaultRequest<{ status: string; relativePath: string; revision: string }>("trashRestore", { itemId, operationId, basePath, baseRevision, relativePath });
+        if (restored.status !== "restored") throw new Error("The original location is occupied. Refresh Trash before trying again.");
+        await vaultRequest("trashReconcile", { itemId, operationId, basePath, baseRevision, relativePath: restored.relativePath, revision: restored.revision });
+        const file = await vaultRequest<VaultFile>("read", { path: restored.relativePath });
+        if (packIdentity(file.markdown) !== itemId) throw new Error("The restored item is still arriving. Try Restore item again.");
+        closeRemoved(); setSelected(file); setDestinationFolder(folderForItem(file.path)); refresh();
+      }} onRestore={async (file, folder) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before restoring a copy.");
         if (readFolderView(file)) {
           const definitions = await vaultRequest<{ files: VaultFile[] }>("folderViews", { folder });

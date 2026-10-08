@@ -3,6 +3,14 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultCollaborationTests: XCTestCase {
+    func testTrashRequestsArePinnedAndPreserveRetryIdentity() throws {
+        let params = ["itemId": "item", "operationId": "operation", "basePath": "Notes/A.textpack", "baseRevision": String(repeating: "a", count: 64), "relativePath": "Notes/A.textpack"]
+        let request = try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "trashRestore", params: params)
+        XCTAssertEqual(request.url?.absoluteString, "https://texttext.app/api/vault/workspace/trash")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: request.httpBody!) as? [String: String], params)
+        XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "trashList", params: ["url": "https://other.test"]))
+    }
     func testAccountReadIsPinnedAndRejectsRendererRouting() throws {
         let request = try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "accountRead", params: [:])
         XCTAssertEqual(request.url?.absoluteString, "https://texttext.app/api/vault/workspace/account")

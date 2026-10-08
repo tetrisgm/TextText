@@ -63,6 +63,18 @@ final class LocalVaultCollaboration {
     /// Pure request builder is shared by relay and validation tests.
     nonisolated static func request(origin: URL, workspaceId: String, token: String, method: String, params: [String: Any]) throws -> URLRequest {
         _ = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId)
+        if ["trashList", "trashRestore"].contains(method) {
+            let keys: Set<String> = ["itemId", "operationId", "basePath", "baseRevision", "relativePath"]
+            guard identifier(workspaceId), method == "trashList" ? params.isEmpty : Set(params.keys) == keys,
+                  method == "trashList" || keys.allSatisfy({ (params[$0] as? String).map { !$0.isEmpty && $0.utf8.count <= 4096 } == true }) else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid restore request.")
+            }
+            var request = URLRequest(url: origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("trash"), timeoutInterval: 35)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            if method == "trashRestore" { request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: params) }
+            return request
+        }
         if method == "accountRead" {
             guard identifier(workspaceId), params.isEmpty else {
                 throw LocalVaultCollaborationError(code: "400", message: "Invalid account request.")
