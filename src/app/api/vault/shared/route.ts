@@ -24,9 +24,12 @@ export async function GET() {
       const grants = await activeVaultGrants({ root, workspaceId, userId });
       if (!grants.length) continue;
       const manifest = await listVaultTextpacks({ root, workspaceId });
-      const items = manifest.items.filter(item => canSeeVaultItem(grants, item.itemId, item.relativePath))
+      // Listing can wait on disk; invitations may be revoked while it runs.
+      const currentGrants = await activeVaultGrants({ root, workspaceId, userId });
+      if (!currentGrants.length) continue;
+      const items = manifest.items.filter(item => canSeeVaultItem(currentGrants, item.itemId, item.relativePath))
         .map(({ itemId, relativePath }) => ({ itemId, relativePath }));
-      const folders = [...new Set(grants.filter(grant => grant.scope.type === "folder").map(grant => grant.scope.key))];
+      const folders = [...new Set(currentGrants.filter(grant => grant.scope.type === "folder").map(grant => grant.scope.key))];
       if (items.length || folders.length) workspaces.push({ id: workspaceId, name: identity.name, items, folders });
     }
     return Response.json({ workspaces }, { headers });

@@ -35,6 +35,25 @@ describe("shared file-vault discovery", () => {
     mocks.identity.mockResolvedValue(null);
     expect(await (await GET()).json()).toEqual({ workspaces: [] });
   });
+  it("does not disclose paths or workspace name when access is revoked during listing", async () => {
+    mocks.list.mockImplementation(async () => {
+      mocks.grants.mockResolvedValue([]);
+      return { items: [{ itemId: "shared", relativePath: "Reading/Shared.textpack" }] };
+    });
+    const response = await GET();
+    expect(await response.json()).toEqual({ workspaces: [] });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(mocks.grants).toHaveBeenCalledTimes(2);
+  });
+  it("filters both files and folders using narrowed access after listing", async () => {
+    mocks.grants.mockResolvedValue([{ scope: { type: "folder", key: "Reading" } }]);
+    mocks.list.mockImplementation(async () => {
+      mocks.grants.mockResolvedValue([{ scope: { type: "item", key: "shared" } }]);
+      return { items: [{ itemId: "shared", relativePath: "Reading/Shared.textpack" }, { itemId: "other", relativePath: "Reading/Other.textpack" }] };
+    });
+    mocks.canSee.mockImplementation((grants, itemId) => grants.some((grant: { scope: { key: string } }) => grant.scope.key === itemId));
+    expect(await (await GET()).json()).toEqual({ workspaces: [{ id: workspaceId, name: "Shared workspace", items: [{ itemId: "shared", relativePath: "Reading/Shared.textpack" }], folders: [] }] });
+  });
   it("requires sign-in before looking up grant candidates", async () => {
     mocks.session.mockResolvedValue(null);
     expect((await GET()).status).toBe(401);
