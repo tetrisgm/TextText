@@ -53,6 +53,11 @@
   (`/tmp/texttext-folder-panel-scope.log`, `/tmp/texttext-folder-panel-types.log`).
   Folder action/target wiring, Windows/hosted folder tools and full panel browser
   acceptance remain pending. The folder action is not exposed yet.
+  Windows shared folder tool adapter now implements list/create/read/write with
+  existing-folder and path-boundary validation; four adapter regressions and
+  TypeScript passed (`/tmp/texttext-windows-folder-tools.log`,
+  `/tmp/texttext-windows-folder-tools-types.log`). Native dispatcher/event
+  wiring is pending; no installed Windows folder-task support is claimed.
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { executeWindowsAgentTool } from "./windows-agent-tools";
+import { executeWindowsAgentTool, executeWindowsFolderAgentTool } from "./windows-agent-tools";
 import { readDocument, writePayload } from "./model";
 import type { VaultFile, VaultTransport } from "./bridge";
 
@@ -17,6 +17,18 @@ function fixture() {
   return { request, file: () => file, writes: () => writes };
 }
 describe("Windows selected-item agent tools", () => {
+  it("creates only within an explicit existing folder and rejects traversal before writes", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const request: VaultTransport = async (method, params) => {
+      if (method === "list") return { root: "fixture", folders: ["Notes", "Notes/Research", "Other"], items: [] };
+      if (method === "create") { calls.push(params); return { path: `${params.folder}/New.textpack`, hash: "new" }; }
+      throw new Error("Unexpected access");
+    };
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", { title: "New", body: "Keep", folder: "Other" })).rejects.toThrow("selected folder");
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "read_file", { path: "Notes/../Other/X.textpack" })).rejects.toThrow("selected folder");
+    await executeWindowsFolderAgentTool(request, "Notes", "create_file", { title: "New", body: "Keep", folder: "Notes/Research", kind: "note" });
+    expect(calls).toEqual([{ title: "New", body: "Keep", folder: "Notes/Research", kind: "note" }]);
+  });
   it("rejects other paths, unsupported tools and stale write hashes", async () => {
     const f = fixture(); const path = f.file().path;
     await expect(executeWindowsAgentTool(f.request, path, "read_file", { path: "Notes/Other.textpack" })).rejects.toThrow("selected item");

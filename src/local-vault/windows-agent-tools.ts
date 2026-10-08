@@ -1,8 +1,31 @@
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
-import { VaultError, type VaultFile, type VaultTransport } from "./bridge";
+import { VaultError, type VaultFile, type VaultTransport, type VaultListing } from "./bridge";
 import { readDocument, readTemplate, writePayload } from "./model";
+
+/** Folder tools use the same transport and permission checks as ordinary creation. */
+export async function executeWindowsFolderAgentTool(request: VaultTransport, folder: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal) {
+  const valid = (path: string) => !path || !path.split("/").some(part => !part || part.startsWith(".") || /[\\:\x00-\x1f]/.test(part));
+  const inside = (path: string) => valid(path) && (!folder || path.startsWith(folder + "/"));
+  if (!valid(folder)) throw new Error("Invalid folder scope.");
+  if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
+  const listing = await request("list", {}, signal) as VaultListing;
+  if (folder && !listing.folders?.includes(folder)) throw new Error("Choose an existing folder.");
+  if (tool === "list_files") return JSON.stringify({ paths: listing.items.filter(item => inside(item.path)).map(item => item.path) });
+  if (tool === "create_file") {
+    const destination = args.folder === undefined ? folder : args.folder;
+    if (typeof destination !== "string" || !valid(destination) || (destination !== folder && !inside(destination))) throw new Error("Create only inside the selected folder.");
+    if (destination && !listing.folders?.includes(destination)) throw new Error("Choose an existing folder.");
+    if (typeof args.title !== "string" || !args.title.trim() || args.title.length > 240 || typeof args.body !== "string" || args.body.length > 2_000_000) throw new Error("Provide a title and body.");
+    if (args.kind !== undefined && !["note", "article", "bookmark", "gallery", "talk"].includes(String(args.kind))) throw new Error("Choose a supported item type.");
+    if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
+    const saved = await request("create", { title: args.title, body: args.body, folder: destination, ...(args.kind ? { kind: args.kind } : {}) }, signal) as VaultFile;
+    return JSON.stringify({ path: saved.path, hash: saved.hash });
+  }
+  if (!["read_file", "write_file"].includes(tool) || typeof args.path !== "string" || !inside(args.path)) throw new Error("This task can only access its selected folder.");
+  return executeWindowsAgentTool(request, args.path, tool, args, signal);
+}
 
 /** Same validated primitives as the human editor. Model output never executes as markup or code. */
 export async function executeWindowsAgentTool(request: VaultTransport, selectedPath: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal) {
