@@ -2,13 +2,13 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1183)**, source `04c265c7`.
+- Mac `/Applications/TextText.app`: **0.204 (1184)**, source `98bb52b5`.
   Startup, note icon, search cache invalidation, save and normal reopen passed.
-  [Receipt](verification/2026-10-07-shared-clients-1183.md).
+  [Receipt](verification/2026-10-07-recovery-templates-1184.md).
 - Windows: product source **04c265c7**, installed in the existing location.
   Build, actual startup/search, snippet save/insert/reopen and passive Mac edit
   delivery passed. [Receipt](verification/2026-10-07-windows-shared-1183.md).
-- Oracle: **texttext-oracle-20261008T054121Z-ccf675f8**. All thirteen production
+- Oracle: **texttext-oracle-20261008T060605Z-98bb52b5**. All thirteen production
   HTTP smoke checks passed. Algorave services and shared proxy were preserved.
 - Actual Mac deletion/restoration, same-ID Safari reading, direct CLI editing,
   web editing and passive Windows convergence passed without manual refresh.
@@ -49,8 +49,11 @@
   [Shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
 - Final candidate `98bb52b5` includes document bootstrap recovery and full
   manifest-body deadlines. All 500 core tests, TypeScript and native gates
-  passed in the clean frozen clone. Windows candidate and Oracle local package
-  are building; installed clients and live Oracle remain the versions above.
+  passed in the clean frozen clone. Mac1184 is installed and Oracle is deployed.
+  Live CLI template update/retry, unchanged old pinned item, new starter creation,
+  save/relaunch, direct file edit and Safari convergence passed. Windows build
+  exited successfully but SSH now resets; installation is waiting for connectivity.
+  [Current receipt](verification/2026-10-07-recovery-templates-1184.md).
   Logs: `/tmp/texttext-sync-98bb52b5.log`,
   `/tmp/texttext-oracle-98bb52b5-build.log`.
 - `30726329` offers the latest version of each template for creation while
