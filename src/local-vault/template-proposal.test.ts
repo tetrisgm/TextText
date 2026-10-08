@@ -31,3 +31,28 @@ describe("file template previews", () => {
     expect(() => prepareTemplateProposal(file, { ...proposal, templateAuthoringSourceJSON: '{"schemaVersion":99}' })).toThrow();
   });
 });
+
+import { prepareTemplateCommandPreview } from "./template-command-preview";
+
+describe("persisted template command previews", () => {
+  const blueprint = { name: "Research", fields: [{ id: "rating", label: "Rating", type: "number" }], collection: { layout: "list" }, starter: { body: "Starter, not this document" } };
+  it("validates the blueprint against frozen real writing without editing the file", () => {
+    const before = JSON.stringify(file);
+    const result = prepareTemplateCommandPreview("create_item_type", { blueprint }, file);
+    expect(result.document.content.body).toBe("Unchanged writing.\n");
+    expect(result.template.name).toBe("Research");
+    expect(result.proposal.hash).toBe(file.hash);
+    expect(JSON.stringify(file)).toBe(before);
+    expect(() => prepareTemplateCommandPreview("create_item_type", { blueprint: { ...blueprint, item: { type: "script" } } }, file)).toThrow();
+  });
+  it("rejects stale or incompatible update sources and preserves the base definition", () => {
+    const original = { ...template, id: "local.research" };
+    const source = { ...file, path: "Templates/Research.textpack", templateJSON: JSON.stringify(original), documentJSON: JSON.stringify({ ...document, presentation: { ...document.presentation, template: { id: original.id, version: original.version } } }) };
+    const args = { template_id: original.id, base_version: original.version, source_hash: source.hash, definition: { ...original, name: "Improved" } };
+    const result = prepareTemplateCommandPreview("update_item_type", args, file, source);
+    expect(result.template.version).toBe(original.version + 1);
+    expect(result.document.content.body).toBe("Unchanged writing.\n");
+    expect(() => prepareTemplateCommandPreview("update_item_type", { ...args, source_hash: "stale" }, file, source)).toThrow(/changed/);
+    expect(() => prepareTemplateCommandPreview("update_item_type", { ...args, base_version: 999 }, file, source)).toThrow(/changed/);
+  });
+});

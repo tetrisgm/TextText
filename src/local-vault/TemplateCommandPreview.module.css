@@ -1,0 +1,5 @@
+.preview { min-width: 0; margin: 12px 0; border-block: 1px solid var(--line, #8885); }
+.preview header { padding: 10px 0; }
+.preview p { font-size: 13px; line-height: 1.5; }
+.preview summary { cursor: pointer; padding: 8px 0; }
+.document { max-height: 380px; overflow: auto; background: var(--surface, Canvas); color: var(--ink, CanvasText); }

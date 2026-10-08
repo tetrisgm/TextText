@@ -810,6 +810,7 @@ export async function getWorkspaceWriteProposalForReview(
   const preview = stored.metadata?.preview as FrozenProposalPreview | undefined;
   return {
     id: stored.id,
+    tool: validated.name,
     title: WORKSPACE_TOOL_DEFINITIONS[validated.name].title,
     summary: preview ? describeFrozenPreview(preview) : workspaceWriteProposalSummary(validated.name, validated.arguments),
     arguments: validated.arguments,

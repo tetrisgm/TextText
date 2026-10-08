@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TemplateCommandPreview } from "./TemplateCommandPreview";
 import { vaultRequest } from "./bridge";
 
-export type AssistantWriteProposal = { id: string; kind: "workspace"; title: string; summary: string; arguments: Record<string, unknown>; expiresAt: string };
+export type AssistantWriteProposal = { id: string; tool?: string; kind: "workspace"; title: string; summary: string; arguments: Record<string, unknown>; expiresAt: string };
 type Card = AssistantWriteProposal & { verified?: boolean; state?: "pending" | "uncertain" | "completed" | "denied" | "failed"; message?: string; decision?: "approve" | "deny" };
 export function AssistantWriteProposals({ root, path, proposals, beforeApprove }: { root: string; path: string; proposals: AssistantWriteProposal[]; beforeApprove: () => Promise<boolean> }) {
   const key = `texttext:assistant-proposals:${root}:${path}`;
@@ -9,8 +10,15 @@ export function AssistantWriteProposals({ root, path, proposals, beforeApprove }
   const cardsRef = useRef(cards); cardsRef.current = cards;
   const [storageNotice, setStorageNotice] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const guards = useRef(new Map<string, () => Promise<void>>());
+  const registrars = useRef(new Map<string, (guard: (() => Promise<void>) | null) => void>());
+  const registerFor = (id: string) => {
+    if (!registrars.current.has(id)) registrars.current.set(id, guard => { if (guard) guards.current.set(id, guard); else guards.current.delete(id); });
+    return registrars.current.get(id)!;
+  };
+  const isTemplate = (card: Card) => card.tool === "create_item_type" || card.tool === "update_item_type";
   const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { alive.current = true; const activeGuards = guards.current, activeRegistrars = registrars.current; return () => { alive.current = false; activeGuards.clear(); activeRegistrars.clear(); }; }, []);
   const save = useCallback((change: (current: Card[]) => Card[]) => {
     const next = change(cardsRef.current); cardsRef.current = next;
     try { localStorage.setItem(key, JSON.stringify(next.map(({id,kind,state,decision}) => ({id,kind,state,decision})))); }
@@ -25,11 +33,13 @@ export function AssistantWriteProposals({ root, path, proposals, beforeApprove }
   const ids = cards.map(card => card.id).join(",");
   useEffect(() => {
     const controller = new AbortController();
+    const currentIds = new Set(ids.split(","));
+    for (const id of registrars.current.keys()) if (!currentIds.has(id)) { registrars.current.delete(id); guards.current.delete(id); }
     for (const id of ids.split(",").filter(Boolean)) void (async () => {
       try {
         const response = await fetch(`/api/ai/proposals/${encodeURIComponent(id)}`, { credentials: "same-origin", cache: "no-store", signal: controller.signal });
         const payload = await response.json();
-        if (!response.ok || payload.proposal?.id !== id) throw new Error("This proposed change is unavailable.");
+        if (!response.ok || payload.proposal?.id !== id || typeof payload.proposal.tool !== "string") throw new Error("This proposed change is unavailable.");
         const proposal = payload.proposal;
         setCards(previous => previous.map(card => card.id !== id ? card : { ...card, ...proposal, verified: true,
           state: proposal.status === "pending" ? card.state ?? "pending" : proposal.status === "executing" ? "uncertain" : proposal.status === "completed" ? "completed" : proposal.status === "denied" ? "denied" : "failed",
@@ -45,6 +55,12 @@ export function AssistantWriteProposals({ root, path, proposals, beforeApprove }
     try {
       if (decision === "approve" && !await beforeApprove()) throw new Error("Finish saving this item before approving the change.");
       if (!alive.current) return;
+      if (decision === "approve" && isTemplate(card) && card.state !== "uncertain") {
+        const guard = guards.current.get(card.id);
+        if (!guard) throw new Error("Wait for the validated template preview before keeping this design.");
+        await guard();
+        if (!alive.current) return;
+      }
       // Persist uncertainty before sending. A lost response retries this exact proposal, never a new command.
       save(current => current.map(item => item.id === card.id ? { ...item, state: "uncertain", decision, message: "Checking the saved result…" } : item));
       sent = true;
@@ -61,9 +77,12 @@ export function AssistantWriteProposals({ root, path, proposals, beforeApprove }
   return <section aria-label="Proposed changes">{storageNotice && <p role="status">{storageNotice}</p>}{cards.map(card => <article key={card.id}>
     <h3>{card.title}</h3><p>{card.summary}</p>
     <details><summary>Review exact change</summary><pre>{JSON.stringify(card.arguments, null, 2)}</pre></details>
+    {card.verified && isTemplate(card) && <TemplateCommandPreview tool={card.tool!} args={card.arguments} path={path}
+      busy={busy !== null} canApprove={!card.state || card.state === "pending"} registerGuard={registerFor(card.id)}
+      onKeep={() => void decide(card, "approve")} />}
     {card.message && <p role="status">{card.message}</p>}
     {(!card.state || card.state === "pending" || card.state === "uncertain") && <>
-      <button disabled={busy !== null || !card.verified} onClick={() => void decide(card, card.state === "uncertain" ? card.decision ?? "approve" : "approve")}>{card.state === "uncertain" ? "Check result" : "Approve change"}</button>
+      {(!isTemplate(card) || card.state === "uncertain") && <button disabled={busy !== null || !card.verified} onClick={() => void decide(card, card.state === "uncertain" ? card.decision ?? "approve" : "approve")}>{card.state === "uncertain" ? "Check result" : "Approve change"}</button>}
       {card.state !== "uncertain" && <button disabled={busy !== null || !card.verified} onClick={() => void decide(card, "deny")}>Reject change</button>}
     </>}
   </article>)}</section>;

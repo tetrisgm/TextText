@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {chromium} from 'playwright';
-const fixture=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{AssistantWriteProposals}from'./src/local-vault/AssistantWriteProposals';import{setVaultTransport}from'./src/local-vault/bridge';window.refreshes=0;setVaultTransport(async()=>{window.refreshes++;return{}});const root=createRoot(document.getElementById('root'));window.renderCards=(path,proposals)=>root.render(<AssistantWriteProposals key={path} root="vault:test" path={path} proposals={proposals} beforeApprove={async()=>true}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'}});
+import {readFile} from 'node:fs/promises';
+const fixture=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{AssistantWriteProposals}from'./src/local-vault/AssistantWriteProposals';import{setVaultTransport}from'./src/local-vault/bridge';import{emptyDocumentSnapshot}from'./src/lib/documents/model';import{requireBuiltinTemplate}from'./src/lib/presentation/templates';window.refreshes=0;const doc=emptyDocumentSnapshot();doc.content.title='Frozen real title';doc.content.body='Frozen real writing';window.target={path:'Notes/Preview',hash:'a'.repeat(64),markdown:['---','textTextId: preview','---','','Frozen real writing'].join(String.fromCharCode(10)),documentJSON:JSON.stringify(doc),templateJSON:JSON.stringify(requireBuiltinTemplate('texttext.note'))};setVaultTransport(async(method)=>{if(method==='read')return structuredClone(window.target);window.refreshes++;return{}});const root=createRoot(document.getElementById('root'));window.renderCards=(path,proposals)=>root.render(<AssistantWriteProposals key={path} root="vault:test" path={path} proposals={proposals} beforeApprove={async()=>true}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,outfile:'/tmp/texttext-proposal-browser.js',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'}});
 const browser=await chromium.launch();
 try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));let pending, decisions=[];
- const cards=[1,2].map(n=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,kind:'workspace',title:`Change ${n}`,summary:'Review body',arguments:{body:`Body ${n}`},expiresAt:new Date(Date.now()+60000).toISOString(),status:'pending'}));
+ const cards=[1,2].map(n=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,kind:'workspace',tool:'update_item',title:`Change ${n}`,summary:'Review body',arguments:{body:`Body ${n}`},expiresAt:new Date(Date.now()+60000).toISOString(),status:'pending'}));
  await page.route('https://test.local/**',async route=>{
   const req=route.request();if(req.url().includes('/api/ai/proposals/')){
    const card=cards.find(c=>req.url().endsWith(c.id));assert.ok(card);
@@ -13,7 +14,8 @@ try{
    decisions.push({id:card.id,decision:req.postDataJSON().decision});pending=route;return;
   }await route.fulfill({contentType:'text/html',body:'<div id="root"></div>'});
  });
- await page.goto('https://test.local');await page.addScriptTag({content:fixture.outputFiles[0].text});
+ await page.goto('https://test.local');await page.addStyleTag({content:await readFile('src/local-vault/style.css','utf8')});await page.evaluate(()=>{document.body.className='vault-app';document.body.style.display='block';document.body.style.padding='24px';});await page.addScriptTag({content:fixture.outputFiles.find(file=>file.path.endsWith('.js')).text});
+ for(const output of fixture.outputFiles.filter(file=>file.path.endsWith('.css')))await page.addStyleTag({content:output.text});
  await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw new DOMException('Quota','QuotaExceededError')}});
  await page.evaluate(cards=>window.renderCards('Notes/A',cards),[cards[0]]);
  await page.getByText('Keep this panel open to review these changes.',{exact:false}).waitFor();
@@ -30,7 +32,36 @@ try{
  assert.deepEqual(decisions,[{id:cards[0].id,decision:'approve'},{id:cards[0].id,decision:'approve'}]);
  await page.getByRole('button',{name:'Reject change'}).click();
  for(let i=0;!pending&&i<100;i++)await new Promise(r=>setTimeout(r,10));assert.ok(pending);
- await page.evaluate(()=>window.renderCards('Notes/B',[]));await pending.fulfill({json:{status:'denied'}});
+ await page.evaluate(()=>window.renderCards('Notes/B',[]));await pending.fulfill({json:{status:'denied'}});pending=null;
  await page.waitForFunction(()=>document.querySelectorAll('h3').length===0);assert.deepEqual(errors,[]);
- console.log('PASS proposal cards: quota recovery, concurrent arrival retained, 503 same-ID/decision retry, navigation fence.');
+ const templateCard={...cards[0],id:'00000000-0000-4000-8000-000000000003',tool:'create_item_type',title:'Research design',arguments:{blueprint:{name:'Research',fields:[{id:'rating',label:'Rating',type:'number'}],collection:{layout:'list'},starter:{body:'Starter must not replace real writing'}}}};cards.push(templateCard);
+ await page.evaluate(card=>window.renderCards('Notes/Preview',[card]),templateCard);
+ await page.getByRole('region',{name:'Template preview'}).getByText('Frozen real writing',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Approve change'}).count(),0);
+ assert.equal(decisions.length,3);
+ for(const colorScheme of ['light','dark']){await page.emulateMedia({colorScheme});await page.getByRole('region',{name:'Template preview'}).screenshot({path:`/tmp/texttext-template-preview-${colorScheme}.png`});}
+ await page.getByRole('button',{name:'Compare original'}).click();
+ await page.getByRole('button',{name:'Show proposed design'}).click();
+ await page.evaluate(()=>window.target.hash='b'.repeat(64));
+ await page.getByRole('button',{name:'Keep this design'}).click();
+ await page.getByText('This file changed since the preview.',{exact:false}).waitFor();assert.equal(decisions.length,3);
+ await page.evaluate(()=>window.renderCards('Notes/Other',[]));
+ await page.waitForFunction(()=>document.querySelectorAll('h3').length===0);
+ await page.evaluate(card=>window.renderCards('Notes/Preview',[card]),templateCard);
+ await page.getByRole('button',{name:'Keep this design'}).click();
+ for(let i=0;!pending&&i<100;i++)await new Promise(r=>setTimeout(r,10));assert.ok(pending);
+ assert.deepEqual(decisions.at(-1),{id:templateCard.id,decision:'approve'});
+ await pending.fulfill({json:{receipt:{text:'Template saved without changing this file'}}});pending=null;
+ await page.getByText('Template saved without changing this file').waitFor();
+ assert.equal(await page.evaluate(()=>window.target.hash),'b'.repeat(64));assert.deepEqual(errors,[]);
+ const malformed={...templateCard,id:'00000000-0000-4000-8000-000000000004',arguments:{blueprint:{name:'Unsafe',item:{type:'script'}}}};cards.push(malformed);
+ await page.evaluate(()=>window.renderCards('Notes/Other',[]));await page.waitForFunction(()=>document.querySelectorAll('h3').length===0);
+ await page.evaluate(card=>window.renderCards('Notes/Preview',[card]),malformed);
+ await page.getByRole('alert').waitFor();assert.equal(await page.getByRole('button',{name:'Keep this design'}).count(),0);assert.equal(await page.getByRole('button',{name:'Approve change'}).count(),0);
+ const legacy={...cards[0],id:'00000000-0000-4000-8000-000000000005'};delete legacy.tool;cards.push(legacy);
+ await page.evaluate(()=>window.renderCards('Notes/Other',[]));await page.waitForFunction(()=>document.querySelectorAll('h3').length===0);
+ await page.evaluate(card=>window.renderCards('Notes/Preview',[card]),legacy);
+ await page.getByText('This proposed change is unavailable.').waitFor();assert.equal(await page.getByRole('button',{name:'Approve change'}).isDisabled(),true);
+ assert.equal(decisions.length,4);assert.deepEqual(errors,[]);
+ console.log('PASS proposal cards: quota recovery, concurrent arrival retained, 503 same-ID/decision retry, navigation fence, real template preview, stale target refusal and exact-ID Keep.');
 }finally{await browser.close();}

@@ -15,7 +15,7 @@ function substitute<T>(value: T, urls: Map<string, string>): T {
   return value;
 }
 
-function PreviewContent({ file, proposal, original }: { file: VaultFile; proposal: TemplateProposal; original: boolean }) {
+export function PreviewContent({ file, proposal, original }: { file: VaultFile; proposal: TemplateProposal; original: boolean }) {
   const prepared = useMemo(() => prepareTemplateProposal(file, proposal), [file, proposal]);
   const urls = useMemo(() => {
     const urls = new Map<string, string>();

@@ -346,7 +346,7 @@ describe("owner review of externally staged writes", () => {
       origin: { surface: "hosted_mcp", connectionName: "Research agent" } }, dependencies);
     args.body = "Changed after staging";
     const reviewed = await getWorkspaceWriteProposalForReview(owner, proposal.id, dependencies);
-    expect(reviewed).toMatchObject({ status: "pending", arguments: { body: "Exact replacement" }, origin: { surface: "hosted_mcp" } });
+    expect(reviewed).toMatchObject({ tool: "update_item", status: "pending", arguments: { body: "Exact replacement" }, origin: { surface: "hosted_mcp" } });
     expect(await getWorkspaceWriteProposalForReview(otherOwner, proposal.id, dependencies)).toBeNull();
     expect(execute).not.toHaveBeenCalled();
     await decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, dependencies);

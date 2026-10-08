@@ -46,7 +46,7 @@ try {
       else { const payload=request.postDataJSON(); assistantRequests.push(payload); assert.equal(payload.context.mode,"workspace_review"); assert.equal(payload.context.postId,id);
         const prompt=payload.messages.at(-1).content;
         const writes=[];
-        if(prompt.startsWith("Propose")){const proposal={id:`00000000-0000-4000-8000-${String(++proposalSequence).padStart(12,"0")}`,kind:"workspace",title:"Update Web note",summary:"Replace the body of Web note",arguments:{id,body:"Approved through assistant",if_match:digest(files.get(id).bytes)},expiresAt:new Date(Date.now()+60000).toISOString(),status:"pending",stale:prompt.includes("stale")};proposals.set(proposal.id,proposal);writes.push(proposal);}
+        if(prompt.startsWith("Propose")){const proposal={id:`00000000-0000-4000-8000-${String(++proposalSequence).padStart(12,"0")}`,kind:"workspace",tool:"update_item",title:"Update Web note",summary:"Replace the body of Web note",arguments:{id,body:"Approved through assistant",if_match:digest(files.get(id).bytes)},expiresAt:new Date(Date.now()+60000).toISOString(),status:"pending",stale:prompt.includes("stale")};proposals.set(proposal.id,proposal);writes.push(proposal);}
         await route.fulfill({contentType:"application/x-ndjson",body:JSON.stringify({type:"text",text:"Canonical answer"})+"\n"+JSON.stringify({type:"complete",text:"Canonical answer",writeProposals:writes})+"\n"}); }
       return;
     }
