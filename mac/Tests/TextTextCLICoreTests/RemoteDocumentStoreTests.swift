@@ -131,7 +131,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
             id: "recent", slug: "recent", title: "Planning note", kind: "note",
             status: "draft", hash: "hash-1",
             snippet: "Evidence follows the launch owner review and revised brief.",
-            folderPath: "Notes/Research")
+            folderPath: "Notes/Research", path: "Notes/Research/actual-server-name.textpack")
         let api = FakeCLISyncAPI(
             workspace: workspace(folders: [notes]),
             manifests: [notes.id: [item(id: "recent", title: "Recent")]],
@@ -147,6 +147,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
 
         let exact = try await store.resolve(matches[0].id)
         XCTAssertEqual(exact.itemId, "recent")
+        XCTAssertEqual(exact.path, "Notes/Research/actual-server-name.textpack")
         let markdown = try await store.readMarkdown(at: exact)
         XCTAssertEqual(markdown, "# Recent\n\nA field observation")
         let events = await api.recordedEvents()
@@ -328,6 +329,36 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertFalse(request.markdown.contains("type: \"note\""))
     }
 
+    func testCreateAndCaptureUseAuthoritativeServerPath() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+        let api = FakeCLISyncAPI(workspace: workspace(folders: [notes]), manifests: [notes.id: []],
+            commandPath: "Notes/Field notes-short-id.textpack")
+        let store = RemoteDocumentStore(api: api)
+        let created = try await store.create(title: "Field notes", body: "Body", folder: "Notes")
+        XCTAssertEqual(created.path, "Notes/Field notes-short-id.textpack")
+        let input = try XCTUnwrap(AgentCaptureInput(value: "Observation"))
+        let captured = try await store.capture(input, rawValue: "Observation")
+        XCTAssertEqual(captured.document.path, created.path)
+        let cached = try await store.resolve("created")
+        XCTAssertEqual(cached.path, created.path)
+    }
+
+    func testCanonicalPathsDecodeFromCommandAndSearchReplies() throws {
+        let data = Data(#"{"content":[],"structuredContent":{"item":{"id":"one","title":"Title","hash":"revision","path":"Notes/real.textpack"},"receipt":{"item_id":"one","kind":"note","saved_to":"Notes","title":"Title","path":"Notes/real.textpack"},"results":[{"id":"one","slug":"one","title":"Title","kind":"note","status":"draft","hash":"revision","snippet":"text","path":"Notes/real.textpack"}]}}"#.utf8)
+        let reply = try JSONDecoder().decode(TextTextAgentCommandReply.self, from: data)
+        XCTAssertEqual(reply.structuredContent?.item?.path, "Notes/real.textpack")
+        XCTAssertEqual(reply.structuredContent?.receipt?.path, "Notes/real.textpack")
+        XCTAssertEqual(reply.structuredContent?.results?.first?.path, "Notes/real.textpack")
+    }
+
+    func testAuthoritativePathValidationFailsClosed() throws {
+        for invalid in ["", "/Notes/a.textpack", "../a.textpack", "Notes/../a.textpack", "Notes//a.textpack", "C:/a.textpack", "Notes\\a.textpack", "Notes/a\n.textpack", "Notes/a.md"] {
+            XCTAssertThrowsError(try RemoteDocumentStore.commandPath(invalid, fallback: "Notes/safe.textpack"), invalid)
+        }
+        XCTAssertEqual(try RemoteDocumentStore.commandPath(nil, fallback: "Notes/Older server.textpack"), "Notes/Older server.textpack")
+        XCTAssertEqual(try RemoteDocumentStore.commandPath("Notes/café 😀.textpack", fallback: ""), "Notes/café 😀.textpack")
+    }
+
     func testCaptureUsesTheSharedCaptureCommandWithoutForcingAFolder() async throws {
         let notes = folder(id: "notes", name: "Notes", path: "notes", mode: "notes")
         let api = FakeCLISyncAPI(
@@ -478,6 +509,7 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     private let searchResults: [TextTextAgentSearchResult]
     private let updateResult: Result<TextTextAgentCommandReply, TextTextSyncError>
     private let captureReceiptFolderPath: String?
+    private let commandPath: String?
     private var updates: [UpdateRequest] = []
     private var creates: [CreateRequest] = []
     private var captures: [CaptureRequest] = []
@@ -491,7 +523,7 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
         manifests: [String: [TextTextManifestItem]],
         contents: [String: (String, String)] = [:],
         searchResults: [TextTextAgentSearchResult] = [],
-        captureReceiptFolderPath: String? = nil,
+        captureReceiptFolderPath: String? = nil, commandPath: String? = nil,
         updateResult: Result<TextTextAgentCommandReply, TextTextSyncError>? = nil
     ) {
         self.workspaceValue = workspace
@@ -499,6 +531,7 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
         self.contents = contents
         self.searchResults = searchResults
         self.captureReceiptFolderPath = captureReceiptFolderPath
+        self.commandPath = commandPath
         self.updateResult =
             updateResult
             ?? .success(
@@ -586,7 +619,7 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
         return .success(
             TextTextAgentCommandReply(
                 item: TextTextAgentCommandItem(
-                    id: "created", title: "Field notes", hash: "hash-created")))
+                    id: "created", title: "Field notes", hash: "hash-created", path: commandPath)))
     }
 
     func agentCaptureItem(
@@ -611,10 +644,10 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
         return .success(
             TextTextAgentCommandReply(
                 item: TextTextAgentCommandItem(
-                    id: "created", title: "Field notes", hash: "hash-created"),
+                    id: "created", title: "Field notes", hash: "hash-created", path: commandPath),
                 receipt: TextTextAgentCaptureReceipt(
                     itemId: "created", kind: "note",
-                    savedTo: selected?.path ?? "notes", title: "Field notes")))
+                    savedTo: selected?.path ?? "notes", title: "Field notes", path: commandPath)))
     }
 
     func recordedEvents() -> [String] { events }

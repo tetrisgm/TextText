@@ -15,11 +15,13 @@ public struct TextTextAgentCommandItem: Decodable, Sendable {
     public let id: String?
     public let title: String
     public let hash: String
+    public let path: String?
 
-    public init(id: String?, title: String, hash: String) {
+    public init(id: String?, title: String, hash: String, path: String? = nil) {
         self.id = id
         self.title = title
         self.hash = hash
+        self.path = path
     }
 }
 
@@ -31,19 +33,21 @@ public struct TextTextAgentCaptureReceipt: Decodable, Sendable {
     public let kind: String
     public let savedTo: String
     public let title: String
+    public let path: String?
 
     private enum CodingKeys: String, CodingKey {
         case itemId = "item_id"
         case kind
         case savedTo = "saved_to"
-        case title
+        case title, path
     }
 
-    public init(itemId: String, kind: String, savedTo: String, title: String) {
+    public init(itemId: String, kind: String, savedTo: String, title: String, path: String? = nil) {
         self.itemId = itemId
         self.kind = kind
         self.savedTo = savedTo
         self.title = title
+        self.path = path
     }
 }
 
@@ -59,16 +63,17 @@ public struct TextTextAgentSearchResult: Decodable, Sendable {
     public let hash: String
     public let snippet: String
     public let folderPath: String?
+    public let path: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, slug, title, kind, status, hash, snippet
+        case id, slug, title, kind, status, hash, snippet, path
         case folderPath = "folder_path"
     }
 
     public init(
         id: String, slug: String, title: String, kind: String,
         status: String, hash: String, snippet: String,
-        folderPath: String? = nil
+        folderPath: String? = nil, path: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -78,6 +83,7 @@ public struct TextTextAgentSearchResult: Decodable, Sendable {
         self.hash = hash
         self.snippet = snippet
         self.folderPath = folderPath
+        self.path = path
     }
 }
 

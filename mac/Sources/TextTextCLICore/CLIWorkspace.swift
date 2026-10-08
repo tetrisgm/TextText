@@ -438,6 +438,20 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         self.api = api
     }
 
+    /// Server paths are data, never absolute filesystem locations. Reject a
+    /// malformed authoritative path instead of silently inventing another one.
+    static func commandPath(_ authoritative: String?, fallback: String) throws -> String {
+        let value = authoritative ?? fallback
+        let components = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard !value.isEmpty, value.utf8.count <= 4096,
+            !value.contains("\\"), !value.contains(":"),
+            !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+            components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+            value.lowercased().hasSuffix(".textpack")
+        else { throw TextTextCLIError.workspaceUnavailable("the server returned an invalid document path") }
+        return value
+    }
+
     public func list(under folder: String? = nil) async throws -> [String] {
         try await documents(under: folder).map(\.path)
     }
@@ -556,14 +570,14 @@ public final class RemoteDocumentStore: @unchecked Sendable {
                 throw TextTextCLIError.workspaceUnavailable(
                     "the server returned no search results")
             }
-            cacheLock.withLock {
+            try cacheLock.withLock {
                 for result in results {
                     let filename = TextTextFilename.filename(
                         title: result.title, slug: result.id,
                         representation: .textpack)
                     documentByItemId[result.id] = RemoteDocument(
-                        path: [result.folderPath ?? "", filename]
-                            .filter { !$0.isEmpty }.joined(separator: "/"),
+                        path: try Self.commandPath(result.path, fallback: [result.folderPath ?? "", filename]
+                            .filter { !$0.isEmpty }.joined(separator: "/")),
                         itemId: result.id, folderId: "", workspaceHandle: "",
                         representation: .textpack)
                 }
@@ -695,6 +709,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
             agentName: CLICommandActor.current?.name,
             agentIntent: CLICommandActor.current?.message)
         let itemId: String
+        let authoritativePath: String?
         switch result {
         case .success(let value):
             guard let id = value.structuredContent?.item?.id, !id.isEmpty else {
@@ -702,6 +717,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
                     "the server created a document without an identity")
             }
             itemId = id
+            authoritativePath = value.structuredContent?.item?.path
         case .failure(.network):
             // A lost response may have committed. Reusing the same key makes
             // one bounded retry safe instead of creating a duplicate.
@@ -717,11 +733,20 @@ public final class RemoteDocumentStore: @unchecked Sendable {
                         "the server created a document without an identity")
                 }
                 itemId = id
+                authoritativePath = value.structuredContent?.item?.path
             case .failure(let error): throw Self.cliError(error)
             }
         case .failure(let error): throw Self.cliError(error)
         }
 
+        if let authoritativePath {
+            let document = RemoteDocument(
+                path: try Self.commandPath(authoritativePath, fallback: ""), itemId: itemId,
+                folderId: targetFolder.id, workspaceHandle: current.workspace.blog.handle,
+                representation: .textpack)
+            cacheLock.withLock { documentByItemId[itemId] = document }
+            return document
+        }
         // The write is committed before the response. A fresh manifest gives
         // the exact user-facing path and handles sibling title collisions.
         if let created = try await snapshot().documents.first(where: {
@@ -803,8 +828,8 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         let filename = TextTextFilename.filename(
             title: receipt.title, slug: createdId, representation: .textpack)
         let document = RemoteDocument(
-            path: [receipt.savedTo, filename].filter { !$0.isEmpty }
-                .joined(separator: "/"),
+            path: try Self.commandPath(authoritative.path ?? structured.item?.path,
+                fallback: [receipt.savedTo, filename].filter { !$0.isEmpty }.joined(separator: "/")),
             itemId: createdId,
             folderId: "",
             workspaceHandle: "",
