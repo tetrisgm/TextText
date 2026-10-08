@@ -482,7 +482,7 @@ class DocumentBoundary extends Component<{ children: ReactNode }, { error: strin
   render() { return this.state.error ? <div className="vault-notice" role="alert">This TextPack could not be opened: {this.state.error}</div> : this.props.children; }
 }
 
-export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null }: { allowFolderPicker?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
+export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null, webAssistant = false }: { allowFolderPicker?: boolean; webAssistant?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
   const shortcut = useShortcutLabel();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
@@ -1012,10 +1012,10 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     shortcut: "U",
     keywords: ["design", "look", "template"],
   });
-  if (allowFolderPicker && selected?.path) commandActions.push({
+  if ((allowFolderPicker || webAssistant) && selected?.path) commandActions.push({
     id: "add-agent",
     label: "Add agent to this item",
-    description: "Give Codex a task for the open item.",
+    description: webAssistant ? "Ask about this item. Read only." : "Give Codex a task for the open item.",
     shortcut: "A",
     keywords: ["assistant", "collaborate", "edit"],
   });
@@ -1389,6 +1389,6 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess}
       onClose={() => { setImportedGalleryPath(null); refresh(); }}
       onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
-    {allowFolderPicker && <NativeAssistant key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
+    {(allowFolderPicker || webAssistant) && <NativeAssistant webReadOnly={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
   </div>;
 }

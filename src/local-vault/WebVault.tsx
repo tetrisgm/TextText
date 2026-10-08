@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createWebAssistant } from "./web-assistant";
 import { VaultApp } from "./VaultApp";
 import { WebAccount } from "./WebAccount";
 import { setVaultTransport } from "./bridge";
@@ -9,7 +10,7 @@ import { watchWebWorkspace } from "./web-watch";
 import { consumeTemplateIntent } from "./template-intent";
 import { claimWebSession, renameWebSession } from "./web-session";
 
-export function WebVault({ workspaceId, name, accountEmail, accountName, requestedTemplate }: { workspaceId: string; name: string; accountEmail: string | null; accountName: string | null; requestedTemplate?: string }) {
+export function WebVault({ workspaceId, name, accountEmail, accountName, requestedTemplate, assistantHandle }: { workspaceId: string; name: string; accountEmail: string | null; accountName: string | null; requestedTemplate?: string; assistantHandle?: string }) {
   const [initial] = useState({ workspaceId, name });
   const [session, setSession] = useState<{ workspaceId: string; name: string; remounted?: boolean } | null>(null);
   const [templateIntent, setTemplateIntent] = useState<{ query: string } | null>(null);
@@ -24,7 +25,9 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
       return;
     }
     const transport = createWebVaultTransport(owned.workspaceId, owned.name);
+    const assistant = assistantHandle ? createWebAssistant(assistantHandle, transport.request) : null;
     const release = setVaultTransport(async (method, params, signal) => {
+      if (assistant && method.startsWith("agent")) return assistant.request(method, params);
       const result = await transport.request(method, params, signal);
       return (method === "list" || method === "open") && result && typeof result === "object" ? { ...result, name: owned.name } : result;
     });
@@ -40,13 +43,13 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
     window.addEventListener("offline", visibility);
     document.addEventListener("visibilitychange", visibility);
     return () => {
-      watcher.dispose(); release(); transport.destroy();
+      watcher.dispose(); assistant?.destroy(); release(); transport.destroy();
       window.removeEventListener("focus", visibility);
       window.removeEventListener("online", visibility);
       window.removeEventListener("offline", visibility);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [initial]);
+  }, [initial, assistantHandle]);
   useEffect(() => {
     if (!session || session.remounted || session.workspaceId !== workspaceId || requestedTemplate === undefined) return;
     const intent = consumeTemplateIntent(window.location.href, session.workspaceId);
@@ -79,5 +82,5 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
     return () => { active = false; };
   }, [session, workspaceId]);
   if (session?.remounted) return <section><p>Open this workspace in a new page.</p><a href={`/vault/${encodeURIComponent(workspaceId)}`}>Open workspace</a><p><a href={`/vault/${encodeURIComponent(session.workspaceId)}`}>Return to previous workspace</a></p></section>;
-  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp templateIntent={templateIntent} allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /></> : <p>Opening workspace…</p>;
+  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp webAssistant={Boolean(assistantHandle)} templateIntent={templateIntent} allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /></> : <p>Opening workspace…</p>;
 }

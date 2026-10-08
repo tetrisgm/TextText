@@ -31,11 +31,18 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const failures = [], unexpected = [];
-  let signedOut = false;
+  let signedOut = false, assistantEnabled = false;
+  const assistantRequests = [];
   page.on("pageerror", (error) => failures.push(error.message));
   await page.route("**/*", async (route) => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== "https://vault.test") { unexpected.push(request.url()); await route.abort(); return; }
+    if (url.pathname === "/api/ai") {
+      if (request.method() === "GET") await route.fulfill({json:{enabled:assistantEnabled,provider:"Test provider"}});
+      else { const payload=request.postDataJSON(); assistantRequests.push(payload); assert.equal(payload.context.mode,"read_only"); assert.equal(payload.context.postId,id);
+        await route.fulfill({contentType:"application/x-ndjson",body:JSON.stringify({type:"text",text:"Canonical answer"})+"\n"+JSON.stringify({type:"complete",text:"Canonical answer"})+"\n"}); }
+      return;
+    }
     if (url.pathname === "/api/auth/csrf") { await route.fulfill({ json: { csrfToken: "test-csrf" } }); return; }
     if (url.pathname === "/api/auth/signout") {
       assert.equal(request.method(), "POST");
@@ -44,6 +51,7 @@ try {
       await route.fulfill({ json: { url: "https://vault.test/signin" } }); return;
     }
     if (url.pathname === "/signin") { await route.fulfill({ body: "Signed out", contentType: "text/html" }); return; }
+    if (url.pathname === "/api/vault/workspace/account") { await route.fulfill({json:{email:"test@example.com",name:"Test account",identities:[],workspaceName:"Web test workspace"}}); return; }
     if (url.pathname === "/api/vault/workspace/access") {
       await route.fulfill({ json: { fullAccess: true, isOwner: true, canEditContent: true, canComment: true, canManageShares: true, grants: [] } }); return;
     }
@@ -112,6 +120,22 @@ try {
   await page.getByRole("button", { name: /test@example.com Signed in/ }).click();
   await page.getByRole("navigation", { name: "Folders" }).locator("summary").filter({ hasText: "Notes" }).click();
   await page.getByRole("button", { name: "Open Web note" }).click();
+  const openAssistant = async () => {
+    await page.getByRole("button", {name:"Search and actions"}).click();
+    await page.getByRole("option", {name:"Add agent to this item",exact:true}).click();
+  };
+  await openAssistant();
+  await page.getByRole("link",{name:"Workspace AI setup guide"}).waitFor();
+  assert.equal(await page.getByRole("button",{name:"Connect Codex"}).isVisible(),false);
+  assert.equal(await page.getByRole("button",{name:"Start task"}).isDisabled(),true);
+  await page.getByRole("button",{name:"Close assistant"}).click(); assistantEnabled=true;
+  await openAssistant();
+  await page.getByRole("textbox",{name:"Message assistant"}).fill("Read this note");
+  await page.getByRole("button",{name:"Start task"}).click();
+  await page.getByText("Canonical answer",{exact:true}).waitFor();
+  assert.equal(assistantRequests.length,1);
+  await page.getByRole("button",{name:"Close assistant"}).click();
+
   await page.getByRole("button", { name: "Edit card" }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   const body = page.getByRole("textbox", { name: "Document body", exact: true });

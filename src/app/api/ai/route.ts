@@ -552,7 +552,7 @@ function cloudToolMode(
   context: unknown,
 ): "full" | "read_only" {
   const view = viewContext(context);
-  if (view.mode === "suggestion") return "read_only";
+  if (view.mode === "suggestion" || view.mode === "read_only") return "read_only";
   const request = lastUserText(messages);
   if (HAND_ME_BACK.test(request)) return "read_only";
   return DIRECT_WRITE_INTENT.test(request) ||
@@ -976,7 +976,7 @@ export async function POST(request: Request) {
   const connections = workspaceRecord
     ? await enabledMcpConnections(workspaceRecord.id)
     : [];
-  const requestedConnections = explicitlyRequestedOutboundConnections(
+  const requestedConnections = requestView.mode === "read_only" ? [] : explicitlyRequestedOutboundConnections(
     lastUserText(messages),
     connections,
   );
@@ -1051,7 +1051,7 @@ export async function POST(request: Request) {
     // Remote tools remain visible so the model can stage the exact requested
     // arguments. No server-supplied safety hint permits execution in this
     // turn: every external call becomes a durable owner review proposal.
-    ...remoteTools,
+    ...(requestView.mode === "read_only" ? {} : remoteTools),
   };
   const streamCancellation = new AbortController();
   const generationSignal = AbortSignal.any([request.signal, streamCancellation.signal, AbortSignal.timeout(55_000)]);
