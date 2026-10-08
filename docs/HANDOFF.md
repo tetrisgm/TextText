@@ -35,7 +35,10 @@
   regression starts a move intent, explicitly recovers to a distinct verified
   file, and checks exact archive bytes plus released protection. Full Windows
   Core suite passed on Mac (`/tmp/texttext-recovery-store-lock-windows-final.log`).
-  Actual PC run and updated installed-client acceptance remain required.
+  Actual PC full Core suite also passed from isolated source `5767b4ba`
+  (`/tmp/texttext-recovery-actual-pc.log`), including serialization-only replay
+  and exact move-intent archival. Updated installed-client acceptance remains
+  required; no existing PC user state changed.
 
 - Native same-generation replay now compares complete journal JSON values,
   allowing serialization-only formatting/key-order changes while retaining
