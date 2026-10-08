@@ -49,12 +49,12 @@ const previewFiles = [
 const actionHref = "/start";
 function PrimaryAction({ signedIn }: { signedIn: boolean }) {
   return (
-    <Link
+    <a
       className="texttext-landing-primary"
       href={signedIn ? "/start?to=home" : actionHref}
     >
       {signedIn ? "Open your inbox" : "Get started"}
-    </Link>
+    </a>
   );
 }
 

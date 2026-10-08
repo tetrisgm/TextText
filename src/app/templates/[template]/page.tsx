@@ -55,13 +55,12 @@ export default async function TemplateDetailPage({
           <strong>{example.template.name}</strong>
           <span>{example.category}</span>
         </span>
-        <Link
+        <a
           href={`/start?template=${example.slug}&seed=1`}
-          prefetch={false}
           className="tpl-detail-use"
         >
           Use this look
-        </Link>
+        </a>
       </div>
       <p className="tpl-detail-note">
         {example.template.description} This is a complete example item, rendered

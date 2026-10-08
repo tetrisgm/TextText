@@ -4,7 +4,6 @@
 // unbound email invites without binding them as a side effect.
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
 import { getSharedPostsForUser } from "@/lib/shares";
 import { SharedWithMe } from "@/components/workspace/SharedWithMe";
@@ -47,9 +46,9 @@ export default async function SharedPage() {
   return (
     <div className="applecms shared-shell">
       <main className="shared-main">
-        <Link className="shared-back" href="/start">
+        <a className="shared-back" href="/start">
           Back to your workspace
-        </Link>
+        </a>
         <h1 className="shared-title">Shared with me</h1>
         <p className="shared-lede">
           Items and workspaces other people invited you to join, view, comment on, or edit.

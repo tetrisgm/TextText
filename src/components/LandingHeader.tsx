@@ -22,16 +22,16 @@ export function LandingHeader({
       <div className="texttext-landing-nav-actions">
         {signedIn ? (
           <>
-            <Link className="texttext-landing-signin" href="/start?to=home">
+            <a className="texttext-landing-signin" href="/start?to=home">
               Open your inbox
-            </Link>
+            </a>
             <SignOutButton className="texttext-landing-link" redirectTo="/" />
           </>
         ) : (
           // The hero owns the one pill on the page; the header stays quiet.
-          <Link className="texttext-landing-signin" href="/start">
+          <a className="texttext-landing-signin" href="/start">
             Sign in
-          </Link>
+          </a>
         )}
       </div>
     </nav>
