@@ -758,11 +758,12 @@ describe("durable file collaboration client", () => {
     const browser = journal.load(original.journalKey)!;
     original.destroy();
     const relocated = JSON.stringify({ ...JSON.parse(browser), relativePath: "Moved/Note.textpack" });
-    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", active: false, journal, retainedJournal: relocated, retainedJournalPath: "Moved/Note.textpack", request: server.request });
+    let observedBody = "";
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", active: false, journal, retainedJournal: relocated, retainedJournalPath: "Moved/Note.textpack", request: server.request, onChange: snapshot => { observedBody = snapshot.content.body; } });
     clients.push(reopened); await reopened.start();
     expect(reopened.hasUnreadableJournal).toBe(false);
     expect(reopened.hasBaseline).toBe(true);
-    expect(reopened.snapshot().content.body).toBe("Hello retained");
+    expect(observedBody).toBe("Hello retained");
     expect(reopened.recoveryJournal?.relativePath).toBe("Moved/Note.textpack");
     expect(reopened.hasPendingChanges).toBe(true);
   });
