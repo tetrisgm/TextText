@@ -150,14 +150,21 @@ export async function smoke({ scratch = false, environment = process.env, origin
     const appended = "The edited paragraph must persist too.";
     const created = await command("create_item", { folder_path: "Notes", kind: "note", title: "Deployment smoke", body });
     assert.match(created.item?.id ?? "", /^[0-9a-f-]{36}$/i, "Create returned no item ID.");
+    assert.equal(created.item.title, "Deployment smoke", "Create omitted the native item title.");
+    assert.match(created.item.hash ?? "", /^[a-f0-9]{64}$/, "Create omitted the native concurrency hash.");
     const itemId = created.item.id;
     const firstRead = await command("read_item", { id: itemId });
     assert.ok(firstRead.markdown?.includes(body), "Created note could not be read through the app.");
     assert.ok(firstRead.item?.hash, "Created note has no concurrency hash.");
+    assert.equal(firstRead.item.title, "Deployment smoke", "Read omitted the native item title.");
+    assert.match(firstRead.item.hash, /^[a-f0-9]{64}$/, "Read returned an invalid native concurrency hash.");
     checks.push("note creation and read");
 
     const appendArgs = { id: itemId, markdown: appended, if_match_hash: firstRead.item.hash, idempotency_key: `smoke-${randomUUID()}` };
-    await command("append_to_item", appendArgs);
+    const edited = await command("append_to_item", appendArgs);
+    assert.equal(edited.item?.id, itemId, "Append omitted the native item ID.");
+    assert.equal(edited.item?.title, "Deployment smoke", "Append omitted the native item title.");
+    assert.match(edited.item?.hash ?? "", /^[a-f0-9]{64}$/, "Append omitted the native concurrency hash.");
     await command("append_to_item", appendArgs); // lost acknowledgement retry keeps the original hash/key
 
     const secondRead = await command("read_item", { id: itemId });
@@ -165,12 +172,35 @@ export async function smoke({ scratch = false, environment = process.env, origin
     assert.notEqual(secondRead.item?.hash, firstRead.item.hash, "Edit did not change the content hash.");
     checks.push("note edit, durable retry and read");
 
+    const search = await command("search", { query: "deployment", limit: 10 });
+    assert.ok(Array.isArray(search.results), "Search omitted native results.");
+    assert.equal(search.results.length, 1, "Search did not return exactly the scratch item.");
+    const hit = search.results[0];
+    assert.equal(hit.id, itemId, "Search returned another item.");
+    for (const field of ["slug", "title", "kind", "status", "hash", "snippet", "folder_path"]) assert.equal(typeof hit[field], "string", `Search omitted native ${field}.`);
+    assert.equal(hit.title, "Deployment smoke", "Search title differs.");
+    assert.equal(hit.kind, "note", "Search kind differs.");
+    assert.equal(hit.folder_path, "Notes", "Search folder differs.");
+    assert.equal(hit.hash, secondRead.item.hash, "Search revision differs.");
+    checks.push("native search result contract");
+
+    const captured = await command("create_item", { capture: "Capture acceptance fixture.", idempotency_key: `capture-${randomUUID()}` });
+    assert.ok(captured.receipt, "Capture omitted native receipt.");
+    assert.equal(captured.receipt.item_id, captured.item?.id, "Capture receipt item differs.");
+    assert.equal(captured.receipt.kind, "note", "Capture receipt kind differs.");
+    assert.equal(captured.receipt.saved_to, "Notes", "Capture receipt destination differs.");
+    assert.equal(captured.receipt.title, captured.item?.title, "Capture receipt title differs.");
+    assert.equal(typeof captured.receipt.title, "string", "Capture omitted its title.");
+    assert.match(captured.item?.hash ?? "", /^[a-f0-9]{64}$/, "Capture omitted native hash.");
+    checks.push("native quick capture receipt");
+
     const manifestResponse = await request(`/api/vault/${fixture.blogId}/items`);
     assert.equal(manifestResponse.status, 200, "File manifest read failed.");
     const manifest = await manifestResponse.json();
-    assert.equal(manifest.items.length, 1, "Retry created a duplicate file.");
-    assert.equal(manifest.items[0].itemId, itemId, "Manifest item identity differs.");
-    assert.equal(manifest.items[0].revision, secondRead.item.hash, "Manifest revision differs from command read.");
+    assert.equal(manifest.items.length, 2, "Commands created missing or duplicate files.");
+    const originalItem = manifest.items.find(item => item.itemId === itemId);
+    assert.ok(originalItem, "Manifest omitted original item.");
+    assert.equal(originalItem.revision, secondRead.item.hash, "Manifest revision differs from command read.");
     const archive = await request(`/api/vault/${fixture.blogId}/items/${itemId}`);
     assert.equal(archive.status, 200, "Canonical TextPack read failed.");
     const bytes = new Uint8Array(await archive.arrayBuffer());
