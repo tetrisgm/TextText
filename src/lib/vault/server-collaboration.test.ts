@@ -11,7 +11,7 @@ import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
-import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, VaultCollaborationEpochError } from "./server-store";
+import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, mutateVaultDocument, VaultCollaborationEpochError } from "./server-store";
 const hash = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
 function pack(body: string, files?: Record<string, Uint8Array>) {
   const document = emptyDocumentSnapshot(); document.content.body = body;
@@ -43,6 +43,24 @@ describe("durable file collaboration", () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
+
+  it("retains local retry receipts through shared editing and agent mutations", async () => {
+    const receiptPath = "net.texttext.mutations/" + "a".repeat(64) + ".json";
+    const receipt = new TextEncoder().encode(JSON.stringify({ fingerprint: "b".repeat(64) }));
+    const original = (await readVaultTextpack(location()))!;
+    await writeVaultTextpack({ ...location(), relativePath, operationId: "add-local-receipt",
+      baseRevision: original.revision, bytes: pack("Hello", { [receiptPath]: receipt }) });
+    const state = (await readVaultCollaboration(location()))!;
+    await push("shared-after-receipt", state, edit(state, " shared edit"));
+    const shared = (await readVaultTextpack(location()))!;
+    expect(unzipSync(shared.bytes)["Note.textbundle/" + receiptPath]).toEqual(receipt);
+    await mutateVaultDocument({ ...location(), operationId: "agent-after-receipt",
+      expectedRevision: shared.revision, mutation: { appendBody: "Agent edit" },
+      audit: { actorUserId: "agent-1", actorType: "external_agent" } });
+    const saved = (await readVaultTextpack(location()))!;
+    expect(unzipSync(saved.bytes)["Note.textbundle/" + receiptPath]).toEqual(receipt);
+    expect(strFromU8(unzipSync(saved.bytes)["Note.textbundle/text.md"])).toContain("Agent edit");
+  });
 
   it("preserves the actual Markdown path across edits and renames", async () => {
     const initial = (await readVaultCollaboration(location()))!;

@@ -43,3 +43,12 @@ regression and native durable-sync suite passed on the Mac .NET runtime
 Mac CLI/import tests passed 17 tests after the placement change
 (`/tmp/texttext-receipt-bundle-root.log`). Server checkpoint/MCP replacement
 paths still need receipt-preservation acceptance before broader claims.
+
+Server follow-up: `server-collaboration.test.ts` passed all 19 tests
+(`/tmp/texttext-receipt-shared-server.log`). The added regression imports a
+canonical receipt-bearing TextPack, commits a Yjs body edit through
+`pushVaultCollaboration`, then appends through `mutateVaultDocument` as an
+external agent. It checks the exact receipt bytes after each commit and the
+new body. Hosted MCP mutations call this store mutation boundary. This verifies
+the shared server/store path; HTTP authentication and installed-client delivery
+are not implied. No server implementation change was needed for preservation.

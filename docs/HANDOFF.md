@@ -45,8 +45,10 @@
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.
   Local CLI create needs durable idempotency-key handling. Keyed append now
   commits its receipt in the same TextPack replacement; reopen/later-edit retry
-  and payload mismatch regression passed. Cross-client receipt preservation
-  remains unverified. [Receipt](verification/2026-10-08-local-append-idempotency.md).
+  and payload mismatch regression passed. Web package rebuild, Windows core
+  rewrite and shared server/agent mutation receipt preservation regressions
+  passed. Installed-client round trip remains unverified.
+  [Receipt](verification/2026-10-08-local-append-idempotency.md).
   Storage/CLI suites passed 84 tests. Bundled editor smoke now passes with
   current account/cached-permission fixture semantics; the earlier failure was
   stale message and unauthenticated-edit expectations.
