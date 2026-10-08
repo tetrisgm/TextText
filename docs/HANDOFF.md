@@ -28,6 +28,15 @@
 
 ## Current work
 
+- Actual PC native acceptance passed for source `adf8d21a`, using the existing
+  TextTextBuild SDK in isolated directory
+  `C:\Users\Shokunin\dev\texttext-rebase-adf8d21a-20261008`.
+  Full Windows Core suite passed, including active same-token save after a
+  move, reopen with pending journal, move crash recovery and pre-checkpoint
+  deferral (`/tmp/texttext-rebase-actual-pc.log`). No installed app, account,
+  user files or SDK configuration changed. Updated desktop build and real
+  shared-editor UI acceptance are next; public releases remain unauthorized.
+
 - First-checkpoint startup window now has native regressions on both desktops:
   an early remote move is safely deferred before the first journal, then the
   ordinary next sync relocates the newly durable pending projection with its
