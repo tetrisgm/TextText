@@ -46,5 +46,11 @@ the successful smoke checks do not dismiss that packaging risk.
 
 ## Pending acceptance
 
-Windows is installed and startup/search passed; snippet and persistence
-acceptance is in progress.
+Windows acceptance passed: signed-in startup, search, snippet save/insert,
+Finish/reopen and passive receipt of the Mac marker. Outbox/conflicts were zero.
+[Windows receipt](2026-10-07-windows-shared-1183.md).
+
+The packaging fix `3de70287` reproduces and prevents duplicate Yjs constructors
+in the actual Oracle package layout. It is committed but not yet deployed.
+Canonical folder creation `48080f86` passed 34 focused checks; the combined
+mandatory gate is running before deployment.

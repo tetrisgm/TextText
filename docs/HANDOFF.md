@@ -5,11 +5,9 @@
 - Mac `/Applications/TextText.app`: **0.204 (1183)**, source `04c265c7`.
   Startup, note icon, search cache invalidation, save and normal reopen passed.
   [Receipt](verification/2026-10-07-shared-clients-1183.md).
-- Windows: product source **5861988e**, candidate
-  `fdd6221385d54e3794031c2a48f2b1d0`, installed in the existing location.
-  Native Core 151 assertions, actual startup/search/reopen, passive deletion,
-  restoration and subsequent file/web edits passed.
-  [Receipt](verification/2026-10-07-windows-desktop-live.md).
+- Windows: product source **04c265c7**, installed in the existing location.
+  Build, actual startup/search, snippet save/insert/reopen and passive Mac edit
+  delivery passed. [Receipt](verification/2026-10-07-windows-shared-1183.md).
 - Oracle: **texttext-oracle-20261008T052428Z-04c265c7**. All twelve production
   HTTP smoke checks passed. Algorave services and shared proxy were preserved.
 - Actual Mac deletion/restoration, same-ID Safari reading, direct CLI editing,
@@ -29,13 +27,15 @@
   assistant proposals/provider settings and attributed whole-turn agent presence
   are implemented. Regression coverage is wired into the mandatory gates.
 - Windows candidate from the same source passed 195 shared-client tests, native
-  checks and actual desktop smoke. Installation acceptance is underway.
+  checks and actual desktop smoke. Installed snippet/persistence acceptance also passed.
 - Oracle deployment passed all 12 production HTTP checks. Actual Safari account,
   provider Settings and passive Mac-edit delivery passed. No provider is
   configured, so live model execution is not attested.
 - Investigating a duplicate-Yjs import startup warning in the deployed package.
-- Next bounded increment: canonical folder creation through the shared file
-  store, with authorization, audit and durable retry coverage.
+- `48080f86` adds canonical folder creation with authorization, audit and durable
+  retry coverage; 34 focused checks passed. Combined mandatory gate is running.
+- `3de70287` fixes the duplicate-Yjs Oracle packaging root cause with constructor
+  identity regression. Deploy after the combined gate passes.
 
 Keep one canonical file system and shared UI/editor/sync implementation across
 Mac, Windows and web. Native adapters handle filesystem, credentials and OS
