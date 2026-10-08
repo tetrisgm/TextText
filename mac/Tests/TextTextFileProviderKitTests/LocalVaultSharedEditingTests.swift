@@ -37,6 +37,40 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testPathRebaseRecoversBothCrashWindowsWithoutLosingPendingJournal() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let target = try checkpoint(original)
+        _ = try store.materialize(checkpoint: target, expectedHash: original.hash,
+            markdown: original.contents.markdown, documentJSON: XCTUnwrap(original.contents.documentJSON))
+        let first = "Archive/Note.textpack", second = "Archive/Again/Note.textpack"
+        XCTAssertThrowsError(try store.rebase(itemId: itemId, newPath: first, interruptAfterIntent: true))
+        let recovered = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertEqual(recovered.path, first)
+        XCTAssertEqual(recovered.projectedHash, original.hash)
+        XCTAssertTrue(recovered.pending)
+        XCTAssertEqual(recovered.journalGeneration, target.journalGeneration)
+        var expected = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any])
+        expected["relativePath"] = first
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: Data(recovered.journal.utf8)) as? NSDictionary, expected as NSDictionary)
+        XCTAssertThrowsError(try store.rebase(itemId: itemId, newPath: second, interruptAfterMove: true))
+        let twice = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertEqual(twice.path, second)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: second).hash, original.hash)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(first).path))
+    }
+    func testPathRebaseRejectsOccupiedDestinationAndPreservesBothFiles() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        _ = try store.materialize(checkpoint: checkpoint(original), expectedHash: original.hash,
+            markdown: original.contents.markdown, documentJSON: XCTUnwrap(original.contents.documentJSON))
+        let destination = "Notes/Occupied.textpack"
+        let bytes = Data("unrelated existing file".utf8)
+        try bytes.write(to: root.appendingPathComponent(destination))
+        XCTAssertThrowsError(try store.rebase(itemId: itemId, newPath: destination))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(destination)), bytes)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
+        XCTAssertEqual(try store.checkpoint(itemId: itemId)?.path, path)
+    }
     func testRemoteTemplateMetadataSurvivesInterruptedCheckpointAndReopen() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
         var target = try checkpoint(original)

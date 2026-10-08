@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Shared journal path rebasing now has a recoverable move intent on Mac.
+  Both interruption windows preserve file bytes, pending updates and journal
+  generation; occupied destinations are refused. All 16 shared editing tests
+  passed (`/tmp/texttext-shared-rebase-tests-final.log`). This primitive is not
+  yet wired into sync: active-session reconciliation, Windows equivalence and
+  selected-editor path updates remain required before deployment.
+
 - Folder staging retry identity is wired through shared dialog, web/Windows
   transport and Mac bridge. An unchanged retry returns one owner-bound frozen
   proposal; changed intent or expired/reviewed keys fail closed. The dialog

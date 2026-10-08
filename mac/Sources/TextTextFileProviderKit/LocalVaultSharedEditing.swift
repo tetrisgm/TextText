@@ -41,6 +41,10 @@ enum LocalVaultSharedFailure: Error, LocalizedError {
 /// Used exclusively by the workspace's LocalVaultSync actor. No independent file writer or worker.
 struct LocalVaultSharedEditingStore: Sendable {
     let root: URL
+    private struct MoveIntent: Codable {
+        var sourcePath: String
+        var checkpoint: LocalVaultSharedCheckpoint
+    }
     private struct Intent: Codable {
         var beforeHash: String
         var checkpoint: LocalVaultSharedCheckpoint
@@ -156,6 +160,11 @@ struct LocalVaultSharedEditingStore: Sendable {
     }
     func checkpoint(itemId: String) throws -> LocalVaultSharedCheckpoint? {
         let directory = try itemDirectory(itemId)
+        if let data = try read(directory.appendingPathComponent("move-intent.json"), limit: 5 * 1024 * 1024) {
+            let intent = try JSONDecoder().decode(MoveIntent.self, from: data)
+            guard intent.checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
+            return try finishMove(intent, directory: directory)
+        }
         if let data = try read(directory.appendingPathComponent("intent.json"), limit: 9 * 1024 * 1024) {
             let intent = try JSONDecoder().decode(Intent.self, from: data)
             guard intent.checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
@@ -166,6 +175,49 @@ struct LocalVaultSharedEditingStore: Sendable {
         guard value.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
         try validate(value)
         return value
+    }
+    /// Move the projection and its journal as one recoverable operation. Content,
+    /// pending update batches and generations remain unchanged.
+    func rebase(itemId: String, newPath: String, interruptAfterIntent: Bool = false,
+                interruptAfterMove: Bool = false) throws -> LocalVaultSharedCheckpoint {
+        guard var target = try checkpoint(itemId: itemId), target.retiredReason == nil else { throw LocalVaultSharedFailure.staleSession }
+        if target.path == newPath { return target }
+        let source = target.path
+        target.path = newPath
+        guard var journal = try JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any] else { throw LocalVaultSharedFailure.invalid }
+        journal["relativePath"] = newPath
+        target.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        try validate(target)
+        let store = LocalVaultDocumentStore(root: root)
+        let current = try store.read(path: source)
+        guard current.hash == target.projectedHash,
+              MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId,
+              !FileManager.default.fileExists(atPath: try store.url(for: newPath).path) else { throw LocalVaultSyncFailure.changed }
+        let directory = try itemDirectory(itemId)
+        let intent = MoveIntent(sourcePath: source, checkpoint: target)
+        try write(JSONEncoder().encode(intent), to: directory.appendingPathComponent("move-intent.json"))
+        if interruptAfterIntent { throw LocalVaultSharedFailure.interrupted }
+        return try finishMove(intent, directory: directory, interruptAfterMove: interruptAfterMove)
+    }
+    private func finishMove(_ intent: MoveIntent, directory: URL, interruptAfterMove: Bool = false) throws -> LocalVaultSharedCheckpoint {
+        try validate(intent.checkpoint)
+        let store = LocalVaultDocumentStore(root: root)
+        let source = try store.url(for: intent.sourcePath)
+        let target = intent.checkpoint
+        guard intent.sourcePath != target.path else { throw LocalVaultSharedFailure.invalid }
+        if FileManager.default.fileExists(atPath: source.path) {
+            let current = try store.read(path: intent.sourcePath)
+            guard current.hash == target.projectedHash,
+                  MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == target.itemId else { throw LocalVaultSyncFailure.changed }
+            _ = try store.rename(path: intent.sourcePath, expectedHash: current.hash, newPath: target.path)
+            if interruptAfterMove { throw LocalVaultSharedFailure.interrupted }
+        }
+        let moved = try store.read(path: target.path)
+        guard moved.hash == target.projectedHash,
+              MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == target.itemId else { throw LocalVaultSyncFailure.changed }
+        try write(JSONEncoder().encode(target), to: directory.appendingPathComponent("checkpoint.json"))
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("move-intent.json"))
+        return target
     }
     private func finish(_ intent: Intent, directory: URL, interruptAfterWrite: Bool = false) throws -> LocalVaultSharedMaterialization {
         try validate(intent.checkpoint)
