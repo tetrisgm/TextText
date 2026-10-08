@@ -1,8 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
 import type { fetchPublicResource } from "@/lib/bookmark-fetch";
 import { fetchArticle } from "../fetch-article.server";
+import { pdfFixture } from "./pdf-fixture";
 const html = `<article><h1>Readable story</h1>${"<p>A useful article contains enough words and detail to provide readers with a complete and meaningful account of the topic at hand.</p>".repeat(3)}<script>alert(1)</script></article>`;
 describe("bounded article fetch", () => {
+  it("propagates caller cancellation to the guarded fetch and releases its listener", async () => {
+    const controller = new AbortController(); const remove = vi.spyOn(controller.signal, "removeEventListener");
+    let fetchSignal: AbortSignal | undefined;
+    const result = fetchArticle("https://example.com/", async (_url, init) => {
+      fetchSignal = init?.signal as AbortSignal;
+      return await new Promise((_resolve, reject) => fetchSignal?.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true }));
+    }, controller.signal);
+    controller.abort();
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchSignal?.aborted).toBe(true);
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+  it("captures public PDF text through the same guarded fetch without fetching embedded links", async () => {
+    const fetcher = vi.fn<typeof fetchPublicResource>(async () => new Response(pdfFixture("A saved PDF reader."), { headers: { "Content-Type": "application/pdf; charset=binary" } }));
+    const result = await fetchArticle("https://example.com/document.pdf", fetcher);
+    expect(result.markdown).toBe("A saved PDF reader.");
+    expect(result.media).toEqual([]);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(result.sourceURL).toBe("https://example.com/document.pdf");
+  });
+  it("rejects declared and chunked oversized PDFs and cancels their body", async () => {
+    for (const declared of [true, false]) {
+      let canceled = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) { if (!declared) controller.enqueue(new Uint8Array(8_000_001)); },
+        cancel() { canceled = true; },
+      });
+      await expect(fetchArticle("https://example.com/large.pdf", async () => new Response(body, { headers: { "Content-Type": "application/pdf", ...(declared ? { "Content-Length": "8000001" } : {}) } }))).rejects.toThrow(/too large/);
+      expect(canceled).toBe(true);
+    }
+  });
   it("uses the existing public-address fetcher and returns inert Markdown", async () => {
     const fetcher = vi.fn<typeof fetchPublicResource>(async () => new Response(html, { headers: { "Content-Type": "text/html" } }));
     const result = await fetchArticle("https://example.com/article", fetcher);

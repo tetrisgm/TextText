@@ -40,7 +40,7 @@ export async function readBoundedText(
     : { value: new TextDecoder().decode(result.value) };
 }
 
-async function readBoundedBytes(
+export async function readBoundedBytes(
   request: Request,
   maximumBytes: number,
 ): Promise<BoundedBytesResult> {

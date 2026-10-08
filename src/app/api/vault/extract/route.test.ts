@@ -12,9 +12,11 @@ it("authorizes before contacting a source", async () => {
 });
 it("returns capture data without a content mutation", async () => {
   mocks.fetch.mockResolvedValue({ sourceURL: "https://example.com/", markdown: "article", capturedAt: "2026-09-30T00:00:00Z" });
-  const response = await POST(request({ sourceURL: "https://example.com/" }));
+  const input = request({ sourceURL: "https://example.com/" });
+  const response = await POST(input);
   expect(response.status).toBe(200); expect((await response.json()).markdown).toBe("article");
   expect(response.headers.get("Cache-Control")).toContain("no-store");
+  expect(mocks.fetch).toHaveBeenCalledWith("https://example.com/", undefined, input.signal);
 });
 it("rejects malformed and oversized input and makes failure retryable", async () => {
   expect((await POST(request({ sourceURL: false }))).status).toBe(400);

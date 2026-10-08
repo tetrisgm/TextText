@@ -1,5 +1,6 @@
 import { fetchPublicResource } from "@/lib/bookmark-fetch";
-import { readBoundedText } from "@/lib/http/bounded-json";
+import { readBoundedBytes, readBoundedText } from "@/lib/http/bounded-json";
+import { extractPDFText, MAX_CAPTURE_PDF_BYTES } from "./pdf-extraction.server";
 import { extractArticleMarkdown } from "./article-extraction";
 import { remoteMarkdownImageUrls } from "@/lib/markdown-images";
 import type { ArticleCapture, ArticleCaptureMedia } from "@/lib/vault/article-capture";
@@ -50,14 +51,23 @@ async function boundedImage(response: Response, remoteURL: string): Promise<Arti
 
 /** No cookies, scripts, browser process, or content writes. The caller saves
  * the result through its normal file revision checks. */
-export async function fetchArticle(sourceURL: string, fetcher = fetchPublicResource): Promise<ArticleCapture> {
+export async function fetchArticle(sourceURL: string, fetcher = fetchPublicResource, signal?: AbortSignal): Promise<ArticleCapture> {
   const url = new URL(sourceURL);
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.href.length > 4096) throw new Error("Choose a public HTTP or HTTPS link without credentials.");
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) throw new DOMException("Request canceled", "AbortError");
+  signal?.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetcher(url, { signal: controller.signal, headers: { accept: "text/html", "user-agent": "TextText/1 article reader" } });
-    if (!response?.ok || !/\b(?:text\/html|application\/xhtml\+xml)\b/i.test(response.headers.get("content-type") ?? "")) {
+    const response = await fetcher(url, { signal: controller.signal, headers: { accept: "text/html,application/xhtml+xml,application/pdf", "user-agent": "TextText/1 article reader" } });
+    const contentType = response?.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+    if (response?.ok && ["application/pdf", "application/x-pdf"].includes(contentType ?? "")) {
+      const result = await readBoundedBytes(response as unknown as Request, MAX_CAPTURE_PDF_BYTES);
+      if ("error" in result) { await response.body?.cancel().catch(() => {}); throw new Error("This PDF is too large to capture. Open the original PDF instead."); }
+      return { sourceURL: url.href, markdown: await extractPDFText(result.value, controller.signal), capturedAt: new Date().toISOString(), media: [] };
+    }
+    if (!response?.ok || !/\b(?:text\/html|application\/xhtml\+xml)\b/i.test(contentType ?? "")) {
       await response?.body?.cancel();
       throw new Error("This page could not be read. Your saved link is still available.");
     }
@@ -80,5 +90,5 @@ export async function fetchArticle(sourceURL: string, fetcher = fetchPublicResou
       } catch { /* Text remains useful when media is unavailable. */ }
     }
     return { sourceURL: url.href, markdown, capturedAt: new Date().toISOString(), media };
-  } finally { controller.abort(); clearTimeout(timeout); }
+  } finally { signal?.removeEventListener("abort", abort); controller.abort(); clearTimeout(timeout); }
 }

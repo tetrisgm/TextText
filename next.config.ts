@@ -22,7 +22,8 @@ const buildId =
   "development";
 
 const nextConfig: NextConfig = {
-  outputFileTracingIncludes: { "/*": ["./presets/builtin/*.textpack"] },
+  outputFileTracingIncludes: { "/*": ["./presets/builtin/*.textpack"],
+    "/api/vault/extract": ["./src/lib/reading/pdf-extraction.worker.mjs", "./node_modules/unpdf/dist/**/*", "./node_modules/unpdf/package.json"] },
   // The manual Oracle deployment packages this output with Linux ARM64 deps.
   ...(process.env.TEXTTEXT_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   // Live client evaluations use an isolated build directory so a stopped

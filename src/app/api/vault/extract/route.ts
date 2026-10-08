@@ -9,6 +9,6 @@ export async function POST(request: Request) {
   if (access instanceof Response) return access;
   const input = await readBoundedJson<{ sourceURL?: unknown }>(request, 8192);
   if ("error" in input || typeof input.value?.sourceURL !== "string") return Response.json({ error: "A source link is required." }, { status: 400, headers });
-  try { return Response.json(await fetchArticle(input.value.sourceURL), { headers }); }
+  try { return Response.json(await fetchArticle(input.value.sourceURL, undefined, request.signal), { headers }); }
   catch { return Response.json({ error: "This article could not be captured. Your link is saved; you can open the original or retry." }, { status: 422, headers }); }
 }
