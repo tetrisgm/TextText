@@ -1,5 +1,6 @@
 import { coordinateFolderMove, previewFolderMoveMetadata } from "./vault/folder-move-metadata";
 import { folderMovePlanHash, type planFolderMove } from "@/sync/engine/folder-move-plan";
+import { freezeFolderMoveReview } from "./vault/folder-move-review";
 import type { FolderMoveIntent } from "@/sync/engine/folder-move-operation";
 import { provisionFileWorkspace } from "@/lib/vault/provision-workspace";
 import { validatedLookSource } from "./presentation/template-library";
@@ -8499,7 +8500,7 @@ export async function previewVaultFolderMove(input: FolderMoveActor & { source: 
   }
   await authorizeFolderMoveOwner(input);
   const plan = await previewFolderMoveMetadata({...input,folders:manifest.folders,items:manifest.items,manifestRevision:manifest.revision});
-  return {plan,reviewedPlanHash:folderMovePlanHash(plan)};
+  return freezeFolderMoveReview(plan);
 }
 
 /** Used only after the approval adapter has presented and retained the preview.

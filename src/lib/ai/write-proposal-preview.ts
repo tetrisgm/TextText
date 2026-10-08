@@ -1,4 +1,12 @@
 import type { WorkspaceToolName } from "@/lib/ai/tools";
+import type { planFolderMove } from "@/sync/engine/folder-move-plan";
+
+export type FrozenFolderMovePreview = {
+  kind: "folder_move";
+  tool: "move_folder";
+  plan: ReturnType<typeof planFolderMove>;
+  reviewedPlanHash: string;
+};
 
 /**
  * What a destructive proposal will actually do, frozen when it is staged.
@@ -30,7 +38,7 @@ export type FrozenItemPreview = {
   missing?: true;
 };
 
-export type FrozenProposalPreview = {
+export type FrozenProposalPreview = FrozenFolderMovePreview | {
   kind: "items";
   tool: WorkspaceToolName;
   items: FrozenItemPreview[];
@@ -53,6 +61,11 @@ export type FrozenProposalPreview = {
 
 /** The sentence the owner is shown, built from the frozen preview. */
 export function describeFrozenPreview(preview: FrozenProposalPreview): string {
+  if (preview.kind === "folder_move") {
+    const { plan } = preview;
+    const added = plan.addedAccess.map(access => `${access.email} (${access.role})`).join(", ");
+    return `Move "${plan.source}" to "${plan.destination}", including ${plan.items.length} file${plan.items.length === 1 ? "" : "s"} and ${plan.folders.length} folder${plan.folders.length === 1 ? "" : "s"}. File contents and existing access stay intact.${added ? ` Additional access from the destination: ${added}.` : " No additional access is granted."}`;
+  }
   if (preview.kind === "trash") return `Permanently delete all ${preview.trashCount ?? 0} items and folders in Trash. This cannot be undone.`;
   if (preview.kind === "access") {
     const target = `${preview.scopeType} ${preview.scopeId}`;

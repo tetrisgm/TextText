@@ -88,6 +88,9 @@
   Required core verification includes the real PostgreSQL boundary/reservation
   tests and passed 765 tests plus TypeScript. Public proposal/client integration
   is still pending; this cohort is not installed or deployed.
+  The boundary now returns a validated frozen review with readable path/count
+  and additional-access summaries. Full-plan and lifecycle regression checks
+  pass; public staging/approval wiring remains the next integration step.
   [Source evidence](verification/2026-10-08-folder-move-recovery-source.md).
 
 

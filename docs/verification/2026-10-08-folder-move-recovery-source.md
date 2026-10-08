@@ -54,3 +54,13 @@ were present, so this is not an attestation of a frozen release candidate.
 Log: `/tmp/texttext-folder-move-boundary-core.log`. Focused database/engine tests
 also passed. ESLint has no errors and two existing store warnings. The public
 proposal adapter, access-review UI and client integration remain pending.
+
+Authoritative previews now return a separately validated frozen folder review.
+Its readable summary names source/destination paths, file/folder counts and each
+additional recipient/role. Validation retains restored-file lifecycle fences,
+checks the full plan hash and rejects changed destinations, hidden access or
+malformed roles. A cloned plan cannot drift when the staging caller later edits
+its original object. Sixteen combined preview/boundary tests passed, followed by
+three review tests covering the final lifecycle case; TypeScript and focused
+ESLint passed. Review tests are included in the core gate. This data model is
+not yet wired into public proposal staging or approval execution.
