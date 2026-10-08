@@ -7,6 +7,9 @@ if (!(Test-Path $dotnet)) { throw 'Run windows/scripts/bootstrap-sdk.ps1 first.'
 Push-Location $root
 try {
   if (!(Test-Path 'windows/TextText.Windows/Runtime/bin/codex.exe')) { throw 'Run node windows/TextText.Windows/fetch-runtime.mjs before building.' }
+  # Match the Mac lockfile resolver and replace stale dependencies before tests.
+  & npx --yes npm@11.10.0 ci --ignore-scripts
+  if ($LASTEXITCODE -ne 0) { throw 'Locked dependency installation failed.' }
   $source = (& node windows/scripts/receipt.mjs source)
   if ($LASTEXITCODE -ne 0) { throw 'Source fingerprint failed.' }
   $candidate = Join-Path $root ('windows/build/candidate-' + [guid]::NewGuid().ToString('N'))
