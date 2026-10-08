@@ -1,5 +1,6 @@
 "use client";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
+import { templateStarterDocument } from "./template-starter";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -853,7 +854,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, ...(source ? { sourcePath, sourceHash: source.hash } : {}) });
     const example = readDocument(cloned);
     const fallback = builtinTemplate ?? (source?.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : BUILTIN_TEMPLATES.find(template => template.id === (folder === "Blog" ? "texttext.article" : "texttext.note")));
-    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle, subtitle: "", body: imageEdit?.document.content.body ?? initialBody, fields: { ...(initialColor === "default" ? {} : { texttextNoteColor: initialColor }), ...(noteIcon(initialIcon) ? { texttextNoteIcon: noteIcon(initialIcon) } : {}) }, tags: initialTags, assets: imageEdit?.document.content.assets ?? [] },
+    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle || fallback?.starter?.title || "", subtitle: "", body: imageEdit?.document.content.body ?? (initialBody || fallback?.starter?.body || ""), fields: { ...fallback?.starter?.fields, ...(initialColor === "default" ? {} : { texttextNoteColor: initialColor }), ...(noteIcon(initialIcon) ? { texttextNoteIcon: noteIcon(initialIcon) } : {}) }, tags: initialTags, assets: imageEdit?.document.content.assets ?? [] },
       presentation: fallback ? { ...example.presentation, template: { id: fallback.id, version: fallback.version } } : example.presentation };
     const created = await vaultRequest<VaultFile>("write", { ...writePayload(cloned, blank, fallback ? { template: fallback } : undefined), ...(imageEdit ? { addedAssets: imageEdit.addedAssets } : {}) });
     if (stayInList) onCreated?.();
@@ -1341,9 +1342,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         const folder = experience === "article" ? "Blog" : experience === "note" ? "Notes" : selectedTemplate.id === "texttext.talk" ? "Presentations" : destinationFolder.trim() || "Notes";
         const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, sourcePath: path, sourceHash: source.hash });
         const example = readDocument(cloned);
-        const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: "", subtitle: "", body: "", fields: {}, tags: [], assets: [] },
-          presentation: { ...example.presentation, template: { id: selectedTemplate.id, version: selectedTemplate.version } } };
-        const created = await vaultRequest<VaultFile>("write", writePayload(cloned, blank, { template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }));
+        const starter = templateStarterDocument(example, selectedTemplate);
+        const created = await vaultRequest<VaultFile>("write", writePayload(cloned, starter, { template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }));
         setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: experience === "article" || experience === "note", awaitSharedMode: allowFolderPicker });
         setSelected(created); setDestinationFolder(folder); setTemplatePicker(false); refresh();
       })} />}

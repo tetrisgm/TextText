@@ -22,6 +22,8 @@ try {
     }
     throw new Error("Timed out waiting for web vault file save.");
   };
+  await build({ entryPoints: ["src/lib/presentation/templates.ts"], outfile: path.join(output, "templates.mjs"), bundle: true, platform: "node", format: "esm" });
+  const { BUILTIN_TEMPLATES } = await import(path.join(output, "templates.mjs"));
   const id = "4c417b9d-f935-40c4-a537-7cb70658f898";
   const document = { schemaVersion: 1, content: { title: "Web note", body: "Original body", fields: {}, tags: [], assets: [] }, presentation: { template: { id: "texttext.note", version: 1 }, theme: {} } };
   const prefix = "Document.textbundle/";
@@ -103,6 +105,10 @@ try {
         await route.fulfill({ json: { ...state, relativePath: file.path, canEditContent: true, canComment: true } }); return;
       }
       const itemId = url.pathname.split("/").at(-1), stored = files.get(itemId);
+      if (url.searchParams.get("metadata") === "template" && stored) {
+        const entries=unzipSync(stored.bytes);
+        await route.fulfill({json:{path:stored.path,hash:digest(stored.bytes),templateJSON:entries[prefix+"template.json"]?strFromU8(entries[prefix+"template.json"]):null}});return;
+      }
       if (url.searchParams.get("metadata") === "preview" && stored) {
         const snapshot = JSON.parse(strFromU8(unzipSync(stored.bytes)[prefix + "document.json"]));
         await route.fulfill({ json: { title: snapshot.content.title, excerpt: snapshot.content.body.slice(0, 400), document: snapshot, incompleteFields: [] } }); return;
@@ -117,6 +123,9 @@ try {
       } else if (!stored) await route.fulfill({ status: 404 });
       else await route.fulfill({ body: Buffer.from(stored.bytes), contentType: "application/zip", headers: { ETag: `"${digest(stored.bytes)}"`, "X-TextText-Path": encodeURIComponent(stored.path) } });
       return;
+    }
+    if (/^\/vault\/cover-[a-zA-Z0-9-]+\.jpg$/.test(url.pathname)) {
+      await route.fulfill({body:await readFile(path.join(output,path.basename(url.pathname))),contentType:"image/jpeg"});return;
     }
     if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/app.css")) {
       const leaf = url.pathname.split("/").at(-1);
@@ -185,6 +194,21 @@ try {
   await page.screenshot({ path: "/tmp/texttext-vault-light.png" });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: "/tmp/texttext-vault-dark.png" });
+  const starterId = "88888888-1111-4111-8111-111111111111";
+  const starterTemplate = { ...BUILTIN_TEMPLATES.find(value => value.id === "texttext.note"), id: "local.research", experience: "note", name: "Research starter", starter: { body: "## Findings\n\n## Questions\n\n## Sources" } };
+  const starterDoc = { ...document, content: { ...document.content, title: "Research preview", body: "Preview is not starter" }, presentation: { ...document.presentation, template: { id: starterTemplate.id, version: 1 } } };
+  files.set(starterId, { path: "Templates/Research.textpack", bytes: zipSync({ [prefix+"text.md"]:strToU8(`---\ntextTextId: "${starterId}"\n---\nPreview is not starter`), [prefix+"document.json"]:strToU8(JSON.stringify(starterDoc)), [prefix+"template.json"]:strToU8(JSON.stringify(starterTemplate)) }) });
+  await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
+  await page.locator("button.vault-home-button").click();
+  await page.keyboard.press("Control+k");
+  await page.getByRole("dialog",{name:"Search and actions",exact:true}).getByRole("option",{name:"New from template",exact:true}).click();
+  await page.getByRole("dialog",{name:"New from template",exact:true}).getByRole("button",{name:"Research starter",exact:true}).click();
+  const starterBody=page.getByRole("textbox",{name:"Document body",exact:true});
+  await starterBody.waitFor();for(const heading of ["Findings","Questions","Sources"])assert.ok((await starterBody.innerText()).includes(heading));
+  await starterBody.fill("User changes the starter");
+  await waitFor(()=>[...files.values()].some(file=>file.path.startsWith("Notes/")&&strFromU8(unzipSync(file.bytes)[prefix+"text.md"]).includes("User changes the starter")));
+  await page.reload();
+  await page.getByText("User changes the starter",{exact:true}).waitFor();
   await page.getByRole("button", { name: /test@example.com Signed in/ }).click();
   await page.getByRole("button", { name: "Log out" }).click();
   await page.waitForURL("https://vault.test/signin");
