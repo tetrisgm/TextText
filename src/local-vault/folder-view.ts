@@ -72,7 +72,7 @@ export function updateFolderViewPack(pack: OpenPack, expectedHash: string, defin
   const view = readFolderView(pack.file);
   if (!view) throw new Error("Choose an explicitly marked folder view file.");
   const template = validateTemplateDefinition(definition);
-  const { payload } = prepareTemplateProposal(pack.file, { path: view.path, hash: expectedHash, templateJSON: JSON.stringify(template) });
+  const { payload } = prepareTemplateProposal(pack.file, { path: view.path, hash: expectedHash, templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: null });
   return { path: view.path, expectedHash, bytes: encodePack(pack, explicitFolderDesignPayload(payload)) };
 }
 

@@ -58,6 +58,7 @@ describe("persisted template command previews", () => {
     const result = prepareTemplateCommandPreview("create_item_type", { blueprint }, file);
     expect(result.document.content.body).toBe("Unchanged writing.\n");
     expect(result.template.name).toBe("Research");
+    expect(JSON.parse(result.proposal.templateAuthoringSourceJSON!).blueprint.name).toBe("Research");
     expect(result.proposal.hash).toBe(file.hash);
     expect(JSON.stringify(file)).toBe(before);
     expect(() => prepareTemplateCommandPreview("create_item_type", { blueprint: { ...blueprint, item: { type: "script" } } }, file)).toThrow();
@@ -71,6 +72,16 @@ describe("persisted template command previews", () => {
     expect(result.document.content.body).toBe("Unchanged writing.\n");
     expect(() => prepareTemplateCommandPreview("update_item_type", { ...args, source_hash: "stale" }, file, source)).toThrow(/changed/);
     expect(() => prepareTemplateCommandPreview("update_item_type", { ...args, base_version: 999 }, file, source)).toThrow(/changed/);
+  });
+  it("previews an authored new version with its updated source instead of the target's old blueprint", () => {
+    const original = compileItemTypeBlueprint(blueprint, { id: "local.research", version: 1 });
+    const source = { ...file, path: "Templates/Research.textpack", templateJSON: JSON.stringify(original),
+      templateAuthoringSourceJSON: JSON.stringify({ kind: "item-type-blueprint", schemaVersion: 1, compilerVersion: ITEM_TYPE_BLUEPRINT_COMPILER_VERSION, blueprint }),
+      documentJSON: JSON.stringify({ ...document, presentation: { ...document.presentation, template: { id: original.id, version: 1 } } }) };
+    const result = prepareTemplateCommandPreview("update_item_type", { template_id: original.id, base_version: 1, source_hash: source.hash, blueprint: { ...blueprint, name: "Revised research" } }, source, source);
+    expect(result.template.version).toBe(2);
+    expect(JSON.parse(result.payload.templateAuthoringSourceJSON!).blueprint.name).toBe("Revised research");
+    expect(JSON.parse(source.templateAuthoringSourceJSON).blueprint.name).toBe("Research");
   });
 });
 

@@ -340,6 +340,9 @@
   Explicit replacement remains supported for manual folder-design editing.
   Targeted regression log: `/tmp/texttext-authoring-refinement-regression.log`.
   This correction is source-only until a verified client/web build is installed.
+  Actual immutable version creation/retry and Mac picker/new-item acceptance
+  now passed. Persisted command previews also retain their matching blueprint.
+  [Version/source receipt](verification/2026-10-08-template-version-authoring.md).
   Real native Gallery image
   description and metadata writing passed; hosted configured-provider generation
   and approval remain unverified.
