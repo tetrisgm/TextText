@@ -14,9 +14,9 @@ describe("OAuth linking uses surviving encrypted session, not fresh callback tok
     expect(result.sub).toBe("original-apple");expect(result.userId).toBe("original");expect(result.email).toBe("original@example.test");
     expect(link).toHaveBeenCalledWith("original","google:new");
   });
-  it.each(["missing", "mismatched", "tampered", "expired"])("fails closed for %s binding before linking",async mode=>{
+  it.each(["missing", "missing-intent", "mismatched", "tampered", "expired"])("fails closed for %s binding before linking",async mode=>{
     const link=vi.fn();
-    await expect(completeOAuthAccountLink({intent: mode==="expired"?mintLinkIntent("original",secret,0):mintLinkIntent("original",secret),secret,
+    await expect(completeOAuthAccountLink({intent: mode==="missing-intent"?"":mode==="expired"?mintLinkIntent("original",secret,0):mintLinkIntent("original",secret),secret,
       cookieHeader:mode==="missing"?"":mode==="tampered"?`${name}=fake`:await cookie(mode==="mismatched"?"other":"original"),secure:true,subject:"google:new",link})).rejects.toThrow();
     expect(link).not.toHaveBeenCalled();
   });
