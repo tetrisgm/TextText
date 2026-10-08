@@ -366,6 +366,36 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         return root
     }
 
+    func testAgentCreationInheritsFolderTemplateUnlessBuiltinKindIsExplicit() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Blog"), withIntermediateDirectories: true)
+        _ = try run("create_file", arguments: ["title": "Folder view", "body": "", "folder": "Blog"], root: root)
+        let store = LocalVaultDocumentStore(root: root)
+        let view = try store.read(path: "Blog/Folder view.textpack")
+        var template = try json(XCTUnwrap(view.contents.templateJSON))
+        template["id"] = "local.blog-default"
+        template["name"] = "Editorial blog"
+        let defaultJSON = try JSONSerialization.data(withJSONObject: ["version": 1, "template": template])
+        var snapshot = try json(XCTUnwrap(view.contents.documentJSON))
+        var content = try XCTUnwrap(snapshot["content"] as? [String: Any])
+        content["fields"] = ["texttextFolderView": "v1", "texttextFolderDefault": String(decoding: defaultJSON, as: UTF8.self)]
+        snapshot["content"] = content
+        _ = try store.write(path: view.path, expectedHash: view.hash, markdown: view.contents.markdown,
+            documentJSON: String(decoding: JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self),
+            templateJSON: view.contents.templateJSON, templateAuthoringSourceJSON: nil)
+        let viewHash = try store.read(path: view.path).hash
+        _ = try run("create_file", arguments: ["title": "Inherited", "body": "Agent words", "folder": "Blog"], root: root, access: .folder(path: "Blog"))
+        let inherited = try store.read(path: "Blog/Inherited.textpack")
+        XCTAssertEqual(try json(XCTUnwrap(inherited.contents.templateJSON))["id"] as? String, "local.blog-default")
+        XCTAssertTrue(inherited.contents.markdown.contains("Agent words"))
+        _ = try run("create_file", arguments: ["title": "Explicit", "body": "Plain note", "folder": "Blog", "kind": "note"], root: root, access: .folder(path: "Blog"))
+        let explicit = try store.read(path: "Blog/Explicit.textpack")
+        XCTAssertNotEqual(try json(XCTUnwrap(explicit.contents.templateJSON))["id"] as? String, "local.blog-default")
+        XCTAssertEqual(try store.read(path: view.path).hash, viewHash)
+    }
+
     private func run(_ name: String, arguments: [String: Any], root: URL,
                      access: LocalVaultAgentAccess = .folder(path: ""),
                      cancellation: LocalVaultAgentCancellation? = nil) throws -> String {

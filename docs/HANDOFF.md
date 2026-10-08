@@ -24,16 +24,22 @@
   override accepts 130/143; ordinary 1207 rollout attested successful exit
   classification. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
 - Windows installed source remains `f3167c4b`.
-  Verified candidate **9a38e556** passed actual PC native suites, 329 shared-client
+  Verified candidate **d7455797** passed actual PC native suites, 330 shared-client
   tests, TypeScript, packaging and desktop smoke. Installation awaits closure
   of the old app with unknown unsaved state; save-and-close request is pending.
-  [Candidate and paths](verification/2026-10-08-windows-9a38e556-candidate.md).
+  [Candidate and paths](verification/2026-10-08-windows-d7455797-candidate.md).
 - Current iCloud workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Workspace ID `be28ae03-c64e-4695-80af-04f048f86f37`.
   Preserve existing content; only dedicated verification items were edited.
 
 ## Current work and next checks
+
+- Native agent creation no longer forces built-in Note when kind is omitted.
+  It inherits the selected folder default through the ordinary DocumentStore
+  creation path. Regression proves inheritance, explicit Note override and
+  unchanged design-file hash; 14 agent file tests passed. Source only, not
+  installed. Log `/tmp/texttext-agent-default-template.log`.
 
 - Agent blueprint instructions now allow plain notes/articles without invented
   fields, using existing title/body/assets and a minimal Medium-like Blog example.

@@ -825,7 +825,7 @@ enum LocalVaultAgentFiles {
              ["path": "string", "hash": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "templateJSON"]),
         tool("write_file", "Save Markdown and optional snapshot/template JSON to the real file. Requires the hash from read_file; preserves assets and omitted metadata.",
              ["path": "string", "hash": "string", "markdown": "string", "documentJSON": "string", "templateJSON": "string", "templateAuthoringSourceJSON": "string"], ["path", "hash", "markdown"]),
-        tool("create_file", "Create a new self-contained TextPack in an existing relative folder.", ["title": "string", "body": "string", "folder": "string", "kind": "string"], ["title", "body"]),
+        tool("create_file", "Create a new self-contained TextPack in an existing relative folder. Omit kind to inherit its default template; supply kind only for an explicitly requested built-in type.", ["title": "string", "body": "string", "folder": "string", "kind": "string"], ["title", "body"]),
         tool("search_files", "Search titles and content in the local folder without a server.", ["query": "string"], ["query"]),
     ]
     static func tools(for access: LocalVaultAgentAccess) -> [[String: Any]] {
@@ -923,7 +923,7 @@ enum LocalVaultAgentFiles {
             }
             let folder = try access.authorizeCreation(in: requestedFolder, root: root)
             let file = try documents.create(title: string("title"), body: string("body"),
-                folder: folder.isEmpty ? nil : folder, kind: arguments["kind"] as? String ?? "note")
+                folder: folder.isEmpty ? nil : folder, kind: arguments["kind"] as? String)
             output = ["path": documents.relativePath(of: file)]
         case "search_files":
             let scope = try access.scopedFolder(root: root)
