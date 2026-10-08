@@ -28,6 +28,15 @@
 
 ## Current work
 
+- Windows explicit recovery now serializes verified-copy checks and journal
+  release under the same store mutation lock as checkpointing/relocation.
+  Interrupted move intents are archived byte-for-byte and removed before the
+  checkpoint, preventing a retained move from reviving released state. The
+  regression starts a move intent, explicitly recovers to a distinct verified
+  file, and checks exact archive bytes plus released protection. Full Windows
+  Core suite passed on Mac (`/tmp/texttext-recovery-store-lock-windows-final.log`).
+  Actual PC run and updated installed-client acceptance remain required.
+
 - Native same-generation replay now compares complete journal JSON values,
   allowing serialization-only formatting/key-order changes while retaining
   generation, projection and content checks. Mac replay returns the original

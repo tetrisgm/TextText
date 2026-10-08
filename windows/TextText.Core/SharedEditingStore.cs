@@ -145,13 +145,19 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         await gate.WaitAsync(ct);try {
             ObjectDisposedException.ThrowIf(disposed,this);
             if(!sessions.TryGetValue(sessionToken,out var session))throw new InvalidOperationException("This editing session is no longer active.");
+            store.WithExclusiveMutation(()=>{
             var recovery=store.Describe(recoveryPath);if(recovery.Hash!=recoveryHash||recovery.ItemId==session.ItemId||recoveryPath==session.Path)throw new InvalidDataException("Save a distinct recovery document first.");
             var directory=DirectoryFor(session.ItemId);var archive=System.IO.Path.Combine(directory,"archive-"+Guid.NewGuid().ToString("N"));System.IO.Directory.CreateDirectory(archive);
-            foreach(var name in new[]{"checkpoint.json","intent.json","acknowledge.json"}){var source=System.IO.Path.Combine(directory,name);if(File.Exists(source))TextPackStore.AtomicWrite(System.IO.Path.Combine(archive,name),File.ReadAllBytes(source));}
+            // Remove replayable intents before the checkpoint. An interruption
+            // must not leave a move able to revive an already released journal.
+            var retainedFiles=new[]{"move-intent.json","intent.json","acknowledge.json","checkpoint.json"};
+            foreach(var name in retainedFiles){var source=System.IO.Path.Combine(directory,name);if(File.Exists(source))TextPackStore.AtomicWrite(System.IO.Path.Combine(archive,name),File.ReadAllBytes(source));}
             Save(System.IO.Path.Combine(archive,"recovered.json"),new{Version=1,recovery.ItemId,recovery.Path,recovery.Hash});
             // Recheck the explicitly saved copy before releasing protected state.
             if(store.Describe(recoveryPath).Hash!=recoveryHash)throw new FileChangedException();
-            foreach(var name in new[]{"checkpoint.json","intent.json","acknowledge.json"})File.Delete(System.IO.Path.Combine(directory,name));
+            foreach(var name in retainedFiles)File.Delete(System.IO.Path.Combine(directory,name));
+            return true;
+            });
             CloseInternal(sessionToken);
         }finally{gate.Release();}
     }
