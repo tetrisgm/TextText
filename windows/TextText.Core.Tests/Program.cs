@@ -11,6 +11,13 @@ static class Test
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  Throws<IOException>(()=>store.Resolve("../outside.textpack"),"reject traversal");Throws<IOException>(()=>store.Resolve("Notes/a.textpack:stream"),"reject alternate data streams");
  var first=store.Write("Notes/Test.textpack",Pack());Assert(first.ItemId=="test-1","identity extraction");
+ var alternate=Path.Combine(temp,"alternate");Directory.CreateDirectory(alternate);
+ WorkspaceLocation.Bind(alternate,"https://texttext.app/","workspace-a");
+ Assert(WorkspaceLocation.Validate(alternate,"https://texttext.app/","workspace-a")==alternate,"workspace location validates saved binding");
+ Throws<IOException>(()=>WorkspaceLocation.Validate(alternate,"https://texttext.app/","workspace-b"),"workspace location rejects other workspace");
+ Throws<IOException>(()=>WorkspaceLocation.Validate(alternate,"https://other.example/","workspace-a"),"workspace location rejects other server");
+ File.WriteAllText(Path.Combine(alternate,".texttext","workspace-binding.json"),"{bad");
+ Throws<IOException>(()=>WorkspaceLocation.Validate(alternate,"https://texttext.app/","workspace-a"),"workspace location preserves corrupt binding");
  Assert(FileActivation.Resolve(store,Path.Combine(store.Root,"Notes","Test.textpack"))==first.Path,"activation resolves existing workspace pack");
  Throws<IOException>(()=>FileActivation.Resolve(store,Path.Combine(temp,"outside.textpack")),"activation rejects outside workspace");
  Throws<IOException>(()=>FileActivation.Resolve(store,"Notes/Test.textpack"),"activation rejects relative arguments");

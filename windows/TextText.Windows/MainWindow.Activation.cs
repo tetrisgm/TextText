@@ -51,7 +51,13 @@ public sealed partial class MainWindow
             catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
             {
                 activationFiles.Dequeue();
-                MessageBox.Show(this, error.Message == "This file is outside your current workspace." ? error.Message : "This file is unavailable in your current workspace.", "Open file", MessageBoxButton.OK, MessageBoxImage.Information); return;
+                if (error.Message == "This file is outside your current workspace.")
+                {
+                    await ChooseWorkspaceFolder(Path.GetDirectoryName(target));
+                    if (target.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) activationFiles.Enqueue(target);
+                }
+                else MessageBox.Show(this, "This file is unavailable in your current workspace.", "Open file", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
             }
             transitioning = true;
             if (!await FlushEditor()) { activationFiles.Dequeue(); ShowSaveFailure(); return; }

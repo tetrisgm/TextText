@@ -76,3 +76,17 @@ process over a current-user-only pipe. The app waits for sign-in and the editor,
 then saves before opening a file inside the current account's workspace.
 Files outside that workspace are not imported or moved. Opening another
 workspace from Explorer remains unsupported until workspace selection exists.
+
+### Workspace folder location
+
+File → Open workspace folder (Ctrl+Shift+O) selects an alternate local folder
+for the current signed-in cloud workspace. TextText flushes the open editor
+before switching, remembers the location per workspace, and keeps the previous
+folder and device journal. Empty folders require confirmation before the
+workspace downloads there. Already bound folders must match the current server
+and workspace; unrelated nonempty folders are not silently imported/uploaded.
+Missing saved folders keep the account signed in and offer folder selection.
+Explorer requests outside the current root offer the same picker.
+
+This changes a workspace's local location; it does not create or switch cloud
+workspaces. An account-level multiworkspace API remains separate work.

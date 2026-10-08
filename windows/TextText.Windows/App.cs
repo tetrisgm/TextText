@@ -10,6 +10,7 @@ public static class App
         MainWindow.WorkspaceFactory = context => new WindowsBridge(context);
         var application = new Application();
         var window = new MainWindow();
+        window.InputBindings.Add(new System.Windows.Input.KeyBinding(new OpenFolderCommand(window), System.Windows.Input.Key.O, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift));
         using var activation = new DesktopActivation(paths => application.Dispatcher.BeginInvoke(() => window.ActivateFiles(paths)));
         window.ActivateFiles(args);
         application.Run(window);

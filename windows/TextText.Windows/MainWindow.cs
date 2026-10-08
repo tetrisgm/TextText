@@ -31,7 +31,7 @@ public sealed partial class MainWindow : Window
         Title = "TextText"; Width = 1200; Height = 850; MinWidth = 720; MinHeight = 480;
         Loaded += async (_,_) => {
             try { account = CredentialStore.Load(); if(account is not null) await OpenWorkspace(); else ShowLogin(); }
-            catch { ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
+            catch { if (account is not null) ShowWorkspaceUnavailable(); else ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
         };
         Closing += (_,e) => {
             if(closing) return;
@@ -70,7 +70,7 @@ public sealed partial class MainWindow : Window
             catch { status.Text = "Could not finish signing in. Please try again."; }
             finally { button.IsEnabled = true; }
         };
-        panel.Children.Add(button); Content = panel;
+        panel.Children.Add(button); SetWorkspaceContent(panel);
     }
     private async Task Login(CancellationToken cancellationToken)
     {
@@ -103,15 +103,16 @@ public sealed partial class MainWindow : Window
             CredentialStore.Save(account); return;
         }
     }
-    private async Task OpenWorkspace()
+    private async Task OpenWorkspace(string? selectedRoot = null)
     {
         var active = account ?? throw new InvalidOperationException("Sign in required");
         if(!Guid.TryParse(active.WorkspaceId,out _)) throw new InvalidOperationException("Invalid workspace");
-        root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"TextText",active.WorkspaceId);
+        root = selectedRoot ?? WorkspaceRoot(active.WorkspaceId);
         Directory.CreateDirectory(root);
+        WorkspaceLocation.Bind(root, Origin.AbsoluteUri, active.WorkspaceId);
         bridge?.Dispose();
         bridge = WorkspaceFactory?.Invoke(new(root, active.WorkspaceId, Origin, () => Task.FromResult(account?.Token ?? throw new InvalidOperationException("Sign in required")),EmitEventAsync));
-        web = new WebView2(); Content = web;
+        web = new WebView2(); SetWorkspaceContent(web);
         var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",active.WorkspaceId);
         var environment = await CoreWebView2Environment.CreateAsync(null,profile);
         await web.EnsureCoreWebView2Async(environment);
@@ -184,6 +185,7 @@ public sealed partial class MainWindow : Window
                 Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true }); return null;
             }
             case "native.openFolder": Process.Start(new ProcessStartInfo(root) { UseShellExecute = true }); return null;
+            case "native.chooseWorkspaceFolder": await ChooseWorkspaceFolder(); return null;
             case "native.settings": MessageBox.Show(this,$"{account?.Name}\n\nFiles: {root}","TextText settings",MessageBoxButton.OK,MessageBoxImage.Information); return null;
             case "native.signOut":
                 if(MessageBox.Show(this,"Log out of TextText? Your saved files remain on this computer.","TextText",MessageBoxButton.OKCancel) != MessageBoxResult.OK) return null;
