@@ -1,3 +1,4 @@
+import { assetCommandPayload, type VaultAssetAttachment } from "@/lib/vault/asset-command";
 import { extractFolderViewMetadata, FolderViewMetadataCache } from "@/local-vault/folder-view-metadata";
 import { buildTemplateRetirement, templateRetirementIdentity } from "@/lib/presentation/vault-template-retirement";
 import { isTemplateRetirementPath, parseTemplateRetirement } from "@/lib/presentation/template-retirement";
@@ -1526,6 +1527,7 @@ export async function createVaultTemplate(input: VaultLocation & {
 export async function mutateVaultDocument(input: VaultLocation & {
   itemId: string; operationId: string; expectedRevision: string; mutation: DocumentMutation;
   audit: NonNullable<VaultWrite["audit"]>;
+  attachment?: VaultAssetAttachment;
   presentation?: { definition?: unknown; authoringSource?: unknown; source?: { itemId: string; revision: string; templateId: string; templateVersion?: number } };
   beforeTemplateRead?: (itemId: string, relativePath: string) => Promise<void>;
   beforeCommit?: (relativePath: string) => Promise<void>;
@@ -1538,10 +1540,12 @@ export async function mutateVaultDocument(input: VaultLocation & {
   let authoring = template && input.presentation?.authoringSource !== undefined ? validatedLookSource(template, input.presentation.authoringSource) : null;
   if (input.presentation?.authoringSource !== undefined && !authoring) throw new Error("Invalid template authoring source");
   if (input.presentation && Object.keys(input.mutation).length) throw new Error("Apply templates separately from content edits");
-  const requestHash = hash(json(["document-command", input.itemId, input.expectedRevision, input.mutation, input.audit, ...(input.presentation ? [input.presentation] : [])]));
+  if (input.attachment && (input.presentation || Object.keys(input.mutation).length)) throw new Error("Attach images separately from other changes");
+  const requestHash = hash(json(["document-command", input.itemId, input.expectedRevision, input.mutation, input.audit, ...(input.presentation ? [input.presentation] : []), ...(input.attachment ? [input.attachment.request] : [])]));
   if (json(input.mutation).length > 2 * 1024 * 1024) throw new Error("Document command exceeds limits");
   const layout = await setup(input);
-  return locked(layout, async () => {
+  const preparation: { value?: Awaited<ReturnType<VaultAssetAttachment["prepare"]>> } = {};
+  const run = () => locked(layout, async () => {
     if (!input.receiptOnly) await recover(layout);
     input.signal?.throwIfAborted();
     const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
@@ -1575,13 +1579,21 @@ export async function mutateVaultDocument(input: VaultLocation & {
     }
     const baseline = await collaborationCheckpoint(layout, input.itemId, item);
     if (baseline.revision !== input.expectedRevision) throw new Error("The item changed. Read it again before editing.");
+    await input.beforeCommit?.(item.relativePath);
+    if (input.attachment && !preparation.value) return null;
     const doc = new Y.Doc();
     let next: ReturnType<typeof applyVaultCollaboration>;
     try {
       Y.applyUpdate(doc, Buffer.from(baseline.update, "base64"));
       const vector = Y.encodeStateVector(doc);
       let workingBytes: Uint8Array = item.bytes;
-      if (template) {
+      if (input.attachment && preparation.value) {
+        const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId);
+        const snapshot = readDocument(pack.file);
+        const payload = assetCommandPayload(snapshot, input.attachment.request, preparation.value, input.operationId);
+        workingBytes = encodePack(pack, pack.file, payload.additions);
+        applyDocumentMutation(doc, payload.mutation);
+      } else if (template) {
         const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId);
         const snapshot = readDocument(pack.file);
         applyDocumentSnapshot(doc, { ...snapshot, presentation: { ...snapshot.presentation, template: { id: template.id, version: template.version } } }, "agent-template");
@@ -1611,6 +1623,12 @@ export async function mutateVaultDocument(input: VaultLocation & {
     await syncDirectory(layout.pending);
     return apply(layout, intent, pendingDir);
   });
+  const existing = await run();
+  if (existing) return existing;
+  preparation.value = await input.attachment!.prepare();
+  const result = await run();
+  if (!result) throw new Error("Image preparation did not complete");
+  return result;
 }
 
 /** Comments are a validated TextPack entry. The durable intent also adopts the

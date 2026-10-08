@@ -23,6 +23,16 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
   const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId };
   const operationId = typeof args.idempotency_key === "string"
     ? digest(`${context.actorUserId}:${name}:${args.idempotency_key}`) : randomUUID();
+  if (name === "add_item_asset") {
+    only(args, ["id", "source_url", "placement", "alt_text", "caption", "if_match_hash", "idempotency_key"]);
+    if (typeof args.id !== "string" || typeof args.source_url !== "string" || typeof args.if_match_hash !== "string" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim() || !["cover", "body_end", "gallery"].includes(String(args.placement))) throw new Error("Choose an image, placement, current hash and stable idempotency key.");
+    const { preparePublicImage } = await import("@/lib/vault/image-fetch");
+    const itemId = args.id;
+    await context.authorize(itemId, "", false);
+    return mutateVaultDocument({ ...location, itemId, operationId, expectedRevision: args.if_match_hash, mutation: {},
+      attachment: { request: { sourceUrl: args.source_url, placement: args.placement as "cover" | "body_end" | "gallery", ...(typeof args.alt_text === "string" ? { altText: args.alt_text } : {}), ...(typeof args.caption === "string" ? { caption: args.caption } : {}) }, prepare: () => preparePublicImage(args.source_url as string) },
+      actorUserId: context.actorUserId, actorType: context.actorType ?? "external_agent", beforeCommit: path => context.authorize(itemId, path, false) });
+  }
   if (name === "create_item") {
     only(args, ["title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key", "capture", "markdown", "template_id", "template_version"]);
     if (args.template_version !== undefined && args.template_id === undefined) throw new Error("template_version requires template_id");

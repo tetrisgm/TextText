@@ -984,7 +984,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   add_item_asset: defineTool("add_item_asset", {
     title: "Add item asset",
     description:
-      "Import one public image or video URL into TextText and attach it as cover, body, or gallery.",
+      "Import one public image URL into TextText and attach it as cover, body, or gallery.",
     inputSchema: z
       .object({
         id,
@@ -993,6 +993,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         alt_text: z.string().max(500).optional(),
         caption: z.string().max(2_000).optional(),
         if_match_hash: ifMatchHash,
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
       })
       .strict(),
     mutability: "write",

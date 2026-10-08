@@ -1,5 +1,5 @@
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
-export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template"] as const;
+export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "add_item_asset", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template"] as const;
 const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
   set_folder_template: ["folder_path", "template_id", "template_version", "source_item_id", "source_hash", "if_match_hash", "idempotency_key"],
   update_item_type: ["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key"],
@@ -38,6 +38,7 @@ export function vaultToolDefinitions() {
     if (allowed && inputSchema.properties) inputSchema.properties = Object.fromEntries(Object.entries(inputSchema.properties).filter(([key]) => allowed.includes(key)));
     if (allowed && inputSchema.required) inputSchema.required = inputSchema.required.filter(key => allowed.includes(key));
     if (name === "set_folder_template") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "template_version", "if_match_hash", "idempotency_key"])];
+    if (name === "add_item_asset") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "if_match_hash", "idempotency_key"])];
     if (name === "add_comment" && inputSchema.properties?.body) inputSchema.properties.body = { type: "string", minLength: 1, maxLength: 4000 };
     if (name === "move_item" || name === "delete_item" || name === "restore_item") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "path", "if_match_hash", "idempotency_key"])];
     if (name === "create_folder" || name === "create_item_type" || name === "save_item_as_look") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "idempotency_key"])];
