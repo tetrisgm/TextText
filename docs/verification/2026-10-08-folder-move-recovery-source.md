@@ -17,6 +17,10 @@ Verification on the Mac:
 - Real local PostgreSQL reservation test passed, including grant preservation,
   sharing writer fencing, hash-bound abort, repeated abort and cancelled retry.
 - TypeScript and focused operation/metadata ESLint passed.
+- Owner-only read-only access preview now shares the reservation planner;
+  local PostgreSQL verifies it creates no reservation and rejects non-owners.
+- Corrected template-version compatibility and the frozen core gate passed
+  all 751 tests at `bf0a8eda`. Log: `/tmp/texttext-sync-final-core.log`.
 
 Pending: public immutable move preview and approval adapter, expanded-access
 review, client integration, integrated required gate and live acceptance.
