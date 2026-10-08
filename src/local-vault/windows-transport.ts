@@ -3,7 +3,7 @@ import { VaultError, type VaultFile, type VaultListing, type VaultTransport } fr
 import { createWebVaultTransport } from "./web-transport";
 import { encodePack, openPack, type OpenPack } from "./pack";
 import { readDocument } from "./model";
-import { executeWindowsAgentTool } from "./windows-agent-tools";
+import { executeWindowsAgentTool, executeWindowsFolderAgentTool } from "./windows-agent-tools";
 
 type NativeView = { postMessage(value: unknown): void; addEventListener(type: "message", listener: (event: MessageEvent) => void): void; removeEventListener(type: "message", listener: (event: MessageEvent) => void): void };
 type Status = { root: string; workspaceId: string; name: string; connected: boolean; available: boolean };
@@ -237,7 +237,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
     const value = (event as CustomEvent).detail;
     if (!value || typeof value.requestId !== "string" || typeof value.selectedPath !== "string") return;
     const controller = new AbortController(); agentTools.set(value.requestId, controller);
-    void executeWindowsAgentTool(transport, value.selectedPath, value.tool, value.arguments, controller.signal)
+    void (value.folderScope === true ? executeWindowsFolderAgentTool : executeWindowsAgentTool)(transport, value.selectedPath, value.tool, value.arguments, controller.signal)
       .then(result => rpc.request("agentToolResult", { requestId: value.requestId, result }))
       .catch(error => rpc.request("agentToolResult", { requestId: value.requestId, error: error instanceof Error ? error.message : "Tool failed" }).catch(() => {}))
       .finally(() => agentTools.delete(value.requestId));

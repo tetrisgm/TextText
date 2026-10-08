@@ -191,17 +191,17 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         } finally { requests.Release(); }
     }
 
-    async Task<string> ExecuteAgentTool(string path, string tool, JsonElement args, CancellationToken ct)
+    async Task<string> ExecuteAgentTool(string path, bool folder, string tool, JsonElement args, CancellationToken ct)
     {
-        _ = files.Resolve(path);
-        if (Required(args, "path") != path) throw new InvalidDataException("The agent can only access its selected item.");
+        if (folder) { if(path.Length > 0) _ = files.Resolve(path); } else _ = files.Resolve(path);
+        if (!folder && Required(args, "path") != path) throw new InvalidDataException("The agent can only access its selected item.");
         var id = Guid.NewGuid().ToString();
         var pending = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (agentTools.Count >= 16 || !agentTools.TryAdd(id, pending)) throw new IOException("Too many pending agent tools.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(60));
         try {
-            await context.Emit("texttext:windows-agent-tool", new { requestId = id, selectedPath = path, tool, arguments = args });
+            await context.Emit("texttext:windows-agent-tool", new { requestId = id, selectedPath = path, folderScope = folder, tool, arguments = args });
             return await pending.Task.WaitAsync(timeout.Token);
         } finally {
             agentTools.TryRemove(id, out _);

@@ -39,7 +39,8 @@ static async Task Fake(bool login)
             if(prompt != "accept" && input.GetArrayLength() != 1) throw new Exception("Photo leaked into another task");
             await Send(new { id,result = new { turn = new { id = "turn" } } });
             await Send(new { method = "item/completed",@params = new { threadId = "obsolete",item = new { type = "agentMessage",phase = "final_answer",text = "stale-leak" } } });
-            await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "write_file",arguments = new { path = prompt == "deny" ? "Other.textpack" : "Note.textpack",hash = "hash",markdown = unicode ? Unicode : "new" } } }); break;
+            if(prompt?.StartsWith("folder-") == true) await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "create_file",arguments = new { folder = prompt == "folder-deny" ? "Other" : "Notes",title = "New",body = "Keep" } } });
+            else await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "write_file",arguments = new { path = prompt == "deny" ? "Other.textpack" : "Note.textpack",hash = "hash",markdown = unicode ? Unicode : "new" } } }); break;
           case "turn/interrupt": await Send(new { id,result = new {} }); break;
           case "account/logout": await Send(new { id,result = new {} }); break;
         }
@@ -64,10 +65,10 @@ var processName = Path.GetFileNameWithoutExtension(executable);
 var originalProcesses = Process.GetProcessesByName(processName).Length;
 string[] Prefix(bool login = false) => (Path.GetFileNameWithoutExtension(executable) == "dotnet" ? new[] { typeof(WindowsAgent).Assembly.Location,"--fake" } : new[] { "--fake" }).Concat(login ? new[]{"--login"} : []).ToArray();
 try {
-  foreach(var scenario in new[]{"deny","accept","cancel","unicode"}) {
+  foreach(var scenario in new[]{"deny","accept","cancel","unicode","folder-accept","folder-deny"}) {
     var events = new ConcurrentQueue<JsonElement>(); var writes = 0; var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    using var agent = new WindowsAgent(scratch,"fixture",(_,value) => { events.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },async (_,tool,arguments,ct) => {
-      if(tool == "write_file") { entered.TrySetResult(); if(scenario == "cancel") await Task.Delay(1000,ct); ct.ThrowIfCancellationRequested(); Interlocked.Increment(ref writes); } if(scenario=="unicode" && tool=="write_file") { Check(S(arguments,"markdown")=="“Café” 日本語 🧪","Literal UTF8 tool arguments corrupted"); return "“Café” 日本語 🧪"; } return "ok";
+    using var agent = new WindowsAgent(scratch,"fixture",(_,value) => { events.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },async (_,_,tool,arguments,ct) => {
+      if(tool is "write_file" or "create_file") { entered.TrySetResult(); if(scenario == "cancel") await Task.Delay(1000,ct); ct.ThrowIfCancellationRequested(); Interlocked.Increment(ref writes); } if(scenario=="unicode" && tool=="write_file") { Check(S(arguments,"markdown")=="“Café” 日本語 🧪","Literal UTF8 tool arguments corrupted"); return "“Café” 日本語 🧪"; } return "ok";
     },executable,Prefix());
     await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="ready","Saved account was not restored by status");
@@ -81,16 +82,16 @@ try {
         Check(rejected,"Unbounded or external photo accepted");
       }
     }
-    await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new { taskId = scenario,path = "Note.textpack",prompt = scenario=="unicode" ? "“Café” 日本語 🧪" : scenario,imageUrl = scenario == "accept" ? "data:image/jpeg;base64,/9j/AA==" : "" }),default);
+    await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new { taskId = scenario,scope = scenario.StartsWith("folder-") ? "folder" : "item",folderPath = "Notes",path = scenario.StartsWith("folder-") ? "" : "Note.textpack",prompt = scenario=="unicode" ? "“Café” 日本語 🧪" : scenario,imageUrl = scenario == "accept" ? "data:image/jpeg;base64,/9j/AA==" : "" }),default);
     if(scenario=="cancel") { await entered.Task.WaitAsync(TimeSpan.FromSeconds(2)); await agent.DispatchAsync("agentCancel",JsonSerializer.SerializeToElement(new { taskId = scenario }),default); await Task.Delay(100); Check(writes==0,"Late write escaped cancellation"); }
-    else { await Until(() => events.Any(e => S(e,"type")=="turn-completed")); Check(writes==(scenario!="deny"?1:0),"Scope failed"); Check(events.Any(e => S(e,"text")== (scenario=="unicode"?"“Café” 日本語 🧪":scenario=="accept"?"tool-accepted":"tool-denied")),"Tool acknowledgement missing"); }
+    else { await Until(() => events.Any(e => S(e,"type")=="turn-completed")); Check(writes==(scenario is not ("deny" or "folder-deny") ? 1 : 0),"Scope failed"); Check(events.Any(e => S(e,"text")== (scenario=="unicode"?"“Café” 日本語 🧪":scenario is "accept" or "folder-accept" ? "tool-accepted":"tool-denied")),"Tool acknowledgement missing"); }
     Check(!events.Any(e => S(e,"text")=="stale-leak"),"Stale task notification escaped");
     await agent.DispatchAsync("agentDisconnect",JsonSerializer.SerializeToElement(new {}),default);
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="disconnected","Process shutdown failed");
     Console.WriteLine("PASS agent "+scenario);
   }
   var loginEvents = new ConcurrentQueue<JsonElement>(); var browserLaunches = 0;
-  using(var agent = new WindowsAgent(scratch,"fixture-login",(_,value) => { loginEvents.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },(_,_,_,_) => Task.FromResult("ok"),executable,Prefix(true),_ => Interlocked.Increment(ref browserLaunches))) {
+  using(var agent = new WindowsAgent(scratch,"fixture-login",(_,value) => { loginEvents.Enqueue(JsonSerializer.SerializeToElement(value)); return Task.CompletedTask; },(_,_,_,_,_) => Task.FromResult("ok"),executable,Prefix(true),_ => Interlocked.Increment(ref browserLaunches))) {
     await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
     await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new {}),default);
     Check(JsonSerializer.SerializeToElement(agent.Status).GetProperty("state").GetString()=="disconnected","Signed-out restoration should remain disconnected");

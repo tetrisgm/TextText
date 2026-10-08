@@ -57,7 +57,11 @@
   existing-folder and path-boundary validation; four adapter regressions and
   TypeScript passed (`/tmp/texttext-windows-folder-tools.log`,
   `/tmp/texttext-windows-folder-tools-types.log`). Native dispatcher/event
-  wiring is pending; no installed Windows folder-task support is claimed.
+  wiring now carries an explicit folder flag through native preflight, tool
+  dispatch and WebView relay. App-server tests passed folder creation/denial plus
+  existing item/cancel/login/process checks on the Mac .NET runtime; log
+  `/tmp/texttext-windows-folder-dispatch.log`. TypeScript passed. Actual PC build
+  and UI acceptance remain pending; no installed folder support is claimed.
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.

@@ -11,7 +11,7 @@ public sealed class WindowsAgent : IDisposable
 {
     private readonly string root, workspaceId;
     private readonly Func<string,object?,Task> emit;
-    private readonly Func<string,string,JsonElement,CancellationToken,Task<string>> tools;
+    private readonly Func<string,bool,string,JsonElement,CancellationToken,Task<string>> tools;
     private readonly SemaphoreSlim write = new(1), commands = new(1);
     private readonly ConcurrentDictionary<string,TaskCompletionSource<JsonElement>> pending = new();
     private readonly CancellationTokenSource lifetime = new();
@@ -19,13 +19,13 @@ public sealed class WindowsAgent : IDisposable
     private CancellationTokenSource? taskCancellation;
     private string state = "disconnected", message = "", email = "", taskId = "", selectedPath = "", threadId = "", turnId = "", loginId = "";
     private long generation;
-    private bool customizing, restoreAttempted;
+    private bool folderTask, customizing, restoreAttempted;
     private readonly ConcurrentDictionary<string,TaskCompletionSource<bool>> proposals = new();
     private int disposed, activeNotifications;
     private readonly string runtime;
     private readonly string[] runtimePrefix;
     private readonly Action<Uri> openBrowser;
-    public WindowsAgent(string root,string workspaceId,Func<string,object?,Task> emit,Func<string,string,JsonElement,CancellationToken,Task<string>> executeTool,string? runtimePath = null,string[]? runtimePrefixArguments = null,Action<Uri>? launchBrowser = null)
+    public WindowsAgent(string root,string workspaceId,Func<string,object?,Task> emit,Func<string,bool,string,JsonElement,CancellationToken,Task<string>> executeTool,string? runtimePath = null,string[]? runtimePrefixArguments = null,Action<Uri>? launchBrowser = null)
     { openBrowser = launchBrowser ?? (uri => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })); runtime = runtimePath ?? Path.Combine(AppContext.BaseDirectory,"Runtime","bin","codex.exe"); runtimePrefix = runtimePrefixArguments ?? []; this.root = Path.GetFullPath(root); this.workspaceId = workspaceId; this.emit = emit; tools = executeTool; }
     public object Status => new { state, message, accountEmail = string.IsNullOrEmpty(email) ? null : email, available = File.Exists(runtime) };
     private async Task Update(string next,string text = "") { state = next; message = text; await emit("texttext:vault-agent",new { type = "status",state,message,accountEmail = email }); }
@@ -107,6 +107,8 @@ public sealed class WindowsAgent : IDisposable
         if(state != "ready") throw new InvalidOperationException("Connect Codex before starting a task.");
         string path = Get(parameters,"path"), prompt = Get(parameters,"prompt"), id = Get(parameters,"taskId");
         string imageUrl = Get(parameters,"imageUrl");
+        var requestedFolder = Get(parameters,"scope") == "folder";
+        if(requestedFolder) { if(path.Length > 0 || imageUrl.Length > 0 || parameters.TryGetProperty("customizing",out var folderCustom) && folderCustom.GetBoolean()) throw new InvalidOperationException("Choose either an item or folder task."); path = Get(parameters,"folderPath"); }
         if(imageUrl.Length > 0) {
             const string prefix = "data:image/jpeg;base64,";
             if(imageUrl.Length > 1_000_000 || !imageUrl.StartsWith(prefix,StringComparison.Ordinal)) throw new InvalidOperationException("The selected photo could not be prepared.");
@@ -116,11 +118,12 @@ public sealed class WindowsAgent : IDisposable
             if(image.Length < 3 || image[0] != 0xff || image[1] != 0xd8 || image[2] != 0xff) throw new InvalidOperationException("The selected photo could not be prepared.");
             if(parameters.TryGetProperty("customizing",out var imageCustom) && imageCustom.GetBoolean()) throw new InvalidOperationException("Choose an item photo task first.");
         }
-        if(path.Length == 0 || path.Length > 1024 || id.Length == 0 || id.Length > 128 || prompt.Length == 0 || prompt.Length > 16000) throw new InvalidOperationException("Choose an item and a task.");
+        if(!requestedFolder && path.Length == 0 || path.Length > 1024 || id.Length == 0 || id.Length > 128 || prompt.Length == 0 || prompt.Length > 16000) throw new InvalidOperationException("Choose an item and a task.");
         var full = Path.GetFullPath(Path.Combine(root,path));
-        if(!full.StartsWith(root + Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase) || path.Contains('\\') || path.Split('/').Any(segment => segment is ".." or ".")) throw new InvalidOperationException("Invalid item path.");
+        if(!(requestedFolder && full == Path.GetFullPath(root)) && !full.StartsWith(root + Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase) || path.Contains('\\') || path.Split('/').Any(segment => segment is ".." or ".")) throw new InvalidOperationException("Invalid item path.");
         // Resolve through the same scope-validating store as tool calls before asking a model anything.
-        await tools(path,"read_file",JsonSerializer.SerializeToElement(new { path }),ct);
+        await tools(path,requestedFolder,requestedFolder ? "list_files" : "read_file",JsonSerializer.SerializeToElement(new { path }),ct);
+        folderTask = requestedFolder;
         selectedPath = path; taskId = id; threadId = ""; turnId = "";
         customizing = parameters.TryGetProperty("customizing",out var custom) && custom.GetBoolean();
         taskCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); taskCancellation.CancelAfter(TimeSpan.FromMinutes(10));
@@ -135,8 +138,8 @@ public sealed class WindowsAgent : IDisposable
             foreach(var name in new[] { "shell_tool","unified_exec","shell_snapshot","apps","hooks","plugins","remote_plugin","multi_agent","browser_use","browser_use_external","computer_use","in_app_browser","skill_search" }) features[name] = false;
             features["code_mode"] = new { direct_only_tool_namespaces = new[] { "texttext" } };
             var result = await Call("thread/start",new { approvalPolicy = "never",sandbox = "read-only",ephemeral = true,cwd = root,
-                developerInstructions = "You are TextText's item assistant. Use only the supplied texttext tools on the selected file: " + path + ". Read before editing and use its exact hash. Preserve other changes. Never use shell, filesystem, skills, web or other integrations. For read-only requests do not write. " + (customizing ? "Only propose a template preview; do not write." : ""),
-                dynamicTools = new[] { new { type = "namespace",name = "texttext",description = "Selected TextText item tools",tools = Definitions(customizing) } },
+                developerInstructions = "You are TextText's assistant. Use only the supplied texttext tools within the selected " + (folderTask ? "folder boundary: " : "file: ") + path + ". Read before editing and use its exact hash. Preserve other changes. Never use shell, filesystem, skills, web or other integrations. For read-only requests do not write. " + (customizing ? "Only propose a template preview; do not write." : ""),
+                dynamicTools = new[] { new { type = "namespace",name = "texttext",description = "Selected TextText item tools",tools = Definitions(customizing,folderTask) } },
                 config = new { mcp_servers = servers,features,agents = new { enabled = false },tools = new { view_image = false },web_search = "disabled",project_doc_max_bytes = 0 } },token);
             token.ThrowIfCancellationRequested(); if(fence != generation) return;
             threadId = result.GetProperty("thread").GetProperty("id").GetString()!;
@@ -155,12 +158,21 @@ public sealed class WindowsAgent : IDisposable
             }
         }
     }
-    private static object[] Definitions(bool design)
+    private static object[] Definitions(bool design,bool folder = false)
     {
         object Tool(string name,string description,string[] required,params string[] properties) => new { type = "function",name,description,inputSchema = new { type = "object",properties = properties.ToDictionary(key => key,key => new { type = "string" }),required,additionalProperties = false } };
-        return new[] { Tool("read_file","Read the selected TextPack and revision hash.",new[]{"path"},"path"),
+        var itemTools = new[] { Tool("read_file","Read the selected TextPack and revision hash.",new[]{"path"},"path"),
           design ? Tool("propose_template","Preview a complete declarative template without writing.",new[]{"path","hash","templateJSON"},"path","hash","templateJSON","templateAuthoringSourceJSON")
           : Tool("write_file","Update selected TextPack with exact read hash, preserving assets.",new[]{"path","hash","markdown"},"path","hash","markdown","documentJSON","templateJSON","templateAuthoringSourceJSON") };
+        return folder ? itemTools.Concat(new[] { Tool("list_files","List files in the selected folder.",Array.Empty<string>()), Tool("create_file","Create a TextPack in the selected folder.",new[]{"title","body"},"title","body","folder","kind") }).ToArray() : itemTools;
+    }
+    static bool FolderToolAllowed(string folder,string tool,JsonElement args) {
+        if(tool == "list_files") return true;
+        if(tool is not ("create_file" or "read_file" or "write_file")) return false;
+        var path = Get(args,tool == "create_file" ? "folder" : "path");
+        if(tool == "create_file" && !args.TryGetProperty("folder",out _)) path = folder;
+        if(path.Contains('\\') || path.Contains(':') || path.Split('/').Any(p => p is "." or "..")) return false;
+        return folder.Length == 0 || path.StartsWith(folder+"/",StringComparison.Ordinal) || tool == "create_file" && path == folder;
     }
     private async Task Cancel()
     {
@@ -194,11 +206,11 @@ public sealed class WindowsAgent : IDisposable
             if(method == "item/tool/call" && value.TryGetProperty("id",out var callId)) {
                 var tool = Get(p,"tool"); var args = p.GetProperty("arguments");
                 var success = false; var text = "The tool is unavailable for this task.";
-                if(Get(p,"namespace") == "texttext" && Get(args,"path") == selectedPath && (tool == "read_file" || tool == (customizing ? "propose_template" : "write_file"))) {
+                if(Get(p,"namespace") == "texttext" && (folderTask ? FolderToolAllowed(selectedPath,tool,args) : Get(args,"path") == selectedPath && (tool == "read_file" || tool == (customizing ? "propose_template" : "write_file")))) {
                     await emit("texttext:vault-agent",new { type = "tool-call",taskId = id,tool,path = selectedPath });
                     try {
                         token.ThrowIfCancellationRequested();
-                        text = await tools(selectedPath,tool,args,token);
+                        text = await tools(selectedPath,folderTask,tool,args,token);
                         token.ThrowIfCancellationRequested(); success = true;
                         if(tool == "propose_template") {
                             var proposalId = Guid.NewGuid().ToString(); var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously); proposals[proposalId] = completion;
