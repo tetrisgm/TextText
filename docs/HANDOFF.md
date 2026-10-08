@@ -81,6 +81,12 @@
 
 ## Current work and next checks
 
+- OpenAI account sign-in is deferred at the owner's request and is not a readiness blocker.
+- Notes creation and full editing now expose Parent in the insertion menu,
+  using existing stable document references. Browser checks cover focus,
+  persistence, text preservation and unchanged template shortcuts. Delivery pending.
+  [Receipt](verification/2026-10-08-notes-parent-menu.md).
+
 - Shared parent/document picker now preserves concurrent selection changes
   during delayed identity resolution and ignores obsolete contexts. Browser
   race regressions, full note-template browser checks, ten relevant unit tests

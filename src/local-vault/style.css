@@ -801,3 +801,8 @@
 
 .vault-folder-move{width:min(480px,calc(100vw - 32px));height:auto;max-height:calc(100vh - 48px);padding:24px}.vault-folder-move header{display:flex;align-items:center;justify-content:space-between;gap:16px}.vault-folder-move h2{margin:0;font-size:22px}.vault-folder-move label{display:grid;gap:8px}.vault-folder-move input{width:100%;padding:10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}.vault-folder-move a{color:var(--tt-accent)}.vault-folder-move p{line-height:1.5}.vault-folder-move form>button{background:var(--selection)}
 .vault-app .vault-folder-move{inset:10vh auto auto 50%;transform:translateX(-50%);width:min(480px,calc(100vw - 32px));height:auto;max-height:calc(80vh);padding:24px}
+
+.vault-app .vault-note-draft-parents { display:grid; gap:6px; margin:8px 0; color:var(--ink); }
+.vault-app .vault-note-draft-parents input { box-sizing:border-box; width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink); }
+.vault-app .vault-note-draft-parents details[open] { display:grid; gap:6px; }
+.vault-app .vault-note-draft-parents .tt-reference-selected { display:flex; align-items:center; gap:8px; }

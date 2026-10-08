@@ -10,7 +10,7 @@ export function WorkspaceOverview({ listing, folder, busy, canCreate = true, sha
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
   onCreateNote?: (pastedText?: string) => void;
-  onCreateCard?: (title: string, body: string, tags: string[], images: File[], color: NoteColor, onCreated: () => void, icon?: string) => void;
+  onCreateCard?: (title: string, body: string, tags: string[], images: File[], color: NoteColor, onCreated: () => void, icon?: string, parents?: string[]) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   onAskBookmarkAgent?: (path: string, question: string) => void; onAskGalleryAgent?: (path: string, task: string, imageAssetId?: string) => void;
   onCustomize?: (path: string) => void;

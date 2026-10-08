@@ -33,6 +33,9 @@ const app=createRoot(document.getElementById('root'));window.render=()=>app.rend
  permit();await page.getByText('Notes',{exact:true}).first().click();
  await page.getByRole('button',{name:'Start typing to create a new card'}).click();
  await page.getByLabel('New card title').fill('Keep title');await page.getByLabel('New card body').fill('Agenda');
+ await page.getByRole('button',{name:'Add to new card',exact:true}).click();await page.getByRole('menuitem',{name:'Parent',exact:true}).click();
+ await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Find item');await page.getByRole('searchbox',{name:'Find item'}).fill('Native listing parent');await page.getByRole('button',{name:'Native listing parent',exact:true}).click();
+ await page.getByRole('button',{name:'Done choosing parents',exact:true}).click();assert.equal(await page.getByLabel('New card body').inputValue(),'Agenda');
  await page.getByRole('button',{name:'Add to new card',exact:true}).click();await page.getByRole('menu',{name:'Add to new card'}).getByRole('menuitem').first().press('=');
  await page.getByLabel('Find or name a text template').fill('Meeting');await page.getByRole('button',{name:'Save current text as Meeting',exact:true}).click();
  await page.waitForFunction(()=>[...window.files.values()].some(f=>f.path==='Templates/Meeting.textpack'&&JSON.parse(f.documentJSON).content.body==='Agenda'));
@@ -41,7 +44,7 @@ const app=createRoot(document.getElementById('root'));window.render=()=>app.rend
  assert.equal(await page.getByLabel('New card body').inputValue(),'Before AgendaAfter');await page.getByRole('button',{name:'Finish',exact:true}).click();
  await page.waitForFunction(()=>window.calls.some(c=>c.method==='importPack'));assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.method==='create'&&c.params.folder==='Notes').length),0);assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.method==='write'&&c.params.path.startsWith('Notes/')).length),0);
  await page.getByRole('button',{name:'Open Keep title',exact:true}).click();await page.getByRole('button',{name:'Edit card',exact:true}).click();
- await page.getByText('Add parent',{exact:true}).click();await page.getByRole('searchbox',{name:'Find item'}).fill('Native listing parent');await page.getByRole('button',{name:'Native listing parent',exact:true}).click();
+ await page.getByRole('button',{name:'Remove Native listing parent',exact:true}).click();await page.getByRole('button',{name:'Add to note',exact:true}).click();await page.getByRole('menuitem',{name:'Parent',exact:true}).click();await page.getByRole('searchbox',{name:'Find item'}).fill('Native listing parent');await page.getByRole('button',{name:'Native listing parent',exact:true}).click();
  await page.getByRole('button',{name:'Native listing parent',exact:true}).waitFor();
  await page.getByRole('button',{name:'Add to note',exact:true}).click();await page.getByRole('menu',{name:'Add to note'}).getByRole('menuitem').first().press('=');await page.getByLabel('Find or name a text template').waitFor();
  for(const theme of ['light','dark']){await page.emulateMedia({colorScheme:theme});await page.screenshot({path:'/tmp/texttext-note-template-'+theme+'.png'});}

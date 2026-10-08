@@ -1865,6 +1865,16 @@ export function UnifiedDocumentEditor({
               items[next]?.focus();
             }}>
               {document.content.tags.length < 500 && <button type="button" role="menuitem" onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteTagInput.current?.focus(); }}>Tag</button>}
+              {activeTemplate.fields.some(field => field.id === "parents" && field.type === "reference" && field.target === "document" && field.visibility !== "hidden") && <button type="button" role="menuitem" onClick={() => {
+                noteSlashLiteral.current = null; setNoteInsertOpen(false);
+                requestAnimationFrame(() => {
+                  const field = noteInsertRef.current?.closest(".tt-unified-editor")?.querySelector<HTMLElement>('[data-field-id="parents"]');
+                  const picker = field?.querySelector<HTMLDetailsElement>("details");
+                  if (picker) picker.open = true;
+                  field?.closest<HTMLDetailsElement>(".tt-field-details")?.setAttribute("open", "");
+                  field?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+                });
+              }}>Parent</button>}
               <button type="button" role="menuitem" onClick={renderNoteCardLinkPicker ? openNoteCardLink : openNoteLink}>Link</button>
               {renderNoteCardLinkPicker && <button type="button" role="menuitem" onClick={openNoteLink}>Web link</button>}
               {onPasteImages && <button type="button" role="menuitem" disabled={imagePastePending} onClick={() => { noteSlashLiteral.current = null; setNoteInsertOpen(false); noteImageInput.current?.click(); }}>Image</button>}
