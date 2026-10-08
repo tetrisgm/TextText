@@ -704,10 +704,12 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     const lifecycleFile = path.join(layout.control, "lifecycles", `${input.itemId}.json`);
     const lifecycle = await maybeRead(lifecycleFile);
     let lifecycleMismatch = false;
+    let lifecycleMarker: string | undefined;
     if (lifecycle) {
       const expected = JSON.parse(lifecycle.toString()) as { marker: string };
       const marker = unzipSync(input.bytes, { filter: entry => entry.name === "texttext-lifecycle.json" })["texttext-lifecycle.json"];
       if (typeof expected.marker !== "string") throw new Error("Invalid file lifecycle");
+      lifecycleMarker = expected.marker;
       lifecycleMismatch = !marker || strFromU8(marker) !== expected.marker;
     }
     // Compare against the exact last shared archive, including assets. Resolve
@@ -721,10 +723,18 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
         const history = await directory(layout.history, input.itemId);
         const base = await maybeRead(path.join(history, `${input.baseRevision}.textpack`));
         if (base && hash(base) === input.baseRevision) {
-          const merged = reconcileTextpacks(base, input.bytes, current);
-          if (merged.status === "merged") {
-            committedBytes = merged.bytes;
-            committedBase = hash(current);
+          // A current marker on incoming bytes does not make an older baseline
+          // part of this lifecycle. Never reconcile across the restore boundary.
+          if (lifecycleMarker !== undefined) {
+            const baseMarker = unzipSync(base, { filter: entry => entry.name === "texttext-lifecycle.json" })["texttext-lifecycle.json"];
+            lifecycleMismatch = !baseMarker || strFromU8(baseMarker) !== lifecycleMarker;
+          }
+          if (!lifecycleMismatch) {
+            const merged = reconcileTextpacks(base, input.bytes, current);
+            if (merged.status === "merged") {
+              committedBytes = merged.bytes;
+              committedBase = hash(current);
+            }
           }
         }
       }

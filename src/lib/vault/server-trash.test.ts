@@ -97,3 +97,13 @@ it("restores formerly published content privately", async () => {
   const file = (await readVaultTextpack(location()))!;
   expect(Object.keys(unzipSync(file.bytes)).some(name => name === "publication.json" || name.endsWith("/publication.json"))).toBe(false);
 });
+
+it("does not merge an old baseline even when incoming bytes carry the restored marker", async () => {
+  await remove(); await restoreVaultTextpack(restore());
+  const restored = (await readVaultTextpack(location()))!;
+  const opened = openPack(restored.bytes, restored.relativePath, restored.revision, itemId);
+  const incoming = encodePack(opened, { ...opened.file, markdown: opened.file.markdown + "\nOld baseline edit" });
+  const result = await writeVaultTextpack({ ...location(), operationId: "mixed-generation", relativePath: restored.relativePath, baseRevision: revision, bytes: incoming });
+  expect(result.status).toBe("conflict");
+  expect((await readVaultTextpack(location()))!.bytes).toEqual(restored.bytes);
+});
