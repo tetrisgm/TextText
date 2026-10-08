@@ -53,12 +53,22 @@ Completed source changes, not yet deployed:
 - `30e3b3dc`: fresh accounts provision file presets with immutable setup intent
   and completion records. Real local-Postgres interrupted/concurrent setup test
   passed without SQL posts/folders; edited/moved/deleted starter retries pass.
-  Deterministic starter IDs are being corrected to UUIDs before shipping.
+  Grant-compatible deterministic UUIDs are verified in `90c78429`.
 - `cf7e9682`: Mac/Windows receive empty folders additively; omission never
   deletes. A folder collision does not block unrelated document sync. Mac 23
   sync tests and Windows Core passed. Template browser regression runs in npm test.
 
-Current work: hosted agent commands using the file backend. `d09bfdf4` is the read
+- `0d382a02`: Mac folder selection no longer creates an independent starter
+  set before server sync. Real controller test leaves an empty offline folder
+  empty; explicit template creation remains available.
+- `f57677a9`: file command engine uses the existing durable intent/receipt
+  transaction; lost-response append retry returns exactly once. 28 focused
+  tests and TypeScript passed. Hosted dispatch/catalog wiring is in progress.
+
+Current work: finish hosted agent dispatch, resources and attributed presence,
+then exact-source gates, builds and deployment. The broader suite passed 4,413
+checks with 149 skips; its only two failures were then-in-progress mutation
+mocks, subsequently replaced and passing in the focused run above. `d09bfdf4` is the read
 adapter preparation only; production dispatch awaits mutation/permission tests.
 The prior export/inventory helpers never migrated production content.
 
