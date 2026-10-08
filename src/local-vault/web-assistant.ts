@@ -21,9 +21,10 @@ export function createWebAssistant(handle: string, read: VaultTransport, fetcher
         return { state: status.enabled ? "ready" : "disconnected", message: status.enabled ? `${status.provider} · ${reviewWrites ? "Changes need approval" : "Read only"}` : "Connect a workspace AI provider to use the web assistant. Desktop ChatGPT sign-in is separate." };
       }
       if (method !== "agentSend") throw new Error("This action is not available in the web assistant.");
-      if (active || typeof params.taskId !== "string" || typeof params.path !== "string" || typeof params.prompt !== "string" || params.customizing) throw new Error("Open an item to ask the read-only assistant.");
+      if (active || typeof params.taskId !== "string" || typeof params.path !== "string" || typeof params.prompt !== "string" || (params.customizing && !reviewWrites)) throw new Error("Open an item with proposal review to customize its design.");
       if (historyPath !== params.path) { historyPath = params.path; history = []; }
-      const prompt = params.prompt.slice(0, 12000);
+      const request = params.prompt.slice(0, 12000);
+      const prompt = params.customizing ? `Customize the selected file's presentation while preserving all writing and assets. Read its current hash and list validated templates. Propose set_item_template for an existing built-in or pinned custom template. For a new design, propose create_item_type or update_item_type first; saving that reusable template does not apply it. Wait for that approval, then read the saved source and propose set_item_template in a separate turn with separate approval. Never claim an unapplied design changed this file.\n\nDesign request: ${request}` : request;
       const turn = { taskId: params.taskId, controller: new AbortController() }; active = turn;
       const send = (event: Record<string, unknown>) => { if (!closed && active === turn) emit({ ...event, taskId: turn.taskId }); };
       try {

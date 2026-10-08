@@ -19,7 +19,7 @@ export function TemplateCommandPreview({ tool, args, path, busy, canApprove, reg
       const file = await vaultRequest<VaultFile>("read", { path });
       if (file.path !== path) throw new Error("The preview target changed.");
       let source: VaultFile | undefined;
-      if (tool === "update_item_type") {
+      if (tool === "update_item_type" || args.source_item_id !== undefined) {
         const listing = await vaultRequest<VaultListing>("list");
         const item = listing.items.find(item => item.itemId === args.source_item_id);
         if (!item) throw new Error("The template source is unavailable.");
@@ -41,7 +41,7 @@ export function TemplateCommandPreview({ tool, args, path, busy, canApprove, reg
     return () => { active = false; registerGuard(null); };
   }, [tool, args, path, registerGuard]);
   return <section className={styles.preview} aria-label="Template preview">
-    <header><p>Preview on this file. Keeping this design saves a reusable template. This file stays unchanged.</p>
+    <header><p>{tool === "set_item_template" ? "Apply this design to this file. Your writing and images stay unchanged." : "Preview on this file. Keeping this design saves a reusable template. Applying it to this file needs a separate approval."}</p>
     {error && <p role="alert">{error}</p>}
     {preview && <><button aria-pressed={original} onClick={() => setOriginal(value => !value)}>{original ? "Show proposed design" : "Compare original"}</button>
       {canApprove && <button disabled={busy} onClick={onKeep}>Keep this design</button>}</>}

@@ -55,3 +55,20 @@ describe("web assistant transport",()=>{
   });
 
 });
+
+
+it("customization uses explicit proposal review and never approves either design stage", async () => {
+  const fetcher = vi.fn(async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    expect(body.context).toEqual({ postId: id, includeItem: true, mode: "workspace_review" });
+    expect(body.messages.at(-1).content).toContain("set_item_template");
+    expect(body.messages.at(-1).content).toContain("separate approval");
+    expect(body.messages.at(-1).content).toContain("Make it readable");
+    return new Response(JSON.stringify({type:"complete",text:"Review design"}) + "\n");
+  });
+  const params = { taskId: "design", path: "Notes/A.textpack", prompt: "Make it readable", customizing: true };
+  await expect(createWebAssistant("test", read, fetcher as typeof fetch).request("agentSend", params)).rejects.toThrow("proposal review");
+  const adapter = createWebAssistant("test", read, fetcher as typeof fetch, () => {}, true);
+  await adapter.request("agentSend", params);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

@@ -1016,7 +1016,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   if (canSubscribeFeed) commandActions.push({ id: "subscribe-feed", label: "Add source", description: "Follow a site in Feeds.", shortcut: "F", keywords: ["rss", "atom", "news", "feed"] });
   if (allowFolderPicker && listing?.root) commandActions.push({ id: "import-file", label: "Import file", description: `Add a file to ${commandLocation}.`, shortcut: "P", keywords: ["textpack", "document"] });
   if (!selected && canCreate) commandActions.push({ id: "folder-design", label: "Choose folder design", description: `Change how ${commandLocation} is presented.`, shortcut: "V", keywords: ["view", "layout", "gallery", "table"] });
-  if (allowFolderPicker && listing?.root) commandActions.push({
+  if ((allowFolderPicker || (webAssistant && selected)) && listing?.root) commandActions.push({
     id: "customize",
     label: selected ? "Customize this item" : "Customize this folder",
     description: selected ? "Change how the open item looks." : `Change how ${commandLocation} looks.`,
@@ -1218,7 +1218,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
                 {selectedStory && canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); void createForFolder("Blog", "Blog post"); }}>Write another story</button>}
                 {canManageFiles && <button disabled={busy} onClick={() => { closeMoreActions(); setNewPath(selected.path); setFileAction("rename"); }}>Rename or move</button>}
                 {canManageFiles && <button disabled={busy} onClick={() => { closeMoreActions(); setFileAction("delete"); }}>Delete</button>}
-                {allowFolderPicker && <button disabled={busy} onClick={() => { closeMoreActions(); beginCustomize(selected.path); }}>Customize</button>}
+                {(allowFolderPicker || webAssistant) && <button disabled={busy} onClick={() => { closeMoreActions(); beginCustomize(selected.path); }}>Customize</button>}
                 {canOpenRecovery && <button disabled={busy} onClick={() => openRecovery(selected.path)}>Version history</button>}
               </> : <>
                 {canCreate && <button disabled={busy} onClick={() => openCapture()}>Capture a link or note</button>}

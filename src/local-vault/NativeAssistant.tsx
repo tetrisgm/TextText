@@ -68,6 +68,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
   const [customizationTaskId, setCustomizationTaskId] = useState<string | null>(proposal?.taskId ?? null);
   const customizationTaskIdRef = useRef(customizationTaskId);
   const requested = useRef(proposal?.request ?? "");
+  const customizationRoot = useRef(root);
   const target = useRef(customizing);
   useEffect(() => { target.current = customizing; }, [customizing]);
   useEffect(() => { customizationTaskIdRef.current = customizationTaskId; }, [customizationTaskId]);
@@ -129,9 +130,10 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
       if (!active) return;
       handledRequestId.current = request.requestId;
       if (request.type === "customize") {
+        customizationRoot.current = root;
         activeTaskFence.current = null;
         acceptTask(null); setPrompt(""); setCustomizing(request.path); setCustomizationTaskId(request.taskId); changeProposal(null);
-        setNotice("Describe the change you want. You can preview and refine it before keeping it.");
+        setNotice(webAssistant ? "Describe the design you want. Applying a design needs approval. New reusable templates are saved first, then applied with a separate approval." : "Describe the change you want. You can preview and refine it before keeping it.");
         requestAnimationFrame(() => composer.current?.focus());
         return;
       }
@@ -148,7 +150,22 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
       } catch (error) { setNotice(error instanceof Error ? error.message : "Open an item before adding an agent."); }
     });
     return () => { active = false; };
-  }, [acceptTask, changeProposal, open, path, request, root, turnActive]);
+  }, [acceptTask, changeProposal, open, path, request, root, turnActive, webAssistant]);
+  useEffect(() => {
+    if (!webAssistant || !customizing || customizing === path && customizationRoot.current === root) return;
+    const handled = handledRequestId.current;
+    let active = true;
+    const taskId = activeTaskFence.current?.taskId;
+    activeTaskFence.current = null;
+    if (taskId) void vaultRequest("agentCancel", { taskId }).catch(() => {});
+    void Promise.resolve().then(() => {
+      if (!active || handledRequestId.current !== handled) return;
+      setCustomizing(null); setCustomizationTaskId(null); setActiveTurn(null); setPrompt(""); setMessages([]);
+      setNotice("Open Customize on this item to start a new design request.");
+      setStatus(current => current.state === "working" ? { ...current, state: "ready" } : current);
+    });
+    return () => { active = false; };
+  }, [webAssistant, customizing, path, root]);
   const sequence = useRef(0);
   const replyId = useRef<number | null>(null);
   const log = useRef<HTMLDivElement>(null);

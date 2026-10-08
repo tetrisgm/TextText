@@ -171,6 +171,22 @@ try {
 
   await page.getByRole("button",{name:"Close assistant"}).click();
 
+  const beforeCustomizeRequests = assistantRequests.length;
+  await page.getByRole("button", {name:"Search and actions"}).click();
+  await page.getByRole("option", {name:"Customize this item",exact:true}).click();
+  await page.getByText("New reusable templates are saved first",{exact:false}).waitFor();
+  assert.equal(assistantRequests.length,beforeCustomizeRequests);
+  await page.getByRole("textbox",{name:"Message assistant"}).fill("Make this easier to read");
+  await page.getByRole("button",{name:"Send",exact:true}).click();
+  await waitFor(()=>assistantRequests.length===beforeCustomizeRequests+1);
+  assert.ok(assistantRequests.at(-1).messages.at(-1).content.includes("separate approval"));
+  await page.locator("button.vault-home-button").click();
+  await page.getByText("Open Customize on this item to start a new design request.",{exact:true}).waitFor();
+  assert.equal(await page.getByRole("textbox",{name:"Message assistant"}).count(),0);
+  await page.getByRole("button",{name:"Close assistant"}).click();
+  await page.getByRole("navigation",{name:"Folders"}).locator("summary").filter({hasText:"Notes"}).click();
+  await page.getByRole("button",{name:"Open Web note"}).click();
+
   await page.getByRole("button", { name: "Edit card" }).click();
   await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor();
   const body = page.getByRole("textbox", { name: "Document body", exact: true });

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {chromium} from 'playwright';
 import {readFile} from 'node:fs/promises';
-const fixture=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{AssistantWriteProposals}from'./src/local-vault/AssistantWriteProposals';import{setVaultTransport}from'./src/local-vault/bridge';import{emptyDocumentSnapshot}from'./src/lib/documents/model';import{requireBuiltinTemplate}from'./src/lib/presentation/templates';window.refreshes=0;const doc=emptyDocumentSnapshot();doc.content.title='Frozen real title';doc.content.body='Frozen real writing';window.target={path:'Notes/Preview',hash:'a'.repeat(64),markdown:['---','textTextId: preview','---','','Frozen real writing'].join(String.fromCharCode(10)),documentJSON:JSON.stringify(doc),templateJSON:JSON.stringify(requireBuiltinTemplate('texttext.note'))};setVaultTransport(async(method)=>{if(method==='read')return structuredClone(window.target);window.refreshes++;return{}});const root=createRoot(document.getElementById('root'));window.renderCards=(path,proposals)=>root.render(<AssistantWriteProposals key={path} root="vault:test" path={path} proposals={proposals} beforeApprove={async()=>true}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,outfile:'/tmp/texttext-proposal-browser.js',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'}});
+const fixture=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{AssistantWriteProposals}from'./src/local-vault/AssistantWriteProposals';import{setVaultTransport}from'./src/local-vault/bridge';import{emptyDocumentSnapshot}from'./src/lib/documents/model';import{requireBuiltinTemplate}from'./src/lib/presentation/templates';window.refreshes=0;window.vaultMethods=[];const doc=emptyDocumentSnapshot();doc.content.title='Frozen real title';doc.content.body='Frozen real writing';window.target={path:'Notes/Preview',hash:'a'.repeat(64),markdown:['---','textTextId: preview','---','','Frozen real writing'].join(String.fromCharCode(10)),documentJSON:JSON.stringify(doc),templateJSON:JSON.stringify(requireBuiltinTemplate('texttext.note'))};setVaultTransport(async(method)=>{window.vaultMethods.push(method);if(method==='read')return structuredClone(window.target);window.refreshes++;return{}});const root=createRoot(document.getElementById('root'));window.renderCards=(path,proposals)=>root.render(<AssistantWriteProposals key={path} root="vault:test" path={path} proposals={proposals} beforeApprove={async()=>true}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,outfile:'/tmp/texttext-proposal-browser.js',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'}});
 const browser=await chromium.launch();
 try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));let pending, decisions=[];
@@ -63,5 +63,15 @@ try{
  await page.evaluate(card=>window.renderCards('Notes/Preview',[card]),legacy);
  await page.getByText('This proposed change is unavailable.').waitFor();assert.equal(await page.getByRole('button',{name:'Approve change'}).isDisabled(),true);
  assert.equal(decisions.length,4);assert.deepEqual(errors,[]);
+ const apply={...templateCard,id:'00000000-0000-4000-8000-000000000006',tool:'set_item_template',arguments:{id:'preview',if_match_hash:'b'.repeat(64),template_id:'texttext.note',template_version:1}};cards.push(apply);
+ await page.evaluate(()=>window.renderCards('Notes/Other',[]));await page.waitForFunction(()=>document.querySelectorAll('h3').length===0);
+ await page.evaluate(card=>window.renderCards('Notes/Preview',[card]),apply);
+ await page.getByText('Apply this design to this file.',{exact:false}).waitFor();
+ await page.getByRole('button',{name:'Keep this design'}).click();
+ for(let i=0;!pending&&i<100;i++)await new Promise(r=>setTimeout(r,10));assert.ok(pending);
+ assert.deepEqual(decisions.at(-1),{id:apply.id,decision:'approve'});
+ await pending.fulfill({json:{receipt:{text:'Applied saved design'}}});pending=null;
+ await page.getByText('Applied saved design').waitFor();
+ assert.equal(await page.evaluate(()=>window.vaultMethods.includes('write')),false);assert.deepEqual(errors,[]);
  console.log('PASS proposal cards: quota recovery, concurrent arrival retained, 503 same-ID/decision retry, navigation fence, real template preview, stale target refusal and exact-ID Keep.');
 }finally{await browser.close();}

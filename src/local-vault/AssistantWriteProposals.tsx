@@ -16,7 +16,7 @@ export function AssistantWriteProposals({ root, path, proposals, beforeApprove }
     if (!registrars.current.has(id)) registrars.current.set(id, guard => { if (guard) guards.current.set(id, guard); else guards.current.delete(id); });
     return registrars.current.get(id)!;
   };
-  const isTemplate = (card: Card) => card.tool === "create_item_type" || card.tool === "update_item_type";
+  const isTemplate = (card: Card) => card.tool === "create_item_type" || card.tool === "update_item_type" || card.tool === "set_item_template";
   const alive = useRef(true);
   useEffect(() => { alive.current = true; const activeGuards = guards.current, activeRegistrars = registrars.current; return () => { alive.current = false; activeGuards.clear(); activeRegistrars.clear(); }; }, []);
   const save = useCallback((change: (current: Card[]) => Card[]) => {

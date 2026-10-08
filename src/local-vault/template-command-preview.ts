@@ -1,3 +1,5 @@
+import { getBuiltinTemplate } from "@/lib/presentation/templates";
+import { packIdentity } from "./pack";
 import { compileItemTypeBlueprint, itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { assertCompatibleItemTypeFields } from "@/lib/presentation/item-type-update";
@@ -10,7 +12,17 @@ import type { VaultFile } from "./bridge";
 export function prepareTemplateCommandPreview(tool: string, args: Record<string, unknown>, target: VaultFile, source?: VaultFile) {
   if (JSON.stringify(args).length > 1_000_000) throw new Error("This design is too large to preview.");
   let template;
-  if (tool === "create_item_type") {
+  if (tool === "set_item_template") {
+    if (packIdentity(target.markdown) !== args.id || target.hash !== args.if_match_hash) throw new Error("This file changed. Ask for a new proposal.");
+    if (args.source_item_id !== undefined || args.source_hash !== undefined) {
+      if (!source || packIdentity(source.markdown) !== args.source_item_id || source.hash !== args.source_hash) throw new Error("The template source changed. Ask for a new proposal.");
+      template = readTemplate(source, readDocument(source));
+      if (template.id !== args.template_id || args.template_version !== undefined && template.version !== args.template_version) throw new Error("The template version changed. Ask for a new proposal.");
+    } else {
+      template = typeof args.template_id === "string" ? getBuiltinTemplate(args.template_id, typeof args.template_version === "number" ? args.template_version : undefined) : null;
+      if (!template) throw new Error("The selected template is unavailable.");
+    }
+  } else if (tool === "create_item_type") {
     template = compileItemTypeBlueprint(itemTypeBlueprintSchema.parse(args.blueprint), { id: "local.preview", version: 1 });
   } else if (tool === "update_item_type") {
     if (!source || source.hash !== args.source_hash || !source.path.startsWith("Templates/")) throw new Error("The template source changed. Ask for a new proposal.");

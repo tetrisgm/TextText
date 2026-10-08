@@ -56,3 +56,24 @@ describe("persisted template command previews", () => {
     expect(() => prepareTemplateCommandPreview("update_item_type", { ...args, base_version: 999 }, file, source)).toThrow(/changed/);
   });
 });
+
+
+describe("apply-template approval previews", () => {
+  it("binds a built-in design to the exact file identity and hash", () => {
+    const args = { id: "abc", if_match_hash: file.hash, template_id: "texttext.note", template_version: 1 };
+    const prepared = prepareTemplateCommandPreview("set_item_template", args, file);
+    expect(prepared.document.content.body).toBe("Unchanged writing.\n");
+    expect(prepared.payload.markdown).toBe(file.markdown);
+    expect(() => prepareTemplateCommandPreview("set_item_template", { ...args, id: "other" }, file)).toThrow(/changed/);
+    expect(() => prepareTemplateCommandPreview("set_item_template", { ...args, if_match_hash: "stale" }, file)).toThrow(/changed/);
+    expect(() => prepareTemplateCommandPreview("set_item_template", { ...args, template_id: "missing" }, file)).toThrow(/unavailable/);
+  });
+  it("requires the pinned custom source identity, version and revision", () => {
+    const source = { ...file, path: "Templates/Look.textpack" };
+    const args = { id: "abc", if_match_hash: file.hash, template_id: "texttext.note", template_version: 1, source_item_id: "abc", source_hash: file.hash };
+    expect(prepareTemplateCommandPreview("set_item_template", args, file, source).template.id).toBe("texttext.note");
+    expect(() => prepareTemplateCommandPreview("set_item_template", { ...args, source_item_id: "other" }, file, source)).toThrow(/changed/);
+    expect(() => prepareTemplateCommandPreview("set_item_template", { ...args, source_hash: "stale" }, file, source)).toThrow(/changed/);
+    expect(() => prepareTemplateCommandPreview("set_item_template", { ...args, template_version: 2 }, file, source)).toThrow(/changed/);
+  });
+});
