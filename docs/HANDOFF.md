@@ -46,6 +46,16 @@
 
 ## Current work and next checks
 
+- Mac 1214 clean candidate build is running from `3382b36a` in
+  `/private/tmp/texttext-candidate-1195-5ELVuo`. Live exec session `26612`, log
+  `/tmp/texttext-mac1214-build.log`; resume this handle, do not restart it.
+  Core/native sync verification passed and release compilation is underway.
+  Actual installed 1213 inspection found signed-in home at the configured
+  iCloud root, no visible unsaved editor or active agent. Installation has not
+  started; reinspect before replacing, then run canonical local installer and
+  actual startup/existing-note/search/save/reopen acceptance. Runtime health
+  remains sandbox-private as in 1213.
+
 - Creation recovery also verifies its recorded destination against the
   original requested folder/title before publishing. A corrupted intent cannot
   redirect a prepared file into another workspace folder. Agent-file/local-vault
