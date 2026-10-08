@@ -40,8 +40,26 @@ Smoke receipts:
 `C:\Users\Shokunin\dev\texttext-build-8621dd0c\windows\build\smoke-receipts-12d18a40d3f7408781be0f9a4771bf41`.
 Log: `/tmp/texttext-windows-8621dd0c-build.log`.
 
-Mac 1193 build is in progress from this same source. Neither
-installed client has been replaced yet. The Windows installed process remains
+Mac `/Applications/TextText.app` is now **0.204 (1193)** from this source.
+Signed arm64 app and three extensions passed installer verification. The local
+Store sandbox exception leaves the automatic runtime-health report unverified;
+actual UI startup preserved the signed-in identity, iCloud root and existing
+verification note. Search found and reopened that same note. A dedicated test
+append survived normal quit/reopen; disk inspection finds both the new
+`Mac save and reopen verification 1193.` and prior native marker exactly once.
+All prior verification text remains visible. A native selection test initially
+landed inside the last line; Undo restored it before the successful end-of-body
+append. The first UI observation after relaunch timed out; the running process
+and subsequent UI observation confirmed startup and saved content.
+
+The first Mac build used the installed sandbox-signed helper as its runtime
+input and stopped when executing it outside the sandbox. Resuming with the
+original installed Codex runtime passed; both versions are `codex-cli 0.153.4`.
+Logs: `/tmp/texttext-mac1193-build-resume.log` and
+`/tmp/texttext-mac1193-install.log`. New parent-specific live acceptance and
+extensions' full interactive acceptance remain pending.
+
+The Windows installed process remains
 running; normal save/close has been requested before replacement. The existing
 changelog is absent from the signed-in CLI search and the inspected TextText
 iCloud/Documents paths; no duplicate has been created. No public desktop release.

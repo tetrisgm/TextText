@@ -2,9 +2,10 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1192)**, source `4e1c218b`.
+- Mac `/Applications/TextText.app`: **0.204 (1193)**, source `8621dd0c`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
-  checks pending. [Receipt](verification/2026-10-08-assets-cohort-1192.md).
+  checks pending. Startup/search/save/reopen passed in the actual app.
+  [Receipt](verification/2026-10-08-parent-review-cohort.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
 - Oracle: **texttext-oracle-20261008T102758Z-8621dd0c**, thirteen live checks passed.
@@ -29,9 +30,9 @@
 - Frozen candidate `8621dd0c` passed 759 core tests, TypeScript, required native
   suites, 16 proposal-review tests and both Note browser flows. It contains the
   versioned Note parent picker/navigation and preset-generation build guard.
-  Oracle is deployed and actual Safari review verified. Local Mac 1193 build is
-  in progress; Windows passed 299 shared-client tests and desktop smoke.
-  Installed clients still retain their prior versions. Windows SSH works again,
+  Oracle is deployed and actual Safari review verified. Mac 1193 is installed
+  with actual startup/search/save/reopen verified. Windows passed 299 shared-client
+  tests and desktop smoke; installation remains pending. Windows SSH works again,
   but its running editor must close normally before installation.
   [Candidate evidence](verification/2026-10-08-parent-review-cohort.md).
 
