@@ -420,7 +420,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const ready = !!client?.hasBaseline;
   const editable = ready && canEdit && !blocked && !busy;
   const readOnly = ready && !canEdit && !detail && status !== "offline" && !blocked;
-  const display = resolveAssets(snapshot);
+  const display = useMemo(() => resolveAssets(snapshot), [snapshot, resolveAssets]);
   const experience = templateExperience(template);
   return <section className="vault-document">
     {presencePeers.length > 0 && <div className="vault-document-presence"><span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here: ${presencePeers.slice(0, 3).map(peer => peer.userName).join(", ")}${presencePeers.length > 3 ? ` and ${presencePeers.length - 3} more` : ""}`}
