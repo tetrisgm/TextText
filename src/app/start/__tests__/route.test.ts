@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 
 const session = vi.hoisted(() => ({ user: null as null | { sub: string } }));
 const templateDraft = vi.hoisted(() => vi.fn(async (slug: string) => `/@writer/blog/${slug}`));
-const workspaceHome = vi.hoisted(() => vi.fn(async () => "/@writer"));
+const workspaceHome = vi.hoisted(() => vi.fn(async () => "/vault/workspace-id"));
 vi.mock("@/lib/session", () => ({ getCurrentUser: async () => session.user }));
 vi.mock("@/app/editor/actions", () => ({
   resolveWorkspaceHomePath: workspaceHome,
@@ -42,9 +42,9 @@ describe("/start", () => {
     session.user = { sub: "apple-sub" };
     const home = await GET(new NextRequest("https://texttext.app/start?to=home&_rsc=abc123"));
     expect(home.status).toBe(307);
-    expect(home.headers.get("location")).toBe("https://texttext.app/@writer");
+    expect(home.headers.get("location")).toBe("https://texttext.app/vault/workspace-id");
     const draft = await GET(new NextRequest("https://texttext.app/start?_rsc=abc123"));
-    expect(draft.headers.get("location")).toBe("https://texttext.app/@writer/blog/first-draft");
+    expect(draft.headers.get("location")).toBe("https://texttext.app/vault/workspace-id");
     const template = await GET(new NextRequest("https://texttext.app/start?template=recipe"));
     expect(template.headers.get("location")).toBe("https://texttext.app/@writer/blog/recipe");
     expect(templateDraft).toHaveBeenCalledWith("recipe", false);

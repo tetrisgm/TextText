@@ -69,7 +69,6 @@ import { cleanPlanTier, planLimits } from "@/lib/product-limits";
 import type { PlanTier } from "@/lib/product-limits";
 import { TENANT_HANDLE_RE } from "@/lib/tenants";
 import {
-  blogHomePath,
   tenantPostEditPath,
   tenantWorkspacePostEditPath,
 } from "@/lib/public-paths";
@@ -565,7 +564,9 @@ export async function createTemplateDraftPath(
 export async function resolveWorkspaceHomePath(): Promise<string> {
   const user = await editorUser();
   const blog = await resolveOwnedWorkspace(user);
-  return blogHomePath(blog);
+  const access = await resolveWorkspaceAccess({ handle: blog.handle, user, fresh: true });
+  if (!access.isOwner || !access.blogId || !access.userId) throw new Error("Workspace not found");
+  return `/vault/${encodeURIComponent(access.blogId)}`;
 }
 
 export async function createDraftAction(
