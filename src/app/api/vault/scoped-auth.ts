@@ -18,7 +18,7 @@ function safeName(value: string | null | undefined): string {
   return value?.replace(/[\x00-\x1f\x7f]/g, " ").trim().slice(0, 80) || "Collaborator";
 }
 
-async function principal(request: Request): Promise<Principal | Response> {
+export async function authorizeVaultPrincipal(request: Request): Promise<Principal | Response> {
   if (request.headers.has("authorization")) {
     const token = await resolveApiToken(request.headers.get("authorization"));
     if (!token) return deny(401, "A valid API token is required");
@@ -38,7 +38,7 @@ async function principal(request: Request): Promise<Principal | Response> {
 
 export async function authorizeVaultWorkspaceOrScoped(request: Request, workspaceId: string) {
   if (!isUuid(workspaceId)) return deny(404, "Workspace not found");
-  const identity = await principal(request);
+  const identity = await authorizeVaultPrincipal(request);
   if (identity instanceof Response) return identity;
   const workspace = await getVaultWorkspaceIdentity(workspaceId);
   if (!workspace || workspace.id !== workspaceId) return deny(404, "Workspace not found");

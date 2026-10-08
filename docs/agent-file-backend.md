@@ -43,3 +43,20 @@ Approval recovery persists a server-generated command key with immutable argumen
 `update_item_type` requires the source file identity/hash and base version from the template list. It creates a separate Templates TextPack with the same validated template ID and the next version, preserving the prior definition and every document pinned to it. Authored types retain their validated editable blueprint; source-less looks accept compatible render-data definitions. Incompatible stored fields and automatic application requests are refused. The artifact identity is derived from workspace/template/version, so competing updates cannot overwrite or create two definitions for the same next version. Both source editing and library editing authority are rechecked for new writes and completed receipt replay.
 
 `create_item` accepts `template_id` and an optional pinned `template_version`. Creation selects the latest accessible valid artifact under the workspace write lock and seeds explicit starter content, never preview examples. Supplied title/body override defaults; supplied field keys override starter keys. The selected definition is embedded in the new TextPack. Durable retries retain the original bytes and source identity even after newer versions appear, and recheck source and destination authority. Invalid unrelated artifacts are skipped; duplicate selected versions fail closed.
+
+### Account workspace discovery
+
+`GET /api/vault/workspaces` accepts a browser session or an existing native app
+bearer with `sync` scope. Manual/OAuth agent tokens and item-scoped tokens cannot
+use this account surface. It returns `defaultWorkspaceId` and authorized
+`{id, name, access}` summaries for the owned default and explicit file/folder
+invitations, with fresh authorization and no file paths or credentials.
+This discovery slice does not enable native switching.
+
+Native follow-on: expose `workspacesList` and `workspaceOpen({workspaceId})` in
+both adapters; separate selected workspace from account credentials; validate
+access and portable folder binding before retiring the current view; flush
+pending edits, then replace collaboration/agent/watch lifetimes and persist
+selection. Scoped replicas must preserve files missing from filtered manifests
+and must not retry unauthorized writes indefinitely. A chooser must wait for
+that lifecycle and its cancellation/revocation tests.
