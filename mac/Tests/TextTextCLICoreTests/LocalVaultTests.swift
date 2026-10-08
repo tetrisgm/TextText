@@ -66,6 +66,44 @@ final class LocalVaultTests: XCTestCase {
         XCTAssertEqual(try store.list(), ["Resume.textpack"])
     }
 
+    func testCreationRefusesChangedPreparedBytesAndPreservesThemForRecovery() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DocumentStore(root: root)
+        let target = try store.createWithRetryKey(title: "Changed stage", body: "Body", folder: nil, kind: nil, key: "changed-stage")
+        let id = try XCTUnwrap(store.itemId(at: target))
+        let stage = root.appendingPathComponent(".texttext/cli-creations/" + id + ".textpack")
+        var changed = try Data(contentsOf: target)
+        changed.append(contentsOf: [0, 1, 2, 3])
+        try changed.write(to: stage)
+        try FileManager.default.removeItem(at: target)
+        XCTAssertThrowsError(try store.createWithRetryKey(title: "Changed stage", body: "Body", folder: nil, kind: nil, key: "changed-stage"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+        XCTAssertEqual(try Data(contentsOf: stage), changed)
+        XCTAssertTrue(try store.list().isEmpty)
+    }
+
+    func testLegacyCreationReceiptStillFindsPublishedIdentityButCannotResumeUnverifiedStage() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DocumentStore(root: root)
+        let target = try store.createWithRetryKey(title: "Legacy", body: "Body", folder: nil, kind: nil, key: "legacy")
+        let id = try XCTUnwrap(store.itemId(at: target))
+        let journal = root.appendingPathComponent(".texttext/cli-creations")
+        let receipt = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: journal, includingPropertiesForKeys: nil).first { $0.pathExtension == "json" })
+        var record = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: receipt)) as? [String: Any])
+        record["version"] = 1; record.removeValue(forKey: "preparedHash")
+        try JSONSerialization.data(withJSONObject: record).write(to: receipt)
+        XCTAssertEqual(try store.createWithRetryKey(title: "Legacy", body: "Body", folder: nil, kind: nil, key: "legacy"), target)
+        let stage = journal.appendingPathComponent(id + ".textpack")
+        try FileManager.default.moveItem(at: target, to: stage)
+        XCTAssertThrowsError(try store.createWithRetryKey(title: "Legacy", body: "Body", folder: nil, kind: nil, key: "legacy"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stage.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
     func testConcurrentKeyedCreationPublishesOneIdentity() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

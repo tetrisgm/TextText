@@ -15,6 +15,7 @@ extension DocumentStore {
         let fingerprint: String
         let itemId: String
         let destination: String
+        let preparedHash: String?
     }
 
     public func createWithRetryKey(
@@ -55,7 +56,7 @@ extension DocumentStore {
                 throw TextTextCLIError.invalidDocument("invalid creation journal")
             }
             intent = try JSONDecoder().decode(CreationIntent.self, from: Data(contentsOf: record))
-            guard intent.version == 1, UUID(uuidString: intent.itemId) != nil,
+            guard [1, 2].contains(intent.version), UUID(uuidString: intent.itemId) != nil,
                   intent.fingerprint == fingerprint else {
                 throw TextTextCLIError.invalidDocument("creation retry key already belongs to a different request")
             }
@@ -68,8 +69,9 @@ extension DocumentStore {
             let target = try prepareCreation(title: title, body: body, folder: folder,
                                             kind: kind, sourceURL: sourceURL,
                                             itemId: id, preparedOutput: stage)
-            intent = CreationIntent(version: 1, fingerprint: fingerprint, itemId: id,
-                                    destination: relativePath(of: target))
+            intent = CreationIntent(version: 2, fingerprint: fingerprint, itemId: id,
+                                    destination: relativePath(of: target),
+                                    preparedHash: TextTextStableDigest.sha256Hex(try Data(contentsOf: stage)))
             try JSONEncoder().encode(intent).write(to: record, options: [.withoutOverwriting])
             let handle = try FileHandle(forWritingTo: record)
             try handle.synchronize(); try handle.close()
@@ -98,6 +100,8 @@ extension DocumentStore {
             throw TextTextCLIError.invalidDocument("the previously created file is unavailable; no replacement was created")
         }
         guard try stage.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true,
+              let preparedHash = intent.preparedHash,
+              TextTextStableDigest.sha256Hex(try Data(contentsOf: stage)) == preparedHash,
               MarkdownIdentityCodec.extract(from: try readMarkdown(at: stage))?.itemId == intent.itemId else {
             throw TextTextCLIError.invalidDocument("invalid prepared creation package")
         }

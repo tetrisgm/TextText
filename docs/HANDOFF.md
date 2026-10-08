@@ -46,6 +46,14 @@
 
 ## Current work and next checks
 
+- Prepared creation intents now pin the package checksum before publication.
+  Resumption refuses changed staging bytes and retains them for recovery.
+  Version-1 journals still find already-published identities; unverified legacy
+  staging is preserved and refused rather than published. Agent-file and local
+  vault suites: 31 tests passed, including intact resumption, tampered staging,
+  legacy behavior and concurrent creation. Log
+  `/tmp/texttext-prepared-creation-integrity-final.log`. Source only.
+
 - Native agent creation now uses the existing durable CLI preparation journal.
   App-server call retries receive a stable key; agents may supply a stable
   intent key across calls. Rename/edit retries preserve the original identity
