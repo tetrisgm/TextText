@@ -836,6 +836,7 @@ export async function getWorkspaceWriteProposalForReview(
   }
   return {
     id: stored.id,
+    workspaceUrl: `/vault/${encodeURIComponent(owner.binding.blogId)}`,
     tool: validated.name,
     title: WORKSPACE_TOOL_DEFINITIONS[validated.name].title,
     summary: preview ? describeFrozenPreview(preview) : workspaceWriteProposalSummary(validated.name, validated.arguments),

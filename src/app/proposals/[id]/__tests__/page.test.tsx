@@ -22,7 +22,7 @@ describe("owner proposal review page", () => {
     vi.clearAllMocks();
     mocks.user.mockResolvedValue({ sub: "apple-sub", userId: "user-1" });
     mocks.blog.mockResolvedValue({ handle: "alpha" });
-    mocks.read.mockResolvedValue({ id, title: "Update item", summary: "Review replacement", status: "pending", arguments: { body: "<script>unsafe()</script>" }, origin: { surface: "hosted_mcp", connectionName: "Research agent" } });
+    mocks.read.mockResolvedValue({ id, workspaceUrl: "/vault/owner-workspace", title: "Update item", summary: "Review replacement", status: "pending", arguments: { body: "<script>unsafe()</script>" }, origin: { surface: "hosted_mcp", connectionName: "Research agent" } });
     mocks.decide.mockResolvedValue({ status: "completed" });
   });
   it("reads only owner-bound data and renders exact arguments as escaped text", async () => {
@@ -34,10 +34,12 @@ describe("owner proposal review page", () => {
     expect(mocks.decide).not.toHaveBeenCalled();
   });
   it("confirms completion without exposing the internal receipt and keeps proposed details", async () => {
-    mocks.read.mockResolvedValue({ id, title: "Update item", summary: "Review replacement", status: "completed", arguments: { body: "Approved text" }, receipt: { text: JSON.stringify({ status: "written", itemId: "internal-item-id", relativePath: "Notes/internal.textpack", revision: "internal-revision-hash" }) } });
+    mocks.read.mockResolvedValue({ id, workspaceUrl: "/vault/owner-workspace", title: "Update item", summary: "Review replacement", status: "completed", arguments: { body: "Approved text" }, receipt: { text: JSON.stringify({ status: "written", itemId: "internal-item-id", relativePath: "Notes/internal.textpack", revision: "internal-revision-hash" }) } });
     const tree = await Page({ params });
     const html = renderToStaticMarkup(tree);
     expect(html).toContain('role="status">Change applied.</p>');
+    expect(html).toContain('href="/vault/owner-workspace"');
+    expect(html).toContain("Back to workspace");
     expect(html).toContain("Technical details");
     expect(html).not.toContain("<details open");
     expect(html).toContain("Approved text");
@@ -50,7 +52,7 @@ describe("owner proposal review page", () => {
     ["executing", "Applying your change."],
     ["failed", "This change could not be applied."],
   ])("explains %s without internal status terminology", async (status, message) => {
-    mocks.read.mockResolvedValue({ id, title: "Update item", summary: "Review replacement", arguments: {}, status });
+    mocks.read.mockResolvedValue({ id, workspaceUrl: "/vault/owner-workspace", title: "Update item", summary: "Review replacement", arguments: {}, status });
     const html = renderToStaticMarkup(await Page({ params }));
     expect(html).toContain(message);
     expect(html).not.toContain("Proposal status:");
@@ -66,7 +68,7 @@ describe("owner proposal review page", () => {
     await expect(Page({ params })).rejects.toThrow("not-found");
   });
   it.each(["completed", "denied", "expired", "failed", "executing"])("offers no mutation controls for %s", async (status) => {
-    mocks.read.mockResolvedValue({ id, title: "Update item", arguments: {}, status });
+    mocks.read.mockResolvedValue({ id, workspaceUrl: "/vault/owner-workspace", title: "Update item", arguments: {}, status });
     expect(forms(await Page({ params }))).toHaveLength(0);
   });
   it.each([0, 1])("rechecks the session and decides only the stored id from form %i", async (index) => {
@@ -83,7 +85,7 @@ describe("owner proposal review page", () => {
     expect(mocks.decide).not.toHaveBeenCalled();
   });
   it("shows destination recipients outside technical details and sends only explicit acknowledgement", async () => {
-    mocks.read.mockResolvedValue({id,title:"Move folder",summary:"Move the folder",status:"pending",arguments:{},additionalAccess:[{email:"editor@example.com",role:"editor",via:"Archive"}]});
+    mocks.read.mockResolvedValue({id,workspaceUrl:"/vault/owner-workspace",title:"Move folder",summary:"Move the folder",status:"pending",arguments:{},additionalAccess:[{email:"editor@example.com",role:"editor",via:"Archive"}]});
     const tree = await Page({params}), html = renderToStaticMarkup(tree);
     expect(html).toContain('aria-label="Additional folder access"');
     expect(html).toContain("editor@example.com: editor");

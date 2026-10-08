@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/session";
 import { getOwnedBlog, getUserIdBySub } from "@/lib/store";
 import { decideWorkspaceWriteProposal, getWorkspaceWriteProposalForReview } from "@/lib/ai/write-proposals.server";
@@ -48,6 +49,7 @@ export default async function ProposalReviewPage({ params }: { params: Promise<{
           <ul>{proposal.additionalAccess.map((access, index) => <li key={`${access.email}:${access.via}:${index}`}>{access.email}: {access.role}</li>)}</ul>
         </section>}
         <p role="status">{proposal.status === "completed" ? "Change applied." : proposal.status === "pending" ? "Waiting for your approval. Nothing has been changed." : proposal.status === "denied" ? "Change dismissed." : proposal.status === "expired" ? "This proposal has expired. Ask your agent for a new proposal." : proposal.status === "executing" ? "Applying your change." : "This change could not be applied."}</p>
+        <p><Link href={proposal.workspaceUrl} prefetch={false}>Back to workspace</Link></p>
         <details>
           <summary>Technical details</summary>
           <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: "50vh", overflow: "auto" }}>{JSON.stringify(proposal.arguments, null, 2)}</pre>

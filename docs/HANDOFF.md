@@ -28,6 +28,10 @@
 
 ## Current work
 
+- Proposal reviews now provide a return link to the server-authorized workspace.
+  The page/service suites passed 47 tests and TypeScript passed. This navigation
+  follow-up is source-only; it has not been deployed.
+
 - Live Mac 1193 acceptance found an empty parent picker: native listings provide
   paths, not document IDs/titles. The shared picker now uses bounded search and
   freshly resolves only the selected TextPack before saving its stable identity.
