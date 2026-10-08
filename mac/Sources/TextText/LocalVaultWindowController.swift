@@ -23,6 +23,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private var watcher: WorkspaceFolderWatcher?
     private var openError: String?
     private var pendingPath: String?
+    private var switchingWorkspace = false
     private var loaded = false
     private let credentials: LocalVaultConnectionController.CredentialsProvider
     private var connection: LocalVaultConnectionController?
@@ -186,16 +187,25 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         if let pendingPath { emit("texttext:vault-open", value: ["path": pendingPath]); self.pendingPath = nil }
     }
 
-    private func selectRoot(_ url: URL) throws {
+    private func selectRoot(_ url: URL, preparedConnection: LocalVaultConnectionController? = nil, persist: (() throws -> Void)? = nil) throws {
         if connection != nil, root?.standardizedFileURL.resolvingSymlinksInPath() == url.standardizedFileURL.resolvingSymlinksInPath() { return }
+        let nextScoped = url.startAccessingSecurityScopedResource()
+        do {
+            var directory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &directory), directory.boolValue,
+                  FileManager.default.isReadableFile(atPath: url.path) else { throw CocoaError(.fileReadNoPermission) }
+            _ = try PortableWorkspaceBinding.read(root: url)
+            // The persisted selection is the commit point. No active service is
+            // retired until validation and the atomic configuration write pass.
+            try persist?()
+        } catch { if nextScoped { url.stopAccessingSecurityScopedResource() }; throw error }
         collaboration?.cancelAll(); collaboration = nil
         connection?.stop(); connection = nil
         agent?.stop(); agent = nil
         watcher?.stop()
         if scoped { root?.stopAccessingSecurityScopedResource() }
-        scoped = url.startAccessingSecurityScopedResource()
+        scoped = nextScoped
         root = url
-        guard FileManager.default.isReadableFile(atPath: url.path) else { throw CocoaError(.fileReadNoPermission) }
         // Account workspaces are provisioned once by the server. Selecting a
         // folder must not create another set of local starter identities.
         openError = nil
@@ -204,12 +214,44 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             self?.emit("texttext:vault-changed", value: [:])
             self?.connection?.schedule()
         }
-        connection = LocalVaultConnectionController(root: url, credentials: credentials)
+        connection = preparedConnection ?? LocalVaultConnectionController(root: url, credentials: credentials)
         connection?.onChange = { [weak self] state, filesChanged in
             self?.emit("texttext:vault-sync-status", value: state)
             if filesChanged { self?.emit("texttext:vault-changed", value: [:]) }
         }
-        connection?.connectAutomatically()
+        if preparedConnection != nil { connection?.activate() } else { connection?.connectAutomatically() }
+    }
+
+    private func openWorkspace(_ workspaceId: String) async throws -> [String: Any] {
+        guard !switchingWorkspace, let oldRoot = root, let existing = connection, let account = credentials() else { throw VaultBridgeError("Open a signed-in workspace first.") }
+        switchingWorkspace = true
+        defer { switchingWorkspace = false }
+        let available = try await existing.availableWorkspaces()
+        guard available.contains(where: { $0.id == workspaceId }) else { throw VaultBridgeError("This workspace is unavailable.") }
+        if existing.status["workspaceId"] as? String == workspaceId { return Self.withCapabilities(try Self.list(root: oldRoot), existing.capabilities) }
+        let binding = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspaceId)
+        let selected = oldRoot.deletingLastPathComponent().appendingPathComponent(workspaceId, isDirectory: true)
+        try LocalVaultWorkspaceSelection.prepareFolder(selected, binding: binding)
+        let access = selected.startAccessingSecurityScopedResource()
+        defer { if access { selected.stopAccessingSecurityScopedResource() } }
+        let candidate = LocalVaultConnectionController(root: selected, workspaceId: workspaceId, credentials: credentials)
+        var activated = false
+        defer { if !activated { candidate.stop() } }
+        _ = try await candidate.connect(startSync: false)
+        guard root == oldRoot, let current = credentials(), current.origin == account.origin, current.token == account.token else { throw CancellationError() }
+        let canLeave = await withCheckedContinuation { continuation in flushForSignOut { continuation.resume(returning: $0) } }
+        guard canLeave else { throw VaultBridgeError("Finish saving this workspace before switching.") }
+        guard root == oldRoot, let current = credentials(), current.origin == account.origin, current.token == account.token else { throw CancellationError() }
+        let listing = Self.withCapabilities(try Self.list(root: selected), candidate.capabilities)
+        let bookmark = try selected.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+        try selectRoot(selected, preparedConnection: candidate) {
+            _ = try LocalVaultConfiguration.openSelection(root: selected, bookmarkData: bookmark)
+        }
+        activated = true
+        pendingPath = nil
+        onSelectedFolder?()
+        emit("texttext:vault-changed", value: [:])
+        return listing
     }
 
     func chooseFolder(requestID: String? = nil, directory: URL? = nil, completion: ((Result<[String: Any], Error>) -> Void)? = nil) {
@@ -228,6 +270,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if let requestID { self.startNativeOperation(requestID) }
             do {
                 let bookmark = try selected.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+                try self.selectRoot(selected, persist: {
                 do {
                     _ = try LocalVaultConfiguration.openSelection(root: selected, bookmarkData: bookmark)
                 } catch let error as LocalVaultConfigurationError {
@@ -239,7 +282,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     alert.addButton(withTitle: "Keep Backup and Continue")
                     alert.addButton(withTitle: "Cancel")
                     guard alert.runModal() == .alertFirstButtonReturn else {
-                        completion?(.failure(CocoaError(.userCancelled))); return
+                        throw CocoaError(.userCancelled)
                     }
                     _ = try LocalVaultConfiguration.openSelection(
                         root: selected,
@@ -247,7 +290,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                         replacingUnreadableConfiguration: true
                     )
                 }
-                try self.selectRoot(selected)
+                })
                 self.onSelectedFolder?()
                 self.io.async {
                     let result = Result { try Self.list(root: selected) }
@@ -264,6 +307,26 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
               let body = message.body as? [String: Any], let id = body["id"] as? String, id.count <= 100,
               let method = body["method"] as? String else { return }
         let params = body["params"] as? [String: Any] ?? [:]
+        if method == "workspacesList" {
+            guard let connection else { reply(id, result: .failure(VaultBridgeError("Open a workspace first."))); return }
+            Task { @MainActor [weak self] in
+                do {
+                    let choices = try await connection.availableWorkspaces()
+                    guard self?.connection === connection else { throw CancellationError() }
+                    self?.reply(id, result: .success(["currentId": connection.status["workspaceId"] ?? NSNull(), "workspaces": choices.map(\.dictionary)]))
+                } catch { self?.reply(id, result: .failure(error)) }
+            }
+            return
+        }
+        if method == "workspaceOpen" {
+            guard params.count == 1, let workspaceId = params["workspaceId"] as? String else { reply(id, result: .failure(VaultBridgeError("Choose a workspace."))); return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do { self.reply(id, result: .success(try await self.openWorkspace(workspaceId))) }
+                catch { self.reply(id, result: .failure(error)) }
+            }
+            return
+        }
         if method == "trashReconcile" {
             guard let engine = connection?.collaborationEngine, root != nil,
                   let lifecycle = params["operationId"] as? String,
@@ -528,7 +591,13 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 current = try? Self.payload(LocalVaultDocumentStore(root: root).read(path: path))
             }
             let conflictCurrent = current
-            DispatchQueue.main.async { self?.reply(id, result: result, current: conflictCurrent) }
+            DispatchQueue.main.async {
+                guard self?.root == root else { self?.reply(id, result: .failure(CancellationError())); return }
+                let decorated = result.map { value in
+                    method == "list" ? Self.withCapabilities(value, self?.connection?.capabilities) : value
+                }
+                self?.reply(id, result: decorated, current: conflictCurrent)
+            }
         }
     }
     static func collaborationErrorCode(_ error: Error, method: String) -> String {
@@ -599,6 +668,19 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private static func list(root: URL) throws -> [String: Any] {
         ["root": root.path, "folders": try LocalVaultStarter.listFolders(root: root), "items": try LocalVaultDocumentStore(root: root).list().map { ["path": $0] }]
     }
+    private static func withCapabilities(_ listing: [String: Any], _ capability: LocalVaultSyncCapabilities?) -> [String: Any] {
+        var value = listing
+        value["fullAccess"] = capability?.fullAccess ?? false
+        value["canCreateContent"] = capability?.canCreateContent ?? false
+        value["writableFolders"] = capability?.writableFolders ?? []
+        value["items"] = (listing["items"] as? [[String: Any]] ?? []).map { row in
+            var row = row
+            row["canEditContent"] = (row["path"] as? String).map { capability?.canEdit(path: $0) ?? false } ?? false
+            return row
+        }
+        return value
+    }
+
     private static func payload(_ document: LocalVaultDocumentStore.Document) -> [String: Any] {
         let contents = document.contents
         return ["path": document.path, "hash": document.hash, "markdown": contents.markdown,

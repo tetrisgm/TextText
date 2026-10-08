@@ -4,11 +4,13 @@ public struct LocalVaultRemoteItem: Codable, Sendable, Equatable {
     public let itemId: String
     public let relativePath: String
     public let revision: String
+    public let canEditContent: Bool?
     public let deleted: Bool?
     public let lifecycle: String?
     public let restoreFromRevision: String?
     public var isDeleted: Bool { deleted == true }
-    public init(itemId: String, relativePath: String, revision: String, deleted: Bool = false, lifecycle: String? = nil, restoreFromRevision: String? = nil) {
+    public init(itemId: String, relativePath: String, revision: String, deleted: Bool = false, canEditContent: Bool? = nil, lifecycle: String? = nil, restoreFromRevision: String? = nil) {
+        self.canEditContent = canEditContent
         self.itemId = itemId; self.relativePath = relativePath; self.revision = revision; self.deleted = deleted; self.lifecycle = lifecycle; self.restoreFromRevision = restoreFromRevision
     }
 }
@@ -37,7 +39,22 @@ public enum LocalVaultSyncFailure: Error, LocalizedError {
     }
 }
 
+public struct LocalVaultSyncCapabilities: Sendable, Codable {
+    public let fullAccess: Bool
+    public let canCreateContent: Bool
+    public let writableFolders: [String]
+    public let writableItems: Set<String>
+    public var knownPaths: Set<String> = []
+    public var writablePaths: Set<String> = []
+    public func canEdit(path: String) -> Bool {
+        if knownPaths.contains(path) { return writablePaths.contains(path) }
+        return canCreateContent || writableFolders.contains { path.hasPrefix($0 + "/") }
+    }
+}
+
 public protocol LocalVaultSyncTransport: Sendable {
+    func canOrganize() async -> Bool
+    func canWrite(itemId: String, path: String, existing: Bool) async -> Bool
     func manifest() async throws -> [LocalVaultRemoteItem]
     func folders() async -> [String]
     func download(itemId: String) async throws -> LocalVaultRemotePack
@@ -46,7 +63,11 @@ public protocol LocalVaultSyncTransport: Sendable {
     func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws
 }
 
-public extension LocalVaultSyncTransport { func folders() async -> [String] { [] } }
+public extension LocalVaultSyncTransport {
+    func folders() async -> [String] { [] }
+    func canOrganize() async -> Bool { true }
+    func canWrite(itemId: String, path: String, existing: Bool) async -> Bool { true }
+}
 
 /// Bearer credentials live only in this transport, never in vault files.
 public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
@@ -54,6 +75,9 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private var token: String
     private let session: URLSession
     private var manifestETag: String?
+    private var fullAccess = false
+    private var canCreateContent = false
+    private var writableFolders: [String] = []
     private var cachedFolders: [String] = []
     public func folders() -> [String] { cachedFolders }
     private var cachedManifest: [LocalVaultRemoteItem] = []
@@ -62,6 +86,22 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         try LocalVaultSyncBinding.validate(origin: origin, workspaceId: workspaceId)
         self.endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("items")
         self.token = token; self.session = session
+    }
+
+    public func canOrganize() async -> Bool { fullAccess && canCreateContent }
+    public func capabilities() -> LocalVaultSyncCapabilities {
+        var value = LocalVaultSyncCapabilities(fullAccess: fullAccess, canCreateContent: canCreateContent,
+            writableFolders: writableFolders, writableItems: Set(cachedManifest.filter { $0.canEditContent == true }.map(\.itemId)))
+        value.knownPaths = Set(cachedManifest.map(\.relativePath))
+        value.writablePaths = Set(cachedManifest.filter { $0.canEditContent == true }.map(\.relativePath))
+        return value
+    }
+    public func canWrite(itemId: String, path: String, existing: Bool) async -> Bool {
+        let canCreate = canCreateContent || writableFolders.contains { folder in path.hasPrefix(folder + "/") }
+        if let item = cachedManifest.first(where: { $0.itemId == itemId }) {
+            return item.canEditContent == true && (item.relativePath == path || canCreate)
+        }
+        return !existing && canCreate
     }
 
     public func updateToken(_ token: String) { self.token = token }
@@ -89,6 +129,9 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
             let items: [LocalVaultRemoteItem]
             let tombstones: [LocalVaultRemoteItem]?
             let folders: [String]?
+            let fullAccess: Bool?
+            let canCreateContent: Bool?
+            let writableFolders: [String]?
         }
         var url = endpoint
         if wait {
@@ -103,10 +146,14 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         if response.statusCode == 304 { return false }
         let decoded = try JSONDecoder().decode(Manifest.self, from: data)
         let manifest = (decoded.items + (decoded.tombstones ?? []).map {
-            LocalVaultRemoteItem(itemId: $0.itemId, relativePath: $0.relativePath, revision: $0.revision, deleted: true)
+            LocalVaultRemoteItem(itemId: $0.itemId, relativePath: $0.relativePath, revision: $0.revision, deleted: true, canEditContent: $0.canEditContent, lifecycle: $0.lifecycle, restoreFromRevision: $0.restoreFromRevision)
         }).sorted { $0.itemId < $1.itemId }
         let folders = (decoded.folders ?? []).sorted()
-        let changed = manifest != cachedManifest || folders != cachedFolders
+        let previousCapabilities = (fullAccess, canCreateContent, writableFolders)
+        fullAccess = decoded.fullAccess == true
+        canCreateContent = decoded.canCreateContent == true
+        writableFolders = (decoded.writableFolders ?? []).filter { !$0.isEmpty && !$0.hasPrefix("/") && !$0.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) && !$0.contains("\\") }
+        let changed = manifest != cachedManifest || folders != cachedFolders || previousCapabilities.0 != fullAccess || previousCapabilities.1 != canCreateContent || previousCapabilities.2 != writableFolders
         cachedFolders = folders
         cachedManifest = manifest
         manifestETag = response.value(forHTTPHeaderField: "ETag")

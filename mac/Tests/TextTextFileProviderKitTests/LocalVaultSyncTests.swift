@@ -12,6 +12,27 @@ final class LocalVaultSyncTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
+    func testRevokedPendingWriteIsRetainedWithoutRetryLoop() async throws {
+        let transport = FakeVaultTransport()
+        await transport.set(itemId: itemId, path: path, data: try pack("before"))
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        try pack("offline edit").write(to: root.appendingPathComponent(path), options: .atomic)
+        await transport.loseNextReply()
+        _ = try await sync.sync()
+        let before = await transport.operations().count
+        await transport.setWritable(false)
+        let report = try await sync.sync()
+        let after = await transport.operations().count
+        XCTAssertEqual(before, after)
+        XCTAssertFalse(report.hasMore)
+        XCTAssertTrue(report.errors.isEmpty)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains("offline edit"))
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        XCTAssertNotNil((state["outbox"] as? [String: Any])?[itemId])
+    }
+
     func testPassiveRestoreRetiresOldDeletionButHonorsNewDeletion() async throws {
         let transport = FakeVaultTransport()
         await transport.set(itemId: itemId, path: path, data: try pack("before"))
@@ -509,6 +530,11 @@ final class LocalVaultSyncTests: XCTestCase {
 }
 
 private actor FakeVaultTransport: LocalVaultSyncTransport {
+    private var writable = true
+    func setWritable(_ value: Bool) { writable = value }
+    func canWrite(itemId: String, path: String, existing: Bool) async -> Bool { writable }
+    func canOrganize() async -> Bool { writable }
+
     private var racedDownload: (Data, String)?
     func raceDownload(data: Data, lifecycle: String) { racedDownload = (data, lifecycle) }
     private var lifecycles: [String: String] = [:]

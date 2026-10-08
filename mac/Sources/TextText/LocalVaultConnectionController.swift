@@ -8,6 +8,7 @@ import TextTextFileProviderKit
 final class LocalVaultConnectionController {
     typealias CredentialsProvider = () -> (origin: URL, token: String)?
     private static let retryMessage = "Changes are saved on this Mac. The web connection will retry."
+    private let requestedWorkspaceId: String?
     private let root: URL
     private let credentials: CredentialsProvider
     private let session: URLSession
@@ -29,16 +30,21 @@ final class LocalVaultConnectionController {
     private var connecting = false
     private var stopped = false
     private var connectingTask: Task<Void, Never>?
+    private(set) var capabilities: LocalVaultSyncCapabilities?
     private var onlineReady = false
     private var connectRetry: Task<Void, Never>?
     private var connectDelay: UInt64 = 2
     var onChange: (([String: Any], Bool) -> Void)?
 
-    init(root: URL, session: URLSession = .shared, credentials: @escaping CredentialsProvider) {
+    init(root: URL, workspaceId: String? = nil, session: URLSession = .shared, credentials: @escaping CredentialsProvider) {
+        self.requestedWorkspaceId = workspaceId
         self.root = root; self.credentials = credentials; self.session = session
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
                 previousBinding = existing
+                if let account = credentials(), account.origin == existing.origin {
+                    capabilities = try? LocalVaultCapabilityCache.read(root: root, binding: existing)
+                }
             }
         } catch { message = error.localizedDescription }
     }
@@ -119,11 +125,14 @@ final class LocalVaultConnectionController {
             self?.connectAutomatically()
         }
     }
-    func connect(allowRebind: Bool = false) async throws -> [String: Any] {
+    func connect(allowRebind: Bool = false, startSync: Bool = true) async throws -> [String: Any] {
         guard let account = credentials() else { throw LocalVaultConnectionError("Sign in to TextText before connecting this folder to the web.") }
         // Validate before attaching the token to a URL.
         _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: "discovery")
-        var request = URLRequest(url: account.origin.appendingPathComponent("api/vault"), timeoutInterval: 30)
+        let selectedId = requestedWorkspaceId ?? previousBinding.flatMap { $0.origin == account.origin ? $0.workspaceId : nil }
+        if let selectedId { _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: selectedId) }
+        let endpoint = selectedId.map { "api/vault/\($0)/items" } ?? "api/vault"
+        var request = URLRequest(url: account.origin.appendingPathComponent(endpoint), timeoutInterval: 30)
         request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await session.data(for: request)
@@ -142,11 +151,11 @@ final class LocalVaultConnectionController {
             throw LocalVaultConnectionError("The server could not connect this folder. Your files remain saved on this Mac.")
         }
         struct Workspace: Decodable { let workspaceId: String }
-        let workspace = try JSONDecoder().decode(Workspace.self, from: data)
+        let workspaceId = try selectedId ?? JSONDecoder().decode(Workspace.self, from: data).workspaceId
         guard let latest = credentials(), latest.origin == account.origin, latest.token == account.token else {
             throw CancellationError()
         }
-        let binding = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspace.workspaceId)
+        let binding = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspaceId)
         if let portable = try PortableWorkspaceBinding.read(root: root), portable != (try PortableWorkspaceBinding.normalized(binding)) {
             throw LocalVaultSyncFailure.invalidBinding
         }
@@ -157,13 +166,46 @@ final class LocalVaultConnectionController {
             try LocalVaultSync.archiveAndRebind(root: root, to: binding)
         }
         try PortableWorkspaceBinding.bindVerified(root: root, binding: binding)
-        try await configure(binding, token: account.token)
+        try await configure(binding, token: account.token, startSync: false)
+        if let transport, let engine {
+            _ = try await transport.manifest()
+            var value = await transport.capabilities()
+            value.knownPaths.formUnion(await engine.knownLocalPaths())
+            capabilities = value
+            try? LocalVaultCapabilityCache.write(value, root: root, binding: binding)
+        }
+        if startSync { activate() }
         onlineReady = false
         previousBinding = binding
         message = nil
         watchFailureIsCurrent = false
-        schedule()
+        if startSync { schedule() }
         return status
+    }
+    struct AvailableWorkspace: Decodable {
+        let id: String
+        let name: String
+        let access: String
+        var dictionary: [String: Any] { ["id": id, "name": name, "access": access] }
+    }
+    func availableWorkspaces() async throws -> [AvailableWorkspace] {
+        guard let account = credentials() else { throw LocalVaultSyncFailure.httpStatus(401) }
+        _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: "discovery")
+        var request = URLRequest(url: account.origin.appendingPathComponent("api/vault/workspaces"), timeoutInterval: 30)
+        request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard !stopped, let current = credentials(), current.origin == account.origin, current.token == account.token else { throw CancellationError() }
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 1_000_000 else { throw LocalVaultSyncFailure.invalidResponse }
+        struct Discovery: Decodable { let workspaces: [AvailableWorkspace] }
+        let workspaces = try JSONDecoder().decode(Discovery.self, from: data).workspaces
+        guard workspaces.count <= 1000, Set(workspaces.map(\.id)).count == workspaces.count else { throw LocalVaultSyncFailure.invalidResponse }
+        for workspace in workspaces {
+            _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: workspace.id)
+            guard ["owner", "workspace", "scoped"].contains(workspace.access), workspace.name.count <= 1000 else { throw LocalVaultSyncFailure.invalidResponse }
+        }
+        return workspaces
     }
     func watchDidSucceed() {
         guard watchFailureIsCurrent else { return }
@@ -182,7 +224,7 @@ final class LocalVaultConnectionController {
         watchFailureIsCurrent = false
         message = value
     }
-    private func configure(_ binding: LocalVaultSyncBinding, token: String) async throws {
+    private func configure(_ binding: LocalVaultSyncBinding, token: String, startSync: Bool) async throws {
         if self.binding == binding, let transport, engine != nil {
             // Keep the actor that owns live file sessions and checkpoints.
             await transport.updateToken(token)
@@ -191,6 +233,10 @@ final class LocalVaultConnectionController {
         let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token, session: session)
         let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
         self.binding = binding; self.transport = transport; self.engine = engine
+        if startSync { activate() }
+    }
+    func activate() {
+        guard !stopped, let transport else { return }
         watching?.cancel()
         watching = Task { [weak self, transport] in
             var backoff: UInt64 = 2
@@ -233,6 +279,12 @@ final class LocalVaultConnectionController {
             do {
                 let report = try await engine.sync()
                 guard let self else { return }
+                if let transport = self.transport {
+                    var value = await transport.capabilities()
+                    value.knownPaths.formUnion(await engine.knownLocalPaths())
+                    self.capabilities = value
+                    if let binding = self.binding { try? LocalVaultCapabilityCache.write(value, root: self.root, binding: binding) }
+                }
                 self.hasConflicts = !report.conflicts.isEmpty
                 self.onlineReady = report.errors.isEmpty && report.conflicts.isEmpty
                 if !report.conflicts.isEmpty { self.recordSyncMessage("Conflicting edits were kept in this folder's recovery copies.") }

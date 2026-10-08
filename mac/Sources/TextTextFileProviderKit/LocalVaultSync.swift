@@ -434,7 +434,27 @@ public actor LocalVaultSync {
         return pending
     }
 
+    public func knownLocalPaths() -> Set<String> { Set(state.baselines.values.map(\.path)).union(state.outbox.values.filter { $0.baseRevision != nil }.map(\.path)) }
+
+    public func canEditLocalPath(_ path: String) async -> Bool {
+        if let itemId = state.identities?[path] { return await canEditLocalItem(itemId: itemId, path: path) }
+        if let known = state.baselines.first(where: { $0.value.path == path }) { return await canEditLocalItem(itemId: known.key, path: path) }
+        if let pending = state.outbox.values.first(where: { $0.path == path || $0.newPath == path }) { return await canEditLocalItem(itemId: pending.itemId, path: path) }
+        return await transport.canWrite(itemId: "", path: path, existing: false)
+    }
+
+    public func canEditLocalItem(itemId: String, path: String) async -> Bool {
+        await transport.canWrite(itemId: itemId, path: path, existing: state.baselines[itemId] != nil || state.outbox[itemId]?.baseRevision != nil)
+    }
+
+    private func canSend(_ pending: Pending) async -> Bool {
+        if pending.action == "rename" || pending.action == "delete" {
+            guard await transport.canOrganize() else { return false }
+        }
+        return await transport.canWrite(itemId: pending.itemId, path: pending.newPath ?? pending.path, existing: state.baselines[pending.itemId] != nil || pending.baseRevision != nil)
+    }
     private func send(_ pending: Pending, report: inout LocalVaultSyncReport) async throws {
+        guard await canSend(pending) else { return }
         do {
             if pending.action == "delete" {
                 guard let base = pending.baseRevision else { throw LocalVaultSyncFailure.invalidResponse }
@@ -594,7 +614,11 @@ public actor LocalVaultSync {
             }
         }
         // Retry exact journal entries before producing new operations.
-        for pending in state.outbox.values.sorted(by: { $0.path < $1.path }).prefix(budget) {
+        var writablePending: [Pending] = []
+        for pending in state.outbox.values.sorted(by: { $0.path < $1.path }) {
+            if await canSend(pending) { writablePending.append(pending) }
+        }
+        for pending in writablePending.prefix(budget) {
             do { try await send(pending, report: &report) }
             catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
         }
@@ -632,7 +656,10 @@ public actor LocalVaultSync {
             do {
                 if try sharedProtection(itemId: id) { continue }
                 guard (localByID[id]?.count ?? 0) <= 1 else { throw LocalVaultSyncFailure.duplicateIdentity(activePath) }
-                if state.outbox[id] != nil { report.hasMore = true; continue }
+                if let pending = state.outbox[id] {
+                    if await canSend(pending) { report.hasMore = true }
+                    continue
+                }
                 let remote = remoteByID[id]
                 var baseline = state.baselines[id]
                 var localPath = localByID[id]?.first
@@ -721,6 +748,7 @@ public actor LocalVaultSync {
                     }
                 }
                 if baseline != nil, remote == nil {
+                    guard await transport.canWrite(itemId: id, path: path, existing: true) else { continue }
                     // The local TextPack remains authoritative when a server
                     // loses an item without a tombstone. Create with a server
                     // precondition so a concurrent remote return cannot be
@@ -759,6 +787,7 @@ public actor LocalVaultSync {
                     try persist(); report.downloaded += 1
                     continue
                 }
+                guard await transport.canWrite(itemId: id, path: path, existing: baseline != nil) else { continue }
                 let pending = try editOrigins.withLock {
                     let bytes = try Data(contentsOf: store.url(for: path))
                     guard TextTextStableDigest.sha256Hex(bytes) == current.hash else { throw LocalVaultSyncFailure.changed }
@@ -778,7 +807,10 @@ public actor LocalVaultSync {
             }
         }
         state.cursor = (start + count) % ids.count
-        report.hasMore = report.hasMore || !indexComplete || start + count < ids.count || !state.outbox.isEmpty
+        report.hasMore = report.hasMore || !indexComplete || start + count < ids.count
+        for pending in state.outbox.values {
+            if await canSend(pending) { report.hasMore = true; break }
+        }
         try persist()
         return report
     }
