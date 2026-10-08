@@ -23,5 +23,12 @@ cache freshness after save. Unaffected measured performance receipts remain vali
 Windows same-source build/install and account/search acceptance:
 [receipt](2026-10-08-windows-shared-1191.md).
 
-Oracle packaging passed; deployment and live proposal/custom-field acceptance
-are still pending in this receipt. No public desktop release was performed.
+Oracle serves `texttext-oracle-20261008T090012Z-f3167c4b`. All 13 live deployment
+checks passed, including mutations/retries, canonical audit, restore and stale
+upload fencing. Previous release retained. Fresh backup:
+`texttext-20261008T090233Z-b74fd340.dump` (176744 bytes). TextText and Algorave
+remain active. Log: `/tmp/texttext-oracle-f3167c4b-deploy.log`.
+
+Already-open Safari received the new Mac marker automatically before navigation
+or reload, with both desktop clients shown in presence. Live proposal/custom-field
+acceptance is still pending. No public desktop release was performed.

@@ -7,9 +7,9 @@
   [Receipt](verification/2026-10-08-account-proposals-1191.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T083707Z-5254ff85**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T090012Z-f3167c4b**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T083940Z-21135a8d.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T090233Z-b74fd340.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -42,8 +42,7 @@
   [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
 - 1191 source `f3167c4b` passed 725 core tests, TypeScript and required native
   checks. It includes custom-field updates, bounded account-profile recovery and
-  explicit CLI proposal staging. Clients installed; Oracle deployment and live
-  proposal/field acceptance are in progress.
+  explicit CLI proposal staging. Clients and Oracle installed; live proposal/field acceptance is in progress.
 - Next cohort: atomic agent image addition/removal, using bounded public-resource
   preparation and the existing durable engine intent. No asset feature shipped yet.
 
