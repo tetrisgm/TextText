@@ -24,6 +24,16 @@
 
 ## Current work and next checks
 
+- Mac candidate **0.204 (1208)** is building from frozen source `9a38e556`
+  in the existing clean ordinary clone `/private/tmp/texttext-candidate-1195-5ELVuo`.
+  Live exec handle `39188`; log `/tmp/texttext-mac1208-build.log`. Exact-source
+  core gates passed 823 tests in 87 suites and TypeScript; native compilation
+  and gates are running. Poll this handle; do not restart based on an observation
+  timeout. Installed app inspected: verification folder overview, no editor,
+  assistant or unsaved draft visible. Recheck before quitting/installing.
+  Candidate includes desktop folder agent action/search, scope fences,
+  TextPack mutation receipts and cold-home loading. Not installed yet.
+
 - Home List/Cards toggles and navigation persistence passed in actual Mac and
   Safari. [Receipt](verification/2026-10-08-home-layouts-live.md).
   Shared source now retains bounded saved-title labels during return navigation,
