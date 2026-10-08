@@ -408,7 +408,7 @@ export async function createWorkspaceWriteProposal(
     tool: string;
     arguments: unknown;
     ttlMs?: number;
-    origin?: { surface: "hosted_mcp"; connectionName: string };
+    origin?: { surface: "hosted_mcp" | "local_cli"; connectionName: string };
   },
   dependencies: WorkspaceWriteProposalDependencies = defaultDependencies,
 ): Promise<WorkspaceWriteProposalPreview> {

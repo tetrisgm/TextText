@@ -4,6 +4,10 @@ import base from '../vitest.config';
 export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
+    "src/lib/__tests__/agent-command-access.test.ts",
+    "src/lib/__tests__/agent-commands-cli-route.test.ts",
+    "src/lib/__tests__/agent-commands-list.test.ts",
+    "src/lib/__tests__/agent-command-upload-auth.test.ts",
       "src/components/document/__tests__/plain-paragraph.test.tsx",
     'sync/**/*.test.ts',
     'src/local-vault/{reader-write-baselines,collaboration-client,web-transport,web-assistant,web-watch,web-workspace-open,listing-capabilities,account-profile-loader,bootstrap-retry,folder-view,folder-view-metadata,folder-item-default,new-item-pack,template-starter,template-proposal,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',

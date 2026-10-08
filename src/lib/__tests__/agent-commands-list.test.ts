@@ -44,6 +44,14 @@ describe("GET /api/agent/commands", () => {
     mocks.resolveMcpScopeAccess.mockReturnValue("full");
   });
 
+  it("separates approval-required proposals from direct command permissions", async () => {
+    const body = await (await GET(request())).json();
+    expect(body.commands.map((entry: { name: string }) => entry.name)).not.toContain("retire_document_template");
+    expect(body.proposals).toContainEqual(expect.objectContaining({ name: "retire_document_template", approvalRequired: true, invocation: expect.stringContaining("texttext propose") }));
+    mocks.resolveMcpScopeAccess.mockReturnValue("read-only");
+    expect((await (await GET(request())).json()).proposals).toEqual([]);
+  });
+
   it("answers with the commands this connection may run", async () => {
     const body = (await (await GET(request())).json()) as {
       commands?: Array<{ name: string; mutability: string }>;
@@ -88,7 +96,7 @@ describe("GET /api/agent/commands", () => {
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/fixture");
     const body = await (await GET(request())).json();
     expect(body.commands.map((entry: { name: string }) => entry.name)).toEqual(expect.arrayContaining(["read_item", "create_item", "append_to_item"]));
-    expect(body.commands.map((entry: { name: string }) => entry.name)).not.toContain("move_item");
+    expect(body.commands.map((entry: { name: string }) => entry.name)).not.toContain("delete_folder");
     expect(body.commands.find((entry: { name: string }) => entry.name === "append_to_item").inputSchema.required).toContain("if_match_hash");
   });
 

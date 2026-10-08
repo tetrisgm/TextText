@@ -1,3 +1,6 @@
+import { hasItemAgentScope } from "@/lib/item-agent-access";
+import { DURABLE_PROPOSAL_TOOLS } from "@/lib/ai/write-proposal-policy";
+import { stageAgentToolProposal } from "@/lib/mcp/write-proposals";
 import { VAULT_TOOL_NAMES, vaultToolDefinitions } from "@/lib/mcp/vault-contract";
 import {
   WORKSPACE_TOOL_DEFINITIONS,
@@ -112,6 +115,11 @@ export async function GET(request: Request) {
       ...(fileDefinitions ? { inputSchema: fileDefinitions.find(definition => definition.name === name)?.inputSchema } : {}),
       mutability: WORKSPACE_TOOL_DEFINITIONS[name].mutability,
     })),
+    proposals: scopeAccess === "full" && !hasItemAgentScope(auth.scopes) ? fileDefinitions.filter(definition => DURABLE_PROPOSAL_TOOLS.has(definition.name)).map(definition => ({
+      name: definition.name, title: WORKSPACE_TOOL_DEFINITIONS[definition.name as WorkspaceToolName].title,
+      description: definition.description, inputSchema: definition.inputSchema,
+      approvalRequired: true, invocation: `texttext propose ${definition.name} --args '{...}'`,
+    })) : [],
     note:
       scopeAccess === "full"
         ? "Run one with: texttext do <name> --args '{...}'"
@@ -149,18 +157,17 @@ export async function POST(request: Request) {
   const rawName = typeof body.name === "string" ? body.name : "";
   const proposalMode = body.mode === "proposal" || rawName.startsWith("proposal:");
   const name = rawName.startsWith("proposal:") ? rawName.slice("proposal:".length) : rawName;
-  if (proposalMode || !(VAULT_TOOL_NAMES as readonly string[]).includes(name)) {
-    return noStore({ error: proposalMode
-      ? "File commands are applied directly. Use a supported command with its current revision."
-      : "That command is not available for file workspaces yet." }, 400);
+  if (!(VAULT_TOOL_NAMES as readonly string[]).includes(name) || proposalMode && !DURABLE_PROPOSAL_TOOLS.has(name)) {
+    return noStore({ error: "That command is not available for file workspaces yet." }, 400);
   }
-  if (!LOCAL_AGENT_COMMANDS.has(name as WorkspaceToolName)) {
+  if (!proposalMode && !LOCAL_AGENT_COMMANDS.has(name as WorkspaceToolName)) {
     return noStore(
       { error: "That command is not available to the local CLI" },
       400,
     );
   }
   const scopeAccess = resolveMcpScopeAccess(auth.scopes);
+  if (proposalMode && (scopeAccess !== "full" || hasItemAgentScope(auth.scopes))) return noStore({ error: "A full workspace connection is required to stage changes." }, 403);
   if (scopeAccess === "none") {
     return noStore({ error: "This connection cannot read the workspace" }, 403);
   }
@@ -200,6 +207,7 @@ export async function POST(request: Request) {
       },
     },
   };
+  if (proposalMode) return noStore(await stageAgentToolProposal(name as WorkspaceToolName, args as Record<string, unknown>, context, "local_cli"));
   const result = await runWorkspaceToolForAuth(
     name as WorkspaceToolName,
     args as Record<string, unknown>,

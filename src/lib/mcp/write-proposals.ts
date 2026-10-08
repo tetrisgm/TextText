@@ -1,5 +1,6 @@
 // The inbound boundary only. Approved writes use the canonical executor without
 // coming back through this gate, so approval cannot recursively stage a write.
+import { hasItemAgentScope } from "@/lib/item-agent-access";
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { getOwnedBlog } from "@/lib/store";
 import { rootDomainUrl } from "@/lib/site-url";
@@ -32,19 +33,20 @@ export function hostedToolNeedsProposal(
   return false;
 }
 
-export async function stageHostedToolProposal(
+export async function stageAgentToolProposal(
   name: WorkspaceToolName,
   args: Record<string, unknown>,
   context: ToolContext,
+  surface: "hosted_mcp" | "local_cli",
 ): Promise<CallToolResult> {
   const error = (text: string): CallToolResult => ({
     isError: true, content: [{ type: "text", text }],
   });
   // Scope checks must precede staging: approval is not a scope escalation.
-  if (resolveMcpScopeAccess(context.authInfo?.scopes) !== "full") {
+  if (hasItemAgentScope(context.authInfo?.scopes) || resolveMcpScopeAccess(context.authInfo?.scopes) !== "full") {
     return error("A full sync connection is required to stage changes.");
   }
-  const { sub, userId, connectionName } = context.authInfo?.extra ?? {};
+  const { sub, userId, connectionName, connectionId } = context.authInfo?.extra ?? {};
   if (typeof sub !== "string" || !sub || typeof userId !== "string" || !userId) {
     return error("An authenticated workspace owner is required to stage changes.");
   }
@@ -53,10 +55,10 @@ export async function stageHostedToolProposal(
     if (!blog) return error("Workspace not found.");
     const { createWorkspaceWriteProposal } = await import("@/lib/ai/write-proposals.server");
     const proposal = await createWorkspaceWriteProposal({
-      actor: { sub, userId, handle: blog.handle },
+      actor: { sub, userId, handle: blog.handle, actorType: "external_agent", ...(typeof connectionId === "string" && connectionId ? { connectionId } : {}) },
       tool: name,
       arguments: args,
-      origin: { surface: "hosted_mcp", connectionName: typeof connectionName === "string" ? connectionName : "Connected agent" },
+      origin: { surface, connectionName: typeof connectionName === "string" ? connectionName : "Connected agent" },
     });
     const result = {
       approvalRequired: true,
@@ -76,4 +78,8 @@ export async function stageHostedToolProposal(
     console.error("[mcp] staging failed", name, cause instanceof Error ? cause.message : cause);
     return error("The change could not be staged. Check the tool arguments and try again; nothing was executed.");
   }
+}
+
+export function stageHostedToolProposal(name: WorkspaceToolName, args: Record<string, unknown>, context: ToolContext): Promise<CallToolResult> {
+  return stageAgentToolProposal(name, args, context, "hosted_mcp");
 }

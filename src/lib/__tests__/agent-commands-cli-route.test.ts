@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const verifyTextTextApiToken = vi.fn();
 const runWorkspaceToolForAuth = vi.fn();
+const stageAgentToolProposal = vi.fn();
+vi.mock("@/lib/mcp/write-proposals", () => ({ stageAgentToolProposal: (...args: unknown[]) => stageAgentToolProposal(...args) }));
 
 vi.mock("@/lib/mcp/auth", () => ({
   verifyTextTextApiToken: (...args: unknown[]) =>
@@ -54,7 +56,7 @@ describe("POST /api/agent/commands", () => {
     });
   });
 
-  it.each(["proposal:update_item", "move_item"])("rejects %s before legacy dispatch for a file workspace", async name => {
+  it.each(["proposal:delete_folder", "delete_folder"])("rejects %s before legacy dispatch for a file workspace", async name => {
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", "/fixture");
     const response = await POST(command(name, { id: "item-1" }));
     expect(response.status).toBe(400);
@@ -75,6 +77,21 @@ describe("POST /api/agent/commands", () => {
       args,
       expect.anything(),
     );
+  });
+
+  it("stages explicit retirement with trusted local origin and never directly executes", async () => {
+    stageAgentToolProposal.mockResolvedValue({ structuredContent: { approvalRequired: true, proposalId: "proposal-1", reviewUrl: "https://texttext.app/proposals/proposal-1" } });
+    const args = { template_id: "local.test", source_item_id: "source", source_hash: "a".repeat(64), idempotency_key: "key" };
+    const response = await POST(command("proposal:retire_document_template", args));
+    expect(response.status).toBe(200);
+    expect(stageAgentToolProposal).toHaveBeenCalledWith("retire_document_template", args, expect.objectContaining({ authInfo: expect.objectContaining({ extra: expect.objectContaining({ actorType: "external_agent", userId: "user-1" }) }) }), "local_cli");
+    expect(runWorkspaceToolForAuth).not.toHaveBeenCalled();
+  });
+  it.each([{ scopes: ["read"] }, { scopes: ["sync", "item:11111111-1111-4111-8111-111111111111:edit"] }])("cannot stage proposals with restricted scopes %j", async ({ scopes }) => {
+    verifyTextTextApiToken.mockResolvedValue({ scopes, extra: { userId: "user-1", sub: "sub-1" } });
+    expect((await POST(command("proposal:retire_document_template", {}))).status).toBe(403);
+    expect(stageAgentToolProposal).not.toHaveBeenCalled();
+    expect(runWorkspaceToolForAuth).not.toHaveBeenCalled();
   });
 
   // The boundary that did not move. Widening the surface must not hand a local
