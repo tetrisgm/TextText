@@ -31,9 +31,17 @@
 - Shared journal path rebasing now has a recoverable move intent on Mac.
   Both interruption windows preserve file bytes, pending updates and journal
   generation; occupied destinations are refused. All 16 shared editing tests
-  passed (`/tmp/texttext-shared-rebase-tests-final.log`). This primitive is not
-  yet wired into sync: active-session reconciliation, Windows equivalence and
-  selected-editor path updates remain required before deployment.
+  passed (`/tmp/texttext-shared-rebase-tests-final.log`). This primitive is now
+  wired into Mac sync for unique unchanged shared projections, retaining the
+  session token and pending journal. A checkpoint prepared before the move
+  adopts the actor-owned current path. Active-session save and restart passed;
+  all 16 shared editing and 33 native sync tests passed
+  (`/tmp/texttext-active-rebase-tests.log`,
+  `/tmp/texttext-active-rebase-sync-tests.log`). Windows equivalence, live
+  sessions before their first checkpoint, and selected-editor identity/path
+  updates remain required before deployment. The UI still interprets a
+  missing old path as deletion and keys its boundary by path; fix that before
+  claiming live acceptance.
 
 - Folder staging retry identity is wired through shared dialog, web/Windows
   transport and Mac bridge. An unchanged retry returns one owner-bound frozen

@@ -162,11 +162,16 @@ public actor LocalVaultSync {
         guard !session.retired else { throw LocalVaultSyncFailure.changed }
         guard session.hash == expectedHash else { throw LocalVaultSyncFailure.changed }
         guard state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { throw LocalVaultSyncFailure.busy }
-        let journalObject = try JSONSerialization.jsonObject(with: Data(journal.utf8)) as? [String: Any]
-        let retirement = journalObject?["retired"] as? String
+        guard var journalObject = try JSONSerialization.jsonObject(with: Data(journal.utf8)) as? [String: Any] else { throw LocalVaultSharedFailure.invalid }
+        // The actor owns file location. A browser checkpoint may have been
+        // prepared immediately before a remote rename was reconciled.
+        let pathChanged = journalObject["relativePath"] as? String != session.path
+        journalObject["relativePath"] = session.path
+        let rebasedJournal = pathChanged ? String(decoding: try JSONSerialization.data(withJSONObject: journalObject), as: UTF8.self) : journal
+        let retirement = journalObject["retired"] as? String
         let checkpoint = LocalVaultSharedCheckpoint(itemId: itemId, path: session.path, projectedHash: expectedHash,
             acknowledgedRevision: acknowledgedRevision, epoch: epoch, seq: seq, journalGeneration: journalGeneration,
-            journal: journal, pending: pending, retiredReason: retirement)
+            journal: rebasedJournal, pending: pending, retiredReason: retirement)
         do {
             let result = try sharedStore.materialize(checkpoint: checkpoint, expectedHash: expectedHash, markdown: markdown, documentJSON: documentJSON)
             sharedSessions[itemId]?.hash = result.document.hash
@@ -728,7 +733,28 @@ public actor LocalVaultSync {
         for id in ids[start..<(start + count)] {
             var activePath = localByID[id]?.first ?? remoteByID[id]?.relativePath ?? state.baselines[id]?.path ?? id
             do {
-                if try sharedProtection(itemId: id) { continue }
+                if try sharedProtection(itemId: id) {
+                    // Content protection must not pin an identity to an obsolete
+                    // path. Rebase only a unique, unchanged shared projection.
+                    if let remote = remoteByID[id], !remote.isDeleted,
+                       state.outbox[id] == nil, state.conflicts[id] == nil,
+                       (localByID[id]?.count ?? 0) == 1,
+                       let saved = try readSharedCheckpoint(itemId: id), saved.retiredReason == nil,
+                       saved.path != remote.relativePath,
+                       localByID[id]?.first == saved.path,
+                       sharedSessions[id]?.retired != true {
+                        let moved = try sharedStore.rebase(itemId: id, newPath: remote.relativePath)
+                        sharedSessions[id]?.path = moved.path
+                        state.identities?.removeValue(forKey: saved.path)
+                        state.identities?[moved.path] = id
+                        if var baseline = state.baselines[id] {
+                            baseline.path = moved.path; state.baselines[id] = baseline
+                        }
+                        activePath = moved.path
+                        try persist(); report.downloaded += 1
+                    }
+                    continue
+                }
                 guard (localByID[id]?.count ?? 0) <= 1 else { throw LocalVaultSyncFailure.duplicateIdentity(activePath) }
                 if let pending = state.outbox[id] {
                     if await canSend(pending) { report.hasMore = true }

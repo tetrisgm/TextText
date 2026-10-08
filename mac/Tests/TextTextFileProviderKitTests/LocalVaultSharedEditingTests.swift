@@ -131,7 +131,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         XCTAssertNotNil(retained.retiredReason); XCTAssertTrue(retained.pending)
         XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, written.hash)
     }
-    func testRemoteFolderMoveWaitsForSharedProjectionAcknowledgement() async throws {
+    func testRemoteFolderMovePreservesActiveSessionAndPendingEdits() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
         let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
@@ -143,36 +143,25 @@ final class LocalVaultSharedEditingTests: XCTestCase {
             journalGeneration: 1, journal: target.journal, pending: true, markdown: change.0, documentJSON: change.1)
         let moved = "Archive/Shared/Note.textpack"
         await transport.set(itemId: itemId, path: moved, data: try Data(contentsOf: root.appendingPathComponent(path)))
-        _ = try await engine.sync()
-        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
-        _ = try await restarted.sync()
-        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, written.document.hash)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(moved).path))
-        let heldCounts = await transport.counts()
-        XCTAssertEqual(heldCounts.0, 1); XCTAssertEqual(heldCounts.1, 0)
-        let reopened = try await restarted.beginSharedEditing(itemId: itemId, path: path, expectedHash: written.document.hash)
-        var clean = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any])
-        clean["pending"] = [String]()
-        clean["seq"] = 1
-        clean["journalGeneration"] = 2
-        clean["revision"] = written.document.hash
-        let journal = String(decoding: try JSONSerialization.data(withJSONObject: clean), as: UTF8.self)
-        _ = try await restarted.materializeSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId,
-            expectedHash: written.document.hash, epoch: 1, seq: 1, acknowledgedRevision: written.document.hash,
-            journalGeneration: 2, journal: journal, pending: false, markdown: change.0, documentJSON: change.1)
-        try await restarted.endSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId)
-        let released = try await restarted.sync()
-        XCTAssertTrue(released.errors.isEmpty)
+        let report = try await engine.sync()
+        XCTAssertTrue(report.errors.isEmpty)
         XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: moved).hash, written.document.hash)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
-        let finalEngine = try LocalVaultSync(root: root, binding: binding, transport: transport)
-        let final = try await finalEngine.sync()
-        XCTAssertTrue(final.errors.isEmpty)
-        XCTAssertTrue(final.conflicts.isEmpty)
-        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: moved).hash, written.document.hash)
-        let counts = await transport.counts()
-        XCTAssertEqual(counts.0, 1)
+        var journal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any])
+        journal["journalGeneration"] = 2
+        let next = try changes(written.document, body: "Still editing after the move")
+        let saved = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: written.document.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 2, journal: String(decoding: JSONSerialization.data(withJSONObject: journal), as: UTF8.self),
+            pending: true, markdown: next.0, documentJSON: next.1)
+        XCTAssertEqual(saved.document.path, moved)
+        XCTAssertTrue(saved.checkpoint.pending)
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let reopened = try await restarted.beginSharedEditing(itemId: itemId, path: moved, expectedHash: saved.document.hash)
+        XCTAssertEqual(reopened.checkpoint?.journalGeneration, 2)
+        XCTAssertTrue(reopened.checkpoint?.pending == true)
+        XCTAssertEqual(reopened.document.contents.markdown, next.0)
     }
 
     func testActorSuppressesSnapshotUploadAndDownloadForPendingAcrossRestart() async throws {
