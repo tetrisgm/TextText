@@ -106,8 +106,10 @@ extension DocumentStore {
             throw TextTextCLIError.invalidDocument("invalid prepared creation package")
         }
         let target = root.appendingPathComponent(intent.destination).standardizedFileURL
+        let requestedDirectory = folder.map { root.appendingPathComponent($0, isDirectory: true) } ?? root
+        let requestedTarget = requestedDirectory.appendingPathComponent(DocumentCreation.filename(for: title) + ".textpack").standardizedFileURL
         guard !intent.destination.hasPrefix("/"), target.resolvingSymlinksInPath().path.hasPrefix(canonicalRoot),
-              target.pathExtension == "textpack" else {
+              target == requestedTarget, target.pathExtension == "textpack" else {
             throw TextTextCLIError.invalidDocument("invalid creation destination")
         }
         var error: NSError?

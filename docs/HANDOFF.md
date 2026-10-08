@@ -46,6 +46,12 @@
 
 ## Current work and next checks
 
+- Creation recovery also verifies its recorded destination against the
+  original requested folder/title before publishing. A corrupted intent cannot
+  redirect a prepared file into another workspace folder. Agent-file/local-vault
+  suites: 32 tests passed; `/tmp/texttext-creation-destination-fence.log`.
+  Source only; no installed runtime acceptance claimed.
+
 - Prepared creation intents now pin the package checksum before publication.
   Resumption refuses changed staging bytes and retains them for recovery.
   Version-1 journals still find already-published identities; unverified legacy

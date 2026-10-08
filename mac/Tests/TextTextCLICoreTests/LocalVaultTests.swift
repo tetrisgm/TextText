@@ -104,6 +104,26 @@ final class LocalVaultTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
     }
 
+    func testPreparedIntentCannotRedirectPublicationToAnotherFolder() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Notes"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Other"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DocumentStore(root: root)
+        let target = try store.createWithRetryKey(title: "Scoped", body: "Body", folder: "Notes", kind: nil, key: "scope")
+        let id = try XCTUnwrap(store.itemId(at: target))
+        let journal = root.appendingPathComponent(".texttext/cli-creations")
+        let stage = journal.appendingPathComponent(id + ".textpack")
+        try FileManager.default.moveItem(at: target, to: stage)
+        let receipt = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: journal, includingPropertiesForKeys: nil).first { $0.pathExtension == "json" })
+        var record = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: receipt)) as? [String: Any])
+        record["destination"] = "Other/Scoped.textpack"
+        try JSONSerialization.data(withJSONObject: record).write(to: receipt)
+        XCTAssertThrowsError(try store.createWithRetryKey(title: "Scoped", body: "Body", folder: "Notes", kind: nil, key: "scope"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stage.path))
+        XCTAssertTrue(try store.list().isEmpty)
+    }
+
     func testConcurrentKeyedCreationPublishesOneIdentity() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
