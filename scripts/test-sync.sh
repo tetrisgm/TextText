@@ -26,3 +26,12 @@ for suite in DocumentCreation RemoteDocumentStore; do
     exit 1
   }
 done
+
+# The Windows file/sync core is portable .NET. Run its algorithm and journal
+# regressions on the Mac gate as well as the actual Windows candidate build.
+dotnet run --project windows/TextText.Core.Tests/TextText.Core.Tests.csproj \
+  --configuration Release 2>&1 | tee "$test_log"
+grep -q 'All native file and durable sync regression tests passed.' "$test_log" || {
+  echo 'Required Windows sync regressions did not execute.' >&2
+  exit 1
+}

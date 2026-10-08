@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const inputs = ['src', 'sync', 'presets/builtin', 'scripts/generate-builtin-presets.ts', 'scripts/builtin-preset-assets.ts', 'scripts/fixtures', 'scripts/vault-http-test-server.ts', 'mac/Sources', 'mac/Tests',
   'scripts/build-local-vault.mjs', 'scripts/verify-production-shutdown.mjs', 'windows/scripts/build-ui.mjs', 'windows/TextText.Windows/TextText.Windows.csproj',
+  'windows/TextText.Core', 'windows/TextText.Core.Tests',
   'mac/Package.swift', 'mac/Package.resolved', 'package.json', 'package-lock.json',
   'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'release/ship.sh', 'mac/scripts/build-app.sh', 'mac/scripts/build-store.sh'];
 
@@ -17,7 +18,12 @@ export async function fingerprint(base, paths = inputs) {
     const stat = await fs.lstat(absolute);
     if (stat.isSymbolicLink()) throw new Error(`Sync input must not be a symlink: ${relative}`);
     if (stat.isDirectory()) {
-      for (const name of (await fs.readdir(absolute)).sort()) await visit(`${relative}/${name}`);
+      for (const name of (await fs.readdir(absolute)).sort()) {
+        // .NET regenerates these directories during tests. They are not
+        // source and must neither inflate nor invalidate verification hashes.
+        if (relative.startsWith('windows/') && ['bin', 'obj'].includes(name)) continue;
+        await visit(`${relative}/${name}`);
+      }
     } else if (stat.isFile() && !relative.endsWith('.md') && !relative.endsWith('.DS_Store')) {
       hash.update(relative).update('\0').update(await fs.readFile(absolute)).update('\0');
     }

@@ -47,6 +47,29 @@ test('missing, failed, stale and wrong-platform or scope receipts fail closed', 
   }
 });
 
+test('Windows sync sources and regressions invalidate receipts, generated .NET output does not', async () => {
+  assert.ok(inputs.includes('windows/TextText.Core'));
+  assert.ok(inputs.includes('windows/TextText.Core.Tests'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-windows-gate-'));
+  const paths = ['windows/TextText.Core', 'windows/TextText.Core.Tests'];
+  try {
+    for (const directory of paths) {
+      await fs.mkdir(path.join(root,directory),{recursive:true});
+      await fs.writeFile(path.join(root,directory,'Source.cs'),'original');
+    }
+    const before = await fingerprint(root,paths);
+    for (const generated of ['bin','obj']) {
+      await fs.mkdir(path.join(root,paths[0],generated));
+      await fs.writeFile(path.join(root,paths[0],generated,'output'),'generated');
+    }
+    assert.equal(await fingerprint(root,paths),before);
+    await fs.writeFile(path.join(root,paths[0],'Source.cs'),'changed sync');
+    const changed = await fingerprint(root,paths); assert.notEqual(changed,before);
+    await fs.writeFile(path.join(root,paths[1],'Source.cs'),'changed regression');
+    assert.notEqual(await fingerprint(root,paths),changed);
+  } finally { await fs.rm(root,{recursive:true,force:true}); }
+});
+
 test('default source fingerprint includes binary presets and their generation logic', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-preset-gate-'));
   try {

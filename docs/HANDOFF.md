@@ -28,6 +28,16 @@
 
 ## Current work
 
+- Remote-move verification exposed a Windows path-adoption bug with concurrent
+  offline edits. Windows now carries local bytes to the remote path before
+  upload and recovers interruption before baseline save. Path-strict Windows
+  tests passed 164 assertions; all 27 Mac sync tests passed. The native gate now
+  requires the portable Windows core suite, and its fingerprint includes those
+  sources/tests. Mandatory native verification passed. This remains source-only;
+  persisted-outbox/active-editor orderings and shared folder controls need
+  acceptance before shipping. PC still has TextText process 44968 running; do
+  not force-close its uninspected editor. [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+
 - Canonical `move_folder_tree` now stages a frozen file/folder/access review and
   executes it through the durable store only after owner approval. Approval saves
   the review hash and access acknowledgement atomically; receipt-only expiry is

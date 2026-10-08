@@ -101,7 +101,21 @@ public sealed class SyncEngine
                 }
                 if(server==null) continue; // Missing visibility is not authority to delete or recreate.
                 if(file.Path!=baseline.Path) {
-                    Queue(state,new(Guid.NewGuid().ToString(),"rename",id,baseline.Path,file.Path,baseline.Revision,baseline.Hash,null));await Drain(state,cancellation);if(Blocked(state,id))continue;baseline=state.Items[id];
+                    if(server.RelativePath==file.Path) {
+                        // A prior pass may have adopted the remote path before
+                        // its baseline save. Keep local content and finish that
+                        // adoption rather than issuing another remote rename.
+                        baseline=baseline with{Path=file.Path};state.Items[id]=baseline;Save(state);store.ClearIntent(id);
+                    } else {
+                        Queue(state,new(Guid.NewGuid().ToString(),"rename",id,baseline.Path,file.Path,baseline.Revision,baseline.Hash,null));await Drain(state,cancellation);if(Blocked(state,id))continue;baseline=state.Items[id];
+                    }
+                } else if(server.RelativePath!=baseline.Path) {
+                    // Folder moves preserve the remote revision. Rebase the
+                    // current local bytes first, including offline agent edits,
+                    // then upload against the unchanged content baseline.
+                    store.Rename(file.Path,server.RelativePath,file.Hash);
+                    file=store.Describe(server.RelativePath);local[id]=file;
+                    baseline=baseline with{Path=file.Path};state.Items[id]=baseline;Save(state);store.ClearIntent(id);
                 }
                 if(file.Hash!=baseline.Hash) { QueueUpload(state,file,baseline.Revision);await Drain(state,cancellation); }
                 else if(baseline.Refresh || server.Revision!=baseline.Revision || server.RelativePath!=file.Path) await Pull(state,id,file,cancellation,server.Lifecycle,server.Revision);

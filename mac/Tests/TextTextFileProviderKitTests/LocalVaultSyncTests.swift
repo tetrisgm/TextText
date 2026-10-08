@@ -490,6 +490,30 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(".texttext/history/" + revision + ".textpack")), bytes)
     }
 
+    func testRemoteFolderMoveCarriesConcurrentLocalEditAcrossRestart() async throws {
+        let original = try pack("Initial")
+        let edited = try pack("Offline agent edit")
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        _ = try await engine(transport).sync()
+        let movedPath = "Archive/One/Note.textpack"
+        _ = try await transport.rename(itemId: itemId, from: path, to: movedPath,
+            baseRevision: TextTextStableDigest.sha256Hex(original), operationId: UUID().uuidString)
+        try putLocal(edited)
+        let report = try await engine(transport).sync()
+        XCTAssertTrue(report.errors.isEmpty)
+        XCTAssertTrue(report.conflicts.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(movedPath)), edited)
+        let remote = try await transport.download(itemId: itemId)
+        XCTAssertEqual(remote.relativePath, movedPath)
+        XCTAssertEqual(remote.data, edited)
+        let count = await transport.operations().count
+        _ = try await engine(transport).sync()
+        let after = await transport.operations().count
+        XCTAssertEqual(after, count)
+    }
+
     func testRemoteDeletionCannotEraseAnOfflineEdit() async throws {
         let original = try pack("Initial")
         let edited = try pack("Offline edit")

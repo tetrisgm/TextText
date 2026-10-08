@@ -72,7 +72,8 @@ local PostgreSQL grants tests cover account-bound membership discovery.
 
 - `windows/scripts/build.ps1`: native Windows storage/agent checks, shared client tests, TypeScript, and a source-bound self-contained candidate.
 - `windows/scripts/smoke.ps1`: real WebView editor plus actual native-window save/close handshake, isolated from user accounts.
-- `npm run test:sync`: portable contracts, TypeScript and native Mac/HTTP tests.
+- `npm run test:sync`: portable contracts, TypeScript, native Mac/HTTP tests and
+  the portable Windows file/sync core regressions on the Mac.
 - `npm run test:sync:core`: server/client tests and TypeScript on macOS/Linux.
 - `npm run test:sync:client`: client/transport/merge/auth tests and TypeScript on Windows.
 - `npm run test:sync:check`: require passing Mac core/native receipts for the
@@ -90,6 +91,9 @@ comment replay/attribution, cleanup, and expiry use the production file store.
 A failed rerun invalidates the earlier receipt before tests start. A source change
 during execution prevents a receipt. Source, tests, package lock and gate code
 are fingerprinted, including additions and deletions. Prose is excluded.
+The Windows core and its regression sources are included; generated .NET
+`bin`/`obj` output is excluded. Windows candidate builds also execute these
+tests on Windows, where filesystem behavior is platform-specific.
 
 The public entry points are `src/sync/client.ts` and `src/sync/server.ts`.
 Old import locations contain only compatibility exports. Dependency tests follow
