@@ -21,6 +21,9 @@ type MockRemoteToolsResult = {
   ttlMs: number | null;
 };
 
+const serverDrain = vi.hoisted(() => ({ controller: new AbortController() }));
+vi.mock("@/sync/engine/read-drain", () => ({ readDrainSignal: () => serverDrain.controller.signal }));
+
 const turnPresence = vi.hoisted(() => ({ start: vi.fn(), close: vi.fn() }));
 vi.mock("@/lib/ai/cloud-turn-presence.server", () => ({ startCloudTurnPresence: turnPresence.start }));
 const mocks = vi.hoisted(() => ({
@@ -177,6 +180,7 @@ let currentUser = user;
 
 describe("/api/ai cloud assistant route", () => {
   beforeEach(() => {
+    serverDrain.controller = new AbortController();
     turnPresence.close.mockReset().mockResolvedValue(undefined);
     turnPresence.start.mockReset().mockResolvedValue({ close: turnPresence.close });
     vi.clearAllMocks();
@@ -660,6 +664,27 @@ describe("/api/ai cloud assistant route", () => {
     expect(turnPresence.close).toHaveBeenCalled();
     release();
     await hold;
+    expect(mocks.recordWorkspaceAiResult).not.toHaveBeenCalled();
+  });
+
+  it("closes an active model response on server drain without reporting successful completion", async () => {
+    mocks.streamText.mockImplementation(({ abortSignal }: { abortSignal: AbortSignal }) => ({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "Partial answer" };
+        await new Promise<void>(resolve => {
+          if (abortSignal.aborted) resolve();
+          else abortSignal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        yield { type: "finish" };
+      })(),
+    }));
+    const response = await POST(post({ ...turn, stream: true }));
+    const signal = mocks.streamText.mock.calls.at(-1)![0].abortSignal as AbortSignal;
+    serverDrain.controller.abort();
+    expect(signal.aborted).toBe(true);
+    const events = (await response.text()).trim().split("\n").map(line => JSON.parse(line));
+    expect(events.some(event => event.type === "complete")).toBe(false);
+    expect(turnPresence.close).toHaveBeenCalled();
     expect(mocks.recordWorkspaceAiResult).not.toHaveBeenCalled();
   });
 

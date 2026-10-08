@@ -477,6 +477,12 @@ and actions, with a personal per-device/workspace preference.
   found. Do not create a duplicate. Standalone CLI receipt:
   [current CLI](verification/2026-10-07-standalone-cli-current.md).
 
+## Assistant shutdown drain follow-up
+
+- Cloud assistant generation now receives the existing server lifecycle drain signal as well as request cancellation and its 55-second deadline. Previously an active assistant response could exceed Oracle’s 30-second service stop window even when vault polls drained. This cancels generation, not durable file-store transactions.
+- Added route regression: a stalled model stream wakes on drain, closes presence/response and never records a successful partial answer. All 58 assistant route tests and TypeScript passed. Logs `/tmp/texttext-ai-drain-tests.log`, `/tmp/texttext-ai-drain-types.log`.
+- Not deployed. This removes a concrete shutdown gap but does not prove the cause of the observed Oracle timeout; isolated production and actual rollout drain acceptance remain necessary.
+
 ## Live image command acceptance
 
 - Dedicated CLI image-add/remove proposals completed through actual signed-in Safari on Oracle. Mac 1201 rendered the embedded image, then refreshed removal automatically; image bytes remained inside the iCloud TextPack for recovery. [Receipt](verification/2026-10-08-live-agent-image-roundtrip.md). Windows rendering and autonomous model tool selection remain unverified.

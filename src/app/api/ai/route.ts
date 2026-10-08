@@ -1,3 +1,4 @@
+import { readDrainSignal } from "@/sync/engine/read-drain";
 import { VaultAgentPresenceAuthorizationError } from "@/lib/mcp/vault-agent-presence";
 import { startCloudTurnPresence } from "@/lib/ai/cloud-turn-presence.server";
 import { canonicalContextItem, canonicalContextIndex } from "@/lib/ai/canonical-context.server";
@@ -1059,7 +1060,7 @@ export async function POST(request: Request) {
     ...(["read_only", "workspace_review"].includes(String(requestView.mode)) ? {} : remoteTools),
   };
   const streamCancellation = new AbortController();
-  const generationSignal = AbortSignal.any([request.signal, streamCancellation.signal, AbortSignal.timeout(55_000)]);
+  const generationSignal = AbortSignal.any([request.signal, streamCancellation.signal, readDrainSignal(), AbortSignal.timeout(55_000)]);
   let presence: Awaited<ReturnType<typeof startCloudTurnPresence>>;
   try {
     presence = await startCloudTurnPresence({ ...actor, itemId: requestView.postId,
