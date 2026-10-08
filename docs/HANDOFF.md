@@ -5,7 +5,9 @@
 - Mac `/Applications/TextText.app`: **0.204 (1190)**, source `5254ff85`.
   Startup, preserved note, save/search/relaunch and automatic delivery to Safari
   passed. CLI also updated. [Receipt](verification/2026-10-08-template-cohort-1190.md).
-- Windows: same source `54f33a4e`, installed in the existing location.
+- Windows: source `5254ff85`, installed in the existing location. Existing note
+  and markers survived; sync recovered automatically after Oracle restart.
+  Account-label refresh follow-up is in progress.
 - Oracle: **texttext-oracle-20261008T083707Z-5254ff85**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
   timestamps are unchanged. Fresh backup `texttext-20261008T083940Z-21135a8d.dump`.
