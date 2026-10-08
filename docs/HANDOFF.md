@@ -2,16 +2,18 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1201)**, source `2f959327`.
+- Mac `/Applications/TextText.app`: **0.204 (1202)**, source `c58114ad`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
   [Receipt](verification/2026-10-08-parent-native-contract.md).
+  Latest core/native/browser gates, startup, existing note save/reopen and
+  search freshness: [1202 receipt](verification/2026-10-08-mac-1202.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T144520Z-da36425d**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T155231Z-0533908b**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T134032Z-e279b2e0.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T155439Z-9fb8b835.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
