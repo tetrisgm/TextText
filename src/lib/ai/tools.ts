@@ -1004,11 +1004,12 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
   add_comment: defineTool("add_comment", {
     title: "Add comment",
     description:
-      "Add a comment or reply on one item, optionally anchored to an exact quote.",
+      "Add a comment or reply on one item, optionally anchored to an exact quote. Pass a stable idempotency_key for safe retries.",
     inputSchema: z
       .object({
         id,
         body: z.string().trim().min(1).max(20_000),
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
         parent_comment_id: z.string().trim().min(1).max(128).optional(),
         anchor_field: z.enum(["title", "excerpt", "body"]).optional(),
         anchor_exact: z.string().min(1).max(4_000).optional(),
