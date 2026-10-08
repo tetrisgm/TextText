@@ -1030,6 +1030,16 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: activeItemPath });
     setAssistantOpen(true);
   }, [activeItemPath, activeWorkspaceRoot, setSidebarVisible]);
+  const beginFolderAgent = useCallback(() => {
+    const folder = destinationFolder.trim();
+    if (!allowFolderPicker || !activeWorkspaceRoot || selected || !canCreate || (folder && !folders.includes(folder))) return;
+    setFolderAssistantTarget(null);
+    setAssistantTargetPath(null);
+    assistantReturnFocus.current = focusedControl();
+    if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
+    setAssistantRequest({ type: "agent", scope: "folder", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: folder });
+    setAssistantOpen(true);
+  }, [allowFolderPicker, activeWorkspaceRoot, selected, canCreate, folders, destinationFolder, setSidebarVisible]);
   const askItemAgent = useCallback((path: string, question: string, imageAssetId?: string) => {
     if (!activeWorkspaceRoot || !listing?.items.some(item => item.path === path)) return;
     assistantReturnFocus.current = focusedControl();
@@ -1306,6 +1316,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
                 {canManageFiles && destinationFolder.trim() && <button disabled={busy} onClick={() => { closeMoreActions(); void operate(async () => setMovingFolder(destinationFolder.trim())); }}>Rename or move folder</button>}
                 {canCreate && <button disabled={busy} onClick={openFolderDesign}>Choose folder design</button>}
                 {(allowFolderPicker || webAssistant) && canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); void operate(customizeCurrent); }}>Customize folder</button>}
+                {allowFolderPicker && canCreate && <button disabled={busy} onClick={() => { closeMoreActions(); beginFolderAgent(); }}>Add agent</button>}
                 {canOpenRecovery && <button disabled={busy} onClick={() => openRecovery()}>Trash and recovery</button>}
                 {allowFolderPicker && <button disabled={busy} onClick={openWorkspaceFolder}>Open another folder…</button>}
               </>}
@@ -1480,6 +1491,6 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess} onAskAgent={allowFolderPicker || webAssistant ? askItemAgent : undefined}
       onClose={() => { setImportedGalleryPath(null); refresh(); }}
       onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
-    {(allowFolderPicker || webAssistant) && <NativeAssistant targetTitle={selected ? { path: selected.path, title: contextTitle } : undefined} webAssistant={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path ?? (folderTargetMatches ? folderAssistantTarget?.path : undefined)} request={folderAssistantTarget && !folderTargetMatches ? null : assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
+    {(allowFolderPicker || webAssistant) && <NativeAssistant folder={!selected ? destinationFolder.trim() : undefined} targetTitle={selected ? { path: selected.path, title: contextTitle } : undefined} webAssistant={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path ?? (folderTargetMatches ? folderAssistantTarget?.path : undefined)} request={folderAssistantTarget && !folderTargetMatches ? null : assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
   </div>;
 }

@@ -38,9 +38,12 @@
   startup, existing notes, search, save/reopen, Gallery metadata and live sync.
 - Finish automatic reconnect/failure acceptance and canonical sharing with a
   fresh principal and durable acknowledgments. Preserve existing sync gates.
-- Agent folder creation is unfinished: shared UI only starts item tasks; Windows
-  agent tools are item-scoped. Mac folder tools require an explicit folder task
-  flow across clients. Mac bridge now accepts validated `folderPath`, rejects
+- Agent folder creation is unfinished: desktop source now exposes Add agent
+  from the current folder menu, passing explicit folder scope without an item
+  path. Actual bundled browser dispatch and existing web customization checks
+  passed; TypeScript passed. Logs `/tmp/texttext-folder-agent-browser-fixed.log`
+  and `/tmp/texttext-folder-customize-regression.log`. Dark preview inspected.
+  This action is not installed and actual model creation remains unverified. Mac bridge now accepts validated `folderPath`, rejects
   mixed item/folder/photo/customization requests, and exposes creation tools
   within that boundary. All 16 controller tests passed; log
   `/tmp/texttext-explicit-agent-folder.log`. UI/Windows wiring is pending.
@@ -51,8 +54,8 @@
   draft recovery, updates, send and cancellation; it sends `folderPath` instead
   of an item path. Eight scope regressions and TypeScript passed
   (`/tmp/texttext-folder-panel-scope.log`, `/tmp/texttext-folder-panel-types.log`).
-  Folder action/target wiring, Windows/hosted folder tools and full panel browser
-  acceptance remain pending. The folder action is not exposed yet.
+  Hosted folder authorization and full model acceptance remain pending.
+  Desktop folder action wiring is in source; hosted action is not exposed.
   Windows shared folder tool adapter now implements list/create/read/write with
   existing-folder and path-boundary validation; four adapter regressions and
   TypeScript passed (`/tmp/texttext-windows-folder-tools.log`,
