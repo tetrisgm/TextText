@@ -48,6 +48,7 @@ class MemoryProposalRepository implements WorkspaceWriteProposalRepository {
   rejectCompletion = false;
 
   async create(proposal: StoredWorkspaceWriteProposal) {
+    if (this.rows.has(proposal.id)) throw new Error("duplicate proposal");
     this.rows.set(proposal.id, structuredClone(proposal));
   }
 
@@ -180,6 +181,33 @@ async function createCapture(
 }
 
 describe("workspace write proposals", () => {
+  it("retains one frozen proposal for concurrent staging retries and rejects changed intent", async () => {
+    const h = harness();
+    const input = {actor: owner, tool: "create_item", arguments: {capture: "One note"}, stagingKey: "retry-key-123456789"};
+    const [first, retry] = await Promise.all([createWorkspaceWriteProposal(input,h.dependencies),createWorkspaceWriteProposal(input,h.dependencies)]);
+    expect(retry).toEqual(first); expect(h.repository.rows.size).toBe(1); expect(h.execute).not.toHaveBeenCalled();
+    h.advance(1000);
+    expect(await createWorkspaceWriteProposal(input,h.dependencies)).toEqual(first);
+    await expect(createWorkspaceWriteProposal({...input,arguments:{capture:"Different note"}},h.dependencies)).rejects.toThrow("different change");
+    h.repository.rows.get(first.id)!.status = "completed";
+    await expect(createWorkspaceWriteProposal(input,h.dependencies)).rejects.toThrow("already been reviewed");
+    expect(h.repository.rows.size).toBe(1);
+  });
+
+  it("reuses the original reviewed folder plan without refreshing its expiry or access preview", async () => {
+    const h = harness();
+    const review = freezeFolderMoveReview(planFolderMove({source:"Source",destination:"Archive/Moved",manifestRevision:"a".repeat(64),folders:["Source","Archive"],items:[],grants:[]}));
+    h.dependencies.resolveFolderMove = vi.fn(async () => review);
+    const input = {actor:owner,tool:"move_folder_tree",arguments:{source_path:"Source",destination_path:"Archive/Moved",idempotency_key:"caller"},stagingKey:"folder-retry-123456"};
+    const first = await createWorkspaceWriteProposal(input,h.dependencies);
+    h.dependencies.resolveFolderMove = vi.fn(async () => {throw new Error("world changed");});
+    expect(await createWorkspaceWriteProposal(input,h.dependencies)).toEqual(first);
+    expect(h.dependencies.resolveFolderMove).not.toHaveBeenCalled();
+    h.advance(24*60*60*1000);
+    await expect(createWorkspaceWriteProposal(input,h.dependencies)).rejects.toThrow("expired");
+    expect(h.repository.rows.size).toBe(1);
+  });
+
   it.each(["human", "ai", "external_agent"] as const)("preserves %s attribution and stages the authoritative folder review and executes only that stored plan after acknowledgement", async (actorType) => {
     const h = harness();
     const initiatingActor = { ...owner, actorType };

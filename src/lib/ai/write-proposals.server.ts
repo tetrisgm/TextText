@@ -1,7 +1,7 @@
 import { documentAssetSchema, type DocumentAsset } from "@/lib/documents/model";
 // Server-only durable approval service for cloud-assistant workspace writes.
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { auditCteFrom, auditInsertQuery } from "@/lib/audit";
 import { db, executeAtomicBatch } from "@/lib/db/client";
@@ -424,6 +424,7 @@ export async function createWorkspaceWriteProposal(
     tool: string;
     arguments: unknown;
     ttlMs?: number;
+    stagingKey?: string;
     origin?: { surface: "hosted_mcp" | "local_cli"; connectionName: string };
   },
   dependencies: WorkspaceWriteProposalDependencies = defaultDependencies,
@@ -437,7 +438,27 @@ export async function createWorkspaceWriteProposal(
     MAX_WRITE_PROPOSAL_TTL_MS,
   );
   const expiresAt = new Date(now.getTime() + ttl);
-  const id = dependencies.randomId();
+  if (input.stagingKey !== undefined && !/^[A-Za-z0-9_-]{16,128}$/.test(input.stagingKey)) throw new Error("Invalid proposal staging identifier.");
+  const stagingDigest = input.stagingKey === undefined ? null : createHash("sha256").update(JSON.stringify([
+    requested.name, requested.arguments, input.origin ?? null, input.actor.connectionId ?? null, input.actor.actorType ?? "ai",
+  ])).digest("hex");
+  const identity = input.stagingKey === undefined ? null : createHash("sha256").update(JSON.stringify([
+    owner.binding.blogId, owner.binding.actorUserId, input.stagingKey,
+  ])).digest("hex");
+  const id = identity ? `${identity.slice(0,8)}-${identity.slice(8,12)}-4${identity.slice(13,16)}-8${identity.slice(17,20)}-${identity.slice(20,32)}` : dependencies.randomId();
+  const resume = (stored: StoredWorkspaceWriteProposal): WorkspaceWriteProposalPreview => {
+    if (stored.metadata?.stagingDigest !== stagingDigest) throw new Error("Proposal staging identifier was reused for a different change.");
+    if (stored.status !== "pending" || stored.expiresAt.getTime() <= now.getTime()) throw new Error("This proposal has already been reviewed or expired.");
+    const frozen = stored.metadata?.preview as FrozenProposalPreview | undefined;
+    return { id: stored.id, kind: "workspace", status: "pending", tool: stored.toolName as WorkspaceToolName,
+      title: WORKSPACE_TOOL_DEFINITIONS[stored.toolName as WorkspaceToolName].title,
+      summary: frozen ? describeFrozenPreview(frozen) : workspaceWriteProposalSummary(stored.toolName as WorkspaceToolName, stored.arguments),
+      arguments: stored.arguments, createdAt: stored.createdAt.toISOString(), expiresAt: stored.expiresAt.toISOString() };
+  };
+  if (identity) {
+    const existing = await dependencies.repository.get(id, owner.binding);
+    if (existing) return resume(existing);
+  }
   if (!DURABLE_PROPOSAL_TOOLS.has(requested.name)) throw new Error("This command has no durable approval receipt.");
   const validated = validateWorkspaceWriteProposal(requested.name, { ...requested.arguments, idempotency_key: `proposal:${id}` });
   // Freeze what this will do, while the person is looking at it. Ids are not
@@ -490,7 +511,7 @@ export async function createWorkspaceWriteProposal(
       }),
     };
   }
-  await dependencies.repository.create({
+  try { await dependencies.repository.create({
     id,
     ...owner.binding,
     proposalKind: "workspace",
@@ -501,13 +522,22 @@ export async function createWorkspaceWriteProposal(
       ...(preview ? { preview } : {}),
       ...(input.origin ? { origin: input.origin } : {}),
       durableCommandVersion: 1,
+      ...(stagingDigest ? { stagingDigest } : {}),
       agentConnectionId: input.actor.connectionId ?? `assistant:${input.actor.userId}`,
       agentActorType: input.actor.actorType ?? "ai",
     },
     status: "pending",
     createdAt: now,
     expiresAt,
-  });
+  }); } catch (error) {
+    // A concurrent retry may win the primary-key insert. Its audit and frozen
+    // preview are authoritative; never overwrite them or execute a second plan.
+    if (identity) {
+      const existing = await dependencies.repository.get(id, owner.binding);
+      if (existing) return resume(existing);
+    }
+    throw error;
+  }
   return {
     id,
     kind: "workspace",

@@ -28,6 +28,20 @@
 
 ## Current work
 
+- Proposal service now accepts an optional durable staging key. Owner/workspace
+  identity determines one proposal ID; stored intent rejects key reuse for a
+  different change. Concurrent insert conflicts return the original frozen
+  preview without refreshing expiry or duplicating its audit. Reviewed/expired
+  keys fail closed. Folder dialog and native/web transports still need to carry
+  the key; this service change is not deployed or claimed as end-to-end complete.
+  Proposal tests: 37 passed; TypeScript passed. Receipts:
+  `/tmp/texttext-proposal-staging-retry-tests.log`,
+  `/tmp/texttext-proposal-staging-retry-types.log`.
+  Additional proposal suites: assistant/outbound 13 passed. The old bulk
+  `delete-items-proposal` suite has nine failures because it still stages retired
+  `delete_items`; canonical policy rejects that tool before the new staging code.
+  Reconcile this obsolete suite before pushing the staging work.
+
 - Mac 1197 installs durable native folder-catalog reconciliation. Frozen core
   (795 tests) and native gates passed. Live reviewed move
   `932e1d17-5790-4de2-bcab-08d04496e817` preserved the TextPack hash and empty
