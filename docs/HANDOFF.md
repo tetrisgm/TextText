@@ -40,7 +40,11 @@
   fresh principal and durable acknowledgments. Preserve existing sync gates.
 - Agent folder creation is unfinished: shared UI only starts item tasks; Windows
   agent tools are item-scoped. Mac folder tools require an explicit folder task
-  flow across clients. Ordinary Mac item tasks no longer expand scope because of
+  flow across clients. Mac bridge now accepts validated `folderPath`, rejects
+  mixed item/folder/photo/customization requests, and exposes creation tools
+  within that boundary. All 16 controller tests passed; log
+  `/tmp/texttext-explicit-agent-folder.log`. UI/Windows wiring is pending.
+  Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.
   Local CLI create needs durable idempotency-key handling. Keyed append now

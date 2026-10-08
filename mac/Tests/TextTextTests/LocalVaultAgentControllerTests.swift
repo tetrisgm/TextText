@@ -80,6 +80,22 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     private struct Timeout: Error {}
 
     @MainActor
+    func testExplicitFolderTaskExposesCreationWithinValidatedBoundary() async throws {
+        let (root, controller, server) = try await fixture()
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Notes"), withIntermediateDirectories: true)
+        XCTAssertThrowsError(try controller.send(taskID: "outside", prompt: "Create", folderPath: "../outside"))
+        XCTAssertThrowsError(try controller.send(taskID: "mixed", prompt: "Create", path: "Some.textpack", folderPath: "Notes"))
+        XCTAssertTrue(server.requests("thread/start").isEmpty)
+        try controller.send(taskID: "folder-create", prompt: "Create a note", folderPath: "Notes")
+        let request = try XCTUnwrap(server.requests("thread/start").first)
+        let namespaces = try XCTUnwrap(request.params["dynamicTools"] as? [[String: Any]])
+        let tools = try XCTUnwrap(namespaces.first?["tools"] as? [[String: Any]])
+        XCTAssertTrue(tools.contains { $0["name"] as? String == "create_file" })
+        XCTAssertTrue((request.params["developerInstructions"] as? String)?.contains("selected folder is Notes") == true)
+    }
+
+    @MainActor
     func testFolderDesignMetadataDoesNotExpandOrdinaryItemTask() async throws {
         let (root, controller, server) = try await fixture()
         defer { controller.stop(); try? FileManager.default.removeItem(at: root) }

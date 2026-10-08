@@ -177,7 +177,7 @@ final class LocalVaultAgentController {
         }
     }
 
-    func send(taskID: String, prompt: String, path: String? = nil, customizing: Bool = false, imageURL: String? = nil) throws {
+    func send(taskID: String, prompt: String, path: String? = nil, folderPath: String? = nil, customizing: Bool = false, imageURL: String? = nil) throws {
         guard server != nil, let disabledMCPServers, !busy else {
             throw VaultAgentError("Connect the agent and wait for its current reply first.")
         }
@@ -195,7 +195,11 @@ final class LocalVaultAgentController {
                 throw VaultAgentError("The selected photo could not be prepared. Reopen it and try again.")
             }
         }
-        let access = try resolveAccess(path: path, customizing: customizing)
+        if folderPath != nil && (path != nil || customizing || imageURL != nil) {
+            throw VaultAgentError("Choose either an item task or a folder task.")
+        }
+        let access = try folderPath.map { try LocalVaultAgentAccess.folder(path: $0).validated(root: root) }
+            ?? resolveAccess(path: path, customizing: customizing)
         var context = customizing ? "Presentation customization mode: propose a template preview for the current document. Do not write or create files. If content.fields.texttextFolderView is v1, this is the containing folder's design: customize template.collection and preview its immediate members. Preserve the marker and all member files. Supported folder layouts are cards, list and index (a reference table); use supported collection bindings.\n" : ""
         if let path {
             context += "Current document path: \(path)\nRead the actual file before making changes.\n\n"
