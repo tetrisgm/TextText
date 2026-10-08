@@ -4,6 +4,7 @@ import base from '../vitest.config';
 export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
+      "src/components/document/__tests__/plain-paragraph.test.tsx",
     'sync/**/*.test.ts',
     'src/local-vault/{collaboration-client,web-transport,web-assistant,web-watch,bootstrap-retry,template-starter,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
     'src/lib/vault/{server-collaboration,server-store,server-trash,collaboration,reconcile,pack-reconcile,server-presence,server-item-comments}.test.ts',

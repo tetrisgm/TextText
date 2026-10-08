@@ -5,9 +5,9 @@
 - Mac `/Applications/TextText.app`: **0.204 (1184)**, source `98bb52b5`.
   Startup, note icon, search cache invalidation, save and normal reopen passed.
   [Receipt](verification/2026-10-07-recovery-templates-1184.md).
-- Windows: product source **04c265c7**, installed in the existing location.
-  Build, actual startup/search, snippet save/insert/reopen and passive Mac edit
-  delivery passed. [Receipt](verification/2026-10-07-windows-shared-1183.md).
+- Windows: product source **98bb52b5**, installed in the existing location.
+  Build, actual startup/search freshness, Research v2 starter creation and
+  save/reopen passed. [Receipt](verification/2026-10-07-windows-shared-1184.md).
 - Oracle: **texttext-oracle-20261008T060605Z-98bb52b5**. All thirteen production
   HTTP smoke checks passed. Algorave services and shared proxy were preserved.
 - Actual Mac deletion/restoration, same-ID Safari reading, direct CLI editing,
@@ -29,9 +29,6 @@
   Graceful server shutdown wakes read polls while preserving writes; the fresh
   compiled production probe exited cleanly in 6.043 seconds.
   [Shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
-- Windows final build exited successfully, but SSH resets before receipt
-  inspection/install. Existing installed04c265c7 app remains unchanged. Owner
-  asked to wake/check PC; resume existing SSH workflow when reachable.
 - Bounded performance diagnosis against current shared file-vault production
   code is running. Preserve prior measurements and avoid legacy SQL UI harnesses.
 - Standalone CLI `ccf675f8` remains installed; 106 tests passed. Real account
