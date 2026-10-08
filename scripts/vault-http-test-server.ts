@@ -1,7 +1,7 @@
 /** Opt-in loopback contract fixture. No real auth, database, or permanent jobs.
  * Started and terminated by LocalVaultHTTPContractTests; never ship this server. */
 import { createServer } from "node:http";
-import { writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   listVaultTextpacks, readVaultTextpack, writeVaultTextpack,
@@ -90,6 +90,9 @@ const server = createServer(async (request, response) => {
 server.listen(0, "127.0.0.1", async () => {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing fixture port");
-  await writeFile(readyFile, JSON.stringify({ origin: `http://127.0.0.1:${address.port}` }));
+  // The native harness watches existence, so publish only complete JSON.
+  const readyTemporary = `${readyFile}.${process.pid}.tmp`;
+  await writeFile(readyTemporary, JSON.stringify({ origin: `http://127.0.0.1:${address.port}` }));
+  await rename(readyTemporary, readyFile);
 });
 process.once("SIGTERM", () => { server.closeAllConnections(); server.close(() => process.exit(0)); });
