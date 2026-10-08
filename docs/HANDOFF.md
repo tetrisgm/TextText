@@ -28,11 +28,14 @@ source `5861988e`, candidate `fdd6221385d54e3794031c2a48f2b1d0`. Startup,
 search, save/reopen and the new note icon passed. Dedicated new note converged
 between clients with all four archive entry hashes identical.
 [Mac receipt](verification/2026-10-07-mac-1182-restore.md), Windows `fbb1a98a`.
-Oracle deployment of `233e53b3` is running, log
-`/tmp/texttext-233e53b3-deploy.log`; do not call it live before acceptance.
+Oracle `233e53b3` is live as `texttext-oracle-20261008T042939Z-233e53b3`.
+All twelve production smoke checks passed.
+[Live restore receipt](verification/2026-10-07-live-restore-1182.md).
 Earlier `b2ceb842` attempt stopped locally on a misplaced client directive;
 `233e53b3` fixes it, and the corrected core/native gates plus web build passed.
-Live Trash restore acceptance is next.
+Actual Mac delete/restore, passive Windows deletion/restoration and Safari
+same-ID read passed. Windows lifecycle/baseline match, empty outbox, no manual
+refresh (`28094abe`). No existing notes were changed.
 
 
 Home List/Cards (`160a74ba`) uses the same items/actions and a personal
@@ -113,8 +116,9 @@ Source follow-up since the installed/deployed baseline:
   and TypeScript.
 - `7b36e985`: all 12 local HTTP deployment checks passed, including same-ID
   restore/retry and recoverable stale uploads; four cleanup/security tests passed.
-- Combined source `5861988e` is frozen for exact-source gates and matching
-  client builds. These source changes are not installed or deployed yet.
+- Combined source is installed on Mac/Windows and deployed to Oracle; latest
+  receipts above supersede the earlier baseline. Broader remaining scope below
+  is still open.
 
 File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
 (`f4352d53`, `1ccb5163`) and expanded sync gate (`48ac492a`) are committed.
