@@ -395,3 +395,12 @@ outbox remained empty, no pull pending, and no refresh flag remained.
 Before deletion, differing Mac/Windows archive hashes were confirmed to have
 identical four entry-content digests; ZIP byte identity was not used as a
 substitute for content and acknowledged-state verification.
+
+At 04:35:56 UTC, passive Windows sync also received the subsequent direct
+Mac `text.md` edit and actual Safari editor edit: `Direct file edit after
+restore 1182.` and `Web edit after restore 1182.` each appeared exactly once.
+Original body, same ID, icon and restore lifecycle were retained. Local hash
+and acknowledged revision both became
+`e4a245ba25bb60486d25d161cdd144ce5829b94511c10696bc8517c7211c067f`;
+there were zero queued/conflicted operations, no pending pull and no refresh
+flag. This check did not edit files or refresh/restart Windows.
