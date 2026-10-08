@@ -13,10 +13,10 @@
   override accepts 130/143; ordinary 1207 rollout attested successful exit
   classification. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
 - Windows installed source remains `f3167c4b`.
-  Verified candidate **73740adb** passed actual PC native suites, 327 shared-client
+  Verified candidate **0566c006** passed actual PC native suites, 328 shared-client
   tests, TypeScript, packaging and desktop smoke. Installation awaits closure
   of the old app with unknown unsaved state; save-and-close request is pending.
-  [Candidate and paths](verification/2026-10-08-windows-73740adb-candidate.md).
+  [Candidate and paths](verification/2026-10-08-windows-0566c006-candidate.md).
 - Current iCloud workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Workspace ID `be28ae03-c64e-4695-80af-04f048f86f37`.
@@ -60,8 +60,8 @@
   wiring now carries an explicit folder flag through native preflight, tool
   dispatch and WebView relay. App-server tests passed folder creation/denial plus
   existing item/cancel/login/process checks on the Mac .NET runtime; log
-  `/tmp/texttext-windows-folder-dispatch.log`. TypeScript passed. Actual PC build
-  and UI acceptance remain pending; no installed folder support is claimed.
+  `/tmp/texttext-windows-folder-dispatch.log`. TypeScript passed. Actual PC build and native regressions passed in candidate 0566c006.
+  UI acceptance remains pending; no installed folder support is claimed.
   Hosted scope audit: `/api/ai` passes the workspace actor to
   `guardedCloudAssistantTools` without an item/folder tool restriction. `postId`
   and `folderPath` are context selection, not a tool grant. Panel copy now says
