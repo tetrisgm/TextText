@@ -1,3 +1,4 @@
+import { ReaderWriteBaselines } from "./reader-write-baselines";
 import { useEffect, useRef, useState } from "react";
 import { vaultRequest, type VaultFile, type VaultItem } from "./bridge";
 import type { FolderPreview } from "./folder-collection";
@@ -167,7 +168,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const selectBookmark = (path: string) => { setSelected(path); setCompactReaderOpen(true); };
   const preview = current && (previews[current.path] || metadata[current.path]);
   const [opened, setOpened] = useState<{ path: string; file: VaultFile; document: DocumentSnapshot; urls: string[] } | null>(null);
-  const readerFiles = useRef(new Map<string, VaultFile>());
+  const readerFiles = useRef(new ReaderWriteBaselines<VaultFile>());
   const readerWrites = useRef<Promise<void>>(Promise.resolve());
   const readerPending = useRef(0);
   const readerDraft = useRef<{ path: string; file: VaultFile; transform: (snapshot: DocumentSnapshot) => DocumentSnapshot } | null>(null);
@@ -249,7 +250,7 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
         ...(canonical.content.fields.captureStatus === "complete" ? { captureMediaStatus: "pending" } : { captureStatus: "pending" }) };
       await vaultRequest<VaultFile>("write", writePayload(latest, { ...canonical, content: { ...canonical.content, fields } }));
       const outcome = await enrichArticleFile(path, vaultRequest);
-      readerFiles.current.set(path, await vaultRequest<VaultFile>("read", { path }));
+      await vaultRequest<VaultFile>("read", { path });
       if (outcome === "failed") setError("The page could not be captured. Your link is saved; try again later.");
       else if (outcome === "skipped") setError("The bookmark changed during capture. The latest version was kept.");
       window.dispatchEvent(new Event("texttext:vault-changed"));
@@ -297,7 +298,11 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
         setOpened(previous => previous?.path === path ? { ...previous, file: updated } : previous);
         window.dispatchEvent(new Event("texttext:vault-changed"));
       } catch (reason) { setError(reason instanceof Error ? reason.message : "The highlight could not be saved."); }
-      finally { readerPending.current -= 1; if (!readerPending.current) setUpdating(false); }
+      finally {
+        readerPending.current -= 1;
+        readerFiles.current.settled(readerPending.current, readerDraft.current?.path);
+        if (!readerPending.current) setUpdating(false);
+      }
     });
   };
   const flushReaderDraft = () => {
