@@ -332,6 +332,14 @@
   search/reopen and Mac/web/direct CLI convergence passed.
   [Actual acceptance](verification/2026-10-08-native-template-library-1215.md).
   Direct library version authoring and installed Windows acceptance remain.
+  Source inspection found that `prepareTemplateProposal` cleared existing
+  blueprint metadata when an agent refinement omitted it. The actual source
+  and reusable-library packages now lack `template-source.json`; the earlier
+  receipt proves reuse, not retained authoring provenance. The proposal path
+  now inherits omitted compatible source and rejects incompatible omissions.
+  Explicit replacement remains supported for manual folder-design editing.
+  Targeted regression log: `/tmp/texttext-authoring-refinement-regression.log`.
+  This correction is source-only until a verified client/web build is installed.
   Real native Gallery image
   description and metadata writing passed; hosted configured-provider generation
   and approval remain unverified.

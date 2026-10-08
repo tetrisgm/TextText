@@ -3,6 +3,7 @@ import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { prepareTemplateProposal } from "./template-proposal";
 import type { VaultFile } from "./bridge";
+import { compileItemTypeBlueprint, ITEM_TYPE_BLUEPRINT_COMPILER_VERSION } from "@/lib/presentation/item-type-blueprint";
 
 const template = getBuiltinTemplate("texttext.note", 1)!;
 const document = emptyDocumentSnapshot({ id: template.id, version: template.version });
@@ -12,6 +13,22 @@ const file: VaultFile = { path: "Notes/Research.textpack", hash: "a".repeat(64),
 const proposal = { path: file.path, hash: file.hash, templateJSON: JSON.stringify({ ...template, name: "My research reader" }) };
 
 describe("file template previews", () => {
+  it("keeps compatible authored source and rejects refinements that would discard it", () => {
+    const blueprint = { name: "Research", fields: [], collection: { layout: "list" as const } };
+    const authored = compileItemTypeBlueprint(blueprint, { id: "local.research", version: 1 });
+    const sourceJSON = JSON.stringify({ kind: "item-type-blueprint", schemaVersion: 1, compilerVersion: ITEM_TYPE_BLUEPRINT_COMPILER_VERSION, blueprint });
+    const current = { ...file, templateJSON: JSON.stringify(authored), templateAuthoringSourceJSON: sourceJSON };
+    const compatible = { ...proposal, templateJSON: JSON.stringify({ ...authored, version: 2 }) };
+    expect(JSON.parse(prepareTemplateProposal(current, compatible).payload.templateAuthoringSourceJSON!).blueprint).toMatchObject(blueprint);
+    const changed = { ...compatible, templateJSON: JSON.stringify(compileItemTypeBlueprint({ ...blueprint, name: "Refined research" }, { id: authored.id, version: 2 })) };
+    expect(() => prepareTemplateProposal(current, changed)).toThrow(/updated templateAuthoringSourceJSON/);
+    expect(prepareTemplateProposal(current, { ...changed, templateAuthoringSourceJSON: null }).payload.templateAuthoringSourceJSON).toBeNull();
+    const updated = JSON.stringify({ ...JSON.parse(sourceJSON), blueprint: { ...blueprint, name: "Refined research" } });
+    expect(JSON.parse(prepareTemplateProposal(current, { ...changed, templateAuthoringSourceJSON: updated }).payload.templateAuthoringSourceJSON!).blueprint.name).toBe("Refined research");
+    // Choosing a different template remains an intentional replacement.
+    expect(prepareTemplateProposal(current, proposal).payload.templateAuthoringSourceJSON).toBeNull();
+    expect(current.templateAuthoringSourceJSON).toBe(sourceJSON);
+  });
   it("changes only presentation and preserves exact Markdown and unknown snapshot metadata", () => {
     const before = JSON.stringify(file);
     const result = prepareTemplateProposal(file, proposal);

@@ -38,7 +38,7 @@ export function FolderPresentation({ listing, folder, busy, editable = true, des
       if (current?.path !== base?.path || current?.hash !== base?.hash) throw new Error("The folder design changed. Cancel this preview and choose a design again.");
       if (base) {
         const file = await vaultRequest<VaultFile>("read", { path: base.path });
-        const { payload } = prepareTemplateProposal(file, { path: base.path, hash: base.hash, templateJSON: JSON.stringify(draft) });
+        const { payload } = prepareTemplateProposal(file, { path: base.path, hash: base.hash, templateJSON: JSON.stringify(draft), templateAuthoringSourceJSON: null });
         const saved = await vaultRequest<VaultFile>("write", explicitFolderDesignPayload(payload));
         if (saved.templateJSON !== payload.templateJSON) throw new Error("The saved folder design differs from the preview. Open its file to inspect it.");
       } else {
