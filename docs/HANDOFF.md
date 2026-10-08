@@ -15,10 +15,10 @@
   override accepts 130/143; ordinary 1207 rollout attested successful exit
   classification. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
 - Windows installed source remains `f3167c4b`.
-  Verified candidate **0566c006** passed actual PC native suites, 328 shared-client
+  Verified candidate **9a38e556** passed actual PC native suites, 329 shared-client
   tests, TypeScript, packaging and desktop smoke. Installation awaits closure
   of the old app with unknown unsaved state; save-and-close request is pending.
-  [Candidate and paths](verification/2026-10-08-windows-0566c006-candidate.md).
+  [Candidate and paths](verification/2026-10-08-windows-9a38e556-candidate.md).
 - Current iCloud workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Workspace ID `be28ae03-c64e-4695-80af-04f048f86f37`.
@@ -36,12 +36,10 @@
   light/dark browser checks passed; this follow-up is not installed/deployed.
   [Cold loading receipt](verification/2026-10-08-home-cold-loading.md).
   [Preview receipt](verification/2026-10-08-home-preview-labels.md).
-- Windows candidate matching Mac 1208 is now building from frozen source
-  `9a38e556` in `C:\Users\Shokunin\dev\texttext-client-9a38e556`.
-  Live exec handle `58943`; log `/tmp/texttext-windows-9a38e556-build.log`.
-  Fresh source directory, existing official embedded Codex runtime copied from
-  the earlier candidate. Explicit build only; no install/job or old-process
-  termination. Poll the existing handle rather than restarting after timeout.
+- Windows candidate matching Mac 1208 completed all gates and packaging.
+  [Receipt](verification/2026-10-08-windows-9a38e556-candidate.md).
+  Fresh query still found the old app PID 44968 responding with no window title;
+  unknown unsaved state prevents replacement until safely closed.
 - Install verified Windows candidate when the old process closes, then verify
   startup, existing notes, search, save/reopen, Gallery metadata and live sync.
 - Finish automatic reconnect/failure acceptance and canonical sharing with a
