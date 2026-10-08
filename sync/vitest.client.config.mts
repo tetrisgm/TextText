@@ -8,7 +8,7 @@ export default defineConfig({ ...base, test: { ...base.test,
   include: [
       "src/components/document/__tests__/plain-paragraph.test.tsx",
     'sync/{boundary,compatibility,shared-ui}.test.ts',
-    'src/local-vault/{reader-write-baselines,collaboration-client,web-transport,web-watch,bootstrap-retry,template-starter,template-proposal,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
+    'src/local-vault/{reader-write-baselines,collaboration-client,web-transport,web-watch,web-workspace-open,bootstrap-retry,template-starter,template-proposal,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',
     'src/lib/vault/{collaboration,reconcile,pack-reconcile}.test.ts',
     'src/app/api/vault/{auth,scoped-auth,collaboration-auth}.test.ts',
     'src/lib/__tests__/request-origin.test.ts',

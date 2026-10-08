@@ -5,6 +5,8 @@ import { vaultRequest } from "./bridge";
 import styles from "./AccountMenu.module.css";
 import { accountManagementURL } from "./account-management";
 
+type WorkspaceList = { currentId: string; workspaces: { id: string; name: string; access: "owner" | "workspace" | "scoped" }[] };
+
 type AccountProfile = { accountId?: string; email: string | null; name: string | null; identities: string[]; workspaceName: string };
 const providerLabels: Record<string, string> = { apple: "Apple", google: "Google", github: "GitHub", email: "Email link", openai: "ChatGPT" };
 
@@ -20,6 +22,9 @@ export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite
   signIn?: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [workspaces, setWorkspaces] = useState<WorkspaceList | null>(null);
+  const [workspaceFailure, setWorkspaceFailure] = useState(false);
+  const [workspaceAttempt, setWorkspaceAttempt] = useState(0);
   const [settings, setSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
@@ -47,6 +52,16 @@ export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite
     }).catch(() => { if (!controller.signal.aborted) setProfileFailure(true); });
     return () => controller.abort();
   }, [signedIn, profileKey, attempt]);
+
+  useEffect(() => {
+    if (!open || !signedIn) return;
+    const controller = new AbortController();
+    setWorkspaces(null); setWorkspaceFailure(false);
+    void vaultRequest<WorkspaceList>("workspacesList", {}, controller.signal).then(value => {
+      if (!controller.signal.aborted) setWorkspaces(value);
+    }).catch(() => { if (!controller.signal.aborted) setWorkspaceFailure(true); });
+    return () => controller.abort();
+  }, [open, signedIn, profileKey, workspaceAttempt]);
 
   useEffect(() => {
     if (!open) return;
@@ -87,6 +102,18 @@ export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite
     </button>
     {open && <div id={menuId} className="vault-account-menu">
       {signedIn ? <>
+        <div className={styles.workspaces} role="group" aria-label="Workspaces">
+          <span className={styles.muted}>Workspaces</span>
+          {workspaces?.workspaces.map(workspace => <button key={workspace.id} type="button" disabled={busy || workspace.id === workspaces.currentId}
+            aria-current={workspace.id === workspaces.currentId ? "true" : undefined}
+            onClick={() => void perform(async () => {
+              const flush = (window as Window & { texttextFlushForSignOut?: () => Promise<boolean> }).texttextFlushForSignOut;
+              if (!flush || !await flush()) throw new Error("Finish saving your changes before opening another workspace.");
+              await vaultRequest("workspaceOpen", { workspaceId: workspace.id });
+            })}><span>{workspace.name}</span>{workspace.id === workspaces.currentId && <span aria-label="Current workspace">✓</span>}</button>)}
+          {!workspaces && !workspaceFailure && <span role="status" className={styles.muted}>Loading workspaces…</span>}
+          {workspaceFailure && <button type="button" onClick={() => setWorkspaceAttempt(value => value + 1)}>Try loading workspaces again</button>}
+        </div>
         {actions}
         <button type="button" onClick={() => { setOpen(false); setSettings(true); if (profileFailure) setAttempt(value => value + 1); }}>Settings</button>
         <button type="button" disabled={busy} onClick={() => void perform(logOut)}>Log out</button>

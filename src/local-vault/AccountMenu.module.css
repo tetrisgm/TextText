@@ -24,3 +24,8 @@
 .aiForm input, .aiForm select { width: 100%; min-height: 36px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; color: var(--ink); background: var(--surface); }
 .aiActions { display: flex; gap: 8px; flex-wrap: wrap; }
 .aiActions button { min-height: 36px; }
+
+.workspaces { display: grid; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px; max-height: 240px; overflow: auto; }
+.workspaces > span { padding: 6px 10px; }
+.workspaces button { display: flex; justify-content: space-between; gap: 12px; text-align: left; overflow-wrap: anywhere; }
+.workspaces button[aria-current="true"] { opacity: 1; font-weight: 600; }

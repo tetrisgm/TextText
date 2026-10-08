@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { openWebWorkspace } from "./web-workspace-open";
 import { createWebAssistant } from "./web-assistant";
 import { VaultApp } from "./VaultApp";
 import { WebAccount } from "./WebAccount";
@@ -26,7 +27,23 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
     }
     const transport = createWebVaultTransport(owned.workspaceId, owned.name);
     const assistant = assistantHandle ? createWebAssistant(assistantHandle, transport.request, fetch, undefined, true) : null;
+    const lifetime = new AbortController();
+    let switching = false;
     const release = setVaultTransport(async (method, params, signal) => {
+      if (method === "workspaceOpen") {
+        if (switching) throw new Error("A workspace is already opening.");
+        switching = true;
+        try {
+          await openWebWorkspace(params, {
+            currentId: owned.workspaceId, signal: lifetime.signal,
+            flush: async () => Boolean(await (window as Window & { texttextFlushForSignOut?: () => Promise<boolean> }).texttextFlushForSignOut?.()),
+            stopAgent: () => assistant?.destroy(),
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+            navigate: path => window.location.assign(path),
+          });
+          return null;
+        } finally { switching = false; }
+      }
       if (assistant && method.startsWith("agent")) return assistant.request(method, params);
       const result = await transport.request(method, params, signal);
       return (method === "list" || method === "open") && result && typeof result === "object" ? { ...result, name: owned.name } : result;
@@ -43,7 +60,7 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
     window.addEventListener("offline", visibility);
     document.addEventListener("visibilitychange", visibility);
     return () => {
-      watcher.dispose(); assistant?.destroy(); release(); transport.destroy();
+      lifetime.abort(); watcher.dispose(); assistant?.destroy(); release(); transport.destroy();
       window.removeEventListener("focus", visibility);
       window.removeEventListener("online", visibility);
       window.removeEventListener("offline", visibility);
