@@ -2,7 +2,7 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1196)**, source `efa71682`.
+- Mac `/Applications/TextText.app`: **0.204 (1197)**, source `edab387f`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
@@ -28,14 +28,16 @@
 
 ## Current work
 
-- Mac 1196 fixes the live 201-status review relay failure. Frozen gates and
-  actual native staging/Safari dismissal passed. Oracle 1195 live web approval
-  preserved the test TextPack bytes and empty child folder; Mac adopted its file
-  path automatically. **Old empty source folders remain on Mac**: native sync
-  creates remote folders but does not reconcile removed folder paths. Fix that
-  durable folder catalog behavior on both native adapters. Stable staging retry
-  identity and Oracle's observed shutdown timeout also remain open. Windows
-  verified candidate is ready, but installed older app remains running.
+- Mac 1197 installs durable native folder-catalog reconciliation. Frozen core
+  (795 tests) and native gates passed. Live reviewed move
+  `932e1d17-5790-4de2-bcab-08d04496e817` preserved the TextPack hash and empty
+  child; the previous tracked folder disappeared automatically. Windows source
+  regressions passed, but the new adapter is not installed there yet.
+  Live acceptance exposed a shared UI defect: `VaultApp.refresh` replaces the
+  listing without reconciling `destinationFolder`, so the selected old folder
+  remains and FolderPresentation shows a missing-path error after a move.
+  Fix selection reconciliation across refreshed listings, preserving any active
+  editor. Stable staging retry identity and Oracle shutdown timeout remain open.
   [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
