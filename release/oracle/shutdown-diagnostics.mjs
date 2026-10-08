@@ -20,6 +20,9 @@ export function installHttpShutdownLifecycle({ signals = process, log = console.
   const trackRequest = ({ request, response }) => {
     unstarted.delete(request.socket);
     requests.set(response, { category: category(request), started: Date.now() });
+    // Existing proxy keep-alive sockets can submit another request after
+    // server.close(). Let the operation finish, then retire its connection.
+    if (draining) response.shouldKeepAlive = false;
     const finished = () => {
       requests.delete(response); cleanups.delete(response);
       response.removeListener('finish', finished); response.removeListener('close', finished);
@@ -45,6 +48,7 @@ export function installHttpShutdownLifecycle({ signals = process, log = console.
   const drain = () => {
     if (draining) return;
     draining = true; report();
+    for (const response of requests.keys()) response.shouldKeepAlive = false;
     // server.close() waits for sockets that have not supplied HTTP headers.
     // They have never reached a handler, so no operation or write can exist.
     // Next remains responsible for every socket that has started a request.

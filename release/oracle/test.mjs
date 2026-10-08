@@ -11,7 +11,7 @@ import { backupConnection, createBackup, retainedArchives } from "./backup.mjs";
 import { verifyPackage } from "./verify-package.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
 import { installHttpShutdownLifecycle } from "./shutdown-diagnostics.mjs";
-import { createServer, get, Agent } from "node:http";
+import { createServer, get, request as httpRequest, Agent } from "node:http";
 import { EventEmitter, once } from "node:events";
 
 test("shutdown diagnostics identify unfinished HTTP without logging private request data", async () => {
@@ -35,12 +35,42 @@ test("shutdown diagnostics identify unfinished HTTP without logging private requ
     assert.ok(!response.writableEnded, 'diagnostics must not cancel a request or write');
     response.end('saved'); await pending;
     assert.deepEqual(diagnostics.snapshot().active, {});
-    assert.ok(diagnostics.snapshot().sockets > 0, 'idle socket is distinguished from unfinished request');
+    assert.equal(response.shouldKeepAlive, false, 'completed operation must retire its proxy connection during drain');
   } finally {
     agent.destroy(); await new Promise(resolve => server.close(resolve)); diagnostics.dispose();
   }
   assert.deepEqual(diagnostics.snapshot(), { sockets: 0, unstartedSockets: 0, active: {} });
   assert.equal(signals.listenerCount('SIGTERM'), 0);
+});
+
+test("shutdown retires a reused proxy socket after its durable write completes", async () => {
+  const signals = new EventEmitter();
+  const lifecycle = installHttpShutdownLifecycle({ signals, log: () => {}, delays: [] });
+  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+  let writeResponse, saved = false;
+  const server = createServer((request, response) => {
+    if (request.url === '/warm') response.end('ready');
+    else { writeResponse = response; }
+  });
+  const request = (path, method = 'GET') => new Promise((resolve, reject) => {
+    httpRequest({ host: '127.0.0.1', port: server.address().port, path, method, agent }, incoming => {
+      let body = ''; incoming.on('data', bytes => { body += bytes; });
+      incoming.once('end', () => resolve({ body, headers: incoming.headers }));
+    }).once('error', reject).end();
+  });
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    await request('/warm');
+    const pending = request('/durable-write', 'POST');
+    await once(server, 'request');
+    signals.emit('SIGTERM');
+    const closed = new Promise(resolve => server.close(resolve));
+    assert.equal(writeResponse.writableEnded, false);
+    saved = true; writeResponse.end('committed');
+    assert.equal((await pending).body, 'committed');
+    await closed;
+    assert.equal(saved, true);
+  } finally { agent.destroy(); await new Promise(resolve => server.close(resolve)); lifecycle.dispose(); }
 });
 
 function temporary(t) {
