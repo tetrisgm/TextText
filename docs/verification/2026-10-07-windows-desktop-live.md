@@ -311,3 +311,31 @@ using the PC during final checks; the folder-picker switch/back and unobscured
 final reader screenshot were not performed. Replacement-workspace startup and
 failed-switch retention did pass the mandatory native smoke. No user content
 was changed. Temporary verification tasks removed themselves after execution.
+
+## Canonical file backend candidate 116d3dde
+
+Exact source `116d3dde` completed the Windows clean build and all mandatory
+native/Core/agent, TypeScript, 189 shared-client and real MainWindow smoke
+checks. Sealed candidate `6c51e20e7df74552b663767a9390de38`, smoke receipt
+`windows/build/smoke-receipts-1a8e16d2d33f43958d6dfd9da95f6eb0`.
+The existing saved reader was inspected before normal close; no unsaved editor
+was active. Installation verified source/artifacts twice and retained
+`TextText-previous-20261007T202834-cce8095c`.
+
+Installed startup restored the signed-in account, original workspace and saved
+verification note: shell 1,004 ms, reader 2,095 ms at 03:28:38 UTC. Actual body
+search for `Windows ACK refresh` returned the correct note and path. Normal
+close/reopen passed again: shell 670 ms, reader 1,399 ms at 03:29:54 UTC.
+At 03:30:05 UTC, disk verification confirmed nine markers exactly once, empty
+outbox, no pending pull and the unchanged acknowledged archive hash recorded
+above. No user document was modified; save/failed-flush behavior was exercised
+by the isolated mandatory native smoke, not by editing the live note.
+
+Installed DLL SHA-256:
+`a53c282bc4d46cf70e8bc23e4611482589ee562131c478fa0778e386d62ffb8c`.
+EXE remains `8eaf0eb49815a8c12240c408b20a8d88d6d36a8bce2382692e86e629cc56c37f`.
+The legacy proof helper still prints its historical candidate label; installer
+receipt and DLL hash above identify this candidate. App left open on the saved
+reader. Oracle-specific fresh-account provisioning and hosted agent commands
+await the matching server deployment; this local acceptance does not claim
+those live server checks.
