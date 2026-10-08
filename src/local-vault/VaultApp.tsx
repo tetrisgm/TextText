@@ -1030,7 +1030,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     setAssistantRequest({ type: "agent", requestId: ++assistantRequestId.current, root: activeWorkspaceRoot, target: activeItemPath });
     setAssistantOpen(true);
   }, [activeItemPath, activeWorkspaceRoot, setSidebarVisible]);
-  const askBookmarkAgent = useCallback((path: string, question: string) => {
+  const askItemAgent = useCallback((path: string, question: string) => {
     if (!activeWorkspaceRoot || !listing?.items.some(item => item.path === path)) return;
     assistantReturnFocus.current = focusedControl();
     if (window.matchMedia("(max-width: 700px)").matches) setSidebarVisible(false);
@@ -1466,7 +1466,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         onEditNote={(path) => { if (!capabilities.edit(path)) return; void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true); }}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}
-        onAskBookmarkAgent={allowFolderPicker || webAssistant ? askBookmarkAgent : undefined}
+        onAskBookmarkAgent={allowFolderPicker || webAssistant ? askItemAgent : undefined}
+        onAskGalleryAgent={allowFolderPicker || webAssistant ? askItemAgent : undefined}
         designOpen={folderDesignOpen}
         onCustomize={(allowFolderPicker || webAssistant) && canCreate ? beginCustomize : undefined}
         onCloseDesign={() => setFolderDesignOpen(false)}
@@ -1476,7 +1477,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
       </div>}
     </main>
-    {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess}
+    {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess} onAskAgent={allowFolderPicker || webAssistant ? askItemAgent : undefined}
       onClose={() => { setImportedGalleryPath(null); refresh(); }}
       onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
     {(allowFolderPicker || webAssistant) && <NativeAssistant targetTitle={selected ? { path: selected.path, title: contextTitle } : undefined} webAssistant={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path ?? (folderTargetMatches ? folderAssistantTarget?.path : undefined)} request={folderAssistantTarget && !folderTargetMatches ? null : assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}

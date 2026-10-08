@@ -72,7 +72,7 @@ function GalleryTile({ source, title, disabled, onOpen, onMeasured, width, heigh
     }} /> : <span>{title}</span>}
   </button>;
 }
-export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, onRevealBookmark, onCreateNote, onCreateCard, onQuickSaveBookmark, onAskBookmarkAgent, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath, galleryCommentsAccess }: {
+export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, onRevealBookmark, onCreateNote, onCreateCard, onQuickSaveBookmark, onAskBookmarkAgent, onAskGalleryAgent, folderTemplate, excludedPath, previewOnly = false, canUsePersonalBookmarks = true, emptyMessage, preferredBookmarkPath, galleryCommentsAccess }: {
   listing: VaultListing; folder: string; busy: boolean; onOpen: (path: string) => void;
   onEditNote?: (path: string) => void;
   onRevealBookmark?: (path: string) => void;
@@ -80,6 +80,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   onCreateCard?: (title: string, body: string, tags: string[], images: File[], color: NoteColor, onCreated: () => void, icon?: string) => void;
   onQuickSaveBookmark?: (address: string) => Promise<void>;
   onAskBookmarkAgent?: (path: string, question: string) => void;
+  onAskGalleryAgent?: (path: string, task: string) => void;
   folderTemplate?: TemplateDefinition; excludedPath?: string; previewOnly?: boolean; emptyMessage?: string; preferredBookmarkPath?: string; galleryCommentsAccess?: GalleryCommentsAccess;
 }) {
   const [page, setPage] = useState(0);
@@ -627,7 +628,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       </button>}</PreviewImage>;
     })}</div>}
     {!items.length && !feedsFolder && <p>{members.length ? "No files match this view." : emptyMessage ?? "No files here yet. Choose a template to get started."}</p>}
-    {galleryState && <VaultGalleryLightbox entries={galleryState.entries} initialSelection={galleryState.selection} onClose={() => setGalleryState(null)} onEdit={path => { setGalleryState(null); onOpen(path); }} commentsAccess={galleryCommentsAccess} />}
+    {galleryState && <VaultGalleryLightbox entries={galleryState.entries} initialSelection={galleryState.selection} onClose={() => setGalleryState(null)} onEdit={path => { setGalleryState(null); onOpen(path); }} commentsAccess={galleryCommentsAccess} onAskAgent={onAskGalleryAgent} />}
     {!feedsFolder && filePages}
   </section>;
 }

@@ -2040,7 +2040,16 @@ try {
   await collected.getByRole("link", { name: "example.com" }).waitFor();
   assert.equal(await collected.getByRole("link", { name: "example.com" }).getAttribute("href"), "https://example.com/photos");
   await collected.getByText("color study").waitFor();
-  await collected.getByRole("button", { name: "Close image" }).click();
+  const sendsBeforeGalleryTask = agentSendCount;
+  await collected.getByRole("button", { name: "Describe with agent" }).click();
+  await page.getByRole("textbox", { name: "Message assistant" }).waitFor();
+  const galleryTask = await page.getByRole("textbox", { name: "Message assistant" }).inputValue();
+  assert.ok(galleryTask.includes(JSON.stringify(editedGallery.content.assets[0].id)));
+  assert.ok(galleryTask.includes("asset_metadata"));
+  assert.ok(galleryTask.includes("do not invent"));
+  assert.equal(agentSendCount, sendsBeforeGalleryTask);
+  assert.equal(await collected.count(), 0);
+  await page.getByRole("button", { name: "Close assistant" }).click();
   await page.getByRole("button", { name: "Open Two color studies" }).click();
   await page.getByRole("region", { name: "Two color studies" }).getByRole("img", { name: "Second photograph" }).waitFor();
   await chooseFolder("Notes");

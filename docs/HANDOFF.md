@@ -31,6 +31,17 @@
 
 ## Current work
 
+- Gallery inspector now has Describe with agent. It closes the viewer and
+  opens an editable task for that TextPack and exact stable photo asset ID,
+  preserving neighboring assets and requiring actual visual inspection before
+  metadata generation. The shared folder/grid/import paths pass the callback.
+  TypeScript and the rebuilt full offline browser fixture passed; the fixture
+  verifies selected photo ID in the composer and no automatic agent send
+  (`/tmp/texttext-gallery-agent-action-browser.log`). Source only, not installed
+  or deployed. Hosted assistant already supports bounded image attachments,
+  but the selected image still needs to be wired into that path; visual
+  generation itself is not verified.
+
 - Agent `update_item` now accepts validated `asset_metadata` for one image's
   summary/tags by stable asset ID, with mandatory current revision. The shared
   Yjs mutation validates before any content/receipt changes, preserves image
