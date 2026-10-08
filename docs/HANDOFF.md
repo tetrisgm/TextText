@@ -477,6 +477,12 @@ and actions, with a personal per-device/workspace preference.
   found. Do not create a duplicate. Standalone CLI receipt:
   [current CLI](verification/2026-10-07-standalone-cli-current.md).
 
+## Oracle shutdown candidate in progress
+
+- Clean source `0533908b` at `/private/tmp/texttext-candidate-1195-5ELVuo` passed all 817 core tests, TypeScript and required native sync gates. Receipts `/tmp/texttext-oracle-drain-core.log`, `/tmp/texttext-oracle-drain-clean-types.log`, `/tmp/texttext-oracle-drain-native.log`.
+- Web-only package build running via authorized `release/ship.sh --web-only --skip-tests --no-publish`, local process handle `38647`, log `/tmp/texttext-oracle-drain-package.log`. Revalidate this handle before resuming. No deployment yet; run isolated production shutdown against the completed candidate before deploying.
+- Oracle preflight: current remains `20261008T144740Z-texttext-oracle-20261008T144520Z-da36425d-d4f6ee`; 15 GB free; TextText plus all three Algorave services active; proxy mtime unchanged October 1; latest backup `texttext-20261008T144805Z-34f4f839.dump`. Recheck before deployment.
+
 ## Assistant shutdown drain follow-up
 
 - Cloud assistant generation now receives the existing server lifecycle drain signal as well as request cancellation and its 55-second deadline. Previously an active assistant response could exceed Oracle’s 30-second service stop window even when vault polls drained. This cancels generation, not durable file-store transactions.
