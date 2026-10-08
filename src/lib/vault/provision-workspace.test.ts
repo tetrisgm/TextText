@@ -1,0 +1,30 @@
+import { mkdtemp, rm, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, expect, it } from "vitest";
+import { provisionFileWorkspace, STARTER_FOLDERS } from "./provision-workspace";
+import { openPack, encodePack } from "@/local-vault/pack";
+import { listVaultTextpacks, deleteVaultTextpack, moveVaultTextpack, writeVaultTextpack } from "./server-store";
+import config from "../../../next.config";
+const roots: string[]=[];
+afterEach(async()=>{for(const root of roots.splice(0)) await rm(root,{recursive:true,force:true});});
+it("provisions canonical preset packs and five folders once, through durable audited writes",async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),"texttext-provision-")); roots.push(root); const receipts:unknown[]=[];
+ const location={root,workspaceId:"fresh-workspace",onReceipt:async(receipt:unknown)=>{receipts.push(receipt);}};
+ await provisionFileWorkspace(location,"owner"); const first=await listVaultTextpacks(location);
+ expect(first.items).toHaveLength(4); expect(first.folders).toEqual(expect.arrayContaining([...STARTER_FOLDERS]));
+ expect(first.items.every(item=>!item.relativePath.startsWith("Templates/")&&!item.relativePath.startsWith("Tasks/"))).toBe(true);
+ expect(receipts).toHaveLength(4); await provisionFileWorkspace(location,"owner"); expect(await listVaultTextpacks(location)).toEqual(first); expect(receipts).toHaveLength(4);
+ const [deleted,moved,edited]=first.items;
+ await deleteVaultTextpack({...location,itemId:deleted.itemId,operationId:"delete",basePath:deleted.relativePath,baseRevision:deleted.revision});
+ await moveVaultTextpack({...location,itemId:moved.itemId,operationId:"move",basePath:moved.relativePath,baseRevision:moved.revision,relativePath:"Notes/Moved.textpack"});
+ const pack=openPack(await readFile(path.join(root,location.workspaceId,edited.relativePath)),edited.relativePath,edited.revision);
+ await writeVaultTextpack({...location,itemId:edited.itemId,operationId:"edit",relativePath:edited.relativePath,baseRevision:edited.revision,bytes:encodePack(pack,{...pack.file,markdown:pack.file.markdown+"\nPersonal edit"})});
+ const changed=await listVaultTextpacks(location);await provisionFileWorkspace(location,"owner");expect(await listVaultTextpacks(location)).toEqual(changed);
+});
+it("fails before mutation when a preset cannot be loaded",async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),"texttext-provision-"));roots.push(root);
+ await expect(provisionFileWorkspace({root,workspaceId:"fresh"},"owner",path.join(root,"missing"))).rejects.toThrow();
+ const {readdir}=await import("node:fs/promises");expect(await readdir(root)).toEqual([]);
+});
+it("includes starter pack bytes in standalone server tracing",()=>expect(config.outputFileTracingIncludes?.["/*"]).toContain("./presets/builtin/*.textpack"));

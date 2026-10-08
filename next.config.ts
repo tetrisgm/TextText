@@ -22,6 +22,7 @@ const buildId =
   "development";
 
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: { "/*": ["./presets/builtin/*.textpack"] },
   // The manual Oracle deployment packages this output with Linux ARM64 deps.
   ...(process.env.TEXTTEXT_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   // Live client evaluations use an isolated build directory so a stopped

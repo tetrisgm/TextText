@@ -1,3 +1,4 @@
+import { provisionFileWorkspace } from "@/lib/vault/provision-workspace";
 import { validatedLookSource } from "./presentation/template-library";
 import { searchVaultPack } from "./vault/pack-search.server";
 // Fresh file vault access shares the application's content boundary. Callers
@@ -3389,45 +3390,26 @@ export async function ensureWorkspaceFolders(
   return rows;
 }
 
-async function provisionNewWorkspaceDefaults(blogId: string): Promise<void> {
-  const workspaceFolders = await ensureWorkspaceFolders(blogId);
-  const folderIdByPath = new Map(
-    workspaceFolders.map((folder) => [folder.path, folder.id]),
-  );
-  const blogFolderId = folderIdByPath.get(folderPathForPostType("article"));
-  const notesFolderId = folderIdByPath.get(folderPathForPostType("note"));
-  const documentationFolderId = folderIdByPath.get("documentation");
-  const bookmarksFolderId = folderIdByPath.get(
-    folderPathForPostType("bookmark"),
-  );
-  if (!blogFolderId || !notesFolderId || !bookmarksFolderId || !documentationFolderId) {
-    throw new Error("failed to resolve the workspace folders");
-  }
-  // A new workspace starts with the AI guides in Documentation (owner decision
-  // 2026-08-14, reversing the empty-by-default of 2026-08-08): the paths for
-  // connecting an AI must be discoverable from the very first Library view,
-  // not only from the docs site. They are private notes, they are marked as
-  // starter posts so caps and cleanups know them, and the first visit to the
-  // editor still creates the person's own first draft.
-  void blogFolderId;
-  void bookmarksFolderId;
-  await db!
-    .insert(posts)
-    .values(starterAgentGuideValues(blogId, documentationFolderId))
-    .onConflictDoNothing({
-      target: [posts.folderId, posts.slug],
-      where: sql`${posts.deletedAt} is null`,
-    });
+async function provisionNewWorkspaceDefaults(blogId: string, actorUserId: string): Promise<void> {
+  const root = process.env.TEXTTEXT_VAULT_ROOT;
+  if (!root) throw new Error("TextText file storage is not configured");
+  await provisionFileWorkspace({ root, workspaceId: blogId, onReceipt: recordVaultReceipt }, actorUserId);
+  const digest = createHash("sha256").update(`provision-complete-v1:${blogId}`).digest("hex");
+  const id = `${digest.slice(0,8)}-${digest.slice(8,12)}-${digest.slice(12,16)}-${digest.slice(16,20)}-${digest.slice(20,32)}`;
+  await db!.insert(actionAudit).values({ id, actorUserId, actorType: "human",
+    actionName: "provision_file_workspace_v1_complete", targetType: "workspace", targetId: blogId,
+  }).onConflictDoNothing({ target: actionAudit.id });
+}
 
-  // Provisioning is a mutation like any other; without this row the starter
-  // posts are the only content that appears with no audit trail.
-  await recordAction({
-    actorType: "human",
-    actionName: "provision_workspace_defaults",
-    targetType: "workspace",
-    targetId: blogId,
-    inputSummary: "workspace folders",
-  });
+async function resumeWorkspaceProvisioning(actorUserId: string): Promise<void> {
+  const pending = await db!.select({ workspaceId: actionAudit.targetId }).from(actionAudit).where(and(
+    eq(actionAudit.actorUserId, actorUserId), eq(actionAudit.actionName, "provision_file_workspace_v1"),
+  ));
+  const completed = await db!.select({ workspaceId: actionAudit.targetId }).from(actionAudit).where(and(
+    eq(actionAudit.actorUserId, actorUserId), eq(actionAudit.actionName, "provision_file_workspace_v1_complete"),
+  ));
+  const done = new Set(completed.map(row => row.workspaceId));
+  for (const row of pending) if (row.workspaceId && !done.has(row.workspaceId)) await provisionNewWorkspaceDefaults(row.workspaceId, actorUserId);
 }
 
 /**
@@ -7530,13 +7512,14 @@ export async function updateBlogByHandle(
 
 // Get-or-create the signed-in user's blog. Upserts the user (keyed by Apple sub;
 // Apple only sends name/email on first authorization, so existing values are
-// preserved on later sign-ins) and provisions a starter blog on first sign-in.
+// preserved on later sign-ins) and provisions file-backed starters on first sign-in.
 export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
   if (!db) throw new Error("ensureOwnerBlog requires DATABASE_URL");
   const owner = await upsertUser(user);
 
   const existing = await getOwnedBlog(user.sub);
   if (existing) {
+    await resumeWorkspaceProvisioning(owner.id);
     if (existing.username) return existing;
     const username = await ensureUserUsername(
       owner,
@@ -7544,7 +7527,7 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
     );
     return { ...existing, username };
   }
-  const name = user.name ? `${user.name}'s blog` : "My blog";
+  const name = "My workspace";
   const seed = user.email?.split("@")[0] || user.name || "blog";
   const username = await ensureUserUsername(
     owner,
@@ -7557,17 +7540,18 @@ export async function ensureOwnerBlog(user: StoreUser): Promise<Blog> {
   // index) just retries with a fresh handle. Either way we end with exactly one.
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const handle = await uniqueHandle(seed);
-    const inserted = await db
-      .insert(blogs)
-      .values({ handle, name, ownerId: owner.id })
-      .onConflictDoNothing()
-      .returning();
+    const inserted = await db.transaction(async tx => {
+      const rows = await tx.insert(blogs).values({ handle, name, ownerId: owner.id }).onConflictDoNothing().returning();
+      if (rows[0]) await tx.insert(actionAudit).values({ actorUserId: owner.id, actorType: "human",
+        actionName: "provision_file_workspace_v1", targetType: "workspace", targetId: rows[0].id });
+      return rows;
+    });
     if (inserted[0]) {
-      await provisionNewWorkspaceDefaults(inserted[0].id);
+      await provisionNewWorkspaceDefaults(inserted[0].id, owner.id);
       break;
     }
     const settled = await getOwnedBlog(user.sub);
-    if (settled) return settled; // another request created this owner's blog
+    if (settled) { await resumeWorkspaceProvisioning(owner.id); return settled; } // concurrent sign-in
     // otherwise the handle collided with a different owner; try another handle
   }
 
