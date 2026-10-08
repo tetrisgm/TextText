@@ -482,13 +482,38 @@ public struct LocalVaultDocumentStore: Sendable {
     public func write(path: String, expectedHash: String, markdown: String,
                       documentJSON: String?, templateJSON: String?,
                       templateAuthoringSourceJSON: String?,
-                      addedAssets: [TextTextTextBundleAsset] = []) throws -> Document {
+                      addedAssets: [TextTextTextBundleAsset] = [],
+                      mutationKey: String? = nil, mutationFingerprint: String? = nil) throws -> Document {
+        if let mutationKey {
+            guard !mutationKey.isEmpty, mutationKey.utf8.count <= 256,
+                  mutationFingerprint?.utf8.count == 64 else {
+                throw TextTextTextBundleError.invalidPackage("Invalid mutation identity")
+            }
+        }
         let target = try url(for: path)
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordinationError) { coordinated in
             outcome = Result {
                 let current = try readUncoordinated(path: path, url: coordinated)
+                let receiptPath = mutationKey.map {
+                    "net.texttext.mutations/" + TextTextStableDigest.sha256Hex(Data($0.utf8)) + ".json"
+                }
+                if let receiptPath {
+                    let existingArchive = try Archive(url: coordinated, accessMode: .read)
+                    if let entry = existingArchive[receiptPath] {
+                        guard entry.uncompressedSize <= 1024 else { throw Failure.tooLarge }
+                        var bytes = Data(); _ = try existingArchive.extract(entry) { bytes.append($0) }
+                        let receipt = try JSONSerialization.jsonObject(with: bytes) as? [String: String]
+                        guard receipt?["fingerprint"] == mutationFingerprint else {
+                            throw TextTextTextBundleError.invalidPackage("Mutation key already used for different content")
+                        }
+                        return current
+                    }
+                    guard existingArchive.filter({ $0.path.hasPrefix("net.texttext.mutations/") }).count < 4096 else {
+                        throw TextTextTextBundleError.invalidPackage("Document mutation receipt limit reached")
+                    }
+                }
                 guard current.hash == expectedHash else { throw Failure.changed }
                 let before = current.contents
                 let occupied = Dictionary(uniqueKeysWithValues: before.assets.map {
@@ -516,7 +541,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 if before.markdown == markdown, before.documentJSON == documentJSON,
                    before.templateJSON == templateJSON,
                    before.templateAuthoringSourceJSON == templateAuthoringSourceJSON,
-                   addedAssets.isEmpty { return current }
+                   addedAssets.isEmpty, mutationKey == nil { return current }
                 let parent = coordinated.deletingLastPathComponent()
                 let temporary = parent.appendingPathComponent(".texttext-save-\(UUID().uuidString)")
                 try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
@@ -540,6 +565,11 @@ public struct LocalVaultDocumentStore: Sendable {
                 guard TextTextStableDigest.sha256Hex(originalBytes) == expectedHash else { throw Failure.changed }
                 try originalBytes.write(to: packed)
                 let archive = try Archive(url: packed, accessMode: .update)
+                if let receiptPath, let mutationFingerprint {
+                    let receiptURL = temporary.appendingPathComponent("mutation-receipt.json")
+                    try JSONSerialization.data(withJSONObject: ["fingerprint": mutationFingerprint], options: [.sortedKeys]).write(to: receiptURL)
+                    try archive.addEntry(with: receiptPath, fileURL: receiptURL, compressionMethod: .deflate)
+                }
                 let markdownEntry = try canonicalMarkdownEntry(archive)
                 let prefix = String(markdownEntry.path.dropLast("text.md".count))
                 for name in ["text.md", "document.json", "template.json", "template-source.json"] {

@@ -281,6 +281,22 @@ public enum CLIWorkspace: Sendable {
     ) async throws {
         switch reference {
         case .local(let url):
+            if let idempotencyKey {
+                guard url.pathExtension.lowercased() == "textpack" else {
+                    throw TextTextCLIError.invalidDocument("retry-safe append requires a TextPack")
+                }
+                let vault = LocalVaultDocumentStore(root: url.deletingLastPathComponent())
+                let file = try vault.read(path: url.lastPathComponent)
+                let before = file.contents
+                let separator = before.markdown.hasSuffix("\n") ? "" : "\n"
+                _ = try vault.write(path: file.path, expectedHash: file.hash,
+                    markdown: before.markdown + separator + markdown,
+                    documentJSON: before.documentJSON, templateJSON: before.templateJSON,
+                    templateAuthoringSourceJSON: before.templateAuthoringSourceJSON,
+                    mutationKey: idempotencyKey,
+                    mutationFingerprint: TextTextStableDigest.sha256Hex(Data(("append\u{0}" + markdown).utf8)))
+                return
+            }
             let store = DocumentStore(root: url.deletingLastPathComponent())
             let content = try await readContent(at: reference)
             let current = content.markdown

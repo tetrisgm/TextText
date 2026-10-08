@@ -3,6 +3,28 @@ import XCTest
 @testable import TextTextCLICore
 
 final class LocalVaultTests: XCTestCase {
+    func testLocalAppendReceiptSurvivesReopenAndLaterEdits() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = CLIWorkspace.local(DocumentStore(root: root))
+        let reference = try await workspace.create(title: "Retry", body: "Original.")
+        try await workspace.appendMarkdown("Once.", to: reference, idempotencyKey: "retry-one")
+        let first = try await workspace.readContent(at: reference)
+        try await workspace.writeMarkdown(first.markdown + "\nLater human edit.\n", to: reference, ifMatchHash: first.hash)
+        let reopened = CLIWorkspace.local(DocumentStore(root: root))
+        try await reopened.appendMarkdown("Once.", to: reference, idempotencyKey: "retry-one")
+        let result = try await reopened.readContent(at: reference)
+        XCTAssertEqual(result.markdown.components(separatedBy: "Once.").count, 2)
+        XCTAssertTrue(result.markdown.contains("Later human edit."))
+        do {
+            try await reopened.appendMarkdown("Different.", to: reference, idempotencyKey: "retry-one")
+            XCTFail("a key cannot authorize different content")
+        } catch { }
+        let after = try await reopened.readContent(at: reference)
+        XCTAssertEqual(after.hash, result.hash)
+    }
+
     func testSelectedVaultPersistsAndWorksWithoutCredentials() async throws {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }

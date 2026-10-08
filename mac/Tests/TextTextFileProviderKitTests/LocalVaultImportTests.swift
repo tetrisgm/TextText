@@ -16,7 +16,10 @@ final class LocalVaultImportTests: XCTestCase {
 
     func testFolderViewDiscoveryUsesExplicitMarkerAndImmediateFolderOnly() throws {
         try fixture { root, store in
-            let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "Definition", assets: [], sourceURL: nil, in: root)
+            let snapshot = try BuiltinTextPackDocument.create(title: "Folder view", body: "Definition", kind: "note")
+            let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "Definition",
+                documentJSON: snapshot.documentJSON, templateJSON: snapshot.templateJSON,
+                assets: [], sourceURL: nil, in: root)
             let metadata = #"{"schemaVersion":1,"content":{"title":"Folder view","body":"Definition","fields":{"texttextFolderView":"v1"},"tags":[],"assets":[]},"presentation":{"template":{"id":"texttext.note","version":1},"theme":{}}}"#
             try Data(metadata.utf8).write(to: package.url.appendingPathComponent("document.json"))
             let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)

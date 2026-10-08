@@ -43,7 +43,12 @@
   flow across clients. Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.
-  Local CLI create/append also need durable idempotency-key handling.
+  Local CLI create needs durable idempotency-key handling. Keyed append now
+  commits its receipt in the same TextPack replacement; reopen/later-edit retry
+  and payload mismatch regression passed. Cross-client receipt preservation
+  remains unverified. [Receipt](verification/2026-10-08-local-append-idempotency.md).
+  Storage/CLI suites passed 84 tests. Bundled editor UI smoke failed in the
+  broader run and requires investigation before the next client acceptance.
 - Complete agent item/template creation acceptance. Real native Gallery image
   description and metadata writing passed; hosted configured-provider generation
   and approval remain unverified.
