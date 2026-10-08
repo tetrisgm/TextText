@@ -88,16 +88,17 @@ export function VaultTemplateCards({ looks, onChoose, actionLabel = "Use templat
   )}{extra}</div>;
 }
 
-export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCreateFromFile, onCreateFromBuiltIn, onCreateFeed }: {
+export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCreateFromFile, onCreateFromBuiltIn, onCreateFeed, initialQuery = "" }: {
   onApply: (template: TemplateDefinition, sourceJSON?: string | null) => void;
   onClose: () => void;
   currentTemplate?: TemplateDefinition;
   onCreateFromFile?: (path: string) => void;
   onCreateFromBuiltIn?: (template: TemplateDefinition) => void;
   onCreateFeed?: () => void;
+  initialQuery?: string;
 }) {
   const { looks, loading, notice, reload } = useVaultTemplates();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const dialog = useRef<HTMLDivElement>(null);
   const title = onCreateFromFile ? "New from template" : "Choose a look";
   useDialogFocus(dialog, true); useEscapeLayer(true, title, onClose);

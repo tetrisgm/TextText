@@ -1,16 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { VaultApp } from "./VaultApp";
 import { WebAccount } from "./WebAccount";
 import { setVaultTransport } from "./bridge";
 import { createWebVaultTransport } from "./web-transport";
 import { watchWebWorkspace } from "./web-watch";
+import { consumeTemplateIntent } from "./template-intent";
 import { claimWebSession, renameWebSession } from "./web-session";
 
 export function WebVault({ workspaceId, name, accountEmail, accountName }: { workspaceId: string; name: string; accountEmail: string | null; accountName: string | null }) {
+  const searchParams = useSearchParams();
   const [initial] = useState({ workspaceId, name });
   const [session, setSession] = useState<{ workspaceId: string; name: string; remounted?: boolean } | null>(null);
+  const [templateIntent, setTemplateIntent] = useState<{ query: string } | null>(null);
   const [switchError, setSwitchError] = useState("");
   useEffect(() => {
     const owned = claimWebSession(initial.workspaceId, initial.name);
@@ -46,6 +50,14 @@ export function WebVault({ workspaceId, name, accountEmail, accountName }: { wor
     };
   }, [initial]);
   useEffect(() => {
+    if (!session || session.remounted || session.workspaceId !== workspaceId || !searchParams.has("template")) return;
+    const intent = consumeTemplateIntent(window.location.href, session.workspaceId);
+    if (intent) {
+      window.history.replaceState(window.history.state, "", intent.url);
+      setTemplateIntent({ query: intent.query });
+    }
+  }, [session, workspaceId, searchParams]);
+  useEffect(() => {
     if (!session || session.remounted || !renameWebSession(workspaceId, name)) return;
     window.dispatchEvent(new Event("texttext:vault-changed"));
   }, [session, workspaceId, name]);
@@ -69,5 +81,5 @@ export function WebVault({ workspaceId, name, accountEmail, accountName }: { wor
     return () => { active = false; };
   }, [session, workspaceId]);
   if (session?.remounted) return <section><p>Open this workspace in a new page.</p><a href={`/vault/${encodeURIComponent(workspaceId)}`}>Open workspace</a><p><a href={`/vault/${encodeURIComponent(session.workspaceId)}`}>Return to previous workspace</a></p></section>;
-  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /></> : <p>Opening workspace…</p>;
+  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp templateIntent={templateIntent} allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /></> : <p>Opening workspace…</p>;
 }

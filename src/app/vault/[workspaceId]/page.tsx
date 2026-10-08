@@ -10,14 +10,18 @@ export const metadata = { title: "Workspace", robots: { index: false, follow: fa
 
 export default async function VaultPage({ params, searchParams }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ item?: string | string[] }>;
+  searchParams: Promise<{ item?: string | string[]; template?: string | string[] }>;
 }) {
   const { workspaceId } = await params;
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workspaceId)) notFound();
-  const requestedItem = (await searchParams).item;
+  const query = await searchParams;
+  const requestedItem = query.item;
   const item = typeof requestedItem === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(requestedItem) ? requestedItem : null;
+  const callbackQuery = new URLSearchParams();
+  if (item) callbackQuery.set("item", item);
+  if (typeof query.template === "string" && /^[a-z][a-z0-9-]{0,80}$/.test(query.template)) callbackQuery.set("template", query.template);
   const user = await getCurrentUser();
-  if (!user) redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(`/vault/${workspaceId}${item ? `?item=${encodeURIComponent(item)}` : ""}`)}`);
+  if (!user) redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(`/vault/${workspaceId}${callbackQuery.size ? `?${callbackQuery.toString()}` : ""}`)}`);
   const blog = await getVaultWorkspaceIdentity(workspaceId);
   if (!blog) notFound();
   const access = await resolveWorkspaceAccess({ handle: blog.handle, user, fresh: true });

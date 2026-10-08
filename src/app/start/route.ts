@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
-  createTemplateDraftPath,
   resolveWorkspaceHomePath,
 } from "@/app/editor/actions";
 import { getCurrentUser } from "@/lib/session";
@@ -12,7 +11,7 @@ export const dynamic = "force-dynamic";
 // The signed-in entry point into a workspace: the classic service shape is
 // sign in first, then write. Signed-out visitors are routed through /signin
 // and come back here. Both the default and ?to=home open the shared file workspace.
-// Explicit template links retain their existing document creation behavior.
+// Template links open the shared file template picker without creating a draft.
 //
 // Real HTTP redirects, on purpose. A link to /start is prefetched by the
 // router with a `_rsc` cache-busting parameter; that parameter used to be
@@ -44,13 +43,8 @@ export async function GET(request: NextRequest) {
       if (!/^[a-z][a-z0-9-]{0,80}$/.test(templateSlug)) {
         return go("/templates", request);
       }
-      return go(
-        await createTemplateDraftPath(
-          templateSlug,
-          request.nextUrl.searchParams.get("seed") === "1",
-        ),
-        request,
-      );
+      const home = await resolveWorkspaceHomePath();
+      return go(`${home}?template=${encodeURIComponent(templateSlug)}`, request);
     }
     return go(await resolveWorkspaceHomePath(), request);
   } catch (error) {

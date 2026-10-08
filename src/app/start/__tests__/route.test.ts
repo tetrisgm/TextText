@@ -46,11 +46,11 @@ describe("/start", () => {
     const draft = await GET(new NextRequest("https://texttext.app/start?_rsc=abc123"));
     expect(draft.headers.get("location")).toBe("https://texttext.app/vault/workspace-id");
     const template = await GET(new NextRequest("https://texttext.app/start?template=recipe"));
-    expect(template.headers.get("location")).toBe("https://texttext.app/@writer/blog/recipe");
-    expect(templateDraft).toHaveBeenCalledWith("recipe", false);
+    expect(template.headers.get("location")).toBe("https://texttext.app/vault/workspace-id?template=recipe");
+    expect(templateDraft).not.toHaveBeenCalled();
     const seeded = await GET(new NextRequest("https://texttext.app/start?template=gallery&seed=1"));
-    expect(seeded.headers.get("location")).toBe("https://texttext.app/@writer/blog/gallery");
-    expect(templateDraft).toHaveBeenCalledWith("gallery", true);
+    expect(seeded.headers.get("location")).toBe("https://texttext.app/vault/workspace-id?template=gallery");
+    expect(templateDraft).not.toHaveBeenCalled();
   });
 
   it("routes a matching-email account to linking guidance", async () => {

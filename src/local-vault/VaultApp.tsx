@@ -479,7 +479,7 @@ class DocumentBoundary extends Component<{ children: ReactNode }, { error: strin
   render() { return this.state.error ? <div className="vault-notice" role="alert">This TextPack could not be opened: {this.state.error}</div> : this.props.children; }
 }
 
-export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolderPicker?: boolean; accountMenu?: ReactNode }) {
+export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null }: { allowFolderPicker?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
   const sidebarReopenButton = useRef<HTMLButtonElement>(null);
@@ -551,6 +551,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolde
     return () => { cancelAnimationFrame(frame); narrow.removeEventListener("change", closeForAssistant); };
   }, [assistantOpen, setSidebarVisible]);
   const [templatePicker, setTemplatePicker] = useState(false);
+  const [templateQuery, setTemplateQuery] = useState("");
+  const consumedTemplateIntent = useRef<{ query: string } | null>(null);
   const [captureMode, setCaptureMode] = useState<"bookmark" | "mixed" | null>(null);
   const [pendingCreationLook, setPendingCreationLook] = useState<{ kind: "bookmark" | "gallery"; template: TemplateDefinition; sourceJSON?: string | null } | null>(null);
   const [preferredBookmarkPath, setPreferredBookmarkPath] = useState("");
@@ -652,6 +654,12 @@ export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolde
     flushRef.current = flush; publishFlushRef.current = publishFlush; saveStoryDetailsRef.current = saveStoryDetails; currentFileRef.current = currentFile;
   }, []);
   const canCreate = allowFolderPicker || canCreateInVaultFolder(access, destinationFolder.trim());
+  useEffect(() => {
+    if (templateIntent === null || consumedTemplateIntent.current === templateIntent || !listing || !canCreate) return;
+    consumedTemplateIntent.current = templateIntent;
+    setTemplateQuery(templateIntent.query);
+    setTemplatePicker(true);
+  }, [templateIntent, listing, canCreate]);
   const canManageFiles = allowFolderPicker || Boolean(access?.fullAccess && access.canEditContent);
   const canOpenRecovery = allowFolderPicker || Boolean(access?.isOwner);
   const nativeWorkspaceId = allowFolderPicker && nativeConnection?.root === listing?.root ? nativeConnection?.workspaceId ?? null : null;
@@ -828,7 +836,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolde
       setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true;
     });
   };
-  const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => setTemplatePicker(true)); };
+  const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => { setTemplateQuery(""); setTemplatePicker(true); }); };
   const createForFolder = (folder: string, templateName: string, initialTitle = "", builtinTemplate?: TemplateDefinition, initialBody = "", stayInList = false, onCreated?: () => void, initialTags: string[] = [], initialImages: File[] = [], initialColor = "default") => operate(async () => {
     const sourcePath = `Templates/${templateName}.textpack`;
     const source = listing?.items.some(item => item.path === sourcePath) ? await vaultRequest<VaultFile>("read", { path: sourcePath }) : null;
@@ -1301,7 +1309,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu }: { allowFolde
         if (!await flushRef.current(true)) throw new Error("Save or resolve the current document before opening another file.");
         setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path));
       }} />}
-      {templatePicker && <LocalTemplateLibrary onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFeed={canSubscribeFeed ? () => {
+      {templatePicker && <LocalTemplateLibrary initialQuery={templateQuery} onClose={() => setTemplatePicker(false)} onApply={() => {}} onCreateFeed={canSubscribeFeed ? () => {
         setTemplatePicker(false); setDestinationFolder("Feeds"); openFeedSubscribe(searchButton.current);
       } : undefined} onCreateFromBuiltIn={(template) => {
         setTemplatePicker(false);
