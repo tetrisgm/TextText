@@ -70,20 +70,17 @@ manual Windows build with exit zero. Sealed candidate:
 `6ecf6765af1d4a2e871a03a6b5f2ce70`. Expanded desktop receipt:
 `windows/build/smoke-receipts-1962809f581d477eb76e1a0b28dce860`; build log:
 `windows-final-software-build.log` (historical filename; rendering is default).
-The subsequent install SSH connection reset before any installer output.
-Installation must be checked before retry; final Unicode/comments live checks
-are still pending. The preceding focused expanded smoke also passed:
+After PC access recovered, the installed receipt still differed and no app was
+running. The established installer verified source/artifacts twice and installed
+this candidate, preserving `TextText-previous-20261007T165524-9fa0f669`.
+The preceding focused expanded smoke also passed:
 `windows/build/smoke-receipts-882acd2cf6ed441da603f59ff639cbcc`.
 
-Last installed candidate is `8ca77072ef324c95b4202de1e79ac490`, source
-`911e7564` (UTF-8 subprocess fix). Exact-source/artifact verification and all
-build gates passed before installation. Previous app:
-`TextText-previous-20261007T155724-bc262a43`. Build log:
-`windows-final-utf8-build.log`; passing desktop receipts:
-`windows/build/smoke-receipts-8b5efd2734e149318439dc771df70f1b`.
+The previous installed candidate was `8ca77072ef324c95b4202de1e79ac490`, source
+`911e7564` (UTF-8 fix); it has now been replaced by the candidate above.
 The live agent/sync/close observations below were completed on the immediately
 preceding candidate `e97aec8b1d2d480785e1e9e6bfc66e7f`; they are not evidence
-that the last installed candidate started successfully.
+that every later candidate received the same live test.
 The final candidate includes lazy saved agent-account restoration, shared agent
 presence readiness, and validated durable-checkpoint readiness. The portable
 native suite passed 112 assertions; the final candidate also contains the
@@ -113,7 +110,7 @@ punctuation in the agent reply. Commit `911e7564` explicitly configures UTF-8
 stdin/stdout/stderr; its subprocess regression exchanges literal curly quotes,
 accented text, CJK and emoji in tool arguments, results and final messages.
 Mac portable tests and WPF cross-build passed. The subsequent installed-candidate
-read-only Unicode check has **not** run because startup stalled.
+read-only Unicode check passed on the final candidate, as recorded below.
 
 ## Windows test-launch startup diagnosis
 
@@ -151,9 +148,40 @@ boundary diagnostics remain in the test-only harness.
 The earlier installed process was preserved while its actual state was checked.
 Correcting only that test-launched process to normal CPU priority let it render
 the signed-in account and all eight existing probe markers. No new OAuth or
-credential copying was required. Final candidate assembly and read-only Unicode
-acceptance remain to be recorded below; prior unsealed candidates were never
-installed.
+credential copying was required. Prior unsealed candidates were never installed.
+
+## Final installed acceptance
+
+Candidate `6ecf6765af1d4a2e871a03a6b5f2ce70` opened with the saved TextText
+account and all eight markers. At 23:56:39 UTC the actual native assistant sent
+one read-only request; the actual Codex reply was exactly `“Café” 日本語 🧪`.
+Saved Codex authorization restored without OAuth. UI Automation data was saved
+as UTF-8 and compared by exact string equality; the SSH console itself cannot
+faithfully display these characters. No document mutation was requested.
+
+At 23:58:35 UTC, actual Windows Comments controls posted
+`Windows native comments verification 20261007.` on the dedicated test note.
+Safari independently showed its Windows author and text. Windows then resolved
+that thread; both clients displayed Open 0 / Resolved 1 automatically, without
+browser reload. The unique test thread remains resolved.
+
+Normal window close exited without force or a warning; reopening restored the
+signed-in account, selected note and all eight markers by 00:00:32 UTC Oct 8.
+Both installed launches initially showed an empty WebView shell for roughly
+20–30 seconds before the reader. These checks establish eventual successful
+startup, not fast installed startup. No startup timing target is claimed.
+The final disk receipt confirmed eight markers exactly once, outbox 0, no
+pending pull, and an acknowledged archive hash after comment convergence:
+`afd0dad6ca0877b052441c6b50f334fc13937fee710997011c3625ee95b2c25c`.
+
+Installed SHA-256:
+
+- `TextText.exe`: `8eaf0eb49815a8c12240c408b20a8d88d6d36a8bce2382692e86e629cc56c37f`
+- `TextText.dll`: `a2e0b16c5411746f549dc589830552e707588067fde31fedfdf7da0ec0ec41ee`
+
+Native Settings remains a limited account/location information surface. Real
+user logout was deliberately not exercised; no full OS-integration parity is
+claimed by the shared-content checks.
 
 ## Verification limits
 
