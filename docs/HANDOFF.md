@@ -477,6 +477,12 @@ and actions, with a personal per-device/workspace preference.
   found. Do not create a duplicate. Standalone CLI receipt:
   [current CLI](verification/2026-10-07-standalone-cli-current.md).
 
+## Bookmark summary concurrent-edit protection
+
+- Summary editing now retains its starting value, flushes queued reader edits, reads the latest pack, rejects a competing summary change while keeping the draft, and refreshes the displayed document for explicit review. Successful saves preserve unrelated latest fields/body.
+- Added focused actual browser scenario to the existing offline native-bridge fixture and `npm run test:bookmark-summary:browser`; the normal npm test pipeline includes it. Focused regression and TypeScript passed, logs `/tmp/texttext-bookmark-conflict-focused.log`, `/tmp/texttext-bookmark-conflict-types.log`. Not built/installed/deployed.
+- The unmodified broad fixture stops earlier on stale draft-cache waits and an obsolete hardcoded new-note filename; after temporarily correcting those expectations it stops at another earlier template assertion. Those exploratory corrections were removed; do not claim the full fixture passed. Resolve the broad-fixture assumptions before its next required release gate.
+
 ## Oracle shutdown candidate deployed
 
 - Clean source `0533908b` at `/private/tmp/texttext-candidate-1195-5ELVuo` passed all 817 core tests, TypeScript and required native sync gates. Receipts `/tmp/texttext-oracle-drain-core.log`, `/tmp/texttext-oracle-drain-clean-types.log`, `/tmp/texttext-oracle-drain-native.log`.

@@ -271,6 +271,44 @@ try {
   };
   const folderNavigation = page.getByRole("navigation", { name: "Folders", exact: true });
   const chooseFolder = async (name) => folderNavigation.locator("summary").filter({ hasText: name }).first().click();
+  if (process.argv.includes("--bookmark-conflict-only")) {
+    const fixturePath = "Bookmarks/Summary.textpack";
+    const document = makeDocument("Saved article text.");
+    document.content.title = "Summary conflict fixture";
+    document.content.fields = { sourceUrl: "https://example.com/article" };
+    document.presentation.template = { id: "texttext.bookmark", version: 1 };
+    const preset = unzipSync(await readFile("presets/builtin/bookmark.textpack"));
+    const templateJSON = strFromU8(preset[Object.keys(preset).find(name => name.endsWith("/template.json"))]);
+    files.set(fixturePath, { path: fixturePath, hash: String(++revision), documentJSON: JSON.stringify(document), templateJSON,
+      markdown: '---\ntextTextId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"\ntitle: "Summary conflict fixture"\nkind: "bookmark"\nsourceUrl: "https://example.com/article"\n---\n\nSaved article text.' });
+    await page.reload();
+    await chooseFolder("Bookmarks");
+    await page.getByRole("option", { name: /Summary conflict fixture/ }).click();
+    const reader = page.locator(".vault-bookmark-reader");
+    await reader.getByLabel("Bookmark details", { exact: true }).click();
+    await reader.getByRole("button", { name: "Add summary" }).click();
+    await reader.getByRole("textbox", { name: "Summary text" }).fill("My summary draft.");
+    const competing = { ...document, content: { ...document.content, subtitle: "Another editor's summary." } };
+    files.set(fixturePath, { ...files.get(fixturePath), hash: String(++revision), documentJSON: JSON.stringify(competing) });
+    const writesBefore = writePaths.length;
+    await reader.getByRole("button", { name: "Save summary" }).click();
+    await reader.getByText("The summary changed while you were editing. Your draft is kept. Reopen the summary to review the latest version.").waitFor();
+    assert.equal(writePaths.length, writesBefore);
+    assert.equal(await reader.getByRole("textbox", { name: "Summary text" }).inputValue(), "My summary draft.");
+    await reader.getByRole("button", { name: "Cancel", exact: true }).click();
+    await reader.getByRole("button", { name: "Edit summary" }).click();
+    assert.equal(await reader.getByRole("textbox", { name: "Summary text" }).inputValue(), "Another editor's summary.");
+    await reader.getByRole("textbox", { name: "Summary text" }).fill("Reviewed combined summary.");
+    competing.content.fields.externalDetail = "Preserve this newer detail";
+    files.set(fixturePath, { ...files.get(fixturePath), hash: String(++revision), documentJSON: JSON.stringify(competing) });
+    await reader.getByRole("button", { name: "Save summary" }).click();
+    await reader.getByRole("button", { name: "Edit summary" }).waitFor();
+    const saved = JSON.parse(files.get(fixturePath).documentJSON);
+    assert.equal(saved.content.subtitle, "Reviewed combined summary.");
+    assert.equal(saved.content.fields.externalDetail, "Preserve this newer detail");
+    assert.equal(saved.content.body, "Saved article text.");
+    console.log("PASS bookmark summary competing edits retain drafts; explicit review preserves unrelated newer content.");
+  } else {
   const sidebar = page.locator(".vault-sidebar");
   assert.equal(await sidebar.getByRole("button", { name: "New note", exact: true }).count(), 0);
   assert.equal(await sidebar.getByRole("button", { name: "New from template", exact: true }).count(), 0);
@@ -3061,4 +3099,5 @@ try {
   console.log("Quiet shell passed: one folder tree, one primary create action, contextual actions, Command-K, and narrow keyboard menu.");
   console.log("Narrow folder drawer, full-width editor, remembered collapse, keyboard escape and reduced-motion render passed.");
   console.log("Offline vault UI passed: file save, raw agent refresh, conflict copy, zero HTTP/fetch calls.");
+  }
 } finally { await browser.close(); }
