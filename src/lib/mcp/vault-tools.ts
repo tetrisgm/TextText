@@ -145,7 +145,9 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
         return json(await organizeVaultItem(name, args, { ...location, actorUserId: userId, actorType, authorize }));
       }
       const action = async () => {
-        const receipt = await mutateVaultTool(name, args, { ...location, actorUserId: userId, actorType, authorize });
+        const receipt = await mutateVaultTool(name, args, { ...location, actorUserId: userId, actorType, authorize, authorizeTemplate: async (itemId, relativePath) => {
+          if (!await allowedNow({ itemId, relativePath })) throw new Error("Template source is unavailable");
+        } });
         if (receipt.status === "conflict") throw new Error("The item changed. Read it again before editing.");
         if (location.receiptOnly) return receipt;
         const current = await readVaultTextpack({ ...location, itemId: receipt.itemId });

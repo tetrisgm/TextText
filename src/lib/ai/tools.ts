@@ -258,6 +258,7 @@ const createItemInput = z
       value.fields !== undefined;
     if (
       !value.capture &&
+      !value.template_id &&
       !value.markdown &&
       !value.title &&
       !value.body?.trim()
@@ -265,7 +266,7 @@ const createItemInput = z
       context.addIssue({
         code: "custom",
         message:
-          "Pass capture text, markdown, a title, or body text for the new item.",
+          "Pass a template, capture text, markdown, a title, or body text for the new item.",
       });
     }
     if (value.capture && (value.markdown || structured)) {

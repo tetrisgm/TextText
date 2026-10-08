@@ -4,6 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { unzipSync } from "fflate";
 import * as Y from "yjs";
+import { requireBuiltinTemplate } from "@/lib/presentation/templates";
+import { openPack } from "@/local-vault/pack";
+import { readDocument } from "@/local-vault/model";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { parseWorkspaceToolInput } from "@/lib/ai/tools";
@@ -123,5 +126,87 @@ describe("durable file MCP commands through public input schemas", () => {
   it("fails closed on unsupported metadata and unsafe folders", async () => {
     await expect(mutateVaultTool("update_item", { id: itemId, status: "published" }, context())).rejects.toThrow("Unsupported");
     await expect(mutateVaultTool("create_item", { folder_path: "../private" }, context())).rejects.toThrow("Invalid folder");
+  });
+});
+
+
+describe("custom template creation under the file commit lock", () => {
+  async function template(version: number) {
+    const id = `template-${version}`;
+    const definition = { ...structuredClone(requireBuiltinTemplate("texttext.note")), id: "custom.research", version,
+      fields: [{ id: "sourceUrl", label: "Source", type: "url" as const }, { id: "summary", label: "Summary", type: "text" as const }],
+      starter: { title: `Research ${version}`, body: `# Findings ${version}`, fields: { sourceUrl: "https://example.com", summary: "Starter" } } };
+    const document = emptyDocumentSnapshot({ id: definition.id, version });
+    const result = await writeVaultTextpack({ root, workspaceId: "workspace", itemId: id, operationId: `seed-template-${version}`,
+      relativePath: `Templates/${id}.textpack`, baseRevision: null,
+      bytes: buildTextpack("Template", { document, template: definition, markdown: `---\ntextTextId: ${id}\n---\n` }) });
+    return result;
+  }
+  const templateContext = () => ({ ...context(), authorizeTemplate: vi.fn(async () => {}) });
+  async function read(id: string) {
+    const pack = await readVaultTextpack({ root, workspaceId: "workspace", itemId: id });
+    return { pack: pack!, document: readDocument(openPack(pack!.bytes, pack!.relativePath, pack!.revision, id).file) };
+  }
+  it("seeds latest or pinned starters and preserves the exact original receipt after a new version", async () => {
+    await template(1);
+    const args = parseWorkspaceToolInput("create_item", { template_id: "custom.research", idempotency_key: "starter" });
+    const context = templateContext();
+    const first = await mutateVaultTool("create_item", args, context);
+    const original = await read(first.itemId);
+    expect(original.document.content.title).toBe("Research 1");
+    expect(original.document.content.body).toBe("# Findings 1");
+    expect(original.pack.relativePath).toContain("Notes/Research 1-");
+    await template(2);
+    expect(await mutateVaultTool("create_item", args, context)).toEqual(first);
+    expect((await read(first.itemId)).pack.bytes).toEqual(original.pack.bytes);
+    const latest = await mutateVaultTool("create_item", { ...args, idempotency_key: "latest" }, context);
+    expect((await read(latest.itemId)).document.presentation.template.version).toBe(2);
+    const pinned = await mutateVaultTool("create_item", { ...args, template_version: 1, title: "Mine", body: "My writing", fields: { summary: "" }, idempotency_key: "pinned" }, context);
+    expect((await read(pinned.itemId)).document.content).toMatchObject({ title: "Mine", body: "My writing" });
+    expect((await read(pinned.itemId)).document.presentation.template.version).toBe(1);
+    expect((await read(pinned.itemId)).document.content.fields).toMatchObject({ sourceUrl: "https://example.com", summary: "" });
+    context.authorizeTemplate.mockRejectedValue(new Error("revoked"));
+    await expect(mutateVaultTool("create_item", args, context)).rejects.toThrow("revoked");
+    expect((await read(first.itemId)).pack.bytes).toEqual(original.pack.bytes);
+  });
+  it("keeps root destinations valid, skips invalid unrelated templates, and rejects unbound versions", async () => {
+    await template(1);
+    const invalidId = "invalid-template";
+    const document = emptyDocumentSnapshot();
+    const malformed = await writeVaultTextpack({ root, workspaceId: "workspace", itemId: invalidId, operationId: "invalid-seed",
+      relativePath: "Templates/invalid.textpack", baseRevision: null,
+      bytes: buildTextpack("Invalid", { document, markdown: `---\ntextTextId: ${invalidId}\n---\n` }) });
+    await fs.writeFile(path.join(root, "workspace", malformed.relativePath), "not an archive");
+    const result = await writeVaultTextpack({ root, workspaceId: "workspace", itemId: "root-note", operationId: "root-template",
+      relativePath: "Untitled.textpack", baseRevision: null,
+      bytes: buildTextpack("Note", { document, markdown: "---\ntextTextId: root-note\n---\n" }),
+      templateCreation: { id: "custom.research", titleDefault: true, bodyDefault: true, fieldsDefault: true, folderDefault: false },
+      beforeTemplateRead: async () => {} });
+    expect(result.relativePath).toBe("Research 1-root-not.textpack");
+    expect((await read(result.itemId)).document.content.body).toBe("# Findings 1");
+    await expect(mutateVaultTool("create_item", { title: "Test", template_version: 1 }, templateContext())).rejects.toThrow("requires template_id");
+  });
+  it("rejects ambiguous versions and checks the resolved destination before publishing", async () => {
+    const source = await template(1);
+    await expect(mutateVaultTool("create_item", { template_id: "custom.research", idempotency_key: "denied-folder" },
+      { ...templateContext(), authorize: async (_id, path) => { expect(path).toContain("Notes/Research 1-"); throw new Error("folder denied"); } })).rejects.toThrow("folder denied");
+    const original = await readVaultTextpack({ root, workspaceId: "workspace", itemId: source.itemId });
+    const pack = openPack(original!.bytes, original!.relativePath, original!.revision, source.itemId);
+    const definition = JSON.parse(pack.file.templateJSON!);
+    await writeVaultTextpack({ root, workspaceId: "workspace", itemId: "duplicate", operationId: "duplicate",
+      relativePath: "Templates/duplicate.textpack", baseRevision: null,
+      bytes: buildTextpack("Template", { document: readDocument(pack.file), template: definition, markdown: "---\ntextTextId: duplicate\n---\n" }) });
+    await expect(mutateVaultTool("create_item", { template_id: "custom.research" }, templateContext())).rejects.toThrow("ambiguous");
+  });
+  it("fails closed when unavailable and detects a source changed during final authorization", async () => {
+    const source = await template(1);
+    const args = { template_id: "custom.research", idempotency_key: "race" };
+    await expect(mutateVaultTool("create_item", args, { ...context(), authorizeTemplate: async () => { throw new Error("denied"); } })).rejects.toThrow("unavailable");
+    let reads = 0;
+    await expect(mutateVaultTool("create_item", args, { ...context(), authorizeTemplate: async () => {
+      if (++reads === 2) await fs.appendFile(path.join(root, "workspace", source.relativePath), "changed");
+    } })).rejects.toThrow("Template source changed");
+    const files = await fs.readdir(path.join(root, "workspace", "Notes"));
+    expect(files).toEqual(["A.textpack"]);
   });
 });

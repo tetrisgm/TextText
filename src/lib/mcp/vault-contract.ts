@@ -4,7 +4,7 @@ const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
   update_item_type: ["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key"],
   create_item_type: ["blueprint", "idempotency_key"],
   add_comment: ["id", "body", "parent_comment_id", "idempotency_key"],
-  create_item: ["capture", "markdown", "title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key"],
+  create_item: ["capture", "markdown", "title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key", "template_id", "template_version"],
   update_item: ["id", "title", "body", "excerpt", "tags", "section", "expected_section_body", "if_match_hash", "idempotency_key"],
 };
 const descriptions: Partial<Record<WorkspaceToolName, string>> = {
@@ -20,7 +20,7 @@ const descriptions: Partial<Record<WorkspaceToolName, string>> = {
   delete_item: "Remove a file from the workspace while retaining its recovery copy. Requires path and if_match_hash from read_item and a stable idempotency_key. Permanent deletion is not supported. Use list_trash and restore_item to restore.",
   add_comment: "Add a file comment or reply, up to 4000 characters. Pass idempotency_key for retry safety. Quote anchors are not supported yet.",
   list_comments: "Read accessible file comment threads filtered by open, resolved or all state.",
-  create_item: "Create a private file using title, body, excerpt, kind and optional fields. Uses Notes, Blog, Bookmarks, Gallery or Presentations unless folder_path is supplied. Pass idempotency_key for retry safety. Pass capture for text or a standalone URL, or markdown for a complete Markdown file with frontmatter. These are alternatives to structured fields. Custom templates are not supported by this command yet.",
+  create_item: "Create a private file using title, body, excerpt, kind and optional fields. Uses Notes, Blog, Bookmarks, Gallery or Presentations unless folder_path is supplied. Pass idempotency_key for retry safety. Pass capture for text or a standalone URL, or markdown for a complete Markdown file with frontmatter. These are alternatives to structured fields. Pass template_id to create from the latest accessible template artifact, or template_version to pin a version. Explicit fields override starter defaults.",
   update_item: "Edit title, body, excerpt, tags or one guarded Markdown section in a file. Requires the current if_match_hash from read_item. Unsupported metadata and publication changes fail without changing the file.",
   append_to_item: "Append markdown or markdown_fragment to a file using the current if_match_hash from read_item. Pass a stable idempotency_key so a lost response can be retried exactly once.",
   list_items: "List accessible files, optionally restricted to an exact folder path. Omit folder_path to list the workspace. Returns titles, paths and hashes.",
@@ -32,6 +32,7 @@ export function vaultToolDefinitions() {
     const inputSchema = structuredClone(definition.jsonSchema) as { properties?: Record<string, unknown>; required?: string[]; [key: string]: unknown };
     const allowed = fields[name];
     if (allowed && inputSchema.properties) inputSchema.properties = Object.fromEntries(Object.entries(inputSchema.properties).filter(([key]) => allowed.includes(key)));
+    if (allowed && inputSchema.required) inputSchema.required = inputSchema.required.filter(key => allowed.includes(key));
     if (name === "add_comment" && inputSchema.properties?.body) inputSchema.properties.body = { type: "string", minLength: 1, maxLength: 4000 };
     if (name === "move_item" || name === "delete_item" || name === "restore_item") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "path", "if_match_hash", "idempotency_key"])];
     if (name === "create_folder" || name === "create_item_type" || name === "save_item_as_look") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "idempotency_key"])];

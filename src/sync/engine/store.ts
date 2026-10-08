@@ -8,7 +8,8 @@ import { watch, constants } from "node:fs";
 import path from "node:path";
 import { hostname } from "node:os";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
-import { readDocument } from "@/local-vault/model";
+import { requireBuiltinTemplate, templateExperience } from "@/lib/presentation/templates";
+import { readDocument, writePayload } from "@/local-vault/model";
 import { openPack, encodePack } from "@/local-vault/pack";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
@@ -32,6 +33,8 @@ export interface VaultLocation {
 }
 export interface VaultWrite extends VaultLocation {
   beforeCommit?: (relativePath: string) => Promise<void>;
+  templateCreation?: { id: string; version?: number; titleDefault: boolean; bodyDefault: boolean; fieldsDefault: boolean; folderDefault: boolean };
+  beforeTemplateRead?: (itemId: string, relativePath: string) => Promise<void>;
   signal?: AbortSignal;
   itemId: string;
   operationId: string;
@@ -65,6 +68,7 @@ interface RestoreIntent {
 }
 
 interface Intent {
+  templateSource?: { itemId: string };
   itemId: string; operationId: string; relativePath: string;
   baseRevision: string | null; revision: string; requestHash: string;
   workspaceId: string;
@@ -83,7 +87,7 @@ export interface VaultMutationReceipt {
   actionName?: Intent["commentAction"] | Intent["publicationAction"];
   result: VaultWriteResult | VaultEntryResult | VaultFolderResult;
 }
-interface Receipt<T = VaultWriteResult | VaultEntryResult> { requestHash: string; result: T; mutation?: VaultMutationReceipt }
+interface Receipt<T = VaultWriteResult | VaultEntryResult> { templateSource?: { itemId: string }; requestHash: string; result: T; mutation?: VaultMutationReceipt }
 
 export class VaultBusyError extends Error {
   constructor() { super("Workspace vault is locked. Retry after its writer finishes."); }
@@ -382,7 +386,7 @@ async function apply(layout: Layout, intent: Intent, pendingDir: string): Promis
     }
     result = { status: "written", itemId: intent.itemId, relativePath: intent.relativePath, revision: intent.revision };
   }
-  const receipt: Receipt = { requestHash: intent.requestHash, result, ...(intent.audit ? {
+  const receipt: Receipt = { requestHash: intent.requestHash, result, ...(intent.templateSource ? { templateSource: intent.templateSource } : {}), ...(intent.audit ? {
     mutation: { workspaceId: intent.workspaceId, operationId: intent.operationId, ...intent.audit,
       ...(result.status === "written" && (intent.commentAction || intent.publicationAction)
         ? { actionName: intent.commentAction ?? intent.publicationAction } : {}), result },
@@ -677,13 +681,14 @@ async function recover(layout: Layout): Promise<void> {
 }
 
 export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteResult> {
+  input = { ...input }; // Resolution below must not change the caller's retry fingerprint.
   if (input.audit && !input.onReceipt) throw new Error("Vault mutation requires its audit sink");
   segment(input.itemId); segment(input.operationId); packPath(input.relativePath);
   if (input.baseRevision !== null && !/^[a-f0-9]{64}$/.test(input.baseRevision)) throw new Error("Invalid base revision");
   validatePack(input.bytes, input.itemId);
   const revision = hash(input.bytes);
   const requestHash = hash(json([input.itemId, input.relativePath, input.baseRevision, revision,
-    ...(input.liveReconcile ? ["local-file"] : []), ...(input.audit ? [input.audit] : [])]));
+    ...(input.liveReconcile ? ["local-file"] : []), ...(input.audit ? [input.audit] : []), ...(input.templateCreation ? [input.templateCreation] : [])]));
   const layout = await setup(input);
   return locked(layout, async () => {
     if (!input.receiptOnly) await recover(layout);
@@ -692,12 +697,75 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     if (receipt) {
       const saved = JSON.parse(receipt.toString()) as Receipt<VaultWriteResult>;
       if (saved.requestHash !== requestHash) throw new Error("Operation id was reused with different content");
+      if (saved.templateSource) {
+        const source = await collaborationItem(layout, saved.templateSource.itemId);
+        if (!source || !input.beforeTemplateRead) throw new Error("Template source is unavailable");
+        await input.beforeTemplateRead(saved.templateSource.itemId, source.relativePath);
+      }
       await input.beforeCommit?.(saved.result.relativePath);
       input.signal?.throwIfAborted();
       if (!input.receiptOnly) await deliverReceipt(layout, saved);
       return saved.result;
     }
     if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
+    let templateSource: { itemId: string; revision: string; relativePath: string } | undefined;
+    if (input.templateCreation) {
+      if (input.baseRevision !== null) throw new Error("Template starters are creation only");
+      const selection = input.templateCreation;
+      let template;
+      let sourceJSON: string | null = null;
+      if (selection.id.startsWith("texttext.")) {
+        template = requireBuiltinTemplate(selection.id);
+        if (selection.version !== undefined && template.version !== selection.version) throw new Error("Template version is unavailable");
+      } else {
+        if (!input.beforeTemplateRead) throw new Error("Template source authorization is required");
+        const candidates = [];
+        const names = await fs.readdir(layout.items);
+        if (names.length > 10000) throw new Error("Template inventory exceeds limits");
+        for (const name of names) {
+          const raw = await maybeRead(path.join(layout.items, name));
+          if (!raw) continue;
+          const index = JSON.parse(raw.toString()) as { itemId: string; relativePath: string; deleted?: boolean };
+          if (index.deleted || !index.relativePath.startsWith("Templates/")) continue;
+          // Never open a template artifact before the caller's current read grant.
+          try { await input.beforeTemplateRead(index.itemId, index.relativePath); } catch { continue; }
+          let source, file, definition;
+          try {
+            source = await collaborationItem(layout, index.itemId);
+            if (!source) continue;
+            file = openPack(source.bytes, source.relativePath, source.revision, index.itemId).file;
+            if (!file.templateJSON) continue;
+            definition = validateTemplateDefinition(JSON.parse(file.templateJSON));
+          } catch { continue; } // An invalid unrelated artifact cannot disable creation.
+
+          if (definition.id !== selection.id || selection.version !== undefined && definition.version !== selection.version) continue;
+          const authoring = file.templateAuthoringSourceJSON ? validatedLookSource(definition, JSON.parse(file.templateAuthoringSourceJSON)) : null;
+          if (file.templateAuthoringSourceJSON && !authoring) throw new Error("Invalid template authoring source");
+          candidates.push({ template: definition, sourceJSON: authoring ? json(authoring) : null, itemId: index.itemId, revision: source.revision, relativePath: source.relativePath });
+        }
+        candidates.sort((a, b) => b.template.version - a.template.version);
+        const chosen = candidates[0];
+        if (!chosen) throw new Error("Template source is unavailable");
+        if (candidates[1]?.template.version === chosen.template.version) throw new Error("Template version is ambiguous");
+        template = chosen.template; sourceJSON = chosen.sourceJSON;
+        templateSource = { itemId: chosen.itemId, revision: chosen.revision, relativePath: chosen.relativePath };
+      }
+      const pack = openPack(input.bytes, input.relativePath, revision, input.itemId);
+      const document = readDocument(pack.file);
+      document.presentation.template = { id: template.id, version: template.version };
+      if (selection.titleDefault) document.content.title = template.starter?.title || "Untitled";
+      if (selection.bodyDefault) document.content.body = template.starter?.body ?? "";
+      document.content.fields = { ...template.starter?.fields, ...(selection.fieldsDefault ? {} : document.content.fields) };
+      const kind = templateExperience(template);
+      const folder = selection.folderDefault && kind ? ({ note: "Notes", article: "Blog", bookmark: "Bookmarks", gallery: "Gallery", talk: "Presentations" } as Record<string, string>)[kind] : undefined;
+      const slash = input.relativePath.lastIndexOf("/");
+      const parent = folder ?? (slash < 0 ? "" : input.relativePath.slice(0, slash));
+      const title = document.content.title.replace(/[\/\\:*?"<>|\x00-\x1f]/g, " ").trim().slice(0, 80) || "Untitled";
+      input.relativePath = `${parent ? `${parent}/` : ""}${title}-${input.itemId.slice(0, 8)}.textpack`;
+      packPath(input.relativePath);
+      input.bytes = encodePack(pack, { ...pack.file, ...writePayload(pack.file, document, { template, sourceJSON }) });
+      validatePack(input.bytes, input.itemId);
+    }
     // Identity is stable independently of title. Moves require a separate operation.
     let deletedRevision: string | undefined;
     for (const item of await fs.readdir(layout.items)) {
@@ -756,12 +824,17 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
     const current = await maybeRead(await targetPath(layout, input.relativePath));
     if (!lifecycleMismatch && !samePublicationEntries(current, committedBytes)) throw new Error("Use Publish or Unpublish to change public visibility");
     await input.beforeCommit?.(input.relativePath);
+    if (templateSource) {
+      await input.beforeTemplateRead!(templateSource.itemId, templateSource.relativePath);
+      const source = await collaborationItem(layout, templateSource.itemId);
+      if (!source || source.revision !== templateSource.revision || source.relativePath !== templateSource.relativePath) throw new Error("Template source changed. Try again.");
+    }
     input.signal?.throwIfAborted();
     const pendingDir = await directory(layout.pending, input.operationId);
     await atomicWrite(path.join(pendingDir, "payload.textpack"), committedBytes);
     const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
       relativePath: input.relativePath, baseRevision: committedBase, revision: hash(committedBytes), requestHash,
-      workspaceId: input.workspaceId, ...(input.audit ? { audit: input.audit } : {}) };
+      workspaceId: input.workspaceId, ...(templateSource ? { templateSource: { itemId: templateSource.itemId } } : {}), ...(input.audit ? { audit: input.audit } : {}) };
     if (lifecycleMismatch) intent.lifecycleMismatch = true;
     if (!lifecycleMismatch && input.liveReconcile && input.baseRevision !== null && current && committedBase === hash(current) &&
         intent.revision !== committedBase) {

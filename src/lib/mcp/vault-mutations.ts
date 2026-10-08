@@ -11,6 +11,7 @@ import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 export type VaultMutationContext = {
   receiptOnly?: boolean;
   root: string; workspaceId: string; actorUserId: string; actorType?: "human" | "external_agent";
+  authorizeTemplate?: (itemId: string, path: string) => Promise<void>;
   authorize: (itemId: string, path: string, creating: boolean) => Promise<void>;
 };
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -23,7 +24,8 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
   const operationId = typeof args.idempotency_key === "string"
     ? digest(`${context.actorUserId}:${name}:${args.idempotency_key}`) : randomUUID();
   if (name === "create_item") {
-    only(args, ["title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key", "capture", "markdown"]);
+    only(args, ["title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key", "capture", "markdown", "template_id", "template_version"]);
+    if (args.template_version !== undefined && args.template_id === undefined) throw new Error("template_version requires template_id");
     const capture = typeof args.capture === "string" ? captureIntent(args.capture) : null;
     const rawMarkdown = typeof args.markdown === "string" ? args.markdown.replace(/^\uFEFF/, "") : null;
     if ((capture || rawMarkdown !== null) && ["title", "body", "excerpt", "kind", "fields"].some(key => args[key] !== undefined) || capture && rawMarkdown !== null) throw new Error("Use capture, markdown, or structured fields separately.");
@@ -54,7 +56,9 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
     if (!folder || folder.split("/").some((part) => !part || part === "." || part === "..") || /[\\\x00]/.test(folder)) throw new Error("Invalid folder.");
     const title = document.content.title.replace(/[\/\\:*?"<>|\x00-\x1f]/g, " ").trim().slice(0, 80) || "Untitled";
     const relativePath = `${folder}/${title}-${itemId.slice(0, 8)}.textpack`;
-    await context.authorize(itemId, relativePath, true);
+    // A selected template may determine the final folder/title under the lock.
+    // Authorize that resolved destination in beforeCommit, not this draft path.
+    if (typeof args.template_id !== "string") await context.authorize(itemId, relativePath, true);
     // Preserve supplied frontmatter verbatim, replacing only the new file identity.
     const frontmatter = rawMarkdown?.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
     const markdown = frontmatter
@@ -62,6 +66,13 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
       : `---\ntextTextId: ${itemId}\ntitle: ${JSON.stringify(document.content.title)}\n---\n\n${document.content.body}`;
     return writeVaultTextpack({ ...location, itemId, operationId, relativePath, baseRevision: null,
       bytes: buildTextpack("Document", { document, markdown, template }), actorUserId: context.actorUserId, actorType: context.actorType ?? "external_agent",
+      ...(typeof args.template_id === "string" ? { templateCreation: { id: args.template_id,
+        ...(typeof args.template_version === "number" ? { version: args.template_version } : {}),
+        titleDefault: !capture && !parsed && args.title === undefined,
+        bodyDefault: !capture && !parsed && args.body === undefined,
+        fieldsDefault: !capture && !parsed && args.fields === undefined,
+        folderDefault: args.folder_path === undefined && args.kind === undefined && !capture && !parsed },
+        beforeTemplateRead: context.authorizeTemplate } : {}),
       beforeCommit: (path) => context.authorize(itemId, path, true) });
   }
   only(args, name === "append_to_item"
