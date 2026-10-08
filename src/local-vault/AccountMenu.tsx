@@ -9,12 +9,13 @@ type AccountProfile = { accountId?: string; email: string | null; name: string |
 const providerLabels: Record<string, string> = { apple: "Apple", google: "Google", github: "GitHub", email: "Email link", openai: "ChatGPT" };
 
 /** Shared account identity and settings for all file-workspace clients. */
-export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite, actions, logOut, signIn }: {
+export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite, actions, aiSettings, logOut, signIn }: {
   signedIn: boolean | null;
   initialIdentity?: string | null;
   profileKey?: string;
   accountSite?: string;
   actions?: ReactNode;
+  aiSettings?: ReactNode;
   logOut: () => Promise<void>;
   signIn?: () => Promise<void>;
 }) {
@@ -28,6 +29,7 @@ export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite
   const container = useRef<HTMLElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const focusAi = useRef(false);
   const menuId = useId();
   const headingId = useId();
   const identity = profile?.email || profile?.name || initialIdentity || "TextText account";
@@ -58,8 +60,16 @@ export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite
   useEffect(() => {
     if (!settings) return;
     dialog.current?.showModal();
+    if (focusAi.current) { dialog.current?.querySelector<HTMLElement>("[data-ai-settings] h3")?.focus(); focusAi.current = false; }
     return () => { dialog.current?.close(); toggle.current?.focus(); };
   }, [settings]);
+
+  useEffect(() => {
+    if (!aiSettings || !signedIn) return;
+    const showAi = () => { focusAi.current = true; setOpen(false); setSettings(true); };
+    window.addEventListener("texttext:open-ai-settings", showAi);
+    return () => window.removeEventListener("texttext:open-ai-settings", showAi);
+  }, [aiSettings, signedIn]);
 
   const perform = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -92,6 +102,7 @@ export function AccountMenu({ signedIn, initialIdentity, profileKey, accountSite
         <section><h3>Workspace</h3><p>{profile.workspaceName}</p></section>
         <section><h3>Ways to sign in</h3><ul className={styles.providers}>{profile.identities.filter(provider => providerLabels[provider]).map(provider => <li key={provider}><span>{providerLabels[provider]}</span><span className={styles.muted}>Connected</span></li>)}</ul>{profile.identities.length === 0 && <p className={styles.muted}>No sign-in methods to show.</p>}</section>
       </> : <p className={styles.muted} role="status">{profileFailure ? "Account details are unavailable right now." : "Loading account details…"}</p>}
+      {aiSettings}
       {manageURL && <p><a href={manageURL} target="_blank" rel="noopener noreferrer">Manage sign-in methods</a></p>}
     </dialog>}
   </section>;

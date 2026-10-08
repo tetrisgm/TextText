@@ -18,3 +18,9 @@
 .muted { color: var(--muted); font-size: 13px; }
 .providers { list-style: none; padding: 0; margin: 0; }
 .providers li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
+
+.aiForm { display: grid; gap: 12px; margin-top: 16px; }
+.aiForm label { display: grid; gap: 6px; font-size: 13px; }
+.aiForm input, .aiForm select { width: 100%; min-height: 36px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; color: var(--ink); background: var(--surface); }
+.aiActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.aiActions button { min-height: 36px; }
