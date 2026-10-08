@@ -386,7 +386,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             }
             do {
                 switch method {
-                case "agentStatus": break
+                case "agentStatus": try agent?.restoreConnectionIfNeeded()
                 case "agentConnect": try agent?.connect()
                 case "agentDisconnect": try agent?.disconnect()
                 case "agentSend": try agent?.send(taskID: Self.string(params, "taskId"),

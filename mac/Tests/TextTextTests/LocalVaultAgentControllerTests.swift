@@ -23,8 +23,10 @@ private final class VaultAgentTestServer: LocalVaultAgentServer {
     private(set) var notifications: [(String, [String: Any])] = []
     private(set) var stopCount = 0
     private let accountEmail: String?
+    private let signedIn: Bool
 
-    init(accountEmail: String? = "writer@example.com") {
+    init(accountEmail: String? = "writer@example.com", signedIn: Bool = true) {
+        self.signedIn = signedIn
         self.accountEmail = accountEmail
     }
 
@@ -40,7 +42,7 @@ private final class VaultAgentTestServer: LocalVaultAgentServer {
         case "account/read":
             var account: [String: Any] = ["type": "chatgpt", "planType": "pro"]
             if let accountEmail { account["email"] = accountEmail }
-            emitResponse(request, result: ["account": account])
+            emitResponse(request, result: signedIn ? ["account": account] : [:])
         case "config/read":
             emitResponse(request, result: ["config": ["mcp_servers": [String: Any]()]])
         default:
@@ -78,6 +80,34 @@ private final class VaultAgentTestServer: LocalVaultAgentServer {
 
 final class LocalVaultAgentControllerTests: XCTestCase {
     private struct Timeout: Error {}
+
+    @MainActor
+    func testStatusRestoresExistingAccountOnceWithoutLogin() async throws {
+        let server = VaultAgentTestServer()
+        let controller = LocalVaultAgentController(root: FileManager.default.temporaryDirectory, serverFactory: { server })
+        defer { controller.stop() }
+        try controller.restoreConnectionIfNeeded()
+        try await eventually { controller.status["state"] as? String == "ready" }
+        try controller.restoreConnectionIfNeeded()
+        XCTAssertEqual(server.requests("initialize").count, 1)
+        XCTAssertEqual(server.requests("account/login/start").count, 0)
+        XCTAssertEqual(controller.status["accountEmail"] as? String, "writer@example.com")
+    }
+
+    @MainActor
+    func testSignedOutStatusNeverStartsLoginOrRepeatedRuntime() async throws {
+        let server = VaultAgentTestServer(signedIn: false)
+        let controller = LocalVaultAgentController(root: FileManager.default.temporaryDirectory, serverFactory: { server })
+        defer { controller.stop() }
+        try controller.restoreConnectionIfNeeded()
+        try await eventually { controller.status["state"] as? String == "signed-out" }
+        try controller.restoreConnectionIfNeeded()
+        XCTAssertEqual(server.requests("initialize").count, 1)
+        XCTAssertEqual(server.requests("account/login/start").count, 0)
+        try controller.connect()
+        try await eventually { server.requests("account/login/start").count == 1 }
+    }
+
 
     @MainActor
     func testExplicitFolderTaskExposesCreationWithinValidatedBoundary() async throws {
@@ -359,6 +389,9 @@ final class LocalVaultAgentControllerTests: XCTestCase {
         XCTAssertNil(controller.status["accountEmail"])
         XCTAssertEqual(server.stopCount, 1)
 
+        try controller.restoreConnectionIfNeeded()
+        XCTAssertEqual(server.requests("initialize").count, 1)
+        XCTAssertEqual(controller.status["state"] as? String, "disconnected")
         try controller.connect()
         try await eventually("reconnected state") { controller.status["state"] as? String == "ready" }
         XCTAssertEqual(server.requests("initialize").count, 2)

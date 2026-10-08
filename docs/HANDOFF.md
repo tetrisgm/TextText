@@ -40,6 +40,12 @@
 
 ## Current work and next checks
 
+- Mac agentStatus now checks retained runtime authorization once on first use.
+  Signed-out discovery never starts browser login or repeated runtimes; explicit
+  disconnect is not undone by status reads. Explicit Connect still starts login.
+  All 18 controller regressions passed. Source only, not installed; installed
+  1211 remains the observed old behavior. Log `/tmp/texttext-agent-account-restore.log`.
+
 - Shared transport now accepts explicit Article/Gallery/Talk creation, matching
   the Windows agent advertised types. Package regressions prove content and
   template identity; unsupported types still refuse. Folder-default loading

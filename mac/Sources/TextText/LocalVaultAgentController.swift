@@ -51,6 +51,8 @@ final class LocalVaultAgentController {
     }
     private var pendingProposals: [String: PendingProposal] = [:]
     private var loginID: String?
+    private var restoreAttempted = false
+    private var loginAllowed = true
     private var attemptedLogin = false
     private var disconnecting = false
     private var deadline: DispatchWorkItem?
@@ -121,12 +123,20 @@ final class LocalVaultAgentController {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 
-    func connect() throws {
+    func restoreConnectionIfNeeded() throws {
+        guard !restoreAttempted, server == nil, status["state"] as? String == "disconnected" else { return }
+        restoreAttempted = true
+        try connect(allowLogin: false)
+    }
+
+    func connect(allowLogin: Bool = true) throws {
+        restoreAttempted = true
         if server != nil {
             update(busy ? "working" : (disabledMCPServers == nil ? "connecting" : "ready"))
             return
         }
         stop()
+        loginAllowed = allowLogin
         connectionDiagnosticID = Self.makeDiagnosticID()
         let runtime: any LocalVaultAgentServer
         if let makeServer {
@@ -438,6 +448,11 @@ final class LocalVaultAgentController {
                     try request("account/read")
                 case "account/read":
                     guard let account = CodexAccountSummary(result: message.rawResult) else {
+                        guard loginAllowed else {
+                            stop()
+                            update("signed-out")
+                            return
+                        }
                         guard !attemptedLogin else { throw VaultAgentError("ChatGPT sign-in did not complete. Reconnect to try again.") }
                         attemptedLogin = true
                         try request("account/login/start", CodexAppServerRequests.chatGPTLoginStart)
