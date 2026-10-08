@@ -8,7 +8,7 @@
 - Windows: product source **04c265c7**, installed in the existing location.
   Build, actual startup/search, snippet save/insert/reopen and passive Mac edit
   delivery passed. [Receipt](verification/2026-10-07-windows-shared-1183.md).
-- Oracle: **texttext-oracle-20261008T052428Z-04c265c7**. All twelve production
+- Oracle: **texttext-oracle-20261008T053344Z-25e439c0**. All twelve production
   HTTP smoke checks passed. Algorave services and shared proxy were preserved.
 - Actual Mac deletion/restoration, same-ID Safari reading, direct CLI editing,
   web editing and passive Windows convergence passed without manual refresh.
@@ -31,11 +31,15 @@
 - Oracle deployment passed all 12 production HTTP checks. Actual Safari account,
   provider Settings and passive Mac-edit delivery passed. No provider is
   configured, so live model execution is not attested.
-- Investigating a duplicate-Yjs import startup warning in the deployed package.
-- `48080f86` adds canonical folder creation with authorization, audit and durable
-  retry coverage; 34 focused checks passed. Combined mandatory gate is running.
-- `3de70287` fixes the duplicate-Yjs Oracle packaging root cause with constructor
-  identity regression. Deploy after the combined gate passes.
+- Duplicate-Yjs packaging root cause is fixed and deployed. Live alias and
+  constructor identity passed; startup warning is absent.
+- `25e439c0` passed 470 mandatory core tests and native gates, then all 12
+  existing production smoke checks. New expanded folder smoke exposed the
+  native commands allowlist rejecting create_folder (HTTP 400); fix is underway.
+- `e758c989` implements agent template creation/save-look with validated TextPack
+  artifacts and durable source fencing; 28 focused tests passed, not deployed.
+- Standalone CLI incorrectly disables account commands in local-folder mode;
+  separating local file storage from authenticated command transport is underway.
 
 Keep one canonical file system and shared UI/editor/sync implementation across
 Mac, Windows and web. Native adapters handle filesystem, credentials and OS

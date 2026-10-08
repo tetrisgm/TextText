@@ -54,3 +54,20 @@ The packaging fix `3de70287` reproduces and prevents duplicate Yjs constructors
 in the actual Oracle package layout. It is committed but not yet deployed.
 Canonical folder creation `48080f86` passed 34 focused checks; the combined
 mandatory gate is running before deployment.
+
+## Follow-up server verification
+
+`25e439c0` passed 470 core tests in 44 suites plus native gates
+(`/tmp/texttext-sync-25e439c0.log`). The preceding run caught a stale exact
+catalog expectation; no failed gate was shipped.
+
+Oracle `texttext-oracle-20261008T053344Z-25e439c0` passed all 12 existing
+production smoke checks. The generated archive retains the Yjs alias as a
+relative symlink. On the live host, alias/canonical real paths and imported
+Y.Doc constructors are identical; startup no longer logs duplicate Yjs.
+Log: `/tmp/texttext-oracle-25e439c0.log`.
+
+Expanded scratch smoke from `2b2503d6` then exposed HTTP 400 for create_folder:
+the native route's allowlist still excludes the new command. This is an
+integration failure requiring correction, despite the passing engine tests.
+Log: `/tmp/texttext-folder-live-smoke.log`. No user document was involved.
