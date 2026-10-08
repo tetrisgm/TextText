@@ -18,6 +18,11 @@ an exact-source receipt: `/tmp/texttext-core-parent-editor.log`. Existing browse
 template flow passed inline/full insertion, finish/reopen and light/dark modes:
 `/tmp/texttext-note-template-current.log`.
 
-Pending: parent-specific rendered interaction acceptance, parent/child navigation,
+Selected parents now open through the shared save-before-navigation operation,
+resolve their current path by stable ID and verify the opened pack identity.
+Missing references are non-clickable. Seven field/choice tests and TypeScript
+passed; actual rendered navigation acceptance remains pending.
+
+Pending: parent-specific rendered interaction acceptance, child navigation,
 explicit existing-note upgrade, inline card integration, client install and
 Oracle deployment. No hierarchy traversal or full Supernotes parity is claimed.

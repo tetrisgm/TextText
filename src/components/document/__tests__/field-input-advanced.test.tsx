@@ -125,3 +125,11 @@ it("renders parent choices by authorized title while retaining unavailable refer
   expect(html).not.toContain("hidden-id");
   expect(html).not.toContain("comma separated");
 });
+
+it("offers navigation only for parent identities available in the authorized choices", () => {
+  const field: DocumentFieldDefinition = { id: "parents", label: "Parents", type: "reference", target: "document", multiple: true, required: false, visibility: "public" };
+  const html = renderToStaticMarkup(<FieldInput field={field} value={["known","missing"]} referenceChoices={[{id:"known",label:"Parent title"}]} onOpenReference={() => {}} onChange={() => {}} />);
+  expect(html).toContain('<button type="button">Parent title</button>');
+  expect(html).toContain('<span>Unavailable item</span>');
+  expect(html).not.toContain('>missing<');
+});

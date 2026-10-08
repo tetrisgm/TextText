@@ -156,6 +156,7 @@ type UnifiedDocumentEditorProps = {
   template: TemplateDefinition;
   availableTemplates?: readonly TemplateDefinition[];
   referenceChoices?: readonly WorkspaceReferenceChoice[];
+  onOpenReference?: (id: string) => void;
   collab: UnifiedEditorCollab;
   onDocumentChange?: (document: DocumentSnapshot) => void;
   onMaterialized?: (document: DocumentSnapshot, revision?: number) => void;
@@ -543,6 +544,7 @@ export function UnifiedDocumentEditor({
   template,
   availableTemplates,
   referenceChoices,
+  onOpenReference,
   collab,
   onDocumentChange,
   onMaterialized,
@@ -1915,6 +1917,7 @@ export function UnifiedDocumentEditor({
                   imagePreviewSource={field.type === "image" && typeof previewValue === "string" ? previewValue : undefined}
                   onChange={(value) => updateField(field.id, value)}
                   referenceChoices={referenceChoices}
+                  onOpenReference={onOpenReference}
                   embedded
                 />,
               ];
@@ -1960,7 +1963,7 @@ export function UnifiedDocumentEditor({
         ),
       },
     }),
-    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, noteEmojiOpen, renderNoteTemplatePicker, currentLocalDocument, insertNoteEmoji, onPasteImages, openNoteLink, openNoteCardLink, renderNoteCardLinkPicker, insertNoteChecklist, pasteImages, referenceChoices, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
+    [activeTemplate.fields, experience, displayDocument.content.fields, document.content.body, document.content.fields, document.content.subtitle, document.content.title, bodyImageSources, bodyImageCaptions, updateImageCaption, imagePastePending, noteInsertOpen, noteEmojiOpen, renderNoteTemplatePicker, currentLocalDocument, insertNoteEmoji, onPasteImages, openNoteLink, openNoteCardLink, renderNoteCardLinkPicker, insertNoteChecklist, pasteImages, referenceChoices, onOpenReference, remoteSelections, resolveBodySelection, showSubtitle, updateField, updateSelection, updateText],
   );
 
   /** Declared fields the template does not bind anywhere in its item spec.
@@ -2434,6 +2437,7 @@ export function UnifiedDocumentEditor({
                 imagePreviewSource={field.type === "image" && typeof previewValue === "string" ? previewValue : undefined}
                 onChange={(value) => updateField(field.id, value)}
                 referenceChoices={referenceChoices}
+                  onOpenReference={onOpenReference}
               />;
             })}
           </div>

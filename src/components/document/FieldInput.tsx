@@ -27,6 +27,7 @@ type FieldInputProps = {
   value: DocumentFieldValue | undefined;
   onChange: (value: DocumentFieldValue) => void;
   referenceChoices?: readonly WorkspaceReferenceChoice[];
+  onOpenReference?: (id: string) => void;
   disabled?: boolean;
   embedded?: boolean;
   imagePreviewSource?: string;
@@ -44,6 +45,7 @@ export function FieldInput({
   value,
   onChange,
   referenceChoices = [],
+  onOpenReference,
   disabled,
   embedded = false,
   imagePreviewSource,
@@ -296,7 +298,7 @@ export function FieldInput({
           />
         );
       case "reference":
-        if (field.target === "document") return <DocumentReferenceInput field={field} value={value} choices={referenceChoices} disabled={disabled} onChange={onChange} />;
+        if (field.target === "document") return <DocumentReferenceInput field={field} value={value} choices={referenceChoices} disabled={disabled} onChange={onChange} onOpenReference={onOpenReference} />;
         // References store document/folder ids. A picker is a follow-up; the
         // id input keeps the value editable rather than trapped.
         return (
@@ -364,7 +366,8 @@ export function FieldInput({
   );
 }
 
-function DocumentReferenceInput({ field, value, choices, disabled, onChange }: {
+function DocumentReferenceInput({ field, value, choices, disabled, onChange, onOpenReference }: {
+  onOpenReference?: (id: string) => void;
   field: Extract<DocumentFieldDefinition, { type: "reference" }>;
   value: DocumentFieldValue | undefined;
   choices: readonly WorkspaceReferenceChoice[];
@@ -377,7 +380,7 @@ function DocumentReferenceInput({ field, value, choices, disabled, onChange }: {
   const available = choices.filter(choice => !selected.includes(choice.id) && choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).slice(0, 50);
   return <div className="tt-document-reference-input">
     {selected.map(id => <div key={id} className="tt-reference-selected">
-      <span>{byId.get(id)?.label ?? "Unavailable item"}</span>
+      {byId.has(id) && onOpenReference ? <button type="button" onClick={() => onOpenReference(id)}>{byId.get(id)!.label}</button> : <span>{byId.get(id)?.label ?? "Unavailable item"}</span>}
       <button type="button" disabled={disabled} aria-label={`Remove ${byId.get(id)?.label ?? "unavailable item"}`} onClick={() => onChange(field.multiple ? selected.filter(value => value !== id) : null)}>Remove</button>
     </div>)}
     <details><summary>{field.id === "parents" ? "Add parent" : "Choose item"}</summary>

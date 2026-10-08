@@ -32,6 +32,7 @@ import { applyStoryDetails, type StoryDetails } from "./story-details";
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
 type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
 export type VaultEditorProps = {
+  onOpenReference?: (id: string) => void;
   referenceChoices?: readonly import("@/lib/presentation/workspace-reference-choices").WorkspaceReferenceChoice[];
   readOnly?: boolean; initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>, saveStoryDetails: (details: StoryDetails) => Promise<string | false>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
@@ -51,7 +52,7 @@ function avatarTextColor(color: string): string {
 }
 
 /** The relay owns shared writes; this component never snapshot-autosaves them. */
-export function CollaborativeVaultEditor({ referenceChoices, readOnly: permissionReadOnly = false, initial, root, config, registerFlush, onChanged, onTitleChange, onLocalFallback, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
+export function CollaborativeVaultEditor({ onOpenReference, referenceChoices, readOnly: permissionReadOnly = false, initial, root, config, registerFlush, onChanged, onTitleChange, onLocalFallback, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void }) {
   const file = useRef(initial);
   const [opened, setOpened] = useState(initial);
   const [snapshot, setSnapshot] = useState(() => readDocument(initial));
@@ -447,7 +448,7 @@ export function CollaborativeVaultEditor({ referenceChoices, readOnly: permissio
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />}
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
       {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : experience === "note" ? <VaultNoteDisplay document={display} sourceBody={snapshot.content.body} template={template} onEdit={editable ? () => setReading(false) : undefined} onToggleTask={editable ? (index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } }) : undefined} /> : experience === "article" ? <VaultStoryDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : <DocumentRenderer document={display} template={template} />) :
-        <UnifiedDocumentEditor referenceChoices={referenceChoices} renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
+        <UnifiedDocumentEditor onOpenReference={onOpenReference} referenceChoices={referenceChoices} renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
           focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
           onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { if (await flush() && (experience === "note" || experience === "article")) setReading(true); }}
