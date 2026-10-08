@@ -2,7 +2,10 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1213)**, source `b2bc3856`.
+- Mac `/Applications/TextText.app`: **0.204 (1214)**, source `3382b36a`.
+  Actual startup/account/iCloud, existing custom-template note, editor save,
+  on-disk marker, saved-body search and reopen passed.
+  [1214 receipt](verification/2026-10-08-mac-1214.md).
   Actual atomic Save as look and library discovery passed; original fixture
   hash/content unchanged, new matching identity and opaque entries retained.
   [1213 receipt](verification/2026-10-08-mac-1213.md).
@@ -46,15 +49,10 @@
 
 ## Current work and next checks
 
-- Mac 1214 clean candidate build is running from `3382b36a` in
-  `/private/tmp/texttext-candidate-1195-5ELVuo`. Live exec session `26612`, log
-  `/tmp/texttext-mac1214-build.log`; resume this handle, do not restart it.
-  Core/native sync verification passed and release compilation is underway.
-  Actual installed 1213 inspection found signed-in home at the configured
-  iCloud root, no visible unsaved editor or active agent. Installation has not
-  started; reinspect before replacing, then run canonical local installer and
-  actual startup/existing-note/search/save/reopen acceptance. Runtime health
-  remains sandbox-private as in 1213.
+- Mac 1214 candidate build and installation completed with exit 0. The build
+  and installer handles `26612`/`71689` are terminal; do not resume or restart.
+  See the installed acceptance receipt above. Runtime health remains
+  sandbox-private. No public release.
 
 - Creation recovery also verifies its recorded destination against the
   original requested folder/title before publishing. A corrupted intent cannot
