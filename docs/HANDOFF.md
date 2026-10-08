@@ -26,8 +26,8 @@
   Implementation in progress; not shipped. Folder defaults require shared UI
   and canonical creation to honor them, beyond writing a folder-view file.
 
-- Source `4c7efe85` passed 555 core tests, TypeScript, native gates and relevant
-  browser checks. Agent template creation and durable template/folder approvals
+- Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
+  Agent template creation and durable template/folder approvals
   now use canonical file operations and retry receipts.
 - Shared reader optimizations reduced the bounded 525 KiB note open from
   1.5–1.6 seconds to 170 ms; cached reopen measured 254 ms. Unchanged
@@ -37,9 +37,9 @@
   application approvals are installed. Folder customization remains native-only.
 - Immediate automatic reconnect probes, bookmark baseline release and fresh
   shared discovery permission checks are installed.
-- Source-only workspace switching now includes account discovery, fresh membership
+- Installed workspace switching includes account discovery, fresh membership
   authorization, commit-time editor flush, and shared permission-aware UI.
-  Windows changes through `fa49b978` pass 160 Core assertions and crosscompile;
+  Windows changes through `54f33a4e` pass 161 Core assertions and crosscompile;
   shared UI `a5dc4d6a` passes focused unit/browser checks and TypeScript.
   Mac `43614e64` includes persisted offline capability handling. The integrated
   gate passed 588 core tests and required native suites; Windows passed 269
