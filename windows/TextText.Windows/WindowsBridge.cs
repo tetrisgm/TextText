@@ -127,8 +127,8 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     case "files.ready": return new { ready = await sync.IsReadyAsync(Required(p, "itemId"), ct) };
                     case "files.list": {
                         var capabilities = await sync.CapabilitiesAsync(ct);
-                        var permissions = await sync.FilePermissionsAsync(items,context.Access == "owner",ct);
                         var items = Inventory();
+                        var permissions = await sync.FilePermissionsAsync(items,context.Access == "owner",ct);
                         var folders = items.SelectMany(f => {
                             var parts = f.Path.Split('/');
                             return Enumerable.Range(1, parts.Length - 1).Select(n => string.Join('/', parts.Take(n)));
