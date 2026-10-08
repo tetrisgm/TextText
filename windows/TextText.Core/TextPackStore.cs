@@ -8,6 +8,7 @@ namespace TextText.Core;
 public sealed record ScanError(string Path,string Reason,string? ItemId=null);
 public sealed record PackFile(string Path, string Hash, string ItemId);
 public sealed record FileIntent(string Kind, string ItemId, string Path, string Hash, string? Destination = null);
+public sealed record FileMutationReceipt(int Version, string Fingerprint, string ItemId, string Path, string Hash, bool Committed);
 public sealed class FileChangedException() : IOException("The file changed. Reload its current contents before writing.");
 public sealed class TextPackStore
 {
@@ -145,19 +146,64 @@ public sealed class TextPackStore
         lock(gate){CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return found.Values.ToArray();
     }
 
-    public static void AtomicWrite(string path, byte[] bytes)
+    public static void AtomicWrite(string path, byte[] bytes, bool overwrite = true)
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!); CheckLinks(path);
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try { using(var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { stream.Write(bytes); stream.Flush(true); } CheckLinks(path); File.Move(temp,path,true); }
+        try { using(var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { stream.Write(bytes); stream.Flush(true); } CheckLinks(path); File.Move(temp,path,overwrite); }
         finally { if(File.Exists(temp)) File.Delete(temp); }
     }
     void Match(string full, string? expected) { if (File.Exists(full) ? expected == null || Hash(File.ReadAllBytes(full)) != expected : expected != null) throw new FileChangedException(); }
     public PackFile Write(string path, byte[] bytes, string? expectedHash = null)
     {
         var id = Identity(bytes);
-        lock(gate) { var full=Resolve(path); Match(full,expectedHash); if(File.Exists(full)) { var previous=File.ReadAllBytes(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); } AtomicWrite(full,bytes); }
+        lock(gate) { var full=Resolve(path); Match(full,expectedHash); if(File.Exists(full)) { var previous=File.ReadAllBytes(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); } AtomicWrite(full,bytes,overwrite:expectedHash!=null); }
         Changed?.Invoke(); return new(path,Hash(bytes),id);
+    }
+    // Persist intent before writing and completion before returning. A retry
+    // follows committed identity; it never reapplies old bytes over later work.
+    public PackFile WriteIdempotent(string path, byte[] bytes, string? expectedHash, string operationId)
+    {
+        if (!Guid.TryParseExact(operationId,"D",out _)) throw new InvalidDataException("Invalid file operation identity.");
+        var id=Identity(bytes); var hash=Hash(bytes); _=Resolve(path);
+        var fingerprint=Hash(JsonSerializer.SerializeToUtf8Bytes(new { Root, path, expectedHash, hash, id }));
+        var journal=System.IO.Path.Combine(StateDirectory,"mutation-"+operationId.ToLowerInvariant()+".json");
+        CheckLinks(journal); CheckLinks(journal+".lock");
+        lock(gate) {
+            using var fence=new FileStream(journal+".lock",FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+            FileMutationReceipt? receipt=null;
+            if(File.Exists(journal)) {
+                if(new FileInfo(journal).Length>4096)throw new InvalidDataException("Invalid file operation receipt.");
+                receipt=JsonSerializer.Deserialize<FileMutationReceipt>(File.ReadAllBytes(journal));
+                if(receipt is null || receipt.Version!=1 || receipt.Fingerprint!=fingerprint || receipt.ItemId!=id || receipt.Path!=path || receipt.Hash!=hash)
+                    throw new InvalidDataException("The operation identity belongs to a different file change.");
+                if(receipt.Committed) {
+                    var matches=Scan().Where(file=>file.ItemId==id).ToArray();
+                    if(matches.Length!=1 || LastScanErrors.Any(error=>error.ItemId==id))throw new FileChangedException();
+                    return matches[0];
+                }
+                // Completion can be interrupted after the atomic file write.
+                // Only the exact prepared result attests that pending write.
+                if(Scan().Any(file=>file.ItemId==id && file.Path!=path) || LastScanErrors.Any(error=>error.ItemId==id))
+                    throw new FileChangedException();
+                if(File.Exists(Resolve(path))) {
+                    var observed=Describe(path);
+                    if(observed.ItemId==id && observed.Hash==hash) {
+                        AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(receipt with { Committed=true }));
+                        return observed;
+                    }
+                }
+            } else {
+                Match(Resolve(path),expectedHash);
+                receipt=new(1,fingerprint,id,path,hash,false);
+                AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(receipt));
+            }
+            if(expectedHash is null && (Scan().Any(file=>file.ItemId==id && file.Path!=path) || LastScanErrors.Any(error=>error.ItemId==id)))
+                throw new FileChangedException();
+            var result=Write(path,bytes,expectedHash);
+            AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(receipt with { Committed=true }));
+            return result;
+        }
     }
     public PackFile UpdateMarkdown(string path, string markdown, string expectedHash)
     {

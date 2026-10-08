@@ -174,6 +174,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
     const result = await response.json();
     operations.delete(operationKey);
     if (result.status !== "written") throw new Error("The server did not confirm the file save.");
+    if (typeof result.relativePath === "string") path = result.relativePath;
     const entry = { itemId, relativePath: path, revision: result.revision, canEditContent: true };
     if (manifest) manifest = { ...manifest, items: [...manifest.items.filter((item) => item.itemId !== itemId), entry] };
     if (result.revision !== revision) return read(path); // The server merged another replica.

@@ -122,7 +122,8 @@ export async function createWindowsVaultTransport(view: NativeView) {
         const expectedHash = request.headers.get("If-Match")?.replace(/^"|"$/g, "") ?? null;
         if (method === "PUT") {
           const path = decodeURIComponent(request.headers.get("X-TextText-Path") ?? "");
-          const result = await rpc.request<{ path: string; hash: string }>("files.write", { itemId, path, expectedHash, data: base64(new Uint8Array(await request.arrayBuffer())) }, signal);
+          const result = await rpc.request<{ path: string; hash: string }>("files.write", { itemId, path, expectedHash,
+            operationId: request.headers.get("X-TextText-Operation-Id"), data: base64(new Uint8Array(await request.arrayBuffer())) }, signal);
           return Response.json({ status: "written", revision: result.hash, relativePath: result.path });
         }
         if (method === "PATCH") {

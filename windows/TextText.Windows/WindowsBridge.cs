@@ -159,7 +159,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     case "files.write": {
                         var data = Convert.FromBase64String(Required(p, "data"));
                         if (TextPackStore.Identity(data) != Required(p, "itemId")) throw new InvalidDataException("Document identity does not match.");
-                        return Result(files.Write(Required(p, "path"), data, Optional(p, "expectedHash")));
+                        return Result(files.WriteIdempotent(Required(p, "path"), data, Optional(p, "expectedHash"), Required(p, "operationId")));
                     }
                     case "files.rename": {
                         var file = Find(Required(p, "itemId")); var path = Required(p, "path");

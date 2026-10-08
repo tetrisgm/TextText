@@ -9,6 +9,33 @@ static class Test
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(){var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
+ {
+ var mutationStore=new TextPackStore(Path.Combine(temp,"mutations"),Path.Combine(temp,"mutation-device"));
+ var operation=Guid.NewGuid().ToString();var mutationBytes=Pack("created","mutation-one");
+ var created=mutationStore.WriteIdempotent("Notes/Created.textpack",mutationBytes,null,operation);
+ var restarted=new TextPackStore(mutationStore.Root,mutationStore.StateDirectory);
+ Assert(restarted.WriteIdempotent(created.Path,mutationBytes,null,operation)==created,"lost native response replays persisted creation exactly once");
+ Throws<InvalidDataException>(()=>restarted.WriteIdempotent(created.Path,Pack("different","mutation-one"),null,operation),"operation identity refuses changed intent");
+ restarted.Rename(created.Path,"Notes/Moved.textpack",created.Hash);
+ var moved=restarted.Describe("Notes/Moved.textpack");restarted.UpdateMarkdown(moved.Path,TextPackStore.Markdown(restarted.Read(moved.Path))+"\nlater human edit",moved.Hash);
+ var replay=restarted.WriteIdempotent(created.Path,mutationBytes,null,operation);
+ Assert(replay.Path==moved.Path&&TextPackStore.Markdown(restarted.Read(replay.Path)).Contains("later human edit")&&!File.Exists(restarted.Resolve(created.Path)),"completed retry follows rename and preserves subsequent edits");
+ restarted.Delete(replay.Path,replay.Hash);
+ Throws<FileChangedException>(()=>restarted.WriteIdempotent(created.Path,mutationBytes,null,operation),"completed retry never recreates deleted identity");
+ var pendingMutationOperation=Guid.NewGuid().ToString();var interruptedBytes=Pack("prepared","mutation-two");
+ var interruptedFile=mutationStore.WriteIdempotent("Notes/Interrupted.textpack",interruptedBytes,null,pendingMutationOperation);
+ var interruptedJournal=Path.Combine(mutationStore.StateDirectory,"mutation-"+pendingMutationOperation+".json");
+ var recorded=JsonSerializer.Deserialize<FileMutationReceipt>(File.ReadAllBytes(interruptedJournal))!;
+ TextPackStore.AtomicWrite(interruptedJournal,JsonSerializer.SerializeToUtf8Bytes(recorded with{Committed=false}));
+ Assert(restarted.WriteIdempotent(interruptedFile.Path,interruptedBytes,null,pendingMutationOperation)==interruptedFile,"pendingMutationOperation completion accepts only exact prepared file bytes");
+ TextPackStore.AtomicWrite(interruptedJournal,JsonSerializer.SerializeToUtf8Bytes(recorded with{Committed=false}));
+ restarted.UpdateMarkdown(interruptedFile.Path,TextPackStore.Markdown(interruptedBytes)+"\nintervening edit",interruptedFile.Hash);
+ Throws<FileChangedException>(()=>restarted.WriteIdempotent(interruptedFile.Path,interruptedBytes,null,pendingMutationOperation),"unattested pending retry preserves changed file");
+ Assert(TextPackStore.Markdown(restarted.Read(interruptedFile.Path)).Contains("intervening edit"),"pending retry cannot erase intervening content");
+ var preservedJournal=JsonSerializer.SerializeToUtf8Bytes(recorded with{Version=999});TextPackStore.AtomicWrite(interruptedJournal,preservedJournal);
+ Throws<InvalidDataException>(()=>restarted.WriteIdempotent(interruptedFile.Path,interruptedBytes,null,pendingMutationOperation),"future mutation receipt refuses without rewriting");
+ Assert(File.ReadAllBytes(interruptedJournal).SequenceEqual(preservedJournal),"unrecognized receipt retained for recovery");
+ }
  Throws<IOException>(()=>store.Resolve("../outside.textpack"),"reject traversal");Throws<IOException>(()=>store.Resolve("Notes/a.textpack:stream"),"reject alternate data streams");
  var folderStore=new TextPackStore(Path.Combine(temp,"folders"),Path.Combine(temp,"folder-device"));
  var folderRemote=new Fake{Folders=["Feeds","Research/Empty"]};

@@ -31,6 +31,8 @@ async function fixture() {
   const initial = encodePack(pack, writePayload({ path, hash: "", markdown: `---\ntextTextId: "${itemId}"\n---\n\n` }, doc));
   const files = new Map([[itemId, { path, bytes: initial }]]);
   let ready = true; let checkpoint: Record<string, unknown> | undefined;
+  let loseWriteResponse = false;
+  const committedOperations = new Set<string>();
   const view = native((method, p) => {
     if (method === "native.status") return { root: "C:\\Users\\Person\\TextText\\workspace", workspaceId: "workspace", name: "Workspace", available: true, connected: true };
     if (method === "native.recovery") return null;
@@ -41,14 +43,18 @@ async function fixture() {
     if (method === "files.text") { if (!file) throw Object.assign(new Error("Missing"), { code: "not_found" }); return openPack(file.bytes, file.path, digest(file.bytes), String(p.itemId)).file; }
     if (method === "files.read") { if (!file) throw Object.assign(new Error("Missing"), { code: "not_found" }); return { path: file.path, hash: digest(file.bytes), data: Buffer.from(file.bytes).toString("base64") }; }
     if (method === "files.write") {
+      if (committedOperations.has(String(p.operationId)) && file) return { path: file.path, hash: digest(file.bytes) };
       if (file ? digest(file.bytes) !== p.expectedHash : p.expectedHash !== null) throw Object.assign(new Error("Changed"), { code: "conflict" });
-      const value = { path: String(p.path), bytes: new Uint8Array(Buffer.from(String(p.data), "base64")) }; files.set(String(p.itemId), value); return { path: value.path, hash: digest(value.bytes) };
+      const value = { path: String(p.path), bytes: new Uint8Array(Buffer.from(String(p.data), "base64")) }; files.set(String(p.itemId), value);
+      committedOperations.add(String(p.operationId));
+      if (loseWriteResponse) { loseWriteResponse = false; throw new Error("Lost native response"); }
+      return { path: value.path, hash: digest(value.bytes) };
     }
     if (method === "collaboration.checkpoint") { checkpoint = p; return { path, hash: digest(Buffer.from(String(p.data), "base64")) }; }
     throw new Error(`Unexpected ${method}`);
   });
   const transport = await createWindowsVaultTransport(view);
-  return { transport, view, files, itemId, path, initial, checkpoint: () => checkpoint, setReady(value: boolean) { ready = value; } };
+  return { transport, view, files, itemId, path, initial, checkpoint: () => checkpoint, setReady(value: boolean) { ready = value; }, loseNextWriteResponse() { loseWriteResponse = true; } };
 }
 
 describe("Windows native RPC", () => {
@@ -63,6 +69,25 @@ describe("Windows native RPC", () => {
   });
 });
 describe("Windows shared transport", () => {
+  it("replays a lost native save response with the same operation and follows later rename/edit", async () => {
+    const f = await fixture();
+    try {
+      const source = await f.transport.request("read", { path: f.path }) as VaultFile;
+      const document = readDocument(source); document.content.body = "agent saved";
+      const payload = writePayload(source, document);
+      f.loseNextWriteResponse();
+      await expect(f.transport.request("write", payload)).rejects.toThrow("Lost native response");
+      const committed = f.files.get(f.itemId)!;
+      const latest = openPack(committed.bytes, "Notes/Moved.textpack", digest(committed.bytes), f.itemId);
+      const latestDocument = readDocument(latest.file); latestDocument.content.body += "\nlater human edit";
+      f.files.set(f.itemId, { path: latest.file.path, bytes: encodePack(latest, writePayload(latest.file, latestDocument)) });
+      const result = await f.transport.request("write", payload) as VaultFile;
+      const writes = f.view.messages.filter(call => call.method === "files.write");
+      expect(writes[1].params.operationId).toBe(writes[0].params.operationId);
+      expect(result.path).toBe("Notes/Moved.textpack");
+      expect(readDocument(result).content.body).toBe("agent saved\nlater human edit");
+    } finally { f.transport.destroy(); }
+  });
   it("saves reusable look metadata in one complete native publication", async () => {
     const f = await fixture();
     try {
@@ -74,6 +99,7 @@ describe("Windows shared transport", () => {
       const saved = await f.transport.request("create", { title: "Saved look", folder: "Templates", sourcePath: source.path, sourceHash: source.hash,
         documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: null }) as VaultFile;
       expect(f.view.messages.filter(call => call.method === "files.write").length - before).toBe(1);
+      expect(f.view.messages.filter(call => call.method === "files.write").at(-1)!.params.operationId).toMatch(/^[0-9a-f-]{36}$/i);
       expect(readDocument(saved)).toEqual(document);
       expect(JSON.parse(saved.templateJSON!).id).toBe(template.id);
       expect(f.files.get(f.itemId)!.bytes).toEqual(f.initial);

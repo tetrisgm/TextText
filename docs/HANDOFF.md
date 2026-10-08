@@ -49,6 +49,24 @@
 
 ## Current work and next checks
 
+- Windows native file writes now persist operation intent/completion receipts;
+  repeated writes follow committed identity after rename/edit and refuse
+  resurrection after deletion. Interrupted completion accepts only exact
+  prepared bytes; future/tampered intents fail closed. Creation publication
+  uses a no-overwrite move. Native bridge receives the shared operation ID;
+  shared transport honors the returned current path. Portable native suites,
+  47 shared transport tests and TypeScript pass. Logs:
+  `/tmp/texttext-windows-native-mutation-receipts.log`,
+  `/tmp/texttext-native-retry-follow-path.log`,
+  `/tmp/texttext-windows-mutation-types.log`. Source only: physical Windows
+  build/install and higher-level repeated agent creation remain unverified.
+
+- Release verification on `c3184d96` stopped at the legacy sharing evaluator
+  (`40797` terminal), log `/tmp/texttext-template-release-gates-mcp-fixed.log`.
+  MCP live acceptance passed. The next evaluator calls removed `delete_folder`
+  and SQL folder IDs without file-backed idempotency keys. Replace its obsolete
+  workflow with real file-backed sharing/access acceptance; do not bypass it.
+
 - Oracle template delivery candidate is clean source `223954b8` in
   `/private/tmp/texttext-candidate-1195-5ELVuo`. Exact core gates passed
   (837 tests, 87 files), native sync gates passed, and the production web
