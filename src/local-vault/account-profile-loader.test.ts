@@ -29,3 +29,24 @@ it("ignores late old-account responses and aborts in-flight requests on account 
   controller.abort(); resolve("old account"); await Promise.resolve(); await Promise.resolve();
   expect(requestSignal.aborted).toBe(true); expect(loaded).not.toHaveBeenCalled(); stop();
 });
+
+it("starts a fresh bounded burst after genuine reconnect even when the prior outage exhausted retries", async () => {
+  vi.useFakeTimers(); const events = new EventTarget(), read = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+  const loaded = vi.fn();
+  const stop = loadAccountProfile({ read, signal: new AbortController().signal, events, loaded, failed: vi.fn() });
+  const status = (ready: boolean) => events.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { available: true, onlineReady: ready } }));
+  await vi.advanceTimersByTimeAsync(200_000); expect(read).toHaveBeenCalledTimes(6);
+  read.mockResolvedValue("current account"); events.dispatchEvent(new Event("online"));
+  for (let i = 0; i < 30; i++) status(true);
+  await vi.advanceTimersByTimeAsync(1000); expect(read).toHaveBeenCalledTimes(7); expect(loaded).toHaveBeenCalledWith("current account");
+  status(false); status(true); await vi.advanceTimersByTimeAsync(200_000); expect(read).toHaveBeenCalledTimes(7); stop();
+});
+it("reconnect replaces a long scheduled backoff without repeated-ready traffic", async () => {
+  vi.useFakeTimers(); const events = new EventTarget(), read = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+  const stop = loadAccountProfile({ read, signal: new AbortController().signal, events, loaded: vi.fn(), failed: vi.fn() });
+  await vi.advanceTimersByTimeAsync(44_000); expect(read).toHaveBeenCalledTimes(5);
+  events.dispatchEvent(new Event("offline")); events.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(1000); expect(read).toHaveBeenCalledTimes(6);
+  for (let i = 0; i < 100; i++) events.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(200_000); expect(read).toHaveBeenCalledTimes(11); stop();
+});
