@@ -1,7 +1,7 @@
 // The inbound boundary only. Approved writes use the canonical executor without
 // coming back through this gate, so approval cannot recursively stage a write.
 import { hasItemAgentScope } from "@/lib/item-agent-access";
-import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
+import { type WorkspaceToolName } from "@/lib/ai/tools";
 import { getOwnedBlog } from "@/lib/store";
 import { rootDomainUrl } from "@/lib/site-url";
 import { resolveMcpScopeAccess, type ToolContext } from "./tools";
