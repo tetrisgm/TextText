@@ -33,6 +33,8 @@ deployment `texttext-oracle-20261008T073956Z-43614e64`.
   exactly once and retains all four headings. Only this dedicated test note
   changed. The initial Windows input attempt did not reach the editor; its
   absence on disk was confirmed before correcting focus and entering it once.
+- Windows normal close/reopen retained both markers, headings, account and peer
+  presence. [Installed Windows receipt](2026-10-08-windows-shared-1189.md).
 
 ## Defect found during live acceptance
 
@@ -48,6 +50,5 @@ intact. Build 1189 contains both fixes.
 
 The account exposes one workspace, so live switching between differently
 permissioned workspaces is not attested. Preparation, failed flush, revocation,
-partial manifests and offline restart cases are regression-tested. Windows
-reopen acceptance is recorded separately. No public desktop release was
+partial manifests and offline restart cases are regression-tested. No public desktop release was
 published. Broader product completion remains unproven.
