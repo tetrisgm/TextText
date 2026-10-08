@@ -418,8 +418,7 @@ export async function createWorkspaceWriteProposal(
   const now = dependencies.now();
   const ttl = Math.min(
     Math.max(1_000, input.ttlMs ?? WRITE_PROPOSAL_TTL_MS),
-    DURABLE_PROPOSAL_TOOLS,
-  MAX_WRITE_PROPOSAL_TTL_MS,
+    MAX_WRITE_PROPOSAL_TTL_MS,
   );
   const expiresAt = new Date(now.getTime() + ttl);
   const id = dependencies.randomId();
