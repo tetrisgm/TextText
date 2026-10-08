@@ -95,10 +95,14 @@ Source follow-up since the installed/deployed baseline:
   passed. Recovery copies default to their source parent, not Recovered.
 - `59f6f963`, `1fcd03bf`: fresh owner authorization after waits and restoration
   baseline fencing; five auth and 39 store/Trash regressions passed.
-- In progress: Mac/Windows passive restore reconciliation, including an old
-  pending delete on another client. Do not deploy before those adapters and
-  combined acceptance are verified.
-  These source changes are not installed or deployed yet.
+- `5861988e`: Mac/Windows passive restore reconciliation fences old queued
+  deletes and edits, legacy journals, and download/restore races. Passed 151
+  Windows Core assertions, 25 Swift tests, nine transport tests, WPF compilation
+  and TypeScript.
+- `7b36e985`: all 12 local HTTP deployment checks passed, including same-ID
+  restore/retry and recoverable stale uploads; four cleanup/security tests passed.
+- Combined source `5861988e` is frozen for exact-source gates and matching
+  client builds. These source changes are not installed or deployed yet.
 
 File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
 (`f4352d53`, `1ccb5163`) and expanded sync gate (`48ac492a`) are committed.
