@@ -36,6 +36,12 @@
 
 ## Current work
 
+- Windows candidate `c3c3ed2d` passed the actual PC build, native suites, 327
+  shared-client tests and desktop smoke. It includes the native image input and
+  optional-image checkpoint fix. Installation remains pending closure of the
+  older app, whose unsaved state is unknown.
+  [Current candidate receipt](verification/2026-10-08-windows-c3c3ed2d-candidate.md).
+
 - Web Gallery rejection root cause reproduced from the exact Oracle pack and
   checkpoint: valid optional image caption/poster omissions were encoded as
   JavaScript undefined and rejected by the strict checkpoint JSON validator.
