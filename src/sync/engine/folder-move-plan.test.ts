@@ -1,6 +1,15 @@
 import { expect, it } from "vitest";
-import { folderMovePlanHash, planFolderMove } from "./folder-move-plan";
+import { folderMovePlanHash, planFolderMove, reviewedFolderMoveManifest } from "./folder-move-plan";
 const base = { source: "Projects/One", destination: "Archive/One", manifestRevision: "a".repeat(64), folders: ["Projects", "Projects/One", "Projects/One/Empty", "Archive"], items: [{ itemId: "stable", relativePath: "Projects/One/Folder view.textpack", revision: "b".repeat(64) }], grants: [] };
+it("permits changed contents and unrelated files but fences changed move membership", () => {
+ const plan=planFolderMove(base);
+ const current={folders:[...base.folders,"Other"],items:[{...base.items[0],revision:"c".repeat(64)},{itemId:"other",relativePath:"Other/Note.textpack",revision:"d".repeat(64)}],revision:"e".repeat(64)};
+ expect(reviewedFolderMoveManifest(plan,current).items[0].revision).toBe(base.items[0].revision);
+ expect(()=>reviewedFolderMoveManifest(plan,{...current,items:current.items.filter(item=>item.itemId!=="stable")})).toThrow("Workspace changed");
+ expect(()=>reviewedFolderMoveManifest(plan,{...current,folders:[...current.folders,"Projects/One/New"]})).toThrow("Workspace changed");
+ expect(()=>reviewedFolderMoveManifest(plan,{...current,folders:[...current.folders,"Archive/One"]})).toThrow("occupied");
+ expect(()=>reviewedFolderMoveManifest(plan,{...current,items:[{...base.items[0],itemId:"replacement"}]})).toThrow("Workspace changed");
+});
 it("plans one subtree transition including empty directories without changing item identities or bytes", () => {
  const plan = planFolderMove(base);
  expect(plan.items).toEqual([{ ...base.items[0], destination: "Archive/One/Folder view.textpack" }]);

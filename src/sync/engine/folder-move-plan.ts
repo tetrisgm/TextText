@@ -61,3 +61,15 @@ export function folderMovePlanHash(plan: ReturnType<typeof planFolderMove>): str
       : value);
   return createHash("sha256").update(canonical).digest("hex");
 }
+
+/** A move approves membership and access, not replacement document contents.
+ * Recheck the complete subtree and destination while allowing ordinary edits.
+ * Keep reviewed revisions only in approval metadata; the executor snapshots
+ * and moves the current bytes under its exclusive workspace lock. */
+export function reviewedFolderMoveManifest(plan: ReturnType<typeof planFolderMove>, current: { folders: string[]; items: FolderMoveItem[]; revision: string }) {
+  const latest = planFolderMove({ ...current, manifestRevision: current.revision, source: plan.source, destination: plan.destination, grants: [] });
+  const topology = (value: ReturnType<typeof planFolderMove>) => JSON.stringify({ folders: value.folders, items: value.items.map(({ itemId, relativePath, destination }) => ({ itemId, relativePath, destination })) });
+  if (topology(latest) !== topology(plan)) throw Error("Workspace changed. Review the folder move again.");
+  const revisions = new Map(plan.items.map(item => [item.itemId, item.revision]));
+  return { folders: current.folders, items: current.items.map(item => revisions.has(item.itemId) ? { ...item, revision: revisions.get(item.itemId)! } : item) };
+}

@@ -1,6 +1,6 @@
 import { applyFolderMoveIntent, type FolderMoveIntent } from "./folder-move-operation";
 import { snapshotFolderTree, verifyFolderParents } from "./folder-move-filesystem";
-import { folderMovePlanHash, type planFolderMove } from "./folder-move-plan";
+import { folderMovePlanHash, reviewedFolderMoveManifest, type planFolderMove } from "./folder-move-plan";
 import { detachDocumentAsset } from "@/lib/vault/asset-detachment";
 import { assetCommandPayload, type VaultAssetAttachment } from "@/lib/vault/asset-command";
 import { extractFolderViewMetadata, FolderViewMetadataCache } from "@/local-vault/folder-view-metadata";
@@ -2409,10 +2409,10 @@ export async function moveVaultFolder(input:VaultLocation & {operationId:string;
   if(saved){const receipt=JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;if(receipt.requestHash!==requestHash)throw Error("Operation id was reused");if(!input.receiptOnly)await deliverReceipt(layout,receipt);return receipt.result;}
   if(input.receiptOnly)throw Error("No completed receipt exists for this approved operation.");
   const current=await manifestSnapshot(layout);
-  if(current.revision!==input.plan.manifestRevision)throw Error("Workspace changed. Review the folder move again.");
+  const reviewedManifest=reviewedFolderMoveManifest(input.plan,current);
   const source=await verifyFolderParents(layout.workspace,input.plan.source);
   const tree=await snapshotFolderTree(source);await input.authorize();
-  const intent:FolderMoveIntent={kind:"move_folder",workspaceId:input.workspaceId,operationId:input.operationId,requestHash,actorUserId:input.actorUserId,actorType:input.actorType,plan:input.plan,manifest:{folders:current.folders,items:current.items},treeHash:tree.hash,treeIdentity:tree.entries[0].identity};
+  const intent:FolderMoveIntent={kind:"move_folder",workspaceId:input.workspaceId,operationId:input.operationId,requestHash,actorUserId:input.actorUserId,actorType:input.actorType,plan:input.plan,manifest:reviewedManifest,treeHash:tree.hash,treeIdentity:tree.entries[0].identity};
   const pendingDir=await directory(layout.pending,input.operationId);await atomicWrite(path.join(pendingDir,"intent.json"),json(intent));await syncDirectory(layout.pending);
   return applySubtreeMove(layout,intent,pendingDir);
  });

@@ -28,6 +28,19 @@
 
 ## Current work
 
+- Folder move approval no longer rejects ordinary document edits or unrelated
+  workspace changes solely because the global manifest revision advanced.
+  Execution rechecks exact subtree identities/paths, empty folders and
+  destination availability; grant reservation still validates the complete
+  approved access transition. The intent snapshots current bytes under the
+  engine lock. Regression types after review, interrupts completion, recovers
+  edited bytes and proves one audited replay. Twelve engine tests, both actual
+  local PostgreSQL boundary/access tests and TypeScript passed. Logs:
+  `/tmp/texttext-folder-move-content-tests.log`,
+  `/tmp/texttext-folder-move-content-db.log`,
+  `/tmp/texttext-folder-move-content-tsc.log`. Live proposal is not yet recovered
+  and this source is not deployed.
+
 - Installed Mac 1200 recovered the retained verification note at its 1199
   location. Live pending-edit move proposal
   `01ce878c-5874-4c9a-8e11-c54b932aa872` remains unconfirmed; the editor still

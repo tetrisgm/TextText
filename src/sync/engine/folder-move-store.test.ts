@@ -16,11 +16,14 @@ it("recovers one subtree move with stable pack identity/default bytes, empty fol
   const bytes=buildTextpack("Note",{document,markdown:'---\ntextTextId: item-1\n---\nKeep exact bytes'});
   await writeVaultTextpack({...context,itemId:"item-1",operationId:"seed",relativePath:"Source/Folder view.textpack",baseRevision:null,bytes});
   const before=await listVaultTextpacks(context);const plan=planFolderMove({...before,manifestRevision:before.revision,source:"Source",destination:"Archive/Moved",grants:[]});
+  const editedDocument=emptyDocumentSnapshot();editedDocument.content.title="Folder view";editedDocument.content.body="Keep exact bytes plus concurrent typing";
+  const editedBytes=buildTextpack("Note",{document:editedDocument,markdown:'---\ntextTextId: item-1\n---\nKeep exact bytes plus concurrent typing'});
+  await writeVaultTextpack({...context,itemId:"item-1",operationId:"typing-after-review",relativePath:"Source/Folder view.textpack",baseRevision:before.items[0].revision,bytes:editedBytes});
   const request={...context,operationId:"move",plan,actorUserId:"actor",actorType:"human" as const,authorize:async()=>{}};
   await expect(moveVaultFolder(request)).rejects.toThrow("Database unavailable");
   const after=await listVaultTextpacks(context);
   expect(after.folders).toContain("Archive/Moved/Empty");expect(after.folders).not.toContain("Source");
-  const item=await readVaultTextpack({...context,itemId:"item-1"});expect(item?.relativePath).toBe("Archive/Moved/Folder view.textpack");expect(Buffer.from(item!.bytes)).toEqual(Buffer.from(bytes));
+  const item=await readVaultTextpack({...context,itemId:"item-1"});expect(item?.relativePath).toBe("Archive/Moved/Folder view.textpack");expect(Buffer.from(item!.bytes)).toEqual(Buffer.from(editedBytes));
   expect(await moveVaultFolder(request)).toEqual({status:"folder_moved",relativePath:"Archive/Moved"});expect(audit.size).toBe(1);
   const reordered=Object.fromEntries(Object.entries(plan).reverse()) as typeof plan;
   expect(await moveVaultFolder({...request,plan:reordered})).toEqual({status:"folder_moved",relativePath:"Archive/Moved"});expect(audit.size).toBe(1);
@@ -34,7 +37,7 @@ it("rejects stale manifest and drops a pre-publication failed intent without blo
   const context={root,workspaceId:"workspace",onReceipt:async()=>{},onFolderMove:async(_:unknown,phase:string)=>{if(phase==="reserve")throw Error("Grant changed");}};
   await ensureVaultFolders(context,["Source"]);const manifest=await listVaultTextpacks(context);const plan=planFolderMove({...manifest,manifestRevision:manifest.revision,source:"Source",destination:"Moved",grants:[]});
   const request={...context,operationId:"move",plan,actorUserId:"actor",actorType:"human" as const,authorize:async()=>{}};
-  await expect(moveVaultFolder({...request,plan:{...plan,manifestRevision:"0".repeat(64)}})).rejects.toThrow("Workspace changed");
+  await expect(moveVaultFolder({...request,plan:{...plan,folders:[...plan.folders,{from:"Source/Unexpected",to:"Moved/Unexpected"}]}})).rejects.toThrow("Workspace changed");
   await expect(moveVaultFolder(request)).rejects.toThrow("Grant changed");
   expect((await listVaultTextpacks(context)).folders).toEqual(["Source"]);
  }finally{await fs.rm(root,{recursive:true,force:true});}
