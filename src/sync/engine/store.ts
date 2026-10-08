@@ -1,3 +1,4 @@
+import { extractFolderViewMetadata, FolderViewMetadataCache } from "@/local-vault/folder-view-metadata";
 import { buildTemplateRetirement, templateRetirementIdentity } from "@/lib/presentation/vault-template-retirement";
 import { isTemplateRetirementPath, parseTemplateRetirement } from "@/lib/presentation/template-retirement";
 import { createFolderViewPack, readFolderView, readFolderItemDefault, folderViewPath, FOLDER_DEFAULT_FIELD, FOLDER_STANDARD_LAYOUT_FIELD } from "@/local-vault/folder-view";
@@ -1335,46 +1336,46 @@ export async function retireVaultTemplate(input: VaultLocation & {
 }
 
 /** Create immutable library artifacts through the same durable file intent as ordinary documents. */
-/** Immediate-folder metadata only; never infer configuration from the filename. */
-async function folderViewLocked(layout: Layout, folder: string) {
+const folderMetadataCache = new FolderViewMetadataCache();
+/** Scan all siblings, retaining only bounded metadata and negative results, never archive bytes. */
+async function scanFolderViews(layout: Layout, folder: string) {
   const canonical = await targetPath(layout, folderViewPath(folder));
   const directoryPath = path.dirname(canonical);
   const names = await fs.readdir(directoryPath).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
-  if (names.length > 2048) throw new Error("Folder view discovery exceeds limits");
-  let found: { itemId: string; relativePath: string; revision: string; bytes: Uint8Array; view: NonNullable<ReturnType<typeof readFolderView>> } | null = null;
-  let scanned = 0;
-  for (const name of names.filter(name => name.endsWith(".textpack"))) {
+  const files: NonNullable<ReturnType<typeof extractFolderViewMetadata>>[] = [];
+  let returnedBytes = 0;
+  for (const name of names.filter(name => name.toLowerCase().endsWith(".textpack"))) {
     const relativePath = folder ? `${folder}/${name}` : name;
     const target = await targetPath(layout, relativePath);
-    const stat = await fs.stat(target);
-    if (!stat.isFile()) continue;
-    if ((scanned += stat.size) > 256 * 1024 * 1024) throw new Error("Folder view discovery exceeds limits");
-    const bytes = await maybeRead(target);
-    if (!bytes) continue;
-    let metadata: Record<string, Uint8Array>;
-    try {
-      let expanded = 0;
-      metadata = unzipSync(bytes, { filter(entry) {
-        if (!/(?:^|\/)(document|template)\.json$/.test(entry.name)) return false;
-        if ((expanded += entry.originalSize) > 4 * 1024 * 1024) throw new Error("Folder metadata exceeds limits");
-        return true;
-      } });
-    } catch { continue; }
-    const keys = Object.keys(metadata).filter(key => /(?:^|\/)document\.json$/.test(key));
-    if (keys.length !== 1) continue;
-    const documentJSON = strFromU8(metadata[keys[0]]);
-    let document;
-    try { document = JSON.parse(documentJSON); } catch { continue; }
-    if (document?.content?.fields?.texttextFolderView === undefined) continue;
-    const template = metadata[keys[0].replace(/document\.json$/, "template.json")];
-    const revision = hash(bytes);
-    const view = readFolderView({ path: relativePath, hash: revision, documentJSON, templateJSON: template ? strFromU8(template) : undefined });
-    if (!view) continue;
-    const pack = openPack(bytes, relativePath, revision);
-    if (found) throw new Error("This folder contains multiple folder views");
-    found = { itemId: packIdentity(pack.file.markdown), relativePath, revision, bytes, view };
+    const signature = await fingerprint(target);
+    if (!signature) continue;
+    let metadata = folderMetadataCache.get(target, signature);
+    if (metadata === undefined) {
+      const stat = await fs.stat(target);
+      if (stat.size > 64 * 1024 * 1024) throw new Error("Folder view file exceeds limits");
+      const bytes = await maybeRead(target);
+      if (!bytes) continue;
+      metadata = extractFolderViewMetadata(bytes, relativePath, hash(bytes));
+      if (await fingerprint(target) !== signature) throw new Error("The folder changed while reading its settings. Try again.");
+      folderMetadataCache.put(target, signature, metadata);
+    }
+    if (!metadata) continue;
+    returnedBytes += Buffer.byteLength(metadata.documentJSON ?? "") + Buffer.byteLength(metadata.templateJSON ?? "");
+    if (files.length >= 16 || returnedBytes > 4 * 1024 * 1024) throw new Error("Folder view response exceeds limits");
+    files.push(metadata);
   }
-  return found;
+  return files;
+}
+async function folderViewLocked(layout: Layout, folder: string) {
+  const files = await scanFolderViews(layout, folder);
+  const views = files.map(file => ({ file, view: readFolderView(file) })).filter(value => value.view !== null);
+  if (views.length > 1) throw new Error("This folder contains multiple folder views");
+  const selected = views[0];
+  if (!selected) return null;
+  const bytes = await maybeRead(await targetPath(layout, selected.file.path));
+  if (!bytes || hash(bytes) !== selected.file.hash) throw new Error("The folder view changed. Try again.");
+  const pack = openPack(bytes, selected.file.path, selected.file.hash);
+  return { itemId: packIdentity(pack.file.markdown), relativePath: selected.file.path, revision: selected.file.hash, bytes, view: selected.view! };
 }
 
 export async function setVaultFolderTemplate(input: VaultLocation & {
@@ -1946,34 +1947,8 @@ export async function readVaultTextpackIdentity(input: VaultLocation & { itemId:
 /** Metadata-only discovery; bound work and fail explicitly rather than hide a late definition. */
 export async function listVaultFolderViews(input: VaultLocation & { folder: string }) {
   if (input.folder && (input.folder.startsWith("/") || input.folder.includes("\\") || input.folder.split("/").some((part) => !part || part.startsWith(".")))) throw new Error("Invalid folder path");
-  const manifest = await listVaultTextpacks(input);
-  const members = manifest.items.filter((item) => path.posix.dirname(item.relativePath).replace(/^\.$/, "") === input.folder);
-  if (members.length > 2048) throw new Error("Folder view discovery exceeds limits");
-  const files: { path: string; hash: string; documentJSON: string; templateJSON?: string }[] = [];
-  let scanned = 0, returnedBytes = 0;
-  for (const member of members) {
-    const item = await readVaultTextpack({ ...input, itemId: member.itemId });
-    if (!item || path.posix.dirname(item.relativePath).replace(/^\.$/, "") !== input.folder) continue;
-    if ((scanned += item.bytes.length) > 256 * 1024 * 1024) throw new Error("Folder view discovery exceeds limits");
-    let expanded = 0;
-    const entries = unzipSync(item.bytes, { filter(entry) {
-      if (!/(?:^|\/)(document|template)\.json$/.test(entry.name)) return false;
-      if ((expanded += entry.originalSize) > 4 * 1024 * 1024) throw new Error("Folder view metadata exceeds limits");
-      return true;
-    } });
-    const documents = Object.keys(entries).filter((key) => /(?:^|\/)document\.json$/.test(key));
-    if (documents.length !== 1) continue;
-    const key = documents[0], documentJSON = strFromU8(entries[key]);
-    let document;
-    try { document = JSON.parse(documentJSON); } catch { continue; }
-    if (document?.content?.fields?.texttextFolderView === undefined) continue;
-    const template = entries[key.replace(/document\.json$/, "template.json")];
-    returnedBytes += Buffer.byteLength(documentJSON) + (template?.length ?? 0);
-    if (returnedBytes > 4 * 1024 * 1024) throw new Error("Folder view response exceeds limits");
-    files.push({ path: item.relativePath, hash: item.revision, documentJSON, ...(template ? { templateJSON: strFromU8(template) } : {}) });
-    if (files.length > 16) throw new Error("Too many folder view definitions");
-  }
-  return { files };
+  const layout = await setup(input);
+  return locked(layout, async () => { await recover(layout); return { files: await scanFolderViews(layout, input.folder) }; });
 }
 
 /** Scan only explicit feed snapshots. Ordinary Bookmarks and subscription

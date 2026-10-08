@@ -1,3 +1,4 @@
+import { extractFolderViewMetadata, FolderViewMetadataCache } from "./folder-view-metadata";
 import { VaultError, type VaultFile, type VaultListing, type VaultTransport } from "./bridge";
 import { createWebVaultTransport } from "./web-transport";
 import { encodePack, openPack, type OpenPack } from "./pack";
@@ -55,6 +56,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
   const status = await rpc.request<Status>("native.status");
   if (!status.available || !status.workspaceId) throw new Error("Sign in to open your workspace.");
   const base = `/api/vault/${encodeURIComponent(status.workspaceId)}/items`;
+  const folderMetadataCache = new FolderViewMetadataCache();
   const list = () => rpc.request<Manifest>("files.list");
   const read = async (itemId: string, signal?: AbortSignal): Promise<OpenPack> => {
     const result = await rpc.request<Read>("files.read", { itemId }, signal);
@@ -90,8 +92,17 @@ export async function createWindowsVaultTransport(view: NativeView) {
         if (folder !== null) {
           const result = [];
           for (const item of manifest.items.filter(item => item.relativePath.split("/").slice(0, -1).join("/") === folder)) {
-            const pack = await read(item.itemId, signal);
-            if (readDocument(pack.file).content.fields.texttextFolderView === "v1") result.push(pack.file);
+            let metadata = folderMetadataCache.get(item.relativePath, item.revision);
+            if (metadata === undefined) {
+              const value = await rpc.request<Read>("files.read", { itemId: item.itemId }, signal);
+              if (value.path !== item.relativePath) throw new Error("The folder changed. Try again.");
+              metadata = extractFolderViewMetadata(bytes(value.data), value.path, value.hash);
+              folderMetadataCache.put(value.path, value.hash, metadata);
+            }
+            if (metadata) {
+              result.push(metadata);
+              if (result.length > 16 || result.reduce((total, file) => total + (file.documentJSON?.length ?? 0) + (file.templateJSON?.length ?? 0), 0) > 2 * 1024 * 1024) throw new Error("Folder view response exceeds limits");
+            }
           }
           return Response.json({ files: result });
         }
@@ -236,5 +247,5 @@ export async function createWindowsVaultTransport(view: NativeView) {
   window.addEventListener("texttext:windows-agent-cancel", agentCancel);
   window.addEventListener("texttext:vault-changed", changed);
   window.addEventListener("texttext:vault-sync-status", changed);
-  return { request: transport, destroy() { window.removeEventListener("texttext:windows-agent-tool", agentTool); window.removeEventListener("texttext:windows-agent-cancel", agentCancel); for (const controller of agentTools.values()) controller.abort(); agentTools.clear(); window.removeEventListener("texttext:vault-changed", changed); window.removeEventListener("texttext:vault-sync-status", changed); shared.destroy(); rpc.destroy(); } };
+  return { request: transport, destroy() { window.removeEventListener("texttext:windows-agent-tool", agentTool); window.removeEventListener("texttext:windows-agent-cancel", agentCancel); for (const controller of agentTools.values()) controller.abort(); agentTools.clear(); window.removeEventListener("texttext:vault-changed", changed); window.removeEventListener("texttext:vault-sync-status", changed); folderMetadataCache.clear(); shared.destroy(); rpc.destroy(); } };
 }

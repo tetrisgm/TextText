@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as fs from "node:fs/promises";
+vi.mock("node:fs/promises", async () => { const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises"); return { ...actual, readFile: vi.fn(actual.readFile) }; });
 import os from "node:os";
 import path from "node:path";
 import * as engine from "@/sync/engine/store";
@@ -95,3 +96,26 @@ it("fences custom source changes after authorization and replays completed defau
   const authorize = async () => { if (++reads === 2) await fs.writeFile(path.join(root, "workspace", "Templates", "Default.textpack"), changed); };
   await expect(executeVaultTemplateTool("set_folder_template", { ...request, if_match_hash: "revision" in saved ? saved.revision : null, idempotency_key: "race-source" }, { ...context(), authorize })).rejects.toThrow("source changed");
 });
+it("creates beyond 2048 notes and invalidates cached markers on rename/replacement", async () => {
+  const directory = path.join(root, "workspace", "Notes");
+  const template = requireBuiltinTemplate("texttext.note");
+  for (let batch = 0; batch < 2050; batch += 50) await Promise.all(Array.from({ length: Math.min(50, 2050 - batch) }, (_, offset) => {
+    const number = batch + offset;
+    const id = `77777777-7777-4777-8777-${String(number).padStart(12, "0")}`;
+    return fs.writeFile(path.join(directory, `${String(number).padStart(4, "0")}.textpack`), buildTextpack("Document", { template, document: emptyDocumentSnapshot(), markdown: `---\ntextTextId: ${id}\n---\n` }));
+  }));
+  expect((await engine.listVaultFolderViews({ ...location(), folder: "Notes" })).files).toEqual([]);
+  const reads = vi.mocked(fs.readFile); reads.mockClear();
+  expect((await engine.listVaultFolderViews({ ...location(), folder: "Notes" })).files).toEqual([]);
+  expect(reads.mock.calls.filter(([file]) => String(file).endsWith(".textpack"))).toHaveLength(0);
+  reads.mockClear();
+  const created = await mutateVaultTool("create_item", { title: "Next", folder_path: "Notes", idempotency_key: "scale" }, context());
+  expect(created.status).toBe("written");
+  const marker = (await import("@/local-vault/folder-view")).createFolderViewPack("Notes", template);
+  await fs.writeFile(path.join(directory, "0000.textpack"), marker.bytes);
+  expect((await engine.listVaultFolderViews({ ...location(), folder: "Notes" })).files.map(file => file.path)).toEqual(["Notes/0000.textpack"]);
+  await fs.rename(path.join(directory, "0000.textpack"), path.join(directory, "Renamed.textpack"));
+  expect((await engine.listVaultFolderViews({ ...location(), folder: "Notes" })).files.map(file => file.path)).toEqual(["Notes/Renamed.textpack"]);
+  await fs.writeFile(path.join(directory, "0001.textpack"), marker.bytes);
+  await expect(mutateVaultTool("create_item", { title: "Ambiguous", folder_path: "Notes", idempotency_key: "scale-duplicate" }, context())).rejects.toThrow("multiple folder views");
+}, 30_000);

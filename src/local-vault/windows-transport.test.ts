@@ -161,3 +161,22 @@ describe("Windows shared transport", () => {
     } finally { f.transport.destroy(); }
   });
 });
+
+it("discovers folder markers beyond 2048 siblings and caches only metadata by current hash/path", async () => {
+  const f = await fixture();
+  try {
+    const original = f.files.get(f.itemId)!;
+    for (let index = 0; index < 2050; index++) f.files.set(`ordinary-${index}`, { ...original, path: `Notes/${index}.textpack` });
+    expect(await f.transport.request("folderViews", { folder: "Notes" })).toEqual({ files: [] });
+    const reads = f.view.messages.filter(message => message.method === "files.read").length;
+    expect(await f.transport.request("folderViews", { folder: "Notes" })).toEqual({ files: [] });
+    expect(f.view.messages.filter(message => message.method === "files.read")).toHaveLength(reads);
+    const marker = (await import("./folder-view")).createFolderViewPack("Notes", requireBuiltinTemplate("texttext.note"));
+    f.files.set("ordinary-2049", { path: "Notes/2049.textpack", bytes: marker.bytes });
+    const found = await f.transport.request("folderViews", { folder: "Notes" }) as { files: VaultFile[] };
+    expect(found.files.map(file => file.path)).toEqual(["Notes/2049.textpack"]);
+    f.files.set("ordinary-2049", { path: "Notes/Renamed.textpack", bytes: marker.bytes });
+    const renamed = await f.transport.request("folderViews", { folder: "Notes" }) as { files: VaultFile[] };
+    expect(renamed.files.map(file => file.path)).toEqual(["Notes/Renamed.textpack"]);
+  } finally { f.transport.destroy(); }
+});
