@@ -2,7 +2,7 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1195)**, source `94cef4ea`.
+- Mac `/Applications/TextText.app`: **0.204 (1196)**, source `efa71682`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
@@ -11,7 +11,7 @@
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
 - Oracle: **texttext-oracle-20261008T121823Z-94cef4ea**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
-  timestamps are unchanged. Fresh backup `texttext-20261008T105710Z-d08da82e.dump`.
+  timestamps are unchanged. Fresh backup `texttext-20261008T121947Z-ecc4fb6c.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
@@ -28,12 +28,15 @@
 
 ## Current work
 
-- Candidate 1195 installed on Mac and deployed on Oracle; frozen core/native/
-  browser checks and startup/search/save/reopen passed. Windows candidate is
-  verified but the older installed app remains running. Live native folder
-  review caught a 201-status relay defect; source fix passes 17 relay tests but
-  needs build/install/live acceptance. Stable proposal staging retries and the
-  Oracle shutdown timeout remain open. [Receipt](verification/2026-10-08-candidate-1195.md).
+- Mac 1196 fixes the live 201-status review relay failure. Frozen gates and
+  actual native staging/Safari dismissal passed. Oracle 1195 live web approval
+  preserved the test TextPack bytes and empty child folder; Mac adopted its file
+  path automatically. **Old empty source folders remain on Mac**: native sync
+  creates remote folders but does not reconcile removed folder paths. Fix that
+  durable folder catalog behavior on both native adapters. Stable staging retry
+  identity and Oracle's observed shutdown timeout also remain open. Windows
+  verified candidate is ready, but installed older app remains running.
+  [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
   (`/tmp/texttext-folder-integrated-core.log`). Unrelated working edits were
@@ -48,8 +51,9 @@
   workspace departure closes stale UI. Nine focused tests, TypeScript and a
   full-app Chromium fixture passed, including light/dark visual inspection.
   Mandatory core/browser suites include the new checks. No actual install or
-  live folder move is claimed. Pending-edit readiness, frozen gates and live
-  native/web review acceptance remain before shipping.
+  live folder move is claimed. Queued and active editor moves have native regressions; installed/native
+  review and web move acceptance are recorded above. Removed-folder convergence
+  and stable staging retries remain before claiming this flow complete.
 
 - Desktop folder-review transport is wired: Mac uses a bound authenticated
   request builder with exact source/destination keys and a bounded response;
