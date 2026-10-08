@@ -1,4 +1,4 @@
-import { FOLDER_AGENT_TOOLS, insideAgentFolder, validFolderAgentPath } from "./folder-agent-boundary";
+import { folderAgentAllowsTool, ROOT_TEMPLATE_AGENT_TOOLS, insideAgentFolder, validFolderAgentPath } from "./folder-agent-boundary";
 import { documentAssetSchema, type DocumentAsset } from "@/lib/documents/model";
 // Server-only durable approval service for cloud-assistant workspace writes.
 
@@ -436,15 +436,16 @@ export async function createWorkspaceWriteProposal(
   const requested = validateWorkspaceWriteProposal(input.tool, input.arguments);
   if (input.actor.folderAgentPath !== undefined) {
     const boundary = input.actor.folderAgentPath;
-    if (!validFolderAgentPath(boundary) || !FOLDER_AGENT_TOOLS.has(requested.name)) throw new Error("This task can only work in its selected folder.");
+    if (!folderAgentAllowsTool(boundary, requested.name)) throw new Error("This task can only work in its selected folder.");
     const args = requested.arguments as Record<string, unknown>;
+    const rootTemplateCommand = boundary === "" && ROOT_TEMPLATE_AGENT_TOOLS.has(requested.name);
     if (requested.name === "create_item" || requested.name === "move_item") {
       if (typeof args.folder_path !== "string" || !insideAgentFolder(boundary, args.folder_path)) throw new Error("Choose a destination inside this task's folder.");
     }
     if (requested.name === "create_folder") {
       const parent = typeof args.parent_path === "string" ? args.parent_path : "";
       if (!insideAgentFolder(boundary, parent)) throw new Error("Choose a destination inside this task's folder.");
-    } else if (requested.name !== "create_item") {
+    } else if (requested.name !== "create_item" && !rootTemplateCommand) {
       if (typeof args.id !== "string") throw new Error("An item inside this task's folder is required.");
       const current = await dependencies.resolveItems(owner.workspace.handle, [args.id], input.actor);
       const item = current.get(args.id);

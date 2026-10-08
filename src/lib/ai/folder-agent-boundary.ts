@@ -14,3 +14,14 @@ export const FOLDER_AGENT_TOOLS = new Set([
   "append_to_item", "add_item_asset", "remove_item_asset", "list_comments",
   "add_comment", "set_comment_resolved", "create_folder", "move_item", "delete_item",
 ]);
+/** Templates are workspace-wide files. Only a root-folder task covers both
+ * the source items and the library; a named-folder task cannot cross into it. */
+export const ROOT_TEMPLATE_AGENT_TOOLS = new Set([
+  "list_document_templates", "create_item_type", "update_item_type",
+  "save_item_as_look", "remix_item_type", "retire_document_template",
+  "set_item_template", "set_folder_template",
+]);
+export function folderAgentAllowsTool(folder: unknown, name: string): boolean {
+  return validFolderAgentPath(folder) &&
+    (FOLDER_AGENT_TOOLS.has(name) || folder === "" && ROOT_TEMPLATE_AGENT_TOOLS.has(name));
+}

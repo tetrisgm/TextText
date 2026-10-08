@@ -12,7 +12,8 @@ vi.mock("@/lib/mcp/tools", () => ({
   runWorkspaceToolForSession: mocks.runWorkspaceToolForSession,
 }));
 
-import { guardedCloudAssistantTools } from "@/lib/ai/cloud-tools";
+import { cloudAssistantTools, guardedCloudAssistantTools } from "@/lib/ai/cloud-tools";
+import { folderAgentAllowsTool, ROOT_TEMPLATE_AGENT_TOOLS } from "@/lib/ai/folder-agent-boundary";
 
 const actor = {
   sub: "owner-sub",
@@ -56,6 +57,19 @@ describe("guarded cloud assistant tools", () => {
     expect(tools).not.toHaveProperty("get_workspace");
     expect(tools).not.toHaveProperty("create_item_type");
     expect(tools).not.toHaveProperty("move_folder_tree");
+  });
+
+  it("offers workspace template commands only to a root folder task in both adapters", () => {
+    for (const tools of [cloudAssistantTools({...actor, folderAgentPath: ""}), guardedCloudAssistantTools({...actor, folderAgentPath: ""}, vi.fn())]) {
+      for (const name of ROOT_TEMPLATE_AGENT_TOOLS) expect(tools).toHaveProperty(name);
+      expect(tools).not.toHaveProperty("move_folder_tree");
+    }
+    for (const folder of ["Notes", "Templates", "../", null, undefined]) {
+      for (const name of ROOT_TEMPLATE_AGENT_TOOLS) expect(folderAgentAllowsTool(folder, name)).toBe(false);
+    }
+    const readOnly = guardedCloudAssistantTools({...actor, folderAgentPath: ""}, vi.fn(), undefined, "read_only");
+    expect(readOnly).toHaveProperty("list_document_templates");
+    for (const name of ROOT_TEMPLATE_AGENT_TOOLS) if (name !== "list_document_templates") expect(readOnly).not.toHaveProperty(name);
   });
 
   it("records a failed command with the executor's own message", async () => {

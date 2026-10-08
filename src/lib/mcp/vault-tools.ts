@@ -1,4 +1,4 @@
-import { FOLDER_AGENT_TOOLS, insideAgentFolder, validFolderAgentPath } from "@/lib/ai/folder-agent-boundary";
+import { folderAgentAllowsTool, insideAgentFolder } from "@/lib/ai/folder-agent-boundary";
 import { createHash, randomUUID } from "node:crypto";
 import type { AuthInfo, CallToolResult } from "./types";
 import { hasItemAgentScope, itemAgentAccess, itemAgentAllows } from "@/lib/item-agent-access";
@@ -25,7 +25,7 @@ const error = (text: string): CallToolResult => ({ content: [{ type: "text", tex
 export async function executeVaultReadTool(name: string, args: Record<string, unknown>, auth: AuthInfo | undefined): Promise<CallToolResult> {
   const folderBoundary = auth?.extra?.folderAgentPath;
   const folderScoped = folderBoundary !== undefined;
-  if (folderScoped && (!validFolderAgentPath(folderBoundary) || !FOLDER_AGENT_TOOLS.has(name))) return error("This task can only work in its selected folder.");
+  if (folderScoped && !folderAgentAllowsTool(folderBoundary, name)) return error("This task can only work in its selected folder.");
   const withinFolder = (path: string) => !folderScoped || insideAgentFolder(folderBoundary as string, path);
   const sub = auth?.extra?.sub;
   if (typeof sub !== "string" || !sub) return error("Sign in required.");

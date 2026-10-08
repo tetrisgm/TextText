@@ -46,6 +46,17 @@
 
 ## Current work and next checks
 
+- Hosted workspace-root agent tasks now offer the reusable template library
+  commands through both cloud adapters, proposal staging and the canonical
+  executor. Named-folder tasks remain fenced, including a task targeting
+  `Templates`; ordinary account permissions and owner approvals still apply.
+  Actual file-engine creation/update/remix approval tests cover root scope,
+  expired lost-response recovery without duplicate writes and access revocation.
+  Four targeted suites: 84 tests passed (43 proposal tests rerun after correcting
+  a missing idempotency key in the new refusal fixture); TypeScript passed.
+  Logs `/tmp/texttext-root-template-{tests,proposals,types}.log`.
+  Source only: Oracle deployment and native reusable-library tools remain.
+
 - Save as look now supplies complete metadata to clone creation, eliminating
   the second write and partial library item on failure. Mac customizes only a
   private clone before publication; web/Windows encode the complete new identity

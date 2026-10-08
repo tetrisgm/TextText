@@ -181,6 +181,14 @@ async function createCapture(
 }
 
 describe("workspace write proposals", () => {
+  it("rejects template creation from a named folder before staging", async () => {
+    const h = harness();
+    for (const folderAgentPath of ["Notes", "Templates", "../"]) {
+      await expect(createWorkspaceWriteProposal({ actor: {...owner, folderAgentPath}, tool: "create_item_type", arguments: {idempotency_key: "caller", blueprint: {name: "Research", fields: [], collection: {layout: "list"}}}}, h.dependencies)).rejects.toThrow("selected folder");
+    }
+    expect(h.repository.rows.size).toBe(0);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
   it("persists the task folder through owner approval and rejects out-of-folder staging", async () => {
     const h = harness();
     const actor = { ...owner, folderAgentPath: "Notes" };
@@ -578,14 +586,14 @@ describe("canonical files through the public proposal lifecycle", () => {
 });
 
 describe("canonical template approval durability", () => {
-  it("creates and updates through public approvals, recovering expired lost responses without another write", async () => {
+  it.each([false, true])("creates and updates through public approvals, recovering expired lost responses without another write (root task: %s)", async (rootTask) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-template-proposal-"));
     vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true;
     try {
       const h = harness(); h.dependencies.execute = runWorkspaceToolForSession;
       let counter = 0; h.dependencies.randomId = () => `66666666-6666-4666-8666-${String(++counter).padStart(12, "0")}`;
       const blueprint = { name: "Research", fields: [], collection: { layout: "list" } };
-      const stage = (tool: string, args: Record<string, unknown>) => createWorkspaceWriteProposal({ actor: owner, tool, arguments: { ...args, idempotency_key: "caller" } }, h.dependencies);
+      const stage = (tool: string, args: Record<string, unknown>) => createWorkspaceWriteProposal({ actor: rootTask ? {...owner, folderAgentPath: ""} : owner, tool, arguments: { ...args, idempotency_key: "caller" } }, h.dependencies);
       const approve = (id: string) => decideWorkspaceWriteProposal({ actor: owner, proposalId: id, decision: "approve" }, h.dependencies);
       const engine = await import("@/sync/engine/store");
       const location = { root, workspaceId: "blog-1" };
@@ -597,6 +605,7 @@ describe("canonical template approval durability", () => {
         const proposal = await stage(updating ? "update_item_type" : "create_item_type", updating
           ? { template_id: definition.id, base_version: 1, source_item_id: source.itemId, source_hash: source.revision, blueprint: { ...blueprint, name: "Research revised" } }
           : { blueprint });
+        if (rootTask) expect(h.repository.rows.get(proposal.id)?.metadata?.folderAgentPath).toBe("");
         expect(proposal.arguments).not.toHaveProperty("apply_to_existing");
         await h.repository.claim(proposal.id, { blogId: "blog-1", actorUserId: "user-1" }, h.dependencies.now());
         h.repository.rejectCompletion = true;
