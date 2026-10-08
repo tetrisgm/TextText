@@ -31,6 +31,11 @@
 
 ## Current work
 
+- Windows candidate now matches installed Mac 1202 source `c58114ad`. The actual
+  PC build, 326 shared-client tests and desktop smoke passed. Installation
+  remains pending closure of the older app with unknown unsaved state.
+  [Candidate receipt](verification/2026-10-08-windows-c58114ad-candidate.md).
+
 - Oracle HTTP shutdown lifecycle is deployed; actual Oracle shutdown remains
   unverified. A raw TCP
   socket without HTTP headers reproduced standalone shutdown exceeding 12
