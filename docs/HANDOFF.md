@@ -2,7 +2,10 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1208)**, source `9a38e556`.
+- Mac `/Applications/TextText.app`: **0.204 (1209)**, source `3f94f8fc`.
+  Signed native Apple sign-in build; account/iCloud startup, existing note,
+  saved-body search, editor save and ZIP persistence passed.
+  [1209 receipt](verification/2026-10-08-mac-1209.md).
   Real native folder agent creation, persisted TextPack reopen and saved-body
   search passed. [1208 receipt](verification/2026-10-08-mac-1208.md).
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
@@ -33,7 +36,8 @@
   Web/Windows share the package encoder, now stripping receipts on new identity
   and retaining them on ordinary writes. All 330 shared-client tests and
   TypeScript passed; native import regression passed. Rebuild/install/deploy
-  these changes; existing copies remain untouched.
+  these changes on Windows/Oracle; Mac 1209 is installed with startup/search/save
+  acceptance. Fresh runtime clone acceptance remains. Existing copies remain untouched.
   [Acceptance and fix receipt](verification/2026-10-08-reusable-template-1208.md).
 
 - Oracle candidate `af65cbc6` deployed successfully after matching core/native
