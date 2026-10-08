@@ -2656,6 +2656,13 @@ export function UnifiedDocumentEditor({
         .tt-people-options small{color:var(--muted,#6e6e73);font-size:0.625rem}
         .tt-people-options>p{margin:0.625rem;color:var(--muted,#6e6e73);text-align:center}
         .tt-people-manual[open]{width:100%}
+        .tt-document-reference-input{display:grid;gap:.5rem;color:var(--ink,#1d1d1f)}
+        .tt-reference-selected{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+        .tt-document-reference-input details[open]{display:grid;gap:.375rem}
+        .tt-document-reference-input input{width:100%;padding:.5rem;background:var(--paper,#fff);color:inherit;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px}
+        .tt-document-reference-input button{display:block;padding:.375rem .5rem;text-align:left;font:inherit;color:inherit;background:transparent;border:0;border-radius:4px;cursor:pointer}
+        .tt-document-reference-input button:hover{background:var(--ac-hover,rgba(128,128,128,.12))}
+        .tt-document-reference-input button:disabled{opacity:.5;cursor:default}
         .tt-people-manual>div{display:flex;align-items:center;gap:0.375rem;margin-top:0.375rem}
         .tt-people-manual .tt-field-input{width:100%}
         .tt-people-manual button{padding:0.3125rem 0.625rem;border:1px solid var(--ac-hairline,#d2d2d7);border-radius:6px;background:transparent;color:var(--ink,#1d1d1f);font:inherit;font-weight:650;cursor:pointer}

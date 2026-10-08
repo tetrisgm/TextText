@@ -6,6 +6,7 @@ import base from '../vitest.config';
 export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
+    'src/components/document/__tests__/field-input-advanced.test.tsx',
       "src/components/document/__tests__/plain-paragraph.test.tsx",
     'sync/{boundary,compatibility,shared-ui}.test.ts',
     'src/local-vault/{reader-write-baselines,collaboration-client,web-transport,web-watch,web-workspace-open,listing-capabilities,account-profile-loader,bootstrap-retry,folder-view,folder-view-metadata,folder-item-default,new-item-pack,template-starter,template-proposal,template-versions,windows-transport,windows-agent-tools,bridge,presence-client,agent-presence-client}.test.ts',

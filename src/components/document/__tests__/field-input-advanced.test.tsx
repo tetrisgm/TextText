@@ -114,3 +114,14 @@ describe("advanced field inputs", () => {
     expect(html).not.toContain("Find a workspace item");
   });
 });
+
+it("renders parent choices by authorized title while retaining unavailable references privately", () => {
+  const field: DocumentFieldDefinition = { id: "parents", label: "Parents", type: "reference", target: "document", multiple: true, required: false, visibility: "public" };
+  const html = renderToStaticMarkup(<FieldInput field={field} value={["hidden-id", "known-id"]} referenceChoices={[{id:"known-id",label:"Known parent"},{id:"next-id",label:"Another note"}]} onChange={() => {}} />);
+  expect(html).toContain("Known parent");
+  expect(html).toContain("Unavailable item");
+  expect(html).toContain("Add parent");
+  expect(html).toContain("Another note");
+  expect(html).not.toContain("hidden-id");
+  expect(html).not.toContain("comma separated");
+});

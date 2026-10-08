@@ -296,6 +296,7 @@ export function FieldInput({
           />
         );
       case "reference":
+        if (field.target === "document") return <DocumentReferenceInput field={field} value={value} choices={referenceChoices} disabled={disabled} onChange={onChange} />;
         // References store document/folder ids. A picker is a follow-up; the
         // id input keeps the value editable rather than trapped.
         return (
@@ -361,6 +362,30 @@ export function FieldInput({
       {control}
     </label>
   );
+}
+
+function DocumentReferenceInput({ field, value, choices, disabled, onChange }: {
+  field: Extract<DocumentFieldDefinition, { type: "reference" }>;
+  value: DocumentFieldValue | undefined;
+  choices: readonly WorkspaceReferenceChoice[];
+  disabled?: boolean;
+  onChange: (value: DocumentFieldValue) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const selected = [...new Set((Array.isArray(value) ? value : value == null ? [] : [value]).filter((entry): entry is string => typeof entry === "string"))];
+  const byId = new Map(choices.map(choice => [choice.id, choice]));
+  const available = choices.filter(choice => !selected.includes(choice.id) && choice.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).slice(0, 50);
+  return <div className="tt-document-reference-input">
+    {selected.map(id => <div key={id} className="tt-reference-selected">
+      <span>{byId.get(id)?.label ?? "Unavailable item"}</span>
+      <button type="button" disabled={disabled} aria-label={`Remove ${byId.get(id)?.label ?? "unavailable item"}`} onClick={() => onChange(field.multiple ? selected.filter(value => value !== id) : null)}>Remove</button>
+    </div>)}
+    <details><summary>{field.id === "parents" ? "Add parent" : "Choose item"}</summary>
+      <input type="search" aria-label="Find item" placeholder="Find an item" value={query} disabled={disabled} onChange={event => setQuery(event.target.value)} />
+      {available.map(choice => <button key={choice.id} type="button" disabled={disabled} onClick={() => { onChange(field.multiple ? [...selected, choice.id] : choice.id); setQuery(""); }}>{choice.label}</button>)}
+      {!available.length && <p>No matching items</p>}
+    </details>
+  </div>;
 }
 
 type PeopleField = Extract<DocumentFieldDefinition, { type: "reference" }>;
