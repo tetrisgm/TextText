@@ -13,5 +13,6 @@ export default defineConfig({ ...base, test: { ...base.test,
     'src/app/api/vault/{auth,scoped-auth,collaboration-auth}.test.ts',
     'src/lib/__tests__/request-origin.test.ts',
     'src/app/api/vault/**/presence/route.test.ts',
+    'src/app/api/vault/**/trash/route.test.ts',
   ],
 } });
