@@ -1,3 +1,4 @@
+import { readDrainSignal } from "./read-drain";
 import { buildVaultTemplateArtifact, type VaultTemplateCreation } from "@/lib/presentation/vault-template-authoring";
 import * as Y from "yjs";
 import { applyDocumentMutation, applyDocumentSnapshot, type DocumentMutation } from "@/lib/collab/document";
@@ -1974,6 +1975,7 @@ async function discoverFiles(layout: Layout, folders: string[]): Promise<{ relat
 export async function waitVaultTextpacks(input: VaultLocation & {
   revision: string; waitMs: number; signal?: AbortSignal;
 }): Promise<Awaited<ReturnType<typeof listVaultTextpacks>>> {
+  const signal = AbortSignal.any([readDrainSignal(), ...(input.signal ? [input.signal] : [])]);
   const layout = await setup(input);
   let wake!: () => void;
   const changed = new Promise<void>((resolve) => { wake = resolve; });
@@ -1983,18 +1985,18 @@ export async function waitVaultTextpacks(input: VaultLocation & {
   });
   watcher.once("error", wake);
   const timer = setTimeout(wake, Math.max(0, Math.min(input.waitMs, 25_000)));
-  input.signal?.addEventListener("abort", wake, { once: true });
+  signal.addEventListener("abort", wake, { once: true });
   try {
     // Register before reading so a commit between initial read and wait cannot
     // get lost. Ignore our own lock files in the notification filter above.
     const initial = await listVaultTextpacks(input);
-    if (input.signal?.aborted || initial.revision !== input.revision) return initial;
+    if (signal.aborted || initial.revision !== input.revision) return initial;
     await changed;
-    return input.signal?.aborted ? initial : await listVaultTextpacks(input);
+    return signal.aborted ? initial : await listVaultTextpacks(input);
   } finally {
     clearTimeout(timer);
     watcher.close();
-    input.signal?.removeEventListener("abort", wake);
+    signal.removeEventListener("abort", wake);
   }
 }
 
@@ -2004,6 +2006,7 @@ export async function waitVaultCollaboration(input: VaultLocation & {
   itemId: string; epoch: number; seq: number; waitMs: number; signal?: AbortSignal;
 }) {
   segment(input.itemId);
+  const signal = AbortSignal.any([readDrainSignal(), ...(input.signal ? [input.signal] : [])]);
   const layout = await setup(input);
   let wake!: () => void;
   const changed = new Promise<void>(resolve => { wake = resolve; });
@@ -2026,20 +2029,20 @@ export async function waitVaultCollaboration(input: VaultLocation & {
   const watcher = watch(layout.workspace, { recursive: true }, () => { void checkForChange(); });
   watcher.once("error", () => { void checkForChange(); });
   const timer = setTimeout(wake, Math.max(0, Math.min(input.waitMs, 25_000)));
-  input.signal?.addEventListener("abort", wake, { once: true });
+  signal.addEventListener("abort", wake, { once: true });
   let interval: ReturnType<typeof setInterval> | undefined;
   try {
     const initial = await readVaultCollaboration(input);
-    if (!initial || initial.epoch !== input.epoch || initial.seq !== input.seq || input.signal?.aborted) return initial;
+    if (!initial || initial.epoch !== input.epoch || initial.seq !== input.seq || signal.aborted) return initial;
     // Some filesystem providers coalesce or omit a watch event. This scoped
     // fallback checks only while one bounded long-poll request is waiting.
     interval = setInterval(() => { void checkForChange(); }, 250);
     await changed;
-    return input.signal?.aborted ? initial : await readVaultCollaboration(input);
+    return signal.aborted ? initial : await readVaultCollaboration(input);
   } finally {
     clearTimeout(timer);
     if (interval) clearInterval(interval);
     watcher.close();
-    input.signal?.removeEventListener("abort", wake);
+    signal.removeEventListener("abort", wake);
   }
 }
