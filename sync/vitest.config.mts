@@ -10,7 +10,7 @@ export default defineConfig({ ...base, test: { ...base.test,
     // Hosted agents mutate the same durable files and must pass the sync gate.
     'src/lib/mcp/__tests__/vault-{tools,mutations,organization,templates,comments,agent-presence}.test.ts',
     'src/lib/mcp/__tests__/native-file-command-route.test.ts',
-    'src/lib/ai/__tests__/{cloud-tools,guarded-cloud-tools}.test.ts',
+    'src/lib/ai/__tests__/{cloud-tools,guarded-cloud-tools,canonical-context,write-proposals,write-proposal-preview}.test.ts',
     'src/app/api/vault/{auth,scoped-auth,collaboration-auth}.test.ts',
     'src/lib/__tests__/request-origin.test.ts',
     'src/app/api/vault/**/presence/route.test.ts',
