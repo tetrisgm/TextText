@@ -44,8 +44,14 @@
   checks. It includes custom-field updates, bounded account-profile recovery and
   explicit CLI proposal staging. Clients and Oracle installed; live proposal/field acceptance passed.
   [Receipt](verification/2026-10-08-cli-proposals-live.md).
-- Next cohort: atomic agent image addition/removal, using bounded public-resource
-  preparation and the existing durable engine intent. No asset feature shipped yet.
+- Next cohort: atomic agent image addition (`8aae3f12`) and reference removal
+  (`a3c2bad5`) are committed and focused-tested, not shipped. Originals stay in
+  the TextPack for recovery. Web image approval support is in progress.
+- Proposal completion copy (`7fee3438`) is tested, not shipped. Web folder
+  customization target fencing and canonical layout application are in progress.
+- Durable folder move/rename is being implemented with filesystem recovery and
+  coordinated grant migration. Legacy SQL folder commands remain unavailable to
+  canonical agents until this is complete; do not compose partial per-item moves.
 
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
