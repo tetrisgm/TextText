@@ -357,6 +357,7 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
     ?? (status.state === "ready" || status.state === "working" ? "Codex connected" : null);
   const diagnosticReference = status.state === "failed" && status.diagnosticId && /^[A-Z0-9-]{4,64}$/.test(status.diagnosticId)
     ? status.diagnosticId : null;
+  const proposalTarget = itemTask?.scope === "folder" ? itemTask.target : path;
   const heading = customizing ? "Customize" : "Add agent";
   return <><aside className={`vault-assistant${proposal ? " has-design-preview" : ""}`} aria-label={heading}>
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
@@ -381,7 +382,7 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
       {messages.map((message) => <div className={`vault-assistant-message is-${message.role}`} key={message.id}><strong>{message.role === "user" ? "You" : webAssistant ? "Assistant" : "Codex"}</strong><p>{message.text}</p></div>)}
       {working && <p className="vault-assistant-action">{action || "Working…"}</p>}
     </div>
-    {webAssistant && path && <AssistantWriteProposals key={`${root}:${path}`} root={root} path={path} proposals={writeProposals.path === path ? writeProposals.items : []} beforeApprove={beforeSend} />}
+    {webAssistant && proposalTarget !== undefined && <AssistantWriteProposals key={`${root}:${itemTask?.scope ?? "item"}:${proposalTarget}`} root={root} path={proposalTarget} proposals={writeProposals.path === proposalTarget ? writeProposals.items : []} beforeApprove={beforeSend} />}
     {(itemTask || customizing) && <form onSubmit={(event) => { event.preventDefault(); void send(); }}>
       <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : itemTask?.scope === "folder" ? webAssistant ? "This folder · Changes need approval" : "This folder · Create, read and edit" : webAssistant ? "Workspace · Changes need approval" : "This item · Read and edit"}</p>
       <label><span>{customizing ? "Design request" : "Task"}</span><textarea ref={composer} aria-label="Message assistant" value={prompt} maxLength={12000} rows={4}

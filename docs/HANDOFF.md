@@ -96,6 +96,9 @@
   grant. Transport/catalog/adapter tests passed (29), TypeScript and rebuilt
   desktop folder-agent browser regression passed. Live hosted task/approval and
   Oracle rollout remain; template-library commands require cross-library rules.
+  Rebuilt web-shaped folder UI now verifies root-folder proposal controls and
+  approval receipt. Fixed the item-only condition that previously hid those
+  controls; desktop regression and TypeScript also passed.
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.

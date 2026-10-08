@@ -42,3 +42,19 @@ Logs: `/tmp/texttext-web-folder-transport.log`,
 This still needs actual web browser task/approval acceptance and Oracle rollout;
 the existing browser fixture verifies the desktop-shaped shared surface, not
 live hosted execution. Template-library folder commands remain excluded.
+
+## Folder proposal controls
+
+Found and fixed an item-only rendering condition that hid proposal cards for
+folder tasks. Cards now bind to the task's folder target, including the empty
+workspace-root target. The existing approval component refreshes the listing
+and dispatches the workspace-change event after confirmation.
+
+The rebuilt browser fixture now runs both desktop and web-shaped VaultApp.
+Web mode verifies folder navigation/dispatch plus visible root-folder approval,
+posting the proposal decision and showing the saved receipt. It is included in
+`test:web-assistant:browser`. Both modes and TypeScript passed.
+Logs: `/tmp/texttext-web-folder-approval-browser.log`,
+`/tmp/texttext-folder-proposal-native-browser.log`,
+`/tmp/texttext-web-folder-approval-types.log`.
+Network responses are fixtures; live hosted model/Oracle acceptance is pending.
