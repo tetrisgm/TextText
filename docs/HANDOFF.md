@@ -2,7 +2,9 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1202)**, source `c58114ad`.
+- Mac `/Applications/TextText.app`: **0.204 (1203)**, source `3691b769`.
+  Exact-source core/native gates, signed build and observed account/iCloud/note
+  startup passed. [1203 receipt](verification/2026-10-08-mac-1203.md).
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
@@ -43,7 +45,8 @@
   and cancelled-decode fencing. Logs: `/tmp/texttext-gallery-vision-unit.log`,
   `/tmp/texttext-gallery-vision-context-browser.log`,
   `/tmp/texttext-gallery-vision-browser-gate.log`. Source changes remain
-  uninstalled/undeployed. Actual configured-provider generation and approval
+  installed on Mac 1203 but undeployed on Oracle/Windows. Native selected-image
+  input wiring remains needed. Actual configured-provider generation and approval
   still require end-to-end acceptance; these tests do not prove model output.
 
 - Gallery inspector now has Describe with agent. It closes the viewer and
