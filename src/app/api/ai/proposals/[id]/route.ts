@@ -1,3 +1,4 @@
+import { getWorkspaceWriteProposalForReview } from "@/lib/ai/write-proposals.server";
 import { z } from "zod";
 import { decideAssistantProposal } from "@/lib/ai/assistant-proposal-decisions.server";
 import { readBoundedJson } from "@/lib/http/bounded-json";
@@ -73,4 +74,16 @@ export async function POST(
     case "failed":
       return response({ error: result.message }, 422);
   }
+}
+
+/** Reload the persisted review; browser storage never supplies the approved arguments. */
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return response({ error: "Sign in to review this change." }, 401);
+  const blog = await getOwnedBlog(user.sub);
+  const id = proposalIdSchema.safeParse((await params).id);
+  const userId = user.userId ?? await getUserIdBySub(user.sub);
+  if (!blog || !userId || !id.success) return response({ error: "That proposed change was not found." }, 404);
+  const proposal = await getWorkspaceWriteProposalForReview({ sub: user.sub, userId, handle: blog.handle }, id.data);
+  return proposal ? response({ proposal: { ...proposal, kind: "workspace" } }) : response({ error: "That proposed change was not found." }, 404);
 }

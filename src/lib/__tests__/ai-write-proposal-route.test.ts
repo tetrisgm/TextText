@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getOwnedBlog: vi.fn(),
   getUserIdBySub: vi.fn(),
   decide: vi.fn(),
+  review: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
@@ -16,7 +17,9 @@ vi.mock("@/lib/ai/assistant-proposal-decisions.server", () => ({
   decideAssistantProposal: mocks.decide,
 }));
 
-import { POST } from "@/app/api/ai/proposals/[id]/route";
+vi.mock("@/lib/ai/write-proposals.server", () => ({getWorkspaceWriteProposalForReview:mocks.review}));
+
+import { GET, POST } from "@/app/api/ai/proposals/[id]/route";
 
 const proposalId = "11111111-1111-4111-8111-111111111111";
 
@@ -129,4 +132,14 @@ describe("AI write proposal decision route", () => {
     expect(response.status).toBe(code);
     expect(JSON.stringify(await response.json())).not.toContain("arguments");
   });
+});
+
+it("loads only the authenticated owner's persisted proposal review", async () => {
+  mocks.getCurrentUser.mockResolvedValue({sub:"owner",userId:"user"});mocks.getOwnedBlog.mockResolvedValue({handle:"mine"});
+  const id="00000000-0000-4000-8000-000000000001";
+  mocks.review.mockResolvedValue({id,title:"Saved title",arguments:{body:"Saved arguments"},status:"pending"});
+  const result=await GET(new Request("https://texttext.test/api/ai/proposals/"+id),{params:Promise.resolve({id})});
+  expect(result.status).toBe(200);expect((await result.json()).proposal.arguments.body).toBe("Saved arguments");
+  expect(mocks.review).toHaveBeenCalledWith({sub:"owner",userId:"user",handle:"mine"},id);
+  mocks.review.mockResolvedValue(null);expect((await GET(new Request("https://texttext.test"),{params:Promise.resolve({id})})).status).toBe(404);
 });

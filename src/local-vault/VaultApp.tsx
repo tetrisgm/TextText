@@ -1015,7 +1015,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   if ((allowFolderPicker || webAssistant) && selected?.path) commandActions.push({
     id: "add-agent",
     label: "Add agent to this item",
-    description: webAssistant ? "Ask about this item. Read only." : "Give Codex a task for the open item.",
+    description: webAssistant ? "Ask about this item or review a proposed change." : "Give Codex a task for the open item.",
     shortcut: "A",
     keywords: ["assistant", "collaborate", "edit"],
   });
@@ -1389,6 +1389,6 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess}
       onClose={() => { setImportedGalleryPath(null); refresh(); }}
       onEdit={(path) => void operate(async () => { setImportedGalleryPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Gallery"); }, true)} />}
-    {(allowFolderPicker || webAssistant) && <NativeAssistant webReadOnly={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
+    {(allowFolderPicker || webAssistant) && <NativeAssistant webAssistant={webAssistant} key={listing?.root || "no-workspace"} open={assistantOpen} root={listing?.root ?? ""} path={assistantTargetPath ?? selected?.path} request={assistantRequest} onClose={closeAssistant} beforeSend={() => flushRef.current()} />}
   </div>;
 }

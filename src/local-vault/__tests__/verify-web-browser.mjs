@@ -32,16 +32,31 @@ try {
   const page = await browser.newPage();
   const failures = [], unexpected = [];
   let signedOut = false, assistantEnabled = false;
-  const assistantRequests = [];
+  const assistantRequests = [], decisions = [];
+  const proposals = new Map();
+  let proposalSequence=0, writesApplied=0, dropApprovalResponse=true;
   page.on("pageerror", (error) => failures.push(error.message));
   await page.route("**/*", async (route) => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== "https://vault.test") { unexpected.push(request.url()); await route.abort(); return; }
     if (url.pathname === "/api/ai") {
       if (request.method() === "GET") await route.fulfill({json:{enabled:assistantEnabled,provider:"Test provider"}});
-      else { const payload=request.postDataJSON(); assistantRequests.push(payload); assert.equal(payload.context.mode,"read_only"); assert.equal(payload.context.postId,id);
-        await route.fulfill({contentType:"application/x-ndjson",body:JSON.stringify({type:"text",text:"Canonical answer"})+"\n"+JSON.stringify({type:"complete",text:"Canonical answer"})+"\n"}); }
+      else { const payload=request.postDataJSON(); assistantRequests.push(payload); assert.equal(payload.context.mode,"workspace_review"); assert.equal(payload.context.postId,id);
+        const prompt=payload.messages.at(-1).content;
+        const writes=[];
+        if(prompt.startsWith("Propose")){const proposal={id:`00000000-0000-4000-8000-${String(++proposalSequence).padStart(12,"0")}`,kind:"workspace",title:"Update Web note",summary:"Replace the body of Web note",arguments:{id,body:"Approved through assistant",if_match:digest(files.get(id).bytes)},expiresAt:new Date(Date.now()+60000).toISOString(),status:"pending",stale:prompt.includes("stale")};proposals.set(proposal.id,proposal);writes.push(proposal);}
+        await route.fulfill({contentType:"application/x-ndjson",body:JSON.stringify({type:"text",text:"Canonical answer"})+"\n"+JSON.stringify({type:"complete",text:"Canonical answer",writeProposals:writes})+"\n"}); }
       return;
+    }
+    if(url.pathname.startsWith("/api/ai/proposals/")){
+      const proposal=proposals.get(url.pathname.split("/").at(-1));assert.ok(proposal);
+      if(request.method()==="GET"){await route.fulfill({json:{proposal}});return;}
+      const decision=request.postDataJSON().decision;decisions.push({id:proposal.id,decision});
+      if(decision==="deny"){proposal.status="denied";await route.fulfill({json:{status:"denied",proposalId:proposal.id}});return;}
+      if(proposal.status==="completed"){await route.fulfill({json:{receipt:{text:"Change saved.",proposalId:proposal.id}}});return;}
+      if(proposal.stale){await route.fulfill({status:422,json:{error:"This item changed. Ask for a new proposal."}});return;}
+      const entries=unzipSync(files.get(id).bytes);const doc=JSON.parse(strFromU8(entries[prefix+"document.json"]));doc.content.body="Approved through assistant";entries[prefix+"document.json"]=strToU8(JSON.stringify(doc));entries[prefix+"text.md"]=strToU8(strFromU8(entries[prefix+"text.md"]).replace("Original body","Approved through assistant"));files.set(id,{path:"Notes/Web.textpack",bytes:zipSync(entries)});
+      proposal.status="completed";writesApplied++;if(dropApprovalResponse){dropApprovalResponse=false;await route.abort("failed");return;}await route.fulfill({json:{receipt:{text:"Change saved.",proposalId:proposal.id}}});return;
     }
     if (url.pathname === "/api/auth/csrf") { await route.fulfill({ json: { csrfToken: "test-csrf" } }); return; }
     if (url.pathname === "/api/auth/signout") {
@@ -125,7 +140,7 @@ try {
     await page.getByRole("option", {name:"Add agent to this item",exact:true}).click();
   };
   await openAssistant();
-  await page.getByRole("link",{name:"Workspace AI setup guide"}).waitFor();
+  await page.getByRole("button",{name:"Set up AI in Settings"}).waitFor();
   assert.equal(await page.getByRole("button",{name:"Connect Codex"}).isVisible(),false);
   assert.equal(await page.getByRole("button",{name:"Start task"}).isDisabled(),true);
   await page.getByRole("button",{name:"Close assistant"}).click(); assistantEnabled=true;
@@ -134,6 +149,14 @@ try {
   await page.getByRole("button",{name:"Start task"}).click();
   await page.getByText("Canonical answer",{exact:true}).waitFor();
   assert.equal(assistantRequests.length,1);
+  const propose=async text=>{await page.getByRole("textbox",{name:"Message assistant"}).fill(text);await page.getByRole("button",{name:"Send",exact:true}).click();await page.getByRole("button",{name:"Approve change",exact:true}).last().waitFor();};
+  await propose("Propose a body change");assert.equal(decisions.length,0);assert.ok(strFromU8(unzipSync(files.get(id).bytes)[prefix+"text.md"]).includes("Original body"));
+  await page.getByRole("button",{name:"Approve change",exact:true}).click();await page.getByRole("button",{name:"Check result",exact:true}).click();await page.getByText("Change saved.",{exact:true}).waitFor();assert.equal(writesApplied,1);
+  await page.locator("main").getByText("Approved through assistant",{exact:true}).waitFor();
+  await propose("Propose another change");await page.getByRole("button",{name:"Reject change",exact:true}).click();await page.getByText("Change rejected.",{exact:true}).waitFor();
+  await propose("Propose stale change");await page.getByRole("button",{name:"Approve change",exact:true}).click();await page.getByText("This item changed. Ask for a new proposal.",{exact:true}).waitFor();
+  assert.deepEqual(decisions.map(value=>value.decision),["approve","approve","deny","approve"]);
+
   await page.getByRole("button",{name:"Close assistant"}).click();
 
   await page.getByRole("button", { name: "Edit card" }).click();

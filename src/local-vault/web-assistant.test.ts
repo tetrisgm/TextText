@@ -38,4 +38,20 @@ describe("web assistant transport",()=>{
     await adapter.request("agentCancel",{taskId:"other"});await adapter.request("agentSend",{taskId:"turn",path:"Notes/A.textpack",prompt:"read"});
     expect(events.map(e=>e.type)).toEqual(["final-text","turn-completed"]);
   });
+  it("offers persisted proposals only in explicit review mode and never posts approval",async()=>{
+    for(const review of [false,true]){
+      const events:Record<string,unknown>[]=[];
+      const proposal={id:"proposal-1",kind:"workspace",title:"Append",arguments:{item_id:id,markdown:"New"}};
+      const fetcher=vi.fn(async(_url:unknown,init?:RequestInit)=>{
+        expect(JSON.parse(String(init?.body)).context.mode).toBe(review?"workspace_review":"read_only");
+        return new Response(JSON.stringify({type:"complete",text:"Review this change",writeProposals:[proposal]})+"\n");
+      });
+      const adapter=createWebAssistant("test",read,fetcher as typeof fetch,e=>events.push(e),review);
+      await adapter.request("agentSend",{taskId:"turn",path:"Notes/A.textpack",prompt:"Append"});
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(events.some(e=>e.type==="write-proposals")).toBe(review);
+      if(review)expect(events.find(e=>e.type==="write-proposals")?.proposals).toEqual([proposal]);
+    }
+  });
+
 });

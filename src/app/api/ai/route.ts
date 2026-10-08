@@ -976,7 +976,7 @@ export async function POST(request: Request) {
   const connections = workspaceRecord
     ? await enabledMcpConnections(workspaceRecord.id)
     : [];
-  const requestedConnections = requestView.mode === "read_only" ? [] : explicitlyRequestedOutboundConnections(
+  const requestedConnections = ["read_only", "workspace_review"].includes(String(requestView.mode)) ? [] : explicitlyRequestedOutboundConnections(
     lastUserText(messages),
     connections,
   );
@@ -1051,7 +1051,7 @@ export async function POST(request: Request) {
     // Remote tools remain visible so the model can stage the exact requested
     // arguments. No server-supplied safety hint permits execution in this
     // turn: every external call becomes a durable owner review proposal.
-    ...(requestView.mode === "read_only" ? {} : remoteTools),
+    ...(["read_only", "workspace_review"].includes(String(requestView.mode)) ? {} : remoteTools),
   };
   const streamCancellation = new AbortController();
   const generationSignal = AbortSignal.any([request.signal, streamCancellation.signal, AbortSignal.timeout(55_000)]);

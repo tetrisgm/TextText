@@ -1,3 +1,4 @@
+import { AssistantWriteProposals, type AssistantWriteProposal } from "./AssistantWriteProposals";
 import { AgentPresenceClient } from "./agent-presence-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { vaultRequest } from "./bridge";
@@ -14,7 +15,7 @@ type AgentState = "disconnected" | "connecting" | "signed-out" | "ready" | "work
 type Status = { state: AgentState; message?: string; accountEmail?: string; diagnosticId?: string;
   failureCode?: string; recoveryAction?: string };
 type Message = { id: number; role: "user" | "assistant"; text: string };
-type AgentEvent = Partial<Status> & { type: string; taskId?: string; text?: string; tool?: string; path?: string };
+type AgentEvent = Partial<Status> & { proposals?: AssistantWriteProposal[]; type: string; taskId?: string; text?: string; tool?: string; path?: string };
 export type NativeAssistantRequest =
   | { type: "agent"; requestId: number; root: string; target: string; suggestedPrompt?: string }
   | { type: "customize"; requestId: number; taskId: string; path: string };
@@ -27,17 +28,18 @@ function bounded(messages: Message[]): Message[] {
   return kept;
 }
 
-export function NativeAssistant({ open, path, root, request, onClose, beforeSend, webReadOnly = false }: {
-  webReadOnly?: boolean; root: string; open: boolean; path?: string; request: NativeAssistantRequest | null; onClose: () => void; beforeSend: () => Promise<boolean>;
+export function NativeAssistant({ open, path, root, request, onClose, beforeSend, webAssistant = false }: {
+  webAssistant?: boolean; root: string; open: boolean; path?: string; request: NativeAssistantRequest | null; onClose: () => void; beforeSend: () => Promise<boolean>;
 }) {
   useEffect(() => {
-    if (webReadOnly) void vaultRequest("agentRetarget", { path: path ?? "" }).catch(() => {});
-  }, [webReadOnly, root, path]);
+    if (webAssistant) void vaultRequest("agentRetarget", { path: path ?? "" }).catch(() => {});
+  }, [webAssistant, root, path]);
   const presence = useRef<AgentPresenceClient | null>(null);
   useEffect(() => {
     const client = new AgentPresenceClient(vaultRequest); presence.current = client;
     return () => { client.destroy(); if (presence.current === client) presence.current = null; };
   }, [root]);
+  const [writeProposals, setWriteProposals] = useState<{path:string;items:AssistantWriteProposal[]}>({path:"",items:[]});
   const [status, setStatus] = useState<Status>({ state: "disconnected" });
   const [messages, setMessages] = useState<Message[]>([]);
   const [prompt, setPrompt] = useState("");
@@ -157,7 +159,10 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       if (detail.type !== "status" && (!turnFence || detail.taskId !== turnFence.taskId ||
           (turnFence.type === "agent" ? !agentTaskMatches(taskRef.current, turnFence) :
             target.current !== turnFence.target || customizationTaskIdRef.current !== turnFence.taskId))) return;
-      if (detail.type === "template-proposal") {
+      if (detail.type === "write-proposals" && webAssistant && turnFence && Array.isArray(detail.proposals)) {
+        setWriteProposals({path:turnFence.target,items:detail.proposals.slice(0,12)});
+      }
+      else if (detail.type === "template-proposal") {
         const proposed = detail as unknown as TemplateProposal & { proposalId?: string };
         let valid = false, message = "";
         try {
@@ -215,18 +220,23 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
     };
     window.addEventListener("texttext:vault-agent", receive);
     return () => window.removeEventListener("texttext:vault-agent", receive);
-  }, [changeProposal, changeTask]);
+  }, [changeProposal, changeTask, webAssistant]);
   useEffect(() => {
     if (!open) return;
     let active = true;
-    void vaultRequest<Status>("agentStatus").then((next) => {
+    const refresh = () => {
+      if (activeTaskFence.current) return;
+      void vaultRequest<Status>("agentStatus").then((next) => {
       if (!active) return;
       setStatus(next);
       const current = taskRef.current;
       if (current?.phase === "connecting" && next.state === "ready") changeTask(current, { phase: "draft" });
     }).catch((error: Error) => { if (active) setNotice(error.message); });
-    return () => { active = false; };
-  }, [changeTask, open]);
+    };
+    refresh();
+    if (webAssistant) window.addEventListener("texttext:ai-settings-changed", refresh);
+    return () => { active = false; window.removeEventListener("texttext:ai-settings-changed", refresh); };
+  }, [changeTask, open, webAssistant]);
   useEffect(() => { if (open && log.current) log.current.scrollTop = log.current.scrollHeight; }, [messages, action, open]);
   const connect = async () => {
     const currentTask = taskRef.current;
@@ -273,7 +283,7 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
       requested.current = text;
       const selectedPath = customizing ?? taskFence?.target;
       const refinement = proposal ? `\n\nRefine this pending design for the same file. It has not been saved. Baseline hash: ${proposal.hash}\nPending templateJSON: ${proposal.templateJSON}\nPending templateAuthoringSourceJSON: ${proposal.templateAuthoringSourceJSON ?? "none"}` : "";
-      if (selectedPath && !webReadOnly) void presence.current?.start(selectedPath, turnFence.taskId);
+      if (selectedPath && !webAssistant) void presence.current?.start(selectedPath, turnFence.taskId);
       await vaultRequest("agentSend", { prompt: text + refinement, scope: "item", customizing: !!customizing,
         taskId: turnFence.taskId, ...(selectedPath ? { path: selectedPath } : {}) });
     } catch (error) {
@@ -318,27 +328,28 @@ export function NativeAssistant({ open, path, root, request, onClose, beforeSend
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
     {itemTask && <div className="vault-assistant-setup" role="group" aria-label="Agent task target">
       <strong>{itemTask.target.split("/").at(-1)?.replace(/\.textpack$/i, "") || "Open item"}</strong>
-      <p>{webReadOnly ? "This item · Read only" : "This item · Read and edit"}</p>
+      <p>{webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
       <small>{itemTask.target}</small>
     </div>}
-    {accountLabel && !webReadOnly && <div className="vault-assistant-account" role="group" aria-label="Codex account">
+    {accountLabel && !webAssistant && <div className="vault-assistant-account" role="group" aria-label="Codex account">
       <span>{accountLabel}</span>
       <button type="button" disabled={working || status.state !== "ready"} onClick={() => void disconnect()}>Disconnect</button>
     </div>}
     {status.state !== "ready" && status.state !== "working" && <div className="vault-assistant-connect">
-      <p hidden={webReadOnly}>Codex uses your ChatGPT account. Authorization opens in your browser. Your request stays here while you sign in. You won’t need to paste a token or use Terminal.</p>
-      {webReadOnly && <a href="/docs/ai" target="_blank" rel="noreferrer">Workspace AI setup guide</a>}
-      <button hidden={webReadOnly} disabled={status.state === "connecting"} onClick={() => void connect()}>{status.state === "connecting" ? "Connecting…" : "Connect Codex"}</button>
+      <p hidden={webAssistant}>Codex uses your ChatGPT account. Authorization opens in your browser. Your request stays here while you sign in. You won’t need to paste a token or use Terminal.</p>
+      {webAssistant && <button type="button" onClick={() => window.dispatchEvent(new Event("texttext:open-ai-settings"))}>Set up AI in Settings</button>}
+      <button hidden={webAssistant} disabled={status.state === "connecting"} onClick={() => void connect()}>{status.state === "connecting" ? "Connecting…" : "Connect Codex"}</button>
     </div>}
     {(notice || status.message) && <p role="status" className="vault-assistant-notice">{notice || status.message}
       {diagnosticReference && <><br /><small>Diagnostic reference: {diagnosticReference}</small></>}
     </p>}
     <div ref={log} className="vault-assistant-messages" aria-live="polite">
-      {messages.map((message) => <div className={`vault-assistant-message is-${message.role}`} key={message.id}><strong>{message.role === "user" ? "You" : webReadOnly ? "Assistant" : "Codex"}</strong><p>{message.text}</p></div>)}
+      {messages.map((message) => <div className={`vault-assistant-message is-${message.role}`} key={message.id}><strong>{message.role === "user" ? "You" : webAssistant ? "Assistant" : "Codex"}</strong><p>{message.text}</p></div>)}
       {working && <p className="vault-assistant-action">{action || "Working…"}</p>}
     </div>
+    {webAssistant && path && <AssistantWriteProposals key={`${root}:${path}`} root={root} path={path} proposals={writeProposals.path === path ? writeProposals.items : []} beforeApprove={beforeSend} />}
     {(itemTask || customizing) && <form onSubmit={(event) => { event.preventDefault(); void send(); }}>
-      <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : webReadOnly ? "This item · Read only" : "This item · Read and edit"}</p>
+      <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
       <label><span>{customizing ? "Design request" : "Task"}</span><textarea ref={composer} aria-label="Message assistant" value={prompt} maxLength={12000} rows={4}
         placeholder={customizing ? "Describe how this item should look" : "What should the agent do?"}
         onChange={(event) => {

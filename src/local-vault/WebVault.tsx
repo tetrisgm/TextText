@@ -25,7 +25,7 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
       return;
     }
     const transport = createWebVaultTransport(owned.workspaceId, owned.name);
-    const assistant = assistantHandle ? createWebAssistant(assistantHandle, transport.request) : null;
+    const assistant = assistantHandle ? createWebAssistant(assistantHandle, transport.request, fetch, undefined, true) : null;
     const release = setVaultTransport(async (method, params, signal) => {
       if (assistant && method.startsWith("agent")) return assistant.request(method, params);
       const result = await transport.request(method, params, signal);
@@ -82,5 +82,5 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
     return () => { active = false; };
   }, [session, workspaceId]);
   if (session?.remounted) return <section><p>Open this workspace in a new page.</p><a href={`/vault/${encodeURIComponent(workspaceId)}`}>Open workspace</a><p><a href={`/vault/${encodeURIComponent(session.workspaceId)}`}>Return to previous workspace</a></p></section>;
-  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp webAssistant={Boolean(assistantHandle)} templateIntent={templateIntent} allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} />} /></> : <p>Opening workspace…</p>;
+  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp webAssistant={Boolean(assistantHandle)} templateIntent={templateIntent} allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} assistantHandle={assistantHandle} />} /></> : <p>Opening workspace…</p>;
 }
