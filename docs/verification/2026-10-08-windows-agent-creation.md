@@ -26,6 +26,7 @@ unsaved state. No force termination or user-content replacement was performed.
 These regressions and isolated desktop smoke do not certify installed account
 startup, real model creation or cross-client production acceptance.
 
-The preceding folder-review source `0c71652e` passed all 22 release checks;
-[exact receipt](2026-10-08-folder-review-release-gates.json). The newer source
-requires its own full release receipt before delivery.
+The current source passed all 22 required release checks in 6m 6s;
+[exact receipt](2026-10-08-windows-creation-release-gates.json).
+The preceding folder-review source `0c71652e` also passed all 22 checks;
+[preceding receipt](2026-10-08-folder-review-release-gates.json).

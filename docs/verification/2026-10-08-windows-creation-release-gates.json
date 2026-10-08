@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "0428bfca3bcc328f5ff9d0e711bbcd359caa53fe",
+  "sourceFingerprint": "d7525ebe8d2a1413ea6043734144e000135d6073e6198fac9ade93afb55e4fcb",
+  "generatedAt": "2026-10-08T22:15:53.710Z",
+  "totalDurationMilliseconds": 366497,
+  "checks": [
+    {
+      "id": "web.types",
+      "status": "pass",
+      "durationMilliseconds": 4684,
+      "reused": false,
+      "commandFingerprint": "48f475e6ff4ca01740ebb0cdad40b39846813dc213a24603aa5844b3583ba96c"
+    },
+    {
+      "id": "workflow.document_engine",
+      "status": "pass",
+      "durationMilliseconds": 986,
+      "reused": false,
+      "commandFingerprint": "c7cd9f92c35962de99092d3fb61e16826538ec8b676d04a8f94796fb028d679b"
+    },
+    {
+      "id": "workflow.canonical_documents",
+      "status": "pass",
+      "durationMilliseconds": 812,
+      "reused": false,
+      "commandFingerprint": "786fffb0a7a4d4ade49de9f32bf2053956c57d6a45995ec1fe6e4a6bf10b10a1"
+    },
+    {
+      "id": "workflow.collaboration",
+      "status": "pass",
+      "durationMilliseconds": 434,
+      "reused": false,
+      "commandFingerprint": "6bba0fdda0fcc7a1d24182b3b4ec5b9c36c3cd4894797e8dc2faad01f76b28a5"
+    },
+    {
+      "id": "workflow.client_reliability",
+      "status": "pass",
+      "durationMilliseconds": 520,
+      "reused": false,
+      "commandFingerprint": "8b6c3270fc075e80873c31d629f80511a3ccee839183014fdfe7e9dff12c67c2"
+    },
+    {
+      "id": "workflow.agent_interoperability",
+      "status": "pass",
+      "durationMilliseconds": 925,
+      "reused": false,
+      "commandFingerprint": "b4b4ac346bec32c09741d2f750344c1bad0f334d0af4f33681db6a782d7b5c9c"
+    },
+    {
+      "id": "native.health_manifest",
+      "status": "pass",
+      "durationMilliseconds": 337,
+      "reused": false,
+      "commandFingerprint": "47faf2fb4b5fe7bbe74fcae6ec115f991e8496ee18e71f23b33cbca307427e6d"
+    },
+    {
+      "id": "docs.tool_lists",
+      "status": "pass",
+      "durationMilliseconds": 405,
+      "reused": false,
+      "commandFingerprint": "8043d9aa9c4655472641f56cb84bbdf17b59709252a01428928b3503e732e184"
+    },
+    {
+      "id": "db.migration_coverage",
+      "status": "pass",
+      "durationMilliseconds": 18,
+      "reused": false,
+      "commandFingerprint": "721d3d1e4bc7a60bb621946a2a4aa94868805a7f67e877f98d6b74ed06c897a2"
+    },
+    {
+      "id": "db.oracle_bootstrap",
+      "status": "pass",
+      "durationMilliseconds": 48005,
+      "reused": false,
+      "commandFingerprint": "89ea149a971aa8db96032a4b1a290c9b44f6f9670a22dafc1650183dd3361b4c"
+    },
+    {
+      "id": "runtime.oracle_guards",
+      "status": "pass",
+      "durationMilliseconds": 2122,
+      "reused": false,
+      "commandFingerprint": "0c517399e323dfb1b0625c9105707c1bcaf46e8d664af392fd49e308cb79fae7"
+    },
+    {
+      "id": "workflow.template_render",
+      "status": "pass",
+      "durationMilliseconds": 880,
+      "reused": false,
+      "commandFingerprint": "0cf0ba9d158482096b37c96d2850443683f35df2815ee3fa4353dcc830deab35"
+    },
+    {
+      "id": "docs.no_rot",
+      "status": "pass",
+      "durationMilliseconds": 960,
+      "reused": false,
+      "commandFingerprint": "fd9afe358bab859c441a468ff895423f405796979b7b98567700d30e39c25be0"
+    },
+    {
+      "id": "workflow.agent_integrations",
+      "status": "pass",
+      "durationMilliseconds": 669,
+      "reused": false,
+      "commandFingerprint": "28453d246c801d9424fa5cb127370e5e2ad76ea232d3c78c6f27d48a13e87917"
+    },
+    {
+      "id": "workflow.live_clients",
+      "status": "pass",
+      "durationMilliseconds": 55666,
+      "reused": false,
+      "commandFingerprint": "45bc7e4162f48670f40d66d30f044b12f05bb68324474e2546b66c53082a215d"
+    },
+    {
+      "id": "web.unit",
+      "status": "pass",
+      "durationMilliseconds": 127351,
+      "reused": false,
+      "commandFingerprint": "fc4559f3aa54239dcb5003494b4722b3d45df473487f412f8110700351bc648d"
+    },
+    {
+      "id": "web.sync_durability",
+      "status": "pass",
+      "durationMilliseconds": 12810,
+      "reused": false,
+      "commandFingerprint": "52ae923eedc9cefbb837c0a2f25393b13e9a5d1777ab03a7dd2640c730dfdb58"
+    },
+    {
+      "id": "native.web_bundle",
+      "status": "pass",
+      "durationMilliseconds": 164,
+      "reused": false,
+      "commandFingerprint": "d1c6144668a7921fcf1d8c62023d8ec9699bf7ff0960146a16b484d7aab62718"
+    },
+    {
+      "id": "native.unit",
+      "status": "pass",
+      "durationMilliseconds": 104543,
+      "reused": false,
+      "commandFingerprint": "5b63d62350f28214d7bd0ef5287604bbcbf2fb61a18aa02f3883a3e22fa00ee7"
+    },
+    {
+      "id": "native.local_promotion",
+      "status": "pass",
+      "durationMilliseconds": 2102,
+      "reused": false,
+      "commandFingerprint": "9ca042da52381c9f3a59f9ba3b37eca9801635991baf2245bac5178487a637c9"
+    },
+    {
+      "id": "native.testflight_package",
+      "status": "pass",
+      "durationMilliseconds": 1648,
+      "reused": false,
+      "commandFingerprint": "0a90227d6352788835664d149110ce33705d506fd569af81ad3f8b0223e44e3a"
+    },
+    {
+      "id": "apple.eval",
+      "status": "pass",
+      "durationMilliseconds": 456,
+      "reused": false,
+      "commandFingerprint": "7e3ca8c6147786277c3378ffc867d76c949a2e50b4430d5e17bbb381cbe68d9e"
+    }
+  ]
+}

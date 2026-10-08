@@ -72,8 +72,9 @@
 - Source `0c71652e` passed all 22 required release checks after fixing the
   native assistant folder-move handler and stale fixtures.
   [Exact receipt](verification/2026-10-08-folder-review-release-gates.json).
-  Newer source `0428bfca` is running its full gate (`33981`), log
-  `/tmp/texttext-windows-creation-release-gates.log`. The clean candidate clone
+  Newer source `0428bfca` passed all 22 checks in 6m 6s;
+  [current exact receipt](verification/2026-10-08-windows-creation-release-gates.json).
+  Log `/tmp/texttext-windows-creation-release-gates.log`. The clean candidate clone
   `/private/tmp/texttext-candidate-1195-5ELVuo` now contains this source.
   Older packaged archives must not be deployed as this candidate.
 
