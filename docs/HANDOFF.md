@@ -26,6 +26,14 @@
 
 ## Current work
 
+- Frozen candidate `8621dd0c` passed 759 core tests, TypeScript, required native
+  suites, 16 proposal-review tests and both Note browser flows. It contains the
+  versioned Note parent picker/navigation and preset-generation build guard.
+  Oracle web-only deployment and local Mac 1193/Windows builds are in progress;
+  installed clients still retain their prior versions. Windows SSH works again,
+  but its running editor must close normally before installation.
+  [Candidate evidence](verification/2026-10-08-parent-review-cohort.md).
+
 - Canonical `remix_item_type` is committed as `626ee884`, with pinned source
   authorization and durable retries; shipped in 1190. Focused suites passed 56
   tests, with a final 21-test recheck and TypeScript.
