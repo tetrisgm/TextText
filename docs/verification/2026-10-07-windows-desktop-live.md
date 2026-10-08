@@ -167,9 +167,12 @@ browser reload. The unique test thread remains resolved.
 
 Normal window close exited without force or a warning; reopening restored the
 signed-in account, selected note and all eight markers by 00:00:32 UTC Oct 8.
-Both installed launches initially showed an empty WebView shell for roughly
-20–30 seconds before the reader. These checks establish eventual successful
-startup, not fast installed startup. No startup timing target is claimed.
+Initial spaced observations showed the WebView shell before content, so a
+subsequent precise startup measurement polled UI Automation every 250 ms from
+process launch, without screenshots. Shell appeared at 752 ms and the selected
+reader containing the eighth marker at 1,435 ms (00:01:29 UTC). Normal close
+before this measured reopen also succeeded. The earlier 20–30 second estimate
+included setup/observation gaps and was not a startup measurement.
 The final disk receipt confirmed eight markers exactly once, outbox 0, no
 pending pull, and an acknowledged archive hash after comment convergence:
 `afd0dad6ca0877b052441c6b50f334fc13937fee710997011c3625ee95b2c25c`.
