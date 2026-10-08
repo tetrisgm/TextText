@@ -1,4 +1,7 @@
-import { validateDocumentSnapshot } from "@/lib/documents/model";
+import { loadFolderItemDefault, folderStarter } from "./folder-item-default";
+import { newItemPack } from "./new-item-pack";
+import { encodeBase64 } from "./image-import";
+import { emptyDocumentSnapshot, validateDocumentSnapshot } from "@/lib/documents/model";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
 import { VaultError, type VaultFile, type VaultTransport, type VaultListing } from "./bridge";
@@ -30,7 +33,15 @@ export async function executeWindowsFolderAgentTool(request: VaultTransport, fol
     if (typeof args.title !== "string" || !args.title.trim() || args.title.length > 240 || typeof args.body !== "string" || args.body.length > 2_000_000) throw new Error("Provide a title and body.");
     if (args.kind !== undefined && !["note", "article", "bookmark", "gallery", "talk"].includes(String(args.kind))) throw new Error("Choose a supported item type.");
     if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
-    const saved = await request("create", { title: args.title, body: args.body, folder: destination, ...(args.kind ? { kind: args.kind } : {}) }, signal) as VaultFile;
+    const chosen = args.kind === undefined ? await loadFolderItemDefault(destination, listing, request) : null;
+    if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
+    let saved: VaultFile;
+    if (chosen) {
+      const document = emptyDocumentSnapshot({ id: chosen.template.id, version: chosen.template.version });
+      document.content = { ...document.content, ...folderStarter(chosen.template, { title: args.title, body: args.body }) };
+      const data = encodeBase64(newItemPack(document, { template: chosen.template, sourceJSON: chosen.authoringSource ? JSON.stringify(chosen.authoringSource) : null }));
+      saved = await request("importPack", { title: args.title, folder: destination, data }, signal) as VaultFile;
+    } else saved = await request("create", { title: args.title, body: args.body, folder: destination, ...(args.kind ? { kind: args.kind } : {}) }, signal) as VaultFile;
     return JSON.stringify({ path: saved.path, hash: saved.hash });
   }
   if (!["read_file", "write_file"].includes(tool) || typeof args.path !== "string" || !inside(args.path)) throw new Error("This task can only access its selected folder.");

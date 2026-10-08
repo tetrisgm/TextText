@@ -35,6 +35,13 @@
 
 ## Current work and next checks
 
+- Windows folder-agent creation now resolves the same validated folder default
+  as human creation when kind is omitted, publishing one complete TextPack.
+  Explicit built-in kind keeps its override. Regression proves template/content
+  persistence and malformed-default refusal before creation; 12 targeted tests
+  and TypeScript passed. Source only; candidate d7455797 predates this fix.
+  Logs `/tmp/texttext-windows-agent-folder-default{,-types}.log`.
+
 - Native agent creation no longer forces built-in Note when kind is omitted.
   It inherits the selected folder default through the ordinary DocumentStore
   creation path. Regression proves inheritance, explicit Note override and
