@@ -23,6 +23,11 @@ resolve their current path by stable ID and verify the opened pack identity.
 Missing references are non-clickable. Seven field/choice tests and TypeScript
 passed; actual rendered navigation acceptance remains pending.
 
+The isolated browser picker now verifies filtered selection, retained missing
+parents, stable-ID navigation callback, removal and Escape focus restoration.
+It runs with `test:note-template:browser`. This is picker interaction evidence,
+not live save-before-navigation or physical Safari acceptance.
+
 Pending: parent-specific rendered interaction acceptance, child navigation,
 explicit existing-note upgrade, inline card integration, client install and
 Oracle deployment. No hierarchy traversal or full Supernotes parity is claimed.

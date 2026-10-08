@@ -374,6 +374,7 @@ function DocumentReferenceInput({ field, value, choices, disabled, onChange, onO
   disabled?: boolean;
   onChange: (value: DocumentFieldValue) => void;
 }) {
+  const picker = useRef<HTMLDetailsElement>(null);
   const [query, setQuery] = useState("");
   const selected = [...new Set((Array.isArray(value) ? value : value == null ? [] : [value]).filter((entry): entry is string => typeof entry === "string"))];
   const byId = new Map(choices.map(choice => [choice.id, choice]));
@@ -383,9 +384,9 @@ function DocumentReferenceInput({ field, value, choices, disabled, onChange, onO
       {byId.has(id) && onOpenReference ? <button type="button" onClick={() => onOpenReference(id)}>{byId.get(id)!.label}</button> : <span>{byId.get(id)?.label ?? "Unavailable item"}</span>}
       <button type="button" disabled={disabled} aria-label={`Remove ${byId.get(id)?.label ?? "unavailable item"}`} onClick={() => onChange(field.multiple ? selected.filter(value => value !== id) : null)}>Remove</button>
     </div>)}
-    <details><summary>{field.id === "parents" ? "Add parent" : "Choose item"}</summary>
+    <details ref={picker} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); picker.current?.removeAttribute("open"); picker.current?.querySelector("summary")?.focus(); setQuery(""); } }}><summary>{field.id === "parents" ? "Add parent" : "Choose item"}</summary>
       <input type="search" aria-label="Find item" placeholder="Find an item" value={query} disabled={disabled} onChange={event => setQuery(event.target.value)} />
-      {available.map(choice => <button key={choice.id} type="button" disabled={disabled} onClick={() => { onChange(field.multiple ? [...selected, choice.id] : choice.id); setQuery(""); }}>{choice.label}</button>)}
+      {available.map(choice => <button key={choice.id} type="button" disabled={disabled} onClick={() => { onChange(field.multiple ? [...selected, choice.id] : choice.id); setQuery(""); picker.current?.removeAttribute("open"); picker.current?.querySelector("summary")?.focus(); }}>{choice.label}</button>)}
       {!available.length && <p>No matching items</p>}
     </details>
   </div>;
