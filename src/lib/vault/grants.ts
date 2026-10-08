@@ -1,3 +1,4 @@
+import { assertNoReservedFolderMove } from "./folder-move-metadata";
 // File-vault authorization metadata. Legacy collaborators.scope_id points to
 // database posts/folders; it must never authorize a portable TextPack identity.
 import { and, asc, eq, isNull, or } from "drizzle-orm";
@@ -126,6 +127,7 @@ type GrantMutation = { root: string; workspaceId: string; scope: VaultGrantScope
 async function ownerLock(transaction: Parameters<Parameters<NonNullable<typeof db>["transaction"]>[0]>[0], workspaceId: string, actorUserId: string) {
   const result = await transaction.execute(sql`SELECT id FROM blogs WHERE id = ${workspaceId}::uuid AND owner_id = ${actorUserId}::uuid AND deleted_at IS NULL FOR UPDATE`);
   if (result.rows.length !== 1) throw new Error("Only the workspace owner can manage file shares");
+  await assertNoReservedFolderMove(transaction, workspaceId);
 }
 
 function auditEntry(actionName: string, input: GrantMutation, description: string) {

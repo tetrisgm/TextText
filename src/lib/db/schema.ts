@@ -278,6 +278,23 @@ export const vaultGrants = pgTable("vault_grants", {
   index("vault_grants_user_active_idx").on(t.userId, t.workspaceId).where(sql`${t.revokedAt} is null and ${t.userId} is not null`),
 ]);
 
+// Durable metadata reservation for one coordinated filesystem subtree move.
+// Share writers serialize on the workspace row and refuse while reserved.
+export const vaultFolderMoves = pgTable("vault_folder_moves", {
+  workspaceId: uuid("workspace_id").notNull().references(() => blogs.id, { onDelete: "cascade" }),
+  operationId: text("operation_id").notNull(),
+  requestHash: text("request_hash").notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id),
+  plan: jsonb("plan").notNull(),
+  status: text("status").notNull().default("reserved"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+}, t => [
+  primaryKey({ columns: [t.workspaceId, t.operationId] }),
+  check("vault_folder_moves_status_check", sql`${t.status} in ('reserved', 'applied', 'aborted')`),
+  uniqueIndex("vault_folder_moves_reserved_idx").on(t.workspaceId).where(sql`${t.status} = 'reserved'`),
+]);
+
 // Workspace-scoped cloud AI credentials. The raw key never enters this table:
 // workspace-ai-config.server.ts encrypts it with a server secret before storage
 // and is the only module that decrypts it for a provider request.
