@@ -36,8 +36,10 @@
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
   save/reopen passed in 1206; 1207 startup, existing note, home navigation and
   saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
-- Oracle: **texttext-oracle-20261008-cce4206c-atomic**. Thirteen live checks
-  passed; [current receipt](verification/2026-10-08-oracle-atomic-look.md).
+- Oracle: **texttext-oracle-20261008-0428bfca-creation**. Thirteen live checks
+  passed; [current receipt](verification/2026-10-08-oracle-creation.md).
+  Prior atomic-look deployment:
+  [receipt](verification/2026-10-08-oracle-atomic-look.md).
   Shared identity-copy receipt isolation and web loading/provider labels deployed.
   Actual Safari atomic Save as look and local iCloud delivery passed; source
   hash/content unchanged and new matching template identity verified.
