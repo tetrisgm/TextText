@@ -4,6 +4,7 @@ import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/prese
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { useEscapeLayer } from "./LocalKeyboard";
 import { vaultRequest, type VaultListing } from "./bridge";
+import { latestTemplateVersions } from "./template-versions";
 
 type TemplatePreviewContent = { title?: string; subtitle?: string; body?: string; sourceUrl?: string; tag?: string };
 export type VaultLook = { template: TemplateDefinition; sourceJSON?: string | null; path?: string; preview?: TemplatePreviewContent };
@@ -104,7 +105,7 @@ export function WorkspaceTypeLibrary({ onApply, onClose, currentTemplate, onCrea
   useDialogFocus(dialog, true); useEscapeLayer(true, title, onClose);
   const matches = (look: VaultLook) => `${look.template.name} ${look.template.description ?? ""} ${look.path ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   const retiredStarterIds = new Set(["texttext.timeline", "texttext.page", "texttext.casestudy", "texttext.project", "texttext.brief", "texttext.todo"]);
-  const visible = looks.filter(look => !retiredStarterIds.has(look.template.id) && matches(look));
+  const visible = (onCreateFromFile ? latestTemplateVersions(looks) : looks).filter(look => !retiredStarterIds.has(look.template.id) && matches(look));
   const included = BUILTIN_TEMPLATES
     .filter((template) => !retiredStarterIds.has(template.id) && !looks.some((look) => look.template.id === template.id))
     .map((template) => ({ template })).filter(matches);

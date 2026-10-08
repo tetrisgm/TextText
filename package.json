@@ -84,7 +84,7 @@
     "test:note-template:browser": "node src/local-vault/__tests__/note-template.browser.mjs",
     "test:trash-restore:browser": "node src/local-vault/__tests__/trash-restore.browser.mjs",
     "test:note-icon:browser": "node src/local-vault/__tests__/note-icon.browser.mjs",
-    "test:template-intent:browser": "node src/local-vault/__tests__/template-intent.browser.mjs",
+    "test:template-intent:browser": "node src/local-vault/__tests__/template-intent.browser.mjs && node src/local-vault/__tests__/template-versions.browser.mjs",
     "test:web-session:browser": "node src/local-vault/__tests__/web-session.browser.mjs",
     "test:document-layout:browser": "node src/local-vault/__tests__/document-layout.browser.mjs",
     "test:gallery:browser": "node src/local-vault/__tests__/gallery-image-stage.browser.mjs && node src/local-vault/__tests__/gallery-comments.browser.mjs",
