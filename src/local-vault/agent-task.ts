@@ -18,6 +18,13 @@ export type AgentTask = {
 };
 export type AgentTaskFence = Pick<AgentTask, "root" | "target" | "taskId" | "scope">;
 
+/** Keep folder boundaries distinct from selected-file arguments on the bridge. */
+export function agentTaskTargetArguments(task: Pick<AgentTask, "scope" | "target">) {
+  return task.scope === "folder"
+    ? { scope: "folder" as const, folderPath: task.target }
+    : { scope: "item" as const, path: task.target };
+}
+
 function boundedText(value: unknown, limit: number): string | null {
   if (typeof value !== "string" || /[\u0000]/.test(value)) return null;
   return value.slice(0, limit);

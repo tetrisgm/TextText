@@ -68,7 +68,12 @@ describe("local item agent task", () => {
   });
 });
 
-import { agentTaskTitle } from "./agent-task";
+import { agentTaskTitle, agentTaskTargetArguments } from "./agent-task";
+it("sends folder boundaries separately from item paths, including the workspace root", () => {
+  expect(agentTaskTargetArguments({ target: "Notes", scope: "folder" })).toEqual({ scope: "folder", folderPath: "Notes" });
+  expect(agentTaskTargetArguments({ target: "", scope: "folder" })).toEqual({ scope: "folder", folderPath: "" });
+  expect(agentTaskTargetArguments({ target: "Notes/A.textpack" })).toEqual({ scope: "item", path: "Notes/A.textpack" });
+});
 it("restores the selected photo with its item task and preserves it through phase changes", () => {
   const storage = memoryStorage(), task = createAgentTask("/Photos", "Gallery/A.textpack", "photo-task");
   writeAgentTask(storage, { ...task, imageAssetId: "selected-photo", prompt: "Describe it" });

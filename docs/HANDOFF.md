@@ -47,7 +47,12 @@
   Shared draft storage now separates item/folder scope, preserves root-folder
   drafts and fences late updates by scope; 7 regressions and TypeScript passed
   (`/tmp/texttext-agent-task-scope.log`, `/tmp/texttext-agent-task-scope-types.log`).
-  Folder action/send wiring and Windows folder tools are still pending.
+  Assistant panel now accepts a folder target and preserves its scope through
+  draft recovery, updates, send and cancellation; it sends `folderPath` instead
+  of an item path. Eight scope regressions and TypeScript passed
+  (`/tmp/texttext-folder-panel-scope.log`, `/tmp/texttext-folder-panel-types.log`).
+  Folder action/target wiring, Windows/hosted folder tools and full panel browser
+  acceptance remain pending. The folder action is not exposed yet.
   Ordinary Mac item tasks no longer expand scope because of
   folder-design metadata; all 15 controller regressions passed (log
   `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.

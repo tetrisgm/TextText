@@ -1,4 +1,4 @@
-import { agentTaskTitle } from "./agent-task";
+import { agentTaskTitle, agentTaskTargetArguments } from "./agent-task";
 import { AssistantWriteProposals, type AssistantWriteProposal } from "./AssistantWriteProposals";
 import { AgentPresenceClient } from "./agent-presence-client";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,9 +19,9 @@ type Status = { state: AgentState; message?: string; accountEmail?: string; diag
 type Message = { id: number; role: "user" | "assistant"; text: string };
 type AgentEvent = Partial<Status> & { proposals?: AssistantWriteProposal[]; type: string; taskId?: string; text?: string; tool?: string; path?: string };
 export type NativeAssistantRequest =
-  | { type: "agent"; requestId: number; root: string; target: string; suggestedPrompt?: string; imageAssetId?: string }
+  | { type: "agent"; requestId: number; root: string; target: string; scope?: "item" | "folder"; suggestedPrompt?: string; imageAssetId?: string }
   | { type: "customize"; requestId: number; taskId: string; root: string; path: string };
-type ActiveTurnFence = { type: "agent" | "customize"; taskId: string; root: string; target: string };
+type ActiveTurnFence = { type: "agent" | "customize"; taskId: string; root: string; target: string; scope?: "item" | "folder" };
 const MAX_MESSAGES = 50, MAX_TEXT = 24_000, MAX_TOTAL = 120_000;
 function bounded(messages: Message[]): Message[] {
   const kept = messages.slice(-MAX_MESSAGES).map((message) => ({ ...message, text: message.text.slice(0, MAX_TEXT) }));
@@ -30,9 +30,11 @@ function bounded(messages: Message[]): Message[] {
   return kept;
 }
 
-export function NativeAssistant({ open, path, root, targetTitle, request, onClose, beforeSend, webAssistant = false }: {
-  targetTitle?: { path: string; title: string }; webAssistant?: boolean; root: string; open: boolean; path?: string; request: NativeAssistantRequest | null; onClose: () => void; beforeSend: () => Promise<boolean>;
+export function NativeAssistant({ open, path, folder, root, targetTitle, request, onClose, beforeSend, webAssistant = false }: {
+  targetTitle?: { path: string; title: string }; webAssistant?: boolean; root: string; open: boolean; path?: string; folder?: string; request: NativeAssistantRequest | null; onClose: () => void; beforeSend: () => Promise<boolean>;
 }) {
+  const taskScope = request?.type === "agent" && request.scope === "folder" ? "folder" : "item";
+  const taskTarget = taskScope === "folder" ? folder : path;
   useEffect(() => {
     if (webAssistant) void vaultRequest("agentRetarget", { path: path ?? "" }).catch(() => {});
   }, [webAssistant, root, path]);
@@ -52,7 +54,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
   const [activeTurn, setActiveTurn] = useState<ActiveTurnFence | null>(null);
   const turnActive = activeTurn !== null;
   const taskRef = useRef<AgentTask | null>(null);
-  const lastItemTarget = useRef<Pick<AgentTask, "root" | "target"> | null>(null);
+  const lastItemTarget = useRef<Pick<AgentTask, "root" | "target" | "scope"> | null>(null);
   const activeTaskFence = useRef<ActiveTurnFence | null>(null);
   const disconnectRequested = useRef(false);
   const queuedRetarget = useRef(false);
@@ -99,18 +101,18 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
     if (turnActive) {
       // Keep Stop and incoming events fenced to the running task, then follow the latest selection.
       const fence = activeTaskFence.current;
-      queuedRetarget.current = !fence || fence.type !== "agent" || fence.root !== root || fence.target !== path;
+      queuedRetarget.current = !fence || fence.type !== "agent" || fence.root !== root || fence.target !== taskTarget || (fence.scope ?? "item") !== taskScope;
       return;
     }
-    if (!queuedRetarget.current && open && taskRef.current?.root === root && taskRef.current.target === path) return;
+    if (!queuedRetarget.current && open && taskRef.current?.root === root && taskRef.current.target === taskTarget && (taskRef.current.scope ?? "item") === taskScope) return;
     queuedRetarget.current = false;
     activeTaskFence.current = null;
     void Promise.resolve().then(() => {
-      const targetChanged = lastItemTarget.current?.root !== root || lastItemTarget.current.target !== path;
+      const targetChanged = lastItemTarget.current?.root !== root || lastItemTarget.current.target !== taskTarget || (lastItemTarget.current.scope ?? "item") !== taskScope;
       try {
-        const saved = path ? open && agentMode
-          ? resumeAgentTask(localStorage, root, path, () => crypto.randomUUID())
-          : readAgentTask(localStorage, root, path) : null;
+        const saved = taskTarget !== undefined ? open && agentMode
+          ? resumeAgentTask(localStorage, root, taskTarget, () => crypto.randomUUID(), taskScope)
+          : readAgentTask(localStorage, root, taskTarget, taskScope) : null;
         acceptTask(saved);
         setPrompt(saved?.prompt ?? "");
         if (targetChanged) { setMessages([]); setAction(""); }
@@ -123,7 +125,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
         setNotice(error instanceof Error ? error.message : "Open an item before adding an agent.");
       }
     });
-  }, [acceptTask, agentMode, open, path, root, turnActive]);
+  }, [acceptTask, agentMode, open, taskTarget, taskScope, root, turnActive]);
   useEffect(() => {
     if (!open || !request || turnActive || handledRequestId.current === request.requestId) return;
     let active = true;
@@ -139,11 +141,11 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
         requestAnimationFrame(() => composer.current?.focus());
         return;
       }
-      const targetPath = path;
-      if (!targetPath || request.root !== root || request.target !== targetPath) return;
+      const targetPath = taskTarget;
+      if (targetPath === undefined || request.root !== root || request.target !== targetPath) return;
       try {
         activeTaskFence.current = null;
-        let next = resumeAgentTask(localStorage, root, targetPath, () => crypto.randomUUID());
+        let next = resumeAgentTask(localStorage, root, targetPath, () => crypto.randomUUID(), taskScope);
         if (request.imageAssetId && next.prompt && next.imageAssetId !== request.imageAssetId) throw new Error("Your previous task for this item is kept. Finish or clear it before describing another photo.");
         if (request.imageAssetId) next = updateAgentTask(localStorage, next, { imageAssetId: request.imageAssetId, prompt: next.prompt || request.suggestedPrompt || "" }) ?? next;
         acceptTask(next); setCustomizing(null); setCustomizationTaskId(null); setPrompt(next.prompt || request.suggestedPrompt || ""); changeProposal(null);
@@ -154,7 +156,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
       } catch (error) { setNotice(error instanceof Error ? error.message : "Open an item before adding an agent."); }
     });
     return () => { active = false; };
-  }, [acceptTask, changeProposal, open, path, request, root, turnActive, webAssistant]);
+  }, [acceptTask, changeProposal, open, path, taskTarget, taskScope, request, root, turnActive, webAssistant]);
   useEffect(() => {
     if (!webAssistant || !customizing || customizing === path && customizationRoot.current === root) return;
     const handled = handledRequestId.current;
@@ -262,7 +264,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
   useEffect(() => { if (open && log.current) log.current.scrollTop = log.current.scrollHeight; }, [messages, action, open]);
   const connect = async () => {
     const currentTask = taskRef.current;
-    const fence: AgentTaskFence | null = currentTask && currentTask.root === root && currentTask.target === path ? currentTask : null;
+    const fence: AgentTaskFence | null = currentTask && currentTask.root === root && currentTask.target === taskTarget && (currentTask.scope ?? "item") === taskScope ? currentTask : null;
     if (!fence && !customizing) { setNotice("Open an item and add the agent from that item."); return; }
     if (fence) changeTask(fence, { phase: "connecting" });
     setNotice(""); setStatus({ state: "connecting" });
@@ -282,10 +284,10 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
     const text = prompt.trim();
     if (!text || submitting || status.state !== "ready") return;
     const currentTask = taskRef.current;
-    const taskFence = currentTask && currentTask.root === root && currentTask.target === path ? currentTask : null;
+    const taskFence = currentTask && currentTask.root === root && currentTask.target === taskTarget && (currentTask.scope ?? "item") === taskScope ? currentTask : null;
     if (!customizing && !taskFence) { setNotice("Add the agent from the open item before starting a task."); return; }
     const turnFence: ActiveTurnFence | null = taskFence
-      ? { type: "agent", taskId: taskFence.taskId, root: taskFence.root, target: taskFence.target }
+      ? { type: "agent", taskId: taskFence.taskId, root: taskFence.root, target: taskFence.target, scope: taskFence.scope }
       : customizing && customizationTaskId
         ? { type: "customize", taskId: customizationTaskId, root, target: customizing }
         : null;
@@ -299,7 +301,7 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
         activeTaskFence.current = null; setActiveTurn(null);
         setNotice("Save or resolve the current item before asking the assistant to edit it."); return;
       }
-      const selectedPath = customizing ?? taskFence?.target;
+      const selectedPath = customizing ?? (taskFence?.scope === "folder" ? undefined : taskFence?.target);
       const imageAssetId = taskFence?.imageAssetId;
       const image = !webAssistant && imageAssetId && selectedPath
         ? await galleryAgentImage(await vaultRequest<VaultFile>("read", { path: selectedPath }), imageAssetId)
@@ -313,9 +315,10 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
       requested.current = text;
       const refinement = proposal ? `\n\nRefine this pending design for the same file. It has not been saved. Baseline hash: ${proposal.hash}\nPending templateJSON: ${proposal.templateJSON}\nPending templateAuthoringSourceJSON: ${proposal.templateAuthoringSourceJSON ?? "none"}` : "";
       if (selectedPath && !webAssistant) void presence.current?.start(selectedPath, turnFence.taskId);
-      await vaultRequest("agentSend", { prompt: text + refinement, scope: "item", customizing: !!customizing,
+      await vaultRequest("agentSend", { prompt: text + refinement,
+        ...(taskFence ? agentTaskTargetArguments(taskFence) : { scope: "item", path: selectedPath }), customizing: !!customizing,
         ...(imageAssetId ? { imageAssetId } : {}), ...(image ? { imageUrl: image.dataUrl } : {}),
-        taskId: turnFence.taskId, ...(selectedPath ? { path: selectedPath } : {}) });
+        taskId: turnFence.taskId });
     } catch (error) {
       presence.current?.stop();
       if (taskFence && agentTaskMatches(taskRef.current, taskFence)) changeTask(taskFence, { prompt: text, phase: "draft" });
@@ -343,12 +346,12 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
   };
   const cancel = async () => {
     const fence = activeTaskFence.current;
-    await vaultRequest("agentCancel", { scope: "item", ...(fence ? { taskId: fence.taskId } : { customizing: true }) });
+    await vaultRequest("agentCancel", { scope: fence?.scope ?? "item", ...(fence ? { taskId: fence.taskId } : { customizing: true }) });
   };
   if (!open) return null;
   const working = submitting || status.state === "working";
   const runningFence = activeTurn?.type === "agent" ? activeTurn : null;
-  const itemTask = task && task.root === root && (task.target === path || (runningFence && agentTaskMatches(task, runningFence))) ? task : null;
+  const itemTask = task && task.root === root && (task.target === taskTarget && (task.scope ?? "item") === taskScope || (runningFence && agentTaskMatches(task, runningFence))) ? task : null;
   const accountLabel = connectedAccountLabel(status.accountEmail)
     ?? (status.state === "ready" || status.state === "working" ? "Codex connected" : null);
   const diagnosticReference = status.state === "failed" && status.diagnosticId && /^[A-Z0-9-]{4,64}$/.test(status.diagnosticId)
@@ -357,8 +360,8 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
   return <><aside className={`vault-assistant${proposal ? " has-design-preview" : ""}`} aria-label={heading}>
     <header><h2>{heading}</h2><button aria-label="Close assistant" onClick={onClose}>Close</button></header>
     {itemTask && <div className="vault-assistant-setup" role="group" aria-label="Agent task target">
-      <strong>{agentTaskTitle(itemTask.target, targetTitle)}</strong>
-      <p>{webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
+      <strong>{itemTask.scope === "folder" ? itemTask.target || "Workspace" : agentTaskTitle(itemTask.target, targetTitle)}</strong>
+      <p>{itemTask.scope === "folder" ? "This folder · Create, read and edit" : webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
       <small>{itemTask.target}</small>
     </div>}
     {accountLabel && !webAssistant && <div className="vault-assistant-account" role="group" aria-label="Codex account">
@@ -379,13 +382,13 @@ export function NativeAssistant({ open, path, root, targetTitle, request, onClos
     </div>
     {webAssistant && path && <AssistantWriteProposals key={`${root}:${path}`} root={root} path={path} proposals={writeProposals.path === path ? writeProposals.items : []} beforeApprove={beforeSend} />}
     {(itemTask || customizing) && <form onSubmit={(event) => { event.preventDefault(); void send(); }}>
-      <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
+      <p className="vault-assistant-context">{customizing ? `Customize ${customizing}` : itemTask?.scope === "folder" ? "This folder · Create, read and edit" : webAssistant ? "This item · Changes need approval" : "This item · Read and edit"}</p>
       <label><span>{customizing ? "Design request" : "Task"}</span><textarea ref={composer} aria-label="Message assistant" value={prompt} maxLength={12000} rows={4}
         placeholder={customizing ? "Describe how this item should look" : "What should the agent do?"}
         onChange={(event) => {
           const value = event.target.value; setPrompt(value);
           const current = taskRef.current;
-          if (current && current.root === root && current.target === path) {
+          if (current && current.root === root && current.target === taskTarget && (current.scope ?? "item") === taskScope) {
             changeTask(current, { prompt: value, ...(current.phase === "submitted" ? { phase: "draft" as const } : {}) });
             if (current.phase === "submitted") setNotice("");
           }
