@@ -1936,9 +1936,14 @@ try {
   assert.equal(titledPair.fields.sourceUrl ?? null, null);
   await lightbox.getByRole("button", { name: "Edit image summary" }).click();
   await lightbox.getByRole("textbox", { name: "Image summary" }).fill("A study in blue and orange light.");
+  // An external writer changes a different photo after the viewer was read.
+  const concurrentGallery = JSON.parse(files.get("Gallery/Pair.textpack").documentJSON);
+  concurrentGallery.content.assets[0].summary = "Neighbor's concurrent summary.";
+  files.set("Gallery/Pair.textpack", { ...files.get("Gallery/Pair.textpack"), hash: String(++revision), documentJSON: JSON.stringify(concurrentGallery) });
   await lightbox.getByRole("button", { name: "Save summary" }).click();
+  await waitForFixture(() => JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets[1].summary === "A study in blue and orange light.", "merged Gallery summary").catch(async error => { console.error(await lightbox.innerText()); throw error; });
   await lightbox.getByText("A study in blue and orange light.").waitFor();
-  assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets.map(asset => asset.summary), [undefined, "A study in blue and orange light."]);
+  assert.deepEqual(JSON.parse(files.get("Gallery/Pair.textpack").documentJSON).content.assets.map(asset => asset.summary), ["Neighbor's concurrent summary.", "A study in blue and orange light."]);
   await lightbox.getByRole("button", { name: "Previous image" }).click();
   assert.equal(await lightbox.getByText("A study in blue and orange light.").count(), 0);
   assert.equal(await lightbox.getByRole("link", { name: "example.com" }).count(), 0);

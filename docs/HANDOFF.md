@@ -31,6 +31,17 @@
 
 ## Current work
 
+- Gallery metadata now reads the latest TextPack before writing and merges only
+  the viewer's changed fields. Concurrent edits to other photos, body, custom
+  fields, asset order and added images survive. Competing edits to the same
+  field or replacement/removal of that image refuse the write and retain the
+  draft; the final write still fences the freshly read revision. Eight focused
+  regressions and TypeScript passed. Rebuilt current local UI passed the full
+  offline browser fixture, including a real viewer save after another photo's
+  summary changed (`/tmp/texttext-gallery-metadata-browser-current.log`). Source
+  change is not installed or deployed yet. Gallery agent-generated metadata
+  remains unfinished; this change provides the safe manual write path first.
+
 - Windows candidate now matches installed Mac 1202 source `c58114ad`. The actual
   PC build, 326 shared-client tests and desktop smoke passed. Installation
   remains pending closure of the older app with unknown unsaved state.

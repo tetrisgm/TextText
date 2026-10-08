@@ -9,6 +9,7 @@ import { readDocument, readTemplate, writePayload } from "./model";
 import { packIdentity } from "./pack";
 import { VaultComments } from "./VaultComments";
 import { GalleryImageStage } from "./GalleryImageStage";
+import { mergeGalleryMetadata } from "./gallery-metadata-merge";
 
 export type GalleryCommentsAccess = (itemId: string, path: string) => { canComment: boolean; canResolve: boolean } | null;
 
@@ -184,7 +185,11 @@ export function VaultGalleryLightbox({ entries, initialSelection, onClose, onEdi
     setUpdating(true); setError("");
     try {
       const document = readDocument(file);
-      const updated = await vaultRequest<VaultFile>("write", writePayload(file, { ...document, content: change(document.content) }));
+      const latest = await vaultRequest<VaultFile>("read", { path });
+      if (packIdentity(latest.markdown) !== packIdentity(file.markdown)) throw new Error("This image file changed. Your draft is kept. Reopen the image to review it.");
+      const liveDocument = readDocument(latest);
+      const content = mergeGalleryMetadata(document.content, change(document.content), liveDocument.content);
+      const updated = await vaultRequest<VaultFile>("write", writePayload(latest, { ...liveDocument, content }));
       setFile(current => current?.path === updated.path ? updated : current);
       window.dispatchEvent(new Event("texttext:vault-changed"));
       return true;
