@@ -12,9 +12,9 @@ vi.mock("next/navigation", () => ({
 import Page from "../page";
 const id = "11111111-1111-4111-8111-111111111111";
 const params = Promise.resolve({ id });
-function forms(node: ReactNode): Array<() => Promise<void>> {
+function forms(node: ReactNode): Array<(data?:FormData) => Promise<void>> {
   if (Array.isArray(node)) return node.flatMap(forms);
-  if (!isValidElement<{ action?: () => Promise<void>; children?: ReactNode }>(node)) return [];
+  if (!isValidElement<{ action?: (data?:FormData) => Promise<void>; children?: ReactNode }>(node)) return [];
   return node.type === "form" ? [node.props.action!] : forms(node.props.children);
 }
 describe("owner proposal review page", () => {
@@ -81,5 +81,18 @@ describe("owner proposal review page", () => {
     mocks.user.mockResolvedValue(null);
     await expect(approve()).rejects.toThrow("redirect:/api/auth/signin");
     expect(mocks.decide).not.toHaveBeenCalled();
+  });
+  it("shows destination recipients outside technical details and sends only explicit acknowledgement", async () => {
+    mocks.read.mockResolvedValue({id,title:"Move folder",summary:"Move the folder",status:"pending",arguments:{},additionalAccess:[{email:"editor@example.com",role:"editor",via:"Archive"}]});
+    const tree = await Page({params}), html = renderToStaticMarkup(tree);
+    expect(html).toContain('aria-label="Additional folder access"');
+    expect(html).toContain("editor@example.com: editor");
+    expect(html).toMatch(/<input[^>]*required=""[^>]*name="acknowledgeAccessExpansion"/);
+    const [approve] = forms(tree);
+    await expect(approve(new FormData())).rejects.toThrow(`redirect:/proposals/${id}`);
+    expect(mocks.decide).toHaveBeenLastCalledWith(expect.objectContaining({acknowledgeAccessExpansion:false}));
+    const confirmed = new FormData(); confirmed.set("acknowledgeAccessExpansion","on");
+    await expect(approve(confirmed)).rejects.toThrow(`redirect:/proposals/${id}`);
+    expect(mocks.decide).toHaveBeenLastCalledWith(expect.objectContaining({acknowledgeAccessExpansion:true}));
   });
 });

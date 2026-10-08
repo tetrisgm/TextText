@@ -91,6 +91,9 @@
   The boundary now returns a validated frozen review with readable path/count
   and additional-access summaries. Full-plan and lifecycle regression checks
   pass; public staging/approval wiring remains the next integration step.
+  Additional-access acknowledgement is implemented in the review page and checked
+  before server claim. Public folder staging/execution and live UI acceptance
+  remain pending; no folder command has been enabled or deployed by this cohort.
   [Source evidence](verification/2026-10-08-folder-move-recovery-source.md).
 
 

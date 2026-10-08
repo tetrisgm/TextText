@@ -23,6 +23,7 @@ import {
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import { getBlogEditRecord } from "@/lib/store";
+import { validateFolderMoveReview } from "@/lib/vault/folder-move-review";
 
 export type WorkspaceWriteProposalActor = {
   receiptOnly?: boolean;
@@ -553,6 +554,7 @@ export async function decideWorkspaceWriteProposal(
     actor: WorkspaceWriteProposalActor;
     proposalId: string;
     decision: "approve" | "deny";
+    acknowledgeAccessExpansion?: boolean;
   },
   dependencies: WorkspaceWriteProposalDependencies = defaultDependencies,
 ): Promise<WorkspaceWriteProposalDecision> {
@@ -580,6 +582,16 @@ export async function decideWorkspaceWriteProposal(
           now,
           dependencies.repository,
         );
+  }
+
+  const knownPreview = known.metadata?.preview as FrozenProposalPreview | undefined;
+  let knownFolderReview;
+  if (knownPreview?.kind === "folder_move") {
+    try { knownFolderReview = validateFolderMoveReview(knownPreview,{source:knownPreview.plan?.source ?? "",destination:knownPreview.plan?.destination ?? ""}); }
+    catch { return {status:"failed",proposalId:input.proposalId,message:"The stored folder review is invalid. Ask for a new proposal."}; }
+  }
+  if (known.status === "pending" && knownFolderReview?.plan.addedAccess.length && input.acknowledgeAccessExpansion !== true) {
+    return {status:"failed",proposalId:input.proposalId,message:"Review and acknowledge the additional folder access before approving."};
   }
 
   let claimed = await dependencies.repository.claim(
@@ -818,6 +830,10 @@ export async function getWorkspaceWriteProposalForReview(
   if (!stored || stored.proposalKind !== "workspace") return null;
   const validated = validateWorkspaceWriteProposal(stored.toolName, stored.arguments);
   const preview = stored.metadata?.preview as FrozenProposalPreview | undefined;
+  if (preview?.kind === "folder_move") {
+    try { validateFolderMoveReview(preview,{source:preview.plan?.source ?? "",destination:preview.plan?.destination ?? ""}); }
+    catch { return null; }
+  }
   return {
     id: stored.id,
     tool: validated.name,
@@ -827,5 +843,6 @@ export async function getWorkspaceWriteProposalForReview(
     status: stored.status === "pending" && stored.expiresAt <= dependencies.now() ? "expired" : stored.status,
     origin: stored.metadata?.origin as { surface: string; connectionName: string } | undefined,
     receipt: stored.receipt ?? null,
+    additionalAccess: preview?.kind === "folder_move" ? preview.plan.addedAccess : [],
   };
 }

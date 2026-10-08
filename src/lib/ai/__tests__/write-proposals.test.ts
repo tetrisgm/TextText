@@ -39,6 +39,8 @@ import {
   type AssistantProposalReceipt,
 } from "@/lib/ai/write-proposals.server";
 import { WriteProposalValidationError } from "@/lib/ai/write-proposal-policy";
+import { planFolderMove } from "@/sync/engine/folder-move-plan";
+import { freezeFolderMoveReview } from "@/lib/vault/folder-move-review";
 
 class MemoryProposalRepository implements WorkspaceWriteProposalRepository {
   rows = new Map<string, StoredWorkspaceWriteProposal>();
@@ -173,6 +175,23 @@ async function createCapture(
 }
 
 describe("workspace write proposals", () => {
+  it("requires destination-access acknowledgement before claiming a stored folder review", async () => {
+    const h = harness(), proposal = await createCapture(h.dependencies);
+    const row = h.repository.rows.get(proposal.id)!;
+    const plan = planFolderMove({source:"Source",destination:"Archive/Moved",manifestRevision:"a".repeat(64),folders:["Source","Archive"],items:[],grants:[{id:"destination",path:"Archive",signature:"folder",email:"editor@example.com",role:"editor"}]});
+    row.toolName = "move_folder";
+    row.metadata = {preview:freezeFolderMoveReview(plan)};
+    const result = await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies);
+    expect(result).toMatchObject({status:"failed",message:expect.stringContaining("acknowledge")});
+    expect(row.status).toBe("pending");
+    expect(h.execute).not.toHaveBeenCalled();
+    const frozen = row.metadata!.preview as ReturnType<typeof freezeFolderMoveReview>;
+    frozen.plan.addedAccess = [];
+    expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve",acknowledgeAccessExpansion:true},h.dependencies)).toMatchObject({status:"failed",message:expect.stringContaining("invalid")});
+    expect(row.status).toBe("pending");
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"deny"},h.dependencies)).toMatchObject({status:"denied"});
+  });
   it("validates and stores an inert bounded proposal without executing", async () => {
     const { dependencies, execute, repository } = harness();
     const proposal = await createCapture(dependencies);

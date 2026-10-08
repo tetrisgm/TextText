@@ -64,3 +64,12 @@ its original object. Sixteen combined preview/boundary tests passed, followed by
 three review tests covering the final lifecycle case; TypeScript and focused
 ESLint passed. Review tests are included in the core gate. This data model is
 not yet wired into public proposal staging or approval execution.
+
+The proposal review page now has an additional-access section and required
+acknowledgement checkbox. Its server action sends only that acknowledgement and
+the stored proposal ID after checking the current session. The decision service
+validates a stored folder review before claiming it and rejects missing
+acknowledgement or an altered hash without starting execution. Dismissal remains
+available. These are source-level approval safeguards; public folder proposal
+staging/execution still is not enabled. Page/service regressions passed 47 tests;
+TypeScript passed. Actual rendered/live acknowledgement acceptance is pending.
