@@ -13,7 +13,8 @@ import path from "node:path";
 import { hostname } from "node:os";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { requireBuiltinTemplate, templateExperience } from "@/lib/presentation/templates";
-import { readDocument, writePayload } from "@/local-vault/model";
+import { validateDocumentFieldMutation } from "@/lib/presentation/document-field-mutation";
+import { readDocument, readTemplate, writePayload } from "@/local-vault/model";
 import { openPack, encodePack, packIdentity, replacePackIdentity } from "@/local-vault/pack";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
@@ -1585,7 +1586,13 @@ export async function mutateVaultDocument(input: VaultLocation & {
         const snapshot = readDocument(pack.file);
         applyDocumentSnapshot(doc, { ...snapshot, presentation: { ...snapshot.presentation, template: { id: template.id, version: template.version } } }, "agent-template");
         workingBytes = encodePack(pack, { ...pack.file, templateJSON: json(template), templateAuthoringSourceJSON: authoring ? json(authoring) : null });
-      } else applyDocumentMutation(doc, input.mutation);
+      } else {
+        if (input.mutation.fields !== undefined) {
+          const current = openPack(item.bytes, item.relativePath, item.revision, input.itemId).file;
+          validateDocumentFieldMutation(readTemplate(current, readDocument(current)), input.mutation.fields);
+        }
+        applyDocumentMutation(doc, input.mutation);
+      }
       // File commands keep exactly-once state in durable receipts. The legacy
       // SQL mutator adds a document-root operation map outside the file schema.
       doc.getMap("document").delete("agentOperations");

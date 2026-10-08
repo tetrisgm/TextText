@@ -78,13 +78,17 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
   }
   only(args, name === "append_to_item"
     ? ["id", "markdown", "markdown_fragment", "if_match_hash", "idempotency_key"]
-    : ["id", "title", "body", "excerpt", "tags", "section", "expected_section_body", "if_match_hash", "idempotency_key"]);
+    : ["id", "title", "body", "excerpt", "tags", "fields", "section", "expected_section_body", "if_match_hash", "idempotency_key"]);
   if (typeof args.id !== "string") throw new Error("Item not found.");
   const itemId = args.id;
   // authorize before opening content, then again under the commit lock.
   await context.authorize(itemId, "", false);
   if (typeof args.if_match_hash !== "string") throw new Error("Read the item before editing.");
     const mutation: DocumentMutation = {};
+    if (args.fields !== undefined) {
+      if (!args.fields || typeof args.fields !== "object" || Array.isArray(args.fields)) throw new Error("Fields must be a map.");
+      mutation.fields = args.fields as NonNullable<DocumentMutation["fields"]>;
+    }
     if (name === "append_to_item") {
       const text = args.markdown ?? args.markdown_fragment;
       if (typeof text !== "string" || !text) throw new Error("Append text is required.");

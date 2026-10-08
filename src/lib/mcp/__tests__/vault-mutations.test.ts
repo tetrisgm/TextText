@@ -210,3 +210,50 @@ describe("custom template creation under the file commit lock", () => {
     expect(files).toEqual(["A.textpack"]);
   });
 });
+
+it("updates declared custom fields through public dispatch with durable replay and preserves other content", async () => {
+  vi.stubEnv("TEXTTEXT_VAULT_ROOT", root);
+  const custom = { ...requireBuiltinTemplate("texttext.note"), id: "local.ratings", fields: [
+    { id: "rating", label: "Rating", type: "number" as const, min: 0, max: 5, format: "plain" as const, required: false, visibility: "public" as const },
+    { id: "summary", label: "Summary", type: "text" as const, maxLength: 100, required: false, visibility: "public" as const },
+  ] };
+  const document = emptyDocumentSnapshot({ id: custom.id, version: custom.version });
+  document.content.body = "Human writing"; document.content.fields = { rating: 1, summary: "Keep", legacy: "Untouched" };
+  const saved = await writeVaultTextpack({ root, workspaceId: "workspace", itemId, operationId: "custom-seed", relativePath: "Notes/A.textpack", baseRevision: revision, bytes: buildTextpack("Note", { document, template: custom, markdown: `---\ntextTextId: ${itemId}\n---\n\nHuman writing` }) });
+  const args = parseWorkspaceToolInput("update_item", { id: itemId, fields: { rating: 4 }, if_match_hash: saved.revision, idempotency_key: "rate" });
+  const { executeMcpTool } = await import("../tools");
+  const authInfo = { token: "test", clientId: "test", scopes: ["sync"], extra: { sub: "subject", userId: "actor", connectionId: "fields-test" } };
+  const result = await executeMcpTool("update_item", args, { authInfo });
+  expect(result, JSON.stringify(result)).not.toHaveProperty("isError", true);
+  const pack = (await readVaultTextpack({ root, workspaceId: "workspace", itemId }))!;
+  const snapshot = readDocument(openPack(pack.bytes, pack.relativePath, pack.revision).file);
+  expect(snapshot.content.fields).toEqual({ rating: 4, summary: "Keep", legacy: "Untouched" });
+  expect(snapshot.content.body).toBe("Human writing"); expect(snapshot.presentation.template.id).toBe(custom.id);
+  expect((await executeMcpTool("update_item", args, { authInfo })).structuredContent).toEqual(result.structuredContent);
+  await expect(mutateVaultTool("update_item", { ...args, fields: { rating: 3 } }, context())).rejects.toThrow("reused");
+  for (const fields of [{ rating: 6 }, { rating: "bad" }, { texttextRecordType: "template-retirement" }, { missing: "value" }]) {
+    await expect(mutateVaultTool("update_item", { ...args, fields, if_match_hash: pack.revision, idempotency_key: JSON.stringify(fields) }, context())).rejects.toThrow();
+    expect((await readVaultTextpack({ root, workspaceId: "workspace", itemId }))!.revision).toBe(pack.revision);
+  }
+  await expect(mutateVaultTool("update_item", { ...args, idempotency_key: "stale" }, context())).rejects.toThrow("changed");
+  await mutateVaultTool("update_item", { ...args, fields: { rating: null }, if_match_hash: pack.revision, idempotency_key: "clear" }, context());
+  const cleared = (await readVaultTextpack({ root, workspaceId: "workspace", itemId }))!;
+  expect(readDocument(openPack(cleared.bytes, cleared.relativePath, cleared.revision).file).content.fields).toEqual({ summary: "Keep", legacy: "Untouched" });
+  expect(await mutateVaultTool("update_item", args, { ...context(), receiptOnly: true })).toBeTruthy();
+  authorize.mockRejectedValue(new Error("revoked"));
+  await expect(mutateVaultTool("update_item", args, { ...context(), receiptOnly: true })).rejects.toThrow("revoked");
+});
+
+it("validates typed template field values without accepting unknown row properties", async () => {
+  const { validateDocumentFieldMutation } = await import("@/lib/presentation/document-field-mutation");
+  const { validateTemplateDefinition } = await import("@/lib/presentation/schema");
+  const template = validateTemplateDefinition({ ...requireBuiltinTemplate("texttext.note"), fields: [
+    { id: "state", label: "State", type: "enum", options: [{ value: "ready", label: "Ready" }] },
+    { id: "steps", label: "Steps", type: "rows", maxRows: 1, fields: [{ id: "done", label: "Done", type: "boolean" }] },
+    { id: "link", label: "Link", type: "url" },
+  ] });
+  expect(() => validateDocumentFieldMutation(template, { state: "ready", steps: [{ done: true }], link: "https://example.com" })).not.toThrow();
+  for (const fields of [{ state: "other" }, { steps: [{ hidden: true }] }, { steps: [{ done: "yes" }] }, { steps: [{ done: true }, { done: false }] }, { link: "javascript:alert(1)" }] as Parameters<typeof validateDocumentFieldMutation>[1][]) {
+    expect(() => validateDocumentFieldMutation(template, fields)).toThrow();
+  }
+});

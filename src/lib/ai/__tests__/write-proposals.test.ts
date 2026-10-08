@@ -569,3 +569,28 @@ it("explicitly approves retirement with a frozen source and recovers an expired 
     expect((await engine.listVaultTextpacks(location)).items).toEqual(committed);
   } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
 });
+
+it("approves declared field edits and reconciles expired completed receipts without another write", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-field-proposal-"));
+  vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true;
+  try {
+    const { requireBuiltinTemplate } = await import("@/lib/presentation/templates");
+    const { readDocument } = await import("@/local-vault/model"); const { openPack } = await import("@/local-vault/pack");
+    const template = { ...requireBuiltinTemplate("texttext.note"), id: "local.fields", fields: [{ id: "score", label: "Score", type: "number" as const, required: false, visibility: "public" as const, format: "plain" as const }] };
+    const document = emptyDocumentSnapshot({ id: template.id, version: 1 }); document.content.body = "Keep writing";
+    const location = { root, workspaceId: "blog-1", itemId: "99999999-9999-4999-8999-999999999999" };
+    const saved = await writeVaultTextpack({ ...location, operationId: "seed-fields", relativePath: "Notes/Fields.textpack", baseRevision: null, bytes: buildTextpack("Fields", { document, template, markdown: `---\ntextTextId: ${location.itemId}\n---\n\nKeep writing` }) });
+    const h = harness(); h.dependencies.execute = runWorkspaceToolForSession;
+    const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "update_item", arguments: { id: location.itemId, fields: { score: 5 }, if_match_hash: saved.revision, idempotency_key: "fields" } }, h.dependencies);
+    const approve = () => decideWorkspaceWriteProposal({ actor: owner, proposalId: proposal.id, decision: "approve" }, h.dependencies);
+    expect(readDocument(openPack((await readVaultTextpack(location))!.bytes, saved.relativePath, saved.revision!).file).content.fields).toEqual({});
+    h.repository.rejectCompletion = true;
+    expect((await approve()).status).toBe("ambiguous");
+    const committed = (await readVaultTextpack(location))!;
+    expect(readDocument(openPack(committed.bytes, committed.relativePath, committed.revision).file).content.fields).toEqual({ score: 5 });
+    h.advance(16 * 60_000); h.repository.rejectCompletion = false;
+    access.allowed = false; expect((await approve()).status).not.toBe("completed");
+    access.allowed = true; expect((await approve()).status).toBe("completed");
+    expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
+  } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
+});
