@@ -8,8 +8,9 @@
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
   save/reopen passed in 1206; 1207 startup, existing note, home navigation and
   saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
-- Oracle: **texttext-oracle-20261008-2cc028b9-preview**. Thirteen live checks
-  passed; actual Safari editor reads the Mac photo metadata.
+- Oracle: **texttext-oracle-20261008-af65cbc6-folder**. Thirteen live checks
+  passed; [current receipt](verification/2026-10-08-oracle-folder-agent.md).
+  Prior preview verification: actual Safari editor reads the Mac photo metadata.
   [Deployment and live reconnect receipt](verification/2026-10-08-oracle-preview-1207.md).
   Graceful shutdown exited 143 without timeout/SIGKILL. The additive systemd
   override accepts 130/143; ordinary 1207 rollout attested successful exit
@@ -26,16 +27,10 @@
 
 ## Current work and next checks
 
-- Oracle candidate source `af65cbc6` built and packaged in clean snapshot
-  `/private/tmp/texttext-candidate-1195-5ELVuo`; archive
-  `.texttext/oracle/texttext-af65cbc6-folder.tar.gz` (304 MB).
-  Logs `/tmp/texttext-folder-oracle-{build,package,deploy}.log`.
-  Deployment stopped before changes: `test:sync:check` requires a fresh core
-  receipt for this snapshot. Required `npm run test:sync` is running in exec
-  session **99082**, log `/tmp/texttext-folder-required-sync.log`; poll the
-  existing handle. Once passed, retry the same `ship.sh --web-only --skip-tests`
-  with the verified artifact. Oracle remains on the recorded 1207 deployment.
-
+- Oracle candidate `af65cbc6` deployed successfully after matching core/native
+  sync gates (828 core tests, all native regressions). All 13 live checks passed.
+  [Deployment receipt](verification/2026-10-08-oracle-folder-agent.md).
+  Actual Safari folder model task and proposal approval remain next.
 - Local CLI keyed creation/capture now uses a durable prepared-package journal.
   Rename/edit retries, deletion/duplicate fences, capture retry, prepared-intent
   resumption and concurrent local creation passed in 64 native tests.
