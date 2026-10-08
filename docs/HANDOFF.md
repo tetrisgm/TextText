@@ -32,9 +32,12 @@ and actual folder-picker switch/back await PC SSH recovery. Do not rebuild.
 See [Windows receipt](verification/2026-10-07-windows-desktop-live.md).
 
 Shared inactivity now pauses quietly; reconnect revalidates authority before
-sending journaled edits (`3ff475d9`, 49 focused tests). This change is installed on Mac and live on Oracle. Windows final candidate
-contains it but remains pending installation. Actual Safari interaction checks
-for this final patch remain pending; prior account acceptance is recorded below.
+sending journaled edits (`3ff475d9`, 49 focused tests). This change is installed
+on Mac and live on Oracle. Windows final candidate contains it but remains
+pending installation. Actual Safari opened the dedicated note on this
+deployment, showed the signed-in account and Mac presence, and retained all
+nine markers after switching away
+and back without a false Offline/Retry banner. No content was edited.
 
 ## Changes and durable checks
 
