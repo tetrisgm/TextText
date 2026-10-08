@@ -1484,8 +1484,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         onCloseDesign={() => setFolderDesignOpen(false)}
         onRevealBookmark={(path) => void operate(async () => { setSelected(null); setPreferredBookmarkPath(path); setDestinationFolder("Bookmarks"); }, true)}
         onOpen={(path) => void operate(async () => { setNoteEditPath(null); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)} /></div> : <div className="vault-empty">
-        <h2>{listing?.root ? "Your workspace" : "Open a workspace folder"}</h2>
-        <p>{listing?.root ? "Choose a TextPack or create a note." : "Choose a folder on your Mac. Your documents and templates live there as TextPack files."}</p>
+        <h2>{listing?.root ? "Your workspace" : allowFolderPicker ? "Open a workspace folder" : "Opening workspace"}</h2>
+        <p>{listing?.root ? "Choose a TextPack or create a note." : allowFolderPicker ? "Choose a folder on your computer. Your documents and templates live there as TextPack files." : "Your files will appear here."}</p>
       </div>}
     </main>
     {importedGalleryPath && destinationFolder.trim() === "Gallery" && !selected && <VaultGalleryLightbox key={importedGalleryPath} entries={[{ path: importedGalleryPath, index: 0 }]} initialSelection={0} commentsAccess={galleryCommentsAccess} onAskAgent={allowFolderPicker || webAssistant ? askItemAgent : undefined}

@@ -354,7 +354,7 @@ export function NativeAssistant({ open, path, folder, root, targetTitle, request
   const runningFence = activeTurn?.type === "agent" ? activeTurn : null;
   const itemTask = task && task.root === root && (task.target === taskTarget && (task.scope ?? "item") === taskScope || (runningFence && agentTaskMatches(task, runningFence))) ? task : null;
   const accountLabel = connectedAccountLabel(status.accountEmail)
-    ?? (status.state === "ready" || status.state === "working" ? "Codex connected" : null);
+    ?? (status.state === "ready" || status.state === "working" ? webAssistant ? "Workspace AI connected" : "Codex connected" : null);
   const diagnosticReference = status.state === "failed" && status.diagnosticId && /^[A-Z0-9-]{4,64}$/.test(status.diagnosticId)
     ? status.diagnosticId : null;
   const proposalTarget = itemTask?.scope === "folder" ? itemTask.target : path;

@@ -24,3 +24,23 @@ verified before rollout and is distinct from the new hosted folder task.
 Actual Safari hosted folder model/proposal approval remains next. The required
 existing TextText Changelog package was not found in the configured iCloud root;
 no duplicate changelog was created.
+
+## Actual Safari folder surface
+
+After reload of the deployed canonical workspace, opened the dedicated Agent
+creation verification 1207 folder, More, Add agent. The actual panel showed the
+correct folder target and `This folder · Changes need approval`. Production
+status showed `Set up AI in Settings` and no connected workspace provider, so
+no model task or write proposal was sent. Do not claim live model/approval
+acceptance from the fixture tests.
+
+The documented Keychain development services `texttext-dev-anthropic` and
+`texttext-dev-openai` exist (presence only checked; values were not printed).
+They were not moved into production. Commercial ChatGPT sign-in registration
+remains externally pending, separately from API-provider configuration.
+
+The transient web loading screen incorrectly requested a Mac folder and the
+assistant ready label could say Codex for a cloud provider. Source labels now
+use a web workspace loading message, platform-neutral desktop folder copy, and
+`Workspace AI connected` on web. TypeScript passed; this follow-up is not yet
+installed/deployed. Log `/tmp/texttext-web-platform-labels.log`.

@@ -30,7 +30,10 @@
 - Oracle candidate `af65cbc6` deployed successfully after matching core/native
   sync gates (828 core tests, all native regressions). All 13 live checks passed.
   [Deployment receipt](verification/2026-10-08-oracle-folder-agent.md).
-  Actual Safari folder model task and proposal approval remain next.
+  Actual Safari folder target/approval copy passed. Its production workspace
+  provider is disconnected, preventing live model/proposal acceptance. Existing
+  development Keychain keys were only checked for presence, not moved to Oracle.
+  Web loading/provider-label fixes passed TypeScript, not yet deployed.
 - Local CLI keyed creation/capture now uses a durable prepared-package journal.
   Rename/edit retries, deletion/duplicate fences, capture retry, prepared-intent
   resumption and concurrent local creation passed in 64 native tests.
