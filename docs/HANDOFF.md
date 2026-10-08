@@ -56,10 +56,14 @@
   `/tmp/texttext-oracle-template-gates.log`,
   `/tmp/texttext-template-native-gates.log`,
   `/tmp/texttext-oracle-template-build.log`, `/tmp/texttext-template-package.log`.
-  Full required release checks stopped at stale generated MCP documentation
-  (handle `99704` is terminal). Log `/tmp/texttext-template-release-gates.log`.
-  Regenerated tool contract and docs now pass `sync-tool-docs.ts --check`;
-  update the clean candidate to the corrective commit before resuming checks.
+  Full required release checks first stopped at stale generated MCP docs
+  (`99704` terminal), then historical handoff links and temporary fixture
+  paths (`98957` terminal). Both failures are corrected in `3e01429e` and
+  `b403c984`; docs verification and all seven sync-verifier regressions pass.
+  The clean clone is now `b403c984`; full release verification is running
+  through handle `14624`, log `/tmp/texttext-template-release-gates-links-fixed.log`.
+  Resume that handle. Revalidate sync receipts and rebuild/package the exact
+  new candidate source before deployment; the existing archive is older.
   Oracle remains on `cce4206c`, unchanged. Preflight
   verified 27 GB free, recent backups and all TextText/Algorave services active.
   Candidate archive:
