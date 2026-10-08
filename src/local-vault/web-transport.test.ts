@@ -553,3 +553,14 @@ describe("account profile transport", () => {
     transport.destroy();
   });
 });
+
+ it("retains empty folder destinations across a cached web listing", async () => {
+  let calls = 0;
+  const request: typeof fetch = async () => ++calls === 1
+    ? Response.json({ items: [], folders: ["Feeds", "Notes/Research"], revision: "folders" })
+    : new Response(null, { status: 304 });
+  const transport = createWebVaultTransport("workspace", "Workspace", request);
+  expect(await transport.request("list", {})).toMatchObject({ folders: ["Feeds", "Notes/Research"], items: [] });
+  expect(await transport.request("list", {})).toMatchObject({ folders: ["Feeds", "Notes/Research"], items: [] });
+  transport.destroy();
+});

@@ -40,6 +40,17 @@ describe("shared workspace manifests", () => {
     expect(result.tombstones).toEqual([]); expect(result.problems).toEqual([]);
     expect(result.revision).not.toBe("a".repeat(64));
   });
+  it("returns only granted empty folders and changes scoped etags when folders change", async () => {
+    mocks.auth.mockResolvedValue({ ...identity, fullAccess: false, grants: [{ id: "grant", role: "viewer" }] });
+    mocks.folder.mockImplementation((_grants, folder) => folder.startsWith("Shared"));
+    mocks.list.mockResolvedValue({ ...manifest, items: [], tombstones: [], folders: ["Shared", "Private"] });
+    const first = await (await GET(new Request("https://texttext.test/items"), context)).json();
+    expect(first.folders).toEqual(["Shared"]);
+    mocks.list.mockResolvedValue({ ...manifest, items: [], tombstones: [], folders: ["Shared", "Shared/Empty", "Private"] });
+    const next = await (await GET(new Request("https://texttext.test/items"), context)).json();
+    expect(next.folders).toEqual(["Shared", "Shared/Empty"]);
+    expect(next.revision).not.toBe(first.revision);
+  });
   it("scans only authorized saved stories and rechecks access before returning them", async () => {
     const scoped = { ...identity, fullAccess: false, grants: [{ id: "grant", role: "viewer" }] };
     mocks.auth.mockResolvedValue(scoped);

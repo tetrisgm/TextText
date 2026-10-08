@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { unzipSync, zipSync } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { readVaultTextpack, readVaultTextpackPath, readVaultTextpackIdentity, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
+import { ensureVaultFolders, readVaultTextpack, readVaultTextpackPath, readVaultTextpackIdentity, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
 import { listVaultFolderViews, listVaultKeptFeedEntries, listVaultReadFeedEntries, listVaultRecovery, readVaultRecovery } from "./server-store";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -26,6 +26,34 @@ describe("directory TextPack store", () => {
   const relativePath = "Notes/My note.textpack";
   beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-vault-")); });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
+  it("lists empty folders durably and invalidates the manifest when they change", async () => {
+    const before = await listVaultTextpacks({ root, workspaceId });
+    await ensureVaultFolders({ root, workspaceId }, ["Feeds", "Notes/Research"]);
+    const after = await listVaultTextpacks({ root, workspaceId });
+    expect(after.folders).toEqual(["Feeds", "Notes", "Notes/Research"]);
+    expect(after.items).toEqual([]);
+    expect(after.revision).not.toBe(before.revision);
+    await ensureVaultFolders({ root, workspaceId }, ["Feeds", "Notes/Research"]);
+    expect((await listVaultTextpacks({ root, workspaceId })).revision).toBe(after.revision);
+    await fs.rmdir(path.join(root, workspaceId, "Feeds"));
+    expect((await listVaultTextpacks({ root, workspaceId })).folders).toEqual(["Notes", "Notes/Research"]);
+  });
+
+  it("does not provision or list internal or symlinked folders", async () => {
+    await ensureVaultFolders({ root, workspaceId }, ["Notes"]);
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-outside-"));
+    try {
+      await fs.symlink(outside, path.join(root, workspaceId, "Linked"));
+      await fs.mkdir(path.join(root, workspaceId, ".hidden"));
+      expect((await listVaultTextpacks({ root, workspaceId })).folders).toEqual(["Notes"]);
+      await expect(ensureVaultFolders({ root, workspaceId }, ["Linked/Child"])).rejects.toThrow("symlink");
+      for (const name of ["../escape", ".texttext/new", "bad:folder", "/absolute"]) {
+        await expect(ensureVaultFolders({ root, workspaceId }, [name])).rejects.toThrow();
+      }
+      expect(await fs.readdir(outside)).toEqual([]);
+    } finally { await fs.rm(outside, { recursive: true, force: true }); }
+  });
+
   const input = (root: string, operationId: string, bytes: Uint8Array, baseRevision: string | null = null) => ({
     root, workspaceId, itemId, relativePath, operationId, bytes, baseRevision,
   });

@@ -5,7 +5,7 @@ import { emptyPack, encodePack, openPack, packIdentity, replacePackIdentity, typ
 import { writePayload } from "./model";
 import { imageType } from "./image-import";
 
-type Manifest = { items: { itemId: string; relativePath: string; revision: string }[]; revision: string };
+type Manifest = { folders?: string[]; items: { itemId: string; relativePath: string; revision: string }[]; revision: string };
 type OpenCollaborationPrefetch = {
   itemId: string; controller: AbortController; result: Promise<unknown | null>;
   revision?: string; path?: string; timer?: ReturnType<typeof setTimeout>;
@@ -79,7 +79,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
         manifest = await response.json() as Manifest;
       }
       if (!manifest) throw new Error("The workspace listing was empty.");
-      return { root: `vault:${workspaceId}`, name, items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId })) };
+      return { root: `vault:${workspaceId}`, name, folders: manifest.folders ?? [], items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId })) };
     })().finally(() => { listingRequest = null; });
     return listingRequest;
   };

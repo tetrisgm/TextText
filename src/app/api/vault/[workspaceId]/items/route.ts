@@ -65,9 +65,10 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
     const visible = stillAuthorized.fullAccess ? manifest : (() => {
       const items = manifest.items.filter(item => canSeeVaultItem(stillAuthorized.grants, item.itemId, item.relativePath));
       const tombstones = manifest.tombstones.filter(item => canSeeVaultItem(stillAuthorized.grants, item.itemId, item.relativePath));
-      const revision = createHash("sha256").update(JSON.stringify([items, tombstones,
+      const folders = (manifest.folders ?? []).filter(folder => canSeeVaultFolder(stillAuthorized.grants, folder));
+      const revision = createHash("sha256").update(JSON.stringify([items, tombstones, folders,
         stillAuthorized.grants.map(grant => [grant.id, grant.role])])).digest("hex");
-      return { items, tombstones, problems: [], revision };
+      return { items, tombstones, folders, problems: [], revision };
     })();
     const etag = `"${visible.revision}"`;
     const headers = { ETag: etag, "Cache-Control": "private, no-cache" };

@@ -1469,7 +1469,26 @@ export async function readVaultTemplate(input: VaultLocation & { itemId: string 
   return result;
 }
 
+/** Provision ordinary empty directories without replacing existing content. */
+export async function ensureVaultFolders(input: VaultLocation, folders: readonly string[]): Promise<void> {
+  if (folders.length > 1000) throw new Error("Too many workspace folders");
+  for (const folder of folders) packPath(`${folder}/placeholder.textpack`);
+  const layout = await setup(input);
+  await locked(layout, async () => {
+    await recover(layout);
+    for (const folder of folders) {
+      let parent = layout.workspace;
+      for (const part of folder.split("/")) {
+        const child = await directory(parent, part);
+        await syncDirectory(parent);
+        parent = child;
+      }
+    }
+  });
+}
+
 export async function listVaultTextpacks(input: VaultLocation): Promise<{
+  folders: string[];
   items: { itemId: string; relativePath: string; revision: string }[];
   tombstones: { itemId: string; relativePath: string; revision: string; deleted: true }[];
   revision: string;
@@ -1478,7 +1497,9 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
   const layout = await setup(input);
   return locked(layout, async () => {
     await recover(layout);
-    const problems = await discoverFiles(layout);
+    const folders: string[] = [];
+    const problems = await discoverFiles(layout, folders);
+    folders.sort();
     const items: { itemId: string; relativePath: string; revision: string }[] = [];
     const tombstones: { itemId: string; relativePath: string; revision: string; deleted: true }[] = [];
     for (const name of (await fs.readdir(layout.items)).sort()) {
@@ -1516,11 +1537,11 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
       }
       items.push({ itemId: item.itemId, relativePath: item.relativePath, revision });
     }
-    return { items, tombstones, problems, revision: hash(json([items, tombstones, problems])) };
+    return { items, tombstones, folders, problems, revision: hash(json([items, tombstones, folders, problems])) };
   });
 }
 
-async function discoverFiles(layout: Layout): Promise<{ relativePath: string; reason: string }[]> {
+async function discoverFiles(layout: Layout, folders: string[]): Promise<{ relativePath: string; reason: string }[]> {
   type Item = { itemId: string; relativePath: string; revision?: string; deleted?: boolean };
   const byId = new Map<string, Item>();
   const paths = new Set<string>();
@@ -1538,7 +1559,13 @@ async function discoverFiles(layout: Layout): Promise<{ relativePath: string; re
       if (++visited > 100_000) throw new Error("Vault directory exceeds discovery limits");
       if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
       const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) { await walk(relativePath); continue; }
+      if (entry.isDirectory()) {
+        // Use the same path validation as file writes; never expose internal,
+        // symlinked or unaddressable directories as sidebar destinations.
+        try { packPath(`${relativePath}/placeholder.textpack`); } catch { continue; }
+        folders.push(relativePath);
+        await walk(relativePath); continue;
+      }
       if (!entry.isFile() || !entry.name.endsWith(".textpack") || paths.has(relativePath)) continue;
       let bytes: Buffer | null;
       let itemId: string;
