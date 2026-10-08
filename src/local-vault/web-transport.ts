@@ -3,7 +3,8 @@ import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { VaultError, type VaultFile, type VaultListing, type VaultTransport } from "./bridge";
 import { emptyPack, encodePack, openPack, packIdentity, replacePackIdentity, type OpenPack, type PackAssetAddition } from "./pack";
-import { writePayload } from "./model";
+import { readDocument, readTemplate, writePayload } from "./model";
+import { validatedLookSource } from "@/lib/presentation/template-library";
 import { imageType } from "./image-import";
 
 type Manifest = { fullAccess?: boolean; canCreateContent?: boolean; writableFolders?: string[]; folders?: string[]; items: { itemId: string; relativePath: string; revision: string; canEditContent?: boolean }[]; revision: string };
@@ -492,6 +493,18 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
         const source = packs.get(String(params.sourceHash));
         if (!source || source.file.path !== params.sourcePath) throw new Error("The original conflict snapshot is unavailable. Keep this editor open and save its text before closing.");
         pack = source; file = { ...source.file, path, hash: "", markdown: replacePackIdentity(source.file.markdown, id) };
+        if (params.documentJSON !== undefined || params.templateJSON !== undefined || params.templateAuthoringSourceJSON !== undefined) {
+          for (const key of ["documentJSON", "templateJSON", "templateAuthoringSourceJSON"] as const) {
+            if (params[key] !== undefined && params[key] !== null && (typeof params[key] !== "string" || String(params[key]).length > 2_000_000)) throw new Error("Invalid template metadata.");
+          }
+          const candidate = { ...file,
+            documentJSON: params.documentJSON === undefined ? file.documentJSON : params.documentJSON as string,
+            templateJSON: params.templateJSON === undefined ? file.templateJSON : params.templateJSON as string,
+            templateAuthoringSourceJSON: params.templateJSON === undefined && params.templateAuthoringSourceJSON === undefined ? file.templateAuthoringSourceJSON : params.templateAuthoringSourceJSON as string | null };
+          const document = readDocument(candidate), template = readTemplate(candidate, document);
+          if (candidate.templateAuthoringSourceJSON && !validatedLookSource(template, JSON.parse(candidate.templateAuthoringSourceJSON))) throw new Error("Invalid template authoring source.");
+          file = { ...candidate, ...writePayload(candidate, document, { template, sourceJSON: candidate.templateAuthoringSourceJSON }) };
+        }
       } else {
         pack = emptyPack();
         const kind = String(params.kind ?? "note");

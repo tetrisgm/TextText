@@ -252,6 +252,11 @@ try {
       nextCreatedPath = null;
       result = { ...(request.params.sourcePath ? (files.get(request.params.sourcePath) ?? history.get(request.params.sourceHash)) : initial), path: name, hash: String(createRevision) };
       result.markdown = result.markdown.replace(/textTextId: [^\n]+/, `textTextId: "copy-${revision}"`);
+      if (request.params.sourcePath && request.params.documentJSON !== undefined) {
+        result.documentJSON = request.params.documentJSON;
+        result.templateJSON = request.params.templateJSON;
+        result.templateAuthoringSourceJSON = request.params.templateAuthoringSourceJSON;
+      }
       if (!request.params.sourcePath) {
         const body = typeof request.params.body === "string" ? request.params.body : "";
         const document = makeDocument(body);
@@ -602,6 +607,13 @@ try {
   await page.getByRole("button", { name: "Save", exact: true }).first().click();
   await page.getByText(/Saved in Templates\//).waitFor();
   assert.ok([...files.values()].some((file) => file.path.startsWith("Templates/") && JSON.parse(file.templateJSON).name === "Saved local look"));
+  if (process.argv.includes("--save-look-only")) {
+    const saved = [...files.values()].find(file => file.path.startsWith("Templates/") && JSON.parse(file.templateJSON).name === "Saved local look");
+    assert.equal(JSON.parse(saved.documentJSON).presentation.template.id, JSON.parse(saved.templateJSON).id);
+    assert.deepEqual(failures, []);
+    console.log("Reusable look creation publishes matching document and template metadata.");
+    await browser.close(); process.exit(0);
+  }
   await page.keyboard.press("Meta+k");
   const itemCommands = page.getByRole("dialog", { name: "Search and actions", exact: true });
   assert.match(await itemCommands.getByRole("option").first().getAttribute("id") || "", /^action:(edit-current|share-current|show-comments|publish-current|version-history)$/);

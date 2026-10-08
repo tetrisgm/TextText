@@ -42,6 +42,16 @@
 
 ## Current work and next checks
 
+- Save as look now supplies complete metadata to clone creation, eliminating
+  the second write and partial library item on failure. Mac customizes only a
+  private clone before publication; web/Windows encode the complete new identity
+  before one commit. Source content, assets/opaque entries and receipt isolation
+  remain covered. Seven native recovery tests, 17 shared-editing tests, 333 shared
+  tests (before the additional Windows-specific test), 46 targeted transport tests,
+  TypeScript and focused browser Save as look acceptance passed. Source only;
+  install/deployment and actual native/Safari acceptance remain. Logs
+  `/tmp/texttext-atomic-look-{native,shared-editing,client-all,transports,types,browser}.log`.
+
 - Mac agent creation now rejects invalid explicit item types before publication,
   matching Windows. All 15 agent-file tests passed, including each supported
   type and invalid string/non-string refusal with no draft. Source only.

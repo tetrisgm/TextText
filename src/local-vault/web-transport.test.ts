@@ -506,6 +506,32 @@ describe("web file vault transport", () => {
     test.transport.destroy();
   });
 
+  it("publishes a complete reusable look in one mutation and rejects malformed metadata before publishing", async () => {
+    const test = fixture();
+    const source = await test.transport.request("read", { path: test.path }) as VaultFile;
+    const document = readDocument(source);
+    const template = { ...JSON.parse(source.templateJSON!), id: "local.saved-look", version: 1, name: "Saved look" };
+    document.presentation.template = { id: template.id, version: template.version };
+    const params = { title: "Saved look", folder: "Templates", sourcePath: source.path, sourceHash: source.hash,
+      documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: null };
+    const before = test.operations.length;
+    const saved = await test.transport.request("create", params) as VaultFile;
+    expect(test.operations.length - before).toBe(1);
+    expect(readDocument(saved)).toEqual(document);
+    expect(JSON.parse(saved.templateJSON!).id).toBe(template.id);
+    expect(saved.assets).toEqual(source.assets);
+    const bytes = [...test.files.values()].find(entry => entry.path === saved.path)!.bytes;
+    const entries = unzipSync(bytes);
+    expect(Object.keys(entries).some(name => name.includes("/net.texttext.mutations/"))).toBe(false);
+    expect(strFromU8(Object.entries(entries).find(([name]) => name.endsWith("/agent-metadata.json"))![1])).toBe('{"keep":true}');
+    const count = test.files.size;
+    await expect(test.transport.request("create", { ...params, title: "Broken", templateJSON: "{}" })).rejects.toThrow();
+    expect(test.files.size).toBe(count);
+    expect(test.operations.length - before).toBe(1);
+    expect(test.files.get(test.id)!.bytes).toEqual(test.initial);
+    test.transport.destroy();
+  });
+
   it("writes the same pack model while preserving asset bytes and unknown entries", async () => {
     const test = fixture();
     const file = await test.transport.request("read", { path: test.path }) as VaultFile;

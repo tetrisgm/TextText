@@ -569,7 +569,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     if let source = params["sourcePath"] as? String {
                         return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
                             try store.clone(path: source, sourceHash: params["sourceHash"] as? String,
-                                newPath: (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack")
+                                newPath: (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack",
+                                documentJSON: params["documentJSON"] as? String,
+                                templateJSON: params["templateJSON"] as? String,
+                                templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String)
                         })
                     }
                     let kind = params["kind"] as? String ?? "note"

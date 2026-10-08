@@ -93,6 +93,35 @@ final class LocalVaultRecoveryTests: XCTestCase {
         }
     }
 
+    func testReusableLookMetadataIsAppliedBeforePublishingClone() throws {
+        try fixture { _, store, original in
+            let builtin = try BuiltinTextPackDocument.create(title: "Original", body: "Body", kind: "note", sourceURL: nil)
+            let source = try store.write(path: original.path, expectedHash: original.hash,
+                markdown: original.contents.markdown, documentJSON: builtin.documentJSON,
+                templateJSON: builtin.templateJSON, templateAuthoringSourceJSON: nil)
+            var template = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(builtin.templateJSON.utf8)) as? [String: Any])
+            template["id"] = "local.saved-look"
+            template["version"] = 1
+            var snapshot = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(builtin.documentJSON.utf8)) as? [String: Any])
+            var presentation = try XCTUnwrap(snapshot["presentation"] as? [String: Any])
+            presentation["template"] = ["id": "local.saved-look", "version": 1]
+            snapshot["presentation"] = presentation
+            let documentJSON = String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self)
+            let templateJSON = String(decoding: try JSONSerialization.data(withJSONObject: template), as: UTF8.self)
+            let saved = try store.clone(path: source.path, sourceHash: source.hash, newPath: "Templates/Saved.textpack",
+                documentJSON: documentJSON, templateJSON: templateJSON)
+            XCTAssertEqual(saved.contents.templateJSON, templateJSON)
+            let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try XCTUnwrap(saved.contents.documentJSON).utf8)) as? [String: Any])
+            XCTAssertEqual((stored["presentation"] as? [String: Any])?["template"] as? [String: AnyHashable], ["id": "local.saved-look", "version": 1])
+            XCTAssertNotEqual(MarkdownIdentityCodec.extract(from: saved.contents.markdown)?.itemId,
+                              MarkdownIdentityCodec.extract(from: source.contents.markdown)?.itemId)
+            XCTAssertEqual(try store.read(path: source.path).hash, source.hash)
+            XCTAssertThrowsError(try store.clone(path: source.path, sourceHash: source.hash,
+                newPath: "Templates/Broken.textpack", documentJSON: documentJSON, templateJSON: "{}"))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: try store.url(for: "Templates/Broken.textpack").path))
+        }
+    }
+
     func testOversizedAndExcessRetainedEntriesReportTruncation() throws {
         try fixture { _, store, _ in
             let trash = store.root.appendingPathComponent(".texttext/trash")

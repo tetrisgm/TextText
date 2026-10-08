@@ -367,9 +367,9 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
       template = validateTemplateDefinition({ ...compileItemTypeBlueprint(source.blueprint, identity), experience: templateExperience(original) ?? undefined });
       sourceJSON = JSON.stringify(source);
     }
-    const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash });
     const snapshot = { ...current.current, presentation: { ...current.current.presentation, template: identity } };
-    await vaultRequest<VaultFile>("write", writePayload({ ...fresh, templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: sourceJSON }, snapshot, { template, sourceJSON }));
+    const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash,
+      documentJSON: JSON.stringify(snapshot), templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: sourceJSON });
     onChanged();
     return { ok: true, message: `Saved in ${fresh.path}` };
   };

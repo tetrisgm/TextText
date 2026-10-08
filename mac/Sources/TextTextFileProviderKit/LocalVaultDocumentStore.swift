@@ -392,7 +392,9 @@ public struct LocalVaultDocumentStore: Sendable {
     /// Opaque entries and metadata survive because this never rematerializes
     /// the package from the subset of fields understood by the current app.
     /// Mutation receipts belong to the old identity and must not be inherited.
-    public func clone(path: String, sourceHash: String? = nil, newPath: String) throws -> Document {
+    public func clone(path: String, sourceHash: String? = nil, newPath: String,
+                      documentJSON: String? = nil, templateJSON: String? = nil,
+                      templateAuthoringSourceJSON: String? = nil) throws -> Document {
         let source = try sourceHash.map { try readRevision(path: path, hash: $0) } ?? read(path: path)
         let destination = try url(for: newPath)
         let saved = root.appendingPathComponent(".texttext/history/\(source.hash).textpack")
@@ -425,6 +427,40 @@ public struct LocalVaultDocumentStore: Sendable {
             guard let currentMarkdown = archive[entryPath] else { throw Failure.invalidPath }
             try archive.remove(currentMarkdown)
             try archive.addEntry(with: entryPath, fileURL: replacementURL, compressionMethod: .deflate)
+        }
+        // Apply look metadata to the private package before publishing its new
+        // identity. A failed customization must never leave a partial library item.
+        if documentJSON != nil || templateJSON != nil || templateAuthoringSourceJSON != nil {
+            let stagingStore = LocalVaultDocumentStore(root: temporary)
+            let draft = try stagingStore.read(path: "clone.textpack")
+            let snapshot = documentJSON ?? draft.contents.documentJSON
+            let definition = templateJSON ?? draft.contents.templateJSON
+            guard let snapshot, let definition,
+                  snapshot.utf8.count <= 2_000_000, definition.utf8.count <= 2_000_000,
+                  let document = try JSONSerialization.jsonObject(with: Data(snapshot.utf8)) as? [String: Any],
+                  let template = try JSONSerialization.jsonObject(with: Data(definition.utf8)) as? [String: Any],
+                  document["schemaVersion"] as? Int == 1, template["schemaVersion"] as? Int == 1,
+                  template["engineVersion"] as? Int == 1,
+                  let presentation = document["presentation"] as? [String: Any],
+                  let reference = presentation["template"] as? [String: Any],
+                  let id = template["id"] as? String, !id.isEmpty,
+                  let version = template["version"] as? Int, version > 0,
+                  reference["id"] as? String == id, reference["version"] as? Int == version else {
+                throw TextTextTextBundleError.invalidPackage("The saved look must match its document.")
+            }
+            if let templateAuthoringSourceJSON {
+                guard templateAuthoringSourceJSON.utf8.count <= 2_000_000,
+                      (try JSONSerialization.jsonObject(with: Data(templateAuthoringSourceJSON.utf8))) is [String: Any] else {
+                    throw TextTextTextBundleError.invalidPackage("Invalid template authoring source.")
+                }
+            }
+            _ = try stagingStore.write(path: draft.path, expectedHash: draft.hash,
+                markdown: draft.contents.markdown,
+                documentJSON: snapshot,
+                templateJSON: definition,
+                templateAuthoringSourceJSON: templateJSON == nil
+                    ? templateAuthoringSourceJSON ?? draft.contents.templateAuthoringSourceJSON
+                    : templateAuthoringSourceJSON)
         }
         let handle = try FileHandle(forWritingTo: packed)
         try handle.synchronize(); try handle.close()

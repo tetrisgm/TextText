@@ -422,9 +422,9 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       source.blueprint.name = name;
       look = validateTemplateDefinition({ ...compileItemTypeBlueprint(source.blueprint, identity), experience: templateExperience(template) ?? undefined }); sourceJSON = JSON.stringify(source);
     }
-    const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash });
     const document = { ...latestSnapshot.current, presentation: { ...latestSnapshot.current.presentation, template: identity } };
-    await vaultRequest("write", writePayload({ ...fresh, templateJSON: JSON.stringify(look), templateAuthoringSourceJSON: sourceJSON }, document, { template: look, sourceJSON }));
+    const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash,
+      documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(look), templateAuthoringSourceJSON: sourceJSON });
     onChanged(); return { ok: true, message: `Saved in ${fresh.path}` };
   };
   const blocked = status === "recovery" || status === "error";

@@ -63,6 +63,22 @@ describe("Windows native RPC", () => {
   });
 });
 describe("Windows shared transport", () => {
+  it("saves reusable look metadata in one complete native publication", async () => {
+    const f = await fixture();
+    try {
+      const source = await f.transport.request("read", { path: f.path }) as VaultFile;
+      const document = readDocument(source);
+      const template = { ...JSON.parse(source.templateJSON!), id: "local.saved-look", version: 1, name: "Saved look" };
+      document.presentation.template = { id: template.id, version: template.version };
+      const before = f.view.messages.filter(call => call.method === "files.write").length;
+      const saved = await f.transport.request("create", { title: "Saved look", folder: "Templates", sourcePath: source.path, sourceHash: source.hash,
+        documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template), templateAuthoringSourceJSON: null }) as VaultFile;
+      expect(f.view.messages.filter(call => call.method === "files.write").length - before).toBe(1);
+      expect(readDocument(saved)).toEqual(document);
+      expect(JSON.parse(saved.templateJSON!).id).toBe(template.id);
+      expect(f.files.get(f.itemId)!.bytes).toEqual(f.initial);
+    } finally { f.transport.destroy(); }
+  });
   it("does not inherit item mutation receipts when cloning or importing a new identity", async () => {
     const f = await fixture();
     try {
