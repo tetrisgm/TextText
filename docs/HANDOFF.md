@@ -2,7 +2,10 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1209)**, source `3f94f8fc`.
+- Mac `/Applications/TextText.app`: **0.204 (1210)**, source `c32f920b`.
+  Actual Save as look now passes on a receipt-bearing note: exact content,
+  fresh identity, no inherited receipts, original receipt retained.
+  [1210 receipt](verification/2026-10-08-mac-1210.md).
   Signed native Apple sign-in build; account/iCloud startup, existing note,
   saved-body search, editor save and ZIP persistence passed.
   [1209 receipt](verification/2026-10-08-mac-1209.md).
@@ -32,8 +35,8 @@
 
 - Mac 1209 runtime Save as look failed before destination creation. Fixed stale
   ZIP offset use when receipt removal precedes Markdown extraction. Regression
-  now places Markdown after receipts; 53 storage/remote tests passed. Rebuild
-  and install this follow-up, then repeat actual clone acceptance.
+  now places Markdown after receipts; 53 storage/remote tests passed. Mac 1210
+  installed and actual clone acceptance passed.
   [Runtime finding](verification/2026-10-08-mac-1209.md).
 
 - Mac 1208 reusable agent design → Save as look → New from template → saved
