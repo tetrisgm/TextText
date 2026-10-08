@@ -1,0 +1,11 @@
+import { afterEach, expect, it, vi } from "vitest";
+const m=vi.hoisted(()=>({user:vi.fn(),id:vi.fn(),set:vi.fn(),signIn:vi.fn()}));
+vi.mock("next/headers",()=>({cookies:async()=>({set:m.set})}));
+vi.mock("@/lib/session",()=>({getCurrentUser:m.user}));
+vi.mock("@/lib/store",()=>({getUserIdBySub:m.id}));
+vi.mock("@/auth",()=>({hasAppleProvider:true,hasGoogleProvider:true,hasGithubProvider:true,signIn:m.signIn}));
+import { connectAccountGoogle } from "./connect-provider-actions";
+const id="a1123456-1234-1234-1234-123456789abc";
+afterEach(()=>{vi.unstubAllEnvs();vi.clearAllMocks();});
+it("revalidates expected account at action time before minting intent",async()=>{m.user.mockResolvedValue({sub:"owner"});m.id.mockResolvedValue("other");await expect(connectAccountGoogle(id)).rejects.toThrow("different TextText account");expect(m.set).not.toHaveBeenCalled();expect(m.signIn).not.toHaveBeenCalled();});
+it("returns only to fixed self-account page and keeps cookies protected",async()=>{vi.stubEnv("AUTH_SECRET","fixture");m.user.mockResolvedValue({sub:"owner"});m.id.mockResolvedValue(id);await connectAccountGoogle(id);expect(m.set).toHaveBeenCalledWith(expect.objectContaining({httpOnly:true,secure:true,sameSite:"lax"}));expect(m.signIn).toHaveBeenCalledWith("google",{redirectTo:`/account/sign-in-methods?account=${id}`});});

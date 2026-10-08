@@ -16,11 +16,14 @@ import {
   mintLinkIntent,
 } from "@/lib/link-intent";
 
-async function beginLink(provider: "apple" | "google" | "github"): Promise<void> {
+async function beginLink(provider: "apple" | "google" | "github", expectedAccountId?: string): Promise<void> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Connecting a provider requires signing in first");
   const userId = await getUserIdBySub(user.sub);
   if (!userId) throw new Error("Connecting a provider requires a workspace account");
+  if (expectedAccountId !== undefined && (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(expectedAccountId) || userId !== expectedAccountId)) {
+    throw new Error("This browser is signed in to a different TextText account.");
+  }
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error("Auth is not configured");
 
@@ -37,7 +40,7 @@ async function beginLink(provider: "apple" | "google" | "github"): Promise<void>
 
   // Ordinary sign-in from here on. redirectTo lands back in the workspace;
   // the linking itself happens in the jwt callback during the OAuth callback.
-  await signIn(provider, { redirectTo: "/start?to=home" });
+  await signIn(provider, { redirectTo: expectedAccountId ? `/account/sign-in-methods?account=${encodeURIComponent(userId)}` : "/start?to=home" });
 }
 
 export async function connectApple(): Promise<void> {
@@ -53,4 +56,17 @@ export async function connectGoogle(): Promise<void> {
 export async function connectGithub(): Promise<void> {
   if (!hasGithubProvider) throw new Error("GitHub sign-in is not configured");
   await beginLink("github");
+}
+
+export async function connectAccountApple(expectedAccountId: string): Promise<void> {
+  if (!hasAppleProvider) throw new Error("Apple sign-in is not configured");
+  await beginLink("apple", expectedAccountId);
+}
+export async function connectAccountGoogle(expectedAccountId: string): Promise<void> {
+  if (!hasGoogleProvider) throw new Error("Google sign-in is not configured");
+  await beginLink("google", expectedAccountId);
+}
+export async function connectAccountGithub(expectedAccountId: string): Promise<void> {
+  if (!hasGithubProvider) throw new Error("GitHub sign-in is not configured");
+  await beginLink("github", expectedAccountId);
 }

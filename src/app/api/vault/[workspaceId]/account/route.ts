@@ -11,5 +11,5 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
   const profile = await getVaultAccountProfile(access.actorUserId);
   const headers = { "Cache-Control": "private, no-store" };
   if (!profile) return Response.json({ error: "Account not found" }, { status: 404, headers });
-  return Response.json({ email: profile.email, name: profile.name, identities: profile.identities, workspaceName: access.name }, { headers });
+  return Response.json({ accountId: access.actorUserId, email: profile.email, name: profile.name, identities: profile.identities, workspaceName: access.name }, { headers });
 }
