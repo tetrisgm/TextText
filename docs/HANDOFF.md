@@ -42,7 +42,8 @@
   [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
 - 1191 source `f3167c4b` passed 725 core tests, TypeScript and required native
   checks. It includes custom-field updates, bounded account-profile recovery and
-  explicit CLI proposal staging. Clients and Oracle installed; live proposal/field acceptance is in progress.
+  explicit CLI proposal staging. Clients and Oracle installed; live proposal/field acceptance passed.
+  [Receipt](verification/2026-10-08-cli-proposals-live.md).
 - Next cohort: atomic agent image addition/removal, using bounded public-resource
   preparation and the existing durable engine intent. No asset feature shipped yet.
 

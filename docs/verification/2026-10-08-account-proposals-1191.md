@@ -31,4 +31,4 @@ remain active. Log: `/tmp/texttext-oracle-f3167c4b-deploy.log`.
 
 Already-open Safari received the new Mac marker automatically before navigation
 or reload, with both desktop clients shown in presence. Live proposal/custom-field
-acceptance is still pending. No public desktop release was performed.
+acceptance passed: [receipt](2026-10-08-cli-proposals-live.md). No public desktop release was performed.
