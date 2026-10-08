@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const inputs = ['src', 'sync', 'scripts/fixtures', 'scripts/vault-http-test-server.ts', 'mac/Sources', 'mac/Tests',
+export const inputs = ['src', 'sync', 'presets/builtin', 'scripts/generate-builtin-presets.ts', 'scripts/builtin-preset-assets.ts', 'scripts/fixtures', 'scripts/vault-http-test-server.ts', 'mac/Sources', 'mac/Tests',
   'scripts/build-local-vault.mjs', 'scripts/verify-production-shutdown.mjs', 'windows/scripts/build-ui.mjs', 'windows/TextText.Windows/TextText.Windows.csproj',
   'mac/Package.swift', 'mac/Package.resolved', 'package.json', 'package-lock.json',
   'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'release/ship.sh', 'mac/scripts/build-app.sh', 'mac/scripts/build-store.sh'];
@@ -73,6 +73,7 @@ async function main() {
       continue;
     }
     await recordPassingRun(receiptPath, digest, process.platform, scope, async () => {
+      await run(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/generate-builtin-presets.ts', '--check']);
       if (scope === 'core' || scope === 'client') {
         await run(process.execPath, ['--test', 'sync/verify.test.mjs']);
         await run(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', '--config',

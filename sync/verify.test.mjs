@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { fingerprint, validateReceipt, recordPassingRun } from './verify.mjs';
+import { inputs, fingerprint, validateReceipt, recordPassingRun } from './verify.mjs';
 
 test('invocation through a symlink executes the gate and rejects invalid flags', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-sync-entry-'));
@@ -45,6 +45,25 @@ test('missing, failed, stale and wrong-platform or scope receipts fail closed', 
     { ...passed, platform: 'win32' }, { ...passed, scope: 'native' }, { ...passed, node: 'old' }]) {
     assert.throws(() => validateReceipt(receipt, 'source', 'darwin', 'core'), /verification/);
   }
+});
+
+test('default source fingerprint includes binary presets and their generation logic', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-preset-gate-'));
+  try {
+    for (const input of inputs) {
+      await fs.mkdir(path.dirname(path.join(root, input)), {recursive:true});
+      if (input === 'presets/builtin') await fs.mkdir(path.join(root,input), {recursive:true});
+      else await fs.writeFile(path.join(root,input), 'fixture');
+    }
+    const preset = path.join(root,'presets/builtin/note.textpack');
+    await fs.writeFile(preset, new Uint8Array([80,75,1]));
+    const before = await fingerprint(root);
+    await fs.writeFile(preset, new Uint8Array([80,75,2]));
+    const changed = await fingerprint(root);
+    assert.notEqual(changed,before);
+    await fs.writeFile(path.join(root,'scripts/generate-builtin-presets.ts'),'changed generator');
+    assert.notEqual(await fingerprint(root),changed);
+  } finally {await fs.rm(root,{recursive:true,force:true});}
 });
 
 
