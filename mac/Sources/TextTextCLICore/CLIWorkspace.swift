@@ -321,13 +321,13 @@ public enum CLIWorkspace: Sendable {
     @discardableResult
     public func create(
         title: String, body: String = "", folder: String? = nil,
-        kind: String = "note", idempotencyKey: String? = nil
+        kind: String? = nil, idempotencyKey: String? = nil
     ) async throws -> CLIDocumentReference {
         switch self {
         case .local(let store):
             return .local(
                 try store.create(
-                    title: title, body: body, folder: folder, kind: kind))
+                    title: title, body: body, folder: folder, kind: kind ?? "note"))
         case .remote(let store):
             return .remote(
                 try await store.create(
@@ -690,31 +690,19 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     @discardableResult
     public func create(
         title: String, body: String = "", folder: String? = nil,
-        kind: String = "note", idempotencyKey: String? = nil
+        kind: String? = nil, idempotencyKey: String? = nil
     ) async throws -> RemoteDocument {
         let current = try await snapshot()
-        let targetFolder = try resolveFolder(folder, kind: kind, in: current)
-        // An explicitly selected folder controls the presentation kind. The
-        // command's default `note` is only a default-folder hint; carrying it
-        // into Blog or Bookmarks makes the shared command reject the create.
-        let effectiveKind: String
-        switch targetFolder.mode
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        {
-        case "notes": effectiveKind = "note"
-        case "bookmarks": effectiveKind = "bookmark"
-        default: effectiveKind = "article"
-        }
-        let markdown =
-            DocumentCreation.frontmatter(
-                title: title, kind: effectiveKind)
-            + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n")
+        let targetFolder = try resolveFolder(folder, kind: kind ?? "note", in: current)
         let key = idempotencyKey ?? "cli-create-\(UUID().uuidString.lowercased())"
-
-        let result = await api.agentCreateItem(
-            markdown: markdown, folderPath: targetFolder.path,
-            idempotencyKey: key,
+        // Omitted kind is intentional: the canonical command selects the folder's
+        // pinned default. An explicit kind remains an explicit override.
+        var arguments: [String: Any] = ["title": title, "folder_path": targetFolder.path, "idempotency_key": key]
+        if !body.isEmpty { arguments["body"] = body }
+        if let kind { arguments["kind"] = kind }
+        let argumentsJSON = String(decoding: try JSONSerialization.data(withJSONObject: arguments, options: [.sortedKeys]), as: UTF8.self)
+        let result = await api.agentRunCommand(
+            name: "create_item", argumentsJSON: argumentsJSON,
             agentName: CLICommandActor.current?.name,
             agentIntent: CLICommandActor.current?.message)
         let itemId: String
@@ -730,9 +718,8 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         case .failure(.network):
             // A lost response may have committed. Reusing the same key makes
             // one bounded retry safe instead of creating a duplicate.
-            switch await api.agentCreateItem(
-                markdown: markdown, folderPath: targetFolder.path,
-                idempotencyKey: key,
+            switch await api.agentRunCommand(
+                name: "create_item", argumentsJSON: argumentsJSON,
                 agentName: CLICommandActor.current?.name,
                 agentIntent: CLICommandActor.current?.message)
             {

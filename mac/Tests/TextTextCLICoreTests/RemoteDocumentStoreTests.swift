@@ -312,7 +312,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertEqual(request.agentIntent, "Create field notes")
     }
 
-    func testCreateInfersArticleKindFromAnExplicitBlogFolder() async throws {
+    func testGenericCreateLeavesFolderDefaultSelectionToCanonicalCommand() async throws {
         let blog = folder(id: "blog", name: "Blog", path: "blog", mode: "blog")
         let api = FakeCLISyncAPI(
             workspace: workspace(folders: [blog]),
@@ -325,8 +325,27 @@ final class RemoteDocumentStoreTests: XCTestCase {
         let capturedRequest = await api.lastCreate()
         let request = try XCTUnwrap(capturedRequest)
         XCTAssertEqual(request.folderPath, "blog")
-        XCTAssertTrue(request.markdown.contains("type: \"article\""))
-        XCTAssertFalse(request.markdown.contains("type: \"note\""))
+
+        let args = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(request.markdown.utf8)) as? [String: Any])
+        XCTAssertNil(args["kind"])
+        XCTAssertNil(args["markdown"])
+        XCTAssertEqual(args["title"] as? String, "Field report")
+    }
+
+    func testExplicitKindAndLostResponseRetryKeepExactStructuredArguments() async throws {
+        let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+        let api = FakeCLISyncAPI(workspace: workspace(folders: [notes]), manifests: [notes.id: []], commandPath: "Notes/Canonical.textpack")
+        await api.loseNextCreateReply()
+        let store = RemoteDocumentStore(api: api)
+        let created = try await store.create(title: "Explicit", folder: "Notes", kind: "note", idempotencyKey: "stable-key")
+        XCTAssertEqual(created.path, "Notes/Canonical.textpack")
+        let calls = await api.ranCommands.filter { $0.name == "create_item" }
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls.first?.argumentsJSON, calls.last?.argumentsJSON)
+        let args = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try XCTUnwrap(calls.first).argumentsJSON.utf8)) as? [String: Any])
+        XCTAssertEqual(args["kind"] as? String, "note")
+        XCTAssertEqual(args["idempotency_key"] as? String, "stable-key")
+        XCTAssertNil(args["body"], "No input body should leave the starter available")
     }
 
     func testCreateAndCaptureUseAuthoritativeServerPath() async throws {
@@ -512,6 +531,8 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     private let commandPath: String?
     private var updates: [UpdateRequest] = []
     private var creates: [CreateRequest] = []
+    private var loseCreateReply = false
+    func loseNextCreateReply() { loseCreateReply = true }
     private var captures: [CaptureRequest] = []
     private var sectionUpdates: [SectionUpdateRequest] = []
     private var readCount = 0
@@ -591,6 +612,12 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
         events.append("run:\(name)")
         ranCommands.append((name: name, argumentsJSON: argumentsJSON))
+        if name == "create_item" {
+            let args = (try? JSONSerialization.jsonObject(with: Data(argumentsJSON.utf8))) as? [String: Any] ?? [:]
+            let result = await agentCreateItem(markdown: argumentsJSON, folderPath: args["folder_path"] as? String ?? "", idempotencyKey: args["idempotency_key"] as? String ?? "", agentName: agentName, agentIntent: agentIntent)
+            if loseCreateReply { loseCreateReply = false; return .failure(.network("lost response")) }
+            return result
+        }
         return .success(TextTextAgentCommandReply(message: "ok"))
     }
 
