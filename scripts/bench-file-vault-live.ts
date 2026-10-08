@@ -172,7 +172,9 @@ function documentItem(page: Page, relativePath: string) {
   const parts = relativePath.split("/");
   const title = parts.at(-1)?.replace(/\.textpack$/i, "") ?? relativePath;
   const folder = parts.length > 1 ? parts.at(-2)! : "Workspace";
-  return page.getByRole("button", { name: `${title} ${folder} Open →`, exact: true });
+  return folder === "Notes" || folder === "Gallery"
+    ? page.getByRole("button", { name: `Open ${title}`, exact: true })
+    : page.getByRole("button", { name: `${title} ${folder} Open →`, exact: true });
 }
 async function checkDocumentItem(page: Page, account: string, relativePath: string, result: Result) {
   const button = documentItem(page, relativePath);
@@ -428,15 +430,17 @@ async function main() {
       const navigation = [];
       navigation.push(await tracedClick("Gallery folder", folder("Gallery"), ".vault-context-location h2", "Gallery"));
       const imageStart = performance.now();
-      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-document-grid img")].some(image => image.complete && image.naturalWidth > 0), null, { timeout: 20_000 });
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".vault-photo-grid img")].some(image => image.complete && image.naturalWidth > 0), null, { timeout: 20_000 });
       const galleryDecodeMs = performance.now() - imageStart;
-      navigation.push(await tracedClick("Gallery item", await checkDocumentItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".tt-md-surface", "A visual study 001", true));
-      navigation.push(await tracedClick("All files", page.getByRole("button", { name: "All files", exact: true }), ".vault-context-location h2", "All files"));
+      navigation.push(await tracedClick("Gallery item", await checkDocumentItem(page, EMAILS[0], "Gallery/Gallery 001.textpack", result), ".vault-gallery-title", "Gallery 001", true));
+      await page.getByRole("button", { name: "Close image", exact: true }).click();
+      navigation.push(await tracedClick("All files", page.getByRole("button", { name: "TextText", exact: true }), ".vault-context-location h2", "All files"));
       navigation.push(await tracedClick("Notes folder", folder("Notes"), ".vault-context-location h2", "Notes"));
-      navigation.push(await tracedClick("Long note item", await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
-      navigation.push(await tracedClick("All files after Long note", page.getByRole("button", { name: "All files", exact: true }), ".vault-context-location h2", "All files"));
+      navigation.push(await tracedClick("Long note item", await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".vault-note-display", "One careful paragraph about a file library", true));
+      navigation.push(await tracedClick("All files after Long note", page.getByRole("button", { name: "TextText", exact: true }), ".vault-context-location h2", "All files"));
       navigation.push(await tracedClick("Notes folder after Long note", folder("Notes"), ".vault-context-location h2", "Notes"));
-      navigation.push(await tracedClick("Cached Long note item", await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".tt-md-surface", "One careful paragraph about a file library", true));
+      navigation.push(await tracedClick("Cached Long note item", await checkDocumentItem(page, EMAILS[0], "Notes/Long note.textpack", result), ".vault-note-display", "One careful paragraph about a file library", true));
+      await page.getByRole("button", { name: "Edit card", exact: true }).click();
       await page.getByRole("textbox", { name: "Document body", exact: true }).waitFor({ timeout: 20_000 });
       const target = items.find(item => item.title === "Long note")!;
       const before = await store.readVaultCollaboration({ root: ROOT, workspaceId, itemId: target.id });
@@ -470,6 +474,7 @@ async function main() {
           startMs: Math.round(event.start - writeAt), responseMs: event.response === undefined ? null : Math.round(event.response - writeAt),
           finishedMs: event.finished === undefined ? null : Math.round(event.finished - writeAt),
         })) };
+      check(visible.updated || reopened, "External file edit did not become visible after cache invalidation");
       await page.close();
       guard();
       result.status = "passed";
