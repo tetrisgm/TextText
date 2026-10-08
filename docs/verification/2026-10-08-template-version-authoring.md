@@ -45,8 +45,32 @@ Targeted verification: 35 tests across preview, saved-look, folder-view and
 workspace-template command suites. Log:
 `/tmp/texttext-authoring-command-preview-regression.log`.
 
-Limits: the correction is installed in Mac 1216, with startup/save/search/reopen
-acceptance. A real model refinement still needs verification; the live test above
-uses a source-less definition and does not certify model-generated blueprint
-updates or Windows installed behavior. It does not certify reference-service
-fidelity or all sync failure modes.
+## Real model refinement and library reuse
+
+Installed Mac 1216 created `Notes/Untitled 13.textpack` from the authored
+version-2 look. Its saved title is Agent authored-source refinement verification
+1216. The retained Codex connection produced a preview for a smaller title.
+An initial inconsistent compiled design was refused without changing package
+entries. A subsequent request produced a matching editable blueprint and
+compiled design. Before accepting that preview, all ZIP entry bytes remained
+unchanged despite package repacking.
+
+Keep this design changed only `template.json` and `template-source.json`.
+Writing and other entries remained unchanged. The blueprint records
+`theme.titleScale: compact`, matching the compiled definition. The editor
+automatically resumed after the shared update.
+
+Actual Save as look created
+`Templates/Agent refined reusable blueprint verification 1216.textpack` with
+the matching editable source retained. The picker offered that look, and
+choosing it created `Notes/Untitled 14.textpack` with the same template identity,
+compact title theme, blueprint and Findings/Questions/Next steps starter.
+Independent ZIP inspection verified both files.
+
+Evidence: `/tmp/texttext-authored-refinement-1216-{before,preview,kept}.json`,
+`/tmp/texttext-authored-refinement-1216-before-entries.json` and
+`/tmp/texttext-refined-library-1216.json`.
+
+Limits: these checks certify this real model workflow on installed Mac 1216.
+Windows installed behavior, reference-service fidelity and all sync failure
+modes remain separate acceptance work.
