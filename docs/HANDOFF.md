@@ -2,10 +2,10 @@
 
 ## Installed and live
 
-- Current Windows source `0428bfca` passed actual PC packaging and desktop smoke,
-  including durable agent creation and native write-receipt regressions. Not installed; the older
+- Current Windows source `fcb1cd42` passed actual PC packaging and desktop smoke,
+  including empty-folder inventory and durable agent creation. Not installed; the older
   app remains running with unknown unsaved state.
-  [Candidate receipt](verification/2026-10-08-windows-agent-creation.md).
+  [Candidate receipt](verification/2026-10-08-windows-folder-inventory.md).
 
 - Mac `/Applications/TextText.app`: **0.204 (1215)**, source `0428bfca`.
   Actual account/iCloud startup, 55-file installation preservation,
@@ -62,7 +62,8 @@
 
 - Windows empty folders now enter the native manifest through the same
   traversal as documents, with folder-aware revision and cache invalidation.
-  Native sync regressions and shell compilation passed; source only.
+  Native sync regressions, shell compilation and actual PC packaging passed;
+  not installed.
   [Folder inventory receipt](verification/2026-10-08-windows-folder-inventory.md).
 
 - Windows agent creation now freezes original intent, identity, path and package
@@ -89,38 +90,15 @@
   `/private/tmp/texttext-candidate-1195-5ELVuo` now contains this source.
   Older packaged archives must not be deployed as this candidate.
 
-- Earlier Oracle template package used clean source `223954b8`.
-  It is superseded and must not be deployed as the current candidate. Its core gates passed
-  (837 tests, 87 files), native sync gates passed, and the production web
-  build and immutable packaging completed successfully. Logs:
-  `/tmp/texttext-oracle-template-gates.log`,
-  `/tmp/texttext-template-native-gates.log`,
-  `/tmp/texttext-oracle-template-build.log`, `/tmp/texttext-template-package.log`.
-  Full required release checks first stopped at stale generated MCP docs
-  (`99704` terminal), then historical handoff links and temporary fixture
-  paths (`98957` terminal). Both failures are corrected in `3e01429e` and
-  `b403c984`; docs verification and all seven sync-verifier regressions pass.
-  The clean clone is `b403c984`; full release verification stopped at the
-  stale MCP live-client contract (`14624` terminal), log
-  `/tmp/texttext-template-release-gates-links-fixed.log`. The corrective source
-  now generates the hosted 27-tool catalog from the actual vault registry,
-  checks OAuth resource discovery, and gives local evaluation disposable file
-  storage. Actual MCP discovery/catalog/resources/prompts/revocation/replacement
-  acceptance passed; `/tmp/texttext-mcp-discovery-live-check.log`. TypeScript,
-  docs verification and generated-doc checks passed. Update the clean candidate,
-  then resume full release checks. Revalidate sync receipts and rebuild/package the exact
-  new candidate source before deployment; the existing archive is older.
-  Oracle remains on `cce4206c`, unchanged. Preflight
-  verified 27 GB free, recent backups and all TextText/Algorave services active.
-  Candidate archive:
-  `.texttext/oracle/texttext-223954b8-templates.tar.gz` in that clean clone.
+- Superseded template packaging investigations are archived in
+  [build history](verification/2026-10-08-superseded-template-build-history.md).
 
 - Matching native snapshot/template validation now lives in the shared
   `BuiltinTextPackDocument.validateMetadata`, consumed by the agent and by the
   actual custom creation store. Direct store callers cannot bypass metadata,
   title/body and unimported-asset checks. Agent, local-vault and local/remote
   document suites passed; `/tmp/texttext-custom-create-store-validation.log`.
-  Source only, not installed. Reusable-library authoring still remains.
+  Included in Mac 1215 and the current Oracle deployment. Reusable-library authoring still remains.
 
 - Desktop folder-agent `create_file` now accepts complete matching custom
   snapshot/template JSON. Native packages prepare metadata before publication
@@ -131,8 +109,8 @@
   Windows adapter: eight passed; Mac-run Windows native agent suite and
   TypeScript passed. Logs `/tmp/texttext-agent-custom-create-{verified,types}.log`,
   `/tmp/texttext-windows-agent-custom-create.log`,
-  `/tmp/texttext-native-windows-custom-create.log`. Source only: no installed
-  custom-creation or Windows lost-response durability claim. Higher-level
+  `/tmp/texttext-native-windows-custom-create.log`. Included in Mac 1215 and
+  Oracle; actual installed Windows creation remains unverified. Higher-level
   reusable template authoring/version/apply workflows remain unfinished.
 
 - Both shared editor modes now prepare saved-look metadata through
@@ -141,7 +119,8 @@
   before the existing atomic clone. Source title/body/fields/theme are preserved.
   Three transport/preparation suites: 48 tests passed; additional provenance
   regression passed (all three preparation tests); TypeScript passed. Logs
-  `/tmp/texttext-shared-look-{tests,provenance,types-final}.log`. Source only;
+  `/tmp/texttext-shared-look-{tests,provenance,types-final}.log`. Included in Mac
+  1215 and Oracle;
   native agent-library commands are still unfinished.
 
 - Mac 1214 candidate build and installation completed with exit 0. The build
@@ -349,7 +328,11 @@
   brief automatic sync wait. [Receipt](verification/2026-10-08-native-design-1208.md).
   New customization requests now clear stale prior-task conversation in source;
   browser regression and TypeScript passed, not installed.
-- Complete reusable agent template-library creation acceptance. Real native Gallery image
+- Real Mac template generation/refinement/keep, library saving, creation/reuse,
+  search/reopen and Mac/web/direct CLI convergence passed.
+  [Actual acceptance](verification/2026-10-08-native-template-library-1215.md).
+  Direct library version authoring and installed Windows acceptance remain.
+  Real native Gallery image
   description and metadata writing passed; hosted configured-provider generation
   and approval remain unverified.
   [Native acceptance](verification/2026-10-08-gallery-agent-1204.md),

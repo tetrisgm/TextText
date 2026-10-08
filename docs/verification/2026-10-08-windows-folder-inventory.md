@@ -17,5 +17,12 @@ Mac; Windows shell compilation passed without warnings or errors.
 Logs: `/tmp/texttext-windows-folder-inventory-core.log`,
 `/tmp/texttext-windows-folder-inventory-shell.log`.
 
-Source only. Physical Windows packaging and installed UI acceptance are still
-required; the previously verified 0428bfca candidate does not contain this fix.
+Source `fcb1cd42` passed physical PC packaging, Core/Agent suites, 338 shared
+client tests, TypeScript, and interactive desktop smoke. Log:
+`/tmp/texttext-windows-fcb1cd42-build.log`.
+Candidate:
+`C:\Users\Shokunin\dev\texttext-client-fcb1cd42\windows\build\candidate-37ab7610907e411aad1cceb3e9c2085e`.
+Smoke receipts:
+`C:\Users\Shokunin\dev\texttext-client-fcb1cd42\windows\build\smoke-receipts-5f07192292d24e35a3bf7aa637d9914b`.
+Not installed: canonical app process 44968 is still responding with unknown
+unsaved state. The older 0428bfca candidate does not contain this folder fix.
