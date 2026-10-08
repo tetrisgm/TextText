@@ -6,6 +6,7 @@ import base from '../vitest.config';
 export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
+    'src/local-vault/item-location.test.ts',
     'src/local-vault/folder-location.test.ts',
     'src/local-vault/FolderMoveDialog.test.tsx',
     "src/local-vault/reference-choices.test.ts",

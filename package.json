@@ -81,7 +81,7 @@
     "test:sync:client": "node sync/verify.mjs --client-only",
     "test:auth:browser": "node --import tsx scripts/verify-apple-callback-browser.mjs",
     "test:ai-provider-settings:browser": "node src/local-vault/__tests__/ai-provider-settings.browser.mjs",
-    "test:note-template:browser": "node src/local-vault/__tests__/note-template.browser.mjs && node src/local-vault/__tests__/parent-reference.browser.mjs",
+    "test:note-template:browser": "node src/local-vault/__tests__/open-item-move.browser.mjs && node src/local-vault/__tests__/note-template.browser.mjs && node src/local-vault/__tests__/parent-reference.browser.mjs",
     "test:trash-restore:browser": "node src/local-vault/__tests__/trash-restore.browser.mjs",
     "test:long-note-reader:browser": "node src/local-vault/__tests__/long-note-reader.browser.mjs && node src/local-vault/__tests__/reader-rerender.browser.mjs",
     "test:note-icon:browser": "node src/local-vault/__tests__/note-icon.browser.mjs",

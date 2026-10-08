@@ -26,6 +26,7 @@ import { flushForNavigation } from "./navigation-flush";
 import { DetachedFileSaveProof } from "./detached-file-save";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { queueArticleEnrichment } from "./article-enrichment";
+import { packIdentity } from "./pack";
 import { currentVaultWindowActive } from "./window-activity";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 
@@ -63,6 +64,11 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const clientRef = useRef<FileCollaborationClient | null>(null);
   const nativeSessionRef = useRef<NativeSharedSession | null>(null);
+  useEffect(() => {
+    if (packIdentity(initial.markdown) === config.itemId && packIdentity(file.current.markdown) === config.itemId) {
+      file.current = { ...file.current, path: initial.path };
+    }
+  }, [initial.path, initial.markdown, config.itemId]);
   const [status, setStatus] = useState<FileCollaborationStatus>("reconnecting");
   const [detail, setDetail] = useState("");
   const [canEdit, setCanEdit] = useState(false);

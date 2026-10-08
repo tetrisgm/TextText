@@ -47,6 +47,7 @@ import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 import { packIdentity } from "./pack";
+import { locateVaultItem } from "./item-location";
 import { prepareSharedNote } from "./new-note-promotion";
 import { readFolderView, resolveFolderView, type FolderViewMetadata } from "./folder-view";
 import { VaultSearch, type VaultSearchAction } from "./VaultSearch";
@@ -84,12 +85,16 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
 }
 
 function VaultEditor({ documentReferences, onOpenReference, referenceChoices, readOnly = false, initial, root, onChanged, onRemoved, onTitleChange, registerFlush, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
-  const recoveryKey = `texttext:vault-draft:${root}:${initial.path}`;
+  const recoveryKey = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(initial.markdown)])}`;
+  const legacyRecoveryKey = useRef(`texttext:vault-draft:${root}:${initial.path}`).current;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
   const initialTemplate = useMemo(() => readTemplate(initial, initialDocument), [initial, initialDocument]);
   const [templates, setTemplates] = useState(() => [initialTemplate, ...BUILTIN_TEMPLATES.filter((template) => template.id !== initialTemplate.id || template.version !== initialTemplate.version)]);
   const pendingLook = useRef<VaultTemplateSelection | null>(null);
   const file = useRef(initial);
+  useEffect(() => {
+    if (packIdentity(initial.markdown) === packIdentity(file.current.markdown)) file.current = { ...file.current, path: initial.path };
+  }, [initial.path, initial.markdown]);
   const baseline = useRef(initialDocument);
   const current = useRef(initialDocument);
   const running = useRef<Promise<boolean> | null>(null);
@@ -139,7 +144,7 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
     } catch { setNotice("The recovery copy could not be saved. Keep this document open until its file saves."); return false; }
   }, [recoveryKey]);
   const acceptRemote = useCallback((remote: VaultFile): boolean => {
-    if (remote.hash === file.current.hash) return true;
+    if (remote.hash === file.current.hash) { file.current = { ...file.current, path: remote.path }; return true; }
     let remoteDocument: DocumentSnapshot;
     try { remoteDocument = readDocument(remote, file.current, baseline.current); }
     catch (error) {
@@ -264,7 +269,11 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
   useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails); }, [flush, publishFlush, registerFlush, saveStoryDetails]);
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(recoveryKey);
+      let saved = localStorage.getItem(recoveryKey);
+      if (!saved) {
+        saved = localStorage.getItem(legacyRecoveryKey);
+        if (saved) { localStorage.setItem(recoveryKey, saved); localStorage.removeItem(legacyRecoveryKey); }
+      }
       if (saved) {
         const draft = JSON.parse(saved);
         if (draft.look) {
@@ -300,6 +309,14 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
         // listing so an offline/read error never closes a recoverable draft.
         try {
           const listing = await vaultRequest<VaultListing>("list");
+          const relocated = locateVaultItem(packIdentity(file.current.markdown), listing);
+          if (relocated && relocated.path !== file.current.path) {
+            if (running.current) await running.current;
+            const latest = await vaultRequest<VaultFile>("read", { path: relocated.path });
+            if (packIdentity(latest.markdown) !== packIdentity(file.current.markdown)) throw new Error("The file location changed again. Your draft is kept.");
+            if (acceptRemote(latest)) await flush();
+            return;
+          }
           if (!listing.items.some((item) => item.path === file.current.path)) {
             if (running.current) await running.current;
             if (equal(current.current, baseline.current) && !pendingLook.current) {
@@ -393,9 +410,9 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     let stopped = false;
     const controller = new AbortController();
     const cacheKey = `texttext:collaboration-config:${root}:${packIdentity(markdown)}`;
-    const draftKey = `texttext:vault-draft:${root}:${path}`;
+    const draftKey = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(markdown)])}`;
     // Finish a recoverable file draft before switching its persistence mechanism.
-    if (localStorage.getItem(draftKey)) {
+    if (localStorage.getItem(draftKey) || localStorage.getItem(`texttext:vault-draft:${root}:${path}`)) {
       queueMicrotask(() => { if (!stopped) setMode("local"); });
       return () => { stopped = true; };
     }
@@ -447,7 +464,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   useEffect(() => {
     if (mode !== "local" || !awaitSharedMode) return;
     let stopped = false, running = false, rerun = false;
-    const draftKey = `texttext:vault-draft:${root}:${path}`;
+    const draftKey = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(markdown)])}`;
     const config = () => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path });
     const read = () => vaultRequest<VaultFile>("read", { path });
     const check = () => {
@@ -489,7 +506,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   }, [mode, awaitSharedMode, path, root]);
   if (mode === "local") return <><div ref={localRoot} inert={promoting}><VaultEditor {...props} registerFlush={registerLocalFlush} /></div>
     {promoting && <p className="vault-notice" role="status">Connecting this note…</p>}</>;
-  if (mode) return <CollaborativeVaultEditor {...props} initial={sharedInitial ?? props.initial} config={mode}
+  if (mode) return <CollaborativeVaultEditor {...props} initial={sharedInitial ? { ...sharedInitial, path: props.initial.path } : props.initial} config={mode}
     focusNewNote={Boolean(resumeBody) || props.focusNewNote} focusNewNoteOrigin={resumeBody ? null : props.focusNewNoteOrigin}
     focusNewNoteSelection={resumeBody?.selection} onNewNoteFocusHandled={() => { setResumeBody(null); props.onNewNoteFocusHandled?.(); }}
     onLocalFallback={() => setMode("local")} />;
@@ -737,6 +754,15 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       .then(value => { if (request === listingRequest.current) {
         const previous = listingRef.current;
         setDestinationFolder(folder => reconcileFolderLocation(folder, previous, value));
+        const opened = selectedRef.current;
+        if (opened && previous?.root === value.root) {
+          const relocated = locateVaultItem(packIdentity(opened.markdown), value);
+          if (relocated && relocated.path !== opened.path) {
+            const next = { ...opened, path: relocated.path };
+            selectedRef.current = next; setSelectedState(next);
+            setLiveTitle(title => title?.path === opened.path ? { ...title, path: next.path } : title);
+          }
+        }
         setListing(value);
       } })
       .catch((error: Error) => { if (request === listingRequest.current) setError(error.message); });
@@ -1408,7 +1434,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}
       {listing && <ArticleEnrichmentWorker listing={listing} enabled={canManageFiles} skipPath={selected?.path} onChanged={refresh} />}
-      {selected && listing ? <DocumentBoundary key={`${listing.root}:${selected.path}`}>
+      {selected && listing ? <DocumentBoundary key={`${listing.root}:${selectedItemId ?? selected.path}`}>
         {selectedFeed.error ? <div className="vault-notice" role="alert">{selectedFeed.error}</div> : selectedFeed.subscription
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />

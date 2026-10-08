@@ -28,6 +28,21 @@
 
 ## Current work
 
+- Shared UI now relocates selected items only by a unique stable identity,
+  preserving the editor boundary and drafts when paths move. Local read
+  recovery follows the same identity before treating a missing path as
+  deletion. Native collaborative checkpointing keeps its session mounted.
+  Draft keys are identity-based with a preserved legacy-draft migration.
+  Browser acceptance passed for typing immediately before a move and saving
+  at the new path without recreating the old file; existing note-template
+  creation/editing passed, 15 focused tests and TypeScript passed. Logs:
+  `/tmp/texttext-open-item-move-browser.log`,
+  `/tmp/texttext-item-move-note-browser.log`,
+  `/tmp/texttext-item-location-tests.log`,
+  `/tmp/texttext-item-location-tsc.log`. Regression is in the normal note
+  browser command; identity tests are in core/client sync gates. Windows
+  journal rebasing and real installed shared-editor acceptance are pending.
+
 - Shared journal path rebasing now has a recoverable move intent on Mac.
   Both interruption windows preserve file bytes, pending updates and journal
   generation; occupied destinations are refused. All 16 shared editing tests
