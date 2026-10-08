@@ -61,6 +61,15 @@
   The old process again timed out on SIGTERM before replacement; this rollout
   does not close the live drain defect. Local rebuilt production probe passed
   in 6.005 seconds (`/tmp/texttext-1199-production-shutdown.log`).
+  Live native staging succeeded against the new Oracle server: proposal
+  `2f9f8182-7ec1-4ead-878e-baf1291ee26c`, source `Folder move verified 1198`,
+  destination `Folder move verified 1199`, one file/two folders/no access growth.
+  Safari approval completed. Active-editor acceptance FAILED: the local TextPack
+  remains at the old path while destination has only the empty child; header
+  stays old and the editor becomes read-only. Text remains visible, no recovery
+  error. Opening the editor before approval may have created a competing local
+  checkpoint/outbox, so inspect native pending-path reconciliation before UI-only
+  changes. No unsaved text was typed in this check. Preserve the retained file.
   Installed-client retry verification remains. PC process 44968 still runs;
   unsaved state has not been established.
 
