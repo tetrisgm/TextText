@@ -40,6 +40,19 @@ comment/anchor and permission adapters, old URL aliases and epoch fencing.
 legacy collaborators and vault grants are separate. Inventory through store.ts
 before migration. Explicit template entry still creates a legacy document.
 
+Reconciliation preparation is committed, not deployed/cut over:
+- `8eda3d86`: bounded read-only store inventory, supplied vault snapshot, separate
+  revisions/digests, duplicate and divergent IDs, conservative grants/comments
+  and missing-asset blockers. Eight tests and TypeScript passed.
+- `a7bd430d`, `f910d38f`: deterministic export with original UUID, full snapshot,
+  resolved template/assets and exact body whitespace through the actual file
+  reader. Sixteen export tests pass; combined comparator run 22 tests passed,
+  TypeScript and scoped ESLint passed. Unsupported inline media/comments block
+  export. This is preparation only, no production data has been migrated.
+- Next: capture actual source inventory, implement revision/epoch-fenced
+  idempotent cutover and compatibility for comments/grants/old URLs. Never infer
+  authorization to overwrite from an equal content digest.
+
 
 Windows startup regression fixed in `033231ae`: WebView2 must enter the live
 visual tree before initialization. The production startup/rollback gate now
