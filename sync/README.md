@@ -108,3 +108,20 @@ operation. An unknown future journal is preserved unchanged with zero network
 requests. Add fixtures when introducing a new persisted/protocol version, and
 retain earlier versions for the supported upgrade window. Version migrations
 must be explicit and tested for interruption before changing stored user data.
+
+## Shared product surface
+
+Mac `main.tsx`, Windows `windows-main.tsx`, and web `WebVault.tsx` mount
+`VaultApp`. That app owns the collection views and the same document editor and
+collaboration client. Both native bundles use `scripts/build-local-vault.mjs`;
+the Windows entry adds its RPC transport. `sync/shared-ui.test.ts` guards those
+composition and packaging boundaries in both core and Windows client gates.
+It does not claim identical native authentication, menus, or filesystem behavior.
+
+Remaining platform differences requiring behavioral tests are the Mac Swift
+file transport, Windows RPC/local search cache, and web server search/storage.
+Windows already delegates ordinary item/template operations through the web
+transport with a native fetch adapter. Native filesystem persistence remains
+Swift/C# because provider coordination and durability are platform responsibilities.
+The architecture gate prevents replacing shared composition with a platform view;
+real browser/editor and native smoke tests remain required to prove behavior.
