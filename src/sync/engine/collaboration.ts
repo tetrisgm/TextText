@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import * as Y from "yjs";
 import { applyDocumentSnapshot, encodeDocumentBaseline, documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
-import { validateDocumentSnapshot } from "@/lib/documents/model";
+import { documentAssetSchema, validateDocumentSnapshot } from "@/lib/documents/model";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { openPack, encodePack } from "@/local-vault/pack";
 import { readDocument, readTemplate, writePayload } from "@/local-vault/model";
@@ -54,7 +54,14 @@ function checkedSnapshot(doc: Y.Doc) {
   if (presentation.size !== 3 || [...presentation.keys()].some(key => !["templateId", "templateVersion", "theme"].includes(key))) fail();
   const theme = presentation.get("theme");
   if (!(theme instanceof Y.Map) || theme._start !== null) fail();
-  for (const value of [...fields.values(), ...tags.toArray(), ...assets.toArray(), ...theme.values()]) jsonValue(value);
+  for (const value of [...fields.values(), ...tags.toArray(), ...theme.values()]) jsonValue(value);
+  for (const value of assets.toArray()) {
+    // Older valid baselines encoded absent optional asset properties as
+    // undefined. Strict schema validation makes omission safe only here:
+    // unknown properties, required omissions and non-JSON values still fail.
+    documentAssetSchema.parse(value);
+    jsonValue(Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([, entry]) => entry !== undefined)));
+  }
   if (doc.share.has("agentOperations")) {
     const operations = doc.getMap("agentOperations");
     if (operations._start !== null || operations.size > 256 || [...operations.values()].some(value => typeof value !== "number" || !Number.isFinite(value))) fail();

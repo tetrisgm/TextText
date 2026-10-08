@@ -309,7 +309,9 @@ export function applyDocumentSnapshot(
     yield* replaceText(text(rootMap, "body"), snapshot.content.body);
     replaceMap(map(rootMap, "fields"), snapshot.content.fields);
     replaceArray(array(rootMap, "tags"), snapshot.content.tags);
-    replaceArray(array(rootMap, "assets"), snapshot.content.assets);
+    // Optional schema properties may be explicitly undefined after Markdown
+    // reconciliation. Persist the JSON document representation in Yjs too.
+    replaceArray(array(rootMap, "assets"), JSON.parse(JSON.stringify(snapshot.content.assets)));
     const presentation = map(rootMap, "presentation");
     replaceMap(
       presentation,
@@ -442,12 +444,12 @@ export function applyDocumentMutation(
       }
     }
     if (mutation.assets !== undefined) {
-      replaceArray(array(rootMap, "assets"), mutation.assets);
+      replaceArray(array(rootMap, "assets"), JSON.parse(JSON.stringify(mutation.assets)));
     }
     if (metadataAsset) {
       const assets = array(rootMap, "assets");
       assets.delete(metadataIndex, 1);
-      assets.insert(metadataIndex, [metadataAsset]);
+      assets.insert(metadataIndex, [JSON.parse(JSON.stringify(metadataAsset))]);
     }
     if (mutation.template !== undefined) {
       // Presentation is a pinned reference, never a merged structure: two

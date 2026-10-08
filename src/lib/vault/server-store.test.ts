@@ -5,6 +5,7 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { unzipSync, zipSync } from "fflate";
+import * as Y from "yjs";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { ensureVaultFolders, readVaultTextpack, readVaultTextpackPath, readVaultTextpackIdentity, readVaultCollaboration, writeVaultTextpack, listVaultTextpacks, waitVaultTextpacks, moveVaultTextpack, deleteVaultTextpack } from "./server-store";
@@ -26,6 +27,25 @@ describe("directory TextPack store", () => {
   const relativePath = "Notes/My note.textpack";
   beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-vault-")); });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
+  it("reopens a legacy optional-image checkpoint without losing its epoch or file bytes", async () => {
+    const document = emptyDocumentSnapshot(); document.content.body = "Keep";
+    document.content.assets = [{ id: "photo", kind: "image", src: "assets/picture.bin" }];
+    const bytes = buildTextpack("Note", { document, markdown: '---\ntextTextId: item-1\n---\n\nKeep', files: { "assets/picture.bin": new Uint8Array([1, 2, 3]) } });
+    await writeVaultTextpack(input(root, "photo-initial", bytes));
+    const location = { root, workspaceId, itemId }, initial = (await readVaultCollaboration(location))!;
+    const doc = new Y.Doc();
+    try {
+      Y.applyUpdate(doc, Buffer.from(initial.update, "base64"));
+      const assets = doc.getMap("document").get("assets") as Y.Array<Record<string, unknown>>;
+      const image = { ...assets.get(0), caption: undefined, poster: undefined };
+      assets.delete(0, 1); assets.insert(0, [image]);
+      const legacy = { ...initial, update: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64") };
+      await fs.writeFile(path.join(root, workspaceId, ".texttext", "collaboration", `${itemId}.json`), JSON.stringify(legacy));
+      const reopened = (await readVaultCollaboration(location))!;
+      expect(reopened.epoch).toBe(initial.epoch); expect(reopened.seq).toBe(initial.seq);
+      expect((await readVaultTextpack(location))?.bytes).toEqual(Buffer.from(bytes));
+    } finally { doc.destroy(); }
+  });
   it("lists empty folders durably and invalidates the manifest when they change", async () => {
     const before = await listVaultTextpacks({ root, workspaceId });
     await ensureVaultFolders({ root, workspaceId }, ["Feeds", "Notes/Research"]);

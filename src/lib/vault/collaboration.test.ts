@@ -28,6 +28,26 @@ function mutation(doc: Y.Doc, change: () => void) {
 }
 
 describe("file pack full-document collaboration", () => {
+  it("seeds JSON-safe optional image fields and reads older valid undefined omissions", () => {
+    const entries = unzipSync(fixture());
+    const document = emptyDocumentSnapshot();
+    document.content.title = "Shared note"; document.content.body = "Hello";
+    document.content.assets = [{ id: "photo", kind: "image", src: "assets/photo.png", caption: undefined, poster: undefined }];
+    entries["Shared.textbundle/document.json"] = strToU8(JSON.stringify(document));
+    const bytes = zipSync(entries), state = seedVaultCollaboration(bytes, "item-1", 1), doc = client(state.update);
+    try {
+      const assets = doc.getMap("document").get("assets") as Y.Array<Record<string, unknown>>;
+      expect(Object.values(assets.get(0))).not.toContain(undefined);
+      const legacy = { ...assets.get(0), caption: undefined, poster: undefined };
+      assets.delete(0, 1); assets.insert(0, [legacy]);
+      const retained = { ...state, update: encode(Y.encodeStateAsUpdate(doc)) };
+      expect(() => applyVaultCollaboration(retained, bytes, ["AAA="])).not.toThrow();
+      assets.delete(0, 1); assets.insert(0, [{ ...legacy, unknown: undefined }]);
+      expect(() => applyVaultCollaboration({ ...state, update: encode(Y.encodeStateAsUpdate(doc)) }, bytes, ["AAA="])).toThrow();
+      assets.delete(0, 1); assets.insert(0, [{ ...legacy, id: undefined }]);
+      expect(() => applyVaultCollaboration({ ...state, update: encode(Y.encodeStateAsUpdate(doc)) }, bytes, ["AAA="])).toThrow();
+    } finally { doc.destroy(); }
+  });
   it("merges concurrent text, fields and presentation from one canonical baseline and keeps opaque bytes", () => {
     const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1);
     expect(seedVaultCollaboration(bytes, "item-1", 1)).toEqual(initial);

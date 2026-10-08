@@ -36,6 +36,19 @@
 
 ## Current work
 
+- Web Gallery rejection root cause reproduced from the exact Oracle pack and
+  checkpoint: valid optional image caption/poster omissions were encoded as
+  JavaScript undefined and rejected by the strict checkpoint JSON validator.
+  New shared asset snapshot/mutation writes now omit undefined properties.
+  Existing asset values are strictly schema-validated before accepting only
+  optional omissions; unknown and required-field omissions remain rejected.
+  The copied production checkpoint now reads with the same epoch/sequence.
+  Thirty-seven focused tests passed, including persisted checkpoint reopening
+  with unchanged file bytes. Logs: `/tmp/texttext-gallery-optional-store-tests.log`,
+  `/tmp/texttext-gallery-optional-checkpoint-types.log`. Not installed/deployed.
+  The earlier `10735a38` Oracle package is stale and must not be deployed as the
+  fix. Build/deploy this correction and repeat actual Safari acceptance.
+
 - Native Gallery photo input is now wired in source for Mac and Windows. The
   shared UI reads the exact selected embedded asset and prepares the existing
   bounded JPEG input; closing or retargeting during decode fences the send.
