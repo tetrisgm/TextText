@@ -11,7 +11,7 @@ Source `346ddf0d`, clean snapshot `/tmp/texttext-final-346ddf0d`. Built with the
 - Added only `Mac build 1177 account verification 20261007.` to that dedicated test note using the editor. Finish saved it; normal Command-Q terminated the process. Relaunch displayed the new marker and all eight previous markers.
 - Search for `1177 account verification` found that note. Escape dismissed search normally.
 - Quick Look, Share and File Provider extensions remain registered.
-- Account identity and shared Settings live-server verification are pending the matching Oracle account endpoint deployment. Before deployment the sidebar correctly retains the generic signed-in fallback; no successful profile fetch is claimed here.
+- After Oracle `texttext-oracle-20261008T002518Z-c5d625b7` became live, opening Settings retried the earlier unavailable profile endpoint successfully. The actual Mac UI displayed `ramine@ramine.net`, the existing workspace name and `Apple Connected`. Closing Settings updated the sidebar to the real email and Signed in. Settings contained no logout, Finder or sync-setup controls. No logout, account mutation or further file edit was performed.
 
 ## Installed SHA-256
 
