@@ -295,7 +295,7 @@ public struct DocumentStore: Sendable {
     /// keeps its identity because the ID is stored inside the file.
     @discardableResult
     public func create(
-        title: String, body: String = "", folder: String? = nil, kind: String = "note",
+        title: String, body: String? = nil, folder: String? = nil, kind: String? = nil,
         sourceURL: String? = nil
     ) throws -> URL {
         let fileManager = FileManager.default
@@ -309,6 +309,9 @@ public struct DocumentStore: Sendable {
                 throw TextTextCLIError.documentNotFound(folder)
             }
         }
+        let folderDefault = kind == nil ? try LocalVaultFolderDefault.read(root: root, folder: destination) : nil
+        let effectiveKind = kind ?? "note"
+        let body = body ?? folderDefault?.body ?? ""
         let name = DocumentCreation.filename(for: title)
         let url = destination.appendingPathComponent("\(name).textpack")
         guard !fileManager.fileExists(atPath: url.path) else {
@@ -318,18 +321,28 @@ public struct DocumentStore: Sendable {
 
         let markdown = MarkdownIdentityCodec.inject(
             into: DocumentCreation.frontmatter(
-                title: title, kind: kind, sourceURL: sourceURL)
+                title: title, kind: effectiveKind, sourceURL: sourceURL)
             + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n"),
-            itemId: UUID().uuidString.lowercased(), folderId: nil, kind: kind)
+            itemId: UUID().uuidString.lowercased(), folderId: nil, kind: effectiveKind)
 
         let temporary = try makeTemporaryDirectory()
         defer { try? fileManager.removeItem(at: temporary) }
         let builtin = try BuiltinTextPackDocument.create(
             title: title, body: body.trimmingCharacters(in: .newlines),
-            kind: kind, sourceURL: sourceURL)
+            kind: effectiveKind, sourceURL: sourceURL)
+        var documentJSON = builtin.documentJSON
+        if let folderDefault {
+            var document = try JSONSerialization.jsonObject(with: Data(documentJSON.utf8)) as! [String: Any]
+            var content = document["content"] as! [String: Any]
+            content["fields"] = folderDefault.fields
+            document["content"] = content
+            document["presentation"] = ["template": ["id": folderDefault.templateId, "version": folderDefault.templateVersion], "theme": [:]] as [String: Any]
+            documentJSON = String(decoding: try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]), as: UTF8.self)
+        }
         let package = try TextTextTextBundlePackage.materialize(
-            canonicalMarkdown: markdown, documentJSON: builtin.documentJSON,
-            templateJSON: builtin.templateJSON,
+            canonicalMarkdown: markdown, documentJSON: documentJSON,
+            templateJSON: folderDefault?.templateJSON ?? builtin.templateJSON,
+            templateAuthoringSourceJSON: folderDefault?.authoringSourceJSON,
             assets: [], sourceURL: sourceURL, in: temporary)
         let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
@@ -337,6 +350,12 @@ public struct DocumentStore: Sendable {
         let staging = destination.appendingPathComponent(".texttext-\(UUID().uuidString).tmp")
         try fileManager.copyItem(at: packed, to: staging)
         defer { try? fileManager.removeItem(at: staging) }
+        if let folderDefault {
+            let latest = try LocalVaultFolderDefault.read(root: root, folder: destination)
+            guard latest?.sourceHash == folderDefault.sourceHash, latest?.sourcePath == folderDefault.sourcePath else {
+                throw TextTextCLIError.documentChanged(folderDefault.sourcePath)
+            }
+        }
         try fileManager.moveItem(at: staging, to: url)
         return url
     }

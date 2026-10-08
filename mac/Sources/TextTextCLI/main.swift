@@ -356,7 +356,7 @@ do {
         // create request and its audit record.
         let created = try await withActor(.edit, itemId: nil) {
             try await store.create(
-                title: title, body: body,
+                title: title, body: options.from != nil || isatty(FileHandle.standardInput.fileDescriptor) != 1 ? body : nil,
                 folder: options.positional.dropFirst().first ?? options.folder,
                 idempotencyKey: options.idempotencyKey)
         }

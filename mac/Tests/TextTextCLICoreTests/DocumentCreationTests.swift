@@ -18,6 +18,61 @@ final class DocumentCreationTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
+    func testLocalFolderDefaultCreatesCompletePackAndPreservesExplicitOverrides() throws {
+        let builtin = try BuiltinTextPackDocument.create(title: "Folder view", body: "")
+        var template = try JSONSerialization.jsonObject(with: Data(builtin.templateJSON.utf8)) as! [String: Any]
+        template["id"] = "local.research"
+        template["starter"] = ["body": "Starter research", "fields": ["topic": "science"]]
+        let defaultValue: [String: Any] = ["version": 1, "template": template]
+        var document = try JSONSerialization.jsonObject(with: Data(builtin.documentJSON.utf8)) as! [String: Any]
+        var content = document["content"] as! [String: Any]
+        content["fields"] = ["texttextFolderView": "v1", "texttextFolderDefault": String(decoding: try JSONSerialization.data(withJSONObject: defaultValue), as: UTF8.self)]
+        document["content"] = content
+        let scratch = root.appendingPathComponent("fixture")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: 11111111-1111-4111-8111-111111111111\n---\n", documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: document), as: UTF8.self), templateJSON: builtin.templateJSON, assets: [], sourceURL: nil, in: scratch)
+        let packed = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: scratch)
+        let view = root.appendingPathComponent("Notes/View.textpack")
+        try FileManager.default.copyItem(at: packed, to: view)
+        let original = try Data(contentsOf: view)
+        let made = try store.create(title: "Research", folder: "Notes")
+        let result = try LocalVaultDocumentStore(root: root).readMetadata(path: "Notes/Research.textpack", includeTemplate: true)
+        XCTAssertTrue(result.contents.markdown.contains("Starter research"))
+        XCTAssertTrue(try XCTUnwrap(result.contents.templateJSON).contains("local.research"))
+        XCTAssertTrue(try XCTUnwrap(result.contents.documentJSON).contains("science"))
+        XCTAssertEqual(try Data(contentsOf: view), original)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: made.path))
+        _ = try store.create(title: "Blank", body: "", folder: "Notes")
+        XCTAssertFalse(try store.readMarkdown(at: root.appendingPathComponent("Notes/Blank.textpack")).contains("Starter research"))
+        _ = try store.create(title: "Explicit", folder: "Notes", kind: "note")
+        XCTAssertFalse(try store.readMarkdown(at: root.appendingPathComponent("Notes/Explicit.textpack")).contains("Starter research"))
+        try FileManager.default.copyItem(at: view, to: root.appendingPathComponent("Notes/Duplicate.textpack"))
+        XCTAssertThrowsError(try store.create(title: "Ambiguous", folder: "Notes"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Notes/Ambiguous.textpack").path))
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Notes/Duplicate.textpack"))
+        var invalidDocument = document
+        var invalidContent = content
+        invalidContent["fields"] = ["texttextFolderView": "v1", "texttextFolderDefault": "{\"version\":99}"]
+        invalidDocument["content"] = invalidContent
+        let invalidPackage = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "Invalid fixture", documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: invalidDocument), as: UTF8.self), templateJSON: builtin.templateJSON, assets: [], sourceURL: nil, in: scratch)
+        let invalidPack = try TextTextTextBundlePackage.zipToTextPack(packageURL: invalidPackage.url, in: scratch)
+        try Data(contentsOf: invalidPack).write(to: view, options: .atomic)
+        XCTAssertThrowsError(try store.create(title: "Malformed rejected", folder: "Notes"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Notes/Malformed rejected.textpack").path))
+        try original.write(to: view, options: .atomic)
+        let retirementFolder = root.appendingPathComponent("Templates/Retired")
+        try FileManager.default.createDirectory(at: retirementFolder, withIntermediateDirectories: true)
+        var retiredDocument = try JSONSerialization.jsonObject(with: Data(builtin.documentJSON.utf8)) as! [String: Any]
+        retiredDocument["content"] = ["title": "Retired", "body": "{\"format\":\"texttext-template-retirement\",\"version\":1,\"templateId\":\"local.research\"}", "fields": ["texttextRecordType": "template-retirement"], "tags": [], "assets": []] as [String: Any]
+        let retiredPackage = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "Retired", documentJSON: String(decoding: try JSONSerialization.data(withJSONObject: retiredDocument), as: UTF8.self), templateJSON: builtin.templateJSON, assets: [], sourceURL: nil, in: scratch)
+        let retiredPack = try TextTextTextBundlePackage.zipToTextPack(packageURL: retiredPackage.url, in: scratch)
+        try FileManager.default.copyItem(at: retiredPack, to: retirementFolder.appendingPathComponent("retired.textpack"))
+        XCTAssertThrowsError(try store.create(title: "Retired rejected", folder: "Notes"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Notes/Retired rejected.textpack").path))
+        _ = try store.create(title: "Explicit after retirement", folder: "Notes", kind: "note")
+
+    }
+
     func testCreatesAReadableDocument() throws {
         let url = try store.create(title: "My Idea", body: "First line.", folder: "Notes")
 

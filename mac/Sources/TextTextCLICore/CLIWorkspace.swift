@@ -320,14 +320,14 @@ public enum CLIWorkspace: Sendable {
 
     @discardableResult
     public func create(
-        title: String, body: String = "", folder: String? = nil,
+        title: String, body: String? = nil, folder: String? = nil,
         kind: String? = nil, idempotencyKey: String? = nil
     ) async throws -> CLIDocumentReference {
         switch self {
         case .local(let store):
             return .local(
                 try store.create(
-                    title: title, body: body, folder: folder, kind: kind ?? "note"))
+                    title: title, body: body, folder: folder, kind: kind))
         case .remote(let store):
             return .remote(
                 try await store.create(
@@ -689,7 +689,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
 
     @discardableResult
     public func create(
-        title: String, body: String = "", folder: String? = nil,
+        title: String, body: String? = nil, folder: String? = nil,
         kind: String? = nil, idempotencyKey: String? = nil
     ) async throws -> RemoteDocument {
         let current = try await snapshot()
@@ -698,7 +698,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         // Omitted kind is intentional: the canonical command selects the folder's
         // pinned default. An explicit kind remains an explicit override.
         var arguments: [String: Any] = ["title": title, "folder_path": targetFolder.path, "idempotency_key": key]
-        if !body.isEmpty { arguments["body"] = body }
+        if let body { arguments["body"] = body }
         if let kind { arguments["kind"] = kind }
         let argumentsJSON = String(decoding: try JSONSerialization.data(withJSONObject: arguments, options: [.sortedKeys]), as: UTF8.self)
         let result = await api.agentRunCommand(
