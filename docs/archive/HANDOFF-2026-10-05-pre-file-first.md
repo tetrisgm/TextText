@@ -1,3 +1,5 @@
+> ARCHIVED: Historical handoff; current work is in [HANDOFF.md](../HANDOFF.md).
+
 # TextText handoff
 
 ## Current work
@@ -20,7 +22,7 @@ Newly saved and read feed stories now carry their topic in the same TextPack as 
 
 Feeds Profile now shows reading-topic counts from completed story history matched to currently followed source topics. The label makes that scope explicit, so a removed or untagged subscription is not silently assigned a topic. The local browser flow checks the count, both themes were captured, and TypeScript, local build, and local/web browser flows pass. Historic topic attribution remains open because older history TextPacks do not record a topic; no release was run.
 
-The [parity audit](design/template-reference-parity.md) now links the Artifact team's public launch and topic screens. They replace the missing local screenshot copies as the available comparison reference for the next Feeds pass. The current fixture still does not prove equivalent navigation, composition, or reading behavior; no product change or release followed this reference update.
+The [parity audit](../design/template-reference-parity.md) now links the Artifact team's public launch and topic screens. They replace the missing local screenshot copies as the available comparison reference for the next Feeds pass. The current fixture still does not prove equivalent navigation, composition, or reading behavior; no product change or release followed this reference update.
 
 Gallery image detail now exposes the existing hosted item comments inside its inspector when the workspace has comment access. Opening the section loads comments on demand; the same permission-aware read/post/resolve path used elsewhere remains in control. It is labeled Item comments because multi-image TextPacks share one comment thread, rather than claiming per-image threads. The local browser flow posts a comment and checks dark, light, and narrow rendering; TypeScript and local/web browser flows pass. Per-image threads and real Mac/web interaction checks remain open; no release was run.
 
@@ -128,9 +130,9 @@ Feeds History now includes deliberately marked unsaved stories as article TextPa
 
 Web Feeds now supports the same Read Later/History metadata request as the Mac. One bounded Oracle-side scan reads marked Bookmark TextPacks, filters scoped access before and after the scan, and avoids one browser request per saved story. Store, route, transport, TypeScript, and web browser checks passed; no release was run.
 
-Feeds now shows a History tab of saved Bookmark TextPacks explicitly marked read, sorted by their persisted read time. Mark unread removes a row; marking it read in Bookmarks appears again after reopening Feeds. The local and web browser flows and TypeScript pass; `/tmp/texttext-feeds-history-reference.png` shows the dark view. Unsaved-story read sessions, progress, and profile remain open in the [parity audit](design/template-reference-parity.md). No release was run.
+Feeds now shows a History tab of saved Bookmark TextPacks explicitly marked read, sorted by their persisted read time. Mark unread removes a row; marking it read in Bookmarks appears again after reopening Feeds. The local and web browser flows and TypeScript pass; `/tmp/texttext-feeds-history-reference.png` shows the dark view. Unsaved-story read sessions, progress, and profile remain open in the [parity audit](../design/template-reference-parity.md). No release was run.
 
-Blog Publish now keeps its action footer outside the scrollable story review, so the footer cannot cover review content. TypeScript, local vault build, and local/web browser flows pass; `/tmp/texttext-blog-publish-reference.png` shows the current dialog. The six reference experiences remain incomplete per [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). No release was run.
+Blog Publish now keeps its action footer outside the scrollable story review, so the footer cannot cover review content. TypeScript, local vault build, and local/web browser flows pass; `/tmp/texttext-blog-publish-reference.png` shows the current dialog. The six reference experiences remain incomplete per [`docs/design/template-reference-parity.md`](../design/template-reference-parity.md). No release was run.
 
 The local browser's Blog preview and Gallery now render the repository's photographic fixtures in place of flat color blocks. Captures at `/tmp/texttext-blog-publish-reference.png`, `/tmp/texttext-gallery-grid-light-reference.png`, and `/tmp/texttext-gallery-import-detail-light-reference.png` show actual image cropping, aspect ratios, and color extraction. The local browser flow passes. This strengthens visual review but does not establish reference parity; no release was run.
 
@@ -138,7 +140,7 @@ Command K now frames five complete commands with the next row peeking below, fol
 
 Gallery image detail now gives the photo a neutral stage and keeps empty Source, Caption, and Tags controls compact. Editing remains available beside the image. Compared against the public [Resurf image-detail tour](https://resurf.so/); TypeScript, local and web browser flows pass, with dark/light captures at `/tmp/texttext-gallery-import-detail-{dark,light}-reference.png`. A real photographic-library comparison remains open. No release was run.
 
-The six requested reference experiences are not proven complete. The current evidence and missing creation/edit/read proof are mapped in [`docs/design/template-reference-parity.md`](design/template-reference-parity.md). The Artifact originals named in the old plan are absent on this Mac. No release was run.
+The six requested reference experiences are not proven complete. The current evidence and missing creation/edit/read proof are mapped in [`docs/design/template-reference-parity.md`](../design/template-reference-parity.md). The Artifact originals named in the old plan are absent on this Mac. No release was run.
 
 Bookmarks' inline URL capture now saves a copied link in one click when the field is empty, while typed URLs still use Save. The local browser contract verifies the copied URL becomes a Bookmark TextPack; TypeScript passes. Shiori's current product page is the reference: <https://www.shiori.sh/>. Full Shiori parity remains open; no release was run.
 
@@ -268,7 +270,7 @@ Gallery previews now trim excess secondary thumbnails to fit the 512 KiB Mac bri
 
 The October 2 work is the folder-based template redesign, committed through `8b15161f` before the current Bookmarks day-grouping update. Feeds has ranked For You, chronological Latest, grouped cross-publisher Headlines, an in-app reader, and Save to Bookmarks as bookmark TextPacks. Its source window now shows eight sources at a time with explicit loading of more subscriptions and an in-visit bounded cache. A bounded metadata index covers subscriptions across source-list pages, so the news view can load the 25th source and beyond. Notes has tags during card editing, a compact editor, and a Finish, saved card, Edit card cycle for local and shared notes. Command K is centered with action icons and shortcuts, second-press dismissal with focus restoration, forgiving action matching, and monospaced command text. Gallery has an image-first editor with title and caption controls plus a justified image grid that fills rows without cropping; image details now show colors and dimensions from the selected asset, including legacy files. New imports keep dimensions in their TextPack asset metadata. Newly saved bookmarks stay in the Bookmarks inbox reader with compact URL-first capture, Inbox and Archive states, and tag editing and filtering. Blog drafts show a subtitle during writing and align title, subtitle, and body on one measure. That subtitle now reaches Mac and web previews. Saved Blog stories open in a reader with Edit story; new drafts open ready to write, and Publish can return to topic editing. These are TextPack views and editors, not a second content model. Tasks are out of this pass. New local workspaces start with Blog, Bookmarks, Notes, Gallery, Feeds, and Presentations; the Templates folder stays internal. The current local workspace at `~/Documents/TextText` was refined in place; original packs are recoverable under `.texttext/starter-before-refinement-2026-10-02`.
 
-Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](HANDOFF-history-2026-09-30.md).
+Oracle remains the sole host and storage location. The last shipped release and production receipts are in [the September 30 archive](../HANDOFF-history-2026-09-30.md).
 
 The saved Note card now uses a corner pencil control and bottom-aligned tags, following the Supernotes card layout. Its text stays readable in both light and dark themes.
 
@@ -343,11 +345,11 @@ New bookmarks record their save time in the initial TextPack snapshot. The Bookm
 
 ## Boundaries
 
-- The installed app remains 0.203 build 1151. The rebuilt UI bundle under `mac/build/LocalVault` is test-only and has not been installed or published. Visual parity with the named products has not been established by a side-by-side review on real content. Command K's current shape follows Superhuman's published design guide, not a verified pixel match. Feeds has deterministic ranking over followed sources, but has no durable personal interest/read feedback yet; its reader and coverage page have been checked only with local fixtures. Blog typography and draft creation were compared with a public Medium story and its writing guidance, but its complete editing experience still needs comparison on real content. Artifact's original 28 screenshots described in [the historical plan](plans/artifact-home-replication.md) are not present in this checkout or their former Downloads paths.
+- The installed app remains 0.203 build 1151. The rebuilt UI bundle under `mac/build/LocalVault` is test-only and has not been installed or published. Visual parity with the named products has not been established by a side-by-side review on real content. Command K's current shape follows Superhuman's published design guide, not a verified pixel match. Feeds has deterministic ranking over followed sources, but has no durable personal interest/read feedback yet; its reader and coverage page have been checked only with local fixtures. Blog typography and draft creation were compared with a public Medium story and its writing guidance, but its complete editing experience still needs comparison on real content. Artifact's original 28 screenshots described in [the historical plan](../plans/artifact-home-replication.md) are not present in this checkout or their former Downloads paths.
 
 ## References
 
-- [Content checkpoint](TEXTTEXT_UX_CHECKPOINT.md)
-- [File-vault architecture](design/texttext-file-vault-migration.md)
-- [Oracle operations](../release/oracle/README.md)
-- [Resolved release history](HANDOFF-history-2026-09-30.md)
+- [Content checkpoint](../TEXTTEXT_UX_CHECKPOINT.md)
+- [File-vault architecture](../design/texttext-file-vault-migration.md)
+- [Oracle operations](../../release/oracle/README.md)
+- [Resolved release history](../HANDOFF-history-2026-09-30.md)

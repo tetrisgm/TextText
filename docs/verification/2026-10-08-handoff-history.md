@@ -8,37 +8,37 @@ Historical investigation notes, not current installation or readiness status.
 
 - Mac `/Applications/TextText.app`: **0.204 (1206)**, source `3a115301`.
   Signed build/install, account/iCloud startup and saved Gallery model metadata
-  reopening passed. [Current Mac receipt](verification/2026-10-08-mac-1206.md).
+  reopening passed. [Current Mac receipt](2026-10-08-mac-1206.md).
   Real native Gallery image description and metadata write passed. The Safari
   checkpoint rejection is fixed and live reopening passed.
-  [Web follow-up](verification/2026-10-08-gallery-web-checkpoint.md).
-  [Current acceptance and failure](verification/2026-10-08-gallery-agent-1204.md).
+  [Web follow-up](2026-10-08-gallery-web-checkpoint.md).
+  [Current acceptance and failure](2026-10-08-gallery-agent-1204.md).
   Exact-source core/native gates, signed build and observed account/iCloud/note
-  startup passed. [1203 receipt](verification/2026-10-08-mac-1203.md).
+  startup passed. [1203 receipt](2026-10-08-mac-1203.md).
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
-  [Receipt](verification/2026-10-08-parent-native-contract.md).
+  [Receipt](2026-10-08-parent-native-contract.md).
   Latest core/native/browser gates, startup, existing note save/reopen and
-  search freshness: [1202 receipt](verification/2026-10-08-mac-1202.md).
+  search freshness: [1202 receipt](2026-10-08-mac-1202.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
-  account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
+  account identity and search passed. [Receipt](2026-10-08-windows-shared-1191.md).
 - Oracle: **texttext-oracle-20261008-3a115301-gallery**, thirteen live checks
   passed. Mac photo tags are present in the actual Safari editor. The outgoing
   server exited 143 immediately without timeout/SIGKILL.
-  [Current deployment](verification/2026-10-08-oracle-gallery-1206.md).
+  [Current deployment](2026-10-08-oracle-gallery-1206.md).
   An additive systemd override now classifies graceful 130/143 exits correctly;
-  no restart was needed. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
+  no restart was needed. [Service receipt](2026-10-08-oracle-normal-exit.md).
 - Live 1188 acceptance found a permission-only listing notification gap in both
   native adapters. Build 1189 fixes it with controller/engine regressions.
   Mac save/search/reopen and automatic Mac-to-Windows/web and Windows-to-Mac/web
   marker delivery passed; local TextPack contains both markers exactly once.
-  [Current receipt](verification/2026-10-08-workspace-capabilities-1189.md).
+  [Current receipt](2026-10-08-workspace-capabilities-1189.md).
 - Accounts, existing notes, saved edits and search freshness passed on installed
   clients. Agent-created template item arrived on both desktops automatically;
   Safari opened the same item with Mac/Windows presence.
-  [Current receipt](verification/2026-10-08-reconnect-customize-1187.md),
-  [Windows receipt](verification/2026-10-08-windows-shared-1187.md).
+  [Current receipt](2026-10-08-reconnect-customize-1187.md),
+  [Windows receipt](2026-10-08-windows-shared-1187.md).
 - Mac folder:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Only dedicated verification notes changed during acceptance.
@@ -49,7 +49,7 @@ Historical investigation notes, not current installation or readiness status.
   shared-client tests and desktop smoke. It includes the native image input and
   optional-image checkpoint fix. Installation remains pending closure of the
   older app, whose unsaved state is unknown.
-  [Current candidate receipt](verification/2026-10-08-windows-c3c3ed2d-candidate.md).
+  [Current candidate receipt](2026-10-08-windows-c3c3ed2d-candidate.md).
 
 - Web Gallery rejection root cause reproduced from the exact Oracle pack and
   checkpoint: valid optional image caption/poster omissions were encoded as
@@ -62,12 +62,12 @@ Historical investigation notes, not current installation or readiness status.
   with unchanged file bytes. Logs: `/tmp/texttext-gallery-optional-store-tests.log`,
   `/tmp/texttext-gallery-optional-checkpoint-types.log`. Installed in Mac 1205
   and deployed to Oracle; actual Safari editor and saved model summary reopened
-  without rejection. [Live receipt](verification/2026-10-08-gallery-web-checkpoint.md).
+  without rejection. [Live receipt](2026-10-08-gallery-web-checkpoint.md).
 
 - Oracle connection retirement is deployed and its clean shutdown is attested.
   Detailed Gallery photo resizing and single-photo metadata editing are installed
   in Mac 1206 and deployed on Oracle. Windows candidate `73740adb` is building;
-  log `/tmp/texttext-windows-73740adb-build.log`. [Photo input receipt](verification/2026-10-08-gallery-photo-input-budget.md).
+  log `/tmp/texttext-windows-73740adb-build.log`. [Photo input receipt](2026-10-08-gallery-photo-input-budget.md).
 
 - Native Gallery photo input is now wired in source for Mac and Windows. The
   shared UI reads the exact selected embedded asset and prepares the existing
@@ -135,7 +135,7 @@ Historical investigation notes, not current installation or readiness status.
 - Windows candidate now matches installed Mac 1202 source `c58114ad`. The actual
   PC build, 326 shared-client tests and desktop smoke passed. Installation
   remains pending closure of the older app with unknown unsaved state.
-  [Candidate receipt](verification/2026-10-08-windows-c58114ad-candidate.md).
+  [Candidate receipt](2026-10-08-windows-c58114ad-candidate.md).
 
 - Oracle HTTP shutdown lifecycle is deployed; actual Oracle shutdown remains
   unverified. A raw TCP
@@ -399,7 +399,7 @@ Historical investigation notes, not current installation or readiness status.
   passed in 6.018 seconds (`/tmp/texttext-production-drain-warmed-gate.log`).
   Live timeout remains unresolved; three loopback HTTP connections were active
   during read-only inspection, with no application error in recent logs. Stable staging retry identity and Oracle timeout remain open.
-  [Acceptance receipt](verification/2026-10-08-candidate-1195.md).
+  [Acceptance receipt](2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
   (`/tmp/texttext-folder-integrated-core.log`). Unrelated working edits were
@@ -444,21 +444,21 @@ Historical investigation notes, not current installation or readiness status.
   remains protected across restart; acknowledged bytes adopt the remote path
   after editor release without duplicate upload. Source fixtures only. Shared
   folder controls, frozen builds and live multi-client acceptance remain next.
-  [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+  [Evidence](2026-10-08-remote-folder-move-native.md).
 
 - Mac persisted uploads now adopt path-only remote moves with bounded identity
   indexing, fresh permission and base/lifecycle checks, preserving staged
   attribution and later edits under a new operation identity. All 31 sync tests
   passed, including interrupted adoption, permission restoration and lost ACK.
   Source-only; active editors and live multi-client moves remain pending.
-  [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+  [Evidence](2026-10-08-remote-folder-move-native.md).
 
 - Persisted Windows uploads now follow path-only remote moves using a fresh
   operation identity, preserving staged and later local edits. Regression first
   reproduced the conflict; 171 portable core assertions passed, including
   interrupted adoption, changed remote content, revoked permission and lost ACK.
   Source-only. Mac persisted-outbox ordering and active editor checks remain next.
-  [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+  [Evidence](2026-10-08-remote-folder-move-native.md).
 
 - Remote-move verification exposed a Windows path-adoption bug with concurrent
   offline edits. Windows now carries local bytes to the remote path before
@@ -468,7 +468,7 @@ Historical investigation notes, not current installation or readiness status.
   sources/tests. Mandatory native verification passed. This remains source-only;
   persisted-outbox/active-editor orderings and shared folder controls need
   acceptance before shipping. PC still has TextText process 44968 running; do
-  not force-close its uninspected editor. [Evidence](verification/2026-10-08-remote-folder-move-native.md).
+  not force-close its uninspected editor. [Evidence](2026-10-08-remote-folder-move-native.md).
 
 - Canonical `move_folder_tree` now stages a frozen file/folder/access review and
   executes it through the durable store only after owner approval. Approval saves
@@ -476,7 +476,7 @@ Historical investigation notes, not current installation or readiness status.
   forwarded correctly. Real local PostgreSQL hosted-to-execution acceptance and
   the mandatory core gate passed 772 tests in 81 files plus TypeScript. This is
   source-only; shared folder action UI, frozen release gates and live deployment
-  acceptance remain pending. [Evidence](verification/2026-10-08-folder-move-recovery-source.md).
+  acceptance remain pending. [Evidence](2026-10-08-folder-move-recovery-source.md).
 
 - Proposal reviews now provide a return link to the server-authorized workspace.
   The page/service suites passed 47 tests and TypeScript passed. This navigation
@@ -492,7 +492,7 @@ Historical investigation notes, not current installation or readiness status.
   must close normally before installation. Oracle deployed with thirteen passing
   checks. Actual Safari parent navigation saved its edit and delivered it to Mac.
   An initial deployment-time page error cleared on reload; cause remains unproven.
-  [Evidence](verification/2026-10-08-parent-native-contract.md).
+  [Evidence](2026-10-08-parent-native-contract.md).
 
 - Frozen candidate `8621dd0c` passed 759 core tests, TypeScript, required native
   suites, 16 proposal-review tests and both Note browser flows. It contains the
@@ -501,12 +501,12 @@ Historical investigation notes, not current installation or readiness status.
   with actual startup/search/save/reopen verified. Windows passed 299 shared-client
   tests and desktop smoke; installation remains pending. Windows SSH works again,
   but its running editor must close normally before installation.
-  [Candidate evidence](verification/2026-10-08-parent-review-cohort.md).
+  [Candidate evidence](2026-10-08-parent-review-cohort.md).
 
 - Canonical `remix_item_type` is committed as `626ee884`, with pinned source
   authorization and durable retries; shipped in 1190. Focused suites passed 56
   tests, with a final 21-test recheck and TypeScript.
-  [Receipt](verification/2026-10-08-agent-template-remix.md).
+  [Receipt](2026-10-08-agent-template-remix.md).
 - Shared folder defaults, atomic complete-item creation and reversible template
   retirement are committed in `197c7552`; local/remote CLI parity is covered by
   `eaf1c25e`, `5f74d92a` and `af658589`. These changes shipped in 1190.
@@ -516,11 +516,11 @@ Historical investigation notes, not current installation or readiness status.
   is completing on the same source.
   Server/Windows `a0d9391b` and native `163b9a02` remove aggregate folder scan
   limits, cache bounded metadata, and test external change/rename invalidation.
-  [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
+  [Source receipt](2026-10-08-folder-default-retirement-source.md).
 - 1191 source `f3167c4b` passed 725 core tests, TypeScript and required native
   checks. It includes custom-field updates, bounded account-profile recovery and
   explicit CLI proposal staging. Clients and Oracle installed; live proposal/field acceptance passed.
-  [Receipt](verification/2026-10-08-cli-proposals-live.md).
+  [Receipt](2026-10-08-cli-proposals-live.md).
 - Next cohort: atomic agent image addition (`8aae3f12`) and reference removal
   (`a3c2bad5`) are committed and focused-tested, not shipped. Originals stay in
   the TextPack for recovery. Web image approval support is in progress.
@@ -548,7 +548,7 @@ Historical investigation notes, not current installation or readiness status.
   Additional-access acknowledgement is implemented in the review page and checked
   before server claim. Public folder staging/execution and live UI acceptance
   remain pending; no folder command has been enabled or deployed by this cohort.
-  [Source evidence](verification/2026-10-08-folder-move-recovery-source.md).
+  [Source evidence](2026-10-08-folder-move-recovery-source.md).
 
 
 - Source `54f33a4e` passed 588 core tests, TypeScript and required native gates.
@@ -557,7 +557,7 @@ Historical investigation notes, not current installation or readiness status.
 - Shared reader optimizations reduced the bounded 525 KiB note open from
   1.5–1.6 seconds to 170 ms; cached reopen measured 254 ms. Unchanged
   status/presence no longer reparses Markdown. Actual edits still invalidate.
-  [Performance evidence](verification/2026-10-07-file-vault-bounded-performance.md).
+  [Performance evidence](2026-10-07-file-vault-bounded-performance.md).
 - Shared frozen-content template previews, web item Customize and guarded
   application approvals are installed. Folder customization remains native-only.
 - Immediate automatic reconnect probes, bookmark baseline release and fresh
@@ -576,11 +576,11 @@ Historical investigation notes, not current installation or readiness status.
 - Owner-approved obsolete deployment cleanup restored Oracle free space;
   retained current/rollback/candidate, all content and backups. No cleanup job.
 - Automatic request/bootstrap recovery and graceful read-poll shutdown are
-  installed. [Recovery receipt](verification/2026-10-07-recovery-templates-1184.md),
-  [shutdown evidence](verification/2026-10-07-read-poll-shutdown.md).
+  installed. [Recovery receipt](2026-10-07-recovery-templates-1184.md),
+  [shutdown evidence](2026-10-07-read-poll-shutdown.md).
 - Standalone CLI `5254ff85` remains installed; real account commands and template
   create/update/retry work while local reads stay offline.
-  [CLI receipt](verification/2026-10-07-cli-account-commands.md).
+  [CLI receipt](2026-10-07-cli-account-commands.md).
 - No web provider is configured; live model execution is not attested.
 
 Keep one canonical file system and shared UI/editor/sync implementation across
@@ -591,8 +591,8 @@ and actions, with a personal per-device/workspace preference.
 
 ## Remaining scope and external limits
 
-- [Agent command inventory](agent-file-backend.md).
-- [Reference-template parity audit](design/template-reference-parity.md).
+- [Agent command inventory](../agent-file-backend.md).
+- [Reference-template parity audit](../design/template-reference-parity.md).
 - Google client exists but its secret is unavailable; Oracle Google sign-in is
   not configured. Commercial ChatGPT sign-in requires OpenAI registration that
   the owner does not yet have.
@@ -602,7 +602,7 @@ and actions, with a personal per-device/workspace preference.
   hardware power loss are not live-certified.
 - Required existing `Shoku's Space/My Notes/TextText Changelog.textpack` was not
   found. Do not create a duplicate. Standalone CLI receipt:
-  [current CLI](verification/2026-10-07-standalone-cli-current.md).
+  [current CLI](2026-10-07-standalone-cli-current.md).
 
 ## Bookmark summary concurrent-edit protection
 
@@ -626,7 +626,7 @@ and actions, with a personal per-device/workspace preference.
 
 ## Live image command acceptance
 
-- Dedicated CLI image-add/remove proposals completed through actual signed-in Safari on Oracle. Mac 1201 rendered the embedded image, then refreshed removal automatically; image bytes remained inside the iCloud TextPack for recovery. [Receipt](verification/2026-10-08-live-agent-image-roundtrip.md). Windows rendering and autonomous model tool selection remain unverified.
+- Dedicated CLI image-add/remove proposals completed through actual signed-in Safari on Oracle. Mac 1201 rendered the embedded image, then refreshed removal automatically; image bytes remained inside the iCloud TextPack for recovery. [Receipt](2026-10-08-live-agent-image-roundtrip.md). Windows rendering and autonomous model tool selection remain unverified.
 
 ## Agent image placement verification
 
@@ -651,12 +651,12 @@ and actions, with a personal per-device/workspace preference.
 
 ## Working conventions and evidence
 
-- [Sync subsystem contract](../sync/README.md) and exact-source gates cover
+- [Sync subsystem contract](../../sync/README.md) and exact-source gates cover
   journals, external edits, epochs, recovery, acknowledgements and sessions.
   Reuse unaffected receipts; verify relevant changes.
 - Preserve unrelated edits in `src/components/workspace/assistant/attachments.ts`,
-  `src/lib/workspace/__tests__/tabs.test.ts`, `scripts/.probe-editor.ts` and the
+  `src/lib/workspace/__tests__/tabs.test.ts`, the untracked `.probe-editor.ts` scratch file and the
   existing Python cache. Coordinate concurrent edits before staging.
 - Local client installs and needed Oracle deployments are authorized. Public
   desktop releases require an explicit request. No automated build/install jobs.
-- [Archived implementation history](verification/2026-10-07-handoff-before-shared-templates.md).
+- [Archived implementation history](2026-10-07-handoff-before-shared-templates.md).

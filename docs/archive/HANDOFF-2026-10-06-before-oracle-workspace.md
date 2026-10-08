@@ -1,3 +1,5 @@
+> ARCHIVED: Historical handoff; current work is in [HANDOFF.md](../HANDOFF.md).
+
 # TextText handoff
 
 ## Current work
@@ -54,7 +56,7 @@ For the new cloud deletion guard, 20 `LocalVaultSyncTests` pass, including provi
 
 1. Build 1160 opened the existing iCloud folder, listed its Notes, found the existing `Agent file edit verification 1144` note by body text, saved an added build-1160 verification line, reopened the note, and confirmed that line in the TextPack on disk. Its three extensions are signed and registered. Earlier external-edit/search-cache checks and the separate 125-second native picker acceptance passed; repeat them only after relevant changes.
 2. iCloud Drive accepted the complete local copy, but off-device upload completion was not independently verified; `brctl status` stalled. The owner explicitly requested permanent removal of the old workspace folders, which are now gone. The active iCloud folder is still present and readable on this Mac.
-3. Hosted MCP manual tokens and connected CLI/MCP/in-app agent presence already work. ChatGPT OAuth source passed focused OAuth, MCP, docs, and account-deletion tests; TypeScript, lint, migration order, local PostgreSQL schema/SQL checks, and the Next.js production build passed. A live ChatGPT connector check still needs an approved website deployment. A bare filesystem edit cannot authenticate its process and must be shown as a local file edit. Sign in with ChatGPT inside TextText is a separate inner login flow and may require OpenAI enablement. See [agent interoperability](agent-interoperability.md), [assistant architecture](ai-sidebar-architecture.md), and [official plugin authentication](https://developers.openai.com/plugins/build/auth).
-4. Template/reference parity remains discoverable in the [archived handoff](archive/HANDOFF-2026-10-05-pre-file-first.md) and is not verified complete. Do not deploy the website or publish a release without owner approval.
+3. Hosted MCP manual tokens and connected CLI/MCP/in-app agent presence already work. ChatGPT OAuth source passed focused OAuth, MCP, docs, and account-deletion tests; TypeScript, lint, migration order, local PostgreSQL schema/SQL checks, and the Next.js production build passed. A live ChatGPT connector check still needs an approved website deployment. A bare filesystem edit cannot authenticate its process and must be shown as a local file edit. Sign in with ChatGPT inside TextText is a separate inner login flow and may require OpenAI enablement. See [agent interoperability](../agent-interoperability.md), [assistant architecture](../ai-sidebar-architecture.md), and [official plugin authentication](https://developers.openai.com/plugins/build/auth).
+4. Template/reference parity remains discoverable in the [archived handoff](HANDOFF-2026-10-05-pre-file-first.md) and is not verified complete. Do not deploy the website or publish a release without owner approval.
 
-Unrelated dirty files from another worker remain untouched: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`.
+Unrelated dirty files from another worker remain untouched: `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, and the untracked `.probe-editor.ts` scratch file.

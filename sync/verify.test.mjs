@@ -24,16 +24,16 @@ test('source additions, changes and removals invalidate receipts; prose does not
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-sync-gate-'));
   try {
     await fs.mkdir(path.join(root, 'src'));
-    await fs.writeFile(path.join(root, 'src/a.ts'), 'original');
+    await fs.writeFile(path.join(root, 'src', 'a.ts'), 'original');
     const first = await fingerprint(root, ['src']);
-    await fs.writeFile(path.join(root, 'src/readme.md'), 'notes');
+    await fs.writeFile(path.join(root, 'src', 'readme.md'), 'notes');
     assert.equal(await fingerprint(root, ['src']), first);
-    await fs.writeFile(path.join(root, 'src/a.ts'), 'changed');
+    await fs.writeFile(path.join(root, 'src', 'a.ts'), 'changed');
     const changed = await fingerprint(root, ['src']);
     assert.notEqual(changed, first);
-    await fs.writeFile(path.join(root, 'src/b.ts'), 'new');
+    await fs.writeFile(path.join(root, 'src', 'b.ts'), 'new');
     assert.notEqual(await fingerprint(root, ['src']), changed);
-    await fs.rm(path.join(root, 'src/a.ts'));
+    await fs.rm(path.join(root, 'src', 'a.ts'));
     assert.notEqual(await fingerprint(root, ['src']), first);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

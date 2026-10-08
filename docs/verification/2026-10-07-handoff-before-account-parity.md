@@ -59,15 +59,15 @@
   directory, ignoring renderer-supplied paths. Native coverage now has 112
   assertions. Expanded real desktop smoke passed 26 UI/template/image checks,
   native recovery access and five actual window-close checks (`c1c99964`).
-- Receipts: [Windows live checks](verification/2026-10-07-windows-desktop-live.md),
-  [Mac 1176 install](verification/2026-10-07-mac-1176-local-install.md),
-  [Mac 1174 save/reopen](verification/2026-10-07-mac-1174-local-install.md),
-  [Mac 1175 agent lifecycle](verification/2026-10-07-mac-1175-agent-presence.md),
-  [sync failure audit](verification/2026-10-07-sync-failure-audit.md).
+- Receipts: [Windows live checks](2026-10-07-windows-desktop-live.md),
+  [Mac 1176 install](2026-10-07-mac-1176-local-install.md),
+  [Mac 1174 save/reopen](2026-10-07-mac-1174-local-install.md),
+  [Mac 1175 agent lifecycle](2026-10-07-mac-1175-agent-presence.md),
+  [sync failure audit](2026-10-07-sync-failure-audit.md).
 
 ## Regression protection
 
-- [Sync subsystem contract](../sync/README.md): separate engine/client/server
+- [Sync subsystem contract](../../sync/README.md): separate engine/client/server
   boundaries, native core isolation, frozen v1 journals, future-version rejection,
   stale epochs, external edits, lost ACKs, recovery and provider-absence coverage.
 - Exact-source receipts gate normal Mac builds/releases. Windows builds require
@@ -90,6 +90,6 @@
 - Standalone `~/.local/bin/texttext` still uses build 1158; bundled agent testing
   used the installed native runtimes, not that CLI.
 - Unrelated worker changes remain in `src/components/workspace/assistant/attachments.ts`,
-  `src/lib/workspace/__tests__/tabs.test.ts`, and `scripts/.probe-editor.ts`.
+  `src/lib/workspace/__tests__/tabs.test.ts`, and the untracked `.probe-editor.ts` scratch file.
 - Oracle deploys and one-off local installs are authorized. Public desktop
   releases still require an explicit request. Preserve Algorave and shared HAProxy.
