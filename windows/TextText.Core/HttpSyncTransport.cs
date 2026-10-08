@@ -5,11 +5,11 @@ using System.Text.Json;
 namespace TextText.Core;
 public sealed class HttpSyncTransport : ISyncTransport
 {
-    readonly HttpClient http; readonly Uri endpoint; readonly Func<Task<string>> token; string? etag; IReadOnlyList<RemoteItem> cached=[];
+    readonly bool ownerFallback; readonly HttpClient http; readonly Uri endpoint; readonly Func<Task<string>> token; string? etag; IReadOnlyList<RemoteItem> cached=[];
     static readonly JsonSerializerOptions Json=new(){PropertyNameCaseInsensitive=true};
-    public HttpSyncTransport(HttpClient http,Uri origin,string workspaceId,Func<Task<string>> tokenProvider) {
+    public HttpSyncTransport(HttpClient http,Uri origin,string workspaceId,Func<Task<string>> tokenProvider,bool ownerFallback = true) {
         if(origin.Scheme!="https" || !string.IsNullOrEmpty(origin.UserInfo) || origin.AbsolutePath!="/" || !string.IsNullOrEmpty(origin.Query) || !System.Text.RegularExpressions.Regex.IsMatch(workspaceId,@"^[A-Za-z0-9_-]+$")) throw new ArgumentException("Invalid sync binding.");
-        this.http=http;token=tokenProvider;endpoint=new(origin,"api/vault/"+workspaceId+"/items");
+        this.ownerFallback=ownerFallback;this.http=http;token=tokenProvider;endpoint=new(origin,"api/vault/"+workspaceId+"/items");
     }
     async Task<HttpResponseMessage> Send(Func<HttpRequestMessage> create,CancellationToken ct) {
         var credential=await token();
@@ -28,13 +28,16 @@ public sealed class HttpSyncTransport : ISyncTransport
         while((count=await input.ReadAsync(buffer,ct))>0){if(output.Length+count>64*1024*1024)throw new InvalidDataException("Remote file too large.");output.Write(buffer,0,count);}return output.ToArray();
     }
     public IReadOnlyList<string> Folders {get;private set;}=[];
-    sealed record Manifest(RemoteItem[] Items,RemoteItem[]? Tombstones,string[]? Folders);
+    public WorkspaceCapabilities? Capabilities {get;private set;}
+    sealed record Manifest(RemoteItem[] Items,RemoteItem[]? Tombstones,string[]? Folders,bool? FullAccess,bool? CanCreateContent,string[]? WritableFolders);
     public async Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default) {
         using var response=await Send(()=>{var r=new HttpRequestMessage(HttpMethod.Get,endpoint);if(etag!=null)r.Headers.TryAddWithoutValidation("If-None-Match",etag);return r;},cancellation);
         if(response.StatusCode==HttpStatusCode.NotModified)return cached;
         var manifest=JsonSerializer.Deserialize<Manifest>(await Bytes(response,cancellation),Json)??throw new InvalidDataException("Invalid manifest.");
         Folders=manifest.Folders??[];
-        cached=manifest.Items.Concat((manifest.Tombstones??[]).Select(x=>x with{Deleted=true})).ToArray();etag=response.Headers.ETag?.ToString();return cached;
+        cached=manifest.Items.Concat((manifest.Tombstones??[]).Select(x=>x with{Deleted=true})).ToArray();
+        Capabilities=new(manifest.FullAccess??ownerFallback,manifest.CanCreateContent??ownerFallback,manifest.WritableFolders??[],cached.ToDictionary(item=>item.ItemId,item=>item.CanEditContent??ownerFallback));
+        etag=response.Headers.ETag?.ToString();return cached;
     }
     Uri Item(string id)=>new(endpoint+"/"+Uri.EscapeDataString(id));
     public async Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default) {

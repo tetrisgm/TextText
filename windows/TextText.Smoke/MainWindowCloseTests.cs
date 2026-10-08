@@ -69,7 +69,7 @@ static class MainWindowCloseTests
             Field("root").SetValue(fenced.Window,root);
             var open=typeof(MainWindow).GetMethod("OpenWorkspace",PrivateInstance)!;
             var rejected=false;
-            try { await ((Task)open.Invoke(fenced.Window,[rejectedRoot,null])!); } catch(IOException) { rejected=true; }
+            try { await ((Task)open.Invoke(fenced.Window,[rejectedRoot,null,null,null])!); } catch(IOException) { rejected=true; }
             Check(rejected&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&ReferenceEquals(Field("bridge").GetValue(fenced.Window),fencedBridge)&&(string)Field("root").GetValue(fenced.Window)! == root,"failed workspace preparation preserves previous view bridge and root",checks);
             Field("web").SetValue(fenced.Window,replacement);
             await fenced.View.ExecuteScriptAsync("window.chrome.webview.postMessage({id:'retired-write',method:'files.write',params:{}})");
@@ -84,10 +84,14 @@ static class MainWindowCloseTests
                 MainWindow.WorkspaceFactory=_=>new ActivationBridge();
                 var preparedRoot=Path.Combine(root,"prepared-workspace");Directory.CreateDirectory(preparedRoot);
                 var failed=false;
-                try { await ((Task)open.Invoke(fenced.Window,[preparedRoot,(Action)(()=>throw new IOException("isolated commit failure"))])!).WaitAsync(TimeSpan.FromSeconds(15),ct); }
+                try { await ((Task)open.Invoke(fenced.Window,[preparedRoot,(Action)(()=>throw new IOException("isolated commit failure")),null,null])!).WaitAsync(TimeSpan.FromSeconds(15),ct); }
                 catch(IOException){failed=true;}
                 Check(failed&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&fenced.Window.IsVisible,"failed initialized workspace switch restores usable previous presentation",checks);
-                await ((Task)open.Invoke(fenced.Window,[preparedRoot,null])!).WaitAsync(TimeSpan.FromSeconds(15),ct);
+                var flushRejected=false;
+                try { await ((Task)open.Invoke(fenced.Window,[preparedRoot,null,null,(Func<Task>)(()=>throw new IOException("isolated flush failure"))])!).WaitAsync(TimeSpan.FromSeconds(15),ct); }
+                catch(IOException){flushRejected=true;}
+                Check(flushRejected&&ReferenceEquals(Field("web").GetValue(fenced.Window),fenced.View)&&ReferenceEquals(Field("bridge").GetValue(fenced.Window),fencedBridge),"failed prepared editor flush preserves previous workspace and bridge",checks);
+                await ((Task)open.Invoke(fenced.Window,[preparedRoot,null,null,null])!).WaitAsync(TimeSpan.FromSeconds(15),ct);
                 var initialized=(WebView2)Field("web").GetValue(fenced.Window)!;
                 await Until(async()=>await initialized.ExecuteScriptAsync("location.host === 'texttext.local' && document.readyState === 'complete'")=="true",ct);
                 Check(initialized.IsLoaded&&initialized.ActualWidth>100&&initialized.CoreWebView2 is not null,"production OpenWorkspace initializes attached visible native view",checks);

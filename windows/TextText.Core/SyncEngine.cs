@@ -1,11 +1,12 @@
 using System.Text.Json;
 using System.IO.Compression;
 namespace TextText.Core;
-public sealed record RemoteItem(string ItemId,string RelativePath,string Revision,bool Deleted=false,string? Lifecycle=null,string? RestoreFromRevision=null);
+public sealed record RemoteItem(string ItemId,string RelativePath,string Revision,bool Deleted=false,string? Lifecycle=null,string? RestoreFromRevision=null,bool? CanEditContent=null);
 public sealed record RemotePack(byte[] Data,string RelativePath,string Revision);
 public interface ISyncTransport
 {
     IReadOnlyList<string> Folders => [];
+    WorkspaceCapabilities? Capabilities => null;
     Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default);
     Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default);
     Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default);
@@ -19,7 +20,7 @@ public sealed class SyncEngine
     public sealed record Baseline(string Path,string Hash,string Revision,bool Refresh=false,string? Lifecycle=null);
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
-    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; }
+    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath;
     public SyncStatus Status {get;private set;}=new(false,null,0);
@@ -52,7 +53,7 @@ public sealed class SyncEngine
         }finally{gate.Release();}
     }
     public async Task<string?> BaselineRevisionAsync(string itemId,CancellationToken ct=default) {await gate.WaitAsync(ct);try{return Load().Items.GetValueOrDefault(itemId)?.Revision;}finally{gate.Release();}}
-    static bool Blocked(State state,string id)=>state.Outbox.Any(x=>x.ItemId==id&&x.Conflicted);
+    static bool Blocked(State state,string id)=>state.Outbox.Any(x=>x.ItemId==id);
     State Load() { if(!File.Exists(statePath)) return new(); var result=JsonSerializer.Deserialize<State>(File.ReadAllBytes(statePath)) ?? throw new InvalidDataException("Invalid sync state."); if(result.Version!=1) throw new InvalidDataException("This workspace was used by a newer app. Update TextText."); return result; }
     void Save(State state) {
         var bytes=JsonSerializer.SerializeToUtf8Bytes(state);
@@ -75,10 +76,11 @@ public sealed class SyncEngine
             if(state.PendingPull is {} incoming && remote.TryGetValue(incoming.ItemId,out var incomingRemote) && incomingRemote.Lifecycle!=null && incomingRemote.Lifecycle!=incoming.Lifecycle) {store.Preserve(Convert.FromBase64String(incoming.Payload),"previous-lifecycle");state.PendingPull=null;Save(state);}
             if(state.PendingPull!=null) {if(IsEditing(state.PendingPull.ItemId)){Report(false,null,state.Outbox.Count);return;}ApplyPull(state);}
             local=store.Scan().ToDictionary(x=>x.ItemId);
+            RememberCapabilities(state);
             ReconcileLifecycles(state,local,remote);
-            var hadPendingWrites=state.Outbox.Any(x=>!x.Conflicted&&!IsEditing(x.ItemId));
+            var hadPendingWrites=state.Outbox.Any(x=>!x.Conflicted&&!IsEditing(x.ItemId)&&Permitted(state,x));
             await Drain(state,cancellation);
-            if(hadPendingWrites)remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);
+            if(hadPendingWrites) {remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);RememberCapabilities(state);}
             if(transport.Folders.Count>20000)throw new IOException("Too many workspace folders.");
             var folderError=false;
             foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
@@ -88,7 +90,7 @@ public sealed class SyncEngine
                 if(intent?.Kind=="delete" && file==null) {
                     if(File.Exists(store.Resolve(intent.Path)))continue;
                     if(server is { Deleted:false }) { Queue(state,new(Guid.NewGuid().ToString(),"delete",id,baseline.Path,null,baseline.Revision,baseline.Hash,null)); await Drain(state,cancellation); }
-                    else { state.Items.Remove(id);Save(state);store.ClearIntent(id); } continue;
+                    else if(server is { Deleted:true }) { state.Items.Remove(id);Save(state);store.ClearIntent(id); } continue;
                 }
                 // Provider-evicted or transiently absent files are never inferred to be deletions.
                 if(file==null) continue;
@@ -152,14 +154,17 @@ public sealed class SyncEngine
         foreach(var item in state.Items)if(!local.ContainsKey(item.Key)&&!IsEditing(item.Key)&&!Blocked(state,item.Key)&&store.Intent(item.Key)?.Kind=="delete")return true;
         return false;
     }
+    public async Task<WorkspaceCapabilities?> CapabilitiesAsync(CancellationToken ct=default) {await gate.WaitAsync(ct);try{return Load().Capabilities;}finally{gate.Release();}}
+    void RememberCapabilities(State state) {if(transport.Capabilities is {} current && JsonSerializer.Serialize(state.Capabilities)!=JsonSerializer.Serialize(current)){state.Capabilities=current;Save(state);}}
+    static bool Permitted(State state,Operation op) => state.Capabilities is null || state.Capabilities.CanWrite(op.ItemId,op.Path,op.Revision is not null) && (op.Kind is not ("rename" or "delete") || state.Capabilities.FullAccess && state.Capabilities.CanCreateContent) && (op.Kind!="rename" || state.Capabilities.CanCreate(op.Destination!));
     void QueueUpload(State state,PackFile file,string? revision) {
         var bytes=store.Read(file.Path);if(TextPackStore.Hash(bytes)!=file.Hash) throw new FileChangedException();
         Queue(state,new(Guid.NewGuid().ToString(),"upload",file.ItemId,file.Path,null,revision,file.Hash,Convert.ToBase64String(bytes)));
     }
     void Queue(State state,Operation operation) {state.Outbox.Add(operation with {Lifecycle=state.Items.GetValueOrDefault(operation.ItemId)?.Lifecycle});Save(state);}
     async Task Drain(State state,CancellationToken ct) {
-        while(state.Outbox.Any(x=>!x.Conflicted&&!IsEditing(x.ItemId))) {
-            var op=state.Outbox.First(x=>!x.Conflicted&&!IsEditing(x.ItemId));string? revision=null;
+        while(state.Outbox.Any(x=>!x.Conflicted&&!IsEditing(x.ItemId)&&Permitted(state,x))) {
+            var op=state.Outbox.First(x=>!x.Conflicted&&!IsEditing(x.ItemId)&&Permitted(state,x));string? revision=null;
             try {
                 if(op.Kind=="upload") revision=await transport.UploadAsync(op.ItemId,op.Path,Convert.FromBase64String(op.Payload!),op.Revision,op.Id,ct);
                 else if(op.Kind=="rename") revision=await transport.RenameAsync(op.ItemId,op.Path,op.Destination!,op.Revision!,op.Id,ct);

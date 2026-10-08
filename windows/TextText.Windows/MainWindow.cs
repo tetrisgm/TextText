@@ -12,7 +12,7 @@ using Microsoft.Web.WebView2.Wpf;
 using TextText.Core;
 namespace TextText.Windows;
 
-public sealed record WorkspaceContext(string Root, string WorkspaceId, Uri Origin, Func<Task<string>> TokenProvider, Func<string,object?,Task> Emit);
+public sealed record WorkspaceContext(string Root, string WorkspaceId, Uri Origin, Func<Task<string>> TokenProvider, Func<string,object?,Task> Emit, string Access = "owner");
 public sealed partial class MainWindow : Window
 {
     public static Func<WorkspaceContext, INativeWorkspaceBridge>? WorkspaceFactory { get; set; }
@@ -21,6 +21,9 @@ public sealed partial class MainWindow : Window
     private readonly ConcurrentDictionary<string,CancellationTokenSource> requests = new();
     private readonly CancellationTokenSource lifetime = new();
     private Account? account;
+    private AvailableWorkspace? selectedWorkspace;
+    private string ActiveWorkspaceId => selectedWorkspace?.Id ?? account?.WorkspaceId ?? "";
+    private string ActiveWorkspaceName => selectedWorkspace?.Name ?? account?.Name ?? "Workspace";
     private WebView2? web;
     private INativeWorkspaceBridge? bridge;
     private string root = "";
@@ -30,7 +33,7 @@ public sealed partial class MainWindow : Window
     {
         Title = "TextText"; Width = 1200; Height = 850; MinWidth = 720; MinHeight = 480;
         Loaded += async (_,_) => {
-            try { account = CredentialStore.Load(); if(account is not null) await OpenWorkspace(); else ShowLogin(); }
+            try { account = CredentialStore.Load(); if(account is not null) { selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
             catch { if (account is not null) ShowWorkspaceUnavailable(); else ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
         };
         Closing += (_,e) => {
@@ -103,9 +106,10 @@ public sealed partial class MainWindow : Window
             CredentialStore.Save(account); return;
         }
     }
-    private async Task OpenWorkspace(string? selectedRoot = null, Action? beforeCommit = null)
+    private async Task OpenWorkspace(string? selectedRoot = null, Action? beforeCommit = null, AvailableWorkspace? replacement = null, Func<Task>? prepareCommit = null)
     {
-        var active = account ?? throw new InvalidOperationException("Sign in required");
+        var identity = account ?? throw new InvalidOperationException("Sign in required");
+        var active = identity with { WorkspaceId = replacement?.Id ?? ActiveWorkspaceId, Name = replacement?.Name ?? ActiveWorkspaceName };
         if(!Guid.TryParse(active.WorkspaceId,out _)) throw new InvalidOperationException("Invalid workspace");
         var nextRoot = selectedRoot ?? WorkspaceRoot(active.WorkspaceId);
         Directory.CreateDirectory(nextRoot);
@@ -146,19 +150,21 @@ public sealed partial class MainWindow : Window
         };
         core.WindowCloseRequested += (_,_) => { _ = RequestClose(); };
         core.WebMessageReceived += Receive;
+        if (prepareCommit is not null) await prepareCommit();
         nextBridge = WorkspaceFactory?.Invoke(new(nextRoot, active.WorkspaceId, Origin,
-            () => Task.FromResult(account?.Token ?? throw new InvalidOperationException("Sign in required")),
-            (name, detail) => EmitForView(nextWeb, name, detail)));
-        core.Navigate("https://texttext.local/index.html");
+            () => Task.FromResult(active.Token),
+            (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner"));
         beforeCommit?.Invoke();
         var oldWeb = web; var oldBridge = bridge;
         if (oldWeb?.CoreWebView2 is { } oldCore) oldCore.WebMessageReceived -= Receive;
         foreach (var request in requests.Values) request.Cancel();
         root = nextRoot; web = nextWeb; bridge = nextBridge;
+        if (replacement is not null) selectedWorkspace = replacement;
         staging.Children.Remove(nextWeb);
         nextWeb.Width = double.NaN; nextWeb.Height = double.NaN; nextWeb.IsHitTestVisible = true;
         SetWorkspaceContent(nextWeb);
         oldBridge?.Dispose(); oldWeb?.Dispose();
+        core.Navigate("https://texttext.local/index.html");
         }
         catch {
             if (!ReferenceEquals(web, nextWeb)) {
@@ -203,10 +209,10 @@ public sealed partial class MainWindow : Window
     {
         switch(method)
         {
-            case "native.status": return new { workspaceId = account?.WorkspaceId,root,name = account?.Name,connected = account is not null,available = true };
+            case "native.status": return new { workspaceId = ActiveWorkspaceId,root,name = ActiveWorkspaceName,connected = account is not null,available = true };
             case "native.cancel": if(p.TryGetProperty("requestId",out var request) && requests.TryGetValue(request.GetString() ?? "",out var cancellation)) cancellation.Cancel(); return null;
             case "native.http": return await Http(p,ct);
-            case "native.openWeb": OpenExternal(new Uri(Origin,"/vault/" + account!.WorkspaceId).AbsoluteUri); return null;
+            case "native.openWeb": OpenExternal(new Uri(Origin,"/vault/" + ActiveWorkspaceId).AbsoluteUri); return null;
             case "native.recovery": {
                 // The renderer cannot choose a shell path. Resolve only the
                 // current native workspace's validated recovery directory.
@@ -215,6 +221,8 @@ public sealed partial class MainWindow : Window
                 Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true }); return null;
             }
             case "native.openFolder": Process.Start(new ProcessStartInfo(root) { UseShellExecute = true }); return null;
+            case "native.workspacesList": return await ListWorkspaces(ct);
+            case "native.workspaceOpen": await SwitchWorkspace(p,ct); return null;
             case "native.chooseWorkspaceFolder": await ChooseWorkspaceFolder(); return null;
             case "native.settings": MessageBox.Show(this,$"{account?.Name}\n\nFiles: {root}","TextText settings",MessageBoxButton.OK,MessageBoxImage.Information); return null;
             case "native.signOut":
@@ -224,7 +232,7 @@ public sealed partial class MainWindow : Window
                 try {
                     if(!await FlushEditor()) { ShowSaveFailure(); return null; }
                     foreach(var pending in requests.Values) pending.Cancel();
-                    CredentialStore.Clear(); bridge?.Dispose(); bridge = null; account = null;
+                    CredentialStore.Clear(); bridge?.Dispose(); bridge = null; account = null; selectedWorkspace = null;
                     _ = Dispatcher.BeginInvoke(() => { web?.Dispose(); web = null; ShowLogin(); });
                 } finally { transitioning = false; if(web is not null) web.IsEnabled = true; }
                 return null;
@@ -237,7 +245,7 @@ public sealed partial class MainWindow : Window
         var path = p.TryGetProperty("path",out var pathElement) ? pathElement.GetString() : p.GetProperty("url").GetString();
         if(path is null || !path.StartsWith('/') || path.StartsWith("//") || path.Contains('\\')) throw new InvalidOperationException("Invalid API path");
         var uri = new Uri(Origin,path);
-        var allowed = "/api/vault/" + active.WorkspaceId;
+        var allowed = "/api/vault/" + ActiveWorkspaceId;
         if(uri.GetLeftPart(UriPartial.Authority) != Origin.GetLeftPart(UriPartial.Authority) || !(uri.AbsolutePath == allowed || uri.AbsolutePath.StartsWith(allowed + "/",StringComparison.Ordinal) || uri.AbsolutePath == "/api/vault/extract")) throw new InvalidOperationException("API path outside workspace");
         var method = p.GetProperty("method").GetString()!.ToUpperInvariant();
         if(method is not ("GET" or "HEAD" or "POST" or "PUT" or "PATCH" or "DELETE")) throw new InvalidOperationException("Unsupported method");

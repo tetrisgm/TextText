@@ -34,7 +34,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         this.context = context;
         var binding = TextPackStore.Hash(Encoding.UTF8.GetBytes(context.Origin.AbsoluteUri + "\n" + context.WorkspaceId + "\n" + context.Root));
         files = new(context.Root, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TextText", "Sync", binding));
-        sync = new(files, new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider));
+        sync = new(files, new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));
         editing = new(files, sync);
         agent = new(context.Root, context.WorkspaceId, context.Emit, ExecuteAgentTool);
         notification = new(_ => { if (!lifetime.IsCancellationRequested) _ = context.Emit("texttext:vault-changed", new { }); }, null, Timeout.Infinite, Timeout.Infinite);
@@ -126,13 +126,15 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     case "files.recoveryDirectory": return files.GetRecoveryDirectory();
                     case "files.ready": return new { ready = await sync.IsReadyAsync(Required(p, "itemId"), ct) };
                     case "files.list": {
+                        var capabilities = await sync.CapabilitiesAsync(ct);
                         var items = Inventory();
                         var folders = items.SelectMany(f => {
                             var parts = f.Path.Split('/');
                             return Enumerable.Range(1, parts.Length - 1).Select(n => string.Join('/', parts.Take(n)));
                         }).Distinct().Order().ToArray();
                         return (object)new { root = context.Root, name = Path.GetFileName(context.Root), folders,
-                            items = items.Select(f => new { itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
+                            fullAccess=capabilities?.FullAccess ?? context.Access == "owner",canCreateContent=capabilities?.CanCreateContent ?? context.Access == "owner",writableFolders=capabilities?.WritableFolders ?? [],
+                            items = items.Select(f => new { canEditContent=capabilities?.CanWrite(f.ItemId,f.Path,true) ?? context.Access == "owner",itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
                             revision = TextPackStore.Hash(Encoding.UTF8.GetBytes(string.Join('\n', items.OrderBy(f => f.Path).Select(f => f.Path + ":" + f.Hash)))) };
                     }
                     case "files.read": {

@@ -129,6 +129,14 @@ static class Test
  await ReadinessTests.Run(temp);
  PackLayoutTests.Run(temp);
  await TransportTests.Run();
+ await WorkspaceDirectoryTests.Run();
+ var scopedStore=new TextPackStore(Path.Combine(temp,"scoped"),Path.Combine(temp,"scoped-state"));var scopedFile=scopedStore.Write("Notes/Scoped.textpack",Pack("before","scoped"));var scopedRemote=new Fake();var scopedEngine=new SyncEngine(scopedStore,scopedRemote);await scopedEngine.SyncAsync();
+ scopedStore.Delete(scopedFile.Path,scopedFile.Hash);var visibleScoped=scopedRemote.Item;scopedRemote.Item=null;await scopedEngine.SyncAsync();
+ Assert(scopedStore.Intent("scoped")?.Kind=="delete","scoped manifest absence retains pending local deletion intent");
+ scopedRemote.Item=visibleScoped;scopedRemote.Capabilities=new(false,false,[],new(){{"scoped",false}});await scopedEngine.SyncAsync();await scopedEngine.SyncAsync();
+ Assert(scopedRemote.DeleteCount==0&&scopedEngine.Status.Pending==1,$"role downgrade retains queued deletion without sending or spinning {scopedRemote.DeleteCount}/{scopedEngine.Status.Pending}");
+ var persistedCapabilities=await new SyncEngine(scopedStore,scopedRemote).CapabilitiesAsync();Assert(persistedCapabilities?.Items["scoped"]==false,"permission snapshot survives restart offline");
+ scopedRemote.Capabilities=new(true,true,[],new(){{"scoped",true}});await scopedEngine.SyncAsync();Assert(scopedRemote.DeleteCount==1,"restored permission resumes original durable deletion");
  var restoredStore=new TextPackStore(Path.Combine(temp,"restore-passive"),Path.Combine(temp,"restore-device"));var restoredFake=new Fake{Data=Pack("before"),Item=new("test-1","Notes/Restore.textpack","before")};var restoredEngine=new SyncEngine(restoredStore,restoredFake);await restoredEngine.SyncAsync();var beforeRestore=restoredStore.Describe("Notes/Restore.textpack");restoredStore.Delete(beforeRestore.Path,beforeRestore.Hash);
  var restoreStatePath=Path.Combine(restoredStore.StateDirectory,"sync.json");var staleDeleteState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(restoreStatePath))!;staleDeleteState.Outbox.Add(new("old-delete","delete","test-1",beforeRestore.Path,null,"before",beforeRestore.Hash,null));TextPackStore.AtomicWrite(restoreStatePath,JsonSerializer.SerializeToUtf8Bytes(staleDeleteState));
  var restoredBytes=Pack("restored");restoredFake.Data=restoredBytes;restoredFake.Item=new("test-1",beforeRestore.Path,TextPackStore.Hash(restoredBytes),Lifecycle:"restore-one");await restoredEngine.SyncAsync();Assert(TextPackStore.Markdown(restoredStore.Read(beforeRestore.Path)).Contains("restored")&&restoredFake.DeleteCount==0,"passive restore retires old local deletion and pulls same ID");
@@ -155,6 +163,7 @@ static class Test
   public Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default)=>Get(itemId).DeleteAsync(itemId,path,baseRevision,operationId,cancellation);
  }
  sealed class Fake:ISyncTransport{
+  public WorkspaceCapabilities? Capabilities {get;set;}
   public IReadOnlyList<string> Folders {get;set;}=[];
   public System.Net.HttpStatusCode? DownloadFailure;public RemoteItem? Item;public byte[] Data=[];public int UploadCount,DeleteCount,ManifestCount;public bool FailAfterCommit;public Action? BeforeDownload;public List<string> Operations=[];readonly Dictionary<string,string> receipts=[];
   public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default){ManifestCount++;return Task.FromResult<IReadOnlyList<RemoteItem>>(Item==null?[]:[Item]);}
