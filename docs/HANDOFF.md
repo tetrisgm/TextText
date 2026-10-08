@@ -35,9 +35,10 @@
   selections; 71 focused checks passed.
 - `48a3f378`: canonical approval previews, fresh hashes/grants and durable replay;
   88 tests passed, including a real TextPack absent from SQL.
-- Frozen combined source `48a3f378` is running core/native gates in
-  `/private/tmp/texttext-shared-XdMxA6`; log
-  `/tmp/texttext-shared-48a3f378-sync.log`. No new install yet.
+- Frozen `48a3f378` passed 377 core tests, TypeScript and native gates.
+  [Receipt](verification/2026-10-07-shared-template-core.md). No new install yet.
+- Approval claim/result crash recovery is being fixed after review found that
+  durable file success can otherwise remain ambiguous in the proposal record.
 - Shared web assistant transport and usable workspace provider Settings are in
   progress. Read-only support is an increment, not full write/proposal parity.
 
