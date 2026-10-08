@@ -38,4 +38,17 @@ describe("vault authorization", () => {
     mocks.access.mockResolvedValue({ isOwner: false, blogId: "workspace-1", userId: "user-1" });
     expect((await authorizeVault(new Request("https://texttext.test"), "workspace-1") as Response).status).toBe(404);
   });
+  it("rechecks current ownership instead of reusing request-scoped access", async () => {
+    let owner = true;
+    mocks.access.mockImplementation(async ({ fresh }) => ({
+      isOwner: fresh ? owner : true, blogId: "workspace-1", userId: "user-1",
+    }));
+    const request = new Request("https://texttext.test", { method: "POST", headers: { Origin: "https://texttext.test" } });
+    expect(await authorizeVault(request, "workspace-1")).toMatchObject({ actorUserId: "user-1" });
+    owner = false;
+    const afterWait = await authorizeVault(request, "workspace-1");
+    expect(afterWait).toBeInstanceOf(Response);
+    expect((afterWait as Response).status).toBe(404);
+  });
+
 });

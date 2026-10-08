@@ -29,7 +29,7 @@ export async function authorizeVault(request: Request, workspaceId?: string) {
     user = session;
     actorType = "human";
   }
-  const access = await resolveWorkspaceAccess({ handle, user });
+  const access = await resolveWorkspaceAccess({ handle, user, fresh: true });
   if (!access.isOwner || !access.blogId || (workspaceId !== undefined && access.blogId !== workspaceId) || !access.userId) {
     return Response.json({ error: "Workspace not found" }, { status: 404 });
   }
