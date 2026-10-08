@@ -108,7 +108,8 @@
   actual custom creation store. Direct store callers cannot bypass metadata,
   title/body and unimported-asset checks. Agent, local-vault and local/remote
   document suites passed; `/tmp/texttext-custom-create-store-validation.log`.
-  Included in Mac 1215 and the current Oracle deployment. Reusable-library authoring still remains.
+  Included in Mac 1215 and the current Oracle deployment. Reusable-library
+  authoring now has the installed acceptance linked below.
 
 - Desktop folder-agent `create_file` now accepts complete matching custom
   snapshot/template JSON. Native packages prepare metadata before publication
@@ -341,15 +342,13 @@
 - Real Mac template generation/refinement/keep, library saving, creation/reuse,
   search/reopen and Mac/web/direct CLI convergence passed.
   [Actual acceptance](verification/2026-10-08-native-template-library-1215.md).
-  Direct library version authoring and installed Windows acceptance remain.
-  Source inspection found that `prepareTemplateProposal` cleared existing
-  blueprint metadata when an agent refinement omitted it. The actual source
-  and reusable-library packages now lack `template-source.json`; the earlier
-  receipt proves reuse, not retained authoring provenance. The proposal path
-  now inherits omitted compatible source and rejects incompatible omissions.
-  Explicit replacement remains supported for manual folder-design editing.
-  Targeted regression log: `/tmp/texttext-authoring-refinement-regression.log`.
-  This correction is installed on Mac 1216; Oracle/Windows delivery remains.
+  The older receipt's provenance gap is resolved in installed Mac 1216:
+  real model refinement preserved a matching editable blueprint, Save as look
+  retained it, creation reused it, and actual Safari save converged to Mac.
+  Immutable library version creation and retry also passed.
+  [Current authoring acceptance](verification/2026-10-08-template-version-authoring.md).
+  Oracle corrections are deployed; Windows corrections are packaged and
+  verified. Installed Windows acceptance remains.
   Actual immutable version creation/retry and Mac picker/new-item acceptance
   now passed. Persisted command previews also retain their matching blueprint.
   [Version/source receipt](verification/2026-10-08-template-version-authoring.md).
