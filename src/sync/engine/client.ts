@@ -413,6 +413,7 @@ export class FileCollaborationClient {
   }
   private async begin(): Promise<void> {
     let cleanWebFallback: FileCollaborationJournal | null = null;
+    let cleanRetiredRefresh: FileCollaborationJournal | null = null;
     try {
       if (!this.lease && (this.options.ownership || (!this.options.journal && !this.options.checkpoint))) {
         const lease = await (this.options.ownership ?? browserOwnership()).acquire(this.journalKey);
@@ -420,6 +421,18 @@ export class FileCollaborationClient {
         this.lease = lease; this.ownedJournalKey = lease.key;
       }
       let retained = this.load();
+      if (retained && !this.options.initialRetirement && !retained.pending.length &&
+          !retained.batch && !retained.unqueuedDirty && [
+            "This file or its access changed. Recover your saved edits before reopening.",
+            "This file or your access changed. Pending edits are kept for recovery.",
+          ].includes(retained.retired ?? "")) {
+        // Older clients retired even a fully acknowledged epoch. Keep that
+        // record untouched until a fresh read proves current access, then let
+        // the native file synchronizer refresh it. Never replay its old Yjs IDs.
+        cleanRetiredRefresh = retained;
+        this.saved = retained; this.journalGeneration = retained.journalGeneration ?? 0;
+        retained = null;
+      }
       const staleLocal = retained && this.options.localRevision !== undefined && retained.revision !== this.options.localRevision;
       if (staleLocal && !this.options.initialRetirement && !retained!.pending.length && !retained!.batch && !retained!.unqueuedDirty && !retained!.retired) {
         // A clean old journal must never project over a file downloaded while closed.
@@ -469,10 +482,18 @@ export class FileCollaborationClient {
       const remote = value as StateResponse; cursor(remote);
       presentation(remote.presentation);
       if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
+      if (cleanRetiredRefresh && this.options.checkpoint) {
+        this.current = cursor(cleanRetiredRefresh); this.frozen = true; this.canEdit = false;
+        this.report("stale-file", "Refreshing this note…"); return;
+      }
+      if (cleanRetiredRefresh) this.saved = null;
       this.current = cursor(remote);
       if (retained) {
         this.current = cursor(retained);
-        if (retained.retired || retained.epoch !== remote.epoch || (!remote.canEditContent && (this.canEdit || this.pending.length || this.batch))) {
+        if (retained.epoch !== remote.epoch && !this.hasPendingChanges && !retained.retired) {
+          this.notifyExternalFileChange(); return;
+        }
+        if (retained.retired || retained.epoch !== remote.epoch || (!remote.canEditContent && this.hasPendingChanges)) {
           this.retire(retained.retired ?? "This file or its access changed. Recover your saved edits before reopening."); return;
         }
       }
@@ -508,6 +529,10 @@ export class FileCollaborationClient {
     error = error.cause;
     const detail = error as { status?: number; code?: string; name?: string };
     if (detail?.name === "AbortError") return;
+    if ((detail?.code === "epoch_changed" || detail?.status === 409) &&
+        this.initialized && !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement) {
+      this.notifyExternalFileChange(); return;
+    }
     if ([401, 403, 404].includes(detail?.status ?? 0) || detail?.code === "epoch_changed" || detail?.status === 409) { this.retire("This file or your access changed. Pending edits are kept for recovery."); return; }
     if ([400, 413, 422].includes(detail?.status ?? 0)) { this.retire("The server rejected this edit. Your pending document is kept for recovery."); return; }
     // HTTP service failures remain retryable regardless of server message wording.
@@ -543,7 +568,7 @@ export class FileCollaborationClient {
       if (remote.epoch !== this.current.epoch) { this.notifyExternalFileChange(); return; }
       if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
       if (remote.seq! < this.current.seq) return;
-      if (this.canEdit && !remote.canEditContent) { this.retire("Editing access was removed. Your document is kept for recovery."); return; }
+      if (this.canEdit && !remote.canEditContent && this.hasPendingChanges) { this.retire("Editing access was removed. Your document is kept for recovery."); return; }
       this.canEdit = remote.canEditContent; this.canComment = remote.canComment;
       if (!remote.unchanged && remote.seq! >= this.current.seq) {
         cursor(remote); presentation(remote.presentation); Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.adoptPresentation(remote.presentation); this.snapshot(); this.current = cursor(remote); this.persist(); this.options.onChange?.(this.snapshot(), this.presentation);

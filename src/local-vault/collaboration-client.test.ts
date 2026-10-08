@@ -651,6 +651,74 @@ describe("durable file collaboration client", () => {
     expect(reopened.status).toBe("recovery"); expect(reopened.recoveryJournal?.retired).toBe(retained.retired);
   });
 
+  it("refreshes an acknowledged native epoch on cold reopen without inventing pending edits", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start(); original.destroy();
+    server.bytes = pack("New file epoch"); server.state = seedVaultCollaboration(server.bytes, "item-1", 2);
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request, checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("stale-file"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(reopened.recoveryJournal?.retired).toBeUndefined(); expect(server.pushes).toEqual([]);
+  });
+
+  it("rechecks live access before refreshing the old clean Windows retirement", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start();
+    const retained = JSON.parse(journal.load(original.journalKey)!);
+    retained.retired = "This file or its access changed. Recover your saved edits before reopening.";
+    journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
+    let permit = false;
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: async (...args) => { if (!permit) throw new Error("temporarily offline"); return server.request(...args); }, checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("offline"); expect(reopened.hasBaseline).toBe(false);
+    expect(JSON.parse(journal.load(original.journalKey)!)).toEqual(retained);
+    permit = true; await reopened.retry();
+    expect(reopened.status).toBe("stale-file"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(server.pushes).toEqual([]);
+  });
+
+  it("keeps pending updates in an old Windows retirement protected", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start(); original.setActive(false);
+    original.mutate(doc => documentText(doc, "body").insert(5, " unsaved"));
+    const retained = JSON.parse(journal.load(original.journalKey)!);
+    retained.retired = "This file or its access changed. Recover your saved edits before reopening.";
+    journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request, checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.hasPendingChanges).toBe(true);
+    expect(documentText(reopened.doc, "body").toString()).toBe("Hello unsaved");
+    expect(() => reopened.discardCleanJournal()).toThrow();
+  });
+
+  it("does not resume a clean Windows retirement when live read access was revoked", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start();
+    const retained = JSON.parse(journal.load(original.journalKey)!);
+    retained.retired = "This file or its access changed. Recover your saved edits before reopening.";
+    const bytes = JSON.stringify(retained); journal.save(original.journalKey, bytes); original.destroy();
+    const observed = vi.fn();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: async () => { throw Object.assign(new Error("Forbidden"), { status: 403 }); }, checkpoint: async () => {}, onChange: observed });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.hasBaseline).toBe(false); expect(reopened.canEdit).toBe(false);
+    expect(observed).not.toHaveBeenCalled(); expect(journal.load(original.journalKey)).toBe(bytes);
+  });
+
+  it("adopts read-only permissions without recovery controls when no edits are pending", async () => {
+    const server = new Server(), journal = new Journal();
+    const original = client(server, journal); await original.start(); original.destroy();
+    server.canEdit = false;
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request, checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("ready"); expect(reopened.canEdit).toBe(false);
+    expect(reopened.hasPendingChanges).toBe(false); expect(server.pushes).toEqual([]);
+  });
+
   it("keeps pending edits if an unexpected native session loss still occurs", async () => {
     const server = new Server(), journal = new Journal();
     let closed = false;
