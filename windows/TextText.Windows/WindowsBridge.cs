@@ -127,6 +127,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     case "files.ready": return new { ready = await sync.IsReadyAsync(Required(p, "itemId"), ct) };
                     case "files.list": {
                         var capabilities = await sync.CapabilitiesAsync(ct);
+                        var permissions = await sync.FilePermissionsAsync(items,context.Access == "owner",ct);
                         var items = Inventory();
                         var folders = items.SelectMany(f => {
                             var parts = f.Path.Split('/');
@@ -134,7 +135,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                         }).Distinct().Order().ToArray();
                         return (object)new { root = context.Root, name = Path.GetFileName(context.Root), folders,
                             fullAccess=capabilities?.FullAccess ?? context.Access == "owner",canCreateContent=capabilities?.CanCreateContent ?? context.Access == "owner",writableFolders=capabilities?.WritableFolders ?? [],
-                            items = items.Select(f => new { canEditContent=capabilities?.CanWrite(f.ItemId,f.Path,true) ?? context.Access == "owner",itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
+                            items = items.Select(f => new { canEditContent=permissions[f.ItemId],itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
                             revision = TextPackStore.Hash(Encoding.UTF8.GetBytes(string.Join('\n', items.OrderBy(f => f.Path).Select(f => f.Path + ":" + f.Hash)))) };
                     }
                     case "files.read": {

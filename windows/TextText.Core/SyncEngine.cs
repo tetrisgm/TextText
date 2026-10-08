@@ -155,6 +155,15 @@ public sealed class SyncEngine
         return false;
     }
     public async Task<WorkspaceCapabilities?> CapabilitiesAsync(CancellationToken ct=default) {await gate.WaitAsync(ct);try{return Load().Capabilities;}finally{gate.Release();}}
+    public async Task<IReadOnlyDictionary<string,bool>> FilePermissionsAsync(IEnumerable<PackFile> files,bool ownerFallback=false,CancellationToken ct=default)
+    {
+        await gate.WaitAsync(ct);
+        try {
+            var state=Load();
+            return files.ToDictionary(file=>file.ItemId,file=>state.Capabilities?.CanWrite(file.ItemId,file.Path,
+                state.Items.ContainsKey(file.ItemId)||state.Outbox.Any(op=>op.ItemId==file.ItemId&&op.Revision is not null)) ?? ownerFallback);
+        } finally {gate.Release();}
+    }
     void RememberCapabilities(State state) {if(transport.Capabilities is {} current && JsonSerializer.Serialize(state.Capabilities)!=JsonSerializer.Serialize(current)){state.Capabilities=current;Save(state);}}
     static bool Permitted(State state,Operation op) => state.Capabilities is null || state.Capabilities.CanWrite(op.ItemId,op.Path,op.Revision is not null) && (op.Kind is not ("rename" or "delete") || state.Capabilities.FullAccess && state.Capabilities.CanCreateContent) && (op.Kind!="rename" || state.Capabilities.CanCreate(op.Destination!));
     void QueueUpload(State state,PackFile file,string? revision) {
