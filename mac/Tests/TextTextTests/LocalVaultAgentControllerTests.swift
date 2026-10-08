@@ -80,6 +80,31 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     private struct Timeout: Error {}
 
     @MainActor
+    func testFolderDesignMetadataDoesNotExpandOrdinaryItemTask() async throws {
+        let (root, controller, server) = try await fixture()
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        _ = try LocalVaultAgentFiles.perform("create_file", arguments: ["title": "Design", "body": "Keep"],
+            root: root, access: .folder(path: ""))
+        let store = LocalVaultDocumentStore(root: root)
+        let file = try store.read(path: "Design.textpack")
+        var document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try XCTUnwrap(file.contents.documentJSON).utf8)) as? [String: Any])
+        var content = try XCTUnwrap(document["content"] as? [String: Any])
+        var fields = content["fields"] as? [String: Any] ?? [:]
+        fields["texttextFolderView"] = "v1"; content["fields"] = fields; document["content"] = content
+        _ = try store.write(path: file.path, expectedHash: file.hash, markdown: file.contents.markdown,
+            documentJSON: String(decoding: JSONSerialization.data(withJSONObject: document), as: UTF8.self),
+            templateJSON: file.contents.templateJSON,
+            templateAuthoringSourceJSON: file.contents.templateAuthoringSourceJSON)
+        try controller.send(taskID: "item-boundary", prompt: "Read this item", path: file.path)
+        let request = try XCTUnwrap(server.requests("thread/start").first)
+        let namespaces = try XCTUnwrap(request.params["dynamicTools"] as? [[String: Any]])
+        let tools = try XCTUnwrap(namespaces.first?["tools"] as? [[String: Any]])
+        let names = tools.compactMap { $0["name"] as? String }
+        XCTAssertEqual(Set(names), Set(["read_file", "write_file"]))
+        XCTAssertTrue((request.params["developerInstructions"] as? String)?.contains("No other file or folder is in scope") == true)
+    }
+
+    @MainActor
     func testSelectedPhotoInputIsBoundedAndAttachedToItsTurn() async throws {
         let (root, controller, server) = try await fixture()
         defer { controller.stop(); try? FileManager.default.removeItem(at: root) }

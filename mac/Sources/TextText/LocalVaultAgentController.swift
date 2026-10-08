@@ -252,10 +252,10 @@ final class LocalVaultAgentController {
         } else {
             isFolderDesign = false
         }
-        if isFolderDesign {
-            return customizing
-                ? .folderCustomization(folder: folder, designPath: path)
-                : .folder(path: folder)
+        // Ordinary item tasks remain item-scoped even when their content is a
+        // folder design. Metadata must not silently expand the user's grant.
+        if isFolderDesign && customizing {
+            return .folderCustomization(folder: folder, designPath: path)
         }
         return customizing ? .itemCustomization(path: path) : .item(path: path)
     }

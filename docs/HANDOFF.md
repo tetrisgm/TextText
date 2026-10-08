@@ -38,6 +38,12 @@
   startup, existing notes, search, save/reopen, Gallery metadata and live sync.
 - Finish automatic reconnect/failure acceptance and canonical sharing with a
   fresh principal and durable acknowledgments. Preserve existing sync gates.
+- Agent folder creation is unfinished: shared UI only starts item tasks; Windows
+  agent tools are item-scoped. Mac folder tools require an explicit folder task
+  flow across clients. Ordinary Mac item tasks no longer expand scope because of
+  folder-design metadata; all 15 controller regressions passed (log
+  `/tmp/texttext-agent-item-boundary.log`). This fix is not installed yet.
+  Local CLI create/append also need durable idempotency-key handling.
 - Complete agent item/template creation acceptance. Real native Gallery image
   description and metadata writing passed; hosted configured-provider generation
   and approval remain unverified.
