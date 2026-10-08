@@ -220,6 +220,58 @@ export async function smoke({ scratch = false, environment = process.env, origin
     const audit = await client.query("SELECT action_name, actor_type FROM action_audit WHERE actor_user_id = $1 AND target_id = $2", [fixture.userId, itemId]);
     assert.equal(audit.rows.filter(row => row.action_name === "vault.write" && row.actor_type === "human").length, 2, "Expected exactly two human file mutation audit receipts.");
     checks.push("canonical storage and mutation audit");
+
+    const itemEndpoint = `/api/vault/${fixture.blogId}/items/${itemId}`;
+    const deletion = await request(itemEndpoint, { method: "DELETE", headers: {
+      "X-TextText-Operation-Id": randomUUID(), "X-TextText-Base-Path": encodeURIComponent(originalItem.relativePath), "If-Match": `"${secondRead.item.hash}"`,
+    } });
+    assert.equal(deletion.status, 200, "Canonical deletion failed.");
+    assert.equal((await deletion.json()).status, "deleted", "Deletion returned no tombstone.");
+    const trashResponse = await request(`/api/vault/${fixture.blogId}/trash`);
+    assert.equal(trashResponse.status, 200, "Trash listing failed.");
+    const trash = await trashResponse.json();
+    assert.equal(trash.items.length, 1, "Trash should contain only the deleted scratch item.");
+    assert.deepEqual(trash.items[0], { itemId, relativePath: originalItem.relativePath, revision: secondRead.item.hash }, "Trash identity or revision differs.");
+    checks.push("canonical deletion and Trash listing");
+
+    const restoreArgs = { itemId, operationId: randomUUID(), basePath: originalItem.relativePath, baseRevision: secondRead.item.hash, relativePath: originalItem.relativePath };
+    const restoreRequest = () => request(`/api/vault/${fixture.blogId}/trash`, { method: "POST", body: JSON.stringify(restoreArgs) });
+    const restoreResponse = await restoreRequest();
+    assert.equal(restoreResponse.status, 200, "Same-identity restore failed.");
+    const restored = await restoreResponse.json();
+    assert.equal(restored.status, "restored", "Restore did not succeed.");
+    assert.equal(restored.itemId, itemId, "Restore changed the item identity.");
+    assert.notEqual(restored.revision, secondRead.item.hash, "Restore did not create a new lifecycle hash.");
+    const repeatedRestore = await restoreRequest();
+    assert.equal(repeatedRestore.status, 200, "Restore lost-acknowledgement retry failed.");
+    assert.deepEqual(await repeatedRestore.json(), restored, "Restore retry returned another receipt.");
+    const restoredRead = await command("read_item", { id: itemId });
+    assert.equal(restoredRead.item.hash, restored.revision, "Restored read returned another revision.");
+    assert.equal(restoredRead.markdown, secondRead.markdown, "Restore changed the document text.");
+    const restoredManifestResponse = await request(`/api/vault/${fixture.blogId}/items`);
+    assert.equal(restoredManifestResponse.status, 200, "Restored manifest failed.");
+    const restoredManifest = await restoredManifestResponse.json();
+    const restoredEntry = restoredManifest.items.find(item => item.itemId === itemId);
+    assert.equal(restoredEntry?.lifecycle, restoreArgs.operationId, "Manifest omitted restore lifecycle.");
+    assert.equal(restoredEntry?.restoreFromRevision, secondRead.item.hash, "Manifest omitted restore baseline.");
+    checks.push("same-identity restore and durable retry");
+
+    const stale = await request(itemEndpoint, { method: "PUT", headers: {
+      "Content-Type": "application/zip", "X-TextText-Operation-Id": randomUUID(),
+      "X-TextText-Path": encodeURIComponent(originalItem.relativePath), "If-Match": `"${secondRead.item.hash}"`,
+    }, body: bytes });
+    assert.equal(stale.status, 409, "A pre-restore upload was not fenced.");
+    assert.equal((await stale.json()).status, "conflict", "Stale upload was not preserved as a conflict.");
+    const finalRead = await command("read_item", { id: itemId });
+    assert.equal(finalRead.item.hash, restored.revision, "Stale upload replaced the restored document.");
+    const recoveryResponse = await request(`/api/vault/${fixture.blogId}/recovery`);
+    assert.equal(recoveryResponse.status, 200, "Conflict recovery listing failed.");
+    const conflict = (await recoveryResponse.json()).entries.find(entry => entry.kind === "conflict" && entry.hash === secondRead.item.hash);
+    assert.ok(conflict, "Stale upload is missing its recovery copy.");
+    const recovered = await request(`/api/vault/${fixture.blogId}/recovery?id=${encodeURIComponent(conflict.id)}`);
+    assert.equal(recovered.status, 200, "Stale upload recovery read failed.");
+    assert.equal(createHash("sha256").update(new Uint8Array(await recovered.arrayBuffer())).digest("hex"), secondRead.item.hash, "Stale upload recovery bytes changed.");
+    checks.push("pre-restore upload fenced and recoverable");
   } catch (error) {
     // Do not expose driver errors, response bodies, credentials, or user data.
     failure = error instanceof assert.AssertionError || (error instanceof Error && error.message.startsWith("Loopback request failed:"))
