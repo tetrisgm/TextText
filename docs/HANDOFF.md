@@ -2,7 +2,9 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1189)**, source `54f33a4e`.
+- Mac `/Applications/TextText.app`: **0.204 (1190)**, source `5254ff85`.
+  Startup, preserved note, save/search/relaunch and automatic delivery to Safari
+  passed. CLI also updated. [Receipt](verification/2026-10-08-template-cohort-1190.md).
 - Windows: same source `54f33a4e`, installed in the existing location.
 - Oracle: **texttext-oracle-20261008T073956Z-43614e64**, thirteen live checks passed.
 - Live 1188 acceptance found a permission-only listing notification gap in both
@@ -30,7 +32,8 @@
   `eaf1c25e`, `5f74d92a` and `af658589`. These changes are not installed yet.
   Explicit template choices override defaults; existing items retain their design.
 - Candidate source `5254ff85` passed 662 core tests, TypeScript and native
-  sync/creation suites. Mac 1190 and matching Windows builds are underway.
+  sync/creation suites. Mac 1190 is installed; matching Windows acceptance and
+  Oracle deployment are underway.
   Server/Windows `a0d9391b` and native `163b9a02` remove aggregate folder scan
   limits, cache bounded metadata, and test external change/rename invalidation.
   [Source receipt](verification/2026-10-08-folder-default-retirement-source.md).
