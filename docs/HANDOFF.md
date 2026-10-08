@@ -80,9 +80,13 @@ Source follow-up since the installed/deployed baseline:
   and scoped lint passed. Organization tests are mandatory in the sync gate.
 - `89aa390c`: native remote CLI consumes validated authoritative file paths.
   All 22 focused Swift tests passed. Not installed yet.
-- In progress: tombstone-aware Trash listing/restoration, and the shared Note
-  Icon creation/edit/read flow. Keep full identity and retry semantics.
-  Neither these source changes nor the current UI work is deployed yet.
+- `ba78b73b`: shared note-icon creation/edit/read/grid, with browser persistence
+  and keyboard checks plus light/dark inspection. Default test includes it.
+- `d11108f6`: owner legacy item edit/private URLs use canonical files, while
+  public readers remain intact; 12 route tests, TypeScript and lint passed.
+- In progress: tombstone-aware Trash listing/restoration. Preserve identity,
+  reject pre-delete file writes and collaboration epochs, and test interruption.
+  These source changes are not installed or deployed yet.
 
 File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
 (`f4352d53`, `1ccb5163`) and expanded sync gate (`48ac492a`) are committed.
