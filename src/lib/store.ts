@@ -1,4 +1,5 @@
-import { coordinateFolderMove } from "./vault/folder-move-metadata";
+import { coordinateFolderMove, previewFolderMoveMetadata } from "./vault/folder-move-metadata";
+import { folderMovePlanHash, type planFolderMove } from "@/sync/engine/folder-move-plan";
 import type { FolderMoveIntent } from "@/sync/engine/folder-move-operation";
 import { provisionFileWorkspace } from "@/lib/vault/provision-workspace";
 import { validatedLookSource } from "./presentation/template-library";
@@ -10,6 +11,7 @@ import {
   retireVaultTemplate as retireDirectoryTemplate,
   setVaultFolderTemplate as setDirectoryFolderTemplate,
   createVaultFolder as createDirectoryFolder,
+  moveVaultFolder as moveDirectoryFolder,
   readVaultTextpack as readDirectoryTextpack,
   readVaultTextpackPath as readDirectoryTextpackPath,
   readVaultTextpackIdentity as readDirectoryTextpackIdentity,
@@ -8474,6 +8476,44 @@ export function mutateVaultDocument(input: Omit<VaultLocation, "onReceipt"> & {
 export function createVaultFolder(input: Omit<Parameters<typeof createDirectoryFolder>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
   return createDirectoryFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
+}
+
+type FolderMoveActor = {
+  root: string; workspaceId: string; actorUserId: string;
+  authorize?: () => Promise<void>;
+};
+async function authorizeFolderMoveOwner(input: FolderMoveActor) {
+  await input.authorize?.();
+  const workspace = await getVaultWorkspaceIdentity(input.workspaceId);
+  if (!workspace || workspace.ownerId !== input.actorUserId) throw new Error("Only the workspace owner can move folders");
+}
+
+/** File paths and access come from the current canonical workspace, not caller
+ * supplied manifests. Approval must retain this complete immutable plan. */
+export async function previewVaultFolderMove(input: FolderMoveActor & { source: string; destination: string }) {
+  if (!db) throw new Error(NO_DATABASE);
+  await authorizeFolderMoveOwner(input);
+  const manifest = await listDirectoryTextpacks({root:input.root,workspaceId:input.workspaceId,...folderMoveCoordinator(input.root)});
+  if (manifest.problems.some(problem => problem.relativePath === input.source || problem.relativePath.startsWith(`${input.source}/`))) {
+    throw new Error("The source folder contains files that cannot be safely moved yet.");
+  }
+  await authorizeFolderMoveOwner(input);
+  const plan = await previewFolderMoveMetadata({...input,folders:manifest.folders,items:manifest.items,manifestRevision:manifest.revision});
+  return {plan,reviewedPlanHash:folderMovePlanHash(plan)};
+}
+
+/** Used only after the approval adapter has presented and retained the preview.
+ * Access expansion requires a separate explicit acknowledgement. */
+export async function moveVaultFolder(input: FolderMoveActor & {
+  operationId: string; plan: ReturnType<typeof planFolderMove>; reviewedPlanHash: string;
+  actorType: "human" | "external_agent"; reviewedAccessExpansion?: boolean;
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  if (folderMovePlanHash(input.plan) !== input.reviewedPlanHash) throw new Error("Reviewed folder move changed");
+  if (input.plan.addedAccess.length && input.reviewedAccessExpansion !== true) throw new Error("Review the additional folder access before moving.");
+  return moveDirectoryFolder({root:input.root,workspaceId:input.workspaceId,operationId:input.operationId,
+    plan:input.plan,actorUserId:input.actorUserId,actorType:input.actorType,
+    authorize:()=>authorizeFolderMoveOwner(input),...folderMoveCoordinator(input.root)});
 }
 
 export function createVaultTemplate(input: Omit<Parameters<typeof createDirectoryTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {

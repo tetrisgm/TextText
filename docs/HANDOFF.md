@@ -83,6 +83,11 @@
   public approval/client integration remains pending.
   Reservation and receipt replay now bind the full reviewed plan, with twelve
   focused tests and TypeScript passing; this follow-up remains source-only.
+  Content-boundary preview/execution wrappers now check owner access, current
+  manifests, retained review hashes and explicit access expansion acknowledgement.
+  Required core verification includes the real PostgreSQL boundary/reservation
+  tests and passed 765 tests plus TypeScript. Public proposal/client integration
+  is still pending; this cohort is not installed or deployed.
   [Source evidence](verification/2026-10-08-folder-move-recovery-source.md).
 
 

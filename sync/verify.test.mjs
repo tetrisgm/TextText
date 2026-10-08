@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { inputs, fingerprint, validateReceipt, recordPassingRun } from './verify.mjs';
+import { coreDatabaseEnvironment, inputs, fingerprint, validateReceipt, recordPassingRun } from './verify.mjs';
 
 test('invocation through a symlink executes the gate and rejects invalid flags', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-sync-entry-'));
@@ -66,6 +66,16 @@ test('default source fingerprint includes binary presets and their generation lo
   } finally {await fs.rm(root,{recursive:true,force:true});}
 });
 
+
+test('core database regressions cannot silently skip or use a remote database', () => {
+  for (const DATABASE_URL of [undefined, '', 'invalid', 'postgres://user:secret@production.example/db']) {
+    assert.throws(() => coreDatabaseEnvironment({DATABASE_URL}), /requires local PostgreSQL/);
+  }
+  for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+    const DATABASE_URL = `postgres://user:secret@${host}/test`;
+    assert.equal(coreDatabaseEnvironment({DATABASE_URL,TEXTTEXT_READING_DB_TEST:'0'}).TEXTTEXT_READING_DB_TEST, '1');
+  }
+});
 
 test('failed reruns and edits during a run cannot leave a passing receipt', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-sync-receipt-'));

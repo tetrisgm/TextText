@@ -45,9 +45,18 @@ export async function recordPassingRun(receiptPath, digest, platform, scope, exe
   await fs.rename(temporary, receiptPath);
 }
 
-async function run(command, args) {
+export function coreDatabaseEnvironment(environment = process.env) {
+  let hostname;
+  try { hostname = new URL(environment.DATABASE_URL).hostname; } catch { /* Never expose credentials. */ }
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname)) {
+    throw new Error('Core sync verification requires local PostgreSQL. Run through scripts/with-local-database.mjs.');
+  }
+  return { ...environment, TEXTTEXT_READING_DB_TEST: '1' };
+}
+
+async function run(command, args, environment = process.env) {
   await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, stdio: 'inherit', shell: false });
+    const child = spawn(command, args, { cwd: root, stdio: 'inherit', shell: false, env: environment });
     child.once('error', reject);
     child.once('exit', (code, signal) => code === 0 ? resolve() : reject(new Error(`${command} failed (${signal ?? code})`)));
   });
@@ -77,7 +86,8 @@ async function main() {
       if (scope === 'core' || scope === 'client') {
         await run(process.execPath, ['--test', 'sync/verify.test.mjs']);
         await run(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', '--config',
-          scope === 'client' ? 'sync/vitest.client.config.mts' : 'sync/vitest.config.mts']);
+          scope === 'client' ? 'sync/vitest.client.config.mts' : 'sync/vitest.config.mts'],
+          scope === 'core' ? coreDatabaseEnvironment() : process.env);
         await run(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit', '--pretty', 'false']);
       } else await run('bash', ['scripts/test-sync.sh', '--native-only']);
     }, () => fingerprint(root));

@@ -37,3 +37,20 @@ request receipts use the same plan hash. Twelve focused tests passed, including
 real local PostgreSQL rejection before reservation, changed-plan retry rejection,
 unchanged replay without duplicate audits, and reordered object keys. TypeScript
 passed. This follow-up is source-only, not deployed or exposed as a command.
+
+The sole content boundary now provides authoritative preview and execution
+wrappers. Preview checks current ownership before reading files, derives its
+manifest from the engine, and creates no reservation. Execution rechecks ownership
+under the engine lock, validates the retained review hash and separately requires
+acknowledgement of added destination access. Real local PostgreSQL tests cover
+revoked access, stale manifests, changed reviews, empty-folder preservation,
+rebased grants, expanded-access rejection and one audit row across retries.
+
+These database tests are now mandatory in the core gate, which requires a local
+PostgreSQL URL and explicitly enables them. Gate tests reject missing/remote
+database configuration without printing credentials. The working-tree core run
+passed 765 tests in 80 files and TypeScript; unrelated pre-existing local edits
+were present, so this is not an attestation of a frozen release candidate.
+Log: `/tmp/texttext-folder-move-boundary-core.log`. Focused database/engine tests
+also passed. ESLint has no errors and two existing store warnings. The public
+proposal adapter, access-review UI and client integration remain pending.
