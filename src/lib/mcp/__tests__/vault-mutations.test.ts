@@ -39,6 +39,22 @@ async function body() {
   const doc = new Y.Doc(); try { Y.applyUpdate(doc, Buffer.from(state!.update, "base64")); return documentSnapshotFromYDoc(doc).content.body; } finally { doc.destroy(); }
 }
 describe("durable file MCP commands through public input schemas", () => {
+  it("updates one photo's metadata through the public schema, retaining archive bytes and replaying once", async () => {
+    const document = emptyDocumentSnapshot(); document.content.body = "Human original";
+    document.content.assets = [{ id: "photo", kind: "image", src: "assets/photo.jpg", caption: "Keep caption" }, { id: "neighbor", kind: "image", src: "assets/neighbor.jpg", summary: "Keep neighbor" }];
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const saved = await writeVaultTextpack({ root, workspaceId: "workspace", itemId, operationId: "photo-seed", relativePath: "Notes/A.textpack", baseRevision: revision, bytes: buildTextpack("Note", { document, markdown: `---\ntextTextId: ${itemId}\n---\n\nHuman original`, files: { "assets/photo.jpg": bytes } }) });
+    const args = parseWorkspaceToolInput("update_item", { id: itemId, asset_metadata: { id: "photo", summary: "Generated summary", tags: ["light"] }, if_match_hash: saved.revision, idempotency_key: "photo-metadata" });
+    await mutateVaultTool("update_item", args, context());
+    const pack = await readVaultTextpack({ root, workspaceId: "workspace", itemId });
+    const content = readDocument(openPack(pack!.bytes, "Notes/A.textpack", pack!.revision).file).content;
+    expect(content.body).toBe("Human original");
+    expect(content.assets).toEqual([{ ...document.content.assets[0], summary: "Generated summary", tags: ["light"] }, document.content.assets[1]]);
+    expect(unzipSync(pack!.bytes)["Note.textbundle/assets/photo.jpg"]).toEqual(bytes);
+    await mutateVaultTool("update_item", args, context());
+    expect((await readVaultTextpack({ root, workspaceId: "workspace", itemId }))!.revision).toBe(pack!.revision);
+    await expect(mutateVaultTool("update_item", { ...args, idempotency_key: "stale-photo", asset_metadata: { id: "photo", summary: "Stale replacement" } }, context())).rejects.toThrow("changed");
+  });
   it.each(["create_item", "update_item"])("reads only a matching completed %s receipt without starting new writes", async name => {
     const args = name === "create_item" ? { title: "Receipt", body: "Once", idempotency_key: "receipt" } : { id: itemId, body: "Changed once", if_match_hash: revision, idempotency_key: "receipt" };
     await expect(mutateVaultTool(name, args, { ...context(), receiptOnly: true })).rejects.toThrow("No completed receipt");

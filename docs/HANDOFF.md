@@ -31,6 +31,16 @@
 
 ## Current work
 
+- Agent `update_item` now accepts validated `asset_metadata` for one image's
+  summary/tags by stable asset ID, with mandatory current revision. The shared
+  Yjs mutation validates before any content/receipt changes, preserves image
+  references and neighbors, and replays an operation once. File MCP regression
+  writes an actual TextPack, verifies original asset bytes, replays once and
+  rejects a stale revision. Fifty relevant tests and TypeScript passed
+  (`/tmp/texttext-agent-image-metadata-final.log`). Legacy non-file backend
+  explicitly refuses this operation. Gallery UI action and visual input to
+  hosted agents still need integration; no install/deploy yet.
+
 - Gallery metadata now reads the latest TextPack before writing and merges only
   the viewer's changed fields. Concurrent edits to other photos, body, custom
   fields, asset order and added images survive. Competing edits to the same

@@ -7,7 +7,7 @@ const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
   create_item_type: ["blueprint", "idempotency_key"],
   add_comment: ["id", "body", "parent_comment_id", "idempotency_key"],
   create_item: ["capture", "markdown", "title", "body", "excerpt", "kind", "fields", "folder_path", "idempotency_key", "template_id", "template_version"],
-  update_item: ["id", "title", "body", "excerpt", "tags", "fields", "section", "expected_section_body", "if_match_hash", "idempotency_key"],
+  update_item: ["id", "title", "body", "excerpt", "tags", "fields", "asset_metadata", "section", "expected_section_body", "if_match_hash", "idempotency_key"],
 };
 const descriptions: Partial<Record<WorkspaceToolName, string>> = {
   remove_item_asset: "Detach one asset by its ID from document references and gallery. Requires current hash and stable idempotency key. Original archive bytes are retained for recovery; this is not permanent media deletion.",
@@ -27,7 +27,7 @@ const descriptions: Partial<Record<WorkspaceToolName, string>> = {
   add_comment: "Add a file comment or reply, up to 4000 characters. Pass idempotency_key for retry safety. Quote anchors are not supported yet.",
   list_comments: "Read accessible file comment threads filtered by open, resolved or all state.",
   create_item: "Create a private file using title, body, excerpt, kind and optional fields. Uses Notes, Blog, Bookmarks, Gallery or Presentations unless folder_path is supplied. Pass idempotency_key for retry safety. Pass capture for text or a standalone URL, or markdown for a complete Markdown file with frontmatter. These are alternatives to structured fields. Pass template_id to create from the latest accessible template artifact, or template_version to pin a version. Explicit fields override starter defaults.",
-  update_item: "Edit title, body, excerpt, tags, declared template fields (null clears one), or one guarded Markdown section in a file. Requires the current if_match_hash from read_item. Unsupported metadata and publication changes fail without changing the file.",
+  update_item: "Edit title, body, excerpt, tags, declared template fields (null clears one), one guarded Markdown section, or one image's summary/tags via asset_metadata with its stable asset id. Null image summary clears it; original bytes and neighboring photos remain unchanged. Requires the current if_match_hash from read_item. Unsupported metadata and publication changes fail without changing the file.",
   append_to_item: "Append markdown or markdown_fragment to a file using the current if_match_hash from read_item. Pass a stable idempotency_key so a lost response can be retried exactly once.",
   list_items: "List accessible files, optionally restricted to an exact folder path. Omit folder_path to list the workspace. Returns titles, paths and hashes.",
   read_item: "Read an accessible file's complete DocumentSnapshot, Markdown body, path and current content hash.",

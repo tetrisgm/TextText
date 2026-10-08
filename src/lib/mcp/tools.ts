@@ -2171,6 +2171,7 @@ async function executeLegacyWorkspaceCommand(
 
     case "update_item": {
       const input = args as WorkspaceToolInput<"update_item">;
+      if (input.asset_metadata !== undefined) return errorResult("Image metadata updates require the file workspace backend.");
       const resolved = await requirePost(extra, input.id);
       if (isToolResult(resolved)) return resolved;
       const { blog, post, access } = resolved;

@@ -26,6 +26,13 @@ export const documentAssetSchema = z
 
 export type DocumentAsset = z.infer<typeof documentAssetSchema>;
 
+export const documentAssetMetadataPatchSchema = z.object({
+  id: documentAssetSchema.shape.id,
+  summary: documentAssetSchema.shape.summary.unwrap().nullable().optional(),
+  tags: documentAssetSchema.shape.tags.unwrap().optional(),
+}).strict().refine(value => value.summary !== undefined || value.tags !== undefined, "Choose image metadata to update.");
+export type DocumentAssetMetadataPatch = z.infer<typeof documentAssetMetadataPatchSchema>;
+
 const rowScalarSchema = z.union([
   z.string().max(20_000),
   z.number().finite(),

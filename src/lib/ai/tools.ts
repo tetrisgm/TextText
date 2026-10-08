@@ -1,5 +1,6 @@
 import { selectionEnvelopeSchema } from "@/lib/ai/selection-envelope";
 import { z } from "zod";
+import { documentAssetMetadataPatchSchema } from "@/lib/documents/model";
 import { itemTypeSaveScopeSchema } from "@/lib/presentation/item-type-update";
 import { itemTypeBlueprintSchema } from "@/lib/presentation/item-type-blueprint";
 
@@ -330,6 +331,7 @@ const fieldValues = z
 const updateItemInput = z
   .object({
     id,
+    asset_metadata: documentAssetMetadataPatchSchema.optional().describe("Update one image's summary or tags by stable asset id. Null summary clears it. Other photos and original bytes stay unchanged. Requires the current if_match_hash."),
     idempotency_key: z.string().trim().min(1).max(500).optional(),
     title: z.string().trim().min(1).max(300).optional(),
     excerpt: z.string().max(2_000).nullable().optional(),
@@ -397,6 +399,7 @@ const updateItemInput = z
   .strict()
   .superRefine((value, context) => {
     const replacesWholeItem =
+      value.asset_metadata !== undefined ||
       value.markdown !== undefined ||
       (value.body !== undefined && value.section === undefined);
     if (replacesWholeItem && !value.if_match_hash) {
@@ -498,7 +501,8 @@ const updateItemInput = z
       value.cover_height !== undefined ||
       value.date !== undefined ||
       value.pinned !== undefined ||
-      value.fields !== undefined;
+      value.fields !== undefined ||
+      value.asset_metadata !== undefined;
     if (!value.markdown && !structured) {
       context.addIssue({
         code: "custom",

@@ -4,6 +4,8 @@ import * as Y from "yjs";
 import { spliceText, transactTextChanges } from "./text-transactions";
 import {
   validateDocumentSnapshot,
+  documentAssetMetadataPatchSchema,
+  type DocumentAssetMetadataPatch,
   type DocumentAsset,
   type DocumentFieldValue,
   type DocumentSnapshot,
@@ -53,6 +55,7 @@ export type DocumentMutation = {
    * able to put back the accent and density the version was wearing. */
   theme?: Record<string, unknown>;
   assets?: DocumentAsset[];
+  assetMetadata?: DocumentAssetMetadataPatch;
   operationId?: string;
 };
 
@@ -378,6 +381,21 @@ export function applyDocumentMutation(
       applied = false;
       return;
     }
+    // Yjs cannot roll back a failed transaction: validate the target and patch
+    // before recording the operation or changing any content.
+    let metadataAsset: DocumentAsset | undefined;
+    let metadataIndex = -1;
+    if (mutation.assetMetadata !== undefined) {
+      if (mutation.assets !== undefined) throw new Error("Image metadata cannot also replace assets.");
+      const patch = documentAssetMetadataPatchSchema.parse(mutation.assetMetadata);
+      const assets = array(rootMap, "assets").toArray() as DocumentAsset[];
+      const matches = assets.map((asset, index) => ({ asset, index })).filter(({ asset }) => asset.id === patch.id);
+      if (matches.length !== 1 || matches[0].asset.kind !== "image") throw new Error("The selected image no longer exists or is ambiguous.");
+      metadataIndex = matches[0].index;
+      metadataAsset = { ...matches[0].asset, ...(patch.tags !== undefined ? { tags: patch.tags } : {}) };
+      if (patch.summary === null) delete metadataAsset.summary;
+      else if (patch.summary !== undefined) metadataAsset.summary = patch.summary;
+    }
     const inverses = mutation.revertChanges?.map((change) =>
       inverseTextChange(change, text(rootMap, change.field).toString()));
     const operations = map(rootMap, APPLIED_OPERATIONS_KEY);
@@ -425,6 +443,11 @@ export function applyDocumentMutation(
     }
     if (mutation.assets !== undefined) {
       replaceArray(array(rootMap, "assets"), mutation.assets);
+    }
+    if (metadataAsset) {
+      const assets = array(rootMap, "assets");
+      assets.delete(metadataIndex, 1);
+      assets.insert(metadataIndex, [metadataAsset]);
     }
     if (mutation.template !== undefined) {
       // Presentation is a pinned reference, never a merged structure: two

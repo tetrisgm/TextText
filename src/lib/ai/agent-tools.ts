@@ -848,6 +848,7 @@ export function createWorkspaceAgentTools(
           actor,
         );
         const metadataRequested =
+          input.asset_metadata !== undefined ||
           input.text_edit !== undefined ||
           input.section !== undefined ||
           input.markdown !== undefined ||
