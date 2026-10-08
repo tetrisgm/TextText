@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Package a Mac-verified standalone build. This never connects to a server.
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -34,6 +34,29 @@ export function copyWithoutSecrets(source, destination) {
       return true;
     },
   });
+}
+
+// Turbopack aliases must resolve to the installed package, not dereferenced
+// standalone copies: peers otherwise load a second Yjs constructor universe.
+export function restoreExternalPackageAliases(app, dist) {
+  const aliases = join(app, relativeBuildDirectory(app, dist), "node_modules");
+  if (!existsSync(aliases)) return;
+  for (const alias of readdirSync(aliases)) {
+    const location = join(aliases, alias);
+    const manifest = join(location, "package.json");
+    if (!existsSync(manifest)) continue;
+    const metadata = JSON.parse(readFileSync(manifest, "utf8"));
+    const name = metadata.name;
+    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9._-]*$/.test(name) || !alias.startsWith(`${name}-`) || !/^[a-f0-9]{16}$/.test(alias.slice(name.length + 1))) continue;
+    const canonical = join(app, "node_modules", name);
+    const resolved = realpathSync(canonical);
+    const inside = relative(realpathSync(join(app, "node_modules")), resolved);
+    if (inside.startsWith(`..${sep}`) || inside === ".." || isAbsolute(inside)) throw new Error("External package target escaped runtime dependencies.");
+    const installed = JSON.parse(readFileSync(join(canonical, "package.json"), "utf8"));
+    if (installed.name !== name || installed.version !== metadata.version) throw new Error(`External package version mismatch: ${name}`);
+    rmSync(location, { recursive: true, force: true });
+    symlinkSync(relative(aliases, canonical), location, "dir");
+  }
 }
 
 function run(command, args, options = {}) {
@@ -84,6 +107,7 @@ export function packageBuild({ projectRoot = root, distDirectory = ".next", migr
     // are disabled: Mac binaries must never be compiled into this archive.
     run("npm", ["ci", "--omit=dev", "--include=optional", "--ignore-scripts", "--os=linux", "--cpu=arm64", "--libc=glibc", "--no-audit", "--no-fund"], { cwd: app });
     assertLinuxArmRuntime(app);
+    restoreExternalPackageAliases(app, dist);
     mkdirSync(join(app, "release/oracle"), { recursive: true });
     for (const name of ["entrypoint.mjs", "start.mjs", "backup.mjs", "restore-drill.mjs", "bootstrap-database.mjs", "smoke.mjs", "texttext-backup.service"]) cpSync(join(projectRoot, "release/oracle", name), join(app, "release/oracle", name));
     copyWithoutSecrets(resolve(migrationsDirectory), join(app, "release/oracle/migrations"));

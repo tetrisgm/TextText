@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { copyWithoutSecrets, relativeBuildDirectory } from "./package.mjs";
+import { copyWithoutSecrets, relativeBuildDirectory, restoreExternalPackageAliases } from "./package.mjs";
 import { localDatabase, protectedEnvironment, runtimeEnvironment } from "./start.mjs";
 import { backupConnection, createBackup, retainedArchives } from "./backup.mjs";
 import { verifyPackage } from "./verify-package.mjs";
@@ -273,4 +273,46 @@ test("backup preserves validated archives when the free-space floor cannot be re
   }), /free-space floor/);
   assert.equal(readFileSync(prior, "utf8"), "previous good backup");
   assert.deepEqual(readdirSync(backups), ["texttext-20260901T120000Z-12345678.dump"]);
+});
+
+
+test("Oracle external aliases share real Yjs constructors with awareness peers", (t) => {
+  const app = temporary(t);
+  const aliases = join(app, ".next/node_modules");
+  mkdirSync(aliases, {recursive:true});
+  for (const name of ["yjs", "y-protocols", "lib0", "isomorphic.js"]) cpSync(resolve("node_modules",name), join(app,"node_modules",name), {recursive:true});
+  const yAlias="yjs-0123456789abcdef", protocolAlias="y-protocols-0123456789abcdef";
+  for(const [alias,name] of [[yAlias,"yjs"],[protocolAlias,"y-protocols"]]) cpSync(join(app,"node_modules",name),join(aliases,alias),{recursive:true});
+  const script=`import * as direct from './.next/node_modules/${yAlias}/dist/yjs.mjs';
+    import * as peer from './node_modules/yjs/dist/yjs.mjs';
+    import { Awareness } from './.next/node_modules/${protocolAlias}/awareness.js';
+    const doc=new direct.Doc();const awareness=new Awareness(doc);
+    const same=direct.Doc===peer.Doc && awareness.doc instanceof peer.Doc;
+    awareness.destroy();doc.destroy();if(!same)process.exitCode=2;`;
+  const before=spawnSync(process.execPath,["--input-type=module","-e",script],{cwd:app,encoding:"utf8"});
+  assert.equal(before.status,2);assert.match(before.stderr,/Yjs was already imported/);
+  restoreExternalPackageAliases(app,".next");
+  assert.equal(lstatSync(join(aliases,yAlias)).isSymbolicLink(),true);
+  const after=spawnSync(process.execPath,["--input-type=module","-e",script],{cwd:app,encoding:"utf8"});
+  assert.equal(after.status,0,after.stderr);assert.doesNotMatch(after.stderr,/Yjs was already imported/);
+  // Repackaged aliases remain idempotent; mismatched locked copies fail closed.
+  restoreExternalPackageAliases(app,".next");
+  rmSync(join(aliases,yAlias));mkdirSync(join(aliases,yAlias));
+  writeFileSync(join(aliases,yAlias,"package.json"),JSON.stringify({name:"yjs",version:"0.0.0"}));
+  assert.throws(()=>restoreExternalPackageAliases(app,".next"),/version mismatch/);
+});
+
+
+test("external alias repair refuses dependency escape and preserves unrelated directories", (t) => {
+  const root=temporary(t), app=join(root,"app"), aliases=join(app,".next/node_modules");
+  mkdirSync(aliases,{recursive:true});mkdirSync(join(app,"node_modules"));
+  const outside=join(root,"outside");mkdirSync(outside);
+  writeFileSync(join(outside,"package.json"),JSON.stringify({name:"yjs",version:"1"}));
+  symlinkSync(outside,join(app,"node_modules/yjs"),"dir");
+  const alias=join(aliases,"yjs-0123456789abcdef");mkdirSync(alias);
+  writeFileSync(join(alias,"package.json"),JSON.stringify({name:"yjs",version:"1"}));
+  const unrelated=join(aliases,"leave-alone");mkdirSync(unrelated);writeFileSync(join(unrelated,"keep"),"keep");
+  assert.throws(()=>restoreExternalPackageAliases(app,".next"),/escaped runtime/);
+  assert.equal(lstatSync(alias).isDirectory(),true);
+  assert.equal(readFileSync(join(unrelated,"keep"),"utf8"),"keep");
 });
