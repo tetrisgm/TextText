@@ -2,7 +2,9 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1207)**, source `2cc028b9`.
+- Mac `/Applications/TextText.app`: **0.204 (1208)**, source `9a38e556`.
+  Real native folder agent creation, persisted TextPack reopen and saved-body
+  search passed. [1208 receipt](verification/2026-10-08-mac-1208.md).
   Account/iCloud startup, saved Gallery model metadata, single-photo editor
   save/reopen passed in 1206; 1207 startup, existing note, home navigation and
   saved-body search passed. [Mac receipt](verification/2026-10-08-mac-1207.md).
@@ -23,16 +25,6 @@
   Preserve existing content; only dedicated verification items were edited.
 
 ## Current work and next checks
-
-- Mac candidate **0.204 (1208)** is building from frozen source `9a38e556`
-  in the existing clean ordinary clone `/private/tmp/texttext-candidate-1195-5ELVuo`.
-  Live exec handle `39188`; log `/tmp/texttext-mac1208-build.log`. Exact-source
-  core gates passed 823 tests in 87 suites and TypeScript; native compilation
-  and gates are running. Poll this handle; do not restart based on an observation
-  timeout. Installed app inspected: verification folder overview, no editor,
-  assistant or unsaved draft visible. Recheck before quitting/installing.
-  Candidate includes desktop folder agent action/search, scope fences,
-  TextPack mutation receipts and cold-home loading. Not installed yet.
 
 - Home List/Cards toggles and navigation persistence passed in actual Mac and
   Safari. [Receipt](verification/2026-10-08-home-layouts-live.md).
@@ -56,7 +48,8 @@
   drafts, original-folder fencing during an active turn, post-turn retargeting
   and empty-root dispatch (`/tmp/texttext-folder-agent-navigation.log`);
   TypeScript passed (`/tmp/texttext-folder-navigation-types.log`).
-  This action is not installed and actual model creation remains unverified. Mac bridge now accepts validated `folderPath`, rejects
+  Installed Mac 1208 passed real folder note creation and reopen/search;
+  Windows live model creation and hosted folder authorization remain unverified. Mac bridge now accepts validated `folderPath`, rejects
   mixed item/folder/photo/customization requests, and exposes creation tools
   within that boundary. All 16 controller tests passed; log
   `/tmp/texttext-explicit-agent-folder.log`. UI/Windows wiring is pending.
