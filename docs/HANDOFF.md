@@ -477,6 +477,11 @@ and actions, with a personal per-device/workspace preference.
   found. Do not create a duplicate. Standalone CLI receipt:
   [current CLI](verification/2026-10-07-standalone-cli-current.md).
 
+## Latest Windows recovery follow-up
+
+- Shared checkpoint recovery and session-open validation now hold the same file-store mutation lock through materialization, checkpoint inspection and session registration. Collaboration lease acquisition remains outside the file lock. This closes the remaining reopen race with concurrent file mutations.
+- Verified on the Mac with `dotnet run --project windows/TextText.Core.Tests/TextText.Core.Tests.csproj`: the complete native file and durable sync regression suite passed, including interrupted materialization, retained journal replay and external edits. This follow-up is not installed yet.
+
 ## Working conventions and evidence
 
 - [Sync subsystem contract](../sync/README.md) and exact-source gates cover

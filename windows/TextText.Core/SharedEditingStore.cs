@@ -84,11 +84,11 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         var moved=store.Describe(cp.Path);if(moved.ItemId!=cp.ItemId||moved.Hash!=cp.ProjectedHash)throw new FileChangedException();
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);File.Delete(System.IO.Path.Combine(directory,"move-intent.json"));return cp;
     }
-    SharedCheckpoint? Recover(string itemId) {
-        var directory=DirectoryFor(itemId);store.WithExclusiveMutation(()=>{RecoverMove(store,directory,itemId);return true;});var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
+    SharedCheckpoint? Recover(string itemId) => store.WithExclusiveMutation(() => {
+        var directory=DirectoryFor(itemId);RecoverMove(store,directory,itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
         if(intent!=null) {if(intent.Version!=1)throw new InvalidDataException("Unsupported shared intent.");Finish(intent,directory);}
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
-    }
+    });
     PackFile Finish(Intent intent,string directory) {
         Validate(store,intent.Checkpoint);var bytes=Convert.FromBase64String(intent.Payload);if(TextPackStore.Identity(bytes)!=intent.Checkpoint.ItemId||TextPackStore.Hash(bytes)!=intent.Checkpoint.ProjectedHash)throw new InvalidDataException("Invalid shared projection.");
         var current=store.Describe(intent.Checkpoint.Path);
@@ -101,10 +101,10 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
             ObjectDisposedException.ThrowIf(disposed,this);
             foreach(var token in sessions.Where(x=>x.Value.ItemId==itemId).Select(x=>x.Key).ToArray())CloseInternal(token);
             var lease=await sync.AcquireCollaborationAsync(itemId,ct);
-            try {var cp=Recover(itemId);var file=store.Describe(path);if(file.ItemId!=itemId || (file.Hash!=expectedHash && file.Hash!=cp?.ProjectedHash))throw new FileChangedException();
+            try {return store.WithExclusiveMutation(() => {var cp=Recover(itemId);var file=store.Describe(path);if(file.ItemId!=itemId || (file.Hash!=expectedHash && file.Hash!=cp?.ProjectedHash))throw new FileChangedException();
                 if(cp!=null&&file.Hash!=cp.ProjectedHash){var directory=DirectoryFor(itemId);if(cp.Pending||cp.RetiredReason!=null){cp=cp with{RetiredReason="The file changed outside shared editing. Its saved shared edits are retained for recovery."};Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);}else{Save(System.IO.Path.Combine(directory,"archived-"+Guid.NewGuid().ToString("N")+".json"),cp);File.Delete(System.IO.Path.Combine(directory,"checkpoint.json"));cp=null;}}
-                var token=Guid.NewGuid().ToString();sessions[token]=new(itemId,path,lease);return new(token,file,cp);
-            }catch{lease.Dispose();throw;}
+                var token=Guid.NewGuid().ToString();sessions[token]=new(itemId,path,lease);return new SharedSession(token,file,cp);
+            });}catch{lease.Dispose();throw;}
         }finally{gate.Release();}
     }
     public async Task<PackFile> CheckpointAsync(string sessionToken,string expectedHash,byte[] textPack,SharedCheckpoint checkpoint,CancellationToken ct=default) {
