@@ -2,14 +2,14 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1194)**, source `1e983413`.
+- Mac `/Applications/TextText.app`: **0.204 (1195)**, source `94cef4ea`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
   Parent selection and save-before-navigation/reopen passed in the actual app.
   [Receipt](verification/2026-10-08-parent-native-contract.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
-- Oracle: **texttext-oracle-20261008T105546Z-1e983413**, thirteen live checks passed.
+- Oracle: **texttext-oracle-20261008T121823Z-94cef4ea**, thirteen live checks passed.
   Previous release retained; TextText/Algorave remain active and shared config
   timestamps are unchanged. Fresh backup `texttext-20261008T105710Z-d08da82e.dump`.
 - Live 1188 acceptance found a permission-only listing notification gap in both
@@ -28,14 +28,12 @@
 
 ## Current work
 
-- Clean candidate `/private/tmp/texttext-candidate-1195-5ELVuo` at `81f767b6`
-  passed 795 core tests in 84 files plus TypeScript. Its browser cohort passed
-  folder move/customize, bootstrap and proposal flows, then caught a stale full
-  web fixture missing `/api/vault/workspaces`. The fixture now models account
-  discovery; focused full web interaction passes. Update candidate to this
-  committed fixture fix before recording final exact-source gates/builds.
-  Logs: `/tmp/texttext-candidate1195-core.log`,
-  `/tmp/texttext-candidate1195-browser.log`, `/tmp/texttext-web-workspace-fixture-fix.log`.
+- Candidate 1195 installed on Mac and deployed on Oracle; frozen core/native/
+  browser checks and startup/search/save/reopen passed. Windows candidate is
+  verified but the older installed app remains running. Live native folder
+  review caught a 201-status relay defect; source fix passes 17 relay tests but
+  needs build/install/live acceptance. Stable proposal staging retries and the
+  Oracle shutdown timeout remain open. [Receipt](verification/2026-10-08-candidate-1195.md).
 
 - Integrated folder cohort core gate passed 795 tests in 84 files plus TypeScript
   (`/tmp/texttext-folder-integrated-core.log`). Unrelated working edits were

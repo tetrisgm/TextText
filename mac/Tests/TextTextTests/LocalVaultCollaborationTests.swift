@@ -103,6 +103,36 @@ final class LocalVaultCollaborationTests: XCTestCase {
             method: "folderMoveReview", params: ["source": "Notes", "destination": "Archive/Notes", "approved": true]))
     }
 
+    @MainActor
+    func testFolderReviewRelayAcceptsCreatedAndRetainsConflictFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sync = root.appendingPathComponent(".texttext/sync")
+        try FileManager.default.createDirectory(at: sync, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try JSONSerialization.data(withJSONObject: ["binding": ["origin": origin.absoluteString, "workspaceId": "workspace"],
+            "baselines": [:], "outbox": [:], "conflicts": [:], "cursor": 0] as [String: Any])
+            .write(to: sync.appendingPathComponent("state.json"))
+        for status in [201, 409] {
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [FolderReviewProtocol.self]
+            let relay = LocalVaultCollaboration(credentials: { (self.origin, "fixture-\(status)") }, session: URLSession(configuration: config))
+            let done = expectation(description: "folder review \(status)")
+            relay.start(id: "review-\(status)", method: "folderMoveReview",
+                params: ["source": "Notes", "destination": "Archive/Notes"], root: root) { result in
+                switch result {
+                case .success(let value):
+                    XCTAssertEqual(status, 201)
+                    XCTAssertEqual(value?["reviewPath"] as? String, "/proposals/fixture")
+                case .failure(let error):
+                    XCTAssertEqual(status, 409)
+                    XCTAssertEqual((error as? LocalVaultCollaborationError)?.code, "409")
+                }
+                done.fulfill()
+            }
+            await fulfillment(of: [done], timeout: 3)
+        }
+    }
+
     func testReadBuildsOnlyBoundEndpointAndCursor() throws {
         let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture-token",
             method: "collaborationRead", params: ["itemId": "item-1", "epoch": 3, "seq": 4, "waitMs": 25_000])
@@ -309,6 +339,19 @@ private final class RenewedCollaborationProtocol: URLProtocol, @unchecked Sendab
         let response = HTTPURLResponse(url: request.url!, statusCode: renewed ? 200 : 401, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data((renewed ? "{\"renewed\":true}" : "{\"error\":\"Expired\"}").utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private final class FolderReviewProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let created = request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-201"
+        let response = HTTPURLResponse(url: request.url!, statusCode: created ? 201 : 409, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data((created ? "{\"reviewPath\":\"/proposals/fixture\"}" : "{\"error\":\"Changed folder\"}").utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

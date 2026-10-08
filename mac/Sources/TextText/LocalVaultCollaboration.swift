@@ -506,7 +506,8 @@ final class LocalVaultCollaboration {
                     try Task.checkCancellation()
                 }
                 let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                guard status == 200, let value else {
+                let succeeded = status == 200 || method == "folderMoveReview" && status == 201
+                guard succeeded, let value else {
                     let message = (value?["error"] as? String).map { String($0.prefix(1000)) } ?? "Workspace request could not complete."
                     throw LocalVaultCollaborationError(code: String(status), message: message)
                 }
