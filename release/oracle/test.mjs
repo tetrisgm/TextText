@@ -10,13 +10,13 @@ import { localDatabase, protectedEnvironment, runtimeEnvironment } from "./start
 import { backupConnection, createBackup, retainedArchives } from "./backup.mjs";
 import { verifyPackage } from "./verify-package.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
-import { installShutdownDiagnostics } from "./shutdown-diagnostics.mjs";
+import { installHttpShutdownLifecycle } from "./shutdown-diagnostics.mjs";
 import { createServer, get, Agent } from "node:http";
 import { EventEmitter, once } from "node:events";
 
 test("shutdown diagnostics identify unfinished HTTP without logging private request data", async () => {
   const signals = new EventEmitter(), logs = [];
-  const diagnostics = installShutdownDiagnostics({ signals, log: text => logs.push(text), delays: [] });
+  const diagnostics = installHttpShutdownLifecycle({ signals, log: text => logs.push(text), delays: [] });
   const agent = new Agent({ keepAlive: true });
   let response;
   const server = createServer((request, outgoing) => { response = outgoing; });
@@ -39,7 +39,7 @@ test("shutdown diagnostics identify unfinished HTTP without logging private requ
   } finally {
     agent.destroy(); await new Promise(resolve => server.close(resolve)); diagnostics.dispose();
   }
-  assert.deepEqual(diagnostics.snapshot(), { sockets: 0, active: {} });
+  assert.deepEqual(diagnostics.snapshot(), { sockets: 0, unstartedSockets: 0, active: {} });
   assert.equal(signals.listenerCount('SIGTERM'), 0);
 });
 

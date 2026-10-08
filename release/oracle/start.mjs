@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 import { isEntrypoint } from "./entrypoint.mjs";
-import { installShutdownDiagnostics } from "./shutdown-diagnostics.mjs";
+import { installHttpShutdownLifecycle } from "./shutdown-diagnostics.mjs";
 
 export function protectedEnvironment(path) {
   const stat = lstatSync(path);
@@ -45,7 +45,7 @@ if (isEntrypoint(import.meta.url)) {
     Object.assign(process.env, runtimeEnvironment(environment));
     const release = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
     process.chdir(release);
-    installShutdownDiagnostics();
+    installHttpShutdownLifecycle();
     await import(pathToFileURL(resolve(release, "server.js")).href);
   } catch (error) {
     console.error(error instanceof Error ? error.message : "TextText could not start.");

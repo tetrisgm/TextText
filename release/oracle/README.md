@@ -68,11 +68,14 @@ Use the existing `ubuntu` identity and Node 22. The service example assumes
 read-only inside the service. The example CPU and memory ceilings protect other
 workloads on the shared VM; validate them against available capacity.
 
-The entry point installs shutdown-only diagnostics through Node's
+The entry point installs an HTTP shutdown lifecycle through Node's
 [HTTP diagnostic channels](https://nodejs.org/download/release/v22.23.3/docs/api/diagnostics_channel.html).
 On SIGTERM/SIGINT it reports active request categories/counts/ages and inbound
-socket counts immediately and after 10/20 seconds. It never logs URLs, IDs,
-headers or bodies, cancels requests, or extends shutdown. An idle socket count
+socket counts immediately and after 10/20 seconds. It closes only inbound
+sockets that have never started an HTTP request. Node's server close otherwise
+waits for these pre-request sockets until their header timeout. Executing
+requests and writes remain owned by Next. It never logs URLs, IDs,
+headers or bodies or extends shutdown. An idle socket count
 with no requests points to connection draining; remaining request categories
 identify which handler needs investigation. Verify this evidence from the next
 normal rollout before claiming the production timeout resolved.

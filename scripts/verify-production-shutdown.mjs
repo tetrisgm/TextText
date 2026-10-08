@@ -6,14 +6,16 @@ import { mkdtemp, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import { build } from 'esbuild';
 const server = process.argv[2];
 const injectLifecycle = process.argv[3] === '--inject-lifecycle';
 if (process.argv.length > 4 || process.argv[3] && !injectLifecycle) throw new Error('Only --inject-lifecycle is supported for testing an older build.');
 if (!server || !path.isAbsolute(server)) throw new Error('Pass an absolute local standalone server.js path.');
 const dir = await mkdtemp(path.join(tmpdir(), 'texttext-read-drain-'));
-let child; const agent = new http.Agent({ keepAlive: true });
+let child, idleSocket; const agent = new http.Agent({ keepAlive: true });
 try {
+ await writeFile(path.join(dir, 'lifecycle.mjs'), `import {installHttpShutdownLifecycle} from ${JSON.stringify(path.join(process.cwd(),'release/oracle/shutdown-diagnostics.mjs'))};installHttpShutdownLifecycle();`);
  await symlink(path.join(process.cwd(), 'node_modules'), path.join(dir, 'node_modules'));
  await writeFile(path.join(dir, 'entry.ts'), `import {listVaultTextpacks,waitVaultTextpacks} from ${JSON.stringify(path.join(process.cwd(),'src/sync/engine/store.ts'))}; export {installReadDrain} from ${JSON.stringify(path.join(process.cwd(),'src/sync/engine/read-drain.ts'))}; export async function poll(root:string){const location={root,workspaceId:'fixture'};const initial=await listVaultTextpacks(location);return waitVaultTextpacks({...location,revision:initial.revision,waitMs:25000});}`);
  await build({entryPoints:[path.join(dir,'entry.ts')],outfile:path.join(dir,'engine.cjs'),bundle:true,platform:'node',format:'cjs',packages:'external',tsconfig:path.join(process.cwd(),'tsconfig.json'),logLevel:'silent'});
@@ -21,7 +23,7 @@ try {
  // Let the OS assign a loopback port, then release it immediately before starting the child.
  const reservation = http.createServer(); await new Promise(resolve=>reservation.listen(0,'127.0.0.1',resolve));
  const port=reservation.address().port; await new Promise(resolve=>reservation.close(resolve));
- child=spawn(process.execPath,['--require',path.join(dir,'preload.cjs'),server],{env:{PATH:process.env.PATH,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:String(port),DATABASE_URL:'postgresql://probe:probe@127.0.0.1:5432/nonexistent_shutdown_probe',AUTH_SECRET:'isolated-shutdown-probe-only',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+ child=spawn(process.execPath,['--import',path.join(dir,'lifecycle.mjs'),'--require',path.join(dir,'preload.cjs'),server],{env:{PATH:process.env.PATH,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:String(port),DATABASE_URL:'postgresql://probe:probe@127.0.0.1:5432/nonexistent_shutdown_probe',AUTH_SECRET:'isolated-shutdown-probe-only',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  let requested=false, signalled=false, started=0, output='';
  const result=await new Promise((resolve,reject)=>{
   const timeout=setTimeout(()=>{child.kill('SIGKILL');reject(new Error('Production shutdown exceeded 12 seconds: '+output));},12000);
@@ -35,9 +37,13 @@ try {
      response.resume();
      response.on('end',()=>{
       if(response.statusCode!==200){reject(new Error('Production warm-up failed'));return;}
-      http.get(`http://127.0.0.1:${port}/__texttext_read_drain_probe`,{agent},poll=>{
+      // A proxy may establish an upstream socket before sending HTTP headers.
+      // Node server.close() alone does not drain this pre-request connection.
+      idleSocket=net.createConnection({host:'127.0.0.1',port});
+      idleSocket.once('error',reject);
+      idleSocket.once('connect',()=>http.get(`http://127.0.0.1:${port}/__texttext_read_drain_probe`,{agent},poll=>{
        poll.resume();if(poll.statusCode!==200)reject(new Error('Production drain lifecycle was not installed'));
-      }).on('error',reject);
+      }).on('error',reject));
      });
     }).on('error',reject);
    }
@@ -48,6 +54,7 @@ try {
  });
  assert.equal(result.code,143,output);assert.equal(result.signal,null,output);
  assert.ok(output.includes('PROBE poll-finished'),output);assert.ok(output.includes('PROBE close-finished'),output);
+ assert.ok(output.includes('"unstartedSockets":1'),output);
  assert.ok(result.elapsed<10000,JSON.stringify(result));
- console.log(`PASS production read drain: actual 25-second vault poll woke on SIGTERM, HTTP closed, exit143 in ${result.elapsed}ms without SIGKILL.`);
-} finally {if(child&&child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');agent.destroy();await rm(dir,{recursive:true,force:true});}
+ console.log(`PASS production drain: pre-request socket closed, actual 25-second vault poll woke on SIGTERM, HTTP closed, exit143 in ${result.elapsed}ms without SIGKILL.`);
+} finally {if(child&&child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');idleSocket?.destroy();agent.destroy();await rm(dir,{recursive:true,force:true});}

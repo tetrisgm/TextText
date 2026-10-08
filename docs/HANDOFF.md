@@ -31,15 +31,22 @@
 
 ## Current work
 
-- Oracle shutdown diagnostics are ready in source, not deployed. The entry point
+- Oracle HTTP shutdown lifecycle is ready in source, not deployed. A raw TCP
+  socket without HTTP headers reproduced standalone shutdown exceeding 12
+  seconds while the active long poll had already finished. The lifecycle now
+  closes only sockets that have never entered an HTTP request handler. With
+  that socket and an active 25-second poll, standalone production exits 143 in
+  6020 ms without SIGKILL (`/tmp/texttext-prerequest-drain.log`). Active responses
+  remain untouched. Actual Oracle cause and shutdown fix still require proof.
+  The entry point
   uses Node HTTP diagnostic channels to report fixed request categories/counts/
   ages and inbound socket counts at shutdown, with no private request data and
-  no cancellation or exit changes. Real HTTP regression proves unfinished versus
+  no executing-request cancellation or exit changes. Real HTTP regression proves unfinished versus
   idle distinction, response completion cleanup and observer disposal. Oracle
   suite passed 23 tests, one environment-dependent restore test skipped
   (`/tmp/texttext-shutdown-diagnostics-tests.log`). Next normal rollout must
   install this, then inspect its evidence on a subsequent shutdown; do not
-  interpret this instrumentation as a production fix.
+  infer production completion solely from the standalone result.
 
 - Windows explicit recovery now serializes verified-copy checks and journal
   release under the same store mutation lock as checkpointing/relocation.
