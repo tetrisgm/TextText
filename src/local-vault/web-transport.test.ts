@@ -588,3 +588,17 @@ it("releases a stalled manifest request even when fetch ignores abort",async()=>
   expect(await transport.request("list",{})).toMatchObject({items:[]});expect(request).toHaveBeenCalledTimes(2);
  }finally{vi.useRealTimers();}
 });
+
+it("times out a stalled manifest body and ignores its eventual stale result",async()=>{
+ vi.useFakeTimers();try {
+  const body=deferred<unknown>();
+  const request=vi.fn().mockResolvedValueOnce({status:200,ok:true,json:()=>body.promise})
+    .mockResolvedValueOnce(Response.json({revision:"fresh",items:[{itemId:"fresh",relativePath:"Notes/Fresh.textpack"}],folders:[]}))
+    .mockResolvedValue(new Response(null,{status:304}));
+  const transport=createWebVaultTransport("workspace","Fixture",request);
+  const first=expect(transport.request("list",{})).rejects.toMatchObject({code:"408"});await vi.runAllTimersAsync();await first;
+  expect(await transport.request("list",{})).toMatchObject({items:[{itemId:"fresh"}]});
+  body.resolve({revision:"stale",items:[],folders:[]});await Promise.resolve();await Promise.resolve();
+  expect(await transport.request("list",{})).toMatchObject({items:[{itemId:"fresh"}]});
+ }finally{vi.useRealTimers();}
+});

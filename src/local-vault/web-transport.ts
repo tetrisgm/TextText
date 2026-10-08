@@ -74,11 +74,15 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   const listing = async (): Promise<VaultListing> => {
     if (listingRequest) return listingRequest;
     listingRequest = (async () => {
-      const response = await boundedBootstrapRead(signal => request(base, { signal, credentials: "same-origin", cache: "no-store", headers: manifest ? { "If-None-Match": `"${manifest.revision}"` } : {} }), new AbortController().signal);
-      if (response.status !== 304) {
+      const next = await boundedBootstrapRead(async signal => {
+        const response = await request(base, { signal, credentials: "same-origin", cache: "no-store", headers: manifest ? { "If-None-Match": `"${manifest.revision}"` } : {} });
+        if (response.status === 304) return null;
         if (!response.ok) throw await failure(response);
-        manifest = await response.json() as Manifest;
-      }
+        return await response.json() as Manifest;
+      }, new AbortController().signal);
+      // Publish only after the complete body finishes within its deadline.
+      // A late timed-out response must never replace a newer manifest.
+      if (next) manifest = next;
       if (!manifest) throw new Error("The workspace listing was empty.");
       return { root: `vault:${workspaceId}`, name, folders: manifest.folders ?? [], items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId })) };
     })().finally(() => { listingRequest = null; });
