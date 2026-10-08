@@ -58,7 +58,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const clientRef = useRef<FileCollaborationClient | null>(null);
   const nativeSessionRef = useRef<NativeSharedSession | null>(null);
-  const [status, setStatus] = useState<FileCollaborationStatus>("offline");
+  const [status, setStatus] = useState<FileCollaborationStatus>("reconnecting");
   const [detail, setDetail] = useState("");
   const [canEdit, setCanEdit] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -120,7 +120,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
         await vaultRequest("collaborationClose", { itemId: config.itemId, sessionToken: closing.sessionToken }).catch(() => {});
       }
     };
-    const visibility = () => shared?.setActive(currentVaultWindowActive());
+    const visibility = () => shared?.setActive(currentVaultWindowActive(), navigator.onLine ? "paused" : "offline");
     const begin = async () => {
       if (config.localFiles) {
         native = await vaultRequest<NativeSharedSession>("collaborationOpen", { itemId: config.itemId, path: file.current.path, hash: file.current.hash });
@@ -134,6 +134,7 @@ export function CollaborativeVaultEditor({ initial, root, config, registerFlush,
       }
       shared = new FileCollaborationClient({ server: config.namespace, workspaceId: config.workspaceId, itemId: config.itemId,
       active: currentVaultWindowActive(),
+      inactiveReason: navigator.onLine ? "paused" : "offline",
       retainedJournal: native?.journal,
       localRevision: native?.acknowledgedRevision,
       initialRetirement: native?.retiredReason ?? undefined,

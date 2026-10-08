@@ -5,7 +5,7 @@ import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 
 const REMOTE = Symbol("file-collaboration-remote");
 const LIMIT = 4 * 1024 * 1024;
-export type FileCollaborationStatus = "ready" | "saving" | "offline" | "stale-file" | "stale-session" | "recovery" | "error";
+export type FileCollaborationStatus = "ready" | "saving" | "paused" | "reconnecting" | "offline" | "stale-file" | "stale-session" | "recovery" | "error";
 export type FileCollaborationRequest = (method: "read" | "push", params: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
 export interface FileCollaborationJournalStore { load(key: string): string | null; save(key: string, value: string): void; remove(key: string): void }
 type Batch = { operationId: string; updates: string[]; acknowledged?: boolean; revision?: string };
@@ -15,7 +15,7 @@ export type FileCollaborationCheckpoint = { journal: FileCollaborationJournal; d
 type StateResponse = Cursor & { update: string; canEditContent: boolean; canComment: boolean };
 export type FileCollaborationOptions = {
   server: string; workspaceId: string; itemId: string; request: FileCollaborationRequest;
-  journal?: FileCollaborationJournalStore; active?: boolean;
+  journal?: FileCollaborationJournalStore; active?: boolean; inactiveReason?: "paused" | "offline";
   ownership?: FileCollaborationOwnership;
   retainedJournal?: string | null;
   initialRetirement?: string;
@@ -161,10 +161,11 @@ export class FileCollaborationClient {
   private lease: FileCollaborationLease | null = null;
   canEdit = false;
   canComment = false;
-  status: FileCollaborationStatus = "offline";
+  status: FileCollaborationStatus = "reconnecting";
   private readonly storage: FileCollaborationJournalStore;
   private readonly options: FileCollaborationOptions;
   private active: boolean;
+  private inactiveReason: "paused" | "offline";
   private dead = false;
   private initialized = false;
   private authoritative = false;
@@ -193,7 +194,7 @@ export class FileCollaborationClient {
   private checkpointSavedGeneration = -1;
 
   constructor(options: FileCollaborationOptions) {
-    this.options = options; this.storage = options.journal ?? localJournal; this.active = options.active ?? true;
+    this.options = options; this.storage = options.journal ?? localJournal; this.active = options.active ?? true; this.inactiveReason = options.inactiveReason ?? "paused";
     this.ownedJournalKey = `texttext:file-collaboration:v1:${JSON.stringify([options.server.replace(/\/$/, ""), options.workspaceId, options.itemId])}`;
     this.doc.on("update", this.changed);
   }
@@ -306,7 +307,7 @@ export class FileCollaborationClient {
       this.unqueuedDirty = false;
       this.persist();
       this.options.onChange?.(this.snapshot());
-      this.report(this.active ? "saving" : "offline");
+      this.report(this.active ? "saving" : this.inactiveReason);
       this.schedulePush(250);
     } catch (error) { this.fatal(error); }
   };
@@ -403,7 +404,7 @@ export class FileCollaborationClient {
         this.initialRetirement = this.options.initialRetirement; this.frozen = true; this.canEdit = false;
         this.report("recovery", this.initialRetirement); return;
       }
-      if (!this.active) { this.report("offline", "Offline. Edits are kept on this device."); return; }
+      if (!this.active) { this.report(this.inactiveReason); return; }
       const value = await this.request("read", {});
       if (this.dead || !this.active || this.frozen) return;
       const remote = value as StateResponse; cursor(remote);
@@ -534,11 +535,21 @@ export class FileCollaborationClient {
       return !this.batch && !this.pending.length;
     } catch (error) { this.handleFailure(error, true); return false; }
   }
-  setActive(active: boolean): void {
-    if (this.dead || active === this.active) return;
+  setActive(active: boolean, inactiveReason: "paused" | "offline" = "paused"): void {
+    if (this.dead) return;
+    const reasonChanged = this.inactiveReason !== inactiveReason;
+    this.inactiveReason = inactiveReason;
+    if (active === this.active) {
+      if (!active && reasonChanged && !this.frozen) this.report(inactiveReason);
+      return;
+    }
     this.active = active;
-    if (!active) { this.authoritative = false; this.cancelWork(); this.report("offline"); }
-    else if (!this.frozen) { if (!this.initialized) void this.start(); else { this.schedulePoll(0); this.schedulePush(0); } }
+    if (!active) { this.authoritative = false; this.cancelWork(); if (!this.frozen) this.report(inactiveReason); }
+    else if (!this.frozen) {
+      this.report("reconnecting");
+      if (!this.initialized) void this.start();
+      else { this.schedulePoll(0); this.schedulePush(0); }
+    }
   }
   /** A deliberate Retry may test the connection even while WebKit reports the window hidden. */
   async retry(): Promise<void> {
@@ -547,6 +558,7 @@ export class FileCollaborationClient {
     this.authoritative = false;
     this.failures = 0; this.uploadFailures = 0;
     this.cancelWork();
+    this.report("reconnecting");
     if (!this.initialized) {
       if (this.starting) await this.starting;
       if (!this.dead && !this.frozen && !this.initialized) await this.start();

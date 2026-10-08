@@ -261,14 +261,35 @@ describe("durable file collaboration client", () => {
     expect(documentText(editor.doc, "body").toString()).toContain("Unsaved");
   });
 
+  it("distinguishes a quiet pause from offline and revalidates before sending pending edits", async () => {
+    const server = new Server(), journal = new Journal(), editor = client(server, journal);
+    await editor.start(); await vi.advanceTimersByTimeAsync(1);
+    editor.setActive(false);
+    expect(editor.status).toBe("paused");
+    editor.mutate(doc => documentText(doc, "body").insert(5, " kept"));
+    expect(editor.status).toBe("paused"); expect(editor.hasPendingChanges).toBe(true);
+    const reads = server.reads;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(server.reads).toBe(reads); expect(server.pushes).toHaveLength(0);
+    editor.setActive(false, "offline"); expect(editor.status).toBe("offline");
+    editor.setActive(false, "paused"); expect(editor.status).toBe("paused");
+    editor.setActive(true); expect(editor.status).toBe("reconnecting");
+    expect(server.pushes).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(editor.status).toBe("ready"); expect(editor.hasPendingChanges).toBe(false);
+    expect(server.pushes).toHaveLength(1);
+  });
+
   it("Retry connects an unopened inactive editor without waiting for a visibility event", async () => {
     const server = new Server(), journal = new Journal();
     const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
       active: false, request: server.request });
     clients.push(editor);
     await editor.start();
-    expect(editor.status).toBe("offline"); expect(editor.hasBaseline).toBe(false); expect(server.reads).toBe(0);
-    await editor.retry();
+    expect(editor.status).toBe("paused"); expect(editor.hasBaseline).toBe(false); expect(server.reads).toBe(0);
+    const retry = editor.retry();
+    expect(editor.status).toBe("reconnecting");
+    await retry;
     expect(editor.hasBaseline).toBe(true); expect(editor.status).toBe("ready"); expect(server.reads).toBe(1);
     editor.setActive(false);
     const before = server.reads;
@@ -652,7 +673,7 @@ describe("durable file collaboration client", () => {
     await original.start(); const clean = journal.load(original.journalKey)!;
     original.mutate(doc => documentText(doc, "body").insert(5, " pending"));
     const pending = journal.load(original.journalKey)!; original.destroy();
-    for (const [raw, expected] of [[clean, "offline"], [pending, "recovery"]] as const) {
+    for (const [raw, expected] of [[clean, "paused"], [pending, "recovery"]] as const) {
       journal.values.set(original.journalKey, raw); const checkpoint = vi.fn(async () => {});
       const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", active: false,
         journal, request: server.request, localRevision: "f".repeat(64), checkpoint });
