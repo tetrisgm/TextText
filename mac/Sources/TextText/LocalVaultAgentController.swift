@@ -937,8 +937,16 @@ enum LocalVaultAgentFiles {
                 requestedFolder = ""
             }
             let folder = try access.authorizeCreation(in: requestedFolder, root: root)
+            let kind: String?
+            if let requestedKind = arguments["kind"] {
+                guard let value = requestedKind as? String,
+                      ["note", "article", "bookmark", "gallery", "talk"].contains(value) else {
+                    throw VaultAgentError("Choose a supported item type.")
+                }
+                kind = value
+            } else { kind = nil }
             let file = try documents.create(title: string("title"), body: string("body"),
-                folder: folder.isEmpty ? nil : folder, kind: arguments["kind"] as? String)
+                folder: folder.isEmpty ? nil : folder, kind: kind)
             output = ["path": documents.relativePath(of: file)]
         case "search_files":
             let scope = try access.scopedFolder(root: root)

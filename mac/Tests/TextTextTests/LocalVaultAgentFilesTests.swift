@@ -396,6 +396,26 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertEqual(try store.read(path: view.path).hash, viewHash)
     }
 
+    func testAgentRejectsInvalidExplicitKindsWithoutPublishingFiles() throws {
+        let root = try temporaryVault()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = LocalVaultDocumentStore(root: root)
+        for kind: Any in ["", "task", "custom.look", 42, true, NSNull()] {
+            XCTAssertThrowsError(try run("create_file", arguments: [
+                "title": "Must not appear", "body": "No partial draft", "kind": kind
+            ], root: root))
+            XCTAssertTrue(try store.list().isEmpty)
+        }
+        for kind in ["note", "article", "bookmark", "gallery", "talk"] {
+            _ = try run("create_file", arguments: [
+                "title": kind, "body": "Explicit supported type", "kind": kind
+            ], root: root)
+            let file = try store.read(path: "\(kind).textpack")
+            XCTAssertEqual(MarkdownIdentityCodec.extract(from: file.contents.markdown)?.kind, kind)
+            XCTAssertTrue(file.contents.markdown.contains("Explicit supported type"))
+        }
+    }
+
     private func run(_ name: String, arguments: [String: Any], root: URL,
                      access: LocalVaultAgentAccess = .folder(path: ""),
                      cancellation: LocalVaultAgentCancellation? = nil) throws -> String {

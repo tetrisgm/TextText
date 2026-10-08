@@ -31,16 +31,21 @@
   override accepts 130/143; ordinary 1207 rollout attested successful exit
   classification. [Service receipt](verification/2026-10-08-oracle-normal-exit.md).
 - Windows installed source remains `f3167c4b`.
-  Verified candidate **d7455797** passed actual PC native suites, 330 shared-client
+  Verified candidate **acc63214** passed actual PC native suites, 332 shared-client
   tests, TypeScript, packaging and desktop smoke. Installation awaits closure
   of the old app with unknown unsaved state; save-and-close request is pending.
-  [Candidate and paths](verification/2026-10-08-windows-d7455797-candidate.md).
+  [Candidate and paths](verification/2026-10-08-windows-acc63214-candidate.md).
 - Current iCloud workspace:
   `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`.
   Workspace ID `be28ae03-c64e-4695-80af-04f048f86f37`.
   Preserve existing content; only dedicated verification items were edited.
 
 ## Current work and next checks
+
+- Mac agent creation now rejects invalid explicit item types before publication,
+  matching Windows. All 15 agent-file tests passed, including each supported
+  type and invalid string/non-string refusal with no draft. Source only.
+  Log `/tmp/texttext-agent-kind-parity.log`.
 
 - Mac agentStatus now checks retained runtime authorization once on first use.
   Signed-out discovery never starts browser login or repeated runtimes; explicit
@@ -59,7 +64,7 @@
   as human creation when kind is omitted, publishing one complete TextPack.
   Explicit built-in kind keeps its override. Regression proves template/content
   persistence and malformed-default refusal before creation; 12 targeted tests
-  and TypeScript passed. Source only; candidate d7455797 predates this fix.
+  and TypeScript passed. Verified Windows candidate acc63214 includes this fix; installation remains.
   Logs `/tmp/texttext-windows-agent-folder-default{,-types}.log`.
 
 - Native agent creation no longer forces built-in Note when kind is omitted.
