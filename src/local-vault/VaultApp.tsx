@@ -6,6 +6,7 @@ import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { compileItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
+import { noteIcon } from "@/lib/note-icons";
 import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
@@ -837,7 +838,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     });
   };
   const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => { setTemplateQuery(""); setTemplatePicker(true); }); };
-  const createForFolder = (folder: string, templateName: string, initialTitle = "", builtinTemplate?: TemplateDefinition, initialBody = "", stayInList = false, onCreated?: () => void, initialTags: string[] = [], initialImages: File[] = [], initialColor = "default") => operate(async () => {
+  const createForFolder = (folder: string, templateName: string, initialTitle = "", builtinTemplate?: TemplateDefinition, initialBody = "", stayInList = false, onCreated?: () => void, initialTags: string[] = [], initialImages: File[] = [], initialColor = "default", initialIcon = "") => operate(async () => {
     const sourcePath = `Templates/${templateName}.textpack`;
     const source = listing?.items.some(item => item.path === sourcePath) ? await vaultRequest<VaultFile>("read", { path: sourcePath }) : null;
     let imageEdit: Awaited<ReturnType<typeof prepareEditorImagePaste>> | null = null;
@@ -849,7 +850,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     const cloned = await vaultRequest<VaultFile>("create", { title: "Untitled", folder, ...(source ? { sourcePath, sourceHash: source.hash } : {}) });
     const example = readDocument(cloned);
     const fallback = builtinTemplate ?? (source?.templateJSON ? validateTemplateDefinition(JSON.parse(source.templateJSON)) : BUILTIN_TEMPLATES.find(template => template.id === (folder === "Blog" ? "texttext.article" : "texttext.note")));
-    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle, subtitle: "", body: imageEdit?.document.content.body ?? initialBody, fields: initialColor === "default" ? {} : { texttextNoteColor: initialColor }, tags: initialTags, assets: imageEdit?.document.content.assets ?? [] },
+    const blank: DocumentSnapshot = { ...example, content: { ...example.content, title: initialTitle, subtitle: "", body: imageEdit?.document.content.body ?? initialBody, fields: { ...(initialColor === "default" ? {} : { texttextNoteColor: initialColor }), ...(noteIcon(initialIcon) ? { texttextNoteIcon: noteIcon(initialIcon) } : {}) }, tags: initialTags, assets: imageEdit?.document.content.assets ?? [] },
       presentation: fallback ? { ...example.presentation, template: { id: fallback.id, version: fallback.version } } : example.presentation };
     const created = await vaultRequest<VaultFile>("write", { ...writePayload(cloned, blank, fallback ? { template: fallback } : undefined), ...(imageEdit ? { addedAssets: imageEdit.addedAssets } : {}) });
     if (stayInList) onCreated?.();
@@ -1359,7 +1360,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
               }} /></div>}
       </DocumentBoundary> : visibleListing?.root && !allowFolderPicker && !access ? <div className="vault-empty" role="status">Loading workspace permissions…</div>
       : browseListing?.root ? <div aria-hidden={templatePicker || Boolean(captureMode) || searchOpen || undefined}><WorkspaceOverview listing={browseListing} folder={destinationFolder} busy={busy} canCreate={canCreate} sharedView={Boolean(access && !access.fullAccess)} preferredBookmarkPath={preferredBookmarkPath} galleryCommentsAccess={galleryCommentsAccess}
-        onCreateCard={(title, body, tags, images, color, onCreated) => { void createForFolder("Notes", "Note", title, undefined, body, true, onCreated, tags, images, color); }}
+        onCreateCard={(title, body, tags, images, color, onCreated, icon) => { void createForFolder("Notes", "Note", title, undefined, body, true, onCreated, tags, images, color, icon); }}
         onEditNote={canCreate ? (path) => void operate(async () => { setNoteEditPath(path); setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder("Notes"); }, true) : undefined}
         onCreateNote={(pastedText) => { if (pastedText) { const [firstLine, ...rest] = pastedText.trim().split(/\r?\n/); const title = firstLine.slice(0, 120) || "New card"; void createForFolder("Notes", "Note", title, undefined, rest.join("\n").replace(/^\n+/, "")); } else void createNote(focusedControl()); }}
         onQuickSaveBookmark={canCreate ? quickSaveBookmark : undefined}

@@ -1,3 +1,4 @@
+import { NoteIcon } from "@/components/document/NoteIconControl";
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
@@ -69,6 +70,7 @@ export function VaultNoteDisplay({ document, template, sourceBody = document.con
       if (event.target === event.currentTarget && event.key === "Enter") { event.preventDefault(); onEdit(); }
     } : undefined}>
     {onEdit && <div className="vault-note-display-actions"><button type="button" onClick={onEdit} aria-label="Edit card" title="Edit card"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L9 17l-4 1 1-4Z"/></svg></button></div>}
+    <NoteIcon value={document.content.fields.texttextNoteIcon}/>
     <DocumentRenderer document={document} template={template} />
     {itemId && onOpenCardPath && <VaultCardBacklinks key={itemId} itemId={itemId} onOpen={onOpenCardPath} />}
     {linkError && <p role="alert">{linkError}</p>}

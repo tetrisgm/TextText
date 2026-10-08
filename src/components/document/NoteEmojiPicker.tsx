@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { noteIcon } from "@/lib/note-icons";
 
 const SUGGESTIONS = ["💡", "📌", "✍️", "📚", "🔗", "✨", "✅", "😀"];
 
@@ -9,8 +10,7 @@ export function NoteEmojiPicker({ onPick, onCancel }: { onPick: (emoji: string) 
   const [error, setError] = useState("");
   const insert = () => {
     const value = input.current?.value.trim() ?? "";
-    const graphemes = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)];
-    if (graphemes.length !== 1 || !/\p{Extended_Pictographic}/u.test(value)) {
+    if (!noteIcon(value)) {
       setError("Choose one emoji.");
       return;
     }

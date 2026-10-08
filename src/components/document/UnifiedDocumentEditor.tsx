@@ -8,6 +8,7 @@ import { dismissOpenDetails } from "@/components/accessibility/keyboard";
 import { DocumentHistoryDialog } from "@/components/workspace/DocumentHistoryDialog";
 import { StatusAnnouncement } from "@/components/accessibility/StatusAnnouncement";
 import { EditorSaveNotice, editorSaveLabel } from "./EditorSaveNotice";
+import { NoteIconControl } from "./NoteIconControl";
 import { NoteEmojiPicker } from "./NoteEmojiPicker";
 
 import {
@@ -2046,6 +2047,7 @@ export function UnifiedDocumentEditor({
   />;
   return (
     <section className="tt-unified-editor" role="main" aria-label="Edit item" data-ai-item-id={collab.postId} data-note-color={experience === "note" ? noteColor(document.content.fields.texttextNoteColor) : undefined} onKeyDown={handleKeyboard}>
+      {experience === "note" && <NoteIconControl value={document.content.fields.texttextNoteIcon} onChange={icon => updateField("texttextNoteIcon", icon)} />}
       {choosingTemplate && availableTemplates && availableTemplates.length > 0 && (
         // eslint-disable-next-line react-hooks/refs -- The injected library receives event handlers; it does not invoke them during render.
         renderTemplateLibrary ? renderTemplateLibrary({
