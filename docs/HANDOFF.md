@@ -2,10 +2,11 @@
 
 ## Installed and live
 
-- Mac `/Applications/TextText.app`: **0.204 (1193)**, source `8621dd0c`.
+- Mac `/Applications/TextText.app`: **0.204 (1194)**, source `1e983413`.
   Preserved account/iCloud workspace and existing note at startup. Live asset
   checks pending. Startup/search/save/reopen passed in the actual app.
-  [Receipt](verification/2026-10-08-parent-review-cohort.md).
+  Parent selection and save-before-navigation/reopen passed in the actual app.
+  [Receipt](verification/2026-10-08-parent-native-contract.md).
 - Windows: source `f3167c4b`, installed in the existing location. Preserved note,
   account identity and search passed. [Receipt](verification/2026-10-08-windows-shared-1191.md).
 - Oracle: **texttext-oracle-20261008T102758Z-8621dd0c**, thirteen live checks passed.
@@ -32,7 +33,10 @@
   freshly resolves only the selected TextPack before saving its stable identity.
   Existing references resolve saved titles on reopen. Ten focused tests,
   TypeScript and both browser flows passed, including the path-only full-app
-  fixture. This follow-up is not installed or deployed yet.
+  fixture. Mac 1194 is installed with actual parent selection/navigation/reopen
+  verified. Windows passed 302 shared tests and desktop smoke; its running editor
+  must close normally before installation. Oracle deployment is in progress.
+  [Evidence](verification/2026-10-08-parent-native-contract.md).
 
 - Frozen candidate `8621dd0c` passed 759 core tests, TypeScript, required native
   suites, 16 proposal-review tests and both Note browser flows. It contains the

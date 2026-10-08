@@ -26,5 +26,25 @@ temporarily changed its Store lockfile; no production action occurred.
 Logs: `/tmp/texttext-candidate-1194-sync-resume.log`,
 `/tmp/texttext-candidate-1194-note-browser.log`.
 
-Mac build, Windows verification, deployment and actual parent selection/navigation
-acceptance remain pending. No public desktop release.
+Mac **0.204 (1194)** is installed at `/Applications/TextText.app`. Signing and
+arm64 verification passed for the app and all three extensions. Startup retained
+the signed-in account, iCloud root and open verification note. Actual native UI
+searched and selected `Parent navigation verification 1193`, then appended
+`Parent navigation save verification 1194.` to its dedicated child note and
+navigated to the parent without first pressing Finish. Reopening the child
+retained both the edit and saved parent title. Disk inspection confirms parent
+ID `6c675f6a-142c-46e4-8dc3-4a944811855e` and exactly one new marker. The child
+was left saved. Automatic runtime health remains sandbox-private; this is actual
+UI and file evidence, not a passing runtime-health report.
+
+Windows passed native core/agent tests, 302 shared-client tests in 35 files,
+TypeScript, publish and actual desktop/editor/close/activation smoke. Candidate:
+`C:\Users\Shokunin\dev\texttext-build-1e983413\windows\build\candidate-94b31c125f15407ca1a546a521cd0661`.
+Smoke receipts:
+`C:\Users\Shokunin\dev\texttext-build-1e983413\windows\build\smoke-receipts-3b7a507865fa4bbdbeeb8823e331eb8b`.
+The installed Windows process is still running; replacement awaits its normal
+save/close. Logs: `/tmp/texttext-mac1194-build.log`,
+`/tmp/texttext-mac1194-install.log`, `/tmp/texttext-windows-1e983413-build.log`.
+
+Oracle deployment and actual Safari acceptance remain pending. No public desktop
+release. This does not certify complete Supernotes fidelity or all extensions.
