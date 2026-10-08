@@ -33,13 +33,16 @@
   configured, so live model execution is not attested.
 - Duplicate-Yjs packaging root cause is fixed and deployed. Live alias and
   constructor identity passed; startup warning is absent.
-- `25e439c0` passed 470 mandatory core tests and native gates, then all 12
-  existing production smoke checks. New expanded folder smoke exposed the
-  native commands allowlist rejecting create_folder (HTTP 400); fix is underway.
-- `e758c989` implements agent template creation/save-look with validated TextPack
-  artifacts and durable source fencing; 28 focused tests passed, not deployed.
-- Standalone CLI incorrectly disables account commands in local-folder mode;
-  separating local file storage from authenticated command transport is underway.
+- `25e439c0` is deployed with the Yjs repair. Expanded folder smoke exposed the
+  native allowlist rejecting create_folder; `ef18a85f` fixes it with real route
+  regression. Failed smoke scratch cleanup was verified (zero scratch blogs).
+- `e758c989` implements agent template creation/save-look as validated TextPacks.
+  Frozen `ccf675f8` passed 475 core tests, TypeScript and native gates. Its Oracle
+  deployment is running: `/tmp/texttext-oracle-ccf675f8.log`; verify completion
+  and expanded live smoke before claiming these commands shipped.
+- Standalone CLI `ccf675f8` is installed; 106 tests passed. Real commands and
+  get_workspace now work while local file reads remain unchanged.
+  [Receipt](verification/2026-10-07-cli-account-commands.md).
 
 Keep one canonical file system and shared UI/editor/sync implementation across
 Mac, Windows and web. Native adapters handle filesystem, credentials and OS
