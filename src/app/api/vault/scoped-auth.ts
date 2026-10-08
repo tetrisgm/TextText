@@ -50,7 +50,7 @@ export async function authorizeVaultWorkspaceOrScoped(request: Request, workspac
   const fullAccess = access.isOwner || access.canView;
   const grants = fullAccess ? [] : await activeVaultGrants({ root, workspaceId, userId: access.userId });
   if (!fullAccess && !grants.length) return deny(404, "Workspace not found");
-  return { root, workspaceId, name: workspace.name, actorUserId: access.userId, actorType: identity.actorType,
+  return { root, workspaceId, name: workspace.name, actorSub: identity.user.sub, workspaceHandle: workspace.handle, actorUserId: access.userId, actorType: identity.actorType,
     actorName: identity.actorName, canUseHumanPresence: identity.trustedAppOrSession,
     canAttributeNativeEditor: identity.nativeAppToken,
     canManageShares: identity.trustedAppOrSession && access.isOwner, fullAccess, isOwner: access.isOwner,

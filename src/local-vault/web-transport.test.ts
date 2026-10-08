@@ -602,3 +602,15 @@ it("times out a stalled manifest body and ignores its eventual stale result",asy
   expect(await transport.request("list",{})).toMatchObject({items:[{itemId:"fresh"}]});
  }finally{vi.useRealTimers();}
 });
+
+it("stages a folder move review with authenticated scoped transport and never writes items", async () => {
+  const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ reviewPath: "/proposals/review-id" }, { status: 201 }));
+  const transport = createWebVaultTransport("workspace", "Workspace", request);
+  expect(await transport.request("folderMoveReview", { source: "Notes", destination: "Archive/Notes" })).toEqual({ reviewPath: "/proposals/review-id" });
+  expect(request).toHaveBeenCalledExactlyOnceWith("/api/vault/workspace/folder-moves", expect.objectContaining({
+    method: "POST", credentials: "same-origin", cache: "no-store", body: JSON.stringify({ source: "Notes", destination: "Archive/Notes" }),
+  }));
+  await expect(transport.request("folderMoveReview", { source: "Notes", destination: "Archive/Notes", approved: true })).rejects.toThrow("Choose a source");
+  expect(request).toHaveBeenCalledOnce();
+  transport.destroy();
+});

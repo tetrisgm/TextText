@@ -28,6 +28,13 @@
 
 ## Current work
 
+- Owner folder-move staging API and web transport are implemented. The route
+  requires fresh owner authorization and a trusted app/session capability;
+  generic sync tokens cannot use this human action. It accepts source/destination
+  only and creates the canonical stored review without moving files. Auth,
+  route and web transport suites passed 45 tests plus TypeScript. Native
+  transports and shared folder dialog remain pending; source-only.
+
 - Shared folder-control preparation: durable proposals now retain human versus
   agent initiation through approval/retry; reviewed folder execution records
   human actions correctly instead of always marking an external agent. Proposal
