@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { execFileSync } from 'node:child_process';
+import { runtimeArchiveEntries } from './runtime-archive.mjs';
 const version = '0.153.4';
 const integrity = 'lMkB43kJZH0VFr+hoXc11qqR7QtQIbkr07ALgj4urKL1osNyUyuy1iXd3Vzz2iCYvBUCSw7I0l/W1cEPGx9euQ==';
 const output = resolve(process.argv[2] || join(dirname(fileURLToPath(import.meta.url)), 'Runtime'));
@@ -20,8 +21,7 @@ try {
   const hash = createHash('sha512');
   for await (const chunk of createReadStream(archive)) hash.update(chunk);
   if (hash.digest('base64') !== integrity) throw new Error('Codex package integrity mismatch');
-  const names = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8', maxBuffer: 65536 }).split('\n').filter(Boolean);
-  if (names.some(name => name.startsWith('/') || name.includes('\\') || name.split('/').includes('..'))) throw new Error('Invalid package paths');
+  const names = runtimeArchiveEntries(execFileSync('tar', ['-tzf', archive], { encoding: 'utf8', maxBuffer: 65536 }));
   const executable = names.find(name => /\/bin\/codex\.exe$/.test(name));
   if (!executable) throw new Error('Native Codex binary missing');
   const prefix = executable.slice(0, -'bin/codex.exe'.length);
