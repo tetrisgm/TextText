@@ -339,3 +339,11 @@ receipt and DLL hash above identify this candidate. App left open on the saved
 reader. Oracle-specific fresh-account provisioning and hosted agent commands
 await the matching server deployment; this local acceptance does not claim
 those live server checks.
+
+Mac 1181 live edit propagation was independently confirmed on Windows at
+03:32:03 UTC. The new marker `Mac build 1181 file-core verification 20261007.`
+and all nine prior markers were each present exactly once. Windows acknowledged
+the new archive hash
+`ccb3a3747643353726927b6ae619f789588de975f9cd4127291b742e64dda37c`,
+with empty outbox and no pending pull. This read-only check used the existing
+account/workspace and required no Windows edit or manual refresh.
