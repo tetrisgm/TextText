@@ -2,17 +2,18 @@
 
 ## Installed and live
 
-- Mac: `/Applications/TextText.app` **0.204 (1179)**, source `3ff475d9`.
+- Mac: `/Applications/TextText.app` **0.204 (1180)**, source `160a74ba`.
   Account, iCloud workspace, native Apple sign-in and three extensions preserved.
-  Startup, search, gallery zoom/comments display and normal close/reopen passed.
-  [Receipt](verification/2026-10-07-mac-1179-gallery-workspace.md).
-- Oracle: **`texttext-oracle-20261008T023523Z-3ff475d9`**. Exact-source
+  Startup, search, List/Cards persistence and normal close/reopen passed.
+  Automatic reconnection through the Oracle deploy passed without Retry.
+  [Receipt](verification/2026-10-07-mac-1180-home-views.md).
+- Oracle: **`texttext-oracle-20261008T024706Z-160a74ba`**. Exact-source
   sync core (244 checks) and native gates passed. Authenticated session,
   origin enforcement, read/create/edit and audit smoke passed; scratch removed.
-  Backup `texttext-20261008T023609Z-b45886d3.dump`; prior release retained.
+  Backup `texttext-20261008T024807Z-5fca6b5c.dump`; prior release retained.
   TextText and all three Algorave services active; HAProxy mtime unchanged.
-  Logs: `/tmp/texttext-quiet-sync-core.log`, `/tmp/texttext-quiet-sync-native.log`,
-  `/tmp/texttext-quiet-deploy.log`. No public desktop release.
+  Logs: `/tmp/texttext-home-sync-core.log`, exact-source Node 22 native receipt
+  from the Mac snapshot, `/tmp/texttext-home-deploy.log`. No public desktop release.
 - Windows: installed candidate **`c69bcd6c9a17491db56c038836e963a0`**, source
   `889bac73`, at `C:\Users\Shokunin\AppData\Local\Programs\TextText`.
   Account Settings, body search, actual single-instance file opening and normal
@@ -23,6 +24,22 @@
   Preserve existing files. Only dedicated verification notes changed during tests.
 
 ## Current follow-up
+
+Home List/Cards (`160a74ba`) uses the same items/actions and a personal
+per-device/workspace preference. Browser regression is in `npm test`; light,
+dark and narrow checked. Actual Safari `/start?to=home` now opens the canonical
+workspace, both layouts retain 16 items, and List survives reload. Screenshot:
+`/tmp/texttext-home-list-safari.png`. No document mutations during acceptance.
+
+Remaining home reconciliation: old `/@ramine` still reads SQL posts while
+`/vault` reads folder TextPacks. Existing legacy links remain accessible.
+Do not blanket-redirect that route or overwrite files. A lossless migration
+needs a revision-checked/idempotent ID ledger, preserved assets/templates,
+comment/anchor and permission adapters, old URL aliases and epoch fencing.
+`renderSyncDocumentFile`/`buildTextpack` export documents but omit SQL comments;
+legacy collaborators and vault grants are separate. Inventory through store.ts
+before migration. Explicit template entry still creates a legacy document.
+
 
 Windows startup regression fixed in `033231ae`: WebView2 must enter the live
 visual tree before initialization. The production startup/rollback gate now
