@@ -3,6 +3,16 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultCollaborationTests: XCTestCase {
+    func testAccountReadIsPinnedAndRejectsRendererRouting() throws {
+        let request = try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "accountRead", params: [:])
+        XCTAssertEqual(request.url?.absoluteString, "https://texttext.app/api/vault/workspace/account")
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertNil(request.httpBody)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture")
+        for key in ["url", "token", "workspaceId", "userId"] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "accountRead", params: [key: "other"]))
+        }
+    }
     private let origin = URL(string: "https://texttext.app")!
     @MainActor
     func testInFlightUnauthorizedReadRetriesRenewedCredentialsOnce() async throws {

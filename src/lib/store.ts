@@ -7094,6 +7094,15 @@ async function getUserIdBySubUncached(sub: string): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
+/** Minimal private profile for an already authorized account. */
+export async function getVaultAccountProfile(userId: string): Promise<{ email: string | null; name: string | null; identities: string[] } | null> {
+  if (!db) return null;
+  const [user] = await db.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) return null;
+  const identities = await listUserIdentities(userId);
+  return { ...user, identities: [...new Set(identities.map((identity) => identity.provider))].sort() };
+}
+
 /** Which providers this person can sign in with, for the settings UI. */
 export async function listUserIdentities(
   userId: string,

@@ -63,6 +63,15 @@ final class LocalVaultCollaboration {
     /// Pure request builder is shared by relay and validation tests.
     nonisolated static func request(origin: URL, workspaceId: String, token: String, method: String, params: [String: Any]) throws -> URLRequest {
         _ = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId)
+        if method == "accountRead" {
+            guard identifier(workspaceId), params.isEmpty else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid account request.")
+            }
+            var request = URLRequest(url: origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("account"), timeoutInterval: 35)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            return request
+        }
         if ["feedDiscover", "feedRead", "feedEntry"].contains(method) {
             let key = method == "feedDiscover" ? "address" : "feedURL"
             let expected: Set<String> = method == "feedEntry" ? ["feedURL", "externalKey"] : [key]
@@ -452,7 +461,7 @@ final class LocalVaultCollaboration {
                         request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin")
                     }
                 }
-                let maxBytes = method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
+                let maxBytes = method == "accountRead" ? 64 * 1024 : method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
                 var (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
                 try Task.checkCancellation()
                 // A response can arrive after credential renewal. Retry only
