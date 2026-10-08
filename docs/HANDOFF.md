@@ -7,13 +7,11 @@
   invalidation, actual save and normal reopen passed. New tenth test marker
   reached Windows automatically exactly once.
   [Receipt](verification/2026-10-07-mac-1181-file-core.md).
-- Oracle: **`texttext-oracle-20261008T024706Z-160a74ba`**. Exact-source
-  sync core (244 checks) and native gates passed. Authenticated session,
-  origin enforcement, read/create/edit and audit smoke passed; scratch removed.
-  Backup `texttext-20261008T024807Z-5fca6b5c.dump`; prior release retained.
-  TextText and all three Algorave services active; HAProxy mtime unchanged.
-  Logs: `/tmp/texttext-home-sync-core.log`, exact-source Node 22 native receipt
-  from the Mac snapshot, `/tmp/texttext-home-deploy.log`. No public desktop release.
+- Oracle: **`texttext-oracle-20261008T034937Z-4a7ecb0`**, source `4a7ecb09`.
+  Exact-source core passed 289 tests and native gates. All nine production smoke
+  checks passed; actual Safari owner-home redirect, signed-in account, ten saved
+  markers and both desktop participants verified.
+  [Receipt](verification/2026-10-07-oracle-file-core.md).
 - Windows: source **`116d3dde`**, sealed candidate
   `6c51e20e7df74552b663767a9390de38`, installed in the existing location.
   Native smoke, 189 shared tests, startup/search/reopen passed. Account preserved;
@@ -37,7 +35,7 @@ content system and the same UI/editor/sync implementation on Mac, Windows and
 web, with narrow native filesystem, credential and OS integration adapters.
 No deletion has been performed or is required to stop exposing the old paths.
 
-Completed source changes, not yet deployed:
+Completed and deployed source changes:
 - `14f0c275`: authenticated owner legacy home opens the shared file workspace;
   five focused route tests passed.
 - `ac01d85e`, `f52d268c`: template links open the shared permission-gated picker;
@@ -70,14 +68,14 @@ Completed source changes, not yet deployed:
   contract; CLI cannot stage SQL proposals. Resource tests, 36 CLI/auth tests
   and scoped lint passed.
 
-Current work: Oracle `116d3dde` deployment failed its authenticated smoke and
-rolled back to `160a74ba`; all services healthy and HAProxy unchanged. The new
-canonical command response exposed a storage receipt where native callers expect
-`item.id`, and the smoke still verifies old SQL post storage. Fix public native
-response compatibility and trusted human attribution, then update smoke to verify
-real file persistence/audit/retry and clean only its random scratch workspace.
-Do not bypass the failed check. Mac/Windows `116d3dde` remain installed and passed
-live cross-device edit acceptance against the restored server.
+Native command compatibility and the outdated SQL deployment smoke are fixed
+(`90253663`, `4a7ecb09`). The gate now decodes responses using the actual Swift
+contract and checks canonical file persistence, audit and durable retry. The
+initial failed deployment rolled back correctly; the corrected deployment passed.
+
+Next: extend the canonical agent backend beyond its current eleven tools,
+starting with audited item move/trash operations. Keep shared UI and sync gates
+mandatory; full capability and reference-template parity remain unfinished.
 
 File-only dispatch (`88c5a359`), capture/Markdown (`2ce56ca3`), durable comments
 (`f4352d53`, `1ccb5163`) and expanded sync gate (`48ac492a`) are committed.
