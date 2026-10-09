@@ -57,8 +57,12 @@ function edit(base: string, changed: string): TextEdit {
   return { start, end, replacement: changed.slice(start, changedEnd) };
 }
 
-function mergeBody(base: string, local: string, remote: string): string | undefined {
-  const edits = [edit(base, local), edit(base, remote)].sort((a, b) => a.start - b.start);
+function mergeBody(base: string, local: string, remote: string, concurrentInsertions?: "remote-first"): string | undefined {
+  const localEdit = edit(base, local), remoteEdit = edit(base, remote);
+  if (concurrentInsertions && localEdit.start === localEdit.end && remoteEdit.start === remoteEdit.end && localEdit.start === remoteEdit.start) {
+    return base.slice(0, localEdit.start) + remoteEdit.replacement + localEdit.replacement + base.slice(localEdit.end);
+  }
+  const edits = [localEdit, remoteEdit].sort((a, b) => a.start - b.start);
   const [first, second] = edits;
   // Two insertions at the same position have no agreed ordering. Treat an
   // insertion at a replacement boundary conservatively for the same reason.
@@ -77,6 +81,7 @@ export function reconcileDocumentSnapshots(
   baseInput: DocumentSnapshot,
   localInput: DocumentSnapshot,
   remoteInput: DocumentSnapshot,
+  options?: { concurrentInsertions?: "remote-first" },
 ): DocumentReconciliation {
   const base = validateDocumentSnapshot(baseInput);
   const local = validateDocumentSnapshot(localInput);
@@ -89,7 +94,7 @@ export function reconcileDocumentSnapshots(
     if (equal(right, before)) return left;
     if (path === "/content/body" && typeof before === "string" &&
         typeof left === "string" && typeof right === "string") {
-      const merged = mergeBody(before, left, right);
+      const merged = mergeBody(before, left, right, options?.concurrentInsertions);
       if (merged !== undefined) return merged;
     } else if (path !== "/presentation/template" && object(before) && object(left) && object(right)) {
       const keys = new Set([...Object.keys(before), ...Object.keys(left), ...Object.keys(right)]);

@@ -58,6 +58,62 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
+  it("does not overwrite an overlapping external replacement during checkpoint reconciliation", async () => {
+    const server = new Server(), journal = new Journal();
+    const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
+    base.content.title = "Shared"; base.content.body = "Hello";
+    let collision = false;
+    const editor: FileCollaborationClient = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async () => { if (collision) throw Object.assign(new Error("File changed"), { code: "local_changed" }); },
+      reconcileCheckpoint: async () => {
+        const external = structuredClone(base); external.content.body = "Agent replacement";
+        return editor.reconcileExternalDocument(base, external);
+      },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    editor.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, "Human replacement"); });
+    collision = true;
+    expect(await editor.flushLocal()).toBe(false);
+    expect(editor.status).toBe("error");
+    expect(documentText(editor.doc, "body").toString()).toBe("Human replacement");
+    expect(journal.load(editor.journalKey)).toBeTruthy();
+    expect(server.pushes).toHaveLength(0);
+  });
+  it("merges a CLI append with pending typing through the same document and native lease", async () => {
+    const server = new Server(), journal = new Journal();
+    const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
+    base.content.title = "Shared"; base.content.body = "Hello";
+    let external = false, expectedRevision = 0, diskRevision = 0;
+    const saved: FileCollaborationCheckpoint[] = [];
+    const editor: FileCollaborationClient = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async value => {
+        if (diskRevision !== expectedRevision) throw Object.assign(new Error("File changed"), { code: "local_changed" });
+        saved.push(value);
+      },
+      reconcileCheckpoint: async () => {
+        const fresh = structuredClone(base); fresh.content.body += " CLI";
+        const merged = editor.reconcileExternalDocument(base, fresh);
+        if (merged) { expectedRevision = diskRevision; external = true; }
+        return merged;
+      },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    const doc = editor.doc, body = documentText(doc, "body");
+    editor.mutate(() => body.insert(body.length, " human"));
+    const caret = Y.createRelativePositionFromTypeIndex(body, body.length);
+    diskRevision++;
+    editor.notifyExternalFileChange();
+    expect(await editor.flushLocal()).toBe(true);
+    expect(external).toBe(true); expect(editor.doc).toBe(doc);
+    expect(editor.canEdit).toBe(true);
+    expect(body.toString()).toBe("Hello CLI human");
+    expect(Y.createAbsolutePositionFromRelativePosition(caret, doc)?.index).toBe(body.length);
+    expect(saved.at(-1)?.document.content.body).toBe(body.toString());
+    expect(saved.at(-1)?.journal.retired).toBeUndefined();
+    expect(await editor.flush()).toBe(true);
+    expect(editor.hasPendingChanges).toBe(false);
+    expect(readDocument(openPack(server.bytes, "Shared.textpack", server.state.revision).file).content.body).toBe("Hello CLI human");
+  });
   it("delivers custom presentation before checkpoint and retains it through offline reopen", async () => {
     const server = new Server(), journal = new Journal();
     const original = openPack(server.bytes, "Shared.textpack", server.state.revision);

@@ -30,6 +30,7 @@ let current = pack(markdown, JSON.stringify(initial));
 const externalFile = process.argv.includes("--external-file");
 let exists = externalFile, syncedHash: string | null = null;
 let remoteState: VaultCollaborationState | null = null;
+let remoteBytes = current.bytes;
 let localWrites = 0, sharedOpens = 0, sharedPushes = 0, publicationReads = 0, checkpointConflicts = 0;
 const until = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -46,7 +47,7 @@ const agentEdit = (suffix: string): VaultCollaborationState => {
     const body = agent.getMap("document").get("body") as import("yjs").Text;
     body.insert(body.length, suffix);
     const update = Buffer.from(Y.encodeStateAsUpdate(agent)).toString("base64");
-    const next = applyVaultCollaboration(remoteState, current.bytes, [update]);
+    const next = applyVaultCollaboration(remoteState, remoteBytes, [update]);
     current = { bytes: next.bytes, file: openPack(next.bytes, notePath, next.state.revision).file };
     syncedHash = null;
     return next.state;
@@ -80,6 +81,7 @@ try {
           assert.equal(request.params.hash, current.file.hash, "Shared editing must open the latest saved local file.");
           sharedOpens++;
           remoteState ??= seedVaultCollaboration(current.bytes, itemId, 1);
+          remoteBytes = current.bytes;
           result = { sessionToken: "session", path: notePath, hash: current.file.hash,
             acknowledgedRevision: current.file.hash, journal: null, retiredReason: null };
           break;
@@ -94,9 +96,18 @@ try {
           if (request.params.hash !== current.file.hash) {
             checkpointConflicts++;
             error = { code: "local_changed", message: "The local file changed during sync." };
-          } else result = { path: notePath, hash: current.file.hash };
+          } else {
+            current = pack(String(request.params.markdown), String(request.params.documentJSON));
+            result = { path: notePath, hash: current.file.hash };
+          }
           break;
-        case "collaborationPush": sharedPushes++; throw new Error("Clean promotion must not push a duplicate edit.");
+        case "collaborationPush": {
+          assert.ok(remoteState);
+          const next = applyVaultCollaboration(remoteState, remoteBytes, request.params.updates as string[]);
+          remoteState = next.state; remoteBytes = next.bytes; sharedPushes++;
+          result = { status: "written", revision: next.state.revision };
+          break;
+        }
         case "presenceJoin": result = { epoch: 1, presence: [], session: { clientId: "p-11111111-1111-4111-8111-111111111111",
           sessionCredential: "v1:test", expiresAt: Date.now() + 60_000 } }; break;
         case "presenceRead": case "presenceUpdate": result = { epoch: 1, presence: [] }; break;
@@ -148,31 +159,28 @@ try {
   assert.equal(localWrites, 1);
   assert.equal(sharedPushes, 0);
   assert.deepEqual(errors, []);
-  const firstAgentState = agentEdit(" Agent external edit.");
+  const editor = await page.getByRole("textbox", { name: "Document body" }).elementHandle();
+  await page.keyboard.insertText(" Pending human edit.");
+  agentEdit(" Agent external edit.");
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("texttext:vault-changed")));
-  await page.getByText("Waiting for the updated file to sync…").waitFor();
-  assert.equal(sharedOpens, 1, "A stale file must not reopen before sync acknowledges it.");
-  assert.equal(await page.getByRole("button", { name: "Download recovery" }).count(), 0);
-  remoteState = firstAgentState;
-  syncedHash = current.file.hash;
-  await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", {
-    detail: { connected: true, available: true, workspaceId },
-  })), config.workspaceId);
-  await until(() => sharedOpens === 2, "the clean shared session reopening");
-  await page.getByText("Typed before the first sync. Agent external edit.").waitFor();
+  await until(() => sharedPushes > 0, "external file edit joining the active session");
+  await page.getByRole("textbox", { name: "Document body" }).filter({ hasText: "Agent external edit." }).waitFor();
+  assert.equal(sharedOpens, 1, "External file edits must retain the native session.");
+  assert.match(await page.getByRole("textbox", { name: "Document body" }).innerText(), /Agent external edit\. Pending human edit\./);
+  assert.ok(await editor!.evaluate(node => node.isConnected && node === document.activeElement), "Editor and focus must survive the merge.");
+  await page.keyboard.insertText(" Still typing.");
+  await until(() => JSON.parse(current.file.documentJSON!).content.body.includes("Still typing."), "typing after in-place merge");
+  await until(() => openPack(remoteBytes, notePath, remoteState!.revision).file.markdown.includes("Still typing."), "typing reaching the relay");
 
   remoteState = agentEdit(" Second external edit.");
-  await until(() => checkpointConflicts === 1, "the stale local checkpoint");
-  await page.getByText("Waiting for the updated file to sync…").waitFor();
-  assert.equal(sharedOpens, 2);
-  syncedHash = current.file.hash;
-  await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", {
-    detail: { connected: true, available: true, workspaceId },
-  })), config.workspaceId);
-  await until(() => sharedOpens === 3, "the second clean shared session reopening");
-  await page.getByText("Typed before the first sync. Agent external edit. Second external edit.").waitFor();
-  assert.equal(localWrites, 1); assert.equal(sharedPushes, 0);
+  remoteBytes = current.bytes;
+  const priorConflicts = checkpointConflicts;
+  await until(() => checkpointConflicts > priorConflicts, "server-first checkpoint collision");
+  await page.getByRole("textbox", { name: "Document body" }).filter({ hasText: "Second external edit." }).waitFor();
+  assert.equal(sharedOpens, 1);
+  assert.ok(await editor!.evaluate(node => node.isConnected && node === document.activeElement));
+  assert.equal(localWrites, 1);
   assert.equal(await page.getByRole("button", { name: "Download recovery" }).count(), 0);
   assert.deepEqual(errors, []);
-  console.log("New note promotion and local-first/server-first external edits reopened after exact sync without duplicate writes or recovery.");
+  console.log("Promotion and local-first/server-first file edits retain the editor, focus and native session.");
 } finally { await browser.close(); }

@@ -1,5 +1,24 @@
 # TextText handoff
 
+## Active sync repair
+
+External file changes now enter the existing client's serialized checkpoint
+drain instead of immediately closing the editor. A failed native CAS reads the
+fresh same-ID file and merges it with the last materialized snapshot and current
+Yjs document. Independent edits and simultaneous insertions retain the document,
+native lease and editor binding. Custom template-source changes and overlapping
+replacements still preserve recovery state; those are unfinished acceptance work.
+Browser regression covers pending typing, same editor element/focus, and both
+local-first and server-first changes. Unit coverage checks relative cursor
+continuity, persisted merged content and conflict preservation.
+Logs: `/tmp/texttext-inplace-core-final.log`,
+`/tmp/texttext-inplace-browser-external.log`. This candidate is not installed.
+Next: real PC collision run, undo/IME and crash-window coverage, then all six
+simultaneously. Existing `pc-tunnel` access recovered; direct `pc` reset earlier.
+Canonical PC app remains stopped from the earlier authorized acceptance run;
+restore it after preserving/reconciling the retained test-file journal.
+No six-client pass has been obtained.
+
 ## Authoritative delivery
 
 - Mac `/Applications/TextText.app`: **0.204 (1232)**, source `2e0e10c1`.

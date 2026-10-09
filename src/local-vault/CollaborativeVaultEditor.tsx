@@ -149,6 +149,18 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       retainedJournalPath: native?.path,
       localRevision: native?.acknowledgedRevision,
       initialRetirement: native?.retiredReason ?? undefined,
+      reconcileCheckpoint: native ? async () => {
+        const before = file.current;
+        const fresh = await vaultRequest<VaultFile>("read", { path: before.path });
+        if (stopped || !shared || !native || fresh.hash === before.hash || packIdentity(fresh.markdown) !== config.itemId) return false;
+        // Custom template sources have their own version/metadata protocol.
+        // Never silently overwrite a concurrently changed definition.
+        if (fresh.templateJSON !== before.templateJSON || fresh.templateAuthoringSourceJSON !== before.templateAuthoringSourceJSON) return false;
+        if (!shared.reconcileExternalDocument(readDocument(before), readDocument(fresh))) return false;
+        file.current = fresh;
+        setOpened(fresh);
+        return true;
+      } : undefined,
       checkpoint: native ? async ({ journal, document: next }) => {
         const active = native;
         if (!active) throw new Error("The local shared file session has closed. Your journal is kept.");

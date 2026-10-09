@@ -1,5 +1,6 @@
 import * as Y from "yjs";
-import { documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
+import { applyDocumentSnapshot, documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
+import { reconcileDocumentSnapshots } from "./reconcile";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -35,6 +36,9 @@ export type FileCollaborationOptions = {
   initialRetirement?: string;
   localRevision?: string;
   checkpoint?: (value: FileCollaborationCheckpoint) => Promise<void>;
+  /** Reconcile a failed native compare-and-swap before retrying the latest journal.
+   * Must retain the native lease and adopt only a freshly read file revision. */
+  reconcileCheckpoint?: () => Promise<boolean>;
   onChange?: (snapshot: DocumentSnapshot, presentation?: FileCollaborationPresentation) => void;
   onStatus?: (status: FileCollaborationStatus, detail?: string) => void;
 };
@@ -283,6 +287,14 @@ export class FileCollaborationClient {
       const value = this.checkpointQueued; this.checkpointQueued = null;
       try { await this.options.checkpoint!(value); this.checkpointSavedGeneration = value.journal.journalGeneration!; }
       catch (error) {
+        if ((error as { code?: string } | null)?.code === "local_changed" && this.options.reconcileCheckpoint && !this.dead && !this.frozen) {
+          try {
+            if (await this.options.reconcileCheckpoint()) {
+              this.persist();
+              continue;
+            }
+          } catch { /* Keep the original failed checkpoint and its recoverable journal. */ }
+        }
         this.checkpointError = error; this.checkpointQueued = null;
         if (this.dead) continue;
         const clean = !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement &&
@@ -299,6 +311,12 @@ export class FileCollaborationClient {
   /** Called after a native read proves the TextPack changed outside this shared session. */
   notifyExternalFileChange(): void {
     if (this.dead || this.frozen) return;
+    if (this.options.reconcileCheckpoint && this.options.checkpoint) {
+      // The checkpoint drain serializes external reads with native writes. A
+      // watcher must not advance the expected hash under an in-flight write.
+      try { this.persist(); this.startCheckpointDrain(); } catch (error) { this.fatal(error); }
+      return;
+    }
     if (this.hasPendingChanges || this.saved?.retired || this.initialRetirement) {
       this.retire("The file changed outside shared editing. Your pending edits are kept for recovery.");
       return;
@@ -348,6 +366,14 @@ export class FileCollaborationClient {
   mutate(change: (doc: Y.Doc) => void): void {
     if (!this.initialized || !this.canEdit || this.frozen || this.dead) throw new Error("This collaboration document is not editable.");
     change(this.doc);
+  }
+  /** Merge a native file revision without replacing the Y.Doc or editor binding. */
+  reconcileExternalDocument(base: DocumentSnapshot, external: DocumentSnapshot): boolean {
+    if (!this.initialized || !this.canEdit || this.frozen || this.dead) return false;
+    const result = reconcileDocumentSnapshots(base, this.snapshot(), external, { concurrentInsertions: "remote-first" });
+    if (result.status !== "merged") return false;
+    this.mutate(doc => applyDocumentSnapshot(doc, result.document, "external-file"));
+    return !this.frozen;
   }
   private load(): FileCollaborationJournal | null {
     try { return this.loadJournal(); }
