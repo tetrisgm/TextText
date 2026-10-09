@@ -83,7 +83,7 @@
     "test:ai-provider-settings:browser": "node src/local-vault/__tests__/ai-provider-settings.browser.mjs",
     "test:note-template:browser": "node src/local-vault/__tests__/open-item-move.browser.mjs && node src/local-vault/__tests__/note-template.browser.mjs && node src/local-vault/__tests__/parent-reference.browser.mjs",
     "test:trash-restore:browser": "node src/local-vault/__tests__/trash-restore.browser.mjs",
-    "test:long-note-reader:browser": "node src/local-vault/__tests__/long-note-reader.browser.mjs && node src/local-vault/__tests__/reader-rerender.browser.mjs && node src/local-vault/__tests__/backlinks-cancellation.browser.mjs",
+    "test:long-note-reader:browser": "node src/local-vault/__tests__/long-note-reader.browser.mjs && node src/local-vault/__tests__/reader-rerender.browser.mjs && node src/local-vault/__tests__/document-recovery.browser.mjs && node src/local-vault/__tests__/backlinks-cancellation.browser.mjs",
     "test:note-icon:browser": "node src/local-vault/__tests__/note-icon.browser.mjs",
     "test:template-intent:browser": "node src/local-vault/__tests__/template-intent.browser.mjs && node src/local-vault/__tests__/template-versions.browser.mjs",
     "test:web-session:browser": "node src/local-vault/__tests__/workspace-chooser.browser.mjs && node src/local-vault/__tests__/listing-capabilities.browser.mjs && node src/local-vault/__tests__/web-session.browser.mjs",

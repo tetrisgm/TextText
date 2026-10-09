@@ -11,7 +11,8 @@ import { retryBootstrap, isTransientBootstrapError } from "./bootstrap-retry";
 import { templateStarterDocument } from "./template-starter";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { DocumentBoundary } from "./DocumentBoundary";
 import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
@@ -501,12 +502,6 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     focusNewNoteSelection={resumeBody?.selection} onNewNoteFocusHandled={() => { setResumeBody(null); props.onNewNoteFocusHandled?.(); }}
     onLocalFallback={() => setMode("local")} />;
   return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;
-}
-
-class DocumentBoundary extends Component<{ children: ReactNode }, { error: string }> {
-  state = { error: "" };
-  static getDerivedStateFromError(error: Error) { return { error: error.message }; }
-  render() { return this.state.error ? <div className="vault-notice" role="alert">This TextPack could not be opened: {this.state.error}</div> : this.props.children; }
 }
 
 export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null, webAssistant = false }: { allowFolderPicker?: boolean; webAssistant?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
@@ -1435,7 +1430,14 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}
       {listing && <ArticleEnrichmentWorker listing={listing} enabled={canManageFiles} skipPath={selected?.path} onChanged={refresh} />}
-      {selected && listing ? <DocumentBoundary key={`${listing.root}:${selectedItemId ?? selected.path}`}>
+      {selected && listing ? <DocumentBoundary key={`${listing.root}:${selectedItemId ?? selected.path}`} revision={selected.hash}
+        reload={async signal => {
+          const opened = selectedRef.current;
+          if (!opened || listingRef.current?.root !== listing.root) return;
+          const latest = await vaultRequest<VaultFile>("read", { path: opened.path });
+          if (signal.aborted || selectedRef.current !== opened || listingRef.current?.root !== listing.root) return;
+          if (latest.hash !== opened.hash) setSelected(latest);
+        }}>
         {selectedFeed.error ? <div className="vault-notice" role="alert">{selectedFeed.error}</div> : selectedFeed.subscription
           ? <FeedSubscriptionReader key={`${listing.root}:${selected.path}:${selected.hash}:${canReadFeeds}`} subscription={selectedFeed.subscription}
               folder={feedFolder} canRead={canReadFeeds} canKeep={canKeepFeed} onKept={() => refresh()} />
