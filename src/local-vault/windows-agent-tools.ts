@@ -7,6 +7,17 @@ import { validatedLookSource } from "@/lib/presentation/template-library";
 import { VaultError, type VaultFile, type VaultTransport, type VaultListing } from "./bridge";
 import { readDocument, readTemplate, writePayload } from "./model";
 
+/**
+ * The body bytes a fresh TextPack stores in both text.md and document.json:
+ * surrounding newlines trimmed, one newline closing a non-empty body. Mirrors
+ * `DocumentCreation.canonicalBody` in the Mac store, so a custom snapshot an
+ * agent read back from a file ("Body\n") matches the body it typed ("Body").
+ */
+export function canonicalBody(body: string) {
+  const trimmed = body.replace(/^[\n\r\u000b\u000c\u0085\u2028\u2029]+|[\n\r\u000b\u000c\u0085\u2028\u2029]+$/g, "");
+  return trimmed ? trimmed + "\n" : "";
+}
+
 /** Folder tools use the same transport and permission checks as ordinary creation. */
 export async function executeWindowsFolderAgentTool(request: VaultTransport, folder: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal, operationId?: string) {
   const valid = (path: string) => !path || !path.split("/").some(part => !part || part.startsWith(".") || /[\\:\x00-\x1f]/.test(part));
@@ -45,7 +56,7 @@ export async function executeWindowsFolderAgentTool(request: VaultTransport, fol
       if (typeof args.documentJSON !== "string" || typeof args.templateJSON !== "string" || args.documentJSON.length > 2_000_000 || args.templateJSON.length > 2_000_000) throw new Error("Provide a complete matching snapshot and template.");
       const document = validateDocumentSnapshot(JSON.parse(args.documentJSON));
       const template = validateTemplateDefinition(JSON.parse(args.templateJSON));
-      if (document.presentation.template.id !== template.id || document.presentation.template.version !== template.version || document.content.title !== args.title || document.content.body !== args.body || document.content.assets.length) throw new Error("Custom creation must match title/body and cannot reference assets it has not imported.");
+      if (document.presentation.template.id !== template.id || document.presentation.template.version !== template.version || document.content.title !== args.title || canonicalBody(document.content.body) !== canonicalBody(args.body) || document.content.assets.length) throw new Error("Custom creation must match title/body and cannot reference assets it has not imported.");
       if (signal?.aborted) throw new DOMException("Task stopped", "AbortError");
       const saved = await request("importPack", { title: args.title, folder: destination, data: encodeBase64(newItemPack(document, { template })), ...creation }, signal) as VaultFile;
       return JSON.stringify({ path: saved.path, hash: saved.hash });

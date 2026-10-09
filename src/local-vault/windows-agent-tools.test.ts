@@ -2,7 +2,7 @@ import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { openPack } from "./pack";
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { executeWindowsAgentTool, executeWindowsFolderAgentTool } from "./windows-agent-tools";
+import { canonicalBody, executeWindowsAgentTool, executeWindowsFolderAgentTool } from "./windows-agent-tools";
 import { readDocument, writePayload } from "./model";
 import type { VaultFile, VaultTransport } from "./bridge";
 
@@ -68,6 +68,30 @@ describe("Windows selected-item agent tools", () => {
     await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {...args, title: "Different"})).rejects.toThrow("match");
     await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {...args, templateJSON: undefined})).rejects.toThrow("matching");
     expect(writes).toHaveLength(1);
+  });
+  it("matches a custom snapshot read back from a file against the body the agent typed, as the Mac store does", async () => {
+    const template = {...BUILTIN_TEMPLATES.find(value => value.id === "texttext.note")!, id: "local.research", name: "Research"};
+    const document = emptyDocumentSnapshot({id: template.id, version: template.version});
+    document.content.title = "Research item"; document.content.body = "Body\n";
+    const writes: Record<string, unknown>[] = [];
+    const request: VaultTransport = async (method, params) => {
+      if (method === "list") return {folders: ["Notes"], items: []};
+      if (method === "importPack") { writes.push(params); return {path: "Notes/Research item.textpack", hash: "saved"}; }
+      throw new Error("Unexpected operation " + method);
+    };
+    const args = {title: "Research item", body: "Body", documentJSON: JSON.stringify(document), templateJSON: JSON.stringify(template)};
+    const withAssets = {...document, content: {...document.content, assets: [{id: "a", url: "x.png", kind: "image", alt: ""}]}};
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {...args, body: "Different"})).rejects.toThrow("match");
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {...args, body: "Body\n\nMore"})).rejects.toThrow("match");
+    await expect(executeWindowsFolderAgentTool(request, "Notes", "create_file", {...args, documentJSON: JSON.stringify(withAssets)})).rejects.toThrow("assets");
+    expect(writes).toHaveLength(0);
+    await executeWindowsFolderAgentTool(request, "Notes", "create_file", args);
+    expect(writes).toHaveLength(1);
+    const pack = openPack(Uint8Array.from(atob(String(writes[0].data)), value => value.charCodeAt(0)), "Notes/Research item.textpack", "saved");
+    expect(readDocument(pack.file).content).toEqual(document.content);
+    expect(canonicalBody("")).toBe("");
+    expect(canonicalBody("\n\nBody\n\n")).toBe("Body\n");
+    expect(canonicalBody("\n")).toBe("");
   });
   it("creates only within an explicit existing folder and rejects traversal before writes", async () => {
     const calls: Record<string, unknown>[] = [];
