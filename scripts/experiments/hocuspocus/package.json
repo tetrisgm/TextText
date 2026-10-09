@@ -1,0 +1,14 @@
+{
+  "name": "texttext-hocuspocus-evaluation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node evaluate.mjs"
+  },
+  "dependencies": {
+    "@hocuspocus/server": "4.7.0",
+    "@hocuspocus/provider": "4.7.0",
+    "yjs": "13.6.31",
+    "ws": "8.18.3"
+  }
+}

@@ -1,5 +1,14 @@
 # TextText handoff
 
+## Current delivery
+
+Mac 1235 and Windows source 1163846d are installed. Mac save/reopen and visible
+Windows Edge editing passed; the Mac independently saw the Edge edits.
+[Receipt and remaining gaps](verification/2026-10-08-client-1235.md).
+The owner requested less custom sync machinery. A bounded standard-provider
+prototype is in `scripts/experiments/hocuspocus`; production replacement is not yet
+implemented or verified.
+
 ## Active sync repair
 
 External-file changes now reconcile through the existing Yjs checkpoint drain,
