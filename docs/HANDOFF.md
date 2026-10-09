@@ -11,7 +11,8 @@ implemented or verified.
 The isolated crash probe now passes SIGKILL after ACK, commit-before-ACK replay,
 and existing-writer revocation. Its negative control proves default debounced
 storage alone is insufficient. See the experiment README for limits and commands.
-Template sidecar changes now preserve the current Yjs epoch in the candidate;
+Oracle now serves `texttext-oracle-20261009T045727Z-6b940d3e`, including concurrent
+file appends and template sidecar changes that preserve the current Yjs epoch;
 [regression and delivery limits](verification/2026-10-08-template-continuity.md).
 
 ## Active sync repair
@@ -61,7 +62,7 @@ Logs `/tmp/texttext-restart-{native,windows,windows-build,core-stable}.log`.
 Installed as Mac 1234 and Windows source 88e9ad0e; physical restart acceptance is not yet passed. Older retired journals, overlapping
 replacements and six-client acceptance remain outstanding.
 
-## Authoritative delivery
+## Earlier delivery references
 
 - Mac `/Applications/TextText.app`: **0.204 (1234)**, source `88e9ad0e`.
   Latest install and native app/CLI acceptance: [receipt](verification/2026-10-08-inplace-file-merge.md).

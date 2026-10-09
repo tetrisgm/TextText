@@ -76,4 +76,5 @@ replacements and binary conflicts remain rejected by existing tests.
 Focused tests: 59 passed (`/tmp/texttext-pack-append-after.log`). Full core gate:
 856 tests, TypeScript, and all three browser continuity modes passed with an
 exact-source receipt (`/tmp/texttext-pack-append-core.log`). This additional
-change is not installed or deployed yet and does not itself recover old epochs.
+change is installed in Mac 1235 and Windows source 1163846d; see
+[client receipt](2026-10-08-client-1235.md). It does not itself recover old epochs.
