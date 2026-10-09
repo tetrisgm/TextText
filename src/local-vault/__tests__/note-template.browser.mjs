@@ -29,14 +29,19 @@ const app=createRoot(document.getElementById('root'));window.render=()=>app.rend
  browser=await chromium.launch();const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  let permit;const permission=new Promise(resolve=>permit=resolve);
  await page.route('https://template.test/**',async route=>{const u=new URL(route.request().url());if(u.pathname.endsWith('/access')){await permission;return route.fulfill({json:{fullAccess:true,isOwner:true,canEditContent:true,canComment:true,canManageShares:true,grants:[]}});}if(u.pathname==='/')return route.fulfill({contentType:'text/html',body:'<div id="root"></div>'});return route.fulfill({status:404});});
+ // Load regression: any frame the draft start schedules is held until the body gains focus, the
+ // way a late frame lands on a busy machine. Typing must stay in the field the user chose.
+ await page.addInitScript(()=>{const raf=window.requestAnimationFrame.bind(window);window.lateFrames=[];window.requestAnimationFrame=cb=>{if(!window.holdFrames)return raf(cb);const frame=()=>cb(performance.now());window.lateFrames.push(frame);return 0;};document.addEventListener('focusin',e=>{if(e.target?.getAttribute('aria-label')==='New card body'&&window.lateFrames.length){const frames=window.lateFrames.splice(0);for(const frame of frames)frame();}});});
  await page.goto('https://template.test/');await page.addStyleTag({content:await readFile(path.join(dir,'app.css'),'utf8')});await page.addScriptTag({content:await readFile(path.join(dir,'app.js'),'utf8')});
 
  permit();await page.getByText('Notes',{exact:true}).first().click();
- await page.getByRole('button',{name:'Start typing to create a new card'}).click();
- await page.getByLabel('New card title').fill('Keep title');await page.getByLabel('New card body').fill('Agenda');
+ await page.evaluate(()=>{window.holdFrames=true;});await page.getByRole('button',{name:'Start typing to create a new card'}).click();
+ assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'New card title');
+ await page.getByLabel('New card title').fill('Keep title');await page.getByLabel('New card body').fill('Agenda');await page.evaluate(()=>{window.holdFrames=false;});
+ assert.equal(await page.getByLabel('New card title').inputValue(),'Keep title');assert.equal(await page.getByLabel('New card body').inputValue(),'Agenda');
  await page.getByRole('button',{name:'Add to new card',exact:true}).click();await page.getByRole('menuitem',{name:'Parent',exact:true}).click();
  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Find item');await page.getByRole('searchbox',{name:'Find item'}).fill('Native listing parent');await page.getByRole('button',{name:'Native listing parent',exact:true}).click();
- await page.getByRole('button',{name:'Done choosing parents',exact:true}).click();assert.equal(await page.getByLabel('New card body').inputValue(),'Agenda');
+ await page.getByRole('button',{name:'Done choosing parents',exact:true}).click();assert.equal(await page.getByLabel('New card body').inputValue(),'Agenda');assert.equal(await page.getByLabel('New card title').inputValue(),'Keep title');
  await page.getByRole('button',{name:'Add to new card',exact:true}).click();await page.getByRole('menu',{name:'Add to new card'}).getByRole('menuitem').first().press('=');
  await page.getByLabel('Find or name a text template').fill('Meeting');await page.getByRole('button',{name:'Save current text as Meeting',exact:true}).click();
  await page.waitForFunction(()=>[...window.files.values()].some(f=>f.path==='Templates/Meeting.textpack'&&JSON.parse(f.documentJSON).content.body==='Agenda'));

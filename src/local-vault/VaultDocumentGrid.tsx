@@ -1,6 +1,6 @@
 import { previewLabels, rememberPreviewLabel } from "./preview-labels";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { DocumentCollectionRenderer } from "@/components/document/DocumentRenderer";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { selectCollectionView } from "@/lib/presentation/collection-views";
@@ -200,16 +200,43 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
   const draftParentsRef = useRef<string[]>([]);
   const [draftParentOpen, setDraftParentOpen] = useState(false);
   const draftParentRef = useRef<HTMLDivElement>(null);
+  const draftFormRef = useRef<HTMLFormElement>(null);
   const draftReferences = useMemo(() => createVaultDocumentReferences(), [listing.root]);
+  // Deferred focus runs a frame later. On a slow or busy machine that frame can land after the
+  // user already moved into another draft field, and pulling focus then sends their typing to the
+  // wrong field. Only move focus when the user has not moved into a different text field since
+  // the focus was requested.
+  const draftFocusAllowed = (target: HTMLElement, activeWhenRequested: Element | null) => {
+    const active = document.activeElement;
+    return !(active instanceof HTMLElement && active !== target && active !== activeWhenRequested && draftFormRef.current?.contains(active) && active.matches("input, textarea"));
+  };
+  const focusDraftLater = (target: () => HTMLElement | null | undefined, after?: (element: HTMLElement) => void) => {
+    const activeWhenRequested = document.activeElement;
+    return requestAnimationFrame(() => {
+      const element = target();
+      if (!element || !draftFocusAllowed(element, activeWhenRequested)) return;
+      element.focus();
+      after?.(element);
+    });
+  };
   useEffect(() => {
     if (!draftParentOpen) return;
-    const frame = requestAnimationFrame(() => {
+    const frame = focusDraftLater(() => {
       const picker = draftParentRef.current?.querySelector<HTMLDetailsElement>("details");
       if (picker) picker.open = true;
-      draftParentRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+      return draftParentRef.current?.querySelector<HTMLInputElement>('input[type="search"]');
     });
     return () => cancelAnimationFrame(frame);
   }, [draftParentOpen]);
+  // A new draft focuses its title in the same commit that mounts it, so no later frame can steal
+  // focus from a field the user has already chosen.
+  const draftTitleFocusPending = useRef(false);
+  useLayoutEffect(() => {
+    if (!cardDraft || !draftTitleFocusPending.current) return;
+    draftTitleFocusPending.current = false;
+    const title = draftTitleRef.current;
+    if (title && draftFocusAllowed(title, null)) title.focus();
+  }, [cardDraft]);
   const draftIconRef = useRef("");
   const [draftColorOpen, setDraftColorOpen] = useState(false);
   const [draftTemplate, setDraftTemplate] = useState<{body: string; at: number} | null>(null);
@@ -279,7 +306,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     setDraftInsertOpen(false);
     setDraftCardLinkOpen(card);
     setDraftLinkOpen(!card);
-    if (!card) requestAnimationFrame(() => draftLinkURLRef.current?.focus());
+    if (!card) focusDraftLater(() => draftLinkURLRef.current);
   };
   const showCardDraft = (initial = "") => {
     if (cardDraftRef.current && !initial) { draftTitleRef.current?.focus(); return; }
@@ -296,7 +323,7 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     setDraftCardLinkOpen(false);
     setDraftImageError("");
     window.dispatchEvent(new Event("texttext:note-draft-started"));
-    requestAnimationFrame(() => draftTitleRef.current?.focus());
+    draftTitleFocusPending.current = true;
   };
   const addDraftTag = () => {
     const current = cardDraftRef.current;
@@ -586,21 +613,21 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
       {noteQuery && noteContentSearch.query === noteQuery && noteContentSearch.listing === listing && (noteContentSearch.error || noteContentSearch.truncated) && <p role="status" className="vault-note-index-status">{noteContentSearch.error || "Some long cards were not searched. Results may be incomplete."}</p>}
       {noteTags.length > 0 && <div className="vault-note-tag-filters" role="group" aria-label="Filter card tags"><button aria-pressed={!noteTag} onClick={() => { setNoteTag(""); setPage(0); }}>All</button>{noteTags.slice(0, 50).map(tag => <button key={tag} aria-pressed={noteTag === tag} onClick={() => { setNoteTag(tag); setPage(0); }}>#{tag}</button>)}{noteTags.length > 50 && <span>Find more tags with search</span>}</div>}
       {noteIndexReady && displayedItems.length === 0 && <p className="vault-note-index-status">No cards match.</p>}
-      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form className="vault-note-draft" data-note-color={cardDraft.color} aria-label="New card draft" onSubmit={finishCardDraft} onPaste={event => { const files = [...event.clipboardData.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); addDraftImages(files); } }} onDragOver={event => { if ([...event.dataTransfer.items].some(item => item.kind === "file")) event.preventDefault(); }} onDrop={event => { const files = [...event.dataTransfer.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); event.stopPropagation(); addDraftImages(files); } }}>
-        <div className="vault-note-draft-tools"><button type="button" aria-label="Add to new card" aria-expanded={draftInsertOpen} disabled={busy} onPointerDown={() => { const body = draftBodyRef.current; if (!body) return; draftCaretRef.current = body.selectionStart; draftLinkSelectionRef.current = { from: body.selectionStart, to: body.selectionEnd }; }} onClick={() => { const body = draftBodyRef.current; if (!draftLinkSelectionRef.current && body) { draftCaretRef.current = body.selectionStart; draftLinkSelectionRef.current = { from: body.selectionStart, to: body.selectionEnd }; } setDraftInsertOpen(open => !open); }}>+</button>{draftInsertOpen && <div className="vault-note-draft-insert" role="menu" aria-label="Add to new card" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setDraftInsertOpen(false); draftBodyRef.current?.focus(); return; } const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']")]; const shortcut = event.key === "#" ? "Tag" : event.key === "^" ? "Link" : event.key === "!" ? "Image" : event.key === "*" ? "Color" : event.key === "=" ? "Template" : ""; if (shortcut) { event.preventDefault(); options.find(option => option.textContent?.trim().startsWith(shortcut) && !option.disabled)?.click(); } else if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); const index = options.indexOf(document.activeElement as HTMLButtonElement); options[(index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length]?.focus(); } }}><button type="button" role="menuitem" disabled={cardDraft.tags.length >= 500} onClick={() => { setDraftInsertOpen(false); setDraftTagOpen(true); requestAnimationFrame(() => draftTagRef.current?.focus()); }}>Tag <kbd>#</kbd></button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftParentOpen(true); }}>Parent</button><button type="button" role="menuitem" onClick={() => openDraftLink(true)}>Link <kbd>^</kbd></button><button type="button" role="menuitem" onClick={() => openDraftLink(false)}>Web link</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); draftImageInputRef.current?.click(); }}>Image <kbd>!</kbd></button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftTemplate({body: cardDraftRef.current?.body ?? "", at: draftBodyRef.current?.selectionStart ?? 0}); }}>Template</button><button type="button" role="menuitem" onClick={insertDraftChecklist}>Checklist</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftEmojiOpen(true); }}>Emoji</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftColorOpen(true); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.vault-note-draft-colors button')?.focus()); }}>Color <kbd>*</kbd></button></div>}<input ref={draftImageInputRef} type="file" accept={IMAGE_ACCEPT} multiple aria-label="Choose new card images" hidden onChange={event => { addDraftImages(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} /></div>
+      <div className="vault-note-cards">{cardDraft && onCreateCard && !previewOnly && <form ref={draftFormRef} className="vault-note-draft" data-note-color={cardDraft.color} aria-label="New card draft" onSubmit={finishCardDraft} onPaste={event => { const files = [...event.clipboardData.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); addDraftImages(files); } }} onDragOver={event => { if ([...event.dataTransfer.items].some(item => item.kind === "file")) event.preventDefault(); }} onDrop={event => { const files = [...event.dataTransfer.files].filter(file => file.type.startsWith("image/")); if (files.length) { event.preventDefault(); event.stopPropagation(); addDraftImages(files); } }}>
+        <div className="vault-note-draft-tools"><button type="button" aria-label="Add to new card" aria-expanded={draftInsertOpen} disabled={busy} onPointerDown={() => { const body = draftBodyRef.current; if (!body) return; draftCaretRef.current = body.selectionStart; draftLinkSelectionRef.current = { from: body.selectionStart, to: body.selectionEnd }; }} onClick={() => { const body = draftBodyRef.current; if (!draftLinkSelectionRef.current && body) { draftCaretRef.current = body.selectionStart; draftLinkSelectionRef.current = { from: body.selectionStart, to: body.selectionEnd }; } setDraftInsertOpen(open => !open); }}>+</button>{draftInsertOpen && <div className="vault-note-draft-insert" role="menu" aria-label="Add to new card" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setDraftInsertOpen(false); draftBodyRef.current?.focus(); return; } const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']")]; const shortcut = event.key === "#" ? "Tag" : event.key === "^" ? "Link" : event.key === "!" ? "Image" : event.key === "*" ? "Color" : event.key === "=" ? "Template" : ""; if (shortcut) { event.preventDefault(); options.find(option => option.textContent?.trim().startsWith(shortcut) && !option.disabled)?.click(); } else if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); const index = options.indexOf(document.activeElement as HTMLButtonElement); options[(index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length]?.focus(); } }}><button type="button" role="menuitem" disabled={cardDraft.tags.length >= 500} onClick={() => { setDraftInsertOpen(false); setDraftTagOpen(true); focusDraftLater(() => draftTagRef.current); }}>Tag <kbd>#</kbd></button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftParentOpen(true); }}>Parent</button><button type="button" role="menuitem" onClick={() => openDraftLink(true)}>Link <kbd>^</kbd></button><button type="button" role="menuitem" onClick={() => openDraftLink(false)}>Web link</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); draftImageInputRef.current?.click(); }}>Image <kbd>!</kbd></button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftTemplate({body: cardDraftRef.current?.body ?? "", at: draftBodyRef.current?.selectionStart ?? 0}); }}>Template</button><button type="button" role="menuitem" onClick={insertDraftChecklist}>Checklist</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftEmojiOpen(true); }}>Emoji</button><button type="button" role="menuitem" onClick={() => { setDraftInsertOpen(false); setDraftColorOpen(true); focusDraftLater(() => document.querySelector<HTMLButtonElement>('.vault-note-draft-colors button')); }}>Color <kbd>*</kbd></button></div>}<input ref={draftImageInputRef} type="file" accept={IMAGE_ACCEPT} multiple aria-label="Choose new card images" hidden onChange={event => { addDraftImages(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} /></div>
         {draftTemplate && <VaultNoteTemplatePicker body={draftTemplate.body} onCancel={() => { setDraftTemplate(null); draftBodyRef.current?.focus(); }} onPick={text => {
           const current = cardDraftRef.current;
           if (!current || current.body !== draftTemplate.body) throw new Error("The card changed. Reopen templates at the insertion point.");
           const at = Math.max(0, Math.min(draftTemplate.at, current.body.length));
           const body = current.body.slice(0, at) + text + current.body.slice(at); cardDraftRef.current = {...current, body}; setCardDraft({...current, body});
-          if (draftBodyRef.current) draftBodyRef.current.value = body; setDraftTemplate(null); requestAnimationFrame(() => { draftBodyRef.current?.focus(); draftBodyRef.current?.setSelectionRange(at + text.length, at + text.length); });
+          if (draftBodyRef.current) draftBodyRef.current.value = body; setDraftTemplate(null); focusDraftLater(() => draftBodyRef.current, () => draftBodyRef.current?.setSelectionRange(at + text.length, at + text.length));
         }} />}
         {draftEmojiOpen && <NoteEmojiPicker onPick={insertDraftEmoji} onCancel={() => { setDraftEmojiOpen(false); draftBodyRef.current?.focus(); }} />}
         {draftColorOpen && <div className="vault-note-draft-colors" role="group" aria-label="New card color" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setDraftColorOpen(false); draftBodyRef.current?.focus(); } }}><span>Card color</span>{NOTE_COLORS.map(color => <button key={color} type="button" data-color={color} aria-label={color === "default" ? "Default card color" : `${color} card color`} aria-pressed={cardDraft.color === color} onClick={() => { const next = { ...(cardDraftRef.current ?? cardDraft), color }; cardDraftRef.current = next; setCardDraft(next); setDraftColorOpen(false); draftBodyRef.current?.focus(); }}>{color}</button>)}</div>}
         <NoteIconControl value={draftIcon} onChange={icon => { draftIconRef.current = icon; setDraftIcon(icon); }} />
         {(draftParentOpen || draftParents.length > 0) && <div ref={draftParentRef} className="vault-note-draft-parents" role="group" aria-label="New card parents"><FieldInput field={{id: "parents", label: "Parents", type: "reference", target: "document", multiple: true, required: false, visibility: "public"}} value={draftParents} documentReferences={draftReferences} disabled={busy} onChange={value => { const parents = Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []; draftParentsRef.current = parents; setDraftParents(parents); }} />{draftParentOpen && <button type="button" onClick={() => { const picker = draftParentRef.current?.querySelector<HTMLDetailsElement>("details"); if (picker) picker.open = false; setDraftParentOpen(false); draftBodyRef.current?.focus(); }}>Done choosing parents</button>}</div>}
         <textarea ref={draftTitleRef} aria-label="New card title" rows={1} placeholder="Title" defaultValue={cardDraft.title} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), title: event.currentTarget.value }; }} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); draftBodyRef.current?.focus(); } }} />
-        <textarea ref={draftBodyRef} aria-label="New card body" rows={4} placeholder="Write a card…" defaultValue={cardDraft.body} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), body: event.currentTarget.value }; }} onSelect={event => { if (!draftInsertOpen && !draftLinkOpen && !draftCardLinkOpen && document.activeElement === event.currentTarget) draftLinkSelectionRef.current = { from: event.currentTarget.selectionStart, to: event.currentTarget.selectionEnd }; }} onKeyDown={event => { if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && (event.currentTarget.selectionStart === 0 || /\s/.test(event.currentTarget.value[event.currentTarget.selectionStart - 1] ?? ""))) { event.preventDefault(); draftCaretRef.current = event.currentTarget.selectionStart; setDraftInsertOpen(true); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.vault-note-draft-insert [role="menuitem"]')?.focus()); } else if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+        <textarea ref={draftBodyRef} aria-label="New card body" rows={4} placeholder="Write a card…" defaultValue={cardDraft.body} onInput={event => { cardDraftRef.current = { ...(cardDraftRef.current ?? cardDraft), body: event.currentTarget.value }; }} onSelect={event => { if (!draftInsertOpen && !draftLinkOpen && !draftCardLinkOpen && document.activeElement === event.currentTarget) draftLinkSelectionRef.current = { from: event.currentTarget.selectionStart, to: event.currentTarget.selectionEnd }; }} onKeyDown={event => { if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && (event.currentTarget.selectionStart === 0 || /\s/.test(event.currentTarget.value[event.currentTarget.selectionStart - 1] ?? ""))) { event.preventDefault(); draftCaretRef.current = event.currentTarget.selectionStart; setDraftInsertOpen(true); focusDraftLater(() => document.querySelector<HTMLButtonElement>('.vault-note-draft-insert [role="menuitem"]')); } else if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
         {draftImages.length > 0 && <div className="vault-note-draft-images">{draftImages.map(image => <div key={image.id} className="vault-note-draft-image">{/* eslint-disable-next-line @next/next/no-img-element */}<img src={image.url} alt={image.file.name} /><button type="button" aria-label={`Remove ${image.file.name} from new card`} onClick={() => { URL.revokeObjectURL(image.url); draftImagesRef.current = draftImagesRef.current.filter(item => item.id !== image.id); setDraftImages(draftImagesRef.current); }}>×</button></div>)}</div>}
         {draftImageError && <p role="alert" className="vault-note-draft-error">{draftImageError}</p>}
         {cardDraft.tags.length > 0 && <div className="vault-note-draft-tags">{cardDraft.tags.map(tag => <span key={tag}>#{tag}<button type="button" aria-label={`Remove ${tag} from new card`} onClick={() => { const current = cardDraftRef.current; if (!current) return; const next = { ...current, tags: current.tags.filter(value => value !== tag) }; cardDraftRef.current = next; setCardDraft(next); }}>×</button></span>)}</div>}
