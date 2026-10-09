@@ -56,3 +56,29 @@ the core gate as `--early-open`. Logs `/tmp/texttext-early-open-{before,after}.l
 The physical PC has not yet received this navigation fix. Full core verification
 passed in `/tmp/texttext-activation-core.log`: 853 tests, TypeScript and all three
 browser modes, with an exact-source receipt. Native code is unchanged.
+
+
+## Physical navigation retest, source 3319d821
+
+The isolated production Windows window used native source `88e9ad0e` and the
+exact shared UI built from `3319d821` (app.js SHA256
+`4006ff676e7d79bb5cd80494f3316ebb186a538f2d9075fbd4b51381a8925479`).
+Native activation returned `opened`; the header remained on fixture 1232a.
+The Home replacement is fixed in this run. The next assertion failed: the
+retained shared session displayed the recovery notice before an editor opened.
+No test typing occurred. Receipts:
+`C:\Users\Shokunin\dev\texttext-activation-3319\receipts`.
+
+Retained journal after normal close: epoch 1, sequence 5, one pending update,
+a batch, `unqueuedDirty=false`, and the generic epoch/access retirement reason.
+Do not infer current server permissions or epoch from that generic reason alone.
+Original checkpoint copies remain preserved. This is an unresolved recovery
+failure, not a passed restart test.
+
+A separate fixture 1232d continuity run was launched under `receipts-d` with
+12 inputs. Its result is not yet collected: new SSH connections are temporarily
+resetting on both existing PC profiles. The CLI actor did not start. Do not
+count this as a simultaneous app/CLI run. Local runner compilation passed with
+zero warnings/errors (`/tmp/texttext-cursor-observation-build.log`). The runner
+now records bounded protocol cursor/permission observations without response
+content or credentials to distinguish retirement causes on subsequent runs.

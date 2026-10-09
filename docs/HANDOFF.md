@@ -14,8 +14,10 @@ tests also passed app/CLI collisions with continuous editor-element observation.
 
 Next: restart with pending edits plus external changes, multiple importers,
 overlapping replacements/template-source changes, and all six physical clients.
-No six-client pass. PC activation failed intermittently before a successful
-retry; root cause remains unexplained. Existing `pc-tunnel` access works.
+No six-client pass. Startup location restoration caused a reproduced activation
+race; source 3319d821 fixes it and a physical PC retest stayed on the right file.
+That retest then reproduced the pending-session recovery banner before editing.
+See the restart delivery receipt; pending edits remain preserved.
 Canonical PC app remains stopped; preserve/reconcile the earlier retained test
 journal before reopening. Isolated acceptance apps closed normally.
 
@@ -76,7 +78,10 @@ replacements and six-client acceptance remain outstanding.
   an already activated file. Current candidate fences that restoration; new
   `--early-open` regression fails baseline and passes the fix. Full core gate
   passed: 853 tests, TypeScript and all three browser modes. Navigation fix
-  still needs desktop delivery and physical restart acceptance.
+  passed isolated physical activation, but the pending fixture still shows recovery.
+  Canonical delivery and successful pending restart acceptance remain outstanding.
+  A separate 1232d runner is awaiting result collection; new PC SSH connections
+  currently reset on both existing profiles, so its CLI actor never started.
   [Current delivery and open failure](verification/2026-10-08-restart-delivery.md).
 - Real workspace: `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`,
   ID `be28ae03-c64e-4695-80af-04f048f86f37`. Preserve content.

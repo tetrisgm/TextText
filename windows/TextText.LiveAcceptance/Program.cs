@@ -64,7 +64,7 @@ static class Program
                     try
                     {
                         if (Field(window, "web") is WebView2 diagnostic && diagnostic.CoreWebView2 is not null)
-                            Record(new { kind = "failure-surface", state = await diagnostic.ExecuteScriptAsync("JSON.stringify({heading:document.querySelector('.vault-context-location')?.textContent,notices:[...document.querySelectorAll('[role=alert],.vault-notice')].map(x=>x.textContent),editor:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})") });
+                            Record(new { kind = "failure-surface", state = await diagnostic.ExecuteScriptAsync("JSON.stringify({heading:document.querySelector('.vault-context-location')?.textContent,notices:[...document.querySelectorAll('[role=alert],.vault-notice')].map(x=>x.textContent),cursors:window.texttextAcceptanceCursors,editor:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})") });
                     }
                     catch { /* Preserve the original failure if WebView has already closed. */ }
                     Record(new { kind = "failure", message = error.Message });
@@ -126,6 +126,8 @@ static class Program
                     record(new { kind = "activation-reply", method = method.GetString(), result = value.GetProperty("params").Clone() });
             } catch (JsonException) { }
         };
+        // Record only protocol cursors, never response documents or credentials.
+        await view.ExecuteScriptAsync("window.texttextAcceptanceCursors=[];chrome.webview.addEventListener('message',e=>{try{const r=e.data?.result;if(!r?.body)return;const v=JSON.parse(atob(r.body));if(Number.isSafeInteger(v.epoch)&&typeof v.canEditContent==='boolean'){window.texttextAcceptanceCursors.push({epoch:v.epoch,seq:v.seq,canEditContent:v.canEditContent});window.texttextAcceptanceCursors=window.texttextAcceptanceCursors.slice(-8)}}catch{}})");
         window.ActivateFiles([plan.File]);
         var expectedTitle = JsonSerializer.Serialize(plan.Title);
         await Until(async () => await view.ExecuteScriptAsync($"document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle}") == "true", ct, "Production file activation did not open the test item.");
