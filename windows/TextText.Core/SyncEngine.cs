@@ -153,7 +153,17 @@ public sealed class SyncEngine
                 if(remote.TryGetValue(file.ItemId,out var server)) {
                     if(server.Deleted) { store.Preserve(store.Read(file.Path),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",file.ItemId,file.Path,null,server.Revision,file.Hash,null,true));continue; }
                     var pack=await transport.DownloadAsync(file.ItemId,cancellation);
-                    if(!TextPackStore.Equivalent(pack.Data,store.Read(file.Path))) { store.Preserve(pack.Data,"remote-conflict");store.Preserve(store.Read(file.Path),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",file.ItemId,file.Path,null,server.Revision,file.Hash,null,true));continue; }
+                    var localBytes=store.Read(file.Path);
+                    if(!TextPackStore.Equivalent(pack.Data,localBytes)) {
+                        if(pack.RelativePath==file.Path && TextPackStore.ExtendsMetadata(localBytes,pack.Data)) {
+                            if(TextPackStore.Hash(localBytes)!=file.Hash||store.Describe(file.Path).Hash!=file.Hash)throw new FileChangedException();
+                            // Persist the observed server base before queueing.
+                            // A crash here resumes as a normal local change.
+                            state.Items[file.ItemId]=new(file.Path,TextPackStore.Hash(pack.Data),pack.Revision,Lifecycle:ReadLifecycle(pack.Data)??(pack.Revision==server.Revision?server.Lifecycle:throw new FileChangedException()));Save(state);
+                            QueueUpload(state,file,pack.Revision);await Drain(state,cancellation);continue;
+                        }
+                        store.Preserve(pack.Data,"remote-conflict");store.Preserve(localBytes,"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",file.ItemId,file.Path,null,server.Revision,file.Hash,null,true));continue;
+                    }
                     state.Items[file.ItemId]=new(file.Path,file.Hash,pack.Revision,Lifecycle:ReadLifecycle(pack.Data)??(pack.Revision==server.Revision?server.Lifecycle:throw new FileChangedException()));Save(state);
                 } else { QueueUpload(state,file,null);await Drain(state,cancellation); }
             }

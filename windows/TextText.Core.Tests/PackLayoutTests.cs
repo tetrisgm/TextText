@@ -25,6 +25,14 @@ static class PackLayoutTests
         var duplicate=TextPackStore.WithDocument(bytes,markdown,"{\"schemaVersion\":1,\"content\":{\"title\":\"Different\",\"title\":\"Same\",\"tags\":[\"one\",\"two\"]}}");
         Check(!TextPackStore.Equivalent(ordered,duplicate),"duplicate JSON properties cannot conceal a document difference");
         Check(!TextPackStore.Equivalent(ordered,TextPackStore.WithDocument(reordered,markdown+" changed","{\"schemaVersion\":1,\"content\":{\"title\":\"Same\",\"tags\":[\"one\",\"two\"]}}")),"equivalent JSON never hides a direct Markdown edit");
+        var snapshot="{\"schemaVersion\":1,\"content\":{}}";
+        byte[] Metadata(string header) => TextPackStore.WithDocument(bytes,"---\ntextTextId: \"nested-id\"\n"+header+"---\nOriginal body",snapshot);
+        Check(TextPackStore.ExtendsMetadata(Metadata("workspace: \"Workspace\"\n"),Metadata("")),"additive scalar metadata is eligible for conditional upload");
+        Check(!TextPackStore.ExtendsMetadata(Metadata("workspace: \"Other\"\nextra: true\n"),Metadata("workspace: \"Workspace\"\n")),"changed existing metadata requires reconciliation");
+        Check(!TextPackStore.ExtendsMetadata(Metadata("workspace: \"One\"\nworkspace: \"Two\"\n"),Metadata("")),"duplicate header fields cannot authorize metadata adoption");
+        Check(!TextPackStore.ExtendsMetadata(Metadata("custom: |\n  multiline\n"),Metadata("")),"general YAML remains outside simple additive metadata adoption");
+        Check(!TextPackStore.ExtendsMetadata(Metadata("visibility: \"public\"\n"),Metadata("")),"new authored metadata is not treated as generated projection data");
+        Check(!TextPackStore.ExtendsMetadata(Metadata("excerpt: \"Authored subtitle\"\n"),Metadata("")),"a nonempty subtitle is a content change");
         var store=new TextPackStore(Path.Combine(temporaryRoot,"nested"),Path.Combine(temporaryRoot,"nested-state"));var file=store.Write("Notes/Existing.textpack",bytes);
         file=store.UpdateMarkdown(file.Path,TextPackStore.Markdown(bytes)+" edited",file.Hash);Check(TextPackStore.Markdown(store.Read(file.Path)).EndsWith(" edited"),"nested Markdown edit targets original prefix");
         var updated=TextPackStore.WithDocument(store.Read(file.Path),TextPackStore.Markdown(store.Read(file.Path))+" shared","{\"schemaVersion\":1,\"content\":{\"type\":\"doc\"}}");

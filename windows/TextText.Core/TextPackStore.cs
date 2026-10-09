@@ -118,11 +118,25 @@ public sealed class TextPackStore
         var bytes=output.ToArray();if(Identity(bytes)!=identity)throw new InvalidDataException("Document identity changed.");return bytes;
     }
     public static bool Equivalent(byte[] left,byte[] right) {
+        return Equivalent(left,right,false);
+    }
+    // A copied pack may carry additional, noncompeting frontmatter. These
+    // bytes are a real local change: the caller must CAS-upload them, never
+    // silently declare the files equal or discard the extra metadata.
+    public static bool ExtendsMetadata(byte[] local,byte[] remote) => Equivalent(local,remote,true);
+    static bool Equivalent(byte[] left,byte[] right,bool extendingMetadata) {
         _=Identity(left);_=Identity(right);
         using var a=new ZipArchive(new MemoryStream(left));using var b=new ZipArchive(new MemoryStream(right));
-        if(a.Entries.Count!=b.Entries.Count)return false;
+        var aFiles=a.Entries.Where(entry=>!entry.FullName.EndsWith('/')||entry.Length!=0).ToArray();
+        var bFiles=b.Entries.Where(entry=>!entry.FullName.EndsWith('/')||entry.Length!=0).ToArray();
+        if(aFiles.Length!=bFiles.Length)return false;
         var documentPath=CanonicalPrefix(a)+"document.json";
-        foreach(var entry in a.Entries){var other=b.GetEntry(entry.FullName);if(other==null)return false;using var x=entry.Open();using var y=other.Open();
+        foreach(var entry in aFiles){var other=b.GetEntry(entry.FullName);if(other==null)return false;using var x=entry.Open();using var y=other.Open();
+            if(extendingMetadata && entry.FullName==CanonicalPrefix(a)+"text.md") {
+                using var localReader=new StreamReader(x,new UTF8Encoding(false,true));using var remoteReader=new StreamReader(y,new UTF8Encoding(false,true));
+                if(!ExtendsHeader(localReader.ReadToEnd(),remoteReader.ReadToEnd()))return false;
+                continue;
+            }
             if(entry.FullName==documentPath) {
                 try {using var leftDocument=JsonDocument.Parse(x);using var rightDocument=JsonDocument.Parse(y);
                     if(!UniqueProperties(leftDocument.RootElement)||!UniqueProperties(rightDocument.RootElement)||!JsonElement.DeepEquals(leftDocument.RootElement,rightDocument.RootElement))return false;
@@ -131,6 +145,29 @@ public sealed class TextPackStore
             }
             if(entry.Length!=other.Length)return false;var xb=new byte[8192];var yb=new byte[8192];while(true){var xn=x.Read(xb);if(xn==0){if(y.ReadByte()!=-1)return false;break;}y.ReadExactly(yb.AsSpan(0,xn));if(!xb.AsSpan(0,xn).SequenceEqual(yb.AsSpan(0,xn)))return false;}}
         return true;
+    }
+    static bool ExtendsHeader(string local,string remote) {
+        static (Dictionary<string,string> Fields,string Body)? Parse(string text) {
+            var match=Regex.Match(text,@"\A---\r?\n(?<header>[\s\S]*?)\r?\n---[ \t]*\r?\n(?<body>[\s\S]*)\z");
+            if(!match.Success)return null;
+            var fields=new Dictionary<string,string>(StringComparer.Ordinal);
+            foreach(var line in match.Groups["header"].Value.Split('\n')) {
+                var field=Regex.Match(line.TrimEnd('\r'),@"\A(?<key>[A-Za-z][A-Za-z0-9_-]*):[ \t]*(?<value>.*)\z");
+                // Accept only the single-line JSON scalars emitted by our
+                // projection. General YAML, comments and duplicates stay exact.
+                if(!field.Success)return null;
+                var value=field.Groups["value"].Value;
+                try {using var json=JsonDocument.Parse(value);if(json.RootElement.ValueKind is JsonValueKind.Object or JsonValueKind.Array)return null;}
+                catch(JsonException){return null;}
+                if(!fields.TryAdd(field.Groups["key"].Value,value))return null;
+            }
+            return (fields,match.Groups["body"].Value);
+        }
+        var a=Parse(local);var b=Parse(remote);
+        return a is {} added && b is {} original && added.Body==original.Body && added.Fields.Count>original.Fields.Count &&
+            original.Fields.All(field=>added.Fields.TryGetValue(field.Key,out var value)&&value==field.Value) &&
+            added.Fields.Where(field=>!original.Fields.ContainsKey(field.Key)).All(field=>
+                field.Key is "workspace" or "mode" or "slug" || field.Key=="excerpt" && field.Value=="\"\"");
     }
     // JSON object ordering is serialization, but duplicate keys are ambiguous.
     // Other archive entries (including authored Markdown metadata) stay exact.

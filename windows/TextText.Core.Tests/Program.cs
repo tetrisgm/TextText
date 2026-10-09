@@ -9,6 +9,28 @@ static class Test
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(){var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
+ foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed"}) {
+ var metadataStore=new TextPackStore(Path.Combine(temp,"metadata-"+failure),Path.Combine(temp,"metadata-state-"+failure));
+ var remoteBytes=TextPackStore.WithDocument(Pack("same body","metadata-id"),"---\ntextTextId: \"metadata-id\"\n---\nsame body","{\"schemaVersion\":1,\"content\":{\"body\":\"same body\"}}");
+ var localBytes=TextPackStore.WithDocument(remoteBytes,"---\ntextTextId: \"metadata-id\"\nworkspace: \"Workspace\"\nmode: \"notes\"\nslug: \"Notes/Metadata.textpack\"\nexcerpt: \"\"\n---\nsame body","{\"content\":{\"body\":\"same body\"},\"schemaVersion\":1}");
+ var metadataFile=metadataStore.Write("Notes/Metadata.textpack",localBytes);
+ var metadataRemote=new Fake{Data=remoteBytes,Item=new("metadata-id",metadataFile.Path,TextPackStore.Hash(remoteBytes)),FailAfterCommit=failure=="lost-ack",FailBeforeCommit=failure is "before-commit" or "server-changed"};
+ var metadataSync=new SyncEngine(metadataStore,metadataRemote);
+ try{await metadataSync.SyncAsync();}catch(HttpRequestException)when(failure!="none"){}
+ if(failure=="server-changed") {
+     var competing=TextPackStore.WithDocument(remoteBytes,TextPackStore.Markdown(remoteBytes)+" remote writer","{\"schemaVersion\":1,\"content\":{\"body\":\"same body remote writer\"}}");
+     metadataRemote.Data=competing;metadataRemote.Item=metadataRemote.Item! with{Revision=TextPackStore.Hash(competing)};
+     var metadataResumed=new SyncEngine(metadataStore,metadataRemote);await metadataResumed.SyncAsync();
+     Assert(metadataRemote.UploadCount==0&&metadataRemote.Data.SequenceEqual(competing)&&metadataStore.Read(metadataFile.Path).SequenceEqual(localBytes),"metadata adoption cannot overwrite a concurrent server writer");
+     Assert(!await metadataResumed.IsReadyAsync("metadata-id")&&Directory.GetFiles(metadataStore.GetRecoveryDirectory()).Length==2,"competing metadata adoption retains both versions and does not grant false readiness");
+     continue;
+ }
+ await new SyncEngine(metadataStore,metadataRemote).SyncAsync();
+ Assert(metadataRemote.UploadCount==1&&metadataRemote.Data.SequenceEqual(localBytes)&&metadataStore.Read(metadataFile.Path).SequenceEqual(localBytes),"additive metadata preserved exactly across "+failure);
+ Assert(await new SyncEngine(metadataStore,metadataRemote).IsReadyAsync("metadata-id"),"metadata adoption joins collaboration after "+failure);
+ Assert(!TextPackStore.ExtendsMetadata(remoteBytes,localBytes),"metadata adoption cannot erase extra server fields");
+ Assert(!TextPackStore.ExtendsMetadata(TextPackStore.WithDocument(localBytes,TextPackStore.Markdown(localBytes)+" edited","{\"schemaVersion\":1,\"content\":{\"body\":\"same body\"}}"),remoteBytes),"metadata adoption cannot overwrite different Markdown content");
+ }
  {
  var creationStore=new TextPackStore(Path.Combine(temp,"creation"),Path.Combine(temp,"creation-device"));
  var operation=Guid.NewGuid().ToString();var intent=TextPackStore.Hash(Encoding.UTF8.GetBytes("original creation intent"));var identity=Guid.NewGuid().ToString();

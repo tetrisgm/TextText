@@ -63,3 +63,22 @@ to compare Markdown and all other entries exactly. The native core suite passes
 the extra Markdown projection fields still require a metadata-preserving
 reconciliation policy before this particular pair can join collaboration.
 No test data, pending journal or conflict operation has been cleared.
+
+The next candidate conditionally uploads additive generated header fields
+(`workspace`, `mode`, `slug`, empty `excerpt`) rather than throwing them away.
+It requires an otherwise equivalent archive and identical Markdown body, keeps
+all existing remote header values, persists the downloaded base and uses the
+normal durable upload queue. Empty ZIP directory entries do not affect equality.
+Authored additional fields and changed values still require reconciliation.
+Native regressions cover restart before commit, lost ACK, competing server
+content, duplicate headers and authored metadata exclusions. All native core
+tests pass in `/tmp/texttext-metadata-adoption-tests.log`. A separate read-only
+probe against the actual retained archives passes in
+`/tmp/texttext-metadata-real-fixture`.
+
+Claude Fable 5.1 Low independently reviewed the change via CLI; findings are
+in `/tmp/texttext-metadata-claude-review.json`. Its broad-field and local-race
+concerns led to a narrower field set and pre-adoption hash check. Server writer
+inspection confirms that ordinary uploads persist input bytes; concurrent merges
+use the existing three-way archive reconciler. Installed-client verification
+and recovery of the already-conflicted fixture are still outstanding.
