@@ -8,7 +8,7 @@ import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { documentText } from "@/lib/collab/document";
 import { readVaultCollaboration, pushVaultCollaboration, writeVaultTextpack, readVaultTextpack, deleteVaultTextpack, restoreVaultTextpack,
   VaultCollaborationEpochError, VaultCollaborationRecoveryError } from "@/lib/vault/server-store";
-import { FileCollaborationClient, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, type FileCollaborationOptions } from "./collaboration-client";
+import { FileCollaborationClient, type FileCollaborationJournal, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, type FileCollaborationOptions } from "./collaboration-client";
 
 /** Automatic pending-edit epoch recovery against the real file-backed store (local temp directory only). */
 const workspaceId = "workspace-1", itemId = "item-1", relativePath = "Notes/Shared.textpack";
@@ -189,7 +189,7 @@ describe("automatic pending-edit epoch recovery", () => {
   it("fails closed with the intent retained when the native checkpoint of the replacement epoch fails", async () => {
     const oldEpoch = await pendingThenReplaced(store, journal);
     const checkpoints: FileCollaborationCheckpoint[] = [];
-    const reopened = client(store, journal, { checkpoint: async value => {
+    const reopened = client(store, journal, { supportsEpochRecovery: true, checkpoint: async value => {
       checkpoints.push(value);
       if (value.journal.epoch > oldEpoch) throw new Error("disk full");
     } });
@@ -262,5 +262,304 @@ describe("automatic pending-edit epoch recovery", () => {
     expect(await store.body()).toBe("Hello remote pending");
     expect(reopened.hasPendingChanges).toBe(false);
     expect(() => reopened.discardCleanJournal()).not.toThrow();
+  });
+});
+
+/** Guarded native checkpoint store: the Mac/Windows rules that matter for epoch adoption
+ * (`LocalVaultSharedEditing.swift` materialize/authorizedAdoption, `SharedEditingStore.cs`). */
+class Native {
+  checkpoint: { journal: FileCollaborationJournal; pending: boolean; retired?: string } | null = null;
+  archived: FileCollaborationJournal[] = [];
+  writes = 0;
+  failWith: unknown = null;
+  constructor(private baselineRevision: string) {}
+  /** What `collaborationOpen` returns for the client's constructor. */
+  open(): Pick<FileCollaborationOptions, "retainedJournal" | "retainedJournalPath" | "localRevision" | "initialRetirement" | "checkpoint"> {
+    return { retainedJournal: this.checkpoint ? JSON.stringify(this.checkpoint.journal) : null, retainedJournalPath: this.checkpoint?.journal.relativePath,
+      localRevision: this.checkpoint?.journal.revision ?? this.baselineRevision, initialRetirement: this.checkpoint?.retired, checkpoint: this.materialize };
+  }
+  materialize = async ({ journal }: FileCollaborationCheckpoint): Promise<void> => {
+    if (this.failWith) throw this.failWith;
+    const prior = this.checkpoint, closed = Object.assign(new Error("This shared editing session has closed."), { code: "session_closed" });
+    const pending = Boolean(journal.batch || journal.pending.length || journal.unqueuedDirty);
+    if (prior) {
+      if (prior.retired) throw closed;
+      const incoming = journal.journalGeneration ?? 0, retained = prior.journal.journalGeneration ?? 0;
+      if (incoming < retained) throw new Error("generation");
+      if (incoming === retained) { if (JSON.stringify(journal) !== JSON.stringify(prior.journal)) throw new Error("generation"); return; }
+      if (prior.pending && journal.epoch !== prior.journal.epoch) {
+        const held = prior.journal.recovery, adopted = journal.recovery;
+        const authorized = journal.epoch > prior.journal.epoch && journal.relativePath === prior.journal.relativePath && held && !held.adopted &&
+          held.epoch === prior.journal.epoch && adopted?.adopted && adopted.operationId === held.operationId && adopted.epoch === held.epoch && adopted.update === held.update;
+        if (!authorized) throw closed;
+        this.archived.push(prior.journal);
+      }
+    }
+    this.writes++;
+    this.checkpoint = { journal: JSON.parse(JSON.stringify(journal)), pending, retired: journal.retired };
+  };
+}
+describe("epoch adoption against a guarded native checkpoint store", () => {
+  let root: string, store: Store, journal: Journal, native: Native;
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-epoch-adoption-native-"));
+    store = new Store(root); journal = new Journal();
+    const written = await writeVaultTextpack({ ...store.location(), relativePath, operationId: "initial", baseRevision: null, bytes: pack("Hello") });
+    native = new Native(written.revision!);
+  });
+  afterEach(async () => {
+    for (const entry of clients.splice(0)) entry.destroy();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const open = (options: Partial<FileCollaborationOptions> = {}) => client(store, journal, { ...native.open(), supportsEpochRecovery: true, ...options });
+  /** Hold the recovery push, optionally type, let adoptEpoch persist the replacement, and die before its native checkpoint. */
+  async function crashAfterAdoptPersist(late?: string) {
+    const oldEpoch = await pendingThenReplaced(store, journal);
+    let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+    store.beforePush = async push => { if (push.recovery) { store.beforePush = null; await held; } };
+    const editor = open({ onDocumentReplaced: () => {} });
+    await editor.start();
+    await vi.waitFor(() => expect(store.pushes).toHaveLength(1));
+    await vi.waitFor(() => expect(native.checkpoint?.journal.recovery?.operationId).toBe(store.pushes[0].operationId));
+    if (late) editor.mutate(doc => documentText(doc, "body").insert(0, late));
+    native.failWith = Object.assign(new Error("process died"), { code: "crash" });
+    release();
+    await vi.waitFor(() => expect(journal.load(editor.journalKey)).toContain('"adopted":true'));
+    const persisted = JSON.parse(journal.load(editor.journalKey)!) as FileCollaborationJournal;
+    editor.destroy(); native.failWith = null;
+    expect(persisted.epoch).toBe(oldEpoch + 1); expect(persisted.recovery).toMatchObject({ epoch: oldEpoch, adopted: true });
+    expect(native.checkpoint?.journal.epoch).toBe(oldEpoch); expect(native.checkpoint?.journal.recovery?.adopted).toBeUndefined();
+    expect(native.open().localRevision).not.toBe(persisted.revision);
+    return { oldEpoch, persisted };
+  }
+
+  it("does not read a missing adoption checkpoint as a changed local file when late edits are pending", async () => {
+    const { oldEpoch, persisted } = await crashAfterAdoptPersist("Late ");
+    expect(persisted.pending).toHaveLength(1);
+    const reopened = open();
+    await reopened.start();
+    expect(reopened.status).not.toBe("recovery");
+    expect(await reopened.flush()).toBe(true);
+    expect(reopened.status).toBe("ready"); expect(reopened.canEdit).toBe(true);
+    expect(reopened.epoch).toBe(oldEpoch + 1);
+    expect(await store.body()).toBe("Late Hello remote pending");
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+    expect(native.archived.map(entry => entry.epoch)).toEqual([oldEpoch]);
+    expect(native.checkpoint?.journal.epoch).toBe(oldEpoch + 1); expect(native.checkpoint?.pending).toBe(false);
+    expect(reopened.recoveryJournal?.recovery).toBeUndefined(); expect(reopened.hasPendingChanges).toBe(false);
+  });
+
+  it("proves a clean adopted epoch natively on restart instead of treating it as a fresh baseline", async () => {
+    const { oldEpoch } = await crashAfterAdoptPersist();
+    const reopened = open();
+    await reopened.start();
+    expect(reopened.status).toBe("ready");
+    expect(await reopened.flushLocal()).toBe(true);
+    expect(native.checkpoint?.journal.epoch).toBe(oldEpoch + 1); expect(native.archived).toHaveLength(1);
+    expect(reopened.recoveryJournal?.recovery).toBeUndefined();
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+    reopened.mutate(doc => documentText(doc, "body").insert(0, "Again "));
+    expect(await reopened.flush()).toBe(true);
+    expect(await store.body()).toBe("Again Hello remote pending");
+  });
+
+  it("keeps the intent until the native store adopts the epoch, even when the first checkpoint after restart fails", async () => {
+    const { oldEpoch } = await crashAfterAdoptPersist("Late ");
+    native.failWith = new Error("disk full");
+    const reopened = open();
+    await reopened.start();
+    await settled(reopened, "error");
+    expect(reopened.recoveryJournal?.recovery).toMatchObject({ epoch: oldEpoch, adopted: true });
+    expect(native.checkpoint?.journal.epoch).toBe(oldEpoch);
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+  });
+
+  it("still fails closed when the local file truly changed under pending edits", async () => {
+    await pendingThenReplaced(store, journal);
+    const downloaded = await writeVaultTextpack({ ...store.location(), relativePath, operationId: "download", baseRevision: (await readVaultTextpack(store.location()))!.revision, bytes: pack("Downloaded") });
+    native = new Native(downloaded.revision!); // No native journal: the app downloaded a new file while closed.
+    const reopened = open();
+    await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.canEdit).toBe(false);
+    expect(store.pushes).toEqual([]); expect(reopened.hasPendingChanges).toBe(true);
+    // An adopted intent is no bypass either when the native store never held the matching intent.
+    const raw = JSON.parse(journal.load(reopened.journalKey)!) as FileCollaborationJournal;
+    reopened.destroy();
+    delete raw.retired;
+    raw.recovery = { operationId: "forged", epoch: raw.epoch, update: raw.update, adopted: true };
+    raw.epoch += 1; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
+    journal.save(reopened.journalKey, JSON.stringify(raw));
+    const again = open();
+    await again.start();
+    expect(again.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+  });
+
+  it("retires pending edits for manual recovery when the native store lacks the epoch-adoption capability", async () => {
+    await pendingThenReplaced(store, journal);
+    const reopened = client(store, journal, { ...native.open() });
+    await reopened.start();
+    await settled(reopened, "recovery");
+    expect(store.pushes).toEqual([]);
+    expect(reopened.recoveryJournal?.pending).toHaveLength(1);
+    expect(reopened.recoveryJournal?.recovery).toBeUndefined();
+    expect(await store.body()).toBe("Hello remote");
+  });
+
+  it("awaits the rebinding callback before destroying the previous document and journals edits typed meanwhile", async () => {
+    const oldEpoch = await pendingThenReplaced(store, journal);
+    let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+    const seen: { next: Y.Doc; previous: Y.Doc }[] = [];
+    const editor = open({ onDocumentReplaced: async (next, previous) => { seen.push({ next, previous }); await held; } });
+    await editor.start();
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0].previous.isDestroyed).toBe(false); expect(editor.doc).toBe(seen[0].next);
+    expect(editor.recoveryJournal?.recovery).toMatchObject({ epoch: oldEpoch, adopted: true });
+    editor.mutate(doc => documentText(doc, "body").insert(0, "Meanwhile "));
+    expect(editor.recoveryJournal?.pending).toHaveLength(1);
+    expect(editor.recoveryJournal?.recovery?.adopted).toBe(true);
+    release();
+    expect(await editor.flush()).toBe(true);
+    expect(editor.status).toBe("ready");
+    expect(seen[0].previous.isDestroyed).toBe(true); expect(seen[0].next.isDestroyed).toBe(false);
+    expect(await store.body()).toBe("Meanwhile Hello remote pending");
+    expect(native.checkpoint?.journal.epoch).toBe(oldEpoch + 1);
+  });
+
+  it("destroys both documents when the client is destroyed during the rebinding callback", async () => {
+    await pendingThenReplaced(store, journal);
+    let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+    const seen: { next: Y.Doc; previous: Y.Doc }[] = [];
+    const editor = open({ onDocumentReplaced: async (next, previous) => { seen.push({ next, previous }); await held; } });
+    await editor.start();
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    editor.destroy(); release();
+    await vi.waitFor(() => expect(seen[0].previous.isDestroyed).toBe(true));
+    expect(seen[0].next.isDestroyed).toBe(true);
+    // The adoption stayed durable for the next open.
+    const persisted = JSON.parse(journal.load(editor.journalKey)!) as FileCollaborationJournal;
+    expect(persisted.recovery?.adopted).toBe(true);
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).toBe("ready"); expect(reopened.recoveryJournal?.recovery).toBeUndefined();
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+  });
+
+  it("asks to reopen when the rebinding callback fails, keeping the durable adoption", async () => {
+    const oldEpoch = await pendingThenReplaced(store, journal);
+    const seen: Y.Doc[] = [];
+    const editor = open({ onDocumentReplaced: async (_next, previous) => { seen.push(previous); throw new Error("editor unmounted"); } });
+    await editor.start();
+    await settled(editor, "stale-session");
+    expect(editor.canEdit).toBe(false);
+    expect(seen[0].isDestroyed).toBe(true);
+    expect(native.checkpoint?.journal.epoch).toBe(oldEpoch + 1);
+    expect(editor.recoveryJournal?.recovery).toBeUndefined(); expect(editor.hasPendingChanges).toBe(false);
+    expect(await store.body()).toBe("Hello remote pending");
+  });
+
+  it("destroys the previous document when the adoption checkpoint fails", async () => {
+    const oldEpoch = await pendingThenReplaced(store, journal);
+    const seen: Y.Doc[] = [];
+    native.failWith = null;
+    const editor = client(store, journal, { ...native.open(), supportsEpochRecovery: true, onDocumentReplaced: (_next, previous) => { seen.push(previous); },
+      checkpoint: async value => { if (value.journal.epoch > oldEpoch) throw new Error("disk full"); await native.materialize(value); } });
+    await editor.start();
+    await settled(editor, "error");
+    expect(seen[0].isDestroyed).toBe(true); expect(editor.doc.isDestroyed).toBe(false);
+  });
+
+  it("keeps only the late edits for manual recovery when they conflict after the server committed the intent", async () => {
+    const oldEpoch = await pendingThenReplaced(store, journal);
+    let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+    store.beforePush = async push => { if (push.recovery) { store.beforePush = null; await held; } };
+    const editor = open({ onDocumentReplaced: () => {} });
+    await editor.start();
+    await vi.waitFor(() => expect(store.pushes).toHaveLength(1));
+    // Deleting the whole body spans the replacement's insertion inside it.
+    editor.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, "Bye"); });
+    release();
+    expect(await editor.flush()).toBe(false);
+    await settled(editor, "recovery");
+    expect(await store.body()).toBe("Hello remote pending");
+    const retained = editor.recoveryJournal!;
+    expect(retained.pending).toEqual([]); expect(retained.batch).toBeNull(); expect(retained.unqueuedDirty).toBe(true);
+    expect(retained.epoch).toBe(oldEpoch); expect(retained.recovery).toMatchObject({ epoch: oldEpoch }); expect(retained.recovery?.adopted).toBeUndefined();
+    expect(documentText(editor.doc, "body").toString()).toBe("Bye");
+    expect(editor.hasPendingChanges).toBe(true);
+    editor.destroy();
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).toBe("recovery");
+    await new Promise(resolve => setTimeout(resolve, 300));
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+    expect(await store.body()).toBe("Hello remote pending");
+  });
+});
+
+describe("revival of journals retired by a known older fatal path", () => {
+  const RETIRED = "This note needs to be reopened. Your edits are saved for recovery.";
+  let root: string, store: Store, journal: Journal;
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-epoch-revival-"));
+    store = new Store(root); journal = new Journal();
+    await writeVaultTextpack({ ...store.location(), relativePath, operationId: "initial", baseRevision: null, bytes: pack("Hello") });
+  });
+  afterEach(async () => {
+    for (const entry of clients.splice(0)) entry.destroy();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  async function retiredPending(reason = RETIRED) {
+    const first = client(store, journal); await first.start();
+    first.mutate(doc => documentText(doc, "body").insert(5, " pending"));
+    first.destroy();
+    const raw = JSON.parse(journal.load(first.journalKey)!) as FileCollaborationJournal;
+    raw.retired = reason; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
+    journal.save(first.journalKey, JSON.stringify(raw));
+    return first.journalKey;
+  }
+
+  it("replays a retired pending journal when the server still accepts it at the same epoch", async () => {
+    await retiredPending();
+    const reopened = client(store, journal); await reopened.start();
+    expect(reopened.status).not.toBe("recovery");
+    expect(await reopened.flush()).toBe(true);
+    expect(reopened.status).toBe("ready");
+    expect(await store.body()).toBe("Hello pending");
+    expect(reopened.recoveryJournal?.retired).toBeUndefined(); expect(reopened.hasPendingChanges).toBe(false);
+  });
+
+  it("routes a retired pending journal through server-validated recovery when the epoch was replaced", async () => {
+    await retiredPending();
+    await store.replace("Hello remote");
+    const reopened = client(store, journal); await reopened.start();
+    expect(await reopened.flush()).toBe(true);
+    expect(reopened.status).toBe("ready");
+    expect(await store.body()).toBe("Hello remote pending");
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+  });
+
+  it("restores the original retirement when editing access is gone", async () => {
+    await retiredPending();
+    store.canEdit = false;
+    const reopened = client(store, journal); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.recoveryJournal?.retired).toBe(RETIRED);
+    expect(store.pushes).toEqual([]); expect(reopened.recoveryJournal?.pending).toHaveLength(1);
+  });
+
+  it("never revives unknown retirements, native retirements, or unqueued edits", async () => {
+    const key = await retiredPending("Editing access changed. Your local document is kept for recovery.");
+    const unknown = client(store, journal); await unknown.start();
+    expect(unknown.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+    unknown.destroy();
+    const raw = JSON.parse(journal.load(key)!) as FileCollaborationJournal;
+    raw.retired = RETIRED; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
+    journal.save(key, JSON.stringify(raw));
+    const nativeRetired = client(store, journal, { initialRetirement: "The file changed outside shared editing.", checkpoint: async () => {} });
+    await nativeRetired.start();
+    expect(nativeRetired.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+    nativeRetired.destroy();
+    raw.unqueuedDirty = true; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
+    journal.save(key, JSON.stringify(raw));
+    const dirty = client(store, journal); await dirty.start();
+    expect(dirty.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+    expect(await store.body()).toBe("Hello");
   });
 });

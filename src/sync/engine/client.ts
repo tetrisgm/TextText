@@ -52,12 +52,30 @@ export type FileCollaborationOptions = {
   onStatus?: (status: FileCollaborationStatus, detail?: string) => void;
   /** Live epoch adoption contract. After automatic recovery the server owns new
    * Yjs identities, so `client.doc` becomes a different Y.Doc holding the same
-   * text. The callback runs synchronously after the swap and before editing
-   * resumes; the UI must rebind its editor and awareness to `client.doc` and
-   * may restore the caret by text offset. Without this callback the client
-   * freezes after recovery and asks to reopen the note instead. */
-  onDocumentReplaced?: (next: Y.Doc, previous: Y.Doc) => void;
+   * text. The callback runs after the swap and is awaited before the previous
+   * document is destroyed and before the adoption is proven locally; the UI
+   * must rebind its editor and awareness to `client.doc` and may restore the
+   * caret by text offset. Edits typed on the new document during the await are
+   * journaled. A rejected callback keeps the durable adoption and asks to
+   * reopen the note instead. Without this callback the client freezes after
+   * recovery and asks to reopen the note. */
+  onDocumentReplaced?: (next: Y.Doc, previous: Y.Doc) => void | Promise<void>;
+  /** Whether pending edits may be recovered automatically into a replaced
+   * epoch. Defaults to true without a native `checkpoint` (web) and false with
+   * one: a native store must advertise `epoch-adoption` before it accepts the
+   * replacement epoch over a pending journal. When false, a replaced epoch
+   * retires pending edits for manual recovery as before. */
+  supportsEpochRecovery?: boolean;
 };
+/** Retirements written by a known older fatal path over a valid pending journal.
+ * Every edit in such a journal is replayable: unsent updates go as new batches,
+ * an acknowledged batch replays its receipt, and a replaced epoch goes through
+ * server-validated recovery. The server still decides access and history. */
+const REVIVABLE_RETIREMENTS = [
+  // Native checkpoint failure (Mac 0.204 builds 1237-1239, e.g. a Finder rename
+  // under a pending journal) retired the browser journal with its edits intact.
+  "This note needs to be reopened. Your edits are saved for recovery.",
+];
 function encode(bytes: Uint8Array): string {
   let value = "";
   for (let i = 0; i < bytes.length; i += 8192) value += String.fromCharCode(...bytes.subarray(i, i + 8192));
@@ -246,9 +264,13 @@ export class FileCollaborationClient {
   private checkpointError: unknown = null;
   private checkpointSavedGeneration = -1;
   private initialFileReconciled: boolean;
+  private readonly supportsEpochRecovery: boolean;
+  /** Original retirement of a revived journal, restored if the server refuses it. */
+  private revivedRetirement: string | null = null;
 
   constructor(options: FileCollaborationOptions) {
     this.options = options; this.storage = options.journal ?? localJournal; this.active = options.active ?? true; this.inactiveReason = options.inactiveReason ?? "paused";
+    this.supportsEpochRecovery = options.supportsEpochRecovery ?? !options.checkpoint;
     this.initialFileReconciled = !options.initialFileChange;
     this.ownedJournalKey = `texttext:file-collaboration:v1:${JSON.stringify([options.server.replace(/\/$/, ""), options.workspaceId, options.itemId])}`;
     this.doc.on("update", this.changed);
@@ -486,8 +508,19 @@ export class FileCollaborationClient {
         this.lease = lease; this.ownedJournalKey = lease.key;
       }
       let retained = this.load();
+      // A replacement epoch persisted by adoptEpoch whose native checkpoint never
+      // ran. It is not a clean baseline until the native store adopts it.
+      const unprovenAdoption = Boolean(this.options.checkpoint && retained?.recovery?.adopted);
+      if (retained?.retired && REVIVABLE_RETIREMENTS.includes(retained.retired) && !this.options.initialRetirement &&
+          !retained.unqueuedDirty && (retained.pending.length || retained.batch || unprovenAdoption)) {
+        // Resume the journal as live pending work. A fresh read below decides
+        // access; the server validates history and lifecycle before any merge.
+        this.revivedRetirement = retained.retired;
+        retained = { ...retained, retired: undefined };
+        delete retained.retired;
+      }
       if (retained && !this.options.initialRetirement && !retained.pending.length &&
-          !retained.batch && !retained.unqueuedDirty && [
+          !retained.batch && !retained.unqueuedDirty && !unprovenAdoption && [
             "This file or its access changed. Recover your saved edits before reopening.",
             "This file or your access changed. Pending edits are kept for recovery.",
             // Native checkpoint failure on a renamed file (Mac 0.204 build 1237)
@@ -501,14 +534,19 @@ export class FileCollaborationClient {
         this.saved = retained; this.journalGeneration = retained.journalGeneration ?? 0;
         retained = null;
       }
-      const staleLocal = retained && this.options.localRevision !== undefined && retained.revision !== this.options.localRevision;
-      if (staleLocal && !this.options.initialRetirement && !retained!.pending.length && !retained!.batch && !retained!.unqueuedDirty && !retained!.retired) {
+      // The native acknowledged revision lags one epoch when the process died
+      // after adoptEpoch persisted the replacement but before its checkpoint ran.
+      // That is only a missing checkpoint, not a changed file, when the native
+      // journal still holds the exact unadopted intent this journal adopted.
+      const staleLocal = retained && this.options.localRevision !== undefined && retained.revision !== this.options.localRevision &&
+        !this.nativeAwaitsAdoption(retained);
+      if (staleLocal && !this.options.initialRetirement && !retained!.pending.length && !retained!.batch && !retained!.unqueuedDirty && !retained!.retired && !unprovenAdoption) {
         // A clean old journal must never project over a file downloaded while closed.
         this.journalGeneration = retained!.journalGeneration ?? 0;
         retained = null;
       }
       if (retained && !this.options.initialRetirement && !this.options.initialFileChange &&
-          !retained.pending.length && !retained.batch && !retained.unqueuedDirty && !retained.retired) {
+          !retained.pending.length && !retained.batch && !retained.unqueuedDirty && !retained.retired && !unprovenAdoption) {
         // A clean journal is a fallback, not a live baseline or access grant.
         // Native checkpoints also need fresh Yjs IDs after an epoch replacement,
         // including replacements that leave the TextPack hash unchanged.
@@ -575,24 +613,40 @@ export class FileCollaborationClient {
       if (retained) {
         this.current = cursor(retained);
         if (retained.epoch !== remote.epoch && !this.hasPendingChanges && !retained.retired) {
+          if (this.recovery?.adopted) {
+            // The adopted epoch was replaced again before its native checkpoint
+            // ran. Prove the adoption, then reopen from the clean replacement
+            // rather than merging two unrelated Yjs identities into one doc.
+            if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return;
+            this.recovery = null; this.persist();
+            this.frozen = true; this.canEdit = false; this.cancelWork();
+            this.report("stale-session", "Reopening this note…"); return;
+          }
           this.notifyExternalFileChange(); return;
         }
         if (retained.retired || (!remote.canEditContent && this.hasPendingChanges)) {
-          this.retire(retained.retired ?? "This file or its access changed. Recover your saved edits before reopening."); return;
+          this.retire(retained.retired ?? this.revivedRetirement ?? "This file or its access changed. Recover your saved edits before reopening."); return;
         }
         if (retained.epoch !== remote.epoch) {
           // Pending edits met a replaced epoch. Ask the server to merge them
           // against its retained history instead of retiring the journal.
           this.canEdit = true; this.canComment = remote.canComment;
+          if (!this.supportsEpochRecovery) { this.retire(this.revivedRetirement ?? "This file or its access changed. Recover your saved edits before reopening."); return; }
           this.beginRecovery(); return;
         }
-        if (this.recovery?.adopted) this.recovery = null; // Replacement epoch confirmed live again.
       }
       Y.applyUpdate(this.doc, decode(remote.update), REMOTE);
       this.adoptPresentation(remote.presentation);
       this.snapshot();
       this.current = cursor(remote); this.canEdit = remote.canEditContent; this.canComment = remote.canComment; this.initialized = true; this.authoritative = true;
-      this.persist(); this.failures = 0; this.options.onChange?.(this.snapshot(), this.presentation);
+      this.persist(); this.failures = 0;
+      if (this.recovery?.adopted) {
+        // Replacement epoch confirmed live again. The native store must adopt
+        // it before the intent is dropped, or a restart could not prove it.
+        if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return;
+        this.recovery = null; this.persist();
+      }
+      this.options.onChange?.(this.snapshot(), this.presentation);
       this.report(this.pending.length || this.batch ? "saving" : "ready");
       if (this.pending.length || this.batch) this.schedulePush(0);
       this.schedulePoll(0);
@@ -783,7 +837,7 @@ export class FileCollaborationClient {
   }
   /** Pending edits exist, no retirement fences them, and nothing else owns the journal. */
   private canRecover(): boolean {
-    return this.initialized && this.canEdit && this.active && !this.dead && !this.frozen && !this.recovering &&
+    return this.supportsEpochRecovery && this.initialized && this.canEdit && this.active && !this.dead && !this.frozen && !this.recovering &&
       !this.unreadableJournal && !this.initialRetirement && !this.saved?.retired && !this.unqueuedDirty && this.hasPendingChanges;
   }
   private beginRecovery(): void {
@@ -801,7 +855,12 @@ export class FileCollaborationClient {
   private async recoverEpoch(): Promise<void> {
     try {
       if (!this.current) return;
-      if (this.recovery?.adopted) this.recovery = null; // A later epoch replaced an adopted one; start a new intent.
+      if (this.recovery?.adopted) {
+        // A later epoch replaced an adopted one. The native store accepts a new
+        // intent only over the epoch it has adopted, so prove that one first.
+        if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return;
+        this.recovery = null;
+      }
       if (!this.recovery) {
         this.recovery = { operationId: crypto.randomUUID(), epoch: this.current.epoch, update: encode(Y.encodeStateAsUpdate(this.doc)) };
         this.persist();
@@ -836,12 +895,12 @@ export class FileCollaborationClient {
       let late: string | null = null;
       if (JSON.stringify(base) !== JSON.stringify(local)) {
         const merged = reconcileDocumentSnapshots(base, local, remoteSnapshot, { concurrentInsertions: "remote-first" });
-        if (merged.status !== "merged") { this.retire("Edits made during recovery conflict with the recovered file. Your document is kept for recovery."); return; }
+        if (merged.status !== "merged") { this.retireAfterCommit("Edits made during recovery conflict with the recovered file. Your document is kept for recovery."); return; }
         if (JSON.stringify(merged.document) !== JSON.stringify(remoteSnapshot)) {
           const vector = Y.encodeStateVector(next);
           applyDocumentSnapshot(next, merged.document, "epoch-recovery");
           late = encode(Y.encodeStateAsUpdate(next, vector));
-          if (late.length > MAX_UPDATE_CHARS) { this.retire("Edits made during recovery exceed the collaboration limit. Your document is kept for recovery."); return; }
+          if (late.length > MAX_UPDATE_CHARS) { this.retireAfterCommit("Edits made during recovery exceed the collaboration limit. Your document is kept for recovery."); return; }
         }
       }
       const previous = this.liveDoc;
@@ -855,23 +914,52 @@ export class FileCollaborationClient {
         next.off("update", this.changed); previous.on("update", this.changed); this.liveDoc = previous; swapped = false;
         Object.assign(this, rollback); throw error;
       }
-      this.options.onDocumentReplaced?.(next, previous);
-      this.options.onChange?.(this.snapshot(), this.presentation);
-      // Native adoption of the replacement epoch must succeed before the old
-      // pending state is dropped from the journal.
-      if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return;
-      this.recovery = null; this.persist();
-      previous.destroy();
-      this.authoritative = true; this.failures = 0; this.uploadFailures = 0;
-      if (!this.options.onDocumentReplaced) {
-        // No live rebinding contract: the mounted editor still shows the old
-        // document, so stop editing and reopen from the clean replacement.
-        this.frozen = true; this.canEdit = false; this.cancelWork();
-        this.report(this.options.checkpoint ? "stale-session" : "stale-file", "Reopening this note…");
-        return;
-      }
-      this.report(this.pending.length ? "saving" : "ready");
+      // From here the previous document is retired: it is destroyed on every
+      // exit, but only after the UI had its chance to move off it.
+      try {
+        let rebound = false;
+        if (this.options.onDocumentReplaced) {
+          try { await this.options.onDocumentReplaced(next, previous); rebound = true; }
+          catch { /* The adoption is durable; the editor reopens from it below. */ }
+        }
+        if (this.dead || this.frozen) return;
+        this.notifyRecoverableSnapshot();
+        // Native adoption of the replacement epoch must succeed before the old
+        // pending state is dropped from the journal.
+        if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return;
+        this.recovery = null; this.persist();
+        this.authoritative = true; this.failures = 0; this.uploadFailures = 0;
+        if (!rebound) {
+          // No live rebinding: the mounted editor still shows the old document,
+          // so stop editing and reopen from the clean replacement.
+          this.frozen = true; this.canEdit = false; this.cancelWork();
+          this.report(this.options.checkpoint ? "stale-session" : "stale-file", "Reopening this note…");
+          return;
+        }
+        this.report(this.pending.length ? "saving" : "ready");
+      } finally { previous.destroy(); }
     } finally { captured.destroy(); if (!swapped) next.destroy(); }
+  }
+  /** The server has committed the recovery intent, so every queued update is
+   * already part of the replacement epoch. Only the document itself, with the
+   * edits typed during recovery, still needs manual recovery; the intent stays
+   * unadopted so the native store keeps fencing the old epoch. */
+  private retireAfterCommit(reason: string): void {
+    this.pending = []; this.batch = null; this.unqueuedDirty = true;
+    this.retire(reason);
+  }
+  /** The native journal still holds, unadopted, the exact intent this journal
+   * marks adopted at its old revision: the file did not change, only the
+   * adoption checkpoint never ran. Mirrors the native authorization check. */
+  private nativeAwaitsAdoption(retained: FileCollaborationJournal): boolean {
+    const intent = retained.recovery;
+    if (!this.options.checkpoint || !intent?.adopted || retained.epoch <= intent.epoch || typeof this.options.retainedJournal !== "string") return false;
+    try {
+      const native = parseJournal(this.options.retainedJournal);
+      return native.epoch === intent.epoch && native.revision === this.options.localRevision && native.relativePath === retained.relativePath &&
+        native.recovery?.operationId === intent.operationId && !native.recovery.adopted && native.recovery.update === intent.update &&
+        (native.journalGeneration ?? 0) < (retained.journalGeneration ?? 0);
+    } catch { return false; }
   }
   destroy(): void {
     if (this.dead) return;
