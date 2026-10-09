@@ -2,7 +2,7 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1221)**, source `e19d53c3`.
+- Mac `/Applications/TextText.app`: **0.204 (1222)**, source `e722c893`.
   Signed-in startup, existing content and the reported 1185 note passed without
   recovery controls. Automatic reconnect passed during deployment. Saved-body
   cache invalidation passed on 1221. Owner enabled the Mac share permission. Fresh Safari Share still omits
@@ -10,7 +10,7 @@
   Settings detail actions still fail through native accessibility. Quick Look/File Provider interactive checks remain.
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md). Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
-- Oracle: **texttext-oracle-20261008-e19d53c3-capture-reader**, deployed successfully;
+- Oracle: **texttext-oracle-20261008-e722c893-backlinks**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services stayed
   previous release retained. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
@@ -20,7 +20,9 @@
   and installed. Previous app retained at
   `C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261008T174544-8303dceb`.
   Reopened on the interactive desktop (session 1, PID 18184); temporary launch
-  task was removed. Actual recovery-banner disappearance remains unverified.
+  task was removed. The affected 1185 note checkpoint refreshed to epoch 2, Pending false and
+  RetiredReason null; old checkpoint archived automatically. Visible banner
+  disappearance remains unverified.
   Physical PC native suites, 346 shared tests, TypeScript, packaging and
   interactive smoke passed for this candidate.
   [Candidate evidence](verification/2026-10-08-clean-epoch-recovery.md).
@@ -29,10 +31,12 @@
 
 ## Current candidate / immediate work
 
-- Shared Notes backlink cancellation is source-verified and awaits delivery.
-  Exact-source full sync gate passed for e722c893. Clean artifact
-  `/private/tmp/texttext-delivery-e722c893` is building web-only dry-run;
-  log `/tmp/texttext-e722c893-web-build.log`, terminal session 73355.
+- Shared Notes backlink cancellation is delivered on Oracle and Mac.
+  Exact-source full sync gate passed for e722c893. Oracle deployed and passed
+  live checks; Mac 1222 installed and reopened signed in on the real iCloud
+  workspace with existing note/body intact and no recovery controls. Windows
+  still uses e19d53c3; backlink delivery there remains.
+  [Delivery receipt](verification/2026-10-08-backlinks-delivery.md).
   Closed/unmounted scans stop after their current batch; old results/errors
   cannot overwrite a reopened panel. Baseline fails the new regression; current
   source, TypeScript and reader rerender checks pass.
