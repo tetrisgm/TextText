@@ -1,6 +1,7 @@
 # Windows false recovery after clean epoch replacement
 
-Source fix `701a2bec`. Not yet installed on Windows.
+Final source `8090227e`. Oracle deployed and Mac 0.204 (1220) installed.
+Windows candidate verified; installation and acceptance pending.
 
 ## Observed state
 
@@ -19,7 +20,8 @@ epoch mismatch even without pending edits. Reopening thereafter stopped on the
 retired marker before checking current access. Normal file replacement could
 therefore leave an otherwise clean editor stuck in recovery.
 
-- Clean cold epoch mismatches now enter existing stale-file refresh behavior.
+- Clean cold checkpoints adopt a fresh authorized baseline, including when the
+  file hash is unchanged but the Yjs epoch changes.
 - The exact historical generic retirement is refreshed only if all pending
   markers are empty and a fresh authorized read succeeds. Native initial
   retirement, unknown reasons, corrupt journals and real pending updates retain
@@ -27,8 +29,18 @@ therefore leave an otherwise clean editor stuck in recovery.
 - Clean live epoch-conflict responses likewise use the file refresh path.
 - Successful read-only access does not invent recovery work for a clean file.
 
-345 shared-client tests in 38 suites and TypeScript passed. New regressions
+346 shared-client tests in 38 suites and TypeScript passed. New regressions
 cover cold clean epochs, actual legacy retirement, transient network failure,
 revoked read access, read-only downgrade and protected real pending updates.
-Logs `/tmp/texttext-clean-epoch-shared-tests.log` and
-`/tmp/texttext-clean-epoch-types.log`. Physical Windows delivery/acceptance remains.
+Logs `/tmp/texttext-clean-epoch-final-tests.log` and
+`/tmp/texttext-clean-epoch-final-types.log`. The physical PC build also passed
+346 shared tests, native suites, TypeScript, packaging and interactive desktop smoke.
+Candidate: `C:\Users\Shokunin\dev\texttext-client-8090227e\windows\build\candidate-4557fa2f057441269d23adc0fd3778c4`.
+The final access recheck failed on both existing PC SSH profiles; no alternate
+access path was created. Physical Windows installation/acceptance remains.
+
+Oracle independently reports epoch 2, sequence 0 for this item; the clean PC
+checkpoint was epoch 1, sequence 13. Actual Mac 1220 opened this same note without
+recovery controls. During Oracle deployment its connection recovered automatically
+without clicking Retry; the transient pending-edits message cleared. No content
+was discarded. Saved-body cache invalidation and extensions remain unverified on 1220.

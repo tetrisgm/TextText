@@ -31,8 +31,12 @@ plain object. The bundled parser therefore received an empty byte array.
 `b0f15c7b` sends `{ bytes }`, fixes cleanup to PDF.js loadingTask.destroy, and
 adds an actual compiled-worker packaging gate. That gate fails the original
 production bundle. Source parsing/lifecycle/endpoint suites (20 tests), Oracle
-packaging tests (16) and TypeScript passed for the fix; rebuilt bundled-worker
-and live Safari acceptance remain.
+packaging tests (16) and TypeScript passed for the fix. The rebuilt compiled-worker
+gate passed both after build and during packaging. Source `8090227e` deployed as
+`texttext-oracle-20261008-8090227e-clean-epochs`; thirteen live deployment checks passed.
+Fresh Safari loaded the corrected deployment and retried the earlier failed W3C
+dummy PDF bookmark. The failure message disappeared and the reader displayed
+“Dummy PDF file”. Automatic capture of a newly created PDF bookmark remains to verify.
 
  This extracts embedded text; it does not perform
 OCR, preserve the original PDF as a TextPack attachment, or provide transcripts

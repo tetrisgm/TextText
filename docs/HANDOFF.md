@@ -2,18 +2,20 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1218)**, source `6e1a9ee7`.
-  Startup, existing saved content, search and reopen passed. Fresh saved-body
-  cache invalidation on 1218 remains; see the scoped receipt.
+- Mac `/Applications/TextText.app`: **0.204 (1220)**, source `8090227e`.
+  Signed-in startup, existing content and the reported 1185 note passed without
+  recovery controls. Automatic reconnect passed during deployment. Fresh saved-body
+  cache invalidation and extensions on 1220 remain. Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
-- Oracle: **texttext-oracle-20261008-6e1a9ee7-pdf-parents**, deployed successfully;
+- Oracle: **texttext-oracle-20261008-8090227e-clean-epochs**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services stayed
-  active; HAProxy unchanged. [Parent delivery](verification/2026-10-08-notes-parent-menu.md).
+  previous release retained. Live Safari PDF retry captured “Dummy PDF file”.
+  [PDF delivery](verification/2026-10-08-pdf-capture.md).
 - Windows installed source remains `f3167c4b`. Current verified candidate source
-  `4c84df44` passed physical PC native suites, 340 shared tests, TypeScript,
-  packaging and interactive smoke. [Candidate paths](verification/2026-10-08-reference-picker-delivery.md).
-  Process 44968 in the canonical install remains running, rechecked this turn;
-  its unsaved state is unknown. Save-and-close request remains unanswered.
+  `8090227e` passed physical PC native suites, 346 shared tests, TypeScript,
+  packaging and interactive smoke. [Candidate paths](verification/2026-10-08-clean-epoch-recovery.md).
+  Normal-close request remains pending. Latest SSH recheck failed on both existing
+  PC profiles. Do not overwrite a running app or discard pending edits.
 - Real workspace: `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`,
   ID `be28ae03-c64e-4695-80af-04f048f86f37`. Preserve content.
 
@@ -38,11 +40,12 @@
 - Clean artifact clone: `/private/tmp/texttext-candidate-1195-5ELVuo`.
   Web and Mac builds finished successfully. Logs:
   `/tmp/texttext-web-pdf-6e1a9ee7-build.log`, `/tmp/texttext-mac1218-build.log`.
-  Current source `701a2bec` also fixes false recovery for clean retained native
-  epochs. 345 shared tests and TypeScript passed. Web build handle `30508`,
-  Windows build handle `93940`; revalidate before waiting. Logs
-  `/tmp/texttext-web-clean-epochs-701a2bec-build.log`,
-  `/tmp/texttext-windows-701a2bec-build.log`. No persistent build job.
+  Final source `8090227e` fixes clean native epoch replacement, including unchanged
+  file bytes with replacement Yjs IDs. 346 shared tests and TypeScript passed.
+  All builds finished; Mac 1220 installed and Oracle deployed. Logs
+  `/tmp/texttext-web-clean-epochs-8090227e-build.log`,
+  `/tmp/texttext-windows-8090227e-build.log`, `/tmp/texttext-mac1220-build.log`.
+  No persistent build job.
 - Latest product acceptance for reusable templates: real Mac generation,
   refinement, retained editable blueprint, Save as look, immutable version
   creation/retry, picker reuse and Safari-to-Mac save convergence passed.
