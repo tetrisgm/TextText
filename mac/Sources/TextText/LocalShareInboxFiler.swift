@@ -2,6 +2,7 @@ import Foundation
 import TextTextCLICore
 import TextTextFileProviderKit
 import TextTextShareCore
+import TextTextWorkspaceCore
 
 /// Share capture uses the same files and durable creation journal as CLI agents.
 /// The inbox remains the recovery copy until the complete TextPack is visible.
@@ -13,6 +14,7 @@ struct LocalShareInboxFiler {
 
     func file(_ record: InboxRecord, root: URL) throws -> URL {
         let item = record.item
+        if item.kind == .append { return try append(record, root: root) }
         let folder: String
         let kind: String
         switch item.kind {
@@ -58,6 +60,40 @@ struct LocalShareInboxFiler {
                 sourceURL: source, key: "share-inbox:\(record.id)")
             return try files.read(path: DocumentStore(root: canonicalRoot).relativePath(of: created))
         }.contentsURL(root: canonicalRoot)
+    }
+
+    private func append(_ record: InboxRecord, root: URL) throws -> URL {
+        guard let target = record.item.targetTextTextId, UUID(uuidString: target) != nil else {
+            throw InboxFilerError.missingAppendTarget
+        }
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let files = LocalVaultDocumentStore(root: canonicalRoot)
+        guard let path = try files.path(forItemId: target) else {
+            throw TextTextCLIError.documentNotFound(target)
+        }
+        let marker = record.directoryURL.appendingPathComponent("append-destination.json")
+        let destination = Destination(root: canonicalRoot.path, title: target)
+        if FileManager.default.fileExists(atPath: marker.path) {
+            let stored = try JSONDecoder().decode(Destination.self, from: Data(contentsOf: marker))
+            guard stored.root == destination.root, stored.title == destination.title else {
+                throw TextTextCLIError.invalidDocument("The shared append is retained for its original workspace.")
+            }
+        } else {
+            try JSONEncoder().encode(destination).write(to: marker, options: [.atomic])
+        }
+        let current = try files.read(path: path)
+        let text = record.item.text ?? ""
+        let separator = current.contents.markdown.hasSuffix("\n") ? "" : "\n"
+        let written = try LocalVaultEditOriginJournal(root: canonicalRoot).recordingNativeSave {
+            try files.write(path: path, expectedHash: current.hash,
+                markdown: current.contents.markdown + separator + text,
+                documentJSON: current.contents.documentJSON,
+                templateJSON: current.contents.templateJSON,
+                templateAuthoringSourceJSON: current.contents.templateAuthoringSourceJSON,
+                mutationKey: "share-inbox:\(record.id)",
+                mutationFingerprint: TextTextStableDigest.sha256Hex(Data(("share-append\u{0}" + target + "\u{0}" + text).utf8)))
+        }
+        return canonicalRoot.appendingPathComponent(written.path)
     }
 }
 

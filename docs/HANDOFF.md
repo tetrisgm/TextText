@@ -9,7 +9,10 @@
   Two roots fixed: startup skipped the share watcher when a file workspace was
   open; filing still used the legacy server writer. Share note/bookmark/draft
   now use the durable CLI creation journal and normal file synchronization.
-  Append/file shares remain safely retained in the inbox pending implementation.
+  File shares remain safely retained in the inbox pending implementation.
+  Current source also supports append by stable item identity with a mutation
+  receipt inside the TextPack; three focused tests pass, including retry after
+  later human edits and rename. Mac candidate delivery remains.
   Quick Look/File Provider interactive checks remain.
   [Share delivery](verification/2026-10-08-share-workspace-delivery.md).
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md).
@@ -18,7 +21,13 @@
   previous release retained. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
   [PDF delivery](verification/2026-10-08-pdf-capture.md).
-- Windows installed source **e19d53c3**. On the owner's explicit authorization,
+- Windows installed source **ab8d2968**, verified candidate installed and reopened
+  on interactive desktop (PID 45512). Regression suites and actual WPF desktop
+  smoke passed. The Mac Safari capture 1224 independently arrived in Windows'
+  workspace with the exact identity, title and original URL. Temporary build
+  smoke and app launch tasks are removed; previous app retained.
+  [Current Windows receipt](verification/2026-10-08-windows-current-delivery.md).
+  Earlier recovery delivery: on the owner's explicit authorization,
   stopped stale canonical process 44968, verified candidate and staged receipts,
   and installed. Previous app retained at
   `C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261008T174544-8303dceb`.
@@ -42,7 +51,7 @@
   Exact-source full sync gate passed for e722c893. Oracle deployed and passed
   live checks; Mac 1222 installed and reopened signed in on the real iCloud
   workspace with existing note/body intact and no recovery controls. Windows
-  still uses e19d53c3; backlink delivery there remains.
+  now uses ab8d2968, including backlink cancellation.
   [Delivery receipt](verification/2026-10-08-backlinks-delivery.md).
   Closed/unmounted scans stop after their current batch; old results/errors
   cannot overwrite a reopened panel. Baseline fails the new regression; current
