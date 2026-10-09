@@ -43,8 +43,24 @@ Focused review found a Swift numeric-conversion trap. The fix keeps finite
 cover heights as rounded doubles, with three shared extreme-value regressions.
 The 18 shared projection tests and native projection suite pass after the fix;
 logs: `/tmp/texttext-projection-overflow-{ts,swift}.log`. No other material
-review findings. No deployment or new client installation yet.
+review findings. Mac 0.204 build 1237 is now installed from `6d07ca4b`; Oracle and Windows
+delivery remain pending.
 The already-conflicted legacy Windows upload requires separately attested
 recovery; this patch does not fabricate historical provenance. Six physical
 clients, restart/reconnect acceptance and remaining product work are not certified
 by these unit/native results.
+
+## Installed Mac acceptance
+
+The clean archive at `/private/tmp/texttext-delivery-6d07ca4b` passed 875 core
+tests and produced the signed arm64 app with three extensions. Initial packaging
+lacked cached App Intents metadata; the successful retry is recorded in
+`/tmp/texttext-mac1237-build.log`. Installation used the established local Store
+workflow (`/tmp/texttext-mac1237-install.log`), preserving the previous app.
+
+Live UI: signed-in account and iCloud workspace retained, existing full1235 note
+opened without recovery UI. Appended `[mac-app:installed1237:00]`, finished editing,
+searched the exact title with Command-K and reopened it. The saved TextPack
+contains the marker exactly once and its baseline matches both JSON and Markdown
+SHA-256 digests. Left the app in reader mode. This is single-client acceptance,
+not a six-client convergence result.
