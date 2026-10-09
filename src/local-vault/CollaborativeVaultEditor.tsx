@@ -212,7 +212,10 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       // editor to it (caret and history carried over) before the client
       // destroys `previous`; an editor that is not mounted simply opens next.
       onDocumentReplaced: async (next, previous) => {
-        if (stopped || boundRef.current?.doc !== previous) return;
+        // The client treats a resolved callback as proof that the old Y.Doc
+        // is no longer displayed. Refuse a stale/unmounted binding so it uses
+        // the durable reopen path instead of destroying a still-bound editor.
+        if (stopped || boundRef.current?.doc !== previous) throw new Error("The editor is no longer bound to the previous document.");
         const awareness = new Awareness(next);
         const rebind = rebindRef.current;
         try { if (rebind) await rebind(next, awareness); }
