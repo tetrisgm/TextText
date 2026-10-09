@@ -67,11 +67,11 @@
   Fixture retained: `Gallery/Finder photo share 1229.textpack`, original image
   SHA-256 `ed06a94f6b494148666ddcc13727aa3912aa8b750dab26da7d3f50fa620c6baf`.
   Before restart, repairing the fixture directly did not clear the open reader
-  error. `DocumentBoundary` in `src/local-vault/VaultApp.tsx` latches its error
-  for the same item key and has no retry on file change. Fix this recovery gap
-  with a regression while preserving active editor state. Original fixture is
-  retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`; only its three
-  Markdown kind fields changed, all image bytes retained.
+  error. Fix `c0d37699` reloads errored readers on file changes, preserves healthy
+  editors and cancels stale recovery on navigation. TypeScript and the reader
+  browser suite pass. Build 1231 is running; installed acceptance remains.
+  [Recovery and live sync evidence](verification/2026-10-08-reader-recovery-live-sync.md).
+  Original fixture retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`.
   Supersedes intermediate 1227/1228 candidates; neither was installed.
 
 - Owner's latest acceptance priority: independently measure complete file/asset
