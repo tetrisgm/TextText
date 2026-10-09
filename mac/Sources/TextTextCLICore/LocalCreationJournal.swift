@@ -21,7 +21,8 @@ extension DocumentStore {
     public func createWithRetryKey(
         title: String, body: String?, folder: String?, kind: String?,
         sourceURL: String? = nil, key: String,
-        customDocumentJSON: String? = nil, customTemplateJSON: String? = nil
+        customDocumentJSON: String? = nil, customTemplateJSON: String? = nil,
+        assets: [TextTextTextBundlePackage.MaterializedAsset] = []
     ) throws -> URL {
         guard !key.isEmpty, key.utf8.count <= 512 else {
             throw TextTextCLIError.invalidDocument("creation retry key must contain 1 to 512 bytes")
@@ -50,6 +51,14 @@ extension DocumentStore {
             payload["documentJSON"] = customDocumentJSON.map { $0 as Any } ?? NSNull()
             payload["templateJSON"] = customTemplateJSON.map { $0 as Any } ?? NSNull()
         }
+        // Keep existing text-only intents compatible. Attachments bind the key
+        // to their names, types and bytes without writing bytes into the intent.
+        if !assets.isEmpty {
+            payload["assets"] = assets.sorted { $0.filename < $1.filename }.map {
+                ["filename": $0.filename, "sha256": TextTextStableDigest.sha256Hex($0.data),
+                 "remoteURL": $0.remoteURL, "contentType": $0.contentType.map { $0 as Any } ?? NSNull()] as [String: Any]
+            }
+        }
         let fingerprint = TextTextStableDigest.sha256Hex(
             try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]))
         let record = journal.appendingPathComponent(digest + ".json")
@@ -74,7 +83,8 @@ extension DocumentStore {
             let target = try prepareCreation(title: title, body: body, folder: folder,
                                             kind: kind, sourceURL: sourceURL,
                                             itemId: id, preparedOutput: stage,
-                                            customDocumentJSON: customDocumentJSON, customTemplateJSON: customTemplateJSON)
+                                            customDocumentJSON: customDocumentJSON, customTemplateJSON: customTemplateJSON,
+                                            assets: assets)
             intent = CreationIntent(version: 2, fingerprint: fingerprint, itemId: id,
                                     destination: relativePath(of: target),
                                     preparedHash: TextTextStableDigest.sha256Hex(try Data(contentsOf: stage)))

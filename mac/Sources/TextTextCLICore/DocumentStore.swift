@@ -309,7 +309,8 @@ public struct DocumentStore: Sendable {
     func prepareCreation(
         title: String, body: String? = nil, folder: String? = nil, kind: String? = nil,
         sourceURL: String? = nil, itemId: String, preparedOutput: URL? = nil,
-        customDocumentJSON: String? = nil, customTemplateJSON: String? = nil
+        customDocumentJSON: String? = nil, customTemplateJSON: String? = nil,
+        assets: [TextTextTextBundlePackage.MaterializedAsset] = []
     ) throws -> URL {
         let fileManager = FileManager.default
         var destination = root
@@ -324,6 +325,15 @@ public struct DocumentStore: Sendable {
         }
         guard (customDocumentJSON == nil) == (customTemplateJSON == nil) else {
             throw TextTextCLIError.invalidDocument("custom creation requires matching snapshot and template metadata")
+        }
+        guard assets.isEmpty || customDocumentJSON == nil else {
+            throw TextTextCLIError.invalidDocument("custom creation does not import attachments")
+        }
+        guard assets.count <= 2_000,
+              assets.reduce(UInt64(0), { $0 + UInt64($1.data.count) }) <= 64 * 1_024 * 1_024,
+              assets.allSatisfy({ TextTextTextBundlePackage.isSafeAssetFilename($0.filename) &&
+                  $0.remoteURL == "assets/\($0.filename)" && ($0.contentType?.utf8.count ?? 0) <= 200 }) else {
+            throw TextTextCLIError.invalidDocument("invalid or oversized creation attachments")
         }
         let folderDefault = kind == nil && customDocumentJSON == nil ? try LocalVaultFolderDefault.read(root: root, folder: destination) : nil
         let effectiveKind = kind ?? "note"
@@ -354,7 +364,7 @@ public struct DocumentStore: Sendable {
         defer { try? fileManager.removeItem(at: temporary) }
         let builtin = try BuiltinTextPackDocument.create(
             title: title, body: body.trimmingCharacters(in: .newlines),
-            kind: effectiveKind, sourceURL: sourceURL)
+            kind: effectiveKind, sourceURL: sourceURL, assets: assets)
         var documentJSON = builtin.documentJSON
         if let folderDefault {
             var document = try JSONSerialization.jsonObject(with: Data(documentJSON.utf8)) as! [String: Any]
@@ -368,7 +378,7 @@ public struct DocumentStore: Sendable {
             canonicalMarkdown: markdown, documentJSON: customDocumentJSON ?? documentJSON,
             templateJSON: customTemplateJSON ?? folderDefault?.templateJSON ?? builtin.templateJSON,
             templateAuthoringSourceJSON: folderDefault?.authoringSourceJSON,
-            assets: [], sourceURL: sourceURL, in: temporary)
+            assets: assets, sourceURL: sourceURL, in: temporary)
         let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)
         // moveItem fails if another writer created this name while we built it.

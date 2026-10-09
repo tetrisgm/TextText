@@ -27,7 +27,8 @@ public struct BuiltinTextPackDocument: Sendable {
     }
 
     public static func create(title: String, body: String, kind: String = "note",
-                              sourceURL: String? = nil) throws -> Self {
+                              sourceURL: String? = nil,
+                              assets: [TextTextTextBundlePackage.MaterializedAsset] = []) throws -> Self {
         let definitions = try JSONSerialization.jsonObject(with: Data(GeneratedBuiltinTemplates.json.utf8)) as? [[String: Any]]
         guard let template = definitions?.first(where: { ($0["id"] as? String) == "texttext.\(kind)" }),
               let id = template["id"] as? String,
@@ -41,10 +42,17 @@ public struct BuiltinTextPackDocument: Sendable {
             fields["captureStatus"] = "pending"
             fields["texttextBookmarkSavedAt"] = ISO8601DateFormatter().string(from: Date())
         }
+        let attachments: [[String: Any]] = assets.map { asset in
+            let mediaType = asset.contentType ?? "application/octet-stream"
+            let assetKind = ["image", "video", "audio"].first { mediaType.hasPrefix($0 + "/") } ?? "file"
+            return ["id": "asset-" + TextTextStableDigest.sha256Hex(Data(asset.filename.utf8)),
+                    "kind": assetKind, "src": "assets/\(asset.filename)",
+                    "title": String(asset.filename.prefix(240)), "contentType": mediaType]
+        }
         let document: [String: Any] = [
             "schemaVersion": 1,
             "content": ["title": title, "body": body, "fields": fields,
-                        "tags": [] as [String], "assets": [] as [String]],
+                        "tags": [] as [String], "assets": attachments],
             "presentation": ["template": ["id": id, "version": version],
                              "theme": [:] as [String: String]],
         ]

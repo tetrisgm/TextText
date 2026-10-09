@@ -41,6 +41,65 @@ final class LocalShareInboxFilerTests: XCTestCase {
         XCTAssertEqual(retained.first?.item, record.item)
     }
 
+    func testSharedAttachmentPublishesCompletePackageAndBindsRetryToBytes() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let root = base.appendingPathComponent("Workspace")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let writer = InboxWriter(containerURL: base.appendingPathComponent("InboxContainer"))
+        let bytes = Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+        let record = try writer.write(InboxItem(kind: .file, title: "Shared image"),
+            payload: InboxPayload(filename: "image.png", data: bytes))
+        let filer = LocalShareInboxFiler()
+        let created = try filer.file(record, root: root)
+        XCTAssertEqual(created.deletingLastPathComponent().lastPathComponent, "Gallery")
+        let files = LocalVaultDocumentStore(root: root)
+        let original = try files.read(path: "Gallery/" + created.lastPathComponent)
+        XCTAssertEqual(original.contents.assets.count, 1)
+        XCTAssertEqual(original.contents.assets.first?.data, bytes)
+        let snapshot = try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(original.contents.documentJSON).utf8)) as! [String: Any]
+        let content = snapshot["content"] as! [String: Any]
+        let assets = content["assets"] as! [[String: Any]]
+        XCTAssertEqual(assets.first?["kind"] as? String, "image")
+        XCTAssertEqual(assets.first?["src"] as? String, "assets/" + original.contents.assets[0].filename)
+        XCTAssertEqual(try filer.file(record, root: root), created)
+        XCTAssertEqual(try files.read(path: original.path).hash, original.hash)
+        try Data("different attachment".utf8).write(to: try XCTUnwrap(record.payloadURL))
+        XCTAssertThrowsError(try filer.file(record, root: root))
+        XCTAssertEqual(try files.read(path: original.path).hash, original.hash)
+        XCTAssertEqual(try InboxReader(containerURL: writer.containerURL).completeItems().count, 1)
+    }
+
+    func testSharedPDFIsAnAttachedNoteAndMissingOrSymlinkPayloadStaysQueued() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let root = base.appendingPathComponent("Workspace")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let writer = InboxWriter(containerURL: base.appendingPathComponent("InboxContainer"))
+        let pdf = Data("%PDF-1.4\nfixture".utf8)
+        let record = try writer.write(InboxItem(kind: .file, text: "Keep this context"),
+            payload: InboxPayload(filename: "Report.pdf", data: pdf))
+        let filer = LocalShareInboxFiler()
+        let created = try filer.file(record, root: root)
+        let note = try LocalVaultDocumentStore(root: root).read(path: "Notes/" + created.lastPathComponent)
+        XCTAssertEqual(created.lastPathComponent, "Report.textpack")
+        XCTAssertTrue(note.contents.markdown.contains("Keep this context"))
+        XCTAssertTrue(note.contents.markdown.contains("[Report.pdf](assets/"))
+        XCTAssertEqual(note.contents.assets.first?.data, pdf)
+        let unsafe = try writer.write(InboxItem(kind: .file), payload: InboxPayload(filename: "Other.pdf", data: pdf))
+        let payload = try XCTUnwrap(unsafe.payloadURL)
+        try FileManager.default.removeItem(at: payload)
+        XCTAssertThrowsError(try filer.file(unsafe, root: root))
+        try FileManager.default.createSymbolicLink(at: payload, withDestinationURL: created)
+        XCTAssertThrowsError(try filer.file(unsafe, root: root))
+        try FileManager.default.removeItem(at: payload)
+        XCTAssertTrue(FileManager.default.createFile(atPath: payload.path, contents: Data()))
+        let oversized = try FileHandle(forWritingTo: payload)
+        try oversized.truncate(atOffset: 64 * 1_024 * 1_024 + 1)
+        try oversized.close()
+        XCTAssertThrowsError(try filer.file(unsafe, root: root))
+    }
+
     func testAppendRetrySurvivesLaterFileEditsAndRename() throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: base) }

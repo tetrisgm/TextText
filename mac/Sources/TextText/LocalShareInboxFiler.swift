@@ -1,8 +1,10 @@
 import Foundation
+import Darwin
 import TextTextCLICore
 import TextTextFileProviderKit
 import TextTextShareCore
 import TextTextWorkspaceCore
+import UniformTypeIdentifiers
 
 /// Share capture uses the same files and durable creation journal as CLI agents.
 /// The inbox remains the recovery copy until the complete TextPack is visible.
@@ -17,11 +19,54 @@ struct LocalShareInboxFiler {
         if item.kind == .append { return try append(record, root: root) }
         let folder: String
         let kind: String
+        var assets: [TextTextTextBundlePackage.MaterializedAsset] = []
+        var body = item.text ?? ""
         switch item.kind {
         case .note: folder = "Notes"; kind = "note"
         case .bookmark: folder = "Bookmarks"; kind = "bookmark"
         case .draft: folder = "Blog"; kind = "article"
-        case .append, .file:
+        case .file:
+            guard let payload = record.payloadURL, let filename = item.payloadFilename,
+                  TextTextTextBundlePackage.isSafeAssetFilename(filename),
+                  payload.standardizedFileURL == record.directoryURL.appendingPathComponent(filename).standardizedFileURL else {
+                throw TextTextCLIError.invalidDocument("The shared attachment is unavailable.")
+            }
+            let values = try payload.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true,
+                  (values.fileSize ?? Int.max) <= 64 * 1_024 * 1_024 else {
+                throw TextTextCLIError.invalidDocument("The shared attachment is unavailable or too large.")
+            }
+            // Open without following a replacement symlink, then bound the
+            // actual descriptor rather than trusting an earlier path stat.
+            let descriptor = Darwin.open(payload.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+            guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            defer { try? handle.close() }
+            var actual = stat()
+            guard fstat(descriptor, &actual) == 0, actual.st_mode & S_IFMT == S_IFREG,
+                  actual.st_size >= 0, actual.st_size <= 64 * 1_024 * 1_024 else {
+                throw TextTextCLIError.invalidDocument("The shared attachment is unavailable or too large.")
+            }
+            let data = try handle.read(upToCount: Int(actual.st_size) + 1) ?? Data()
+            guard data.count == actual.st_size else {
+                throw TextTextCLIError.invalidDocument("The shared attachment changed while it was being read.")
+            }
+            guard data.count <= 64 * 1_024 * 1_024 else {
+                throw TextTextCLIError.invalidDocument("The shared attachment is too large.")
+            }
+            let type = UTType(filenameExtension: payload.pathExtension)
+            let visual = type?.conforms(to: .image) == true || type?.conforms(to: .movie) == true
+            folder = visual ? "Gallery" : "Notes"; kind = visual ? "gallery" : "note"
+            let ext = type?.preferredFilenameExtension ?? "bin"
+            let storedName = "shared-" + TextTextStableDigest.sha256Hex(data) + "." + ext
+            assets = [.init(filename: storedName, data: data, remoteURL: "assets/\(storedName)",
+                            contentType: type?.preferredMIMEType ?? "application/octet-stream")]
+            if !visual {
+                let label = filename.replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
+                body += (body.isEmpty ? "" : "\n\n") + "[\(label)](assets/\(storedName))"
+            }
+        case .append:
             throw NSError(domain: "TextTextShare", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "This shared item is kept in the inbox for filing."])
         }
@@ -45,7 +90,10 @@ struct LocalShareInboxFiler {
             }
         } else {
             let supplied = item.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let stem = supplied.isEmpty ? (source.flatMap { URL(string: $0)?.host } ?? "Untitled") : supplied
+            let fallback = item.kind == .file
+                ? URL(fileURLWithPath: item.payloadFilename ?? "Shared file").deletingPathExtension().lastPathComponent
+                : (source.flatMap { URL(string: $0)?.host } ?? "Untitled")
+            let stem = supplied.isEmpty ? fallback : supplied
             var title = stem, suffix = 2
             while FileManager.default.fileExists(atPath: canonicalRoot.appendingPathComponent(folder)
                 .appendingPathComponent(DocumentCreation.filename(for: title) + ".textpack").path) {
@@ -56,8 +104,8 @@ struct LocalShareInboxFiler {
         }
         return try LocalVaultEditOriginJournal(root: canonicalRoot).recordingNativeSave {
             let created = try DocumentStore(root: canonicalRoot).createWithRetryKey(
-                title: destination.title, body: item.text ?? "", folder: folder, kind: kind,
-                sourceURL: source, key: "share-inbox:\(record.id)")
+                title: destination.title, body: body, folder: folder, kind: kind,
+                sourceURL: item.kind == .file ? nil : source, key: "share-inbox:\(record.id)", assets: assets)
             return try files.read(path: DocumentStore(root: canonicalRoot).relativePath(of: created))
         }.contentsURL(root: canonicalRoot)
     }
