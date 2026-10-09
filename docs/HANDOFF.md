@@ -29,8 +29,9 @@
   previous release retained. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
   [PDF delivery](verification/2026-10-08-pdf-capture.md).
-- Windows installed source **ab8d2968**, verified candidate installed and reopened
-  on interactive desktop (PID 45512). Regression suites and actual WPF desktop
+- Windows installed source **c0d37699**, verified candidate installed and reopened
+  on interactive desktop (PID 43648).
+  [Recovery update and fresh image receipt](verification/2026-10-08-windows-recovery-share.md). Regression suites and actual WPF desktop
   smoke passed. The Mac Safari capture 1224 independently arrived in Windows'
   workspace with the exact identity, title and original URL. Temporary build
   smoke and app launch tasks are removed; previous app retained.
@@ -43,7 +44,7 @@
   task was removed. The affected 1185 note checkpoint refreshed to epoch 2, Pending false and
   RetiredReason null; old checkpoint archived automatically. Visible banner
   disappearance remains unverified.
-  Latest read-only PC inspection: canonical process 45512 responds; the affected
+  Latest read-only PC inspection: canonical process 43648 responds; the affected
   journal has zero pending updates, no batch, no unqueued dirty state and no
   retirement. No native checkpoint under the current Sync root is pending or
   retired. Visible editing acceptance still remains.
@@ -62,7 +63,8 @@
   Fix `f1ba5ec4` maps this in common CLI creation, retaining the Gallery template.
   Five focused share tests and the full exact-source gate passed. Build 1230
   installed and reopened signed in; the repaired photo visibly renders. Fresh
-  post-fix share acceptance remains; do not call all attachment paths complete.
+  Finder capture 1231 also opens normally in Mac and Safari, and the PC stores
+  the identical original image hash. Other file types/multiple files remain.
   Logs `/tmp/texttext-share-kind-tests.log`, `/tmp/texttext-mac1230-build.log`.
   Fixture retained: `Gallery/Finder photo share 1229.textpack`, original image
   SHA-256 `ed06a94f6b494148666ddcc13727aa3912aa8b750dab26da7d3f50fa620c6baf`.
@@ -71,7 +73,9 @@
   editors and cancels stale recovery on navigation. TypeScript and the reader
   browser suite and exact-source gate pass. Build 1231 installed; actual native
   reproduction recovered automatically after atomic file repair, without reload
-  or reopening. Windows and Oracle still need the shared UI update.
+  or reopening. Windows installed the same UI source. Oracle web-only verification
+  is running from `ee7292ad` (test render-timing correction only beyond the UI fix),
+  log `/tmp/texttext-reader-recovery-web-verify.log`; no deployment yet.
   [Recovery and live sync evidence](verification/2026-10-08-reader-recovery-live-sync.md).
   Original fixture retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`.
   Supersedes intermediate 1227/1228 candidates; neither was installed.
