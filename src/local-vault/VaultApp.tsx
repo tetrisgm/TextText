@@ -152,7 +152,7 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
       conflict.current = true; setHasConflict(true); setNotice(error.message);
       return false;
     }
-    const result = reconcileDocumentSnapshots(baseline.current, current.current, remoteDocument);
+    const result = reconcileDocumentSnapshots(baseline.current, current.current, remoteDocument, { concurrentInsertions: "remote-first" });
     const competingLook = pendingLook.current && file.current.templateJSON !== remote.templateJSON &&
       JSON.stringify(pendingLook.current.template) !== remote.templateJSON;
     if (result.status === "conflict" || competingLook) {
@@ -283,7 +283,7 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
         }
-        const result = reconcileDocumentSnapshots(draft.base, draft.document, baseline.current);
+        const result = reconcileDocumentSnapshots(draft.base, draft.document, baseline.current, { concurrentInsertions: "remote-first" });
         if (result.status === "merged") { current.current = result.document; setExternal(result.document); void flush(); }
         else { current.current = draft.document; setExternal(draft.document); conflict.current = true; setHasConflict(true); setNotice("A recovered draft and this file have different edits. Save a separate copy to keep both."); }
       }

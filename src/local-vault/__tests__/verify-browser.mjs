@@ -589,6 +589,19 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent?.includes("Agent second line"));
   assert.match(await body.innerText(), /Local first line/);
+  // A local editor waiting to join collaboration uses the same insertion
+  // ordering as the shared client. A CLI append must not retire its draft.
+  const appendBase = files.get(initial.path);
+  await body.evaluate(element => { window.localAppendEditor = element; });
+  await body.fill("Local first line\nAgent second line [local append]");
+  files.set(initial.path, { ...appendBase, hash: String(++revision), markdown: appendBase.markdown.replace(/Agent second line$/, "Agent second line [CLI append]") });
+  await page.evaluate(() => window.dispatchEvent(new Event("texttext:vault-changed")));
+  await waitForFixture(() => files.get(initial.path).markdown.includes("[CLI append] [local append]"), "concurrent local and CLI appends saved");
+  assert.equal(await body.evaluate(element => element === window.localAppendEditor && element.isConnected), true);
+  assert.equal(await page.getByRole("button", { name: "Save my edits as a copy" }).count(), 0);
+  if (process.argv.includes("--local-append-only")) { console.log("PASS local editor and CLI concurrent append: both saved, editor retained, no recovery banner"); await browser.close(); process.exit(0); }
+  await body.fill("Local first line\nAgent second line");
+  await waitForFixture(() => files.get(initial.path).markdown.endsWith("Local first line\nAgent second line"), "reset append fixture");
   // A stale-base same-line edit must preserve disk and offer a separate copy.
   await body.fill("My conflicting version");
   const beforeConflict = files.get(initial.path);

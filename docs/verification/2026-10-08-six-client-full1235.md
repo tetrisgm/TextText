@@ -82,3 +82,15 @@ concerns led to a narrower field set and pre-adoption hash check. Server writer
 inspection confirms that ordinary uploads persist input bytes; concurrent merges
 use the existing three-way archive reconciler. Installed-client verification
 and recovery of the already-conflicted fixture are still outstanding.
+
+## Local-editor append consistency
+
+The waiting-to-join local editor still used conservative insertion reconciliation,
+while the shared editor and server use deterministic remote-first ordering.
+Local live file reconciliation and local draft restoration now use that same
+policy. A browser regression verifies concurrent app/CLI appends both persist,
+the original editor element remains mounted and no recovery banner appears.
+`verify-browser.mjs --local-append-only` and `--save-look-only` pass, including
+the existing conflicting-replacement preservation check; nine reconcile tests
+and TypeScript pass. Logs: `/tmp/texttext-local-append-{browser,conflict-browser,unit,tsc}.log`.
+These are controlled browser regressions, not physical six-client acceptance.
