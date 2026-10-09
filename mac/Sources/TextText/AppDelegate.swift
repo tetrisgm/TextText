@@ -316,9 +316,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         healthReporter = AppHealthReporter(
             stateStore: store,
             syncRootProvider: { [weak self] in
-                // The File Provider mount is the only on-disk home; nil until
-                // the domain resolves (workspace.storage treats that as
-                // nothing-to-verify, never a failure on a retired path).
+                // The File Provider mount; nil until the domain resolves
+                // (workspace.storage treats that as nothing-to-verify, never a
+                // failure on a retired path). With a selected folder the mount
+                // is optional and the reporter verifies the folder instead.
                 self?.fileProviderUserVisibleURL
             },
             finderStatusProvider: { [weak self] in

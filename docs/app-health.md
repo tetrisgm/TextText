@@ -53,12 +53,30 @@ window so the initial `checking` state can settle without hiding persistent
 pending work or provider failures. Runtime reports expose only sample counts and
 stable state flags.
 
-For a linked account, an idle provider is not enough to pass. Runtime health
-also enumerates the real CloudStorage root and requires at least one visible
-workspace folder. This distinguishes a usable domain from the broken state where
-the extension and mount xattrs exist but no active File Provider domain serves
-items. `workspace.storage` separately requires directory enumeration to succeed;
-POSIX readable and writable flags alone are not treated as a Finder proof.
+When a person has selected an ordinary workspace folder (often inside iCloud
+Drive), that folder is the on-disk home. `workspace.storage` resolves it the
+way the app does, through the saved security-scoped bookmark when one exists,
+and fails hard when the folder is missing, not a directory, unreadable,
+unwritable, or cannot be enumerated. It never writes into the folder or
+rewrites the bookmark. The File Provider mount is then optional:
+`finder.provider` passes only when the mount is absent or actually enumerates a
+workspace, and reports `warning` (not pass, not fail) for a mount that resolves
+but cannot be enumerated. Metrics carry `vault_selected` and `mount_optional`.
+
+Without a selected folder the mount is the only home, and for a linked account
+an idle provider is not enough to pass. Runtime health enumerates the real
+CloudStorage root and requires at least one visible workspace folder. This
+distinguishes a usable domain from the broken state where the extension and
+mount xattrs exist but no active File Provider domain serves items.
+`workspace.storage` separately requires directory enumeration to succeed; POSIX
+readable and writable flags alone are not treated as a Finder proof.
+
+Release verification (`mac/scripts/verify-app-health.sh`) passes
+`TEXTTEXT_HEALTH_ISOLATION_ID`; the sandboxed app creates its own run directory
+under its container's `Application Support/TextText/AppHealth/`, points its
+state and folder selection there, and removes it afterwards (sweeping sibling
+runs older than a day). The host never creates or deletes anything inside the
+container. `mac/scripts/test-verify-app-health.sh` holds that contract.
 
 Web-owned workflows use signed capability receipts rather than production
 mutation probes. `mac/scripts/verify-workflow-capabilities.sh` evaluates the

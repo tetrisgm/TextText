@@ -234,12 +234,41 @@ private final class HealthSubmissionResult: @unchecked Sendable {
     }
 }
 
+/// The person's selected workspace folder, as health sees it. The ordinary
+/// folder (often inside iCloud Drive) is the app's on-disk home whenever one is
+/// selected; the File Provider mount is then an optional Finder feature.
+enum TextTextHealthVaultSelection: Equatable {
+    /// No folder is selected: the File Provider mount is the only disk home.
+    case none
+    /// A folder is selected and its saved configuration decoded.
+    case selected(LocalVaultConfiguration)
+    /// A configuration file exists but cannot be read or decoded. The app will
+    /// not be able to open the person's content, so health must fail.
+    case unreadable
+
+    /// Side-effect-free read of the saved selection. `LocalVaultConfiguration.load`
+    /// migrates and refreshes bookmarks; a health check only observes.
+    static func current(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> TextTextHealthVaultSelection {
+        let url = LocalVaultConfiguration.configurationURL(
+            environment: environment, fileManager: fileManager)
+        guard fileManager.fileExists(atPath: url.path) else { return .none }
+        guard let data = try? Data(contentsOf: url),
+              let configuration = try? JSONDecoder().decode(LocalVaultConfiguration.self, from: data)
+        else { return .unreadable }
+        return .selected(configuration)
+    }
+}
+
 /// Runs TextText's own reliability checks using the same implementation during a
 /// release, on first launch of every version, and once per day. The runner is
 /// deliberately independent from the web view and never reloads product UI.
 final class AppHealthReporter {
     typealias FinderStatusProvider = () -> FileProviderStatusSnapshot
     typealias FileProviderDomainEnabledProvider = () -> Bool?
+    typealias VaultSelectionProvider = () -> TextTextHealthVaultSelection
 
     private struct FinderMountProbe {
         let resolved: Bool
@@ -248,11 +277,28 @@ final class AppHealthReporter {
         let entryCount: Int
     }
 
+    private struct VaultProbe {
+        var bookmarkPresent = false
+        var bookmarkResolved = false
+        var scopeGranted = false
+        var present = false
+        var directory = false
+        var readable = false
+        var writable = false
+        var enumerated = false
+        var entryCount = 0
+
+        var accessible: Bool {
+            present && directory && readable && writable && enumerated
+        }
+    }
+
     private let stateStore: StateStore
     private let healthStore: TextTextHealthStore
     private let syncRootProvider: () -> URL?
     private let finderStatusProvider: FinderStatusProvider
     private let fileProviderDomainEnabledProvider: FileProviderDomainEnabledProvider
+    private let vaultSelectionProvider: VaultSelectionProvider
     private let finderReadinessProbe: FileProviderReadinessProbe
     private let bundle: Bundle
     private let clock: () -> Date
@@ -269,6 +315,9 @@ final class AppHealthReporter {
         syncRootProvider: @escaping () -> URL?,
         finderStatusProvider: @escaping FinderStatusProvider,
         fileProviderDomainEnabledProvider: @escaping FileProviderDomainEnabledProvider = { nil },
+        vaultSelectionProvider: @escaping VaultSelectionProvider = {
+            TextTextHealthVaultSelection.current()
+        },
         finderReadinessProbe: FileProviderReadinessProbe = FileProviderReadinessProbe(),
         bundle: Bundle = .main,
         clock: @escaping () -> Date = Date.init
@@ -279,6 +328,7 @@ final class AppHealthReporter {
         self.syncRootProvider = syncRootProvider
         self.finderStatusProvider = finderStatusProvider
         self.fileProviderDomainEnabledProvider = fileProviderDomainEnabledProvider
+        self.vaultSelectionProvider = vaultSelectionProvider
         self.finderReadinessProbe = finderReadinessProbe
         self.bundle = bundle
         self.clock = clock
@@ -828,23 +878,61 @@ final class AppHealthReporter {
     }
 
     private func checkWorkspaceStorage() -> (TextTextHealthStatus, [String: Double]) {
-        // The workspace's on-disk home is the File Provider mount (the legacy
-        // mirror is retired). A nil root means the mount is not resolved here
-        // (signed out, domain still registering, or an isolated CI run): there
-        // is nothing local to verify and finder.provider carries the live
-        // signal, so report pass with mount_resolved = 0 instead of failing on
-        // a path that no longer exists by design.
         let linked = stateStore.loadCredentials() != nil
         let domainEnabled = fileProviderDomainEnabledProvider()
         let userDisabled = linked && domainEnabled == false
-        guard let root = syncRootProvider() else {
-            return (.pass, [
+        let common: [String: Double] = [
+            "linked": linked ? 1 : 0,
+            "domain_enabled_known": domainEnabled == nil ? 0 : 1,
+            "domain_enabled": domainEnabled == true ? 1 : 0,
+            "user_disabled": userDisabled ? 1 : 0,
+        ]
+
+        // A selected ordinary folder is the workspace's on-disk home. It is
+        // verified through its own security-scoped bookmark; the File Provider
+        // mount, if any, is unrelated to it and is reported by finder.provider.
+        // An inaccessible selected folder is a hard fail: the app cannot open
+        // the person's content.
+        switch vaultSelectionProvider() {
+        case .unreadable:
+            return (.fail, common.merging([
+                "vault_selected": 1,
+                "vault_config_readable": 0,
+                "vault_accessible": 0,
                 "mount_resolved": 0,
-                "linked": linked ? 1 : 0,
-                "domain_enabled_known": domainEnabled == nil ? 0 : 1,
-                "domain_enabled": domainEnabled == true ? 1 : 0,
-                "user_disabled": userDisabled ? 1 : 0,
-            ])
+            ]) { $1 })
+        case .selected(let configuration):
+            let probe = Self.probeVault(configuration)
+            return (probe.accessible ? .pass : .fail, common.merging([
+                "vault_selected": 1,
+                "vault_config_readable": 1,
+                "vault_accessible": probe.accessible ? 1 : 0,
+                "bookmark_present": probe.bookmarkPresent ? 1 : 0,
+                "bookmark_resolved": probe.bookmarkResolved ? 1 : 0,
+                "scope_granted": probe.scopeGranted ? 1 : 0,
+                "present": probe.present ? 1 : 0,
+                "directory": probe.directory ? 1 : 0,
+                "readable": probe.readable ? 1 : 0,
+                "writable": probe.writable ? 1 : 0,
+                "enumerated": probe.enumerated ? 1 : 0,
+                "entry_count": Double(probe.entryCount),
+                "mount_resolved": 0,
+            ]) { $1 })
+        case .none:
+            break
+        }
+
+        // No folder selected: the File Provider mount is the only disk home. A
+        // nil root means the mount is not resolved here (signed out, domain
+        // still registering, or an isolated CI run): there is nothing local to
+        // verify and finder.provider carries the live signal, so report pass
+        // with mount_resolved = 0 instead of failing on a path that does not
+        // exist by design.
+        guard let root = syncRootProvider() else {
+            return (.pass, common.merging([
+                "vault_selected": 0,
+                "mount_resolved": 0,
+            ]) { $1 })
         }
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
@@ -871,18 +959,48 @@ final class AppHealthReporter {
         } else {
             status = valid ? .pass : .fail
         }
-        return (status, [
+        return (status, common.merging([
+            "vault_selected": 0,
             "mount_resolved": 1,
             "present": exists ? 1 : 0,
             "directory": isDirectory.boolValue ? 1 : 0,
             "readable": readable ? 1 : 0,
             "writable": writable ? 1 : 0,
             "enumerated": enumerated ? 1 : 0,
-            "linked": linked ? 1 : 0,
-            "domain_enabled_known": domainEnabled == nil ? 0 : 1,
-            "domain_enabled": domainEnabled == true ? 1 : 0,
-            "user_disabled": userDisabled ? 1 : 0,
-        ])
+        ]) { $1 })
+    }
+
+    /// Resolve the selected folder the way the app opens it: through the saved
+    /// security-scoped bookmark when present, else the saved path. Observes
+    /// only; never writes into the person's folder and never rewrites the
+    /// bookmark.
+    private static func probeVault(_ configuration: LocalVaultConfiguration) -> VaultProbe {
+        var probe = VaultProbe()
+        probe.bookmarkPresent = configuration.bookmarkData != nil
+        let root: URL
+        if configuration.bookmarkData != nil {
+            guard let resolved = try? configuration.resolvingRoot() else { return probe }
+            probe.bookmarkResolved = true
+            root = resolved
+        } else {
+            root = configuration.root
+        }
+        probe.scopeGranted = root.startAccessingSecurityScopedResource()
+        defer { if probe.scopeGranted { root.stopAccessingSecurityScopedResource() } }
+
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        probe.present = fileManager.fileExists(atPath: root.path, isDirectory: &isDirectory)
+        probe.directory = probe.present && isDirectory.boolValue
+        probe.readable = probe.present && fileManager.isReadableFile(atPath: root.path)
+        probe.writable = probe.present && fileManager.isWritableFile(atPath: root.path)
+        if let entries = try? fileManager.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        {
+            probe.enumerated = true
+            probe.entryCount = entries.count
+        }
+        return probe
     }
 
     private func checkFinderProvider() -> (TextTextHealthStatus, [String: Double]) {
@@ -893,13 +1011,26 @@ final class AppHealthReporter {
         let mount = finderMountProbe()
         let domainEnabled = fileProviderDomainEnabledProvider()
         let userDisabled = linked && domainEnabled == false
-        let linkedMountUsable = !linked || (mount.enumerated && mount.workspaceVisible)
+        let vaultSelected = vaultSelectionProvider() != .none
+        let mountUsable = mount.enumerated && mount.workspaceVisible
+        let linkedMountUsable = !linked || mountUsable
         let status: TextTextHealthStatus
         if userDisabled {
             // Disabling a File Provider domain is a user preference, not a
             // defective app binary. Record the state in metrics without
             // degrading an otherwise valid App Store-compatible update.
             status = .pass
+        } else if vaultSelected {
+            // With a selected folder the mount is an optional Finder feature,
+            // not the workspace's home. A broken mount must not block the app
+            // whose content lives elsewhere, but it is not healthy either: it
+            // passes only when it actually enumerates a workspace, and a mount
+            // that resolves yet cannot be enumerated is reported as a warning.
+            if snapshot.severity == .healthy && (!mount.resolved || mountUsable) {
+                status = .pass
+            } else {
+                status = .warning
+            }
         } else {
             switch snapshot.severity {
             case .healthy:
@@ -915,6 +1046,8 @@ final class AppHealthReporter {
             }
         }
         return (status, [
+            "vault_selected": vaultSelected ? 1 : 0,
+            "mount_optional": vaultSelected ? 1 : 0,
             "healthy": snapshot.severity == .healthy ? 1 : 0,
             "working": snapshot.severity == .working ? 1 : 0,
             "warning": snapshot.severity == .warning ? 1 : 0,
@@ -1021,16 +1154,29 @@ final class AppHealthReporter {
 }
 
 enum AppHealthCLI {
+    /// `TEXTTEXT_HEALTH_ISOLATION_ID=<token>` asks the app to run against its
+    /// own fresh state and folder selection instead of the installed ones. The
+    /// app creates the run directory inside its own sandbox container, so the
+    /// host never has to create or clean anything under the container, and
+    /// removes it after the report is written.
+    static let isolationEnvironmentKey = "TEXTTEXT_HEALTH_ISOLATION_ID"
+    static let isolationDirectoryName = "AppHealth"
+    static let staleIsolationAge: TimeInterval = 24 * 60 * 60
+
     static func run() -> Int32 {
+        let isolation = prepareIsolation(
+            environment: ProcessInfo.processInfo.environment)
+        defer { if let isolation { cleanUpIsolation(isolation) } }
         let stateStore = StateStore()
-        // Release verification runs in a fresh, isolated workspace with no
-        // registered File Provider domain. Extension embedding and the real
-        // Finder lifecycle are verified independently by this report and the
-        // release test suite.
-        // The workspace's on-disk home is the File Provider mount; resolve the
-        // registered domain's user-visible root (blocking is fine in the CLI).
-        // nil on a machine with no domain (signed out / isolated CI), which
-        // workspace.storage reports as mount_resolved = 0 rather than failing.
+        // Release verification runs in a fresh, isolated state and folder
+        // selection with no registered File Provider domain. Extension
+        // embedding and the real Finder lifecycle are verified independently
+        // by this report and the release test suite.
+        // The selected ordinary folder (if any) is the workspace's on-disk
+        // home and is verified from its saved configuration. The registered
+        // File Provider domain's user-visible root (blocking is fine in the
+        // CLI) is nil on a machine with no domain (signed out / isolated CI),
+        // which the checks report as mount_resolved = 0 rather than failing.
         let providerState = Self.resolveFileProviderState()
         let reporter = AppHealthReporter(
             stateStore: stateStore,
@@ -1045,6 +1191,85 @@ enum AppHealthCLI {
         FileHandle.standardOutput.write(data)
         FileHandle.standardOutput.write(Data("\n".utf8))
         return report.status == .pass ? 0 : 1
+    }
+
+    /// The isolated run directory for a token, or nil when the token is absent
+    /// or not a plain identifier (a path-like token must never escape the
+    /// app-owned directory).
+    static func isolationRoot(
+        token: String?,
+        applicationSupportDirectory: URL
+    ) -> URL? {
+        guard let token, !token.isEmpty, token.count <= 80,
+              token.unicodeScalars.allSatisfy({
+                  CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" || $0 == "."
+              }),
+              !token.hasPrefix(".")
+        else { return nil }
+        return applicationSupportDirectory
+            .appendingPathComponent("TextText", isDirectory: true)
+            .appendingPathComponent(isolationDirectoryName, isDirectory: true)
+            .appendingPathComponent(token, isDirectory: true)
+    }
+
+    /// Create the run directory and point the state store and folder selection
+    /// at it. Explicit `TEXTTEXT_STATE_DIR` / `TEXTTEXT_VAULT_CONFIG` values win
+    /// so a caller can still direct either one deliberately.
+    @discardableResult
+    static func prepareIsolation(
+        environment: [String: String],
+        fileManager: FileManager = .default,
+        applicationSupportDirectory: URL? = nil,
+        setEnvironment: (String, String) -> Void = { setenv($0, $1, 1) }
+    ) -> URL? {
+        let support = applicationSupportDirectory
+            ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        guard let support,
+              let root = isolationRoot(
+                  token: environment[isolationEnvironmentKey],
+                  applicationSupportDirectory: support)
+        else { return nil }
+        do {
+            try fileManager.createDirectory(
+                at: root, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+        } catch {
+            return nil
+        }
+        if environment["TEXTTEXT_STATE_DIR"].map(\.isEmpty) ?? true {
+            setEnvironment(
+                "TEXTTEXT_STATE_DIR",
+                root.appendingPathComponent("state", isDirectory: true).path)
+        }
+        if environment["TEXTTEXT_VAULT_CONFIG"].map(\.isEmpty) ?? true {
+            setEnvironment(
+                "TEXTTEXT_VAULT_CONFIG",
+                root.appendingPathComponent("vault.json").path)
+        }
+        return root
+    }
+
+    /// Remove this run's directory, then any sibling run older than a day that
+    /// an interrupted earlier run left behind. Only the app-owned `AppHealth`
+    /// parent is touched; nothing outside it is ever removed.
+    static func cleanUpIsolation(
+        _ root: URL,
+        fileManager: FileManager = .default,
+        now: Date = Date()
+    ) {
+        let parent = root.deletingLastPathComponent()
+        guard parent.lastPathComponent == isolationDirectoryName else { return }
+        try? fileManager.removeItem(at: root)
+        let siblings = (try? fileManager.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles])) ?? []
+        for sibling in siblings {
+            let modified = (try? sibling.resourceValues(
+                forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            guard let modified, now.timeIntervalSince(modified) > staleIsolationAge else { continue }
+            try? fileManager.removeItem(at: sibling)
+        }
     }
 
     private static func resolveFileProviderState() -> (

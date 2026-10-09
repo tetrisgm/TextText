@@ -1,4 +1,5 @@
 import Foundation
+import TextTextWorkspaceCore
 import XCTest
 @testable import TextTextApp
 
@@ -22,6 +23,7 @@ final class AppHealthReporterTests: XCTestCase {
             stateStore: store,
             syncRootProvider: { root },
             finderStatusProvider: { .healthyFixture },
+            vaultSelectionProvider: { .none },
             bundle: bundle)
         let report = reporter.run(trigger: .releaseVerification)
 
@@ -67,6 +69,7 @@ final class AppHealthReporterTests: XCTestCase {
             stateStore: StateStore(),
             syncRootProvider: { root },
             finderStatusProvider: { .healthyFixture },
+            vaultSelectionProvider: { .none },
             bundle: bundle
         ).run(trigger: .releaseVerification)
 
@@ -107,6 +110,7 @@ final class AppHealthReporterTests: XCTestCase {
                 stateStore: StateStore(),
                 syncRootProvider: { root },
                 finderStatusProvider: { .healthyFixture },
+                vaultSelectionProvider: { .none },
                 bundle: bundle
             ).run(trigger: .releaseVerification)
         }
@@ -152,6 +156,7 @@ final class AppHealthReporterTests: XCTestCase {
             stateStore: StateStore(),
             syncRootProvider: { root },
             finderStatusProvider: { snapshots.removeFirst() },
+            vaultSelectionProvider: { .none },
             finderReadinessProbe: FileProviderReadinessProbe(
                 maximumSamples: 4, interval: 0, wait: { _ in }),
             bundle: bundle)
@@ -188,6 +193,7 @@ final class AppHealthReporterTests: XCTestCase {
             stateStore: store,
             syncRootProvider: { root },
             finderStatusProvider: { .workingFixture },
+            vaultSelectionProvider: { .none },
             finderReadinessProbe: probe,
             bundle: bundle
         ).run(trigger: .manual)
@@ -202,6 +208,7 @@ final class AppHealthReporterTests: XCTestCase {
             stateStore: store,
             syncRootProvider: { root },
             finderStatusProvider: { .warningFixture },
+            vaultSelectionProvider: { .none },
             finderReadinessProbe: probe,
             bundle: bundle
         ).run(trigger: .manual)
@@ -236,6 +243,7 @@ final class AppHealthReporterTests: XCTestCase {
             stateStore: store,
             syncRootProvider: { root },
             finderStatusProvider: { .healthyFixture },
+            vaultSelectionProvider: { .none },
             bundle: bundle)
 
         // File Provider owns a root-level Data directory for attachments. Its
@@ -285,6 +293,7 @@ final class AppHealthReporterTests: XCTestCase {
             syncRootProvider: { workspace },
             finderStatusProvider: { .healthyFixture },
             fileProviderDomainEnabledProvider: { true },
+            vaultSelectionProvider: { .none },
             bundle: bundle
         ).run(trigger: .releaseVerification)
         let storage = try XCTUnwrap(
@@ -325,6 +334,7 @@ final class AppHealthReporterTests: XCTestCase {
             syncRootProvider: { root },
             finderStatusProvider: { .healthyFixture },
             fileProviderDomainEnabledProvider: { false },
+            vaultSelectionProvider: { .none },
             bundle: bundle)
 
         let manual = reporter.run(trigger: .manual)
@@ -349,6 +359,287 @@ final class AppHealthReporterTests: XCTestCase {
         XCTAssertEqual(releaseStorageCheck.status, .pass)
         XCTAssertEqual(releaseCheck.status, .pass)
         XCTAssertEqual(release.status, .pass)
+    }
+
+    // MARK: Selected ordinary folder (iCloud or local) as the workspace home
+
+    func testSelectedVaultWithBookmarkPassesStorageAndIgnoresBrokenOptionalMount() throws {
+        let vault = try temporaryDirectory(name: "vault-selected")
+        try FileManager.default.createDirectory(
+            at: vault.appendingPathComponent("Shoku's Space", isDirectory: true),
+            withIntermediateDirectories: true)
+        // A resolved File Provider URL whose directory macOS refuses to
+        // enumerate: the live state of the preexisting CloudStorage mount.
+        let mount = try temporaryDirectory(name: "mount-broken")
+            .appendingPathComponent("TextText-TextText", isDirectory: true)
+        let state = try temporaryDirectory(name: "state-vault-selected")
+        let bundle = try releaseBundle()
+        try withStateDirectory(state) {
+            let store = StateStore()
+            store.saveCredentials(.healthFixture)
+            let bookmark = try vault.bookmarkData(
+                options: [.withSecurityScope], includingResourceValuesForKeys: nil,
+                relativeTo: nil)
+            let configuration = LocalVaultConfiguration(
+                rootPath: vault.path, bookmarkData: bookmark)
+
+            let report = AppHealthReporter(
+                stateStore: store,
+                syncRootProvider: { mount },
+                finderStatusProvider: { .healthyFixture },
+                fileProviderDomainEnabledProvider: { true },
+                vaultSelectionProvider: { .selected(configuration) },
+                bundle: bundle
+            ).run(trigger: .releaseVerification)
+            let storage = try XCTUnwrap(
+                report.checks.first(where: { $0.id == "workspace.storage" }))
+            let finder = try XCTUnwrap(
+                report.checks.first(where: { $0.id == "finder.provider" }))
+
+            XCTAssertEqual(storage.status, .pass)
+            XCTAssertEqual(storage.metrics["vault_selected"], 1)
+            XCTAssertEqual(storage.metrics["bookmark_present"], 1)
+            XCTAssertEqual(storage.metrics["bookmark_resolved"], 1)
+            XCTAssertEqual(storage.metrics["enumerated"], 1)
+            XCTAssertEqual(storage.metrics["entry_count"], 1)
+            XCTAssertEqual(storage.metrics["mount_resolved"], 0)
+            // The mount is optional with a selected folder: it does not block
+            // the release, and it is not reported healthy either.
+            XCTAssertEqual(finder.status, .warning)
+            XCTAssertEqual(finder.metrics["mount_optional"], 1)
+            XCTAssertEqual(finder.metrics["mount_resolved"], 1)
+            XCTAssertEqual(finder.metrics["mount_enumerated"], 0)
+            XCTAssertEqual(report.status, .warning)
+        }
+    }
+
+    func testSelectedVaultPassesWhenOptionalMountIsAbsentOrUsable() throws {
+        let vault = try temporaryDirectory(name: "vault-plain")
+        let state = try temporaryDirectory(name: "state-vault-plain")
+        let bundle = try releaseBundle()
+        try withStateDirectory(state) {
+            let store = StateStore()
+            store.saveCredentials(.healthFixture)
+            let configuration = LocalVaultConfiguration(
+                rootPath: vault.path, bookmarkData: nil)
+
+            let absent = AppHealthReporter(
+                stateStore: store,
+                syncRootProvider: { nil },
+                finderStatusProvider: { .healthyFixture },
+                vaultSelectionProvider: { .selected(configuration) },
+                bundle: bundle
+            ).run(trigger: .releaseVerification)
+            XCTAssertEqual(absent.status, .pass, "\(absent.checks.filter { $0.status != .pass })")
+            let absentStorage = try XCTUnwrap(
+                absent.checks.first(where: { $0.id == "workspace.storage" }))
+            XCTAssertEqual(absentStorage.metrics["bookmark_present"], 0)
+            XCTAssertEqual(absentStorage.metrics["vault_accessible"], 1)
+            let absentFinder = try XCTUnwrap(
+                absent.checks.first(where: { $0.id == "finder.provider" }))
+            XCTAssertEqual(absentFinder.status, .pass)
+            XCTAssertEqual(absentFinder.metrics["mount_resolved"], 0)
+
+            let mount = try temporaryDirectory(name: "mount-usable")
+            try FileManager.default.createDirectory(
+                at: mount.appendingPathComponent("Health workspace", isDirectory: true),
+                withIntermediateDirectories: true)
+            let usable = AppHealthReporter(
+                stateStore: store,
+                syncRootProvider: { mount },
+                finderStatusProvider: { .healthyFixture },
+                fileProviderDomainEnabledProvider: { true },
+                vaultSelectionProvider: { .selected(configuration) },
+                bundle: bundle
+            ).run(trigger: .releaseVerification)
+            let usableFinder = try XCTUnwrap(
+                usable.checks.first(where: { $0.id == "finder.provider" }))
+            XCTAssertEqual(usableFinder.status, .pass)
+            XCTAssertEqual(usableFinder.metrics["mount_optional"], 1)
+            XCTAssertEqual(usableFinder.metrics["workspace_visible"], 1)
+            XCTAssertEqual(usable.status, .pass)
+        }
+    }
+
+    func testInaccessibleSelectedVaultFailsEvenWhenMountIsHealthy() throws {
+        let missing = try temporaryDirectory(name: "vault-missing")
+            .appendingPathComponent("Workspace", isDirectory: true)
+        let mount = try temporaryDirectory(name: "mount-healthy")
+        try FileManager.default.createDirectory(
+            at: mount.appendingPathComponent("Health workspace", isDirectory: true),
+            withIntermediateDirectories: true)
+        let state = try temporaryDirectory(name: "state-vault-missing")
+        let bundle = try releaseBundle()
+        try withStateDirectory(state) {
+            let store = StateStore()
+            store.saveCredentials(.healthFixture)
+            let reportFor: (TextTextHealthVaultSelection) -> TextTextHealthReport = { selection in
+                AppHealthReporter(
+                    stateStore: store,
+                    syncRootProvider: { mount },
+                    finderStatusProvider: { .healthyFixture },
+                    fileProviderDomainEnabledProvider: { true },
+                    vaultSelectionProvider: { selection },
+                    bundle: bundle
+                ).run(trigger: .releaseVerification)
+            }
+
+            let gone = reportFor(.selected(LocalVaultConfiguration(
+                rootPath: missing.path, bookmarkData: nil)))
+            let goneStorage = try XCTUnwrap(
+                gone.checks.first(where: { $0.id == "workspace.storage" }))
+            XCTAssertEqual(goneStorage.status, .fail)
+            XCTAssertEqual(goneStorage.metrics["vault_selected"], 1)
+            XCTAssertEqual(goneStorage.metrics["present"], 0)
+            XCTAssertEqual(goneStorage.metrics["vault_accessible"], 0)
+            XCTAssertEqual(gone.status, .fail)
+
+            // A bookmark that no longer resolves is an inaccessible folder too.
+            let unresolvable = reportFor(.selected(LocalVaultConfiguration(
+                rootPath: mount.path, bookmarkData: Data("not a bookmark".utf8))))
+            let unresolvableStorage = try XCTUnwrap(
+                unresolvable.checks.first(where: { $0.id == "workspace.storage" }))
+            XCTAssertEqual(unresolvableStorage.status, .fail)
+            XCTAssertEqual(unresolvableStorage.metrics["bookmark_present"], 1)
+            XCTAssertEqual(unresolvableStorage.metrics["bookmark_resolved"], 0)
+
+            let unreadable = reportFor(.unreadable)
+            let unreadableStorage = try XCTUnwrap(
+                unreadable.checks.first(where: { $0.id == "workspace.storage" }))
+            XCTAssertEqual(unreadableStorage.status, .fail)
+            XCTAssertEqual(unreadableStorage.metrics["vault_config_readable"], 0)
+            XCTAssertEqual(unreadable.status, .fail)
+        }
+    }
+
+    func testNoSelectedVaultKeepsMountAsTheOnlyHome() throws {
+        let mount = try temporaryDirectory(name: "mount-only-home")
+            .appendingPathComponent("not-enumerable", isDirectory: true)
+        let state = try temporaryDirectory(name: "state-mount-only")
+        let bundle = try releaseBundle()
+        try withStateDirectory(state) {
+            let store = StateStore()
+            store.saveCredentials(.healthFixture)
+            let report = AppHealthReporter(
+                stateStore: store,
+                syncRootProvider: { mount },
+                finderStatusProvider: { .healthyFixture },
+                fileProviderDomainEnabledProvider: { true },
+                vaultSelectionProvider: { .none },
+                bundle: bundle
+            ).run(trigger: .releaseVerification)
+            XCTAssertEqual(
+                report.checks.first(where: { $0.id == "workspace.storage" })?.status, .fail)
+            XCTAssertEqual(
+                report.checks.first(where: { $0.id == "finder.provider" })?.status, .fail)
+            XCTAssertEqual(
+                report.checks.first(where: { $0.id == "finder.provider" })?
+                    .metrics["mount_optional"], 0)
+        }
+    }
+
+    func testVaultSelectionReadsSavedConfigurationWithoutRewritingIt() throws {
+        let directory = try temporaryDirectory(name: "vault-config")
+        let configURL = directory.appendingPathComponent("vault.json")
+        let environment = ["TEXTTEXT_VAULT_CONFIG": configURL.path]
+
+        XCTAssertEqual(TextTextHealthVaultSelection.current(environment: environment), .none)
+
+        let configuration = LocalVaultConfiguration(rootPath: directory.path, bookmarkData: nil)
+        let data = try JSONEncoder().encode(configuration)
+        try data.write(to: configURL)
+        XCTAssertEqual(
+            TextTextHealthVaultSelection.current(environment: environment),
+            .selected(configuration))
+        XCTAssertEqual(try Data(contentsOf: configURL), data)
+
+        try Data("{".utf8).write(to: configURL)
+        XCTAssertEqual(
+            TextTextHealthVaultSelection.current(environment: environment), .unreadable)
+    }
+
+    // MARK: Release-verification isolation owned by the app
+
+    func testHealthIsolationCreatesAndCleansAppOwnedRunDirectory() throws {
+        let support = try temporaryDirectory(name: "app-support")
+        var environment: [String: String] = [:]
+        let root = AppHealthCLI.prepareIsolation(
+            environment: [AppHealthCLI.isolationEnvironmentKey: "1240-123"],
+            applicationSupportDirectory: support,
+            setEnvironment: { environment[$0] = $1 })
+        let expected = support.appendingPathComponent(
+            "TextText/AppHealth/1240-123", isDirectory: true)
+        XCTAssertEqual(try XCTUnwrap(root).standardizedFileURL, expected.standardizedFileURL)
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path, isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+        XCTAssertEqual(
+            environment["TEXTTEXT_STATE_DIR"],
+            expected.appendingPathComponent("state", isDirectory: true).path)
+        XCTAssertEqual(
+            environment["TEXTTEXT_VAULT_CONFIG"],
+            expected.appendingPathComponent("vault.json").path)
+
+        // An earlier interrupted run is swept once it is older than a day; a
+        // concurrent recent run and anything outside AppHealth are left alone.
+        let parent = expected.deletingLastPathComponent()
+        let stale = parent.appendingPathComponent("1239-7", isDirectory: true)
+        let recent = parent.appendingPathComponent("1240-999", isDirectory: true)
+        let unrelated = support.appendingPathComponent("TextText/vault.json")
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: recent, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: unrelated)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -3 * 24 * 60 * 60)],
+            ofItemAtPath: stale.path)
+
+        AppHealthCLI.cleanUpIsolation(try XCTUnwrap(root))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expected.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: recent.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+    }
+
+    func testHealthIsolationRejectsPathLikeTokensAndKeepsExplicitOverrides() throws {
+        let support = try temporaryDirectory(name: "app-support-reject")
+        for token in ["", "../escape", "a/b", ".hidden", "with space", String(repeating: "x", count: 81)] {
+            XCTAssertNil(
+                AppHealthCLI.isolationRoot(token: token, applicationSupportDirectory: support),
+                "token \(token.debugDescription) must not produce a run directory")
+        }
+        XCTAssertNil(AppHealthCLI.prepareIsolation(
+            environment: [:], applicationSupportDirectory: support,
+            setEnvironment: { _, _ in XCTFail("no token must not touch the environment") }))
+
+        var environment: [String: String] = [:]
+        _ = AppHealthCLI.prepareIsolation(
+            environment: [
+                AppHealthCLI.isolationEnvironmentKey: "explicit",
+                "TEXTTEXT_STATE_DIR": "/explicit/state",
+            ],
+            applicationSupportDirectory: support,
+            setEnvironment: { environment[$0] = $1 })
+        XCTAssertNil(environment["TEXTTEXT_STATE_DIR"])
+        XCTAssertNotNil(environment["TEXTTEXT_VAULT_CONFIG"])
+
+        // Cleanup refuses a directory that is not inside AppHealth.
+        let foreign = support.appendingPathComponent("Documents/not-health", isDirectory: true)
+        try FileManager.default.createDirectory(at: foreign, withIntermediateDirectories: true)
+        AppHealthCLI.cleanUpIsolation(foreign)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: foreign.path))
+    }
+
+    private func withStateDirectory(_ state: URL, _ body: () throws -> Void) throws {
+        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
+        setenv("TEXTTEXT_STATE_DIR", state.path, 1)
+        defer {
+            if let previous {
+                setenv("TEXTTEXT_STATE_DIR", previous, 1)
+            } else {
+                unsetenv("TEXTTEXT_STATE_DIR")
+            }
+        }
+        try body()
     }
 
     private func temporaryDirectory(name: String) throws -> URL {
@@ -424,6 +715,14 @@ final class AppHealthReporterTests: XCTestCase {
         }
         return try XCTUnwrap(Bundle(url: app))
     }
+}
+
+private extension Credentials {
+    static let healthFixture = Credentials(
+        token: "wsk_health_fixture",
+        serverOrigin: "https://texttext.example",
+        tokenName: "Health fixture",
+        linkedAt: Date(timeIntervalSince1970: 0))
 }
 
 private extension FileProviderStatusSnapshot {

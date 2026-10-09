@@ -14,26 +14,28 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-"$SCRIPT_DIR/verify-apple-silicon-app.sh" "$APP" --require-extensions
+# Test-only: the script test drives this wrapper with a fixture bundle whose
+# executable is a shell stub, which cannot pass the Mach-O architecture gate.
+if [ "${TEXTTEXT_HEALTH_SKIP_BINARY_VERIFICATION:-0}" != "1" ]; then
+  "$SCRIPT_DIR/verify-apple-silicon-app.sh" "$APP" --require-extensions
+fi
 
 ROOT="$(mktemp -d -t texttext-app-health)"
-CONTAINER_STATE=""
 cleanup() {
   rm -rf "$ROOT"
-  if [ -n "$CONTAINER_STATE" ]; then rm -rf "$CONTAINER_STATE"; fi
 }
 trap cleanup EXIT
 REPORT="$ROOT/report.json"
-BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
-# The app is sandboxed. Put all app-owned health state in this bundle's own
-# container, under a unique run directory; a host /tmp override is outside the
-# app's grants and can make health checks pass only by weakening the sandbox.
-CONTAINER_STATE="$HOME/Library/Containers/$BUNDLE_ID/Data/Library/Application Support/TextText/AppHealth/$EXPECTED_BUILD-$$"
-mkdir -p "$CONTAINER_STATE"
-
-TEXTTEXT_STATE_DIR="$CONTAINER_STATE/state" \
-TEXTTEXT_VAULT_CONFIG="$CONTAINER_STATE/vault.json" \
+# The app is sandboxed. Its health state and folder selection for this run
+# live in the app's own container, under a run directory the APP creates and
+# removes (TEXTTEXT_HEALTH_ISOLATION_ID). The host cannot create directories
+# inside a sandbox container ("Operation not permitted"), and a host /tmp
+# override is outside the app's grants and could pass only by weakening the
+# sandbox. The report comes back on stdout, so nothing in the container needs
+# to be read from here.
+TEXTTEXT_HEALTH_ISOLATION_ID="$EXPECTED_BUILD-$$" \
 TEXTTEXT_HEALTH_CHECK=1 \
+  env -u TEXTTEXT_STATE_DIR -u TEXTTEXT_VAULT_CONFIG \
   "$APP/Contents/MacOS/TextText" > "$REPORT"
 
 python3 - "$REPORT" "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$REPO_ROOT/mac/health-checks.json" <<'PY'

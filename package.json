@@ -33,7 +33,7 @@
     "deploy:web": "release/deploy-web.sh",
     "verify:deployment": "tsx scripts/verify-deployment.ts",
     "promote:local": "release/promote-local.sh",
-    "promote:local:test": "release/test-promote-local.sh && mac/scripts/test-install-local.sh",
+    "promote:local:test": "release/test-promote-local.sh && mac/scripts/test-install-local.sh && mac/scripts/test-verify-app-health.sh",
     "testflight:build:test": "release/test-prepare-testflight-build.sh",
     "testflight:prepare": "release/prepare-testflight-install.sh",
     "testflight:prepare:test": "release/test-prepare-testflight-install.sh",

@@ -8,6 +8,11 @@ public struct LocalVaultConfiguration: Codable, Sendable, Equatable {
     public let bookmarkData: Data?
     public var root: URL { URL(fileURLWithPath: rootPath, isDirectory: true) }
 
+    public init(rootPath: String, bookmarkData: Data?) {
+        self.rootPath = rootPath
+        self.bookmarkData = bookmarkData
+    }
+
     public func resolvingRoot() throws -> URL {
         guard let bookmarkData else { return root }
         var stale = false
