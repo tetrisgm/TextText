@@ -402,6 +402,83 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(prior.upload, after.upload)
     }
 
+    func testCoherentSaveAfterConflictIsOfferedAgainstAttestedBase() async throws {
+        let initial = try pack("Initial")
+        let local = try pack("Local branch")
+        let remote = try pack("Remote branch")
+        let localV2 = try pack("Local branch v2")
+        let remoteV2 = try pack("Remote branch v2")
+        let localV3 = try pack("Local branch v3")
+        try putLocal(initial)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        let seeded = await transport.uploads().count
+        try putLocal(local)
+        await transport.set(itemId: itemId, path: path, data: remote)
+        let conflict = try await sync.sync()
+        XCTAssertEqual(conflict.conflicts.count, 2)
+        XCTAssertTrue(conflict.errors.isEmpty)
+        let firstConflictFolder = root.appendingPathComponent(conflict.conflicts[0]).deletingLastPathComponent()
+        let afterFirst = await transport.uploads()
+        XCTAssertEqual(afterFirst.count, seeded + 1)
+        let firstOperation = try XCTUnwrap(afterFirst.last)
+        XCTAssertEqual(firstOperation.baseRevision, TextTextStableDigest.sha256Hex(initial))
+
+        // Unchanged conflicted bytes stay fenced: no retry.
+        _ = try await sync.sync()
+        let unchanged = await transport.uploads()
+        XCTAssertEqual(unchanged.count, seeded + 1)
+        XCTAssertFalse(try LocalVaultSync.collaborationReady(root: root, path: path, itemId: itemId,
+            localHash: TextTextStableDigest.sha256Hex(local)))
+
+        // Remote advances again before the coherent save; renewed conflict stays safe.
+        await transport.set(itemId: itemId, path: path, data: remoteV2)
+        try putLocal(localV2)
+        let renewed = try await sync.sync()
+        XCTAssertTrue(renewed.errors.isEmpty)
+        XCTAssertEqual(renewed.conflicts.count, 2)
+        let second = await transport.uploads()
+        XCTAssertEqual(second.count, seeded + 2)
+        let secondOperation = try XCTUnwrap(second.last)
+        XCTAssertEqual(secondOperation.baseRevision, TextTextStableDigest.sha256Hex(initial))
+        XCTAssertNotEqual(secondOperation.operationId, firstOperation.operationId)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), localV2)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(renewed.conflicts[0])), localV2)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(renewed.conflicts[1])), remoteV2)
+        XCTAssertNotEqual(root.appendingPathComponent(renewed.conflicts[0]).deletingLastPathComponent(), firstConflictFolder)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(conflict.conflicts[0])), local)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(conflict.conflicts[1])), remote)
+        let served = try await transport.download(itemId: itemId)
+        XCTAssertEqual(served.data, remoteV2)
+
+        // Unchanged v2 bytes against the same remote: still no retry.
+        _ = try await sync.sync()
+        let stillFenced = await transport.uploads()
+        XCTAssertEqual(stillFenced.count, seeded + 2)
+
+        // Server returns to the attested base; a new coherent save lands and clears the fence.
+        await transport.set(itemId: itemId, path: path, data: initial)
+        try putLocal(localV3)
+        let landed = try await sync.sync()
+        XCTAssertTrue(landed.errors.isEmpty)
+        XCTAssertEqual(landed.uploaded, 1)
+        let third = await transport.uploads()
+        XCTAssertEqual(third.count, seeded + 3)
+        let thirdOperation = try XCTUnwrap(third.last)
+        XCTAssertEqual(thirdOperation.baseRevision, TextTextStableDigest.sha256Hex(initial))
+        XCTAssertNotEqual(thirdOperation.operationId, secondOperation.operationId)
+        let final = try await transport.download(itemId: itemId)
+        XCTAssertEqual(final.data, localV3)
+        XCTAssertTrue(try LocalVaultSync.collaborationReady(root: root, path: path, itemId: itemId,
+            localHash: TextTextStableDigest.sha256Hex(localV3)))
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        XCTAssertTrue((state["conflicts"] as? [String: Any])?.isEmpty ?? true)
+        XCTAssertNil((state["outbox"] as? [String: Any])?[itemId])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstConflictFolder.path))
+    }
+
     func testServerMergeReplacesOnlyTheUploadedLocalRevision() async throws {
         try putLocal(pack("Original"))
         let transport = FakeVaultTransport()
@@ -699,6 +776,8 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     private var tombstones: [String: LocalVaultRemoteItem] = [:]
     private var uploadedOperations: [String] = []
     private var nativeOrigins: [Bool] = []
+    private var uploadTrace: [(operationId: String, baseRevision: String?)] = []
+    func uploads() -> [(operationId: String, baseRevision: String?)] { uploadTrace }
     private var downloads = 0
     private var failBeforeCommit = false
     func failNextUploadBeforeCommit() { failBeforeCommit = true }
@@ -725,6 +804,7 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) throws -> String {
         uploadedOperations.append(operationId)
         nativeOrigins.append(nativeEditor)
+        uploadTrace.append((operationId, baseRevision))
         if failBeforeCommit { failBeforeCommit = false; throw URLError(.notConnectedToInternet) }
         if let receipt = receipts[operationId] { return receipt }
         if let merged {
