@@ -32,7 +32,7 @@ receipt saved (`/tmp/texttext-external-promotion-core.log`).
 
 This is deterministic browser/bridge regression evidence. It does not certify
 physical iCloud eviction, Windows owner-window behavior or latency percentiles.
-Deployment/install of this change remains pending.
+Oracle deployment of this change remains pending; installed-client evidence below.
 
 ## Previous reader-recovery deployment completed
 
@@ -44,3 +44,24 @@ active. HAProxy mtime remains `2026-10-01 00:11:31.941901734 +0000`.
 Actual Safari reload reopened `Finder photo share 1231`, signed in, with image
 controls and live Mac presence. A transient connection message cleared without
 Retry. Logs: `/tmp/texttext-reader-recovery-{web-verify,oracle-deploy}.log`.
+
+## Installed clients
+
+Mac **0.204 (1232)**, source `2e0e10c1`, passed exact-source core/native checks,
+signing, replacement and signed-in startup. Prior saved image reopened intact.
+Created `Notes/External file collaboration 1232.textpack` with the CLI, identity
+`351e446b-b891-4d52-a0ae-c7811fa4af8f`. Command K found it. A CLI append appeared
+in the already-open native reader without reopen. Safari opened the same file.
+Native typing appeared in Safari before Finish/Save. After Finish, independent
+CLI read contained both exact markers, and the physical Windows ZIP contained
+the same identity plus both markers. No transfer latency was measured here.
+Logs: `/tmp/texttext-mac1232-{build,install}.log`.
+
+Windows source `2e0e10c1` passed native/core/agent tests, 346 shared tests,
+TypeScript and actual interactive WPF/WebView smoke. Candidate
+`candidate-bac01f7e399b41c4a17890bc25a208c1` and staged receipt verified.
+All six current native checkpoints were neither pending nor retired before
+stopping the exact canonical process. Previous app retained at
+`TextText-previous-20261008T192102-ab35f378`. Canonical new app responds in
+interactive session 1 (PID 43856); temporary launch/smoke tasks removed.
+No user data was removed. Owner-window visual recovery remains unverified.

@@ -2,7 +2,7 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1231)**, source `c0d37699`.
+- Mac `/Applications/TextText.app`: **0.204 (1232)**, source `2e0e10c1`.
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
   finds it immediately, and the same item/title/original URL opens on Oracle.
@@ -29,8 +29,8 @@
   previous release retained. Safari reopened the saved photo and reconnected. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
   [PDF delivery](verification/2026-10-08-pdf-capture.md).
-- Windows installed source **c0d37699**, verified candidate installed and reopened
-  on interactive desktop (PID 43648).
+- Windows installed source **2e0e10c1**, verified candidate installed and reopened
+  on interactive desktop (PID 43856).
   [Recovery update and fresh image receipt](verification/2026-10-08-windows-recovery-share.md). Regression suites and actual WPF desktop
   smoke passed. The Mac Safari capture 1224 independently arrived in Windows'
   workspace with the exact identity, title and original URL. Temporary build
@@ -44,7 +44,7 @@
   task was removed. The affected 1185 note checkpoint refreshed to epoch 2, Pending false and
   RetiredReason null; old checkpoint archived automatically. Visible banner
   disappearance remains unverified.
-  Latest read-only PC inspection: canonical process 43648 responds; the affected
+  Latest read-only PC inspection: canonical process 43856 responds; the affected
   journal has zero pending updates, no batch, no unqueued dirty state and no
   retirement. No native checkpoint under the current Sync root is pending or
   retired. Visible editing acceptance still remains.
@@ -63,9 +63,14 @@
   opening, local typing before sync, and later external edits in both arrival
   orders. These checks now belong to the required core sync gate. Candidate is
   `2e0e10c1` passed the core gate (848 tests plus both browser modes). Mac build
-  1232 is running from the clean delivery clone, log `/tmp/texttext-mac1232-build.log`.
-  Windows source `C:\Users\Shokunin\dev\texttext-client-2e0e10c1` is building,
-  log `%TEMP%\texttext-windows-2e0e10c1-build.log`. Neither candidate installed yet.
+  1232 installed and passed signed-in startup, CLI creation/search, live reader
+  updates, and native typing reflected in Safari without Save. Windows installed
+  the same source; independent file inspection confirms identity and both markers.
+  Logs `/tmp/texttext-mac1232-{build,install}.log` and
+  `%TEMP%\texttext-windows-2e0e10c1-build.log`. Windows visible editor remains unverified.
+  Web verification stopped at an outdated bootstrap request-count assertion;
+  promotion intentionally performs one additional capability check. Focused test
+  now checks the exact new count and preservation of denied local drafts.
   See `verification/2026-10-08-external-file-promotion.md`.
 
 - Share attachments: installed 1229 (`95dace27`) passed signed-in startup,
