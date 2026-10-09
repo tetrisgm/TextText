@@ -21,6 +21,9 @@ search, save/reopen and direct CLI/atomic ZIP edit visibility on a test note.
 - The simultaneous Mac/PC app, browser and direct-file small-text round passed
   with all 13 edits visible and identical saved `text.md` hashes. See the
   [physical six-client receipt](verification/2026-10-09-six-client-live-edit.md).
+  A brief invalid TextPack write with both Mac editors open also recovered and
+  converged to Windows; its [receipt and native regression](verification/2026-10-09-invalid-intermediate-textpack.md)
+  are in `8616ce61`.
   The remaining fault and two-account rounds in the
   [acceptance contract](verification/six-client-sync-acceptance.md) are open.
 - Windows' older `Six-client acceptance 1232a` journal remains protected: no

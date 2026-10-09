@@ -37,7 +37,9 @@ A file snapshot over SSH proves stored content, not a visible Windows editor.
 
 The October 9 [physical six-client live-edit round](2026-10-09-six-client-live-edit.md)
 passed simultaneous small-text convergence and saved-file equality. The
-two-account and fault rounds below remain open. Earlier evidence in this
+October 9 [invalid intermediate TextPack round](2026-10-09-invalid-intermediate-textpack.md)
+passed open-editor recovery and saved-file equality after repair. The
+two-account and other fault rounds below remain open. Earlier evidence in this
 section is historical.
 
 Mac 1232 and Windows `2e0e10c1` are installed; Oracle serves `texttext-oracle-20261009T023037Z-9189ee96` after complete
