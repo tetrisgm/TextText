@@ -43,7 +43,7 @@ static class Program
     else if(method=="native.http") value=new {status=503,headers=new {},body=""};
     else value=await bridge.InvokeAsync(method!,r.GetProperty("params"),timeout.Token);
     view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new {id,result=value}));
-   } catch(Exception ex) {view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new {id,error=new {message=ex.Message}}));} };
+   } catch(Exception ex) {view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new {id,error=new {message=ex.Message,code=ex is FileChangedException ? "conflict" : ex is FileNotFoundException ? "not_found" : "NATIVE_ERROR"}}));} };
    var loaded=new TaskCompletionSource();
    view.CoreWebView2.NavigationCompleted += (_,e)=> {if(e.IsSuccess) loaded.TrySetResult(); else loaded.TrySetException(new Exception("Navigation failed: "+e.WebErrorStatus));};
    Console.WriteLine("smoke: navigating"); view.Source=new Uri("https://texttext.local/index.html"); await loaded.Task.WaitAsync(timeout.Token); Console.WriteLine("smoke: page loaded");

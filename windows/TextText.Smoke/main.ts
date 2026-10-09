@@ -1,7 +1,7 @@
 // Test-only entry. Never bundled into the production application.
 import '../../src/local-vault/windows-main';
 import { BUILTIN_TEMPLATES } from '../../src/lib/presentation/templates';
-import { vaultRequest, type VaultFile, type VaultListing } from '../../src/local-vault/bridge';
+import { vaultRequest, VaultError, type VaultFile, type VaultListing } from '../../src/local-vault/bridge';
 import { readDocument, writePayload } from '../../src/local-vault/model';
 const delay = (ms: number) => new Promise(resolve=>setTimeout(resolve,ms));
 Object.assign(window, { runDesktopSmoke: async () => {
@@ -85,11 +85,24 @@ Object.assign(window, { runDesktopSmoke: async () => {
     assert(created,`${kind}: template creation controls write correct TextPack`);
     const flush=(window as unknown as {texttextFlushForSignOut?:()=>Promise<boolean>}).texttextFlushForSignOut;
     assert(!flush||await flush(),`${kind}: creation editor flushes successfully`);
-    const fresh=await vaultRequest<VaultFile>('read',{path:created!.path});
-    const snapshot=readDocument(fresh);snapshot.content.title=`Desktop ${kind} persisted`;snapshot.content.body=`Native ${kind} saved marker`;
+    let fresh=await vaultRequest<VaultFile>('read',{path:created!.path});
+    let snapshot=readDocument(fresh);snapshot.content.title=`Desktop ${kind} persisted`;snapshot.content.body=`Native ${kind} saved marker`;
     const imageAssets=fresh.assets?.map(asset=>({filename:asset.filename,data:asset.data}))??[];
-    const changed=await vaultRequest<VaultFile>('write',writePayload(fresh,snapshot));
-    const again=await vaultRequest<VaultFile>('read',{path:changed.path});
+    let changed: VaultFile|undefined;
+    for(let attempt=0;attempt<3;attempt++) {
+      snapshot=readDocument(fresh);snapshot.content.title=`Desktop ${kind} persisted`;snapshot.content.body=`Native ${kind} saved marker`;
+      try {changed=await vaultRequest<VaultFile>('write',writePayload(fresh,snapshot));break;}
+      catch(error) {
+        // Capture enrichment may finish after the creation flush. This direct
+        // file writer must rebase its two intended fields on the latest file,
+        // just as the editor does, while retaining newly captured metadata.
+        if(!(error instanceof VaultError)||error.code!=='conflict'||attempt===2)throw error;
+        fresh=await vaultRequest<VaultFile>('read',{path:created!.path});
+        checks.push(`${kind}: rebased direct write after concurrent capture`);
+      }
+    }
+    assert(changed,`${kind}: conditional write completed`);
+    const again=await vaultRequest<VaultFile>('read',{path:changed!.path});
     assert(readDocument(again).presentation.template.id===template.id&&readDocument(again).content.body===snapshot.content.body,`${kind}: shared edit saves and reopens with template intact`);
     if(kind==='gallery') {
       assert(imageAssets.length>0&&imageAssets.every(asset=>again.assets?.some(saved=>saved.filename===asset.filename&&saved.data===asset.data)),'gallery: native image attachment survives edit and reopen byte-for-byte');

@@ -16,7 +16,7 @@ static class Program
 {
     sealed record Plan(string File, string ItemId, string Title, string RunId,
         DateTimeOffset StartUtc, int Rounds, int IntervalMs, int ObserveSeconds,
-        string[] ExpectedMarkers);
+        string[] ExpectedMarkers, string? RecoveryProfile = null);
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     static object? Field(MainWindow window, string name) => typeof(MainWindow).GetField(name, Private)?.GetValue(window);
@@ -42,7 +42,16 @@ static class Program
                 adapter = "production MainWindow + WindowsBridge", mockedTransport = false });
             var app = new Application();
             MainWindow.WorkspaceFactory = context => new WindowsBridge(context);
-            var window = new MainWindow(Path.Combine(Path.GetFullPath(args[1]), "webview-profile"));
+            var profile = Path.Combine(Path.GetFullPath(args[1]), "webview-profile");
+            if (plan.RecoveryProfile is {} recoveryProfile) {
+                foreach (var source in Directory.EnumerateFiles(recoveryProfile,"*",SearchOption.AllDirectories)) {
+                    var target=Path.Combine(profile,Path.GetRelativePath(recoveryProfile,source));
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);File.Copy(source,target,false);
+                }
+                Record(new { kind="recovery-profile-copied", source=recoveryProfile });
+            }
+            var window = new MainWindow(profile);
+            window.ActivateFiles([plan.File]);
             var exit = 1;
             // MainWindow's production Loaded callback is registered first.
             window.Loaded += async (_, _) =>
@@ -89,12 +98,13 @@ static class Program
             || !plan.Title.StartsWith("Six-client acceptance ", StringComparison.Ordinal)
             || Path.GetFileNameWithoutExtension(plan.File) != plan.Title
             || !Guid.TryParse(plan.ItemId, out _) || !System.Text.RegularExpressions.Regex.IsMatch(plan.RunId, "^[a-zA-Z0-9_-]{1,40}$")
-            || plan.Rounds is < 1 or > 32 || plan.IntervalMs is < 500 or > 10000 || plan.ObserveSeconds is < 5 or > 120
+            || plan.Rounds < (plan.RecoveryProfile is null ? 1 : 0) || plan.Rounds > 32 || plan.IntervalMs is < 500 or > 10000 || plan.ObserveSeconds is < 5 or > 120
             || plan.StartUtc < DateTimeOffset.UtcNow || plan.StartUtc > DateTimeOffset.UtcNow.AddMinutes(5)
             || plan.ExpectedMarkers is null || plan.ExpectedMarkers.Length > 256
             || plan.ExpectedMarkers.Any(value => string.IsNullOrEmpty(value) || value.Length > 100))
             throw new Exception("Invalid or expired bounded acceptance plan.");
         if (TextPackStore.Identity(File.ReadAllBytes(plan.File)) != plan.ItemId) throw new Exception("Test file identity mismatch.");
+        if(plan.RecoveryProfile is {} profile && (!Path.IsPathFullyQualified(profile)||!Directory.Exists(profile)))throw new Exception("Recovery requires an existing, preserved test profile.");
     }
 
     static async Task Until(Func<Task<bool>> condition, CancellationToken ct, string message)

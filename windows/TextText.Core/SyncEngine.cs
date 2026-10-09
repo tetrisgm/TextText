@@ -238,14 +238,17 @@ public sealed class SyncEngine
             // conflict. Their content hashes attest the original comparison;
             // never infer a base from today's file or clear arbitrary conflicts.
             if(!System.Text.RegularExpressions.Regex.IsMatch(op.Hash,@"\A[0-9a-f]{64}\z")||!System.Text.RegularExpressions.Regex.IsMatch(op.Revision!,@"\A[0-9a-f]{64}\z"))continue;
-            var recovery=store.GetRecoveryDirectory();
-            var localPath=Path.Combine(recovery,"conflict-"+op.Hash+".textpack");
-            var remotePath=Path.Combine(recovery,"remote-conflict-"+op.Revision+".textpack");
-            if(!File.Exists(localPath)||!File.Exists(remotePath))continue;
-            var original=File.ReadAllBytes(localPath);var basis=File.ReadAllBytes(remotePath);
-            if(TextPackStore.Hash(original)!=op.Hash||TextPackStore.Hash(basis)!=op.Revision||TextPackStore.Identity(original)!=op.ItemId||TextPackStore.Identity(basis)!=op.ItemId)continue;
-            var equivalent=TextPackStore.Equivalent(original,basis);
-            if(!equivalent&&!TextPackStore.ExtendsMetadata(original,basis))continue;
+            bool equivalent;
+            try {
+                var recovery=store.GetRecoveryDirectory();
+                var localPath=Path.Combine(recovery,"conflict-"+op.Hash+".textpack");
+                var remotePath=Path.Combine(recovery,"remote-conflict-"+op.Revision+".textpack");
+                if(!File.Exists(localPath)||!File.Exists(remotePath))continue;
+                var original=File.ReadAllBytes(localPath);var basis=File.ReadAllBytes(remotePath);
+                if(TextPackStore.Hash(original)!=op.Hash||TextPackStore.Hash(basis)!=op.Revision||TextPackStore.Identity(original)!=op.ItemId||TextPackStore.Identity(basis)!=op.ItemId)continue;
+                equivalent=TextPackStore.Equivalent(original,basis);
+                if(!equivalent&&!TextPackStore.ExtendsMetadata(original,basis))continue;
+            } catch(IOException) {continue;} catch(InvalidDataException) {continue;} catch(UnauthorizedAccessException) {continue;}
             state.Items[op.ItemId]=new(op.Path,equivalent?op.Hash:op.Revision!,op.Revision!,Lifecycle:op.Lifecycle);
             state.Outbox.Remove(op);Save(state);
         }

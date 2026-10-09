@@ -112,3 +112,24 @@ The earlier aa6a3bd0 Windows build passed its full build/smoke gates:
 It is not installed, and does not contain the subsequent local-editor or
 existing-conflict recovery changes. Build log:
 `C:\Users\Shokunin\dev\texttext-aa6a3bd0-build-retry.log`.
+
+## Restart preservation and combined-build gate
+
+The failed 3319 test process (PID 47808, command identity checked) was stopped
+after extracting and validating its durable draft. All six PC app markers occur
+exactly once; its draft base contains markers 00 through 02. The current file,
+complete stopped WebView profile, sync state and test receipts are retained in
+`C:\Users\Shokunin\dev\full1235-preserved-before-restart`.
+Mac copies include `pc-preserved-draft.json`, `pc-local-storage-000003.log` and
+`pc-before-restart.textpack` under the existing receipt directory. The recovery
+runner can copy this profile into a fresh receipt directory and observe with
+zero input rounds; it does not mutate the preserved source profile.
+
+The fa41f330 build failed Windows smoke testing on a bookmark-capture/direct-write
+CAS race. Its smoke bridge omitted production error codes. The smoke bridge now
+returns conflict/not-found codes and the test rebases its intended title/body
+on fresh captured data with a bounded retry. This still needs a physical rerun.
+The code and runner compile on Mac; TypeScript passes. Claude's second review
+also prompted isolation of unreadable/corrupt old recovery archives; the added
+negative regression reproduced the exception and now passes in the native suite.
+No combined candidate has been installed yet.

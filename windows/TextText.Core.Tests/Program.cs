@@ -9,16 +9,17 @@ static class Test
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(){var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
- foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed","legacy-conflict","legacy-missing-proof"}) {
+ foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed","legacy-conflict","legacy-missing-proof","legacy-corrupt-proof"}) {
  var metadataStore=new TextPackStore(Path.Combine(temp,"metadata-"+failure),Path.Combine(temp,"metadata-state-"+failure));
  var remoteBytes=TextPackStore.WithDocument(Pack("same body","metadata-id"),"---\ntextTextId: \"metadata-id\"\n---\nsame body","{\"schemaVersion\":1,\"content\":{\"body\":\"same body\"}}");
  var localBytes=TextPackStore.WithDocument(remoteBytes,"---\ntextTextId: \"metadata-id\"\nworkspace: \"Workspace\"\nmode: \"notes\"\nslug: \"Notes/Metadata.textpack\"\nexcerpt: \"\"\n---\nsame body","{\"content\":{\"body\":\"same body\"},\"schemaVersion\":1}");
  var metadataFile=metadataStore.Write("Notes/Metadata.textpack",localBytes);
  var metadataRemote=new Fake{Data=remoteBytes,Item=new("metadata-id",metadataFile.Path,TextPackStore.Hash(remoteBytes)),FailAfterCommit=failure=="lost-ack",FailBeforeCommit=failure is "before-commit" or "server-changed"};
  if(failure.StartsWith("legacy-")) {
-     metadataStore.Preserve(localBytes,"conflict");
-     if(failure=="legacy-conflict")metadataStore.Preserve(remoteBytes,"remote-conflict");
-     var legacyState=new SyncEngine.State();legacyState.Outbox.Add(new(Guid.NewGuid().ToString(),"conflict","metadata-id",metadataFile.Path,null,TextPackStore.Hash(remoteBytes),metadataFile.Hash,null,true));
+     var proof=failure=="legacy-corrupt-proof"?new byte[]{1,2,3}:localBytes;
+     metadataStore.Preserve(proof,"conflict");
+     if(failure!="legacy-missing-proof")metadataStore.Preserve(remoteBytes,"remote-conflict");
+     var legacyState=new SyncEngine.State();legacyState.Outbox.Add(new(Guid.NewGuid().ToString(),"conflict","metadata-id",metadataFile.Path,null,TextPackStore.Hash(remoteBytes),TextPackStore.Hash(proof),null,true));
      TextPackStore.AtomicWrite(Path.Combine(metadataStore.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(legacyState));
      localBytes=TextPackStore.WithDocument(localBytes,TextPackStore.Markdown(localBytes)+" later CLI edit","{\"schemaVersion\":1,\"content\":{\"body\":\"same body later CLI edit\"}}");
      metadataStore.Write(metadataFile.Path,localBytes,metadataFile.Hash);
@@ -34,7 +35,7 @@ static class Test
      continue;
  }
  await new SyncEngine(metadataStore,metadataRemote).SyncAsync();
- if(failure=="legacy-missing-proof") {
+ if(failure is "legacy-missing-proof" or "legacy-corrupt-proof") {
      Assert(metadataRemote.UploadCount==0&&metadataRemote.Data.SequenceEqual(remoteBytes)&&metadataStore.Read(metadataFile.Path).SequenceEqual(localBytes)&&!await metadataSync.IsReadyAsync("metadata-id"),"unattested legacy conflict remains protected");continue;
  }
  Assert(metadataRemote.UploadCount==1&&metadataRemote.Data.SequenceEqual(localBytes)&&metadataStore.Read(metadataFile.Path).SequenceEqual(localBytes),"additive metadata preserved exactly across "+failure);
