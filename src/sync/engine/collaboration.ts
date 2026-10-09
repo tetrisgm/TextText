@@ -7,9 +7,11 @@ import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { openPack, encodePack } from "@/local-vault/pack";
 import { readDocument, readTemplate, writePayload } from "@/local-vault/model";
+import { reconcileDocumentSnapshots } from "./reconcile";
 
 export type VaultCollaborationState = { epoch: number; seq: number; revision: string; update: string };
 export const MAX_VAULT_COLLABORATION_BYTES = 4 * 1024 * 1024;
+export type RetainedCollaborationEpoch = { version: 1; state: VaultCollaborationState; deleted: boolean };
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 function canonicalJSON(value: unknown): string {
   return JSON.stringify(value, (_key, entry) => entry && typeof entry === "object" && !Array.isArray(entry)
@@ -172,4 +174,39 @@ export function applyVaultCollaboration(state: VaultCollaborationState, currentP
     }
     return { state: { epoch: state.epoch, seq: state.seq + 1, revision: hash(bytes), update }, bytes };
   } finally { doc.destroy(); }
+}
+
+/** Recover against the last authoritative binary state of the old epoch.
+ * Merging Yjs first deduplicates lost acknowledgements and includes server edits
+ * the offline writer never saw. This is a pure preparation step; callers must
+ * authorize and commit under the normal store lock and preserve the old journal.
+ * Cross exactly one boundary; skipping epochs could skip a deletion barrier.
+ */
+export function reconcileVaultCollaborationEpoch(retained: RetainedCollaborationEpoch,
+  pendingState: string, current: VaultCollaborationState, currentBytes: Uint8Array,
+  relativePath = "Document.textpack") {
+  if (retained.version !== 1 || retained.deleted !== false || !Number.isSafeInteger(retained.state.epoch) ||
+      retained.state.epoch < 1 || retained.state.epoch + 1 !== current.epoch || !/^[a-f0-9]{64}$/.test(retained.state.revision)) {
+    throw new Error("This collaboration lifecycle cannot be recovered automatically.");
+  }
+  const previous = new Y.Doc(), local = new Y.Doc(), remote = new Y.Doc();
+  try {
+    const limit = Math.ceil(MAX_VAULT_COLLABORATION_BYTES / 3) * 4;
+    const oldBytes = decode(retained.state.update, limit);
+    Y.applyUpdate(previous, oldBytes);
+    const base = checkedSnapshot(previous);
+    Y.applyUpdate(local, oldBytes);
+    Y.applyUpdate(local, decode(pendingState, limit));
+    const recovered = checkedSnapshot(local);
+    // Also attest the current binary state against its actual TextPack bytes.
+    applyVaultCollaboration(current, currentBytes, ["AAA="], relativePath);
+    Y.applyUpdate(remote, decode(current.update, limit));
+    const merged = reconcileDocumentSnapshots(base, recovered, checkedSnapshot(remote), { concurrentInsertions: "remote-first" });
+    if (merged.status === "conflict") return { status: "conflict" as const, paths: merged.paths };
+    const vector = Y.encodeStateVector(remote);
+    applyDocumentSnapshot(remote, merged.document, "retained-epoch-recovery");
+    const update = Buffer.from(Y.encodeStateAsUpdate(remote, vector)).toString("base64");
+    const result = applyVaultCollaboration(current, currentBytes, [update], relativePath);
+    return { status: "merged" as const, ...result };
+  } finally { previous.destroy(); local.destroy(); remote.destroy(); }
 }

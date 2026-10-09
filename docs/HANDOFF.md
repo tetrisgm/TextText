@@ -14,6 +14,8 @@ storage alone is insufficient. See the experiment README for limits and commands
 Oracle now serves `texttext-oracle-20261009T045727Z-6b940d3e`, including concurrent
 file appends and template sidecar changes that preserve the current Yjs epoch;
 [regression and delivery limits](verification/2026-10-08-template-continuity.md).
+Epoch recovery work now retains the authoritative binary state before resets and
+prepares a deduplicated merge; [scope and remaining integration](verification/2026-10-08-epoch-recovery.md).
 
 ## Active sync repair
 

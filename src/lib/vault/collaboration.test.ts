@@ -7,7 +7,7 @@ import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { documentText, documentFields, documentTheme, documentPresentation } from "@/lib/collab/document";
 import { openPack } from "@/local-vault/pack";
 import { readDocument } from "@/local-vault/model";
-import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, MAX_VAULT_COLLABORATION_BYTES } from "./collaboration";
+import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, reconcileVaultCollaborationEpoch, MAX_VAULT_COLLABORATION_BYTES } from "./collaboration";
 
 function fixture() {
   const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
@@ -28,6 +28,47 @@ function mutation(doc: Y.Doc, change: () => void) {
 }
 
 describe("file pack full-document collaboration", () => {
+  it("recovers an old epoch without duplicating lost ACKs or dropping unseen accepted edits", () => {
+    const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1);
+    const writer = client(initial.update);
+    try {
+      const accepted = mutation(writer, () => documentText(writer, "body").insert(5, " [accepted]"));
+      const committed = applyVaultCollaboration(initial, bytes, [accepted]);
+      const unseen = client(committed.state.update);
+      let finalOld;
+      try {
+        const update = mutation(unseen, () => documentText(unseen, "body").insert(0, "[unseen] "));
+        finalOld = applyVaultCollaboration(committed.state, committed.bytes, [update]);
+      } finally { unseen.destroy(); }
+      // No ACK/read reaches writer. It keeps working from its old Yjs state.
+      documentText(writer, "body").insert(documentText(writer, "body").length, " [pc-cli]");
+      const snapshot = readDocument(openPack(finalOld.bytes, "Note.textpack", finalOld.state.revision).file);
+      snapshot.content.body += " [mac-cli]";
+      const replaced = buildTextpack("Shared", { document: snapshot, markdown: `---\ntextTextId: item-1\n---\n\n${snapshot.content.body}` });
+      const current = seedVaultCollaboration(replaced, "item-1", 2);
+      const result = reconcileVaultCollaborationEpoch({ version: 1, deleted: false, state: finalOld.state }, encode(Y.encodeStateAsUpdate(writer)), current, replaced);
+      expect(result.status).toBe("merged");
+      if (result.status !== "merged") throw Error("Expected recovery");
+      const recovered = readDocument(openPack(result.bytes, "Note.textpack", result.state.revision).file).content.body;
+      for (const marker of ["[accepted]", "[unseen]", "[pc-cli]", "[mac-cli]"]) expect(recovered.split(marker)).toHaveLength(2);
+      expect(result.state.epoch).toBe(2);
+      expect(() => reconcileVaultCollaborationEpoch({ version: 1, deleted: true, state: finalOld.state }, encode(Y.encodeStateAsUpdate(writer)), current, replaced)).toThrow(/lifecycle/);
+      expect(() => reconcileVaultCollaborationEpoch({ version: 1, deleted: false, state: finalOld.state }, encode(Y.encodeStateAsUpdate(writer)), { ...current, epoch: 3 }, replaced)).toThrow(/lifecycle/);
+    } finally { writer.destroy(); }
+  });
+
+  it("does not turn conflicting old-epoch replacements into a writable result", () => {
+    const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1), local = client(initial.update);
+    try {
+      const text = documentText(local, "body"); text.delete(0, text.length); text.insert(0, "Local replacement");
+      const snapshot = readDocument(openPack(bytes, "Note.textpack", initial.revision).file); snapshot.content.body = "Remote replacement";
+      const remoteBytes = buildTextpack("Shared", { document: snapshot, markdown: "---\ntextTextId: item-1\n---\n\nRemote replacement" });
+      const remote = seedVaultCollaboration(remoteBytes, "item-1", 2);
+      expect(reconcileVaultCollaborationEpoch({ version: 1, state: initial, deleted: false }, encode(Y.encodeStateAsUpdate(local)), remote, remoteBytes))
+        .toEqual({ status: "conflict", paths: ["/content/body"] });
+    } finally { local.destroy(); }
+  });
+
   it("rejects changed malformed template sidecars but preserves unchanged legacy provenance", () => {
     const entries = unzipSync(fixture());
     entries["Shared.textbundle/template-source.json"] = strToU8('{"legacy":true}');

@@ -502,6 +502,7 @@ async function applyEntry(layout: Layout, intent: EntryIntent, pendingDir: strin
       }
     }
   }
+  if (result.status === "deleted") await observeCollaborationRevision(layout, intent.itemId, null);
   const receipt: Receipt<VaultEntryResult> = { requestHash: intent.requestHash, result, ...(intent.audit ? {
     mutation: { workspaceId: intent.workspaceId, operationId: intent.operationId, ...intent.audit, result },
   } : {}) };
@@ -613,6 +614,11 @@ async function applyRestore(layout: Layout, intent: RestoreIntent, pendingDir: s
     // persists until every step and its audit receipt are durable.
     await atomicWrite(path.join(await directory(layout.control, "lifecycles"), `${intent.itemId}.json`), json({ marker: strFromU8(marker), lifecycle: intent.operationId, restoreFromRevision: intent.baseRevision }));
     const state = seedVaultCollaboration(payload, intent.itemId, intent.epoch);
+    const prior = await maybeRead(path.join(layout.collaboration, `${intent.itemId}.json`));
+    if (prior) {
+      const previous = JSON.parse(prior.toString()) as VaultCollaborationState;
+      if (previous.epoch < intent.epoch) await retainCollaborationEpoch(layout, intent.itemId, previous, true);
+    }
     await atomicWrite(path.join(layout.collaboration, `${intent.itemId}.json`), json(state));
     await atomicWrite(path.join(await directory(layout.history, intent.itemId), `${intent.revision}.textpack`), payload);
     if (!current && !await createExclusive(target, payload)) throw new VaultBusyError();
@@ -908,13 +914,42 @@ async function projectObservedMarkdown(layout: Layout, itemId: string, state: Va
   } catch { return null; }
 }
 
+async function retainCollaborationEpoch(layout: Layout, itemId: string, state: VaultCollaborationState, deleted = false) {
+  if (!Number.isSafeInteger(state.epoch) || state.epoch < 1) throw new Error("Invalid collaboration epoch");
+  const folder = await directory(layout.collaboration, `${segment(itemId)}.epochs`);
+  const target = path.join(folder, `${state.epoch}.json`);
+  const existing = await maybeRead(target);
+  if (existing) {
+    // A later deletion is a lifecycle barrier, even if a file replacement
+    // already invalidated this epoch. Never downgrade that barrier on reopen.
+    const retained = JSON.parse(existing.toString());
+    if (retained.version !== 1 || retained.state?.epoch !== state.epoch) throw new Error("Invalid retained collaboration epoch");
+    // A crash can leave the archive durable before invalidation becomes
+    // durable. If that epoch is still live, capture its latest accepted state
+    // at the next boundary rather than keeping the abandoned earlier attempt.
+    const next = { ...retained, state: /^[a-f0-9]{64}$/.test(state.revision) ? state : retained.state,
+      deleted: retained.deleted || deleted };
+    if (json(next) !== json(retained)) await atomicWrite(target, json(next));
+    return;
+  }
+  // Older installations may already have discarded the revision. Do not
+  // fabricate a recoverable causal baseline for those records.
+  if (!/^[a-f0-9]{64}$/.test(state.revision)) return;
+  await atomicWrite(target, json({ version: 1, state, deleted }));
+  await syncDirectory(layout.collaboration);
+}
+
 async function observeCollaborationRevision(layout: Layout, itemId: string, revision: string | null,
   rawFileObservation = false) {
   const file = path.join(layout.collaboration, `${segment(itemId)}.json`);
   const raw = await maybeRead(file);
   if (!raw) return;
   const state = JSON.parse(raw.toString()) as VaultCollaborationState;
-  if (!state.revision || state.revision === revision) return;
+  if (!state.revision) {
+    if (revision === null) await retainCollaborationEpoch(layout, itemId, state, true);
+    return;
+  }
+  if (state.revision === revision) return;
   if (rawFileObservation && revision) {
     const item = await collaborationItem(layout, itemId);
     if (item && item.revision === revision) {
@@ -926,6 +961,7 @@ async function observeCollaborationRevision(layout: Layout, itemId: string, revi
       }
     }
   }
+  await retainCollaborationEpoch(layout, itemId, state, revision === null);
   await atomicWrite(file, json({ ...state, revision: "" }));
 }
 async function collaborationItem(layout: Layout, itemId: string) {
@@ -967,6 +1003,7 @@ async function collaborationCheckpoint(layout: Layout, itemId: string, item: Non
     }
   }
   const state = seedVaultCollaboration(item.bytes, itemId, saved ? saved.epoch + 1 : 1);
+  if (saved) await retainCollaborationEpoch(layout, itemId, saved);
   const historyPath = path.join(await directory(layout.history, itemId), `${item.revision}.textpack`);
   const history = await maybeRead(historyPath);
   if (history && hash(history) !== item.revision) throw new Error("Collaboration history is corrupt");

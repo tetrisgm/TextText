@@ -258,6 +258,33 @@ describe("durable file collaboration", () => {
     expect(reopened.epoch).toBe(initial.epoch + 1);
     await expect(push("stale-after-metadata", initial, edit(initial, " stale")))
       .rejects.toBeInstanceOf(VaultCollaborationEpochError);
+    const retained = JSON.parse(await fs.readFile(path.join(root, workspaceId, ".texttext/collaboration", `${itemId}.epochs`, `${initial.epoch}.json`), "utf8"));
+    expect(retained).toEqual({ version: 1, deleted: false, state: {
+      epoch: initial.epoch, seq: initial.seq, revision: initial.revision, update: initial.update,
+    } });
+  });
+
+  it("retains accepted CRDT identities before raw replacement and never downgrades a deletion barrier", async () => {
+    const original = (await readVaultCollaboration(location()))!;
+    // Simulate a crash after archive persistence but before invalidation. The
+    // live epoch can still accept work if the external replacement was undone.
+    const archiveFolder = path.join(root, workspaceId, ".texttext/collaboration", `${itemId}.epochs`);
+    await fs.mkdir(archiveFolder);
+    await fs.writeFile(path.join(archiveFolder, `${original.epoch}.json`), JSON.stringify({ version: 1, deleted: false,
+      state: { epoch: original.epoch, seq: original.seq, revision: original.revision, update: original.update } }));
+    await push("accepted-before-reset", original, edit(original, " accepted"));
+    const accepted = (await readVaultCollaboration(location()))!;
+    const changed = pack("External replacement");
+    await fs.writeFile(path.join(root, workspaceId, relativePath), changed);
+    await readVaultTextpack(location()); // invalidates, without opening the next epoch
+    const archive = path.join(root, workspaceId, ".texttext/collaboration", `${itemId}.epochs`, `${accepted.epoch}.json`);
+    const retained = JSON.parse(await fs.readFile(archive, "utf8"));
+    expect(retained.state.update).toBe(accepted.update);
+    expect(retained.state.revision).toBe(accepted.revision);
+    await deleteVaultTextpack({ ...location(), operationId: "delete-invalidated", basePath: relativePath, baseRevision: hash(changed) });
+    expect(JSON.parse(await fs.readFile(archive, "utf8")).deleted).toBe(true);
+    await readVaultTextpack(location());
+    expect(JSON.parse(await fs.readFile(archive, "utf8")).deleted).toBe(true);
   });
 
   it("projects a raw Markdown-only file edit observed through the cached listing", async () => {
