@@ -37,6 +37,21 @@ function equal(a: Value, b: Value): boolean {
 
 interface TextEdit { start: number; end: number; replacement: string }
 
+/** Map an accepted external body edit through the local edit. Unlike diffing
+ * the merged text, this preserves authorship of equal boundary characters
+ * (for example the space at the beginning of a person's pending append). */
+export function externalBodyEdit(base: string, local: string, external: string): TextEdit | null {
+  if (external === base || external === local) return null;
+  const incoming = edit(base, external);
+  if (local === base) return incoming;
+  const own = edit(base, local);
+  if (own.end <= incoming.start && own.start < incoming.start) {
+    const shift = own.replacement.length - (own.end - own.start);
+    return { ...incoming, start: incoming.start + shift, end: incoming.end + shift };
+  }
+  return incoming;
+}
+
 /** Linear scan and constant auxiliary memory, including for very large notes.
  * Multiple edits on one side become a single conservative replacement span. */
 function edit(base: string, changed: string): TextEdit {

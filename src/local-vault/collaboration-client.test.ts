@@ -58,6 +58,24 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
+  it("keeps human undo history separate from an in-place external insertion", async () => {
+    const server = new Server(), editor = client(server);
+    await editor.start();
+    const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
+    base.content.title = "Shared"; base.content.body = "Hello";
+    const body = documentText(editor.doc, "body");
+    const undo = new Y.UndoManager(body, { captureTimeout: 0 });
+    try {
+      editor.mutate(() => body.insert(body.length, " human"));
+      const external = structuredClone(base); external.content.body += " CLI";
+      expect(editor.reconcileExternalDocument(base, external)).toBe(true);
+      expect(body.toString()).toBe("Hello CLI human");
+      undo.undo();
+      expect(body.toString()).toBe("Hello CLI");
+      undo.redo();
+      expect(body.toString()).toBe("Hello CLI human");
+    } finally { undo.destroy(); }
+  });
   it("does not overwrite an overlapping external replacement during checkpoint reconciliation", async () => {
     const server = new Server(), journal = new Journal();
     const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });

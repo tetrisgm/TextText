@@ -168,6 +168,10 @@ try {
   assert.equal(sharedOpens, 1, "External file edits must retain the native session.");
   assert.match(await page.getByRole("textbox", { name: "Document body" }).innerText(), /Agent external edit\. Pending human edit\./);
   assert.ok(await editor!.evaluate(node => node.isConnected && node === document.activeElement), "Editor and focus must survive the merge.");
+  await page.keyboard.press("Control+z");
+  assert.equal(await page.getByRole("textbox", { name: "Document body" }).innerText(), "Typed before the first sync. Agent external edit.");
+  await page.keyboard.press("Control+Shift+z");
+  assert.match(await page.getByRole("textbox", { name: "Document body" }).innerText(), /Agent external edit\. Pending human edit\./);
   await page.keyboard.insertText(" Still typing.");
   await until(() => JSON.parse(current.file.documentJSON!).content.body.includes("Still typing."), "typing after in-place merge");
   await until(() => openPack(remoteBytes, notePath, remoteState!.revision).file.markdown.includes("Still typing."), "typing reaching the relay");

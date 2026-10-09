@@ -1,6 +1,7 @@
 import * as Y from "yjs";
-import { applyDocumentSnapshot, documentSnapshotFromYDoc, hasDocumentSnapshot } from "@/lib/collab/document";
-import { reconcileDocumentSnapshots } from "./reconcile";
+import { applyDocumentSnapshot, documentSnapshotFromYDoc, documentText, hasDocumentSnapshot } from "@/lib/collab/document";
+import { replaceSharedText } from "@/lib/collab/text-transactions";
+import { externalBodyEdit, reconcileDocumentSnapshots } from "./reconcile";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -370,9 +371,16 @@ export class FileCollaborationClient {
   /** Merge a native file revision without replacing the Y.Doc or editor binding. */
   reconcileExternalDocument(base: DocumentSnapshot, external: DocumentSnapshot): boolean {
     if (!this.initialized || !this.canEdit || this.frozen || this.dead) return false;
-    const result = reconcileDocumentSnapshots(base, this.snapshot(), external, { concurrentInsertions: "remote-first" });
+    const current = this.snapshot();
+    const result = reconcileDocumentSnapshots(base, current, external, { concurrentInsertions: "remote-first" });
     if (result.status !== "merged") return false;
-    this.mutate(doc => applyDocumentSnapshot(doc, result.document, "external-file"));
+    const bodyEdit = externalBodyEdit(base.content.body, current.content.body, external.content.body);
+    const projected = bodyEdit ? current.content.body.slice(0, bodyEdit.start) + bodyEdit.replacement + current.content.body.slice(bodyEdit.end) : current.content.body;
+    if (projected !== result.document.content.body) return false;
+    this.mutate(doc => {
+      applyDocumentSnapshot(doc, { ...result.document, content: { ...result.document.content, body: current.content.body } }, "external-file");
+      if (bodyEdit) replaceSharedText(documentText(doc, "body"), bodyEdit.start, bodyEdit.end - bodyEdit.start, bodyEdit.replacement, "external-file");
+    });
     return !this.frozen;
   }
   private load(): FileCollaborationJournal | null {

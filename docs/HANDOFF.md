@@ -29,6 +29,14 @@ Runner now captures heading/notices/editor availability on failure; rebuild
 passed with zero warnings/errors (`/tmp/texttext-inplace-runner-build.log`).
 Deploy that diagnostic runner to a fresh test directory and diagnose activation
 before scheduling another simultaneous run. Canonical installed clients unchanged.
+The diagnostic retry in `texttext-live-acceptance-cff` opened and edited the same
+fixture successfully; activation failure is intermittent, not explained or fixed.
+Receipts `/tmp/texttext-cff-{events.jsonl,result.json}`. No concurrent file actor
+ran in that retry. Further regression exposed loss of human undo after snapshot
+replacement. The repair now maps the external body's edit through the pending
+local edit and checks it against the validated merge before touching Yjs.
+Unit and real browser undo/redo preserve the CLI insertion. Gate log
+`/tmp/texttext-inplace-undo-core.log`; physical collision rerun still required.
 No six-client pass has been obtained.
 
 ## Authoritative delivery
