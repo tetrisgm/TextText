@@ -30,13 +30,20 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     string? lastStatus;
     int permissionsChanged;
     long durabilityVersion, notifiedDurabilityVersion;
+    // Last permissions read under the sync gate. Startup listings reuse it while
+    // a remote sync pass holds the gate instead of leaving the renderer blank.
+    (WorkspaceCapabilities? Capabilities, IReadOnlyDictionary<string,bool> Items)? knownPermissions;
+    /// <summary>Longest a read-only listing or readiness query waits for the sync gate. The renderer gives up on bootstrap reads after 8 seconds and lists twice.</summary>
+    public static readonly TimeSpan GateWait = TimeSpan.FromSeconds(2);
 
-    public WindowsBridge(WorkspaceContext context)
+    public WindowsBridge(WorkspaceContext context) : this(context, null, null) { }
+    /// <summary>Tests supply the sync transport and state directory; the application always uses the HTTP transport and the per-binding state directory.</summary>
+    public WindowsBridge(WorkspaceContext context, ISyncTransport? transport, string? stateDirectory)
     {
         this.context = context;
         var binding = TextPackStore.Hash(Encoding.UTF8.GetBytes(context.Origin.AbsoluteUri + "\n" + context.WorkspaceId + "\n" + context.Root));
-        files = new(context.Root, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TextText", "Sync", binding));
-        sync = new(files, new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));
+        files = new(context.Root, stateDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TextText", "Sync", binding));
+        sync = new(files, transport ?? new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));
         editing = new(files, sync);
         agent = new(context.Root, context.WorkspaceId, context.Emit, ExecuteAgentTool);
         notification = new(_ => { if (!lifetime.IsCancellationRequested) _ = context.Emit("texttext:vault-changed", new { }); }, null, Timeout.Infinite, Timeout.Infinite);
@@ -68,6 +75,14 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         if(version!=Volatile.Read(ref inventoryVersion))Volatile.Write(ref inventory,null);
         return scanned;
     }
+    /// <summary>Runs a gate-protected sync read, giving up after <see cref="GateWait"/> when a sync pass holds the gate. Returns null only for that timeout; caller cancellation still throws.</summary>
+    async Task<T?> BoundedGateRead<T>(Func<CancellationToken,Task<T>> read, CancellationToken ct) where T : struct
+    {
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
+        bounded.CancelAfter(GateWait);
+        try { return await read(bounded.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !lifetime.IsCancellationRequested) { return null; }
+    }
     PackFile Find(string id) => Inventory().Files.SingleOrDefault(file => file.ItemId == id) ?? throw new FileNotFoundException("Document is not available on this device.");
     static string Required(JsonElement p, string key) => p.GetProperty(key).GetString() ?? throw new InvalidDataException("Missing " + key);
     static string? Optional(JsonElement p, string key) => p.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
@@ -85,9 +100,12 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     // at least every 30 seconds under continuous local typing.
                     var localOnly = localWake && failures == 0 && DateTimeOffset.UtcNow - lastRemotePass < TimeSpan.FromSeconds(30);
                     if (!localOnly) lastRemotePass = DateTimeOffset.UtcNow;
-                    await sync.SyncAsync(lifetime.Token, localChangesOnly: localOnly);
+                    try { await sync.SyncAsync(lifetime.Token, localChangesOnly: localOnly); }
+                    finally {
+                        // A listing served without the gate must be replaced once this pass releases it, whether or not the pass succeeded.
+                        if(Interlocked.Exchange(ref permissionsChanged,0)!=0 && !lifetime.IsCancellationRequested) await context.Emit("texttext:vault-changed",new { });
+                    }
                     failures = 0;
-                    if(Interlocked.Exchange(ref permissionsChanged,0)!=0) await context.Emit("texttext:vault-changed",new { });
                     var status = sync.Status.Error is null ? "ready" : "conflict";
                     var completedVersion = Volatile.Read(ref durabilityVersion);
                     if (lastStatus != status || notifiedDurabilityVersion != completedVersion) {
@@ -135,16 +153,30 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                         return Result(restored);
                     }
                     case "files.recoveryDirectory": return files.GetRecoveryDirectory();
-                    case "files.ready": return new { ready = await sync.IsReadyAsync(Required(p, "itemId"), ct) };
+                    case "files.ready": {
+                        // Readiness decides whether the editor joins shared editing now. While a
+                        // sync pass holds the gate the document opens locally and is promoted
+                        // after the pass reports status, so answering "not ready" is safe.
+                        var itemId = Required(p, "itemId");
+                        var ready = await BoundedGateRead(gated => sync.IsReadyAsync(itemId, gated), ct);
+                        return new { ready = ready ?? false };
+                    }
                     case "files.list": {
-                        var capabilities = await sync.CapabilitiesAsync(ct);
                         var snapshot = Inventory();
                         var items = snapshot.Files;
-                        var permissions = await sync.FilePermissionsAsync(items,context.Access == "owner",ct);
+                        var owner = context.Access == "owner";
+                        var read = await BoundedGateRead(async gated => (await sync.CapabilitiesAsync(gated), await sync.FilePermissionsAsync(items, owner, gated)), ct);
+                        if (read is { } current) knownPermissions = current;
+                        else {
+                            // The remote pass holds the gate. Serve the last authoritative permissions
+                            // (or the ownership default) and refresh the renderer once the pass ends.
+                            Interlocked.Exchange(ref permissionsChanged, 1);
+                        }
+                        var (capabilities, permissions) = read ?? knownPermissions ?? (null, new Dictionary<string,bool>());
                         var folders = snapshot.Folders;
                         return (object)new { root = context.Root, name = Path.GetFileName(context.Root), folders,
-                            fullAccess=capabilities?.FullAccess ?? context.Access == "owner",canCreateContent=capabilities?.CanCreateContent ?? context.Access == "owner",writableFolders=capabilities?.WritableFolders ?? [],
-                            items = items.Select(f => new { canEditContent=permissions[f.ItemId],itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
+                            fullAccess=capabilities?.FullAccess ?? owner,canCreateContent=capabilities?.CanCreateContent ?? owner,writableFolders=capabilities?.WritableFolders ?? [],
+                            items = items.Select(f => new { canEditContent=permissions.TryGetValue(f.ItemId,out var allowed) ? allowed : capabilities?.CanWrite(f.ItemId,f.Path,false) ?? owner,itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
                             revision = TextPackStore.Hash(Encoding.UTF8.GetBytes(string.Join('\n', folders.Select(folder => "folder:"+folder).Concat(items.OrderBy(f => f.Path).Select(f => f.Path + ":" + f.Hash))))) };
                     }
                     case "files.read": {

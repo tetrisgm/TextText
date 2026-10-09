@@ -12,7 +12,6 @@ using Microsoft.Web.WebView2.Wpf;
 using TextText.Core;
 namespace TextText.Windows;
 
-public sealed record WorkspaceContext(string Root, string WorkspaceId, Uri Origin, Func<Task<string>> TokenProvider, Func<string,object?,Task> Emit, string Access = "owner");
 public sealed partial class MainWindow : Window
 {
     public static Func<WorkspaceContext, INativeWorkspaceBridge>? WorkspaceFactory { get; set; }
