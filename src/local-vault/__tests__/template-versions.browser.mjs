@@ -38,6 +38,7 @@ window.render=(creation=true)=>app.render(<WorkspaceTypeLibrary currentTemplate=
  }
  await page.evaluate(()=>window.render(false));
  const choose=page.getByRole('dialog',{name:'Choose a look'});
+ await choose.getByRole('button',{name:'Same name',exact:true}).first().waitFor();
  assert.equal(await choose.getByRole('button',{name:'Same name',exact:true}).count(),3);
  await choose.getByRole('button',{name:'Same name',exact:true}).first().click();
  assert.deepEqual(await page.evaluate(()=>window.chosen),['Templates/new.textpack',1]);
