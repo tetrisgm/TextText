@@ -26,6 +26,12 @@ one-off test setup faults: PowerShell wrote a BOM to Edge's JSON plan, and the
 direct PC actor lacked a receipt directory for its atomic backup. Correcting
 those setup faults allowed the complete round. Preserve both sets of receipts.
 
+The checked-in PC file actor was then rerun as `harness1241e` with a fresh
+receipt directory it created itself; atomic replacement completed and wrote
+`cli-receipts-e/pc-cli.json`. The Edge plan parser now accepts a UTF-8 BOM,
+which Windows PowerShell commonly writes. JavaScript syntax and BOM parsing
+were checked locally.
+
 This passes the simultaneous small-text convergence round, not the full
 [acceptance contract](six-client-sync-acceptance.md). Two-account permissions,
 offline/reconnect and pending-edit restart, overlapping edits, file and asset

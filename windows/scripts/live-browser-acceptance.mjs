@@ -9,7 +9,7 @@ import { sharedEditorReady } from './live-browser-ready.mjs';
 
 const [planFile, receipts] = process.argv.slice(2);
 if (process.platform !== 'win32' || !planFile || !receipts) throw Error('Run on the physical PC with a plan and new receipt directory.');
-const plan = JSON.parse(await readFile(planFile, 'utf8'));
+const plan = JSON.parse((await readFile(planFile, 'utf8')).replace(/^\uFEFF/, ''));
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 const start = Date.parse(plan.StartUtc);
 if (!uuid.test(plan.WorkspaceId) || !uuid.test(plan.ItemId) ||

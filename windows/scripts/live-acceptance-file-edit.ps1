@@ -12,9 +12,11 @@ if (!$p.title.StartsWith('Six-client acceptance ') -or [IO.Path]::GetFileNameWit
 $marker = '[pc-cli:' + $p.runId + ':00]'
 $receipt = Join-Path $Receipts 'pc-cli.json'
 $backup = Join-Path $Receipts 'pc-cli-before.textpack'
+if (Test-Path -LiteralPath $Receipts) { throw 'Use a new receipt directory for each run.' }
 if ((Test-Path -LiteralPath $receipt) -or (Test-Path -LiteralPath $backup)) { throw 'This CLI actor has already run; use a new run.' }
 $due = [DateTimeOffset]::Parse($p.startUtc).AddMilliseconds($OffsetMs)
 if ($due -lt [DateTimeOffset]::UtcNow -or $due -gt [DateTimeOffset]::UtcNow.AddMinutes(6)) { throw 'Expired or unbounded coordinated start.' }
+New-Item -ItemType Directory -Path $Receipts -ErrorAction Stop | Out-Null
 while ([DateTimeOffset]::UtcNow -lt $due) { Start-Sleep -Milliseconds 100 }
 $bytes = [IO.File]::ReadAllBytes($p.file)
 if ($bytes.Length -gt 64MB) { throw 'Acceptance fixture is too large.' }
