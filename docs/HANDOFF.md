@@ -28,7 +28,8 @@ source b36da30a passed 854 shared tests, TypeScript and all browser modes. The
 failed PC fixture also contains a native CLI retry receipt added after its base.
 Server inspection confirms epoch 2 versus the PC's epoch 1. Current candidate
 keeps valid newly added CLI receipts inside the same session, with a reproduced
-failing baseline and passing regression. Neither server fix is deployed yet;
+failing baseline and passing regression. Both server fixes deployed as
+`texttext-oracle-20261009T042315Z-f4b8472f`; authenticated live checks passed;
 the old pending journal still requires reconciliation.
 [Evidence](verification/2026-10-08-attachment-continuity.md).
 

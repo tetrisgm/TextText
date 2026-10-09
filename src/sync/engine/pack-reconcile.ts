@@ -64,7 +64,9 @@ export function reconcileTextpacks(baseBytes: Uint8Array, localBytes: Uint8Array
     const localDocument = effective(base, local);
     const remoteDocument = effective(base, remote);
     if (!localDocument || !remoteDocument) return { status: "conflict", paths: ["/document/markdown"] };
-    const result = reconcileDocumentSnapshots(base.document, localDocument, remoteDocument);
+    const result = reconcileDocumentSnapshots(base.document, localDocument, remoteDocument, {
+      concurrentInsertions: "remote-first",
+    });
     if (result.status === "conflict") return { status: "conflict", paths: result.paths };
     const conflicts: string[] = [];
     const merged: Entries = {};

@@ -21,6 +21,19 @@ function change(bytes: Uint8Array, entries: Record<string, string | Uint8Array |
 }
 
 describe("full TextPack reconciliation", () => {
+  it("preserves simultaneous file appends at the same position exactly once", () => {
+    const base = pack("Shared 🌍");
+    const local = change(base, { "text.md": '---\ntitle: "Title"\n---\n\nShared 🌍\nPC CLI edit' });
+    const remote = pack("Shared 🌍\nMac editor edit");
+    const result = reconcileTextpacks(base, local, remote);
+    expect(result.status).toBe("merged");
+    if (result.status !== "merged") throw new Error("Expected merge");
+    const files = unzipSync(result.bytes);
+    const expected = "Shared 🌍\nMac editor edit\nPC CLI edit";
+    expect(JSON.parse(strFromU8(files["Note.textbundle/document.json"])).content.body).toBe(expected);
+    expect(parsePostMarkdownFile(strFromU8(files["Note.textbundle/text.md"])).body).toBe(expected);
+  });
+
   it("merges Markdown-only agent edits with app title changes and preserves assets", () => {
     const base = change(pack(), { "assets/image.bin": new Uint8Array([0, 255, 4]) });
     const local = change(base, { "text.md": '---\ntitle: "Title"\n---\n\nONE\ntwo\nthree' });
