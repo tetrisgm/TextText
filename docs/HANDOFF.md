@@ -57,6 +57,10 @@ and the signed-in production browser found that note with the saved body.
   are in `8616ce61`.
   The remaining fault and two-account rounds in the
   [acceptance contract](verification/six-client-sync-acceptance.md) are open.
+- A fresh [browser edit with the Mac reader open](verification/2026-10-09-browser-mac-windows-live-note.md)
+  appeared before Finish and reached both Mac and Windows TextPacks with the
+  same extracted Markdown hash. The Windows app was open on a different note,
+  so its visible editor is not covered by this receipt.
 - The older Windows `Six-client acceptance 1232a` journal could not merge
   automatically across an epoch change. Its edits are retained in the
   recovered TextPack and preinstall sync backup above. Test live recovery
