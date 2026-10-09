@@ -56,7 +56,7 @@ import UniformTypeIdentifiers
 
 @available(macOS 12.0, *)
 @objc(PreviewProvider)
-public final class PreviewProvider: QLPreviewProvider {
+public final class PreviewProvider: QLPreviewProvider, QLPreviewingController {
     public func providePreview(
         for request: QLFilePreviewRequest,
         completionHandler handler: @escaping (QLPreviewReply?, Error?) -> Void

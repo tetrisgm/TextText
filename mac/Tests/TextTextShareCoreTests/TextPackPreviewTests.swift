@@ -4,8 +4,13 @@ import TextTextShareCore
 import XCTest
 import TextTextFileProviderKit
 import TextTextQuickLookCore
+import QuickLookUI
 
 final class TextPackPreviewTests: XCTestCase {
+    func testProviderSupportsTheSystemPreviewProtocol() {
+        XCTAssertTrue(PreviewProvider.conforms(to: QLPreviewingController.self))
+        XCTAssertTrue(PreviewProvider.instancesRespond(to: NSSelectorFromString("providePreviewForFileRequest:completionHandler:")))
+    }
     func testTextPackPreviewShowsContentAndEscapesHTML() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
