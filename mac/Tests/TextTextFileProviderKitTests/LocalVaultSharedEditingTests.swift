@@ -37,6 +37,37 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testExternalWriteCollisionKeepsActiveLeaseForMergedCheckpoint() async throws {
+        let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
+        let saved = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: cp.journal, pending: true, markdown: first.0, documentJSON: first.1)
+        let externalText = try changes(saved.document, body: "Pending human\nExternal CLI")
+        let external = try store.write(path: path, expectedHash: saved.document.hash, markdown: externalText.0,
+            documentJSON: externalText.1, templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
+        let merged = try changes(external, body: "Pending human\nExternal CLI\nMore typing"), next = try checkpoint(original, generation: 2)
+        do {
+            _ = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+                expectedHash: saved.document.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+                journalGeneration: 2, journal: next.journal, pending: true, markdown: merged.0, documentJSON: merged.1)
+            XCTFail("Stale file revision was accepted")
+        } catch LocalVaultSyncFailure.changed { }
+        let protected = try await engine.sync()
+        XCTAssertEqual(protected.uploaded, 0)
+        let retained = try await engine.readSharedCheckpoint(itemId: itemId)
+        XCTAssertNil(retained?.retiredReason)
+        let result = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: external.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 2, journal: next.journal, pending: true, markdown: merged.0, documentJSON: merged.1)
+        XCTAssertTrue(result.document.contents.markdown.contains("External CLI\nMore typing"))
+        XCTAssertNil(result.checkpoint.retiredReason)
+        XCTAssertEqual(result.checkpoint.journalGeneration, 2)
+    }
     func testPathRebaseRecoversBothCrashWindowsWithoutLosingPendingJournal() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
         let target = try checkpoint(original)
@@ -327,6 +358,10 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let edited = try store.write(path: path, expectedHash: projected.document.hash, markdown: agent.0, documentJSON: agent.1,
             templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
 
+        let protected = try await engine.sync()
+        XCTAssertEqual(protected.uploaded, 0)
+        XCTAssertTrue(protected.conflicts.isEmpty)
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
         let report = try await engine.sync()
         XCTAssertTrue(report.conflicts.isEmpty)
         XCTAssertEqual(report.uploaded, 1)
@@ -336,7 +371,6 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let idle = try await engine.sync()
         XCTAssertEqual(idle.uploaded, 0)
         XCTAssertTrue(idle.conflicts.isEmpty)
-        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
         let reopened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: edited.hash)
         XCTAssertNil(reopened.checkpoint)
     }

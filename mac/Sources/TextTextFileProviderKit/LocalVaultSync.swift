@@ -160,7 +160,14 @@ public actor LocalVaultSync {
         markdown: String, documentJSON: String) throws -> LocalVaultSharedMaterialization {
         guard let session = sharedSessions[itemId], session.token == sessionToken else { throw LocalVaultSharedFailure.staleSession }
         guard !session.retired else { throw LocalVaultSyncFailure.changed }
-        guard session.hash == expectedHash else { throw LocalVaultSyncFailure.changed }
+        if session.hash != expectedHash {
+            // A live editor may have reconciled a fresh external file revision.
+            // Accept only that exact same-item revision; materialization repeats
+            // the CAS before writing its durable intent.
+            let fresh = try LocalVaultDocumentStore(root: root).readMetadata(path: session.path)
+            guard fresh.hash == expectedHash,
+                  MarkdownIdentityCodec.extract(from: fresh.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
+        }
         guard state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { throw LocalVaultSyncFailure.busy }
         guard var journalObject = try JSONSerialization.jsonObject(with: Data(journal.utf8)) as? [String: Any] else { throw LocalVaultSharedFailure.invalid }
         // The actor owns file location. A browser checkpoint may have been
@@ -178,8 +185,9 @@ public actor LocalVaultSync {
             if result.checkpoint.retiredReason != nil { sharedSessions[itemId]?.retired = true }
             return result
         } catch LocalVaultSyncFailure.changed {
-            sharedSessions[itemId]?.retired = true
-            _ = try sharedStore.retire(itemId: itemId, reason: "The file changed outside shared editing. Its shared journal is retained for recovery.")
+            // Keep the lease for a serialized read/merge/CAS retry. An interrupted
+            // durable intent may already have retired its own checkpoint; that
+            // protection remains intact in the shared store.
             throw LocalVaultSyncFailure.changed
         }
     }
@@ -221,6 +229,12 @@ public actor LocalVaultSync {
         if checkpoint == nil, live?.retired == true { return false }
         let path = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
         let current = try? LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        if let current, let live, !live.retired, checkpoint?.retiredReason == nil,
+           MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId {
+            // The active editor imports external text into Yjs. A parallel file
+            // upload would independently import it and could duplicate the edit.
+            return true
+        }
         guard let current, current.hash == expected, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId else {
             if let checkpoint, !checkpoint.pending {
                 // The shared journal is clean: its acknowledged revision is the

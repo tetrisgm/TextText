@@ -46,6 +46,16 @@ then verified client installs. PC production app remains stopped; isolated test
 apps closed normally and temporary task registrations were removed.
 No six-client pass has been obtained.
 
+Mac parity audit found its actor still retired the native lease on an external
+file CAS failure and could separately upload the file while editing. It now
+keeps same-ID live sessions protected and allows a validated fresh-revision CAS
+retry. A native regression preserves pending text, rejects the stale revision,
+prevents independent file upload and accepts the merged checkpoint under the
+same token. The full native gate passes
+(`/tmp/texttext-mac-inplace-native-gate.log`). Install this native change with the
+shared UI before physical Mac collision acceptance. Pre-install CUA inspection
+shows saved fixture 1232a in reader mode, no unsaved editor.
+
 ## Authoritative delivery
 
 - Mac `/Applications/TextText.app`: **0.204 (1232)**, source `2e0e10c1`.
