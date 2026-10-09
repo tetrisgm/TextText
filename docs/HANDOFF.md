@@ -54,6 +54,17 @@
 
 ## Current candidate / immediate work
 
+- Share attachments: source `f19df173`, `a4c70374`, `95dace27` prepares complete
+  image/video Gallery or attached-note TextPacks in the durable CLI creation
+  transaction. Retry keys include attachment bytes/type/title; original filenames
+  remain visible. Native tests cover exact retry, changed payload refusal,
+  missing/symlink/oversized input retention, and one ordered original payload per
+  supplied file despite alternate macOS representations. Build 1227 passed;
+  1228 is still building from the intermediate title fix. Final source requires
+  build/install and actual Finder share acceptance. The installed app is still
+  1226. Logs `/tmp/texttext-share-file-title-tests.log` and
+  `/tmp/texttext-share-extractor-tests.log`.
+
 - Shared Notes backlink cancellation is delivered on Oracle and Mac.
   Exact-source full sync gate passed for e722c893. Oracle deployed and passed
   live checks; Mac 1222 installed and reopened signed in on the real iCloud
