@@ -32,6 +32,13 @@ receipt directory it created itself; atomic replacement completed and wrote
 which Windows PowerShell commonly writes. JavaScript syntax and BOM parsing
 were checked locally.
 
+The `harness1241e` PC file edit occurred after the timed Windows app had
+closed. It remained on the PC while the app was closed; after starting the
+installed Windows app, its marker reached the Mac TextPack within the next
+10 seconds. This confirms startup catch-up for a direct file edit. Continuous
+background synchronization while the Windows app is closed was not observed
+in this check.
+
 This passes the simultaneous small-text convergence round, not the full
 [acceptance contract](six-client-sync-acceptance.md). Two-account permissions,
 offline/reconnect and pending-edit restart, overlapping edits, file and asset
