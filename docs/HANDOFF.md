@@ -2,8 +2,19 @@
 
 ## Current delivery (October 9)
 
-Windows TextText is installed from source `19a79616`; its cold-start evidence
-is `/tmp/texttext-win-final19-delivery.md`. Oracle serves source `06c3ad60`
+Windows TextText is installed from source `06c3ad60`. Its self-contained
+candidate passed native, shared-client (375 tests), and interactive desktop
+smoke checks; the build log is `/private/tmp/texttext-win-06c3-build.log`.
+The prior app is retained at
+`C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261009T122646-7fb9dc95`
+and preinstall sync state at
+`C:\Users\Shokunin\dev\texttext-preinstall-sync-06c3ad60` (274 files).
+The installed app opened signed in, with its window physically checked on the
+PC. Its old `Six-client acceptance 1232a` recovery warning was resolved by
+`Save a copy and reopen`; the separate recovered TextPack retains the PC-only
+`pc-cli:preflight1232c:00` marker, while the shared note reopened without the
+warning. The earlier conflict evidence is `/tmp/texttext-win-final19-delivery.md`.
+Oracle serves source `06c3ad60`
 from release `20261009T191004Z-tt-1242-06c3ad60-6ac93a64-97399e`.
 `/private/tmp/texttext-promote-06c3.log` records the exact-source web gate,
 database migration preflight, deployment, and 13 authenticated smoke checks.
@@ -30,8 +41,8 @@ and the signed-in production browser found that note with the saved body.
 - Source `22a3ffa2` makes stale live epoch bindings fail closed into the
   durable reopen path. The focused 35-test epoch suite, live browser adoption
   check, TypeScript, and complete local-Postgres sync gate passed (885 shared
-  tests plus native checks). It is included in the deployed and Mac-installed
-  source above; Windows still needs an update and physical acceptance.
+  tests plus native checks). It is included in the deployed, Mac-installed,
+  and Windows-installed source above; physical fault acceptance remains open.
 - The simultaneous Mac/PC app, browser and direct-file small-text round passed
   with all 13 edits visible and identical saved `text.md` hashes. See the
   [physical six-client receipt](verification/2026-10-09-six-client-live-edit.md).
@@ -40,10 +51,11 @@ and the signed-in production browser found that note with the saved body.
   are in `8616ce61`.
   The remaining fault and two-account rounds in the
   [acceptance contract](verification/six-client-sync-acceptance.md) are open.
-- Windows' older `Six-client acceptance 1232a` journal remains protected: no
-  pending marker was lost, but automatic epoch merge could not absorb it. The
-  exact checkpoint, journal and cloud evidence is in the Windows report above.
-  Preserve that journal and improve live recovery without closing the editor.
+- The older Windows `Six-client acceptance 1232a` journal could not merge
+  automatically across an epoch change. Its edits are retained in the
+  recovered TextPack and preinstall sync backup above. Test live recovery
+  without closing the editor on a new disposable note; the manual recovery
+  of this historical conflict does not prove automatic convergence.
 - The Mac's older File Provider mount is not enumerable. Source `1a6abf82`
   made the selected iCloud vault the storage health target; build 1241 passed
   installer health without bypass. The Finder provider still reports a
