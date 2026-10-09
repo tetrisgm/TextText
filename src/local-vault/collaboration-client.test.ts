@@ -658,7 +658,9 @@ describe("durable file collaboration client", () => {
     const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
       request: server.request, checkpoint: async () => {} });
     clients.push(reopened); await reopened.start();
-    expect(reopened.status).toBe("stale-file"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(reopened.status).toBe("ready"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(documentText(reopened.doc, "body").toString()).toBe("New file epoch");
+    expect(reopened.epoch).toBe(2);
     expect(reopened.recoveryJournal?.retired).toBeUndefined(); expect(server.pushes).toEqual([]);
   });
 
@@ -675,8 +677,31 @@ describe("durable file collaboration client", () => {
     expect(reopened.status).toBe("offline"); expect(reopened.hasBaseline).toBe(false);
     expect(JSON.parse(journal.load(original.journalKey)!)).toEqual(retained);
     permit = true; await reopened.retry();
-    expect(reopened.status).toBe("stale-file"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(reopened.status).toBe("ready"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(reopened.recoveryJournal?.retired).toBeUndefined();
     expect(server.pushes).toEqual([]);
+  });
+
+  it("rebases a clean native checkpoint when the epoch changes without changing file bytes", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start(); original.destroy();
+    const oldRevision = server.state.revision;
+    server.state = seedVaultCollaboration(server.bytes, "item-1", 2);
+    expect(server.state.revision).toBe(oldRevision);
+    const checkpoints: FileCollaborationCheckpoint[] = [];
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request, localRevision: oldRevision, checkpoint: async value => { checkpoints.push(value); } });
+    clients.push(reopened); await reopened.start(); await reopened.flushLocal();
+    expect(reopened.status).toBe("ready"); expect(reopened.epoch).toBe(2);
+    expect(reopened.recoveryJournal?.update).toBe(server.state.update);
+    expect(checkpoints.at(-1)?.journal.epoch).toBe(2);
+    reopened.mutate(doc => documentText(doc, "body").insert(5, " after fresh epoch"));
+    expect(await reopened.flush()).toBe(true);
+    const converged = new Y.Doc();
+    try {
+      Y.applyUpdate(converged, Uint8Array.from(atob(server.state.update), c => c.charCodeAt(0)));
+      expect(documentText(converged, "body").toString()).toBe("Hello after fresh epoch");
+    } finally { converged.destroy(); }
   });
 
   it("keeps pending updates in an old Windows retirement protected", async () => {

@@ -427,8 +427,8 @@ export class FileCollaborationClient {
             "This file or your access changed. Pending edits are kept for recovery.",
           ].includes(retained.retired ?? "")) {
         // Older clients retired even a fully acknowledged epoch. Keep that
-        // record untouched until a fresh read proves current access, then let
-        // the native file synchronizer refresh it. Never replay its old Yjs IDs.
+        // record untouched until a fresh read proves current access, then adopt
+        // that baseline. Never replay its old Yjs IDs into a replacement epoch.
         cleanRetiredRefresh = retained;
         this.saved = retained; this.journalGeneration = retained.journalGeneration ?? 0;
         retained = null;
@@ -439,10 +439,11 @@ export class FileCollaborationClient {
         this.journalGeneration = retained!.journalGeneration ?? 0;
         retained = null;
       }
-      if (retained && !this.options.checkpoint && !this.options.initialRetirement &&
+      if (retained && !this.options.initialRetirement &&
           !retained.pending.length && !retained.batch && !retained.unqueuedDirty && !retained.retired) {
-        // A web journal is durable recovery data, not a fresh access grant.
-        // Wait for the live baseline before displaying it or restoring edit rights.
+        // A clean journal is a fallback, not a live baseline or access grant.
+        // Native checkpoints also need fresh Yjs IDs after an epoch replacement,
+        // including replacements that leave the TextPack hash unchanged.
         cleanWebFallback = retained;
         this.journalGeneration = retained.journalGeneration ?? 0;
         retained = null;
@@ -482,10 +483,6 @@ export class FileCollaborationClient {
       const remote = value as StateResponse; cursor(remote);
       presentation(remote.presentation);
       if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
-      if (cleanRetiredRefresh && this.options.checkpoint) {
-        this.current = cursor(cleanRetiredRefresh); this.frozen = true; this.canEdit = false;
-        this.report("stale-file", "Refreshing this note…"); return;
-      }
       if (cleanRetiredRefresh) this.saved = null;
       this.current = cursor(remote);
       if (retained) {
