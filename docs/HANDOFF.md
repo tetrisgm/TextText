@@ -2,6 +2,10 @@
 
 ## Current delivery
 
+Latest six-client attempt failed: Windows stayed local and raised an external
+file conflict while other clients continued. Its pending edits remain protected.
+[Failure, test limitations and next investigation](verification/2026-10-08-six-client-full1235.md).
+
 Mac 1235 and Windows source 1163846d are installed. Mac save/reopen and visible
 Windows Edge editing passed; the Mac independently saw the Edge edits.
 [Receipt and remaining gaps](verification/2026-10-08-client-1235.md).
