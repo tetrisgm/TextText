@@ -1,5 +1,31 @@
 # TextText handoff
 
+## Active October 9 continuation (03:20 Pacific)
+
+Main now includes core epoch restart repair `d3c26037`, Windows bounded startup
+listing `31cbcbb5`, guarded mirrored-retirement recovery `d8281eda`, and
+Windows/native download parity `73a442b8`.
+Mac 0.204 build 1239 is installed from `85c9bcab`; its fresh rename, focus,
+undo and save check passed. Windows installed candidate `85c9bcab` but showed
+a blank window followed by the eight-second native listing timeout. The new
+Windows fix has a stalled-sync regression test; a matching PC build/install and
+physical startup check remain. The old Mac full1237 recovery fixture is still
+pending and preserved; the new guarded fix needs a matching Mac install and a
+physical reopen. The native journal could not be read directly from this
+terminal because of macOS container permissions. See
+`/tmp/texttext-win-startup1250.md` and `/tmp/texttext-old-fixture-followup.md`.
+
+Two Fable 5.1 Low jobs are active: live editor epoch rebinding (UI files and
+browser test) and Windows startup candidate/physical check. Their output
+targets are `/tmp/texttext-ui-resume1250.md` and
+`/tmp/texttext-win-startup1250.md`. Preserve their in-progress files and the
+unrelated dirty work in `attachments.ts`, `tabs.test.ts`, `scripts/.probe-editor.ts`,
+and `mac/scripts/__pycache__/`. Do not arm the prepared six-client run at
+`/tmp/texttext-six-full1238` until the Mac/PC clients and Oracle web source are
+aligned. Web-only source `85c9bcab` passed local ship dry-run and has a verified
+archive; it has not been deployed. OpenAI commercial sign-in is deferred by the
+owner. No public Mac release is authorized.
+
 ## Current delivery
 
 Pending-epoch recovery core is committed as `451b8325`, with real-store restart,
