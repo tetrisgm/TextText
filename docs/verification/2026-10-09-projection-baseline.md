@@ -43,8 +43,8 @@ Focused review found a Swift numeric-conversion trap. The fix keeps finite
 cover heights as rounded doubles, with three shared extreme-value regressions.
 The 18 shared projection tests and native projection suite pass after the fix;
 logs: `/tmp/texttext-projection-overflow-{ts,swift}.log`. No other material
-review findings. Mac 0.204 build 1237 is now installed from `6d07ca4b`; Oracle and Windows
-delivery remain pending.
+review findings. Mac 0.204 build 1237 and Windows are installed from `6d07ca4b`;
+Oracle serves the same source.
 The already-conflicted legacy Windows upload requires separately attested
 recovery; this patch does not fabricate historical provenance. Six physical
 clients, restart/reconnect acceptance and remaining product work are not certified
@@ -64,3 +64,24 @@ searched the exact title with Command-K and reopened it. The saved TextPack
 contains the marker exactly once and its baseline matches both JSON and Markdown
 SHA-256 digests. Left the app in reader mode. This is single-client acceptance,
 not a six-client convergence result.
+
+## Windows and Oracle delivery
+
+Windows candidate `candidate-ce255e99bb284c878f445dfeba3214e3` passed native
+core/agent suites, 365 shared client tests, TypeScript and interactive packaging
+smoke. The canonical installation verified after replacement, preserving the
+previous app and user profile. Its process responded after startup; this is not
+editor acceptance.
+
+Oracle now serves `texttext-oracle-20261009T073910Z-6d07ca4b`. Exact-source gates
+passed 4,854 tests (154 skipped), database suites, 875 shared sync tests and native
+suites. Packaging passed after replacing the archive's external node_modules
+symlink with a clone copy. Deployment created a fresh database backup and passed
+13 authenticated live checks. Previous release retained; Algorave and HAProxy
+unchanged. Receipts: `/tmp/texttext-delivery-6d07ca4b.md`,
+`/tmp/texttext-installed-6d07ca4b.md`, `/tmp/texttext-oracle-deploy-6d07ca4b.log`.
+
+Acceptance runner commit `c3cbf9ce` requires matching shared-document readiness
+before browser input. Nine runtime/readiness tests pass and run in Windows builds.
+Fresh fixture `Six-client acceptance full1237` is saved through the Mac app;
+simultaneous acceptance and retained legacy-upload recovery remain pending.
