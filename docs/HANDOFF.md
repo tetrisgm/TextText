@@ -61,6 +61,11 @@ and the signed-in production browser found that note with the saved body.
   appeared before Finish and reached both Mac and Windows TextPacks with the
   same extracted Markdown hash. The Windows app was open on a different note,
   so its visible editor is not covered by this receipt.
+- The [Windows save/restart receipt](verification/2026-10-09-windows-save-restart.md)
+  covers a fresh physical PC app edit, durable flush, separate-process reader
+  reopen without a recovery notice, and Mac file catch-up. The installed PC app
+  was relaunched afterward. Pending-edit restart and concurrent fault rounds
+  remain open.
 - The older Windows `Six-client acceptance 1232a` journal could not merge
   automatically across an epoch change. Its edits are retained in the
   recovered TextPack and preinstall sync backup above. Test live recovery

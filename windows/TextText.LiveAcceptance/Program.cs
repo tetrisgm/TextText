@@ -16,7 +16,7 @@ static class Program
 {
     sealed record Plan(string File, string ItemId, string Title, string RunId,
         DateTimeOffset StartUtc, int Rounds, int IntervalMs, int ObserveSeconds,
-        string[] ExpectedMarkers, string? RecoveryProfile = null);
+        string[] ExpectedMarkers, string? RecoveryProfile = null, bool VerifyOnly = false);
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     static object? Field(MainWindow window, string name) => typeof(MainWindow).GetField(name, Private)?.GetValue(window);
@@ -83,6 +83,10 @@ static class Program
                 {
                     // Use the production flush-on-close path. A failed flush
                     // deliberately keeps the window/journal available for recovery.
+                    // Verify-only never opens an editor or changes the file. The
+                    // production async flush can wait on a renderer that is already
+                    // leaving; close this disposable test window directly instead.
+                    if (plan.VerifyOnly) typeof(MainWindow).GetField("closing", Private)?.SetValue(window, true);
                     window.Close();
                 }
             };
@@ -98,9 +102,10 @@ static class Program
             || !plan.Title.StartsWith("Six-client acceptance ", StringComparison.Ordinal)
             || Path.GetFileNameWithoutExtension(plan.File) != plan.Title
             || !Guid.TryParse(plan.ItemId, out _) || !System.Text.RegularExpressions.Regex.IsMatch(plan.RunId, "^[a-zA-Z0-9_-]{1,40}$")
-            || plan.Rounds < (plan.RecoveryProfile is null ? 1 : 0) || plan.Rounds > 32 || plan.IntervalMs is < 500 or > 10000 || plan.ObserveSeconds is < 5 or > 120
-            || plan.StartUtc < DateTimeOffset.UtcNow || plan.StartUtc > DateTimeOffset.UtcNow.AddMinutes(5)
+            || plan.Rounds < (plan.VerifyOnly || plan.RecoveryProfile is not null ? 0 : 1) || plan.Rounds > 32 || plan.IntervalMs is < 500 or > 10000 || plan.ObserveSeconds is < 5 or > 120
+            || (!plan.VerifyOnly && (plan.StartUtc < DateTimeOffset.UtcNow || plan.StartUtc > DateTimeOffset.UtcNow.AddMinutes(5)))
             || plan.ExpectedMarkers is null || plan.ExpectedMarkers.Length > 256
+            || (plan.VerifyOnly && (plan.Rounds != 0 || plan.ExpectedMarkers.Length == 0))
             || plan.ExpectedMarkers.Any(value => string.IsNullOrEmpty(value) || value.Length > 100))
             throw new Exception("Invalid or expired bounded acceptance plan.");
         if (TextPackStore.Identity(File.ReadAllBytes(plan.File)) != plan.ItemId) throw new Exception("Test file identity mismatch.");
@@ -142,6 +147,24 @@ static class Program
         var expectedTitle = JsonSerializer.Serialize(plan.Title);
         await Until(async () => await view.ExecuteScriptAsync($"document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle}") == "true", ct, "Production file activation did not open the test item.");
         await Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('button[aria-label=\"Edit card\"]') || !!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test reader did not expose its edit action.");
+        if (plan.VerifyOnly)
+        {
+            await Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('[aria-label=\"Note card\"]')") == "true", ct, "Restart did not open the saved note reader.");
+            using var state = JsonDocument.Parse(await view.ExecuteScriptAsync("JSON.stringify({body:document.querySelector('[aria-label=\"Note card\"]')?.textContent,notices:[...document.querySelectorAll('.vault-notice,[role=\"alert\"]')].map(e=>e.textContent)})"));
+            using var visible = JsonDocument.Parse(state.RootElement.GetString()!);
+            var body = visible.RootElement.GetProperty("body").GetString() ?? "";
+            var notices = visible.RootElement.GetProperty("notices");
+            if (notices.GetArrayLength() != 0) throw new Exception("Saved note reopened with a recovery or error notice.");
+            foreach (var marker in plan.ExpectedMarkers)
+                if (body.Split(marker, StringSplitOptions.None).Length != 2) throw new Exception("Saved marker missing or duplicated after restart: " + marker);
+            var persisted = File.ReadAllBytes(plan.File);
+            if (TextPackStore.Identity(persisted) != plan.ItemId) throw new Exception("Reopened file identity changed.");
+            var markdownAfterRestart = TextPackStore.Markdown(persisted);
+            foreach (var marker in plan.ExpectedMarkers)
+                if (markdownAfterRestart.Split(marker, StringSplitOptions.None).Length != 2) throw new Exception("Saved marker missing or duplicated on disk after restart: " + marker);
+            record(new { kind = "reopen-verified", plan.ItemId, visibleBodySha256 = Hash(Encoding.UTF8.GetBytes(body)), packSha256 = Hash(persisted) });
+            return;
+        }
         await view.ExecuteScriptAsync("document.querySelector('button[aria-label=\"Edit card\"]')?.click()");
         await Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test item did not enter the real document editor.");
         var expectedItem = JsonSerializer.Serialize(plan.ItemId);
