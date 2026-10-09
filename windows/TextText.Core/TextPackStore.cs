@@ -121,7 +121,22 @@ public sealed class TextPackStore
         _=Identity(left);_=Identity(right);
         using var a=new ZipArchive(new MemoryStream(left));using var b=new ZipArchive(new MemoryStream(right));
         if(a.Entries.Count!=b.Entries.Count)return false;
-        foreach(var entry in a.Entries){var other=b.GetEntry(entry.FullName);if(other==null || entry.Length!=other.Length)return false;using var x=entry.Open();using var y=other.Open();var xb=new byte[8192];var yb=new byte[8192];while(true){var xn=x.Read(xb);if(xn==0){if(y.ReadByte()!=-1)return false;break;}y.ReadExactly(yb.AsSpan(0,xn));if(!xb.AsSpan(0,xn).SequenceEqual(yb.AsSpan(0,xn)))return false;}}
+        var documentPath=CanonicalPrefix(a)+"document.json";
+        foreach(var entry in a.Entries){var other=b.GetEntry(entry.FullName);if(other==null)return false;using var x=entry.Open();using var y=other.Open();
+            if(entry.FullName==documentPath) {
+                try {using var leftDocument=JsonDocument.Parse(x);using var rightDocument=JsonDocument.Parse(y);
+                    if(!UniqueProperties(leftDocument.RootElement)||!UniqueProperties(rightDocument.RootElement)||!JsonElement.DeepEquals(leftDocument.RootElement,rightDocument.RootElement))return false;
+                } catch(JsonException){return false;}
+                continue;
+            }
+            if(entry.Length!=other.Length)return false;var xb=new byte[8192];var yb=new byte[8192];while(true){var xn=x.Read(xb);if(xn==0){if(y.ReadByte()!=-1)return false;break;}y.ReadExactly(yb.AsSpan(0,xn));if(!xb.AsSpan(0,xn).SequenceEqual(yb.AsSpan(0,xn)))return false;}}
+        return true;
+    }
+    // JSON object ordering is serialization, but duplicate keys are ambiguous.
+    // Other archive entries (including authored Markdown metadata) stay exact.
+    static bool UniqueProperties(JsonElement value) {
+        if(value.ValueKind==JsonValueKind.Object) {var names=new HashSet<string>(StringComparer.Ordinal);foreach(var property in value.EnumerateObject())if(!names.Add(property.Name)||!UniqueProperties(property.Value))return false;}
+        else if(value.ValueKind==JsonValueKind.Array)foreach(var item in value.EnumerateArray())if(!UniqueProperties(item))return false;
         return true;
     }
     public IReadOnlyList<PackFile> Scan() => ScanInventory().Files;

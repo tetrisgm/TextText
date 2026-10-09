@@ -42,3 +42,24 @@ Trace why Windows stayed in local persistence before accepting input.
 Validate baseline readiness and promotion against the actual sync state;
 do not merely delay the test or suppress the conflict banner. Rebuild the
 runner from the candidate source before the next acceptance attempt.
+
+## Baseline diagnosis
+
+PC `sync.json` has no baseline for this item. It retained conflict operation
+`a7d2b4f7-2e8e-4b05-8f61-76a4901afb9d`, remote revision
+`688889f75100d035a8f0e89d97d1cbe999ce8a8deb4c50d72180230923325580`,
+local hash `7f39779628ca068920124a6b5585428039f4768d4aea14df9ff1ed2d466aea2b`.
+Both preserved archives were copied to the Mac receipt directory as
+`pc-{initial,remote}-conflict.textpack`. Their bodies are empty and their
+document snapshots have identical values, with different JSON object order.
+The local Markdown additionally contains `workspace`, `mode`, `slug` and an
+empty `excerpt`, emitted by the shared client's Markdown projection.
+
+Windows archive equivalence compared document JSON bytes, so harmless object
+ordering could itself prevent baseline adoption. That comparison now handles
+JSON object order and whitespace, rejects duplicate properties, and continues
+to compare Markdown and all other entries exactly. The native core suite passes
+(`/tmp/texttext-json-equivalence-tests.log`). This is a partial correction:
+the extra Markdown projection fields still require a metadata-preserving
+reconciliation policy before this particular pair can join collaboration.
+No test data, pending journal or conflict operation has been cleared.

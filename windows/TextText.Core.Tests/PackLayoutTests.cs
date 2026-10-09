@@ -16,6 +16,15 @@ static class PackLayoutTests
     }
     public static void Run(string temporaryRoot) {
         var bytes=Nested();Check(TextPackStore.Identity(bytes)=="nested-id"&&TextPackStore.DocumentPrefix(bytes)=="Existing/","single enclosing folder resolves document identity");
+        var markdown=TextPackStore.Markdown(bytes);
+        var ordered=TextPackStore.WithDocument(bytes,markdown,"{\"schemaVersion\":1,\"content\":{\"title\":\"Same\",\"tags\":[\"one\",\"two\"]}}");
+        var reordered=TextPackStore.WithDocument(bytes,markdown,"{ \"content\": { \"tags\": [\"one\", \"two\"], \"title\": \"Same\" }, \"schemaVersion\": 1 }");
+        Check(TextPackStore.Equivalent(ordered,reordered),"document JSON formatting and object order do not create a sync conflict");
+        var changed=TextPackStore.WithDocument(bytes,markdown,"{\"schemaVersion\":1,\"content\":{\"title\":\"Same\",\"tags\":[\"two\",\"one\"]}}");
+        Check(!TextPackStore.Equivalent(ordered,changed),"document array order remains a meaningful difference");
+        var duplicate=TextPackStore.WithDocument(bytes,markdown,"{\"schemaVersion\":1,\"content\":{\"title\":\"Different\",\"title\":\"Same\",\"tags\":[\"one\",\"two\"]}}");
+        Check(!TextPackStore.Equivalent(ordered,duplicate),"duplicate JSON properties cannot conceal a document difference");
+        Check(!TextPackStore.Equivalent(ordered,TextPackStore.WithDocument(reordered,markdown+" changed","{\"schemaVersion\":1,\"content\":{\"title\":\"Same\",\"tags\":[\"one\",\"two\"]}}")),"equivalent JSON never hides a direct Markdown edit");
         var store=new TextPackStore(Path.Combine(temporaryRoot,"nested"),Path.Combine(temporaryRoot,"nested-state"));var file=store.Write("Notes/Existing.textpack",bytes);
         file=store.UpdateMarkdown(file.Path,TextPackStore.Markdown(bytes)+" edited",file.Hash);Check(TextPackStore.Markdown(store.Read(file.Path)).EndsWith(" edited"),"nested Markdown edit targets original prefix");
         var updated=TextPackStore.WithDocument(store.Read(file.Path),TextPackStore.Markdown(store.Read(file.Path))+" shared","{\"schemaVersion\":1,\"content\":{\"type\":\"doc\"}}");
