@@ -270,12 +270,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         setupStatusItem()
         if localVaultWindow == nil && accountGateWindow == nil { configureQuickCapture() }
+        // The Share extension's durable inbox belongs to every app window mode.
+        // A file-based workspace must still drain captures, and signed-out
+        // startup keeps them queued until handleSignedIn retries the drain.
+        configureShareInbox()
         // Warm account.json for a returning user so the File Provider domain can
         // register on launch. Best effort and file-free.
         if localVaultWindow == nil && accountGateWindow == nil {
             seedCachedWorkspaceIfNeeded()
             configureSpotlightIndexing()
-            configureShareInbox()
             syncFileProviderDomain()
         }
 
