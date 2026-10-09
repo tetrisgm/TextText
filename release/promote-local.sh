@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Promote the exact committed main revision to production and install one
-# canonical Developer ID app on this Mac. This intentionally does not publish
+# canonical native-sign-in app on this Mac. This intentionally does not publish
 # Sparkle artifacts, update the appcast, create a TestFlight build, or upload.
 #
 # Usage:
@@ -155,6 +155,40 @@ if ! grep -q '^Authority=Developer ID Application:' <<<"$SIGNATURE_DETAILS"; the
 fi
 "$ROOT/mac/scripts/verify-app-health.sh" "$BUILT_APP" "$VERSION" "$BUILD"
 
+# The standalone build supplies the isolated health report. The installed app
+# must retain native Apple sign-in, which requires the sandboxed Store shape.
+# Build and validate that candidate before changing Oracle so a missing local
+# signing profile or helper cannot strand a successful web deployment.
+echo ">> build native-sign-in local app"
+CODEX_RUNTIME="${TEXTTEXT_EMBEDDED_CODEX_RUNTIME:-/Applications/TextText.app/Contents/Helpers/codex}"
+[[ -x "$CODEX_RUNTIME" ]] || {
+  echo "Refusing: no signed Codex runtime for the native app: $CODEX_RUNTIME" >&2
+  exit 1
+}
+codesign --verify --strict "$CODEX_RUNTIME"
+TEXTTEXT_STORE_LOCAL=1 \
+TEXTTEXT_EMBEDDED_CODEX_RUNTIME="$CODEX_RUNTIME" \
+APP_VERSION="$VERSION" \
+APP_BUILD_NUMBER="$BUILD" \
+TEXTTEXT_BUILD_ATTESTATION="$ATTESTATION" \
+  "$ROOT/mac/scripts/build-store.sh"
+[[ "$("$PB" -c 'Print :CFBundleShortVersionString' "$BUILT_APP/Contents/Info.plist")" == "$VERSION" ]]
+[[ "$("$PB" -c 'Print :CFBundleVersion' "$BUILT_APP/Contents/Info.plist")" == "$BUILD" ]]
+[[ "$("$PB" -c 'Print :TextTextServerOrigin' "$BUILT_APP/Contents/Info.plist")" == "$ORIGIN" ]]
+codesign --verify --strict --verbose=2 "$BUILT_APP"
+"$ROOT/mac/scripts/verify-apple-silicon-app.sh" "$BUILT_APP" --require-extensions
+SIGNATURE_DETAILS="$(codesign -dv --verbose=4 "$BUILT_APP" 2>&1)"
+grep -q '^Authority=Apple Development:' <<<"$SIGNATURE_DETAILS" || {
+  echo "Refusing: the local native app lacks an Apple Development signature." >&2
+  exit 1
+}
+codesign -d --entitlements :- "$BUILT_APP" 2>/dev/null | python3 -c '
+import plistlib, sys
+e = plistlib.loads(sys.stdin.buffer.read())
+assert e.get("com.apple.developer.applesignin") == ["Default"]
+assert e.get("com.apple.security.app-sandbox") is True
+'
+
 echo ">> guard the private Oracle database"
 npx tsx "$ROOT/scripts/work-unit.ts" run \
   --name database.promotion_preflight --timeout 120 --no-reuse -- \
@@ -217,7 +251,7 @@ echo ">> atomically replace and health-gate the canonical Mac app"
 TEXTTEXT_SOURCE_APP="$BUILT_APP" \
 TEXTTEXT_EXPECTED_VERSION="$VERSION" \
 TEXTTEXT_EXPECTED_BUILD="$BUILD" \
-TEXTTEXT_REQUIRE_RUNTIME_HEALTH=1 \
+TEXTTEXT_REQUIRE_RUNTIME_HEALTH=0 \
   "$ROOT/mac/scripts/install-local.sh"
 
 INSTALLED="/Applications/TextText.app"

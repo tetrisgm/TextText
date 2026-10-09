@@ -38,6 +38,12 @@ and the signed-in production browser found that note with the saved body.
 
 ## Open work
 
+- `release/promote-local.sh` now builds and checks the sandboxed Apple
+  Development app with native Apple sign-in before Oracle deployment, after
+  the isolated standalone health check. This fixes the prior promotion path
+  that deployed web then tried to install a browser-only Mac app. The focused
+  contract test passed; the amended promotion has not been run end to end.
+
 - Source `22a3ffa2` makes stale live epoch bindings fail closed into the
   durable reopen path. The focused 35-test epoch suite, live browser adoption
   check, TypeScript, and complete local-Postgres sync gate passed (885 shared

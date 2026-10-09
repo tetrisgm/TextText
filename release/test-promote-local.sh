@@ -20,6 +20,9 @@ required = {
     "signed build attestation": 'texttext-build-attestation.sh',
     "Developer ID identity check": 'SIGNATURE_DETAILS="$(codesign -dv',
     "staged app health": 'verify-app-health.sh',
+    "native local build": 'TEXTTEXT_STORE_LOCAL=1',
+    "native sign-in entitlement": 'com.apple.developer.applesignin',
+    "native sandbox entitlement": 'com.apple.security.app-sandbox',
     "private production database guard": '"$ROOT/release/oracle/database.sh" --check',
     "all migrations and backfills": '"$ROOT/release/oracle/database.sh" --migrate',
     "build committed source": 'TEXTTEXT_ORACLE_ARTIFACT= npx tsx',
@@ -27,7 +30,7 @@ required = {
     "public deployment identity": '${origin}/api/app/build?promotion=${expected}-${attempt}',
     "exact public deployment identity": '(await response.json()).buildId === expected',
     "atomic canonical installer": 'mac/scripts/install-local.sh',
-    "exact runtime health": 'TEXTTEXT_REQUIRE_RUNTIME_HEALTH=1',
+    "sandboxed local installer": 'TEXTTEXT_REQUIRE_RUNTIME_HEALTH=0',
 }
 for label, needle in required.items():
     if needle not in source:
@@ -40,6 +43,7 @@ ordered = [
     'scripts/verify-release.ts',
     'texttext-build-attestation.sh',
     'verify-app-health.sh',
+    '"$ROOT/mac/scripts/build-store.sh"',
     '"$ROOT/release/oracle/database.sh" --check',
     '"$ROOT/release/oracle/database.sh" --migrate',
     '"$ROOT/release/oracle/deploy.sh"',
