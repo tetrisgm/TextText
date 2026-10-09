@@ -42,7 +42,18 @@ class Store {
     await writeVaultTextpack({ ...this.location(), relativePath, operationId: `replace-${++this.replacements}`, baseRevision: file.revision,
       bytes: pack(body, { "opaque.bin": new Uint8Array([this.replacements]) }) });
   }
-  request: FileCollaborationRequest = async (method, params) => {
+  /** Store calls still running against the temp directory. The client abandons an aborted request
+   * (as it would a fetch) but the file store cannot stop mid-write and `setup` re-creates
+   * `.texttext/*`; teardown awaits these before removing the directory. */
+  inflight = new Set<Promise<unknown>>();
+  async settle(): Promise<void> { while (this.inflight.size) await Promise.allSettled([...this.inflight]); }
+  request: FileCollaborationRequest = async (method, params, signal) => {
+    if (signal?.aborted) throw new DOMException("Request canceled", "AbortError");
+    const work = this.serve(method, params);
+    this.inflight.add(work);
+    try { return await work; } finally { this.inflight.delete(work); }
+  };
+  private async serve(method: "read" | "push", params: Record<string, unknown>): Promise<unknown> {
     if (method === "read") {
       const state = await readVaultCollaboration(this.location());
       if (!state) throw Object.assign(new Error("Missing"), { status: 404 });
@@ -93,6 +104,7 @@ describe("automatic pending-edit epoch recovery", () => {
   });
   afterEach(async () => {
     for (const entry of clients.splice(0)) entry.destroy();
+    await store.settle();
     await fs.rm(root, { recursive: true, force: true });
   });
 
@@ -312,6 +324,7 @@ describe("epoch adoption against a guarded native checkpoint store", () => {
   });
   afterEach(async () => {
     for (const entry of clients.splice(0)) entry.destroy();
+    await store.settle();
     await fs.rm(root, { recursive: true, force: true });
   });
   const open = (options: Partial<FileCollaborationOptions> = {}) => client(store, journal, { ...native.open(), supportsEpochRecovery: true, ...options });
@@ -507,6 +520,7 @@ describe("revival of journals retired by a known older fatal path", () => {
   });
   afterEach(async () => {
     for (const entry of clients.splice(0)) entry.destroy();
+    await store.settle();
     await fs.rm(root, { recursive: true, force: true });
   });
   async function retiredPending(reason = RETIRED) {
@@ -578,6 +592,7 @@ describe("revival when the native checkpoint mirrors the browser retirement", ()
   });
   afterEach(async () => {
     for (const entry of clients.splice(0)) entry.destroy();
+    await store.settle();
     await fs.rm(root, { recursive: true, force: true });
   });
   const open = (options: Partial<FileCollaborationOptions> = {}) => client(store, journal, { ...native.open(), supportsEpochRecovery: true, ...options });
