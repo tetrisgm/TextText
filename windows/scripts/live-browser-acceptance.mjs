@@ -5,6 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
+import { sharedEditorReady } from './live-browser-ready.mjs';
 
 const [planFile, receipts] = process.argv.slice(2);
 if (process.platform !== 'win32' || !planFile || !receipts) throw Error('Run on the physical PC with a plan and new receipt directory.');
@@ -46,6 +47,11 @@ try {
   const body = page.getByRole('textbox', { name: 'Document body', exact: true });
   if (!await body.isVisible()) await page.getByRole('button', { name: 'Edit card', exact: true }).click();
   await body.waitFor({ state: 'visible', timeout: 30000 });
+  // Same gate as LiveAcceptance/Program.cs: a local-only editor cannot pass
+  // six-client readiness. Timeout fails the run with stage 'shared-ready'.
+  stage = 'shared-ready';
+  await page.waitForFunction(sharedEditorReady, plan.ItemId, { timeout: 45000 })
+    .catch(() => { throw Error('Test editor did not join the shared document; a local-only editor cannot pass six-client readiness.'); });
   if (Date.now() >= start) throw Error('Browser missed the coordinated start.');
   await page.evaluate(() => {
     const editor = document.querySelector('[aria-label="Document body"]');
