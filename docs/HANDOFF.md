@@ -56,6 +56,15 @@
 
 ## Current candidate / immediate work
 
+- Six-client setup now has a real Windows production-window/cloud runner and a
+  direct atomic TextPack actor. Focused run d preserved all seven markers, but
+  measured a 1,195 ms editor gap during file import. Pending edits are still
+  explicitly retired on external-file change in the shared client. Fix that
+  reconciliation/typing-continuity path before claiming simultaneous acceptance.
+  Run c's interrupted test-only journal is retained; do not clear it to hide the
+  failure. Canonical PC app needs reopening after temporary SSH service-accept
+  resets clear. [Exact evidence and retained state](verification/2026-10-08-live-windows-file-collision.md).
+
 - External-file collaboration promotion: the UI only promoted app-created notes
   after initial upload. CLI-created/repaired files could remain in local editing
   until reopened. Current fix applies the same durable flush/identity/hash checks

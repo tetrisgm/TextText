@@ -68,6 +68,37 @@ The temporary task has a 100-second limit and is always removed. No recurring
 job, production launch, build task, or installer task is registered. The signed-in
 Windows user must have an active desktop session.
 
+## Live cloud acceptance runner
+
+`TextText.LiveAcceptance` is a separate developer test executable. It opens the
+production `MainWindow` with the existing saved sign-in and selected workspace,
+and uses the real `WindowsBridge`, file watcher, collaboration HTTP and native
+journals. Browser drafts use a separate profile under the receipt directory;
+the normal app's browser profile is not modified by the runner.
+It shares the app's single-instance mutex: close the ordinary app after preserving
+pending work before invoking it. No mock transport, login bypass, new account,
+workspace switch or persistent job is installed.
+
+Build the project explicitly with `dotnet build --configuration Release`. Its
+output must contain the verified production `Assets` directory. Invoke the
+prebuilt DLL using `windows/scripts/live-acceptance.ps1` with `-Assembly`, `-Plan`
+and a fresh `-Receipts` directory. The launcher schedules only that one test in
+the interactive desktop and removes its registration afterward.
+
+The JSON plan names an existing absolute `file`, matching `itemId` and `title`
+(both filename and title must start with `Six-client acceptance `), a short
+alphanumeric `runId`, future `startUtc`, `rounds` (1–32), `intervalMs` (500–10000),
+`observeSeconds` (5–120), and `expectedMarkers` from the other participants.
+The runner inserts `[pc-app:<runId>:<two-digit-round>]` through WebView2's input
+pipeline. It records actual visible editor snapshots and input times, then checks
+every expected marker occurs once in both the editor and persisted TextPack.
+Late startup fails instead of pretending the clients ran simultaneously.
+
+Receipts identify the native assembly hash. Keep the production asset/source
+receipt beside them. This runner proves the production Windows window/adapter
+path for its named test item; it is not a six-client pass by itself, a substitute
+for the remaining fault rounds, or a certification of physical pointer behavior.
+
 ## Explorer activation
 
 The local installer adds TextText to **Open with** for `.textpack` without

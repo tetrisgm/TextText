@@ -29,8 +29,12 @@ public sealed partial class MainWindow : Window
     private string root = "";
     private bool closing, transitioning;
     private readonly RendererFlushGuard flushGuard = new();
-    public MainWindow()
+    private readonly string? webViewProfile;
+    // Integration tests can isolate browser drafts while retaining the real
+    // native transport. The application entry point always uses the default.
+    public MainWindow(string? webViewProfile = null)
     {
+        this.webViewProfile = webViewProfile;
         Title = "TextText"; Width = 1200; Height = 850; MinWidth = 720; MinHeight = 480;
         Loaded += async (_,_) => {
             try { account = CredentialStore.Load(); if(account is not null) { selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
@@ -126,7 +130,7 @@ public sealed partial class MainWindow : Window
         INativeWorkspaceBridge? nextBridge = null;
         try
         {
-        var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",active.WorkspaceId);
+        var profile = webViewProfile ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",active.WorkspaceId);
         var environment = await CoreWebView2Environment.CreateAsync(null,profile);
         await nextWeb.EnsureCoreWebView2Async(environment);
         var core = nextWeb.CoreWebView2;

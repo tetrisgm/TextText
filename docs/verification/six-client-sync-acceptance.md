@@ -52,6 +52,13 @@ and retains its concurrent edits, offline/reload, idle-upload and permissions
 checks. Results establish a local baseline only. The physical six-client run,
 repeated fault schedule, file/attachment latency and iCloud eviction remain open.
 
+The real Windows production-window runner now exercises native authentication,
+files and Oracle without substituting its transport. A focused PC editor/CLI
+round preserved all edits but exposed a 1,195 ms editing-surface interruption;
+the earlier five-participant attempt was interrupted and did not pass. See
+[live collision receipt](2026-10-08-live-windows-file-collision.md). Windows
+browser orchestration and the complete six-participant run remain outstanding.
+
 ## Local two-account baseline receipt
 
 October 8, compiled production source `9189ee96`, loopback server on the Mac,
