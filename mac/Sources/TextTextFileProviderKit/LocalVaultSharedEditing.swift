@@ -103,6 +103,53 @@ struct LocalVaultSharedEditingStore: Sendable {
               pending.allSatisfy({ $0.utf8.count <= 512 * 1024 && Data(base64Encoded: $0) != nil }) else { throw LocalVaultSharedFailure.invalid }
         let hasBatch = journal["batch"] != nil && !(journal["batch"] is NSNull)
         guard checkpoint.pending || (pending.isEmpty && !hasBatch && journal["unqueuedDirty"] as? Bool != true) else { throw LocalVaultSharedFailure.invalid }
+        if let raw = journal["recovery"], !(raw is NSNull) {
+            guard let intent = Self.recoveryIntent(raw), intent.epoch <= checkpoint.epoch else { throw LocalVaultSharedFailure.invalid }
+        }
+    }
+    /// The client's durable epoch-recovery intent: the exact bytes it sent to the
+    /// server for the old epoch, plus whether the replacement epoch is adopted.
+    struct RecoveryIntent: Equatable {
+        let operationId: String
+        let epoch: Int
+        let update: String
+        let adopted: Bool
+    }
+    static func recoveryIntent(_ raw: Any) -> RecoveryIntent? {
+        guard let fields = raw as? [String: Any],
+              Set(fields.keys).isSubset(of: ["operationId", "epoch", "update", "adopted"]),
+              let operationId = fields["operationId"] as? String,
+              operationId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) == operationId.startIndex..<operationId.endIndex,
+              let epochNumber = fields["epoch"] as? NSNumber, CFGetTypeID(epochNumber) != CFBooleanGetTypeID(),
+              let epoch = fields["epoch"] as? Int, epoch >= 1, epoch <= 9_007_199_254_740_991,
+              let update = fields["update"] as? String, !update.isEmpty, update.utf8.count <= 6 * 1024 * 1024, Data(base64Encoded: update) != nil else { return nil }
+        let adopted: Bool
+        if let flag = fields["adopted"] {
+            guard let number = flag as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+            adopted = number.boolValue
+        } else { adopted = false }
+        return RecoveryIntent(operationId: operationId, epoch: epoch, update: update, adopted: adopted)
+    }
+    private func recoveryIntent(of checkpoint: LocalVaultSharedCheckpoint) -> RecoveryIntent? {
+        guard let journal = try? JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8)) as? [String: Any],
+              let raw = journal["recovery"], !(raw is NSNull) else { return nil }
+        return Self.recoveryIntent(raw)
+    }
+    /// A pending journal may only move to a newer epoch when the incoming
+    /// checkpoint proves the client adopted the epoch produced by the recovery
+    /// intent this store already holds. Server acknowledgement alone never
+    /// qualifies: the intent must have been checkpointed here before the send.
+    private func authorizedAdoption(prior: LocalVaultSharedCheckpoint, incoming: LocalVaultSharedCheckpoint,
+                                    current: LocalVaultDocumentStore.Document) -> RecoveryIntent? {
+        guard prior.pending, prior.retiredReason == nil, incoming.epoch > prior.epoch,
+              incoming.itemId == prior.itemId, incoming.path == prior.path, current.path == prior.path,
+              current.hash == prior.projectedHash,
+              incoming.journalGeneration > prior.journalGeneration,
+              let retained = recoveryIntent(of: prior), !retained.adopted, retained.epoch == prior.epoch,
+              let adopted = recoveryIntent(of: incoming), adopted.adopted,
+              adopted.operationId == retained.operationId, adopted.epoch == retained.epoch,
+              adopted.update == retained.update else { return nil }
+        return adopted
     }
     private struct Presentation {
         let templateJSON: String?
@@ -295,7 +342,14 @@ struct LocalVaultSharedEditingStore: Sendable {
                       current.hash == prior.projectedHash, contentMatches(current, intent: intent) else { throw LocalVaultSharedFailure.generation }
                 return LocalVaultSharedMaterialization(document: current, checkpoint: prior)
             }
-            guard !prior.pending || checkpoint.epoch == prior.epoch else { throw LocalVaultSharedFailure.staleSession }
+            if prior.pending && checkpoint.epoch != prior.epoch {
+                guard let adoption = authorizedAdoption(prior: prior, incoming: checkpoint, current: current),
+                      current.hash == expectedHash else { throw LocalVaultSharedFailure.staleSession }
+                // The replaced epoch's journal stays recoverable on disk before
+                // anything about it is rewritten. A retry of the same operation
+                // rewrites the identical archive.
+                try write(JSONEncoder().encode(prior), to: directory.appendingPathComponent("recovery-" + adoption.operationId + ".json"))
+            }
         }
         guard current.hash == expectedHash else { throw LocalVaultSyncFailure.changed }
         let original = try Data(contentsOf: store.url(for: current.path))

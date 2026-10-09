@@ -194,7 +194,9 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                         return new { sessionToken = session.SessionToken, path = session.Document.Path, hash = session.Document.Hash,
                             acknowledgedRevision = session.Checkpoint?.AcknowledgedRevision ?? await sync.BaselineRevisionAsync(Required(p, "itemId"), ct) ?? session.Document.Hash,
                             projectedHash = session.Checkpoint?.ProjectedHash,
-                            journal = session.Checkpoint?.Journal, retiredReason = session.Checkpoint?.RetiredReason };
+                            journal = session.Checkpoint?.Journal, retiredReason = session.Checkpoint?.RetiredReason,
+                            // The shared client consumes this exact name; only stores that verify and archive authorized epoch adoption may announce it.
+                            capabilities = SharedEditingStore.Capabilities };
                     }
                     case "collaboration.checkpoint": {
                         var file = Find(Required(p, "itemId"));

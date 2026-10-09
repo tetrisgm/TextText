@@ -1069,6 +1069,176 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         stale.journalGeneration = 3; stale.journal = stale.journal.replacingOccurrences(of: "AQ==", with: "Ag==")
         XCTAssertThrowsError(try store.materialize(checkpoint: stale, expectedHash: materialized.document.hash, markdown: change.0, documentJSON: change.1))
     }
+    // MARK: Authorized epoch adoption
+    private let operationId = "op-1111-2222"
+    private func epochCheckpoint(_ projectedHash: String, revision: String, epoch: Int, generation: UInt64, pending: Bool = true,
+                                 recovery: [String: Any]? = nil) throws -> LocalVaultSharedCheckpoint {
+        var journal: [String: Any] = ["version": 1, "journalGeneration": generation, "epoch": epoch, "seq": 0, "revision": revision, "relativePath": path,
+            "update": "AQ==", "pending": pending ? ["AQ=="] : [], "batch": NSNull()]
+        if let recovery { journal["recovery"] = recovery }
+        return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: projectedHash, acknowledgedRevision: revision,
+            epoch: epoch, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
+    }
+    private func intent(_ overrides: [String: Any] = [:], adopted: Bool? = nil) -> [String: Any] {
+        var value: [String: Any] = ["operationId": operationId, "epoch": 1, "update": "AQID"]
+        if let adopted { value["adopted"] = adopted }
+        for (key, replacement) in overrides { value[key] = replacement }
+        return value
+    }
+    private func sharedDirectory() -> URL {
+        LocalVaultDeviceState.directory(root: root.standardizedFileURL.resolvingSymlinksInPath()).appendingPathComponent("shared-editing/\(itemId)")
+    }
+    private func retainedCheckpoint() throws -> LocalVaultSharedCheckpoint {
+        try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: Data(contentsOf: sharedDirectory().appendingPathComponent("checkpoint.json")))
+    }
+    func testPendingJournalAdoptsNewerEpochOnlyWithCheckpointedMatchingIntent() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let change = try changes(original, body: "Pending")
+        let first = try store.materialize(checkpoint: try epochCheckpoint(original.hash, revision: original.hash, epoch: 1, generation: 1),
+            expectedHash: original.hash, markdown: change.0, documentJSON: change.1)
+        let projected = first.document.hash
+        // A later epoch with adoption flags but no checkpointed intent is a server acknowledgement alone.
+        XCTAssertThrowsError(try store.materialize(checkpoint: try epochCheckpoint(projected, revision: original.hash, epoch: 2, generation: 2, recovery: intent(adopted: true)),
+            expectedHash: projected, markdown: change.0, documentJSON: change.1)) { XCTAssertTrue($0 is LocalVaultSharedFailure, "\($0)") }
+        // The intent is checkpointed before the first send; the epoch is still the old one.
+        let durable = try store.materialize(checkpoint: try epochCheckpoint(projected, revision: original.hash, epoch: 1, generation: 2, recovery: intent()),
+            expectedHash: projected, markdown: change.0, documentJSON: change.1)
+        XCTAssertEqual(durable.document.hash, projected)
+        let retainedJournal = try retainedCheckpoint().journal
+        let rejected: [(String, [String: Any])] = [
+            ("different operation", intent(["operationId": "op-other"], adopted: true)),
+            ("different recovery epoch", intent(["epoch": 2], adopted: true)),
+            ("different recovery bytes", intent(["update": "BAUG"], adopted: true)),
+            ("missing adopted flag", intent()),
+            ("adopted flag false", intent(adopted: false))]
+        for (label, recovery) in rejected {
+            XCTAssertThrowsError(try store.materialize(checkpoint: try epochCheckpoint(projected, revision: original.hash, epoch: 2, generation: 3, recovery: recovery),
+                expectedHash: projected, markdown: change.0, documentJSON: change.1), label) { error in
+                guard case LocalVaultSharedFailure.staleSession = error else { return XCTFail("\(label): \(error)") }
+            }
+            XCTAssertEqual(try retainedCheckpoint().journal, retainedJournal, label)
+            XCTAssertEqual(try retainedCheckpoint().epoch, 1, label)
+        }
+        // A later epoch without any intent still fails closed, and a regressing epoch never adopts.
+        XCTAssertThrowsError(try store.materialize(checkpoint: try epochCheckpoint(projected, revision: original.hash, epoch: 2, generation: 3),
+            expectedHash: projected, markdown: change.0, documentJSON: change.1))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sharedDirectory().appendingPathComponent("recovery-\(operationId).json").path))
+        // The exact persisted intent, marked adopted, moves the journal to the newer epoch.
+        let late = try changes(first.document, body: "Pending\nTyped during recovery")
+        let adopted = try store.materialize(checkpoint: try epochCheckpoint(projected, revision: original.hash, epoch: 2, generation: 3, recovery: intent(adopted: true)),
+            expectedHash: projected, markdown: late.0, documentJSON: late.1)
+        XCTAssertEqual(adopted.checkpoint.epoch, 2)
+        XCTAssertTrue(adopted.document.contents.markdown.contains("Typed during recovery"))
+        let archive = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: Data(contentsOf: sharedDirectory().appendingPathComponent("recovery-\(operationId).json")))
+        XCTAssertEqual(archive.journal, retainedJournal)
+        XCTAssertEqual(archive.epoch, 1)
+        XCTAssertEqual(archive.projectedHash, projected)
+        // Late updates continue in the new epoch; the cleared intent and the adopted
+        // journal survive a native encode/decode cycle and a restart unchanged.
+        let next = try store.materialize(checkpoint: try epochCheckpoint(adopted.document.hash, revision: original.hash, epoch: 2, generation: 4),
+            expectedHash: adopted.document.hash, markdown: late.0, documentJSON: late.1)
+        XCTAssertEqual(next.checkpoint.epoch, 2)
+        let restarted = try XCTUnwrap(try LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(restarted.journal, next.checkpoint.journal)
+        XCTAssertEqual(restarted.epoch, 2)
+        XCTAssertNil(restarted.retiredReason)
+        XCTAssertThrowsError(try store.materialize(checkpoint: try epochCheckpoint(next.document.hash, revision: original.hash, epoch: 1, generation: 5),
+            expectedHash: next.document.hash, markdown: late.0, documentJSON: late.1))
+    }
+    func testEpochAdoptionJournalSchemaIsValidatedAndOldJournalsRemainValid() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let change = try changes(original, body: "Pending")
+        let legacy = try checkpoint(original)
+        XCTAssertFalse(legacy.journal.contains("recovery"))
+        let saved = try store.materialize(checkpoint: legacy, expectedHash: original.hash, markdown: change.0, documentJSON: change.1)
+        let projected = saved.document.hash
+        for (label, recovery) in [("unknown field", intent(["extra": 1])), ("bad operation id", intent(["operationId": "../x"])),
+                                  ("boolean epoch", intent(["epoch": true])), ("future epoch", intent(["epoch": 2])),
+                                  ("empty update", intent(["update": ""])), ("non base64 update", intent(["update": "***"])),
+                                  ("string adopted", intent(["adopted": "yes"]))] as [(String, [String: Any])] {
+            XCTAssertThrowsError(try store.materialize(checkpoint: try epochCheckpoint(projected, revision: original.hash, epoch: 1, generation: 2, recovery: recovery),
+                expectedHash: projected, markdown: change.0, documentJSON: change.1), label) { error in
+                guard case LocalVaultSharedFailure.invalid = error else { return XCTFail("\(label): \(error)") }
+            }
+            XCTAssertEqual(try retainedCheckpoint().journal, legacy.journal, label)
+        }
+        let durable = try store.materialize(checkpoint: try epochCheckpoint(projected, revision: original.hash, epoch: 1, generation: 2, recovery: intent()),
+            expectedHash: projected, markdown: change.0, documentJSON: change.1)
+        let reread = try XCTUnwrap(try LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(reread.journal, durable.checkpoint.journal)
+        let intentObject = try XCTUnwrap((try JSONSerialization.jsonObject(with: Data(reread.journal.utf8)) as? [String: Any])?["recovery"] as? [String: Any])
+        XCTAssertEqual(intentObject["operationId"] as? String, operationId)
+        XCTAssertEqual(intentObject["update"] as? String, "AQID")
+    }
+    func testEpochAdoptionCrashAfterArchiveReplaysAndFailedCheckpointKeepsPriorIntact() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root), files = LocalVaultDocumentStore(root: root)
+        let change = try changes(original, body: "Pending")
+        let first = try store.materialize(checkpoint: try epochCheckpoint(original.hash, revision: original.hash, epoch: 1, generation: 1, recovery: intent()),
+            expectedHash: original.hash, markdown: change.0, documentJSON: change.1)
+        let projected = first.document.hash, retainedJournal = try retainedCheckpoint().journal
+        let adoption = try epochCheckpoint(projected, revision: original.hash, epoch: 2, generation: 2, recovery: intent(adopted: true))
+        // A stale file revision fails the CAS before the archive or any intent is written.
+        XCTAssertThrowsError(try store.materialize(checkpoint: adoption, expectedHash: original.hash, markdown: change.0, documentJSON: change.1))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sharedDirectory().appendingPathComponent("recovery-\(operationId).json").path))
+        XCTAssertEqual(try retainedCheckpoint().journal, retainedJournal)
+        // An external edit after the intent means the current file is no longer the projection: no adoption, prior intact.
+        let external = try changes(first.document, body: "Pending\nExternal")
+        let changed = try files.write(path: path, expectedHash: projected, markdown: external.0, documentJSON: external.1,
+            templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
+        XCTAssertThrowsError(try store.materialize(checkpoint: adoption, expectedHash: changed.hash, markdown: external.0, documentJSON: external.1)) { error in
+            guard case LocalVaultSharedFailure.staleSession = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(try retainedCheckpoint().journal, retainedJournal)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sharedDirectory().appendingPathComponent("recovery-\(operationId).json").path))
+        // Reconcile the external edit in the old epoch first, then adopt with a crash after the durable intent.
+        let reconciled = try store.materialize(checkpoint: try epochCheckpoint(changed.hash, revision: original.hash, epoch: 1, generation: 2, recovery: intent()),
+            expectedHash: changed.hash, markdown: external.0, documentJSON: external.1)
+        let before = try retainedCheckpoint().journal
+        let crashing = try epochCheckpoint(reconciled.document.hash, revision: original.hash, epoch: 2, generation: 3, recovery: intent(adopted: true))
+        XCTAssertThrowsError(try store.materialize(checkpoint: crashing, expectedHash: reconciled.document.hash, markdown: external.0, documentJSON: external.1, interruptAfterIntent: true))
+        let archive = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: Data(contentsOf: sharedDirectory().appendingPathComponent("recovery-\(operationId).json")))
+        XCTAssertEqual(archive.journal, before)
+        XCTAssertEqual(try retainedCheckpoint().epoch, 1, "The prior checkpoint stays until the intent finishes")
+        let replayed = try XCTUnwrap(try LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(replayed.epoch, 2)
+        XCTAssertEqual(replayed.journal, crashing.journal)
+        XCTAssertNil(replayed.retiredReason)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sharedDirectory().appendingPathComponent("recovery-\(operationId).json").path))
+    }
+    func testEpochAdoptionRequiresLiveSessionUnretiredJournalAndPresentFile() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let change = try changes(original, body: "Pending")
+        let durable = try epochCheckpoint(original.hash, revision: original.hash, epoch: 1, generation: 1, recovery: intent())
+        let first = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId, expectedHash: original.hash,
+            epoch: 1, seq: 0, acknowledgedRevision: original.hash, journalGeneration: 1, journal: durable.journal, pending: true, markdown: change.0, documentJSON: change.1)
+        let projected = first.document.hash
+        let adoption = try epochCheckpoint(projected, revision: original.hash, epoch: 2, generation: 2, recovery: intent(adopted: true))
+        func adopt(_ engine: LocalVaultSync, token: String, expectedHash: String = projected) async throws {
+            _ = try await engine.materializeSharedEditing(sessionToken: token, itemId: itemId, expectedHash: expectedHash,
+                epoch: 2, seq: 0, acknowledgedRevision: original.hash, journalGeneration: 2, journal: adoption.journal, pending: true, markdown: change.0, documentJSON: change.1)
+        }
+        do { try await adopt(engine, token: "revoked"); XCTFail("A revoked session adopted an epoch") } catch LocalVaultSharedFailure.staleSession { }
+        XCTAssertEqual(try retainedCheckpoint().epoch, 1)
+        // A session that lost its lease after a restart cannot adopt either.
+        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        do { try await adopt(restarted, token: session.sessionToken); XCTFail("A stale token adopted after restart") } catch LocalVaultSharedFailure.staleSession { }
+        // A retired journal keeps its old epoch even for a matching intent.
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId, retiredReason: "Editing access was removed.")
+        let reopened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: projected)
+        XCTAssertNotNil(reopened.checkpoint?.retiredReason)
+        do { try await adopt(engine, token: reopened.sessionToken); XCTFail("A retired journal adopted an epoch") } catch LocalVaultSharedFailure.staleSession { }
+        XCTAssertEqual(try retainedCheckpoint().epoch, 1)
+        XCTAssertEqual(try retainedCheckpoint().journal, durable.journal)
+        // A deleted file cannot adopt; the retained journal is untouched.
+        try FileManager.default.removeItem(at: root.appendingPathComponent(path))
+        do { try await adopt(engine, token: reopened.sessionToken); XCTFail("A deleted file adopted an epoch") } catch { }
+        XCTAssertEqual(try retainedCheckpoint().journal, durable.journal)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sharedDirectory().appendingPathComponent("recovery-\(operationId).json").path))
+    }
 }
 private actor SharedTransport: LocalVaultSyncTransport {
     var items: [String: LocalVaultRemoteItem] = [:], bytes: [String: Data] = [:], uploads = 0, downloads = 0

@@ -303,6 +303,7 @@ static class Test
  var invalid=cp with{Version=99};try{await restarted.CheckpointAsync(recovered.SessionToken,recovered.Document.Hash,content,invalid);throw new Exception("future checkpoint accepted");}catch(InvalidDataException){}
  Assert(JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(sharedFiles.StateDirectory,"shared-editing","test-1","checkpoint.json")))!.Journal==cp.Journal,"unknown checkpoint version does not erase retained state");
  }
+ await EpochAdoptionTests.Run(temp,Assert);
  var isolated=new TextPackStore(Path.Combine(temp,"isolated"),Path.Combine(temp,"isolated-device"));var many=new Many();var isolatedSync=new SyncEngine(isolated,many);
  var one=isolated.Write("Notes/One.textpack",Pack("one","one"));var two=isolated.Write("Notes/Two.textpack",Pack("two","two"));await isolatedSync.SyncAsync();
  isolated.UpdateMarkdown(one.Path,TextPackStore.Markdown(isolated.Read(one.Path))+" local",isolated.Describe(one.Path).Hash);isolated.UpdateMarkdown(two.Path,TextPackStore.Markdown(isolated.Read(two.Path))+" local",isolated.Describe(two.Path).Hash);
@@ -420,7 +421,7 @@ static class Test
   public Task<string> RenameAsync(string itemId,string from,string to,string baseRevision,string operationId,CancellationToken cancellation=default)=>Get(itemId).RenameAsync(itemId,from,to,baseRevision,operationId,cancellation);
   public Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default)=>Get(itemId).DeleteAsync(itemId,path,baseRevision,operationId,cancellation);
  }
- sealed class Fake:ISyncTransport{
+ internal sealed class Fake:ISyncTransport{
   public WorkspaceCapabilities? Capabilities {get;set;}
   public IReadOnlyList<string> Folders {get;set;}=[];
   public IReadOnlyList<string>? AuthoritativeFolders {get;set;}

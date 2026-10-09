@@ -33,6 +33,7 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         let view = try XCTUnwrap(controller.window?.contentView as? WKWebView)
         let opened = try await request(relay, "collaborationOpen", ["itemId": itemId, "path": path, "hash": original.hash], root)
         let token = try XCTUnwrap(opened["sessionToken"] as? String)
+        XCTAssertEqual(opened["capabilities"] as? [String], ["epoch-adoption"], "The shared client keys automatic epoch recovery on this exact name")
         var hash = original.hash
         for generation in 1...4 {
             if generation == 2 {

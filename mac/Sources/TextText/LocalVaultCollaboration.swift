@@ -405,6 +405,7 @@ final class LocalVaultCollaboration {
         try Task.checkCancellation()
         return (data, response.statusCode)
     }
+    static let localCapabilities = ["epoch-adoption"]
     private func localOperation(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         guard let itemId = params["itemId"] as? String, Self.identifier(itemId) else {
             throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration item.")
@@ -419,8 +420,10 @@ final class LocalVaultCollaboration {
                 throw CancellationError()
             }
             localSessions[opened.sessionToken] = (itemId, engine)
+            // The shared client consumes this exact name; only stores that verify
+            // and archive authorized epoch adoption may announce it.
             return ["sessionToken": opened.sessionToken, "path": opened.document.path, "hash": opened.document.hash,
-                    "acknowledgedRevision": opened.acknowledgedRevision,
+                    "acknowledgedRevision": opened.acknowledgedRevision, "capabilities": Self.localCapabilities,
                     "projectedHash": opened.checkpoint?.projectedHash as Any? ?? NSNull(),
                     "journal": opened.checkpoint?.journal as Any? ?? NSNull(),
                     "retiredReason": opened.checkpoint?.retiredReason as Any? ?? NSNull()]

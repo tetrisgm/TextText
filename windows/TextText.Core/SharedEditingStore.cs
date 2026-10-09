@@ -10,6 +10,8 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
     sealed record Intent(int Version,string BeforeHash,string Payload,SharedCheckpoint Checkpoint);
     sealed record Active(string ItemId,string Path,IDisposable Lease);
     readonly Dictionary<string,Active> sessions=[];readonly SemaphoreSlim gate=new(1,1);bool disposed;
+    /// Announced by collaboration.open. "epoch-adoption": a pending journal may move to a newer epoch through an authorized, archived recovery intent.
+    public static readonly string[] Capabilities=["epoch-adoption"];
     string DirectoryFor(string id) {if(!Regex.IsMatch(id,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");var path=System.IO.Path.Combine(store.StateDirectory,"shared-editing",id);Directory.CreateDirectory(path);return path;}
     static T? Read<T>(string path) {if(!File.Exists(path))return default;if(new FileInfo(path).Length>90*1024*1024)throw new InvalidDataException("Shared state exceeds bounds.");return JsonSerializer.Deserialize<T>(File.ReadAllBytes(path))??throw new InvalidDataException("Invalid shared state.");}
     static void Save<T>(string path,T value)=>TextPackStore.AtomicWrite(path,JsonSerializer.SerializeToUtf8Bytes(value));
@@ -23,6 +25,34 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         var pending=j.GetProperty("pending");if(pending.GetArrayLength()>1024)throw new InvalidDataException("Too many pending updates.");
         foreach(var update in pending.EnumerateArray()){if(update.GetString()!.Length>700000)throw new InvalidDataException("Pending update too large.");_=Convert.FromBase64String(update.GetString()!);}
         if(!cp.Pending && (pending.GetArrayLength()>0 || (j.TryGetProperty("batch",out var batch)&&batch.ValueKind!=JsonValueKind.Null) || (j.TryGetProperty("unqueuedDirty",out var dirty)&&dirty.ValueKind==JsonValueKind.True)))throw new InvalidDataException("Unacknowledged updates marked saved.");
+        if(j.TryGetProperty("recovery",out var recovery)&&recovery.ValueKind!=JsonValueKind.Null){var intent=RecoveryIntent.Parse(recovery);if(intent==null||intent.Epoch>cp.Epoch)throw new InvalidDataException("Invalid saved recovery intent. Retained edits are unchanged.");}
+    }
+    /// The client's durable epoch-recovery intent: the exact bytes it sent to the server for the old epoch, plus whether the replacement epoch is adopted.
+    internal sealed record RecoveryIntent(string OperationId,long Epoch,string Update,bool Adopted) {
+        public static RecoveryIntent? Parse(JsonElement raw) {
+            if(raw.ValueKind!=JsonValueKind.Object)return null;
+            foreach(var property in raw.EnumerateObject())if(property.Name is not ("operationId" or "epoch" or "update" or "adopted"))return null;
+            if(!raw.TryGetProperty("operationId",out var id)||id.ValueKind!=JsonValueKind.String||!Regex.IsMatch(id.GetString()!,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))return null;
+            if(!raw.TryGetProperty("epoch",out var epoch)||epoch.ValueKind!=JsonValueKind.Number||!epoch.TryGetInt64(out var epochValue)||epochValue<1||epochValue>9007199254740991)return null;
+            if(!raw.TryGetProperty("update",out var update)||update.ValueKind!=JsonValueKind.String||update.GetString()!.Length==0||update.GetString()!.Length>6*1024*1024)return null;
+            try{if(Convert.FromBase64String(update.GetString()!).Length==0)return null;}catch(FormatException){return null;}
+            var adopted=false;
+            if(raw.TryGetProperty("adopted",out var flag)){if(flag.ValueKind==JsonValueKind.True)adopted=true;else if(flag.ValueKind!=JsonValueKind.False)return null;}
+            return new RecoveryIntent(id.GetString()!,epochValue,update.GetString()!,adopted);
+        }
+        public static RecoveryIntent? Of(SharedCheckpoint cp) {
+            using var doc=JsonDocument.Parse(cp.Journal);
+            return doc.RootElement.TryGetProperty("recovery",out var raw)&&raw.ValueKind!=JsonValueKind.Null?Parse(raw):null;
+        }
+    }
+    /// A pending journal may only move to a newer epoch when the incoming checkpoint proves the client adopted the epoch produced
+    /// by the recovery intent this store already holds. Server acknowledgement alone never qualifies: the intent must have been checkpointed here before the send.
+    static RecoveryIntent? AuthorizedAdoption(SharedCheckpoint prior,SharedCheckpoint incoming,PackFile current) {
+        if(!prior.Pending||prior.RetiredReason!=null||incoming.Epoch<=prior.Epoch||incoming.ItemId!=prior.ItemId||incoming.Path!=prior.Path||current.Path!=prior.Path||current.Hash!=prior.ProjectedHash||incoming.JournalGeneration<=prior.JournalGeneration)return null;
+        var retained=RecoveryIntent.Of(prior);var adopted=RecoveryIntent.Of(incoming);
+        if(retained==null||retained.Adopted||retained.Epoch!=prior.Epoch||adopted==null||!adopted.Adopted)return null;
+        if(adopted.OperationId!=retained.OperationId||adopted.Epoch!=retained.Epoch||adopted.Update!=retained.Update)return null;
+        return adopted;
     }
     public static bool HasProtectedState(string stateDirectory,string itemId) {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid remote identity.");
@@ -134,8 +164,14 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
                 Validate(store,checkpoint);if(checkpoint.ItemId!=session.ItemId||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
                 var current=store.Describe(session.Path);
                 if(prior!=null) {
-                    if(prior.RetiredReason!=null||checkpoint.JournalGeneration<prior.JournalGeneration||prior.Pending&&checkpoint.Epoch!=prior.Epoch)throw new InvalidOperationException("Newer or protected shared edits are retained.");
+                    if(prior.RetiredReason!=null||checkpoint.JournalGeneration<prior.JournalGeneration)throw new InvalidOperationException("Newer or protected shared edits are retained.");
                     if(checkpoint.JournalGeneration==prior.JournalGeneration){if(checkpoint with{Journal=prior.Journal}!=prior||!System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal),System.Text.Json.Nodes.JsonNode.Parse(prior.Journal))||current.Hash!=prior.ProjectedHash)throw new InvalidOperationException("Conflicting checkpoint generation.");return current;}
+                }
+                if(prior!=null&&prior.Pending&&checkpoint.Epoch!=prior.Epoch) {
+                    var adoption=AuthorizedAdoption(prior,checkpoint,current);
+                    if(adoption==null||current.Hash!=expectedHash)throw new InvalidOperationException("Newer or protected shared edits are retained.");
+                    // The replaced epoch's journal stays recoverable on disk before anything about it is rewritten. A retry of the same operation rewrites the identical archive.
+                    Save(System.IO.Path.Combine(DirectoryFor(session.ItemId),"recovery-"+adoption.OperationId+".json"),prior);
                 }
                 if(current.Hash!=expectedHash)throw new FileChangedException();
                 var directory=DirectoryFor(session.ItemId);var intent=new Intent(1,expectedHash,Convert.ToBase64String(textPack),checkpoint);
