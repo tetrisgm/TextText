@@ -19,8 +19,8 @@ Two Fable 5.1 Low jobs are active: live editor epoch rebinding (UI files and
 browser test) and Windows startup candidate/physical check. Their output
 targets are `/tmp/texttext-ui-resume1250.md` and
 `/tmp/texttext-win-startup1250.md`. Preserve their in-progress files and the
-unrelated dirty work in `attachments.ts`, `tabs.test.ts`, `scripts/.probe-editor.ts`,
-and `mac/scripts/__pycache__/`. Do not arm the prepared six-client run at
+unrelated dirty edits in `attachments.ts` and `tabs.test.ts`, plus local probes
+and generated caches. Do not arm the prepared six-client run at
 `/tmp/texttext-six-full1238` until the Mac/PC clients and Oracle web source are
 aligned. Web-only source `85c9bcab` passed local ship dry-run and has a verified
 archive; it has not been deployed. OpenAI commercial sign-in is deferred by the
