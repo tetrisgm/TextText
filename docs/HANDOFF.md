@@ -18,6 +18,11 @@ search, save/reopen and direct CLI/atomic ZIP edit visibility on a test note.
 
 ## Open work
 
+- Source `22a3ffa2` makes stale live epoch bindings fail closed into the
+  durable reopen path. The focused 35-test epoch suite, live browser adoption
+  check, TypeScript, and the complete local-Postgres sync gate passed (885
+  shared tests plus native checks). This source is pushed but not yet installed
+  or deployed; installed versions above remain the runtime truth.
 - The simultaneous Mac/PC app, browser and direct-file small-text round passed
   with all 13 edits visible and identical saved `text.md` hashes. See the
   [physical six-client receipt](verification/2026-10-09-six-client-live-edit.md).
