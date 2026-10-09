@@ -231,6 +231,14 @@ test("deployment validates an incoming local backup before migration", () => {
   assert.match(database, /--unit=texttext-release-backup\.service/);
   assert.match(database, /"\$prepared\/release\/oracle\/backup\.mjs"/);
   assert.ok(database.indexOf("texttext-release-backup.service") < database.indexOf('"$root/current/release/oracle/bootstrap-database.mjs"'));
+  const staged = new Set(database.match(/for name in ([^;]+); do/)?.[1].trim().split(/\s+/) ?? []);
+  for (const name of staged) {
+    const source = readFileSync(new URL(`./${name}`, import.meta.url), "utf8");
+    for (const [, dependency] of source.matchAll(/from ["']\.\/([^"']+\.mjs)["']/g)) {
+      assert.ok(staged.has(dependency), `${name} imports ${dependency}, which must be staged for the release backup`);
+    }
+  }
+  assert.ok(staged.has("backup.mjs"), "the migration stage includes the release backup entry point");
 
   const backupSource = readFileSync(new URL("./backup.mjs", import.meta.url), "utf8");
   assert.match(backupSource, /args\[0\] === "--require-upload"/);

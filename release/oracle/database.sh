@@ -32,7 +32,7 @@ id="database-$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)-$$"
 prepared="$ROOT/.texttext/oracle/$id"
 node release/oracle/prepare-migrations.mjs --out "$prepared"
 mkdir -p "$prepared/release/oracle"
-for name in entrypoint.mjs start.mjs backup.mjs; do
+for name in entrypoint.mjs shutdown-diagnostics.mjs start.mjs backup.mjs; do
   cp "$ROOT/release/oracle/$name" "$prepared/release/oracle/$name"
 done
 ssh "${ssh_options[@]}" "$host" bash -s -- "$remote_root" "$id" <<'REMOTE'
