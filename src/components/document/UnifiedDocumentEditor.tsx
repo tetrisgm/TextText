@@ -45,6 +45,7 @@ import {
   type ReplaceRequest,
 } from "@/lib/document-replace";
 import { Awareness } from "y-protocols/awareness";
+import { EpochUndoHistory, captureUndoHistory, caretAfterBodyChange, mapSelection, type CapturedHistory, type HistoryStep } from "@/lib/collab/epoch-adoption";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
 import { capturePreReadyDocumentBaseline, applyPreReadyMetadata, applyPreReadyTextOperations, preReadyTextOperations } from "@/lib/collab/pre-ready";
@@ -123,6 +124,9 @@ export type EditorImagePasteRequest = {
 
 export type EditorImagePasteResult = { caret: number } | undefined;
 
+/** Swap the live file-relay document in place; see `registerLocalRebind`. */
+export type LocalDocumentRebind = (next: Y.Doc, awareness: Awareness) => Promise<void>;
+
 type UnifiedDocumentEditorProps = {
   /** Local vaults persist through their native file bridge. */
   transport?: "cloud" | "local";
@@ -131,6 +135,11 @@ type UnifiedDocumentEditorProps = {
   localDocument?: Y.Doc;
   /** A file-vault session owns awareness beyond edit mode, including reading. */
   localPresence?: { awareness: Awareness; peers: PresencePeer[] };
+  /** Live epoch adoption. The owner registers a handle that swaps the bound
+   * `localDocument` and awareness without remounting this editor; the
+   * returned promise settles once the editor, caret and history are rebound.
+   * Registered with null on unmount. */
+  registerLocalRebind?: (rebind: LocalDocumentRebind | null) => void;
   /** Resolve embedded assets for rendering without changing canonical Yjs data. */
   resolveDocumentAssets?: (document: DocumentSnapshot) => DocumentSnapshot;
   renderTemplateLibrary?: (props: {
@@ -531,6 +540,7 @@ export function UnifiedDocumentEditor({
   externalDocument,
   localDocument,
   localPresence,
+  registerLocalRebind,
   resolveDocumentAssets,
   renderTemplateLibrary,
   renderNoteTemplatePicker,
@@ -686,7 +696,18 @@ export function UnifiedDocumentEditor({
   // typing in the pre-ready ledger until creation gives it a server ID and
   // the provider catches up. Seeding a second root here makes the server's
   // blank root compete with (and sometimes replace) the person's first edit.
-  const [doc] = useState(() => localDocument ?? new Y.Doc());
+  // The initial `localDocument` only. A later epoch adoption swaps it through
+  // the registered rebind handle, never through this prop, so the editor can
+  // capture its caret and history on the old document first.
+  const [doc, setDoc] = useState(() => localDocument ?? new Y.Doc());
+  /** Set between a rebind request and the commit that binds the next document. */
+  const rebindRef = useRef<{ next: Y.Doc; body: string; selection: { anchor: number; head: number } | null; focused: boolean;
+    history: CapturedHistory | null; resolve: () => void } | null>(null);
+  /** History recorded on documents replaced by epoch adoption; see EpochUndoHistory. */
+  const epochHistoryRef = useRef<EpochUndoHistory | null>(null);
+  const capturingRef = useRef(false);
+  /** Caret to place once the surface shows the merged text of an adopted epoch. */
+  const caretRestoreRef = useRef<{ body: string; anchor: number; head: number } | null>(null);
   const [imagePastePending, setImagePastePending] = useState(false);
   const imagePastePendingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -744,11 +765,17 @@ export function UnifiedDocumentEditor({
   // it wherever it happens to be. Yjs gives us the hook - stack items carry
   // their own metadata - so the selection rides with the step.
   useEffect(() => {
-    const onAdded = (event: { stackItem: { meta: Map<string, unknown> } }) => {
+    const onAdded = (event: { stackItem: { meta: Map<string, unknown> }; type: "undo" | "redo" }) => {
       const selection = activeBodySelection();
       if (selection) event.stackItem.meta.set("tt-selection", selection);
+      // A fresh edit (not an undo or redo moving an item) ends every redo path,
+      // including steps captured from a document replaced by epoch adoption.
+      if (event.type === "undo" && !undoManager.undoing && !undoManager.redoing) epochHistoryRef.current?.noteEdit();
     };
     const onPopped = (event: { stackItem: { meta: Map<string, unknown> } }) => {
+      // The rebind capture walks this history on the document being replaced;
+      // those pops must not move the caret the rebind is about to restore.
+      if (capturingRef.current) return;
       const selection = event.stackItem.meta.get("tt-selection") as
         | { anchor: number; head: number }
         | undefined;
@@ -808,9 +835,38 @@ export function UnifiedDocumentEditor({
     return () => window.removeEventListener(DOCUMENT_REPLACE_EVENT, handler);
   }, []);
 
+  /** Apply a step captured from a replaced document, outside the live manager's tracking. */
+  const applyHistoryStep = useCallback((step: HistoryStep) => {
+    const before = documentSnapshotFromYDoc(doc).content.body;
+    applyDocumentSnapshot(doc, step.document, EpochUndoHistory.origin);
+    const caret = step.bodyEdits?.length
+      ? step.bodyEdits[0].start + step.bodyEdits[0].replacement.length
+      : caretAfterBodyChange(before, step.document.content.body);
+    window.requestAnimationFrame(() => requestDocumentCaret(caret, caret));
+  }, [doc]);
+  // Live steps first (recorded on the bound document), then the steps carried
+  // over from the document an epoch adoption replaced.
+  const historyUndo = useCallback(() => {
+    const manager = undoManagerRef.current, history = epochHistoryRef.current;
+    if (manager?.undoStack.length) { manager.undo(); history?.noteLiveUndo(); return; }
+    if (!history?.canUndo) return;
+    const step = history.stepBack(documentSnapshotFromYDoc(doc));
+    if (step) applyHistoryStep(step);
+  }, [applyHistoryStep, doc]);
+  const historyRedo = useCallback(() => {
+    const manager = undoManagerRef.current, history = epochHistoryRef.current;
+    if (history?.nextRedo() === "captured") {
+      const step = history.stepForward(documentSnapshotFromYDoc(doc));
+      if (step) applyHistoryStep(step);
+      return;
+    }
+    if (manager?.redoStack.length) { manager.redo(); history?.noteLiveRedo(); }
+  }, [applyHistoryStep, doc]);
+  const historyRef = useRef({ undo: historyUndo, redo: historyRedo });
+  useEffect(() => { historyRef.current = { undo: historyUndo, redo: historyRedo }; }, [historyUndo, historyRedo]);
   useEffect(() => {
-    const undo = () => undoManagerRef.current?.undo();
-    const redo = () => undoManagerRef.current?.redo();
+    const undo = () => historyRef.current.undo();
+    const redo = () => historyRef.current.redo();
     window.addEventListener(DOCUMENT_UNDO_EVENT, undo);
     window.addEventListener(DOCUMENT_REDO_EVENT, redo);
     const release = registerDocumentHistory();
@@ -834,7 +890,7 @@ export function UnifiedDocumentEditor({
       doc.off("update", invalidate);
     };
   }, [doc]);
-  const [awareness] = useState(() => localPresence?.awareness ?? new Awareness(doc));
+  const [awareness, setAwareness] = useState(() => localPresence?.awareness ?? new Awareness(doc));
   const [ownsAwareness] = useState(() => !localPresence);
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   const visiblePeers = localPresence?.peers ?? peers;
@@ -971,10 +1027,63 @@ export function UnifiedDocumentEditor({
     // The local Yjs document has now been seeded; expose that external readiness.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReady(true);
-    const publish = () => localPublishRef.current(documentSnapshotFromYDoc(doc));
+    // Walking the old history during a rebind capture rewrites the document
+    // being discarded; none of those states are this editor's content.
+    const publish = () => { if (!capturingRef.current) localPublishRef.current(documentSnapshotFromYDoc(doc)); };
     doc.on("update", publish);
     return () => { doc.off("update", publish); if (ownsAwareness) awareness.destroy(); if (!localDocument) doc.destroy(); };
   }, [awareness, doc, transport, localDocument, ownsAwareness]);
+  // Live epoch adoption. The owner's collaboration client swapped its Y.Doc for
+  // the merged replacement; bind it here without remounting the surface. The
+  // old document is only read (its history walk is discarded with it), so the
+  // owner may destroy it after the returned promise settles.
+  const hasLocalDocument = Boolean(localDocument);
+  useEffect(() => {
+    if (!registerLocalRebind || transport !== "local" || !hasLocalDocument) return;
+    const rebind: LocalDocumentRebind = (next, nextAwareness) => new Promise<void>(resolve => {
+      rebindRef.current?.resolve();
+      const surface = bodySurfaceRef.current;
+      const focused = Boolean(surface && globalThis.document?.activeElement === surface);
+      const selection = focused ? activeBodySelection() : null;
+      let history: CapturedHistory | null = null;
+      const manager = undoManagerRef.current;
+      if (manager && (manager.undoStack.length || manager.redoStack.length)) {
+        capturingRef.current = true;
+        try { history = captureUndoHistory(manager, () => hasDocumentSnapshot(manager.doc) ? documentSnapshotFromYDoc(manager.doc) : null); }
+        catch { history = null; }
+        finally { capturingRef.current = false; }
+      }
+      rebindRef.current = { next, body: documentRef.current.content.body, selection, focused, history, resolve };
+      bodyMirrorRef.current.value = undefined;
+      setAwareness(nextAwareness);
+      setDoc(next);
+    });
+    registerLocalRebind(rebind);
+    return () => { registerLocalRebind(null); rebindRef.current?.resolve(); rebindRef.current = null; };
+  }, [registerLocalRebind, transport, hasLocalDocument]);
+  useEffect(() => {
+    const pending = rebindRef.current;
+    if (!pending || pending.next !== doc) return;
+    rebindRef.current = null;
+    // Steps from the replaced document continue the live history; an earlier
+    // adoption's leftover is superseded, its states no longer reachable.
+    epochHistoryRef.current = pending.history ? new EpochUndoHistory(pending.history) : null;
+    const snapshot = documentSnapshotFromYDoc(doc);
+    localPublishRef.current(snapshot);
+    if (pending.focused && pending.selection) {
+      // Placed once the surface renders the merged text; placing it earlier
+      // would clamp the caret to the old text's length.
+      caretRestoreRef.current = { body: snapshot.content.body, ...mapSelection(pending.body, snapshot.content.body, pending.selection) };
+    }
+    pending.resolve();
+  }, [doc]);
+  useLayoutEffect(() => {
+    const restore = caretRestoreRef.current;
+    if (!restore || document.content.body !== restore.body) return;
+    caretRestoreRef.current = null;
+    bodySurfaceRef.current?.focus({ preventScroll: true });
+    requestDocumentCaret(restore.anchor, restore.head);
+  }, [document]);
 
   useEffect(() => {
     if (transport !== "local" || localDocument || !externalDocument) return;
@@ -1756,8 +1865,8 @@ export function UnifiedDocumentEditor({
         if (key === "z" || key === "y") {
           event.preventDefault();
           event.stopPropagation();
-          if (key === "y" || event.shiftKey) undoManagerRef.current?.redo();
-          else undoManagerRef.current?.undo();
+          if (key === "y" || event.shiftKey) historyRef.current.redo();
+          else historyRef.current.undo();
           return;
         }
       }

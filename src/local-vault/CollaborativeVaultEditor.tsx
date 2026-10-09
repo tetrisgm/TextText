@@ -1,7 +1,7 @@
 "use client";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
+import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult, type LocalDocumentRebind } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -30,7 +30,9 @@ import { currentVaultWindowActive } from "./window-activity";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
-type NativeSharedSession = { sessionToken: string; path: string; hash: string; projectedHash?: string | null; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
+type NativeSharedSession = { sessionToken: string; path: string; hash: string; projectedHash?: string | null; acknowledgedRevision: string; journal: string | null; retiredReason: string | null; capabilities?: string[] };
+/** The native bridge adopts a recovered epoch only when it advertises this; web relays need no native checkpoint. */
+const EPOCH_ADOPTION = "epoch-adoption";
 export type VaultEditorProps = {
   documentReferences?: import("@/lib/presentation/workspace-reference-choices").DocumentReferenceSource;
   onOpenReference?: (id: string) => void;
@@ -58,7 +60,18 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const [opened, setOpened] = useState(initial);
   const [snapshot, setSnapshot] = useState(() => readDocument(initial));
   const [client, setClient] = useState<FileCollaborationClient | null>(null);
-  const awareness = useMemo(() => client ? new Awareness(client.doc) : null, [client]);
+  // The bound document and its awareness. Automatic epoch recovery replaces
+  // both while the client and the mounted editor stay; see onDocumentReplaced.
+  const [bound, setBound] = useState<{ doc: Y.Doc; awareness: Awareness } | null>(null);
+  const boundRef = useRef(bound);
+  const bind = useCallback((doc: Y.Doc | null, awareness?: Awareness) => {
+    if (boundRef.current?.doc === doc) return;
+    boundRef.current = doc ? { doc, awareness: awareness ?? new Awareness(doc) } : null;
+    setBound(boundRef.current);
+  }, []);
+  const awareness = bound?.awareness ?? null;
+  const rebindRef = useRef<LocalDocumentRebind | null>(null);
+  const registerRebind = useCallback((rebind: LocalDocumentRebind | null) => { rebindRef.current = rebind; }, []);
   const presenceRef = useRef<FilePresenceClient | null>(null);
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const clientRef = useRef<FileCollaborationClient | null>(null);
@@ -145,6 +158,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       shared = new FileCollaborationClient({ server: config.namespace, workspaceId: config.workspaceId, itemId: config.itemId,
       active: currentVaultWindowActive(),
       inactiveReason: navigator.onLine ? "paused" : "offline",
+      supportsEpochRecovery: native ? Boolean(native.capabilities?.includes(EPOCH_ADOPTION)) : true,
       retainedJournal: native?.journal,
       retainedJournalPath: native?.path,
       localRevision: native?.acknowledgedRevision,
@@ -189,7 +203,21 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         }
       },
       onChange: (next, presentation) => { if (!stopped) { if (presentation) { file.current = { ...file.current, ...presentation }; setOpened(file.current); } latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
-      onStatus: (next, message) => { if (!stopped && shared) { setStatus(next); setDetail(message ?? ""); setCanEdit(shared.canEdit); setClient(shared); } },
+      onStatus: (next, message) => {
+        if (stopped || !shared) return;
+        setStatus(next); setDetail(message ?? ""); setCanEdit(shared.canEdit); setClient(shared);
+        bind(shared.doc);
+      },
+      // Live epoch adoption: the client already owns `next`. Bind the mounted
+      // editor to it (caret and history carried over) before the client
+      // destroys `previous`; an editor that is not mounted simply opens next.
+      onDocumentReplaced: async (next, previous) => {
+        if (stopped || boundRef.current?.doc !== previous) return;
+        const awareness = new Awareness(next);
+        const rebind = rebindRef.current;
+        try { if (rebind) await rebind(next, awareness); }
+        finally { if (!stopped) bind(next, awareness); else awareness.destroy(); }
+      },
     });
     detachedSaveRef.current.clear();
     clientRef.current = shared;
@@ -212,7 +240,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       document.removeEventListener("visibilitychange", visibility); window.removeEventListener("online", visibility); window.removeEventListener("offline", visibility);
       window.removeEventListener("focus", visibility); window.removeEventListener("blur", visibility);
     };
-  }, [config.namespace, config.workspaceId, config.itemId, config.localFiles, generation, onTitleChange]);
+  }, [config.namespace, config.workspaceId, config.itemId, config.localFiles, generation, onTitleChange, bind]);
   useEffect(() => {
     if (!config.localFiles) return;
     let stopped = false, reading = false, queued = false;
@@ -305,7 +333,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         if (clientRef.current === shared) clientRef.current = null;
       }
       file.current = fresh; setOpened(fresh); setSnapshot(freshSnapshot);
-      setClient(null); setStatus("offline");
+      setClient(null); bind(null); setStatus("offline");
       if (waitForSync) {
         externalReloadRef.current = true;
         setDetail("Waiting for the updated file to sync…"); setWaitingForExternalSync(true);
@@ -319,7 +347,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       if (waitForSync) setStatus("error");
       setDetail(error instanceof Error ? error.message : "Could not reopen the file.");
     }
-  }, [config.itemId, config.localFiles, onChanged]);
+  }, [config.itemId, config.localFiles, onChanged, bind]);
   const pasteImages = useCallback(async (request: EditorImagePasteRequest): Promise<EditorImagePasteResult> => {
     let closedNativeSession = false;
     try {
@@ -466,7 +494,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       {editable && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />}
       {articleSource(snapshot) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => setReading(true)}>Read</button>{editable && <button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button>}</div>}
       {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : experience === "note" ? <VaultNoteDisplay document={display} sourceBody={snapshot.content.body} template={template} onEdit={editable ? () => setReading(false) : undefined} onToggleTask={editable ? (index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } }) : undefined} /> : experience === "article" ? <VaultStoryDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : <DocumentRenderer document={display} template={template} />) :
-        <UnifiedDocumentEditor onOpenReference={onOpenReference} referenceChoices={referenceChoices} documentReferences={documentReferences} renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} key={`${config.itemId}:${generation}`} transport="local" localDocument={client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} resolveDocumentAssets={resolveAssets}
+        <UnifiedDocumentEditor onOpenReference={onOpenReference} referenceChoices={referenceChoices} documentReferences={documentReferences} renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} key={`${config.itemId}:${generation}`} transport="local" localDocument={bound?.doc ?? client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} registerLocalRebind={registerRebind} resolveDocumentAssets={resolveAssets}
           focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
           onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { if (await flush() && (experience === "note" || experience === "article")) setReading(true); }}
