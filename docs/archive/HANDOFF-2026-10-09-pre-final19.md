@@ -1,3 +1,5 @@
+> ARCHIVED: Historical handoff. Replaced by [current handoff](../HANDOFF.md).
+
 # TextText handoff
 
 ## Active October 9 continuation (03:20 Pacific)
@@ -30,7 +32,7 @@ owner. No public Mac release is authorized.
 
 Pending-epoch recovery core is committed as `451b8325`, with real-store restart,
 lost-ACK and late-edit tests. Native adoption is committed as `7ab6cbca`;
-[native verification](verification/2026-10-09-native-epoch-adoption.md).
+[native verification](../verification/2026-10-09-native-epoch-adoption.md).
 Live editor rebinding is unfinished. The independent review found an adopted
 journal crash window that falsely enters recovery and an old-document lifetime
 leak; fix these before delivery. Resume evidence and scopes:
@@ -43,7 +45,7 @@ Installed: Mac 0.204 (1239, source `85c9bcab`), Windows source `488746b2`,
 Oracle `6d07ca4b`. Mac physical rename/focus/undo now passes; the old full1237
 fixture still shows pending recovery, contradicting the clean-journal diagnosis.
 Windows 85c9bcab candidate is built but its existing app refused normal close.
-[Installed evidence](verification/2026-10-09-mac-1239.md).
+[Installed evidence](../verification/2026-10-09-mac-1239.md).
 The reported three baseline collaboration failures did not reproduce: all 70
 `collaboration-client.test.ts` cases pass in a clean `033b1824` archive. The
 earlier failure claim is withdrawn; `/tmp/texttext-epoch-baseline-audit.md`
@@ -55,26 +57,26 @@ the listing, and the editor flipped read-only and unmounted. The editor now
 keeps its element, caret and undo through stale and identified listings and
 still loses editing on explicit revocation; browser regression fails on the old
 source and passes now. Build, install and physical rename re-check remain.
-[Receipt](verification/2026-10-09-rename-focus-continuity.md).
+[Receipt](../verification/2026-10-09-rename-focus-continuity.md).
 
 Mac 1237, Windows and Oracle had the projection-baseline repair. A fresh
 six-client preflight reproduced Mac editor recovery after a filesystem rename;
-timed input was aborted. [Current failure](verification/2026-10-09-rename-editor-failure.md).
+timed input was aborted. [Current failure](../verification/2026-10-09-rename-editor-failure.md).
 Windows superseded-upload recovery is committed and building;
-[receipt](verification/2026-10-09-superseded-upload.md).
+[receipt](../verification/2026-10-09-superseded-upload.md).
 
 Latest six-client attempt failed: Windows stayed local and raised an external
 file conflict while other clients continued. Its pending edits remain protected.
-[Failure, test limitations and next investigation](verification/2026-10-08-six-client-full1235.md).
+[Failure, test limitations and next investigation](../verification/2026-10-08-six-client-full1235.md).
 Mac 0.204 (1236) and Windows source `248bbb28` are installed. Mac existing-note
 search, edit and saved-file verification passed. Windows recovered all six retained
 PC markers and its CLI marker to disk, then closed with a successful native flush.
 It still could not join shared editing: the upload conflicts while reconciling
 sequential JSON/Markdown edits against the last cloud base. The representation-baseline repair now passes shared/native tests and focused
 review; build and deploy next. Six-client acceptance is not passed.
-[Repair receipt](verification/2026-10-09-projection-baseline.md).
-[Current installation and failure evidence](verification/2026-10-08-client-1236.md).
-[Multiple-edit merge repair](verification/2026-10-08-multispan-recovery.md).
+[Repair receipt](../verification/2026-10-09-projection-baseline.md).
+[Current installation and failure evidence](../verification/2026-10-08-client-1236.md).
+[Multiple-edit merge repair](../verification/2026-10-08-multispan-recovery.md).
 The owner requested less custom sync machinery. A bounded standard-provider
 prototype is in `scripts/experiments/hocuspocus`; production replacement is not yet
 implemented or verified.
@@ -85,11 +87,11 @@ Chromium process-crash/replay checks after an explicit disk barrier. See the
 experiment README for limits and commands; neither adapter is in production.
 Oracle now serves `texttext-oracle-20261009T045727Z-6b940d3e`, including concurrent
 file appends and template sidecar changes that preserve the current Yjs epoch;
-[regression and delivery limits](verification/2026-10-08-template-continuity.md).
+[regression and delivery limits](../verification/2026-10-08-template-continuity.md).
 Epoch recovery work now retains the authoritative binary state before resets and
 prepares a deduplicated merge through the authorized durable server writer.
 Client journal/native lease adoption is still pending;
-[scope and remaining integration](verification/2026-10-08-epoch-recovery.md).
+[scope and remaining integration](../verification/2026-10-08-epoch-recovery.md).
 
 ## Active sync repair
 
@@ -101,7 +103,7 @@ Source `176228d3` is installed as Mac 0.204 (1233). Full gates passed, including
 Actual Mac typing plus three CLI replacements preserved all markers; native
 undo/redo kept CLI edits, and Finish saved normally. PC isolated production-window
 tests also passed app/CLI collisions with continuous editor-element observation.
-[Evidence and limits](verification/2026-10-08-inplace-file-merge.md).
+[Evidence and limits](../verification/2026-10-08-inplace-file-merge.md).
 
 Next: restart with pending edits plus external changes, multiple importers,
 overlapping replacements/template-source changes, and all six physical clients.
@@ -122,7 +124,7 @@ keeps valid newly added CLI receipts inside the same session, with a reproduced
 failing baseline and passing regression. Both server fixes deployed as
 `texttext-oracle-20261009T042315Z-f4b8472f`; authenticated live checks passed;
 the old pending journal still requires reconciliation.
-[Evidence](verification/2026-10-08-attachment-continuity.md).
+[Evidence](../verification/2026-10-08-attachment-continuity.md).
 
 ## Pending restart candidate
 
@@ -141,7 +143,7 @@ replacements and six-client acceptance remain outstanding.
 ## Earlier delivery references
 
 - Mac `/Applications/TextText.app`: **0.204 (1234)**, source `88e9ad0e`.
-  Latest install and native app/CLI acceptance: [receipt](verification/2026-10-08-inplace-file-merge.md).
+  Latest install and native app/CLI acceptance: [receipt](../verification/2026-10-08-inplace-file-merge.md).
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
   finds it immediately, and the same item/title/original URL opens on Oracle.
@@ -159,15 +161,15 @@ replacements and six-client acceptance remain outstanding.
   fixing the missing `QLPreviewingController` conformance. Nine focused preview
   tests and the required exact-source sync gate pass. Build 1226 installed and
   reopened signed in with the saved bookmark and URL intact.
-  [Quick Look receipt](verification/2026-10-08-quicklook-delivery.md).
+  [Quick Look receipt](../verification/2026-10-08-quicklook-delivery.md).
   File Provider interactive checks remain.
-  [Share delivery](verification/2026-10-08-share-workspace-delivery.md).
-  [Current acceptance](verification/2026-10-08-current-client-acceptance.md).
+  [Share delivery](../verification/2026-10-08-share-workspace-delivery.md).
+  [Current acceptance](../verification/2026-10-08-current-client-acceptance.md).
 - Oracle: **texttext-oracle-20261009T023037Z-9189ee96**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services remain active; HAProxy unchanged and
   previous release retained. Safari reopened the saved photo and reconnected. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
-  [PDF delivery](verification/2026-10-08-pdf-capture.md).
+  [PDF delivery](../verification/2026-10-08-pdf-capture.md).
 - Windows installed source **88e9ad0e**, candidate verified and replaced the
   canonical app. Native core/agent suites, shared client tests, TypeScript,
   packaging and interactive WPF smoke passed. Previous app retained at
@@ -186,7 +188,7 @@ replacements and six-client acceptance remain outstanding.
   A separate 1232d runner returned exit 0 (12 inputs, editor continuity); its
   individual receipts still need collection. New PC SSH connections reset on
   both existing profiles, so its CLI actor never started.
-  [Current delivery and open failure](verification/2026-10-08-restart-delivery.md).
+  [Current delivery and open failure](../verification/2026-10-08-restart-delivery.md).
 - Real workspace: `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`,
   ID `be28ae03-c64e-4695-80af-04f048f86f37`. Preserve content.
 
@@ -199,7 +201,7 @@ replacements and six-client acceptance remain outstanding.
   reconciliation/typing-continuity path before claiming simultaneous acceptance.
   Run c's interrupted test-only journal is retained; do not clear it to hide the
   failure. Canonical PC app needs reopening after temporary SSH service-accept
-  resets clear. [Exact evidence and retained state](verification/2026-10-08-live-windows-file-collision.md).
+  resets clear. [Exact evidence and retained state](../verification/2026-10-08-live-windows-file-collision.md).
 
 - External-file collaboration promotion: the UI only promoted app-created notes
   after initial upload. CLI-created/repaired files could remain in local editing
@@ -238,14 +240,14 @@ replacements and six-client acceptance remain outstanding.
   or reopening. Windows installed the same UI source. Oracle deployed `ee7292ad` after the complete web-only gate; all thirteen live
   checks passed. Logs `/tmp/texttext-reader-recovery-web-verify.log` and
   `/tmp/texttext-reader-recovery-oracle-deploy.log`.
-  [Recovery and live sync evidence](verification/2026-10-08-reader-recovery-live-sync.md).
+  [Recovery and live sync evidence](../verification/2026-10-08-reader-recovery-live-sync.md).
   Original fixture retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`.
   Supersedes intermediate 1227/1228 candidates; neither was installed.
 
 - Owner now explicitly requires **all six simultaneously**: Mac CLI, Windows CLI,
   both native desktop apps and a browser on each physical machine. The acceptance
   matrix and remaining real-adapter orchestration are in
-  [six-client acceptance](verification/six-client-sync-acceptance.md).
+  [six-client acceptance](../verification/six-client-sync-acceptance.md).
   The extended local two-account collaboration run passed twelve alternating
   small edits (median 448 ms, p95/max 522 ms), concurrent/undo/redo, offline/reload,
   permission revocation, file/folder visibility and zero idle repeat mutations.
@@ -263,11 +265,11 @@ replacements and six-client acceptance remain outstanding.
   live checks; Mac 1222 installed and reopened signed in on the real iCloud
   workspace with existing note/body intact and no recovery controls. Windows
   now uses ab8d2968, including backlink cancellation.
-  [Delivery receipt](verification/2026-10-08-backlinks-delivery.md).
+  [Delivery receipt](../verification/2026-10-08-backlinks-delivery.md).
   Closed/unmounted scans stop after their current batch; old results/errors
   cannot overwrite a reopened panel. Baseline fails the new regression; current
   source, TypeScript and reader rerender checks pass.
-  [Receipt](verification/2026-10-08-backlinks-cancellation.md).
+  [Receipt](../verification/2026-10-08-backlinks-cancellation.md).
 
 - Live automatic PDF capture saved correct content but left the open reader
   pending until reload. Current source adds targeted reader invalidation after
@@ -276,7 +278,7 @@ replacements and six-client acceptance remain outstanding.
   acceptance passed. Mac 1221 built, installed and passed signed-in startup,
   existing note and cross-client captured PDF read. Log `/tmp/texttext-mac1221-build.log`.
   Physical Windows candidate verified and installed; current visible acceptance pending.
-  [Evidence](verification/2026-10-08-pdf-capture.md).
+  [Evidence](../verification/2026-10-08-pdf-capture.md).
 
 - Delivered source `6e1a9ee7`: bounded PDF text capture and plain-template Parent editing.
   Shared capture/enrichment regressions (31 tests), real PDF workers, browser
@@ -285,7 +287,7 @@ replacements and six-client acceptance remain outstanding.
   Live PDF capture failed: Turbopack spread the binary worker input and the
   parser received no bytes. `b0f15c7b` fixes the envelope and cleanup, and adds
   a bundled-worker packaging gate. The old compiled worker fails this gate.
-  [PDF receipt](verification/2026-10-08-pdf-capture.md).
+  [PDF receipt](../verification/2026-10-08-pdf-capture.md).
 - Live Safari created `Notes/Parent menu live verification 1218.textpack` via
   Parent in the insertion menu. Search focused, selected existing stable ID,
   returned focus to writing, and saved. Independent iCloud ZIP inspection
@@ -306,34 +308,34 @@ replacements and six-client acceptance remain outstanding.
 - Latest product acceptance for reusable templates: real Mac generation,
   refinement, retained editable blueprint, Save as look, immutable version
   creation/retry, picker reuse and Safari-to-Mac save convergence passed.
-  [Authoring receipt](verification/2026-10-08-template-version-authoring.md).
+  [Authoring receipt](../verification/2026-10-08-template-version-authoring.md).
   Current Oracle source contains these changes; installed Windows acceptance remains.
 
 ## Remaining acceptance and product work
 
 - Verify Windows false recovery after the authorized candidate install. The reported 1185 note has zero pending updates but an old retired
-  journal. [Root-cause evidence](verification/2026-10-08-clean-epoch-recovery.md).
+  journal. [Root-cause evidence](../verification/2026-10-08-clean-epoch-recovery.md).
   Then check account,
   existing notes, search, save/reopen, live sync and actual agent/template creation.
 - Two-account local production sharing/collaboration acceptance passed, including
   offline reload, permissions and new-folder discovery.
-  [Current receipt](verification/2026-10-08-current-client-acceptance.md).
+  [Current receipt](../verification/2026-10-08-current-client-acceptance.md).
   Finish physical-client automatic reconnect/failure acceptance.
   Preserve independently tested sync/epoch/outbox/receipt behavior and direct
   file editing. Second physical Apple-device iCloud delivery, Windows provider
   eviction and hardware power loss are not live-certified.
 - Complete the six service-reference creation/edit/read comparisons and fix
-  concrete gaps. [Requirement map](design/template-reference-parity.md).
+  concrete gaps. [Requirement map](../design/template-reference-parity.md).
   PDF embedded text is now implemented; original PDF attachments, OCR,
   transcripts and automatic per-bookmark AI summaries remain separate work.
   Gallery opt-in native image description already passed; hosted configured
   provider generation/approval remains unverified.
 - Verify integrated platform performance, interactive extensions and workspace
   switching. Retain measured search/cache improvements and only remeasure
-  affected paths. [Bounded performance](verification/2026-10-07-file-vault-bounded-performance.md),
-  [live file roundtrip](verification/2026-10-08-live-file-roundtrip-1202.md).
+  affected paths. [Bounded performance](../verification/2026-10-07-file-vault-bounded-performance.md),
+  [live file roundtrip](../verification/2026-10-08-live-file-roundtrip-1202.md).
 - Existing 22-check receipts certify their exact sources, not all later changes:
-  [0428bfca receipt](verification/2026-10-08-windows-creation-release-gates.json).
+  [0428bfca receipt](../verification/2026-10-08-windows-creation-release-gates.json).
   Later source uses relevant tests and delivery checks; do not claim unsupported completion.
 
 ## External limits
@@ -354,7 +356,7 @@ replacements and six-client acceptance remain outstanding.
 
 ## Prior evidence
 
-[Archived handoff](verification/2026-10-08-handoff-before-current-audit.md)
+[Archived handoff](../verification/2026-10-08-handoff-before-current-audit.md)
 retains earlier receipts and investigations, including resolved findings whose
 old “source only” wording is superseded by current delivery. Prefer current
 source and receipts above over those historical status statements.
