@@ -45,6 +45,17 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
             return doc.RootElement.TryGetProperty("recovery",out var raw)&&raw.ValueKind!=JsonValueKind.Null?Parse(raw):null;
         }
     }
+    /// A retirement that only repeats the retained journal's own "retired" text was written by the browser client, not found by this store.
+    /// The reopened editor may revive that journal (the server still decides access); a newer unretired checkpoint of the same epoch and
+    /// path lifts it. Retirements this store or the sync engine recorded carry other text and stay fenced.
+    static bool LiftsMirroredRetirement(SharedCheckpoint prior,SharedCheckpoint incoming) {
+        if(prior.RetiredReason==null||incoming.RetiredReason!=null)return false;
+        try {
+            using var doc=JsonDocument.Parse(prior.Journal);
+            if(!doc.RootElement.TryGetProperty("retired",out var retired)||retired.ValueKind!=JsonValueKind.String||retired.GetString()!=prior.RetiredReason)return false;
+        }catch(JsonException){return false;}
+        return incoming.Epoch==prior.Epoch&&incoming.Path==prior.Path&&incoming.ItemId==prior.ItemId&&incoming.JournalGeneration>prior.JournalGeneration;
+    }
     /// A pending journal may only move to a newer epoch when the incoming checkpoint proves the client adopted the epoch produced
     /// by the recovery intent this store already holds. Server acknowledgement alone never qualifies: the intent must have been checkpointed here before the send.
     static RecoveryIntent? AuthorizedAdoption(SharedCheckpoint prior,SharedCheckpoint incoming,PackFile current) {
@@ -164,7 +175,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
                 Validate(store,checkpoint);if(checkpoint.ItemId!=session.ItemId||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
                 var current=store.Describe(session.Path);
                 if(prior!=null) {
-                    if(prior.RetiredReason!=null||checkpoint.JournalGeneration<prior.JournalGeneration)throw new InvalidOperationException("Newer or protected shared edits are retained.");
+                    if((prior.RetiredReason!=null&&!LiftsMirroredRetirement(prior,checkpoint))||checkpoint.JournalGeneration<prior.JournalGeneration)throw new InvalidOperationException("Newer or protected shared edits are retained.");
                     if(checkpoint.JournalGeneration==prior.JournalGeneration){if(checkpoint with{Journal=prior.Journal}!=prior||!System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal),System.Text.Json.Nodes.JsonNode.Parse(prior.Journal))||current.Hash!=prior.ProjectedHash)throw new InvalidOperationException("Conflicting checkpoint generation.");return current;}
                 }
                 if(prior!=null&&prior.Pending&&checkpoint.Epoch!=prior.Epoch) {

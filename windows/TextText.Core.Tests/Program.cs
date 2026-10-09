@@ -304,6 +304,7 @@ static class Test
  Assert(JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(sharedFiles.StateDirectory,"shared-editing","test-1","checkpoint.json")))!.Journal==cp.Journal,"unknown checkpoint version does not erase retained state");
  }
  await EpochAdoptionTests.Run(temp,Assert);
+ await MirroredRetirementTests.Run(temp,Assert);
  var isolated=new TextPackStore(Path.Combine(temp,"isolated"),Path.Combine(temp,"isolated-device"));var many=new Many();var isolatedSync=new SyncEngine(isolated,many);
  var one=isolated.Write("Notes/One.textpack",Pack("one","one"));var two=isolated.Write("Notes/Two.textpack",Pack("two","two"));await isolatedSync.SyncAsync();
  isolated.UpdateMarkdown(one.Path,TextPackStore.Markdown(isolated.Read(one.Path))+" local",isolated.Describe(one.Path).Hash);isolated.UpdateMarkdown(two.Path,TextPackStore.Markdown(isolated.Read(two.Path))+" local",isolated.Describe(two.Path).Hash);

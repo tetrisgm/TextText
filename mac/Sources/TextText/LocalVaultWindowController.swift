@@ -9,7 +9,7 @@ import TextTextShareCore
 
 /// The existing document editor, bundled locally, talking only to the folder
 /// the person selected. Hosted pages cannot invoke this filesystem bridge.
-final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
+final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, NSWindowDelegate {
     static var entryURL: URL? {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("LocalVault/index.html"),
               FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -870,11 +870,55 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         guard let data = try? JSONSerialization.data(withJSONObject: value), let json = String(data: data, encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('\(event)',{detail:\(json)}))", completionHandler: nil)
     }
+    /// Where a vault navigation goes. Anchor clicks with a `download` attribute
+    /// (the recovery JSON the editor builds from a blob URL) become WKDownloads
+    /// instead of being cancelled; the vault entry loads; web links open in the
+    /// browser; everything else is refused.
+    enum NavigationDecision: Equatable { case allow, download, openExternally(URL), cancel }
+    static func navigationDecision(url: URL?, shouldPerformDownload: Bool, entry: URL) -> NavigationDecision {
+        if shouldPerformDownload { return .download }
+        guard let url else { return .cancel }
+        if url.standardizedFileURL == entry.standardizedFileURL { return .allow }
+        if ["http", "https", "mailto"].contains(url.scheme ?? "") { return .openExternally(url) }
+        return .cancel
+    }
+    /// The save-panel name for a download: the last path component only, never empty.
+    static func downloadFileName(suggested: String) -> String {
+        let name = (suggested as NSString).lastPathComponent
+        return name.isEmpty || name == "." || name == ".." ? "TextText download" : name
+    }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = action.request.url else { decisionHandler(.cancel); return }
-        if url.standardizedFileURL == entry.standardizedFileURL { decisionHandler(.allow); return }
-        if ["http", "https", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
-        decisionHandler(.cancel)
+        switch Self.navigationDecision(url: action.request.url, shouldPerformDownload: action.shouldPerformDownload, entry: entry) {
+        case .allow: decisionHandler(.allow)
+        case .download: decisionHandler(.download)
+        case .openExternally(let url): NSWorkspace.shared.open(url); decisionHandler(.cancel)
+        case .cancel: decisionHandler(.cancel)
+        }
+    }
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = Self.downloadFileName(suggested: suggestedFilename)
+        let finish: (NSApplication.ModalResponse) -> Void = { answer in
+            // WebKit refuses to overwrite; an existing file is reported as a failure instead of replaced.
+            guard answer == .OK, let destination = panel.url, !FileManager.default.fileExists(atPath: destination.path) else {
+                completionHandler(nil); return
+            }
+            completionHandler(destination)
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: finish) } else { panel.begin(completionHandler: finish) }
+    }
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        let alert = NSAlert()
+        alert.messageText = "The download could not be saved."
+        alert.informativeText = error.localizedDescription
+        if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
     }
 }
 
