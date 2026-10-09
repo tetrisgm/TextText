@@ -35,6 +35,11 @@ A file snapshot over SSH proves stored content, not a visible Windows editor.
 
 ## Current evidence and gaps
 
+The October 9 [physical six-client live-edit round](2026-10-09-six-client-live-edit.md)
+passed simultaneous small-text convergence and saved-file equality. The
+two-account and fault rounds below remain open. Earlier evidence in this
+section is historical.
+
 Mac 1232 and Windows `2e0e10c1` are installed; Oracle serves `texttext-oracle-20261009T023037Z-9189ee96` after complete
 verification and thirteen live checks. Mac CLI changes reached the open native reader; native
 live typing reached Safari before Finish; independent PC ZIP inspection confirmed

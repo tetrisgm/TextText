@@ -18,13 +18,11 @@ search, save/reopen and direct CLI/atomic ZIP edit visibility on a test note.
 
 ## Open work
 
-- The six-client Mac/PC app, browser and CLI torture run has not been armed.
-  Apple sign-in failed inside Codex's embedded browser; the user's existing
-  Safari TextText session is signed in. A Safari edit of the build-1240 test
-  note appeared in the open Mac app without reopening. Do not claim sync
-  acceptance before every client converges and
-  its editors survive. The acceptance contract is
-  [here](verification/six-client-sync-acceptance.md).
+- The simultaneous Mac/PC app, browser and direct-file small-text round passed
+  with all 13 edits visible and identical saved `text.md` hashes. See the
+  [physical six-client receipt](verification/2026-10-09-six-client-live-edit.md).
+  The remaining fault and two-account rounds in the
+  [acceptance contract](verification/six-client-sync-acceptance.md) are open.
 - Windows' older `Six-client acceptance 1232a` journal remains protected: no
   pending marker was lost, but automatic epoch merge could not absorb it. The
   exact checkpoint, journal and cloud evidence is in the Windows report above.
