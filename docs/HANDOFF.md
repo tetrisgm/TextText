@@ -2,7 +2,7 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1224)**, source `4734219c`.
+- Mac `/Applications/TextText.app`: **0.204 (1226)**, source `20d7bb91`.
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
   finds it immediately, and the same item/title/original URL opens on Oracle.
@@ -12,8 +12,15 @@
   File shares remain safely retained in the inbox pending implementation.
   Current source also supports append by stable item identity with a mutation
   receipt inside the TextPack; three focused tests pass, including retry after
-  later human edits and rename. Mac candidate delivery remains.
-  Quick Look/File Provider interactive checks remain.
+  later human edits and rename. Build/install and signed-in startup passed;
+  existing capture reopens with its saved title and URL. Exact-source sync gate
+  passed (848 shared tests plus native suites), `/tmp/texttext-dbab6d3a-sync.log`.
+  Finder Quick Look now renders an existing note's saved title and body after
+  fixing the missing `QLPreviewingController` conformance. Nine focused preview
+  tests and the required exact-source sync gate pass. Build 1226 installed and
+  reopened signed in with the saved bookmark and URL intact.
+  [Quick Look receipt](verification/2026-10-08-quicklook-delivery.md).
+  File Provider interactive checks remain.
   [Share delivery](verification/2026-10-08-share-workspace-delivery.md).
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md).
 - Oracle: **texttext-oracle-20261008-e722c893-backlinks**, deployed successfully;
@@ -35,7 +42,7 @@
   task was removed. The affected 1185 note checkpoint refreshed to epoch 2, Pending false and
   RetiredReason null; old checkpoint archived automatically. Visible banner
   disappearance remains unverified.
-  Latest read-only PC inspection: canonical process 18184 responds; the affected
+  Latest read-only PC inspection: canonical process 45512 responds; the affected
   journal has zero pending updates, no batch, no unqueued dirty state and no
   retirement. No native checkpoint under the current Sync root is pending or
   retired. Visible editing acceptance still remains.
