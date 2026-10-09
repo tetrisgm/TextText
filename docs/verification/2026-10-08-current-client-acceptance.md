@@ -46,3 +46,22 @@ Log `/tmp/texttext-collaboration-e19d53c3-acceptance.log`. Final TypeScript pass
 log `/tmp/texttext-sharing-verifier-types.log`. Test fixtures were cleaned by
 the verifiers and the temporary server was stopped. These are local compiled
 production acceptance tests, not physical second-device iCloud certification.
+
+
+## Installed Mac share-extension inspection
+
+On Mac 1221, actual Safari File > Share did not list TextText. System Settings
+Sharing explicitly listed `TextText Share` with its switch off. The installed
+Info.plist identifies `app.texttext.mac.share`; read-only `pluginkit -m -A -D -i
+app.texttext.mac.share` confirmed registration at version 0.204. This is an
+activation gap, not evidence that the signed extension was omitted.
+
+UI automation could read the sheet but toggle actions failed with invalidated
+element errors; subsequent settings-window scrolling failed with
+`noWindowsAvailable`, including after rebinding and resetting the UI session.
+No successful enablement or capture is claimed. The temporary public Safari
+tab was closed, returning to the existing TextText workspace tab.
+
+Next: enable this extension through the ordinary Sharing settings, then verify
+an actual public-link capture into the current iCloud workspace. Quick Look
+and interactive File Provider acceptance remain separate.

@@ -5,7 +5,9 @@
 - Mac `/Applications/TextText.app`: **0.204 (1221)**, source `e19d53c3`.
   Signed-in startup, existing content and the reported 1185 note passed without
   recovery controls. Automatic reconnect passed during deployment. Saved-body
-  cache invalidation passed on 1221; interactive extensions remain.
+  cache invalidation passed on 1221. Safari share extension is registered but
+  System Settings shows it disabled; enabling/capture remains unverified after
+  native UI automation errors. Quick Look/File Provider interactive checks remain.
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md). Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
 - Oracle: **texttext-oracle-20261008-e19d53c3-capture-reader**, deployed successfully;
