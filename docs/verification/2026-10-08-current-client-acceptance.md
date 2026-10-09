@@ -1,7 +1,10 @@
 # Current client acceptance
 
-Product source `e19d53c3`; Mac 0.204 (1221), current Oracle delivery recorded in
-[PDF receipt](2026-10-08-pdf-capture.md). Windows candidate is verified but not installed.
+Current installed delivery is recorded in [share workspace acceptance](2026-10-08-share-workspace-delivery.md)
+and [Windows delivery](2026-10-08-windows-current-delivery.md). Mac 0.204 (1224),
+Windows source `ab8d2968`; Oracle delivery remains `e722c893`.
+The earlier scoped checks below used source `e19d53c3`, Mac 1221 and the
+[PDF delivery](2026-10-08-pdf-capture.md).
 
 ## Installed Mac search cache
 
@@ -48,7 +51,7 @@ the verifiers and the temporary server was stopped. These are local compiled
 production acceptance tests, not physical second-device iCloud certification.
 
 
-## Installed Mac share-extension inspection
+## Historical Mac 1221 share-extension inspection
 
 On Mac 1221, actual Safari File > Share did not list TextText. System Settings
 Sharing explicitly listed `TextText Share` with its switch off. The installed
@@ -62,6 +65,8 @@ element errors; subsequent settings-window scrolling failed with
 No successful enablement or capture is claimed. The temporary public Safari
 tab was closed, returning to the existing TextText workspace tab.
 
-Next: enable this extension through the ordinary Sharing settings, then verify
-an actual public-link capture into the current iCloud workspace. Quick Look
-and interactive File Provider acceptance remain separate.
+Subsequently resolved for bookmark capture in Mac 1224: the owner enabled
+permission, PlugInKit election exposed the extension, and both startup and the
+file-workspace filing path were corrected. Actual Safari capture appeared in
+iCloud, native search, Oracle and Windows. See the current delivery receipts
+above. Quick Look and interactive File Provider acceptance remain separate.
