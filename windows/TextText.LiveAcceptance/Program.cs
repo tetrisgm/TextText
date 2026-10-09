@@ -56,6 +56,12 @@ static class Program
                 }
                 catch (Exception error)
                 {
+                    try
+                    {
+                        if (Field(window, "web") is WebView2 diagnostic && diagnostic.CoreWebView2 is not null)
+                            Record(new { kind = "failure-surface", state = await diagnostic.ExecuteScriptAsync("JSON.stringify({heading:document.querySelector('.vault-context-location')?.textContent,notices:[...document.querySelectorAll('[role=alert],.vault-notice')].map(x=>x.textContent),editor:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})") });
+                    }
+                    catch { /* Preserve the original failure if WebView has already closed. */ }
                     Record(new { kind = "failure", message = error.Message });
                     File.WriteAllText(Path.Combine(args[1], "result.json"), JsonSerializer.Serialize(new { ok = false, error = error.Message, plan.ItemId, plan.RunId }));
                 }

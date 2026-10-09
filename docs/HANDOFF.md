@@ -17,6 +17,18 @@ Next: real PC collision run, undo/IME and crash-window coverage, then all six
 simultaneously. Existing `pc-tunnel` access recovered; direct `pc` reset earlier.
 Canonical PC app remains stopped from the earlier authorized acceptance run;
 restore it after preserving/reconciling the retained test-file journal.
+Core gate passed: 850 tests, TypeScript and both browser modes, source `c392f477`.
+Physical PC candidate `C:\Users\Shokunin\dev\texttext-live-acceptance-c392`
+uses that Windows UI (app.js SHA256
+`fb0440a45b4cd1c4b96d2923e5b5781b43703b05378f8f062ed5b8ef2f425eaf`).
+Run `inplacec392` failed before typing at file activation; no sync acceptance
+claim. PC CLI actor succeeded on dedicated fixture 81cecae3-6cf9-47e0-9098-53f593832ed8,
+with its original pack retained under receipts. Local copies:
+`/tmp/texttext-inplace-pc-events.jsonl`, `/tmp/texttext-inplace-pc-result.json`.
+Runner now captures heading/notices/editor availability on failure; rebuild
+passed with zero warnings/errors (`/tmp/texttext-inplace-runner-build.log`).
+Deploy that diagnostic runner to a fresh test directory and diagnose activation
+before scheduling another simultaneous run. Canonical installed clients unchanged.
 No six-client pass has been obtained.
 
 ## Authoritative delivery
