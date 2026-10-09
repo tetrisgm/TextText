@@ -62,7 +62,11 @@
   to every local editor. Browser regression covers app creation and external-file
   opening, local typing before sync, and later external edits in both arrival
   orders. These checks now belong to the required core sync gate. Candidate is
-  not installed yet; see `verification/2026-10-08-external-file-promotion.md`.
+  `2e0e10c1` passed the core gate (848 tests plus both browser modes). Mac build
+  1232 is running from the clean delivery clone, log `/tmp/texttext-mac1232-build.log`.
+  Windows source `C:\Users\Shokunin\dev\texttext-client-2e0e10c1` is building,
+  log `%TEMP%\texttext-windows-2e0e10c1-build.log`. Neither candidate installed yet.
+  See `verification/2026-10-08-external-file-promotion.md`.
 
 - Share attachments: installed 1229 (`95dace27`) passed signed-in startup,
   search, and actual Finder photo creation. The complete image TextPack arrived
