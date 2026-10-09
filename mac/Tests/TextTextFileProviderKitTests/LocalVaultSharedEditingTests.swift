@@ -37,6 +37,29 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testPendingJournalAndExternalFileRemainReopenableAfterRestart() async throws {
+        let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
+        let saved = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: cp.journal, pending: true, markdown: first.0, documentJSON: first.1)
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let text = try changes(saved.document, body: "Pending human\nCLI while closed")
+        let external = try store.write(path: path, expectedHash: saved.document.hash, markdown: text.0,
+            documentJSON: text.1, templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
+        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let result = try await restarted.sync()
+        XCTAssertEqual(result.uploaded, 0)
+        XCTAssertTrue(try LocalVaultSync.collaborationReady(root: root, path: path, itemId: itemId, localHash: external.hash))
+        let reopened = try await restarted.beginSharedEditing(itemId: itemId, path: path, expectedHash: external.hash)
+        XCTAssertNil(reopened.checkpoint?.retiredReason)
+        XCTAssertEqual(reopened.checkpoint?.projectedHash, saved.document.hash)
+        XCTAssertEqual(reopened.document.hash, external.hash)
+    }
     func testExternalWriteCollisionKeepsActiveLeaseForMergedCheckpoint() async throws {
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")

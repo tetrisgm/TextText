@@ -36,6 +36,9 @@ export type FileCollaborationOptions = {
   retainedJournalPath?: string;
   initialRetirement?: string;
   localRevision?: string;
+  /** Same-item file changed while closed. The native journal describes the
+   * exact last projection, which can be older than the browser journal. */
+  initialFileChange?: { journal: string; document: DocumentSnapshot; presentation?: FileCollaborationPresentation };
   checkpoint?: (value: FileCollaborationCheckpoint) => Promise<void>;
   /** Reconcile a failed native compare-and-swap before retrying the latest journal.
    * Must retain the native lease and adopt only a freshly read file revision. */
@@ -219,9 +222,11 @@ export class FileCollaborationClient {
   private checkpointTimer: ReturnType<typeof setTimeout> | null = null;
   private checkpointError: unknown = null;
   private checkpointSavedGeneration = -1;
+  private initialFileReconciled: boolean;
 
   constructor(options: FileCollaborationOptions) {
     this.options = options; this.storage = options.journal ?? localJournal; this.active = options.active ?? true; this.inactiveReason = options.inactiveReason ?? "paused";
+    this.initialFileReconciled = !options.initialFileChange;
     this.ownedJournalKey = `texttext:file-collaboration:v1:${JSON.stringify([options.server.replace(/\/$/, ""), options.workspaceId, options.itemId])}`;
     this.doc.on("update", this.changed);
   }
@@ -267,7 +272,7 @@ export class FileCollaborationClient {
     if (new TextEncoder().encode(value).byteLength > LIMIT) throw new Error("Unsaved collaboration history exceeds 4 MiB. Keep this window open and recover your edits.");
     let storageError: unknown;
     try { this.storage.save(this.journalKey, value); } catch (error) { storageError = error; }
-    if (this.options.checkpoint && !this.checkpointError) this.queueCheckpoint(immutableCheckpoint({ journal: saved, document: this.snapshot() }));
+    if (this.options.checkpoint && !this.checkpointError && this.initialFileReconciled) this.queueCheckpoint(immutableCheckpoint({ journal: saved, document: this.snapshot() }));
     if (storageError) throw new Error(`Collaboration journal could not be saved. Keep this window open to recover your edits. ${String(storageError)}`);
   }
   private queueCheckpoint(value: FileCollaborationCheckpoint): void {
@@ -473,7 +478,7 @@ export class FileCollaborationClient {
         this.journalGeneration = retained!.journalGeneration ?? 0;
         retained = null;
       }
-      if (retained && !this.options.initialRetirement &&
+      if (retained && !this.options.initialRetirement && !this.options.initialFileChange &&
           !retained.pending.length && !retained.batch && !retained.unqueuedDirty && !retained.retired) {
         // A clean journal is a fallback, not a live baseline or access grant.
         // Native checkpoints also need fresh Yjs IDs after an epoch replacement,
@@ -503,6 +508,25 @@ export class FileCollaborationClient {
           this.initialRetirement = "The local file changed while shared edits were pending. Recover your saved edits before reopening.";
           this.frozen = true; this.canEdit = false;
           this.report("recovery", this.initialRetirement); return;
+        }
+        if (this.options.initialFileChange && !retained.retired && !this.unqueuedDirty) {
+          const external = this.options.initialFileChange;
+          const baseline = parseJournal(external.journal);
+          if (baseline.epoch !== retained.epoch || baseline.relativePath !== retained.relativePath ||
+              JSON.stringify(baseline.presentation ?? null) !== JSON.stringify(external.presentation ?? null)) {
+            this.frozen = true; this.canEdit = false;
+            this.report("recovery", "The saved document and file need reconciliation."); return;
+          }
+          const projected = new Y.Doc();
+          try {
+            Y.applyUpdate(projected, decode(baseline.update));
+            if (!this.reconcileExternalDocument(documentSnapshotFromYDoc(projected), external.document)) {
+              // Do not checkpoint the old projection over the external file.
+              this.frozen = true; this.canEdit = false;
+              this.report("recovery", "The saved document and file need reconciliation."); return;
+            }
+          } finally { projected.destroy(); }
+          this.initialFileReconciled = true;
         }
         this.persist();
         if (retained.retired || this.unqueuedDirty) { this.retire(retained.retired ?? "Unsubmitted local edits are kept for recovery."); return; }

@@ -6,7 +6,7 @@ import { DetachedFileSaveProof } from "./detached-file-save";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import * as Y from "yjs";
-import { applyDocumentSnapshot, documentText } from "@/lib/collab/document";
+import { applyDocumentSnapshot, documentSnapshotFromYDoc, documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, seedVaultCollaboration } from "@/lib/vault/collaboration";
 import { FileCollaborationClient, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, selectFileCollaborationJournal, createFileCollaborationOwnership } from "./collaboration-client";
 
@@ -58,6 +58,38 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
+  it("reconciles a closed-file edit against the native projection and a newer browser journal", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start();
+    first.mutate(doc => documentText(doc, "body").insert(5, " saved"));
+    const nativeJournal = journal.load(first.journalKey)!;
+    const external = documentSnapshotFromYDoc(first.doc); external.content.body += " CLI";
+    first.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " newer"));
+    first.destroy();
+    const writes: FileCollaborationCheckpoint[] = [];
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal, retainedJournal: nativeJournal, request: server.request,
+      initialFileChange: { journal: nativeJournal, document: external }, checkpoint: async value => { writes.push(value); } });
+    clients.push(reopened); await reopened.start();
+    expect(documentSnapshotFromYDoc(reopened.doc).content.body).toBe("Hello saved CLI newer");
+    expect(await reopened.flush()).toBe(true);
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes.every(value => value.document.content.body === "Hello saved CLI newer")).toBe(true);
+    expect(readDocument(openPack(server.bytes, "Shared.textpack", server.state.revision).file).content.body).toBe("Hello saved CLI newer");
+  });
+  it("never checkpoints over a conflicting file on restart", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start(); const nativeJournal = journal.load(first.journalKey)!;
+    const external = documentSnapshotFromYDoc(first.doc); external.content.body = "CLI replacement";
+    first.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, "Human replacement"); });
+    first.destroy(); const checkpoint = vi.fn(async () => {});
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal, retainedJournal: nativeJournal, request: server.request,
+      initialFileChange: { journal: nativeJournal, document: external }, checkpoint });
+    clients.push(reopened); await reopened.start(); await vi.advanceTimersByTimeAsync(500);
+    expect(reopened.status).toBe("recovery"); expect(checkpoint).not.toHaveBeenCalled();
+    expect(server.pushes).toHaveLength(0); expect(documentSnapshotFromYDoc(reopened.doc).content.body).toBe("Human replacement");
+  });
   it("keeps human undo history separate from an in-place external insertion", async () => {
     const server = new Server(), editor = client(server);
     await editor.start();

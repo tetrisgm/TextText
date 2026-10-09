@@ -398,6 +398,7 @@ final class LocalVaultCollaboration {
             localSessions[opened.sessionToken] = (itemId, engine)
             return ["sessionToken": opened.sessionToken, "path": opened.document.path, "hash": opened.document.hash,
                     "acknowledgedRevision": opened.acknowledgedRevision,
+                    "projectedHash": opened.checkpoint?.projectedHash as Any? ?? NSNull(),
                     "journal": opened.checkpoint?.journal as Any? ?? NSNull(),
                     "retiredReason": opened.checkpoint?.retiredReason as Any? ?? NSNull()]
         }

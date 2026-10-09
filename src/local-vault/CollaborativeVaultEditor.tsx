@@ -30,7 +30,7 @@ import { currentVaultWindowActive } from "./window-activity";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
-type NativeSharedSession = { sessionToken: string; path: string; hash: string; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
+type NativeSharedSession = { sessionToken: string; path: string; hash: string; projectedHash?: string | null; acknowledgedRevision: string; journal: string | null; retiredReason: string | null };
 export type VaultEditorProps = {
   documentReferences?: import("@/lib/presentation/workspace-reference-choices").DocumentReferenceSource;
   onOpenReference?: (id: string) => void;
@@ -149,6 +149,10 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       retainedJournalPath: native?.path,
       localRevision: native?.acknowledgedRevision,
       initialRetirement: native?.retiredReason ?? undefined,
+      initialFileChange: native?.journal && native.projectedHash && native.projectedHash !== file.current.hash ? {
+        journal: native.journal, document: readDocument(file.current),
+        presentation: { templateJSON: file.current.templateJSON ?? null, templateAuthoringSourceJSON: file.current.templateAuthoringSourceJSON ?? null },
+      } : undefined,
       reconcileCheckpoint: native ? async () => {
         const before = file.current;
         const fresh = await vaultRequest<VaultFile>("read", { path: before.path });

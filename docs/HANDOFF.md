@@ -19,6 +19,20 @@ retry; root cause remains unexplained. Existing `pc-tunnel` access works.
 Canonical PC app remains stopped; preserve/reconcile the earlier retained test
 journal before reopening. Isolated acceptance apps closed normally.
 
+## Pending restart candidate
+
+Current source now keeps a valid pending native checkpoint after a same-ID file
+changes while closed. Native open returns its projection hash; the shared editor
+reconciles that exact journal against the current file and any newer browser
+journal before permitting a native checkpoint. Conflicting edits do not overwrite
+the file. Windows core tests and desktop compilation pass; Mac's new restart test
+passes among 19 shared-editing tests. Full native and core gates passed with exact-source receipts: 853 shared
+tests, TypeScript, both browser modes and native suites. A serial core rerun
+resolved receipt invalidation from concurrent Package.resolved regeneration.
+Logs `/tmp/texttext-restart-{native,windows,windows-build,core-stable}.log`.
+Not installed or physically restart-tested. Older retired journals, overlapping
+replacements and six-client acceptance remain outstanding.
+
 ## Authoritative delivery
 
 - Mac `/Applications/TextText.app`: **0.204 (1233)**, source `176228d3`.

@@ -142,7 +142,7 @@ public actor LocalVaultSync {
         if let saved = checkpoint {
             if saved.retiredReason == nil && (saved.path != path || saved.projectedHash != document.hash) {
                 if !saved.pending { try sharedStore.archive(itemId: itemId); checkpoint = nil }
-                else { checkpoint = try sharedStore.retire(itemId: itemId, reason: "The file changed outside shared editing. Recover the retained shared journal before continuing.") }
+                else if saved.path != path { throw LocalVaultSyncFailure.changed }
             }
         }
         if checkpoint == nil {
@@ -229,6 +229,12 @@ public actor LocalVaultSync {
         if checkpoint == nil, live?.retired == true { return false }
         let path = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
         let current = try? LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        if let checkpoint, checkpoint.pending, checkpoint.retiredReason == nil, let current, current.hash != checkpoint.projectedHash,
+           MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId {
+            // Reopening reconciles this file against the retained projection.
+            // Background sync must not upload it as a separate revision first.
+            return true
+        }
         if let current, let live, !live.retired, checkpoint?.retiredReason == nil,
            MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId {
             // The active editor imports external text into Yjs. A parallel file
@@ -318,6 +324,12 @@ public actor LocalVaultSync {
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
         guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16 * 1024 * 1024 else { throw LocalVaultDocumentStore.Failure.tooLarge }
         let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: url))
+        if state.outbox[itemId] == nil, state.conflicts[itemId] == nil,
+           let checkpoint = try LocalVaultSharedEditingStore(root: canonicalRoot).checkpoint(itemId: itemId),
+           checkpoint.pending, checkpoint.retiredReason == nil, checkpoint.path == path {
+            let current = try LocalVaultDocumentStore(root: canonicalRoot).readMetadata(path: path)
+            if current.hash == localHash, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId { return true }
+        }
         guard let baseline = state.baselines[itemId], baseline.path == path,
               baseline.localHash == localHash, baseline.revision.count == 64,
               baseline.revision.allSatisfy({ $0.isHexDigit }),

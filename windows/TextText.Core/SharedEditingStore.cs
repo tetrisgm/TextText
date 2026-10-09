@@ -39,7 +39,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
             var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
             if(cp==null||cp.ItemId!=itemId||cp.RetiredReason!=null)return false;
             Validate(store,cp);var file=store.Describe(cp.Path);
-            return file.ItemId==itemId&&file.Path==cp.Path&&file.Hash==cp.ProjectedHash;
+            return file.ItemId==itemId&&file.Path==cp.Path&&(file.Hash==cp.ProjectedHash||cp.Pending);
         }catch(Exception error)when(error is IOException or InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException or UnauthorizedAccessException){return false;}
     }
     internal static List<string> ReconcileAcknowledgements(TextPackStore store,SyncEngine.State state) {
@@ -108,7 +108,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
                 var cp=Recover(itemId);
                 if(move!=null&&move.SourcePath==path&&move.Checkpoint.ItemId==itemId&&cp?.Path==move.Checkpoint.Path&&expectedHash==move.Checkpoint.ProjectedHash)path=cp.Path;
                 var file=store.Describe(path);if(file.ItemId!=itemId || (file.Hash!=expectedHash && file.Hash!=cp?.ProjectedHash))throw new FileChangedException();
-                if(cp!=null&&file.Hash!=cp.ProjectedHash){var directory=DirectoryFor(itemId);if(cp.Pending||cp.RetiredReason!=null){cp=cp with{RetiredReason="The file changed outside shared editing. Its saved shared edits are retained for recovery."};Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);}else{Save(System.IO.Path.Combine(directory,"archived-"+Guid.NewGuid().ToString("N")+".json"),cp);File.Delete(System.IO.Path.Combine(directory,"checkpoint.json"));cp=null;}}
+                if(cp!=null&&file.Hash!=cp.ProjectedHash){var directory=DirectoryFor(itemId);if(!cp.Pending&&cp.RetiredReason==null){Save(System.IO.Path.Combine(directory,"archived-"+Guid.NewGuid().ToString("N")+".json"),cp);File.Delete(System.IO.Path.Combine(directory,"checkpoint.json"));cp=null;}}
                 var token=Guid.NewGuid().ToString();sessions[token]=new(itemId,path,lease);return new SharedSession(token,file,cp);
             });}catch{lease.Dispose();throw;}
         }finally{gate.Release();}

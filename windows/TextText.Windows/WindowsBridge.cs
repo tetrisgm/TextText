@@ -193,6 +193,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                         var session = await editing.OpenAsync(Required(p, "itemId"), Required(p, "path"), Required(p, "hash"), ct);
                         return new { sessionToken = session.SessionToken, path = session.Document.Path, hash = session.Document.Hash,
                             acknowledgedRevision = session.Checkpoint?.AcknowledgedRevision ?? await sync.BaselineRevisionAsync(Required(p, "itemId"), ct) ?? session.Document.Hash,
+                            projectedHash = session.Checkpoint?.ProjectedHash,
                             journal = session.Checkpoint?.Journal, retiredReason = session.Checkpoint?.RetiredReason };
                     }
                     case "collaboration.checkpoint": {
