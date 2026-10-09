@@ -2,7 +2,7 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1229)**, source `95dace27`. 
+- Mac `/Applications/TextText.app`: **0.204 (1230)**, source `f1ba5ec4`.
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
   finds it immediately, and the same item/title/original URL opens on Oracle.
@@ -60,11 +60,18 @@
   in the Windows folder, but the Mac reader rejected `kind: gallery`. The
   template is `texttext.gallery`; the shared content kind must be `media_post`.
   Fix `f1ba5ec4` maps this in common CLI creation, retaining the Gallery template.
-  Five focused share tests passed with a new metadata regression. Build 1230 is
-  running from that exact source; do not call attachment acceptance complete.
+  Five focused share tests and the full exact-source gate passed. Build 1230
+  installed and reopened signed in; the repaired photo visibly renders. Fresh
+  post-fix share acceptance remains; do not call all attachment paths complete.
   Logs `/tmp/texttext-share-kind-tests.log`, `/tmp/texttext-mac1230-build.log`.
   Fixture retained: `Gallery/Finder photo share 1229.textpack`, original image
   SHA-256 `ed06a94f6b494148666ddcc13727aa3912aa8b750dab26da7d3f50fa620c6baf`.
+  Before restart, repairing the fixture directly did not clear the open reader
+  error. `DocumentBoundary` in `src/local-vault/VaultApp.tsx` latches its error
+  for the same item key and has no retry on file change. Fix this recovery gap
+  with a regression while preserving active editor state. Original fixture is
+  retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`; only its three
+  Markdown kind fields changed, all image bytes retained.
   Supersedes intermediate 1227/1228 candidates; neither was installed.
 
 - Owner's latest acceptance priority: independently measure complete file/asset
