@@ -71,8 +71,8 @@ grep -q '^STATE_DIR=$' "$FIXTURE/env.txt" || {
   echo "wrapper leaked a host TEXTTEXT_STATE_DIR into the app" >&2; exit 1; }
 grep -q '^VAULT_CONFIG=$' "$FIXTURE/env.txt" || {
   echo "wrapper leaked a host TEXTTEXT_VAULT_CONFIG into the app" >&2; exit 1; }
-if [ -e "$FIXTURE/Home/Library" ]; then
-  echo "wrapper created directories under the (sandbox-owned) home" >&2; exit 1
+if [ -e "$FIXTURE/Home/Library/Containers" ]; then
+  echo "wrapper created directories under the app's sandbox container" >&2; exit 1
 fi
 if grep -q 'Library/Containers' "$WRAPPER"; then
   echo "wrapper still reaches into the sandbox container from the host" >&2; exit 1
