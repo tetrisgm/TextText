@@ -2,14 +2,15 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1226)**, source `20d7bb91`.
+- Mac `/Applications/TextText.app`: **0.204 (1229)**, source `95dace27`. 
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
   finds it immediately, and the same item/title/original URL opens on Oracle.
   Two roots fixed: startup skipped the share watcher when a file workspace was
   open; filing still used the legacy server writer. Share note/bookmark/draft
   now use the durable CLI creation journal and normal file synchronization.
-  File shares remain safely retained in the inbox pending implementation.
+  File share creation now preserves complete attachment bytes; current reader
+  acceptance found a Gallery content-kind mismatch (see immediate work).
   Current source also supports append by stable item identity with a mutation
   receipt inside the TextPack; three focused tests pass, including retry after
   later human edits and rename. Build/install and signed-in startup passed;
@@ -54,16 +55,24 @@
 
 ## Current candidate / immediate work
 
-- Share attachments: source `f19df173`, `a4c70374`, `95dace27` prepares complete
-  image/video Gallery or attached-note TextPacks in the durable CLI creation
-  transaction. Retry keys include attachment bytes/type/title; original filenames
-  remain visible. Native tests cover exact retry, changed payload refusal,
-  missing/symlink/oversized input retention, and one ordered original payload per
-  supplied file despite alternate macOS representations. Build 1227 passed;
-  1228 is still building from the intermediate title fix. Final source requires
-  build/install and actual Finder share acceptance. The installed app is still
-  1226. Logs `/tmp/texttext-share-file-title-tests.log` and
-  `/tmp/texttext-share-extractor-tests.log`.
+- Share attachments: installed 1229 (`95dace27`) passed signed-in startup,
+  search, and actual Finder photo creation. The complete image TextPack arrived
+  in the Windows folder, but the Mac reader rejected `kind: gallery`. The
+  template is `texttext.gallery`; the shared content kind must be `media_post`.
+  Fix `f1ba5ec4` maps this in common CLI creation, retaining the Gallery template.
+  Five focused share tests passed with a new metadata regression. Build 1230 is
+  running from that exact source; do not call attachment acceptance complete.
+  Logs `/tmp/texttext-share-kind-tests.log`, `/tmp/texttext-mac1230-build.log`.
+  Fixture retained: `Gallery/Finder photo share 1229.textpack`, original image
+  SHA-256 `ed06a94f6b494148666ddcc13727aa3912aa8b750dab26da7d3f50fa620c6baf`.
+  Supersedes intermediate 1227/1228 candidates; neither was installed.
+
+- Owner's latest acceptance priority: independently measure complete file/asset
+  replication, direct CLI edits appearing in open clients, and realtime typing
+  across users. Require preserved concurrent edits, automatic reconnection,
+  durable restart recovery and bounded idle work. Existing receipts establish
+  particular convergence/restart cases, not current cross-platform latency or
+  every failure mode. Keep those distinctions explicit.
 
 - Shared Notes backlink cancellation is delivered on Oracle and Mac.
   Exact-source full sync gate passed for e722c893. Oracle deployed and passed
