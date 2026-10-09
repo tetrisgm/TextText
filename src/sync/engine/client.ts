@@ -75,6 +75,12 @@ const REVIVABLE_RETIREMENTS = [
   // Native checkpoint failure (Mac 0.204 builds 1237-1239, e.g. a Finder rename
   // under a pending journal) retired the browser journal with its edits intact.
   "This note needs to be reopened. Your edits are saved for recovery.",
+  // Browser-only retirement of a pending journal whose fresh read reported no
+  // edit access or a replaced epoch on a store without epoch adoption (e.g.
+  // Windows "Six-client acceptance 1232a", 2026-10-09). Native stores never
+  // originate this text. Revival still ends at the same fresh read: no edit
+  // access or no epoch recovery re-retires it unchanged, without any push.
+  "This file or its access changed. Recover your saved edits before reopening.",
 ];
 function encode(bytes: Uint8Array): string {
   let value = "";
@@ -689,7 +695,11 @@ export class FileCollaborationClient {
     }
     if (detail?.code === "epoch_changed" && this.canRecover()) { this.beginRecovery(); return; }
     if (["recovery_unavailable", "recovery_conflict", "recovery_lifecycle"].includes(detail?.code ?? "")) { this.retire("The changed file could not absorb your saved edits automatically. They are kept for recovery."); return; }
-    if ([401, 403, 404].includes(detail?.status ?? 0) || detail?.code === "epoch_changed" || detail?.status === 409) { this.retire("This file or your access changed. Pending edits are kept for recovery."); return; }
+    if ([401, 403, 404].includes(detail?.status ?? 0) || detail?.code === "epoch_changed" || detail?.status === 409) {
+      // A revived journal whose fresh read was refused keeps its original
+      // retirement, so the next open can retry under restored access.
+      this.retire(!this.authoritative && this.revivedRetirement ? this.revivedRetirement : "This file or your access changed. Pending edits are kept for recovery."); return;
+    }
     if ([400, 413, 422].includes(detail?.status ?? 0)) { this.retire("The server rejected this edit. Your pending document is kept for recovery."); return; }
     // HTTP service failures remain retryable regardless of server message wording.
     // Native bridge validation errors without an HTTP retry status still fail closed.

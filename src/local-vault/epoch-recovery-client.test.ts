@@ -672,3 +672,141 @@ describe("revival when the native checkpoint mirrors the browser retirement", ()
     expect(await store.body()).toBe("Hello");
   });
 });
+
+describe("revival of the legacy access-changed retirement over a pending native checkpoint", () => {
+  /** Windows "Six-client acceptance 1232a" (2026-10-09): the browser journal was retired with this
+   * text by an older build while its native checkpoint stayed pending and unretired, holding one
+   * sent batch whose acknowledgement never arrived plus one queued update. The cloud epoch moved on. */
+  const RETIRED = "This file or its access changed. Recover your saved edits before reopening.";
+  let root: string, store: Store, journal: Journal, native: Native;
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-legacy-access-revival-"));
+    store = new Store(root); journal = new Journal();
+    const written = await writeVaultTextpack({ ...store.location(), relativePath, operationId: "initial", baseRevision: null, bytes: pack("Hello") });
+    native = new Native(written.revision!);
+  });
+  afterEach(async () => {
+    for (const entry of clients.splice(0)) entry.destroy();
+    await store.settle();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const open = (options: Partial<FileCollaborationOptions> = {}) => client(store, journal, { ...native.open(), supportsEpochRecovery: true, ...options });
+  async function legacyRetiredPending() {
+    const first = open(); await first.start();
+    expect(first.status).toBe("ready");
+    first.mutate(doc => documentText(doc, "body").insert(5, " A"));
+    store.loseAck = true;
+    expect(await first.flush()).toBe(false);
+    first.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " B"));
+    expect(await first.flushLocal()).toBe(true);
+    first.destroy();
+    const raw = JSON.parse(journal.load(first.journalKey)!) as FileCollaborationJournal;
+    expect(raw.batch?.acknowledged).toBeUndefined(); expect(raw.pending).toHaveLength(1);
+    raw.retired = RETIRED; raw.canEditContent = false; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
+    const bytes = JSON.stringify(raw);
+    journal.save(first.journalKey, bytes);
+    // The native store checkpointed the retired journal text but its own RetiredReason stayed null.
+    native.checkpoint = { journal: JSON.parse(bytes), pending: true, retired: undefined };
+    expect(native.open().initialRetirement).toBeUndefined();
+    expect(await store.body()).toBe("Hello A");
+    store.pushes.length = 0;
+    return { key: first.journalKey, raw, bytes };
+  }
+  function journalIntact(key: string, raw: FileCollaborationJournal) {
+    const now = JSON.parse(journal.load(key)!) as FileCollaborationJournal;
+    expect(now.retired).toBe(RETIRED); expect(now.pending).toEqual(raw.pending); expect(now.batch).toEqual(raw.batch);
+    expect(now.epoch).toBe(raw.epoch); expect(now.update).toBe(raw.update);
+  }
+
+  it("recovers the exact legacy journal through the server after the cloud epoch moved on", async () => {
+    const { key, raw } = await legacyRetiredPending();
+    await store.replace("Remote: Hello A");
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).not.toBe("recovery");
+    expect(await reopened.flush()).toBe(true);
+    await settled(reopened, "ready");
+    expect(reopened.hasPendingChanges).toBe(false);
+    expect(await store.body()).toBe("Remote: Hello A B");
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+    expect((JSON.parse(journal.load(key)!) as FileCollaborationJournal).retired).toBeUndefined();
+    expect(native.checkpoint?.retired).toBeUndefined(); expect(native.checkpoint?.journal.epoch).toBe(raw.epoch + 1);
+    const again = open(); await again.start();
+    expect(again.status).toBe("ready"); expect(again.hasPendingChanges).toBe(false);
+  });
+
+  it("replays the unacknowledged batch idempotently and the queued update at the same epoch", async () => {
+    const { key, raw } = await legacyRetiredPending();
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).not.toBe("recovery");
+    expect(await reopened.flush()).toBe(true);
+    await settled(reopened, "ready");
+    expect(await store.body()).toBe("Hello A B");
+    expect(store.pushes.map(push => push.operationId)[0]).toBe(raw.batch!.operationId);
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(0);
+    expect((JSON.parse(journal.load(key)!) as FileCollaborationJournal).retired).toBeUndefined();
+  });
+
+  it("stays retired unchanged when the fresh read reports no edit access", async () => {
+    const { key, raw } = await legacyRetiredPending();
+    store.canEdit = false;
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.canEdit).toBe(false);
+    expect(reopened.recoveryJournal?.retired).toBe(RETIRED);
+    expect(store.pushes).toEqual([]); expect(await store.body()).toBe("Hello A");
+    journalIntact(key, raw);
+    expect(() => reopened.discardCleanJournal()).toThrow();
+  });
+
+  it("stays retired unchanged when the fresh read is forbidden, and recovers once access returns", async () => {
+    const { key, raw } = await legacyRetiredPending();
+    let forbidden = true;
+    const request: FileCollaborationRequest = async (...args) => {
+      if (forbidden) throw Object.assign(new Error("Forbidden"), { status: 403 });
+      return store.request(...args);
+    };
+    const denied = open({ request }); await denied.start();
+    expect(denied.status).toBe("recovery"); expect(denied.recoveryJournal?.retired).toBe(RETIRED);
+    expect(store.pushes).toEqual([]); journalIntact(key, raw);
+    denied.destroy();
+    forbidden = false;
+    const restored = open({ request }); await restored.start();
+    expect(await restored.flush()).toBe(true);
+    await settled(restored, "ready");
+    expect(await store.body()).toBe("Hello A B");
+  });
+
+  it("keeps every edit for manual recovery when the moved-on epoch cannot absorb them", async () => {
+    const { key, raw } = await legacyRetiredPending();
+    await store.replace("Hello changed");
+    const reopened = open(); await reopened.start();
+    await settled(reopened, "recovery");
+    expect(reopened.recoveryJournal?.retired).toBe("The changed file could not absorb your saved edits automatically. They are kept for recovery.");
+    expect(await store.body()).toBe("Hello changed");
+    expect(documentText(reopened.doc, "body").toString()).toBe("Hello A B");
+    const now = JSON.parse(journal.load(key)!) as FileCollaborationJournal;
+    expect(now.pending).toEqual(raw.pending); expect(now.batch).toEqual(raw.batch); expect(now.epoch).toBe(raw.epoch);
+    expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
+  });
+
+  it("stays retired without pushing when the epoch moved on and the store lacks epoch adoption", async () => {
+    const { key, raw } = await legacyRetiredPending();
+    await store.replace("Hello remote");
+    const reopened = open({ supportsEpochRecovery: false }); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.recoveryJournal?.retired).toBe(RETIRED);
+    expect(store.pushes).toEqual([]); expect(await store.body()).toBe("Hello remote");
+    journalIntact(key, raw);
+  });
+
+  it("keeps native-originated retirements and unqueued edits manual", async () => {
+    const { key, raw } = await legacyRetiredPending();
+    const nativeRetired = open({ initialRetirement: "The file changed outside shared editing. Its saved shared journal is available for recovery." });
+    await nativeRetired.start();
+    expect(nativeRetired.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+    nativeRetired.destroy();
+    const dirty = { ...raw, unqueuedDirty: true, journalGeneration: (raw.journalGeneration ?? 0) + 1 };
+    journal.save(key, JSON.stringify(dirty)); native.checkpoint = { journal: JSON.parse(JSON.stringify(dirty)), pending: true, retired: undefined };
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+    expect(await store.body()).toBe("Hello A");
+  });
+});

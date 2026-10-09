@@ -913,19 +913,31 @@ describe("durable file collaboration client", () => {
     } finally { converged.destroy(); }
   });
 
-  it("keeps pending updates in an old Windows retirement protected", async () => {
+  it("keeps pending updates in an old Windows retirement protected until a fresh read grants editing", async () => {
     const server = new Server(), journal = new Journal(), original = client(server, journal);
     await original.start(); original.setActive(false);
     original.mutate(doc => documentText(doc, "body").insert(5, " unsaved"));
     const retained = JSON.parse(journal.load(original.journalKey)!);
     retained.retired = "This file or its access changed. Recover your saved edits before reopening.";
     journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
+    server.canEdit = false;
+    const denied = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request, checkpoint: async () => {} });
+    clients.push(denied); await denied.start();
+    expect(denied.status).toBe("recovery"); expect(denied.hasPendingChanges).toBe(true);
+    expect(denied.recoveryJournal?.retired).toBe(retained.retired); expect(server.pushes).toEqual([]);
+    expect(documentText(denied.doc, "body").toString()).toBe("Hello unsaved");
+    expect(() => denied.discardCleanJournal()).toThrow();
+    expect(JSON.parse(journal.load(original.journalKey)!).pending).toEqual(retained.pending);
+    denied.destroy();
+    server.canEdit = true;
     const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
       request: server.request, checkpoint: async () => {} });
     clients.push(reopened); await reopened.start();
-    expect(reopened.status).toBe("recovery"); expect(reopened.hasPendingChanges).toBe(true);
-    expect(documentText(reopened.doc, "body").toString()).toBe("Hello unsaved");
-    expect(() => reopened.discardCleanJournal()).toThrow();
+    expect(reopened.status).not.toBe("recovery");
+    expect(await reopened.flush()).toBe(true);
+    expect(reopened.status).toBe("ready"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(reopened.recoveryJournal?.retired).toBeUndefined(); expect(server.pushes).toHaveLength(1);
   });
 
   it("does not resume a clean Windows retirement when live read access was revoked", async () => {
