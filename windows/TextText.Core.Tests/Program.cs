@@ -149,6 +149,19 @@ static class Test
  var collisionSync=new SyncEngine(folderStore,folderRemote);await collisionSync.SyncAsync();Assert(File.Exists(folderStore.Resolve("Notes/Folder-proof.textpack"))&&Directory.Exists(Path.Combine(folderStore.Root,"Another empty"))&&collisionSync.Status.Error!=null,"folder collision does not block unrelated document convergence");
  folderStore.Delete("Notes/Folder-proof.textpack",TextPackStore.Hash(folderRemote.Data));
  var first=store.Write("Notes/Test.textpack",Pack());Assert(first.ItemId=="test-1","identity extraction");
+ {
+ var transientStore=new TextPackStore(Path.Combine(temp,"transient-pack"),Path.Combine(temp,"transient-device"));
+ var original=transientStore.Write("Notes/Transient.textpack",Pack("before","transient-id"));
+ var transientRemote=new Fake();var transientSync=new SyncEngine(transientStore,transientRemote);
+ await transientSync.SyncAsync();
+ var originalRemote=transientRemote.Data.ToArray();var originalUploads=transientRemote.UploadCount;
+ File.WriteAllText(transientStore.Resolve(original.Path),"incomplete zip from another file editor");
+ await transientSync.SyncAsync();
+ Assert(transientStore.LastScanErrors.Any(error=>error.Path==original.Path)&&transientRemote.Data.SequenceEqual(originalRemote)&&transientRemote.UploadCount==originalUploads&&transientRemote.DeleteCount==0,"invalid intermediate TextPack never replaces or deletes the synced document");
+ TextPackStore.AtomicWrite(transientStore.Resolve(original.Path),Pack("after repair","transient-id"));
+ await transientSync.SyncAsync();
+ Assert(TextPackStore.Markdown(transientRemote.Data).EndsWith("after repair")&&transientRemote.UploadCount==originalUploads+1&&transientStore.LastScanErrors.Count==0,"repaired TextPack resumes sync without manual retry");
+ }
  using(var fixture=JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,"workspace-binding.json"))))
  foreach(var example in fixture.RootElement.EnumerateArray()) {
  var fixtureRoot=Path.Combine(temp,"fixture-"+Guid.NewGuid());Directory.CreateDirectory(Path.Combine(fixtureRoot,".texttext"));
