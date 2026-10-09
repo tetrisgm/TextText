@@ -66,3 +66,17 @@ failures. Independent review findings were fixed. Reports:
 
 Build/install, actual cursor/undo continuity and six-client convergence remain
 unverified for this source. Do not substitute these tests for physical acceptance.
+
+## Retained 1237 retirement on installed 1238
+
+Build 1238 (`1dcfa980`) still opened the fixture with “This note needs to be
+reopened. Your edits are saved for recovery.” That text is the web client's own
+`fatal` message from the failed 1237 checkpoint. With no edits, the native
+checkpoint was archived clean on close, so the only retired record is the
+browser journal, which the clean-retired refresh list did not recognise. The
+message is now refreshed like the older clean retirements: the record stays
+untouched until a fresh server read proves current access, then the live
+baseline is adopted; any pending, batched or unqueued edit still shows
+recovery. Regressions: `src/local-vault/collaboration-client.test.ts`
+(“older native session retired after a rename”, “edits are still pending”).
+Physical reopen of the installed fixture remains to be verified.

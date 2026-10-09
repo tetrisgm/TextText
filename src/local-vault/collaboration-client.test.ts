@@ -811,6 +811,41 @@ describe("durable file collaboration client", () => {
     expect(() => reopened.discardCleanJournal()).not.toThrow();
   });
 
+  it("reopens a clean note whose browser journal an older native session retired after a rename", async () => {
+    // Installed 0.204 (1237): a Finder rename failed the native checkpoint, the
+    // web client retired its own clean journal with this message, and the native
+    // checkpoint was archived clean. The next launch must not demand recovery.
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start(); expect(await original.flushLocal()).toBe(true);
+    const retained = JSON.parse(journal.load(original.journalKey)!);
+    retained.retired = "This note needs to be reopened. Your edits are saved for recovery.";
+    journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
+    let permit = false;
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      localRevision: server.state.revision,
+      request: async (...args) => { if (!permit) throw new Error("temporarily offline"); return server.request(...args); }, checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("offline"); expect(reopened.hasBaseline).toBe(false);
+    expect(JSON.parse(journal.load(original.journalKey)!)).toEqual(retained);
+    permit = true; await reopened.retry();
+    expect(reopened.status).toBe("ready"); expect(reopened.canEdit).toBe(true);
+    expect(reopened.hasPendingChanges).toBe(false); expect(reopened.recoveryJournal?.retired).toBeUndefined();
+    expect(server.pushes).toEqual([]);
+  });
+
+  it("keeps recovery for that retirement when edits are still pending", async () => {
+    const server = new Server(), journal = new Journal(), original = client(server, journal);
+    await original.start();
+    const retained = JSON.parse(journal.load(original.journalKey)!);
+    retained.retired = "This note needs to be reopened. Your edits are saved for recovery."; retained.unqueuedDirty = true;
+    journal.save(original.journalKey, JSON.stringify(retained)); original.destroy();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      localRevision: server.state.revision, request: server.request, checkpoint: async () => {} });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.recoveryJournal?.retired).toBe(retained.retired);
+    expect(server.pushes).toEqual([]);
+  });
+
   it("does not discard a clean journal retired for a different reason", async () => {
     const server = new Server(), journal = new Journal(), original = client(server, journal);
     await original.start();

@@ -463,6 +463,9 @@ export class FileCollaborationClient {
           !retained.batch && !retained.unqueuedDirty && [
             "This file or its access changed. Recover your saved edits before reopening.",
             "This file or your access changed. Pending edits are kept for recovery.",
+            // Native checkpoint failure on a renamed file (Mac 0.204 build 1237)
+            // retired the browser journal although every edit was acknowledged.
+            "This note needs to be reopened. Your edits are saved for recovery.",
           ].includes(retained.retired ?? "")) {
         // Older clients retired even a fully acknowledged epoch. Keep that
         // record untouched until a fresh read proves current access, then adopt
