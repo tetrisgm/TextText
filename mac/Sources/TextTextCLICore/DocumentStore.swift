@@ -338,6 +338,9 @@ public struct DocumentStore: Sendable {
         }
         let folderDefault = kind == nil && customDocumentJSON == nil ? try LocalVaultFolderDefault.read(root: root, folder: destination) : nil
         let effectiveKind = kind ?? "note"
+        // Gallery names the presentation template; the shared file schema calls
+        // this content type media_post. Never write a template name as a kind.
+        let contentKind = effectiveKind == "gallery" ? "media_post" : effectiveKind
         let body = body ?? folderDefault?.body ?? ""
         if let customDocumentJSON {
             try BuiltinTextPackDocument.validateMetadata(snapshot: customDocumentJSON, template: customTemplateJSON)
@@ -357,9 +360,9 @@ public struct DocumentStore: Sendable {
 
         let markdown = MarkdownIdentityCodec.inject(
             into: DocumentCreation.frontmatter(
-                title: title, kind: effectiveKind, sourceURL: sourceURL)
+                title: title, kind: contentKind, sourceURL: sourceURL)
             + (body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n"),
-            itemId: itemId, folderId: nil, kind: effectiveKind)
+            itemId: itemId, folderId: nil, kind: contentKind)
 
         let temporary = try makeTemporaryDirectory()
         defer { try? fileManager.removeItem(at: temporary) }

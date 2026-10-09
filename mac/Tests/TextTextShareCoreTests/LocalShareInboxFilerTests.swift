@@ -55,10 +55,14 @@ final class LocalShareInboxFilerTests: XCTestCase {
         XCTAssertEqual(created.deletingLastPathComponent().lastPathComponent, "Gallery")
         let files = LocalVaultDocumentStore(root: root)
         let original = try files.read(path: "Gallery/" + created.lastPathComponent)
+        XCTAssertTrue(original.contents.markdown.contains("kind: \"media_post\""))
+        XCTAssertFalse(original.contents.markdown.contains("kind: \"gallery\""))
         XCTAssertEqual(original.contents.assets.count, 1)
         XCTAssertEqual(original.contents.assets.first?.data, bytes)
         let snapshot = try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(original.contents.documentJSON).utf8)) as! [String: Any]
         let content = snapshot["content"] as! [String: Any]
+        let presentation = snapshot["presentation"] as! [String: Any]
+        XCTAssertEqual((presentation["template"] as? [String: Any])?["id"] as? String, "texttext.gallery")
         let assets = content["assets"] as! [[String: Any]]
         XCTAssertEqual(assets.first?["kind"] as? String, "image")
         XCTAssertEqual(assets.first?["title"] as? String, "image.png")
