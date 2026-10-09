@@ -4,8 +4,9 @@
 
 - Mac `/Applications/TextText.app`: **0.204 (1221)**, source `e19d53c3`.
   Signed-in startup, existing content and the reported 1185 note passed without
-  recovery controls. Automatic reconnect passed during deployment. Fresh saved-body
-  cache invalidation and extensions on 1221 remain. Earlier scoped receipt:
+  recovery controls. Automatic reconnect passed during deployment. Saved-body
+  cache invalidation passed on 1221; interactive extensions remain.
+  [Current acceptance](verification/2026-10-08-current-client-acceptance.md). Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
 - Oracle: **texttext-oracle-20261008-e19d53c3-capture-reader**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services stayed
@@ -70,7 +71,10 @@
   journal. [Root-cause evidence](verification/2026-10-08-clean-epoch-recovery.md).
   Then check account,
   existing notes, search, save/reopen, live sync and actual agent/template creation.
-- Finish fresh-principal sharing and automatic reconnect/failure acceptance.
+- Two-account local production sharing/collaboration acceptance passed, including
+  offline reload, permissions and new-folder discovery.
+  [Current receipt](verification/2026-10-08-current-client-acceptance.md).
+  Finish physical-client automatic reconnect/failure acceptance.
   Preserve independently tested sync/epoch/outbox/receipt behavior and direct
   file editing. Second physical Apple-device iCloud delivery, Windows provider
   eviction and hardware power loss are not live-certified.

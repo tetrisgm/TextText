@@ -43,8 +43,16 @@ async function openTestNote(page: Page) {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
     if (await body.isVisible().catch(() => false) && (await heading.textContent())?.trim() === title) return;
+    if ((await heading.textContent())?.trim() === title) {
+      const edit = page.getByRole("button", { name: /^(Edit card|Edit story)$/ }).first();
+      if (await edit.isVisible().catch(() => false)) await edit.click({ timeout: 3000 });
+      await body.waitFor({ timeout: 3000 }).catch(() => {});
+      continue;
+    }
     if ((await heading.textContent())?.trim() !== "All files") {
-      await page.getByRole("button", { name: "All files", exact: true }).click({ timeout: 3000 }).catch(() => {});
+      const done = page.getByRole("button", { name: "Done", exact: true });
+      if (await done.isVisible().catch(() => false)) await done.click();
+      await page.getByRole("button", { name: "TextText", exact: true }).click({ timeout: 3000 }).catch(() => {});
     }
     const card = page.locator("main .vault-document-grid > button").filter({ hasText: title });
     if (await card.isVisible().catch(() => false)) await card.click({ timeout: 3000 }).catch(() => {});
@@ -138,7 +146,8 @@ async function main() {
     await alice.screenshot({ path: "/tmp/texttext-file-collaboration-light.png", fullPage: true });
     await alice.emulateMedia({ colorScheme: "dark" });
     await alice.screenshot({ path: "/tmp/texttext-file-collaboration-dark.png", fullPage: true });
-    await alice.getByRole("button", { name: "All files", exact: true }).click();
+    await alice.getByRole("button", { name: "Done", exact: true }).click();
+    await alice.getByRole("button", { name: "TextText", exact: true }).click();
     await alice.locator("details.vault-context-menu").getByLabel("More actions", { exact: true }).click();
     await alice.getByLabel("Current folder", { exact: true }).fill(newFolder);
     await alice.keyboard.press("Escape");
@@ -154,8 +163,10 @@ async function main() {
     }, "first account saves a TextPack in the new folder");
     await until(async () => await bob.getByText(newFolder, { exact: true }).count() === 1,
       "second account sees the new folder without reloading", 35000);
+    await bob.getByRole("button", { name: "Done", exact: true }).click();
     await bob.getByRole("navigation", { name: "Folders", exact: true }).locator("summary").filter({ hasText: newFolder }).click();
     await bob.locator("main .vault-document-grid > button").filter({ hasText: "Untitled" }).click();
+    await bob.getByRole("button", { name: /^(Edit card|Edit story)$/ }).first().click();
     await until(async () => (await text(bob)) === "Created together in a new folder.",
       "second account opens the new folder's note with its live content", 35000);
     await openTestNote(bob);

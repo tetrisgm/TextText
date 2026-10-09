@@ -105,6 +105,7 @@ async function main() {
       headers: { Origin: origin }, data: { operationId: randomUUID(), baseRevision: current.revision, published: true },
     });
     check(deniedPublish.status() === 403, "commenter cannot publish the file");
+    await ownerPage.locator("summary[aria-label='More actions']").click();
     await ownerPage.getByRole("button", { name: "Publish", exact: true }).click();
     await ownerPage.getByRole("button", { name: "Publish file", exact: true }).click();
     await ownerPage.getByText("This file is public.", { exact: true }).waitFor({ timeout: 20000 });
