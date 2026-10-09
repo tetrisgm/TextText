@@ -2,6 +2,12 @@
 
 ## Current delivery
 
+Mac 1237, Windows and Oracle now have the projection-baseline repair. A fresh
+six-client preflight reproduced Mac editor recovery after a filesystem rename;
+timed input was aborted. [Current failure](verification/2026-10-09-rename-editor-failure.md).
+Windows superseded-upload recovery is committed and building;
+[receipt](verification/2026-10-09-superseded-upload.md).
+
 Latest six-client attempt failed: Windows stayed local and raised an external
 file conflict while other clients continued. Its pending edits remain protected.
 [Failure, test limitations and next investigation](verification/2026-10-08-six-client-full1235.md).
