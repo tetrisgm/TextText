@@ -96,6 +96,11 @@ async function main() {
           scope === 'client' ? 'sync/vitest.client.config.mts' : 'sync/vitest.config.mts'],
           scope === 'core' ? coreDatabaseEnvironment() : process.env);
         await run(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit', '--pretty', 'false']);
+        if (scope === 'core') {
+          for (const mode of [[], ['--external-file']]) {
+            await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-promotion.mts', ...mode]);
+          }
+        }
       } else await run('bash', ['scripts/test-sync.sh', '--native-only']);
     }, () => fingerprint(root));
     console.log(`Sync ${scope}: passed, exact-source receipt saved.`);

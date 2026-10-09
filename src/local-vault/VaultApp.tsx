@@ -453,7 +453,8 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     return () => { window.removeEventListener("online", recover); window.removeEventListener("focus", recover); };
   }, [retryable]);
   useEffect(() => {
-    if (mode !== "local" || !awaitSharedMode) return;
+    // Files created outside the app also join live editing after sync acknowledges them.
+    if (mode !== "local") return;
     let stopped = false, running = false, rerun = false;
     const draftKey = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(markdown)])}`;
     const config = () => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path });
@@ -494,7 +495,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     window.addEventListener("texttext:vault-changed", check);
     check();
     return () => { stopped = true; window.removeEventListener("texttext:vault-sync-status", sync); window.removeEventListener("texttext:vault-changed", check); };
-  }, [mode, awaitSharedMode, path, root]);
+  }, [mode, path, root]);
   if (mode === "local") return <><div ref={localRoot} inert={promoting}><VaultEditor {...props} registerFlush={registerLocalFlush} /></div>
     {promoting && <p className="vault-notice" role="status">Connecting this note…</p>}</>;
   if (mode) return <CollaborativeVaultEditor {...props} initial={sharedInitial ? { ...sharedInitial, path: props.initial.path } : props.initial} config={mode}

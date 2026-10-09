@@ -8,7 +8,8 @@ import { chromium } from "playwright";
 import { buildLocalVault } from "../../../scripts/build-local-vault.mjs";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { applyVaultCollaboration, seedVaultCollaboration, type VaultCollaborationState } from "@/lib/vault/collaboration";
+import type { VaultCollaborationState } from "@/sync/engine/collaboration";
+const { applyVaultCollaboration, seedVaultCollaboration } = createRequire(import.meta.url)("../../sync/engine/collaboration") as typeof import("@/sync/engine/collaboration");
 import { openPack } from "../pack";
 
 const Y = createRequire(import.meta.url)("yjs") as typeof import("yjs");
@@ -26,7 +27,8 @@ const pack = (text: string, json: string) => {
   return { bytes, file: openPack(bytes, notePath, hash).file };
 };
 let current = pack(markdown, JSON.stringify(initial));
-let exists = false, syncedHash: string | null = null;
+const externalFile = process.argv.includes("--external-file");
+let exists = externalFile, syncedHash: string | null = null;
 let remoteState: VaultCollaborationState | null = null;
 let localWrites = 0, sharedOpens = 0, sharedPushes = 0, publicationReads = 0, checkpointConflicts = 0;
 const until = async (condition: () => boolean, label: string) => {
@@ -63,6 +65,7 @@ try {
       switch (request.method) {
         case "list": result = { root, folders: ["Notes"], items: exists ? [{ path: notePath }] : [] }; break;
         case "connection": result = { connected: true, available: true, workspaceId: config.workspaceId, webURL: "https://texttext.test/vault/workspace" }; break;
+        case "folderViews": result = { files: [] }; break;
         case "create": exists = true; result = current.file; break;
         case "read": result = current.file; break;
         case "write": {
@@ -105,8 +108,17 @@ try {
     await page.evaluate(detail => window.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail })), { id: request.id, result, error });
   });
   await page.addInitScript({ content: "window.webkit = { messageHandlers: { localVault: { postMessage(request) { void window.nativeVaultRequest(request); } } } };" });
+  if (externalFile) await page.addInitScript(({ root, notePath }) => {
+    localStorage.setItem(`texttext:vault-location:${root}`, JSON.stringify({ folder: "Notes", path: notePath }));
+  }, { root, notePath });
   await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
-  await page.getByRole("button", { name: "New note", exact: true }).click();
+  if (externalFile) {
+    await page.getByRole("button", { name: "Edit card", exact: true }).click();
+    await page.getByRole("textbox", { name: "Document body", exact: true }).click();
+  } else {
+    await page.getByRole("button", { name: "New note", exact: true }).click();
+    await page.getByRole("textbox", { name: "Document body", exact: true }).click();
+  }
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   await page.keyboard.insertText("Typed before the first sync.");
   await until(() => localWrites === 1, "the local note save");
@@ -116,7 +128,7 @@ try {
   await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", {
     detail: { connected: true, available: true, workspaceId },
   })), config.workspaceId);
-  try { await page.getByRole("button", { name: "Publish", exact: true }).waitFor({ timeout: 10_000 }); }
+  try { await until(() => sharedOpens === 1, "automatic shared editing after upload"); }
   catch (reason) {
     console.error({ localWrites, sharedOpens, sharedPushes, publicationReads, syncedHash, currentHash: current.file.hash,
       body: (await page.locator("body").innerText()).slice(0, 900), errors });

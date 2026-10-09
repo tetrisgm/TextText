@@ -24,9 +24,9 @@
   File Provider interactive checks remain.
   [Share delivery](verification/2026-10-08-share-workspace-delivery.md).
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md).
-- Oracle: **texttext-oracle-20261008-e722c893-backlinks**, deployed successfully;
-  thirteen live checks passed. TextText and all three Algorave services stayed
-  previous release retained. Live Safari automatic PDF capture displayed “Dummy PDF file”
+- Oracle: **texttext-oracle-20261009T020822Z-ee7292ad**, deployed successfully;
+  thirteen live checks passed. TextText and all three Algorave services remain active; HAProxy unchanged and
+  previous release retained. Safari reopened the saved photo and reconnected. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
   [PDF delivery](verification/2026-10-08-pdf-capture.md).
 - Windows installed source **c0d37699**, verified candidate installed and reopened
@@ -56,6 +56,14 @@
 
 ## Current candidate / immediate work
 
+- External-file collaboration promotion: the UI only promoted app-created notes
+  after initial upload. CLI-created/repaired files could remain in local editing
+  until reopened. Current fix applies the same durable flush/identity/hash checks
+  to every local editor. Browser regression covers app creation and external-file
+  opening, local typing before sync, and later external edits in both arrival
+  orders. These checks now belong to the required core sync gate. Candidate is
+  not installed yet; see `verification/2026-10-08-external-file-promotion.md`.
+
 - Share attachments: installed 1229 (`95dace27`) passed signed-in startup,
   search, and actual Finder photo creation. The complete image TextPack arrived
   in the Windows folder, but the Mac reader rejected `kind: gallery`. The
@@ -73,9 +81,9 @@
   editors and cancels stale recovery on navigation. TypeScript and the reader
   browser suite and exact-source gate pass. Build 1231 installed; actual native
   reproduction recovered automatically after atomic file repair, without reload
-  or reopening. Windows installed the same UI source. Oracle web-only verification
-  is running from `ee7292ad` (test render-timing correction only beyond the UI fix),
-  log `/tmp/texttext-reader-recovery-web-verify.log`; no deployment yet.
+  or reopening. Windows installed the same UI source. Oracle deployed `ee7292ad` after the complete web-only gate; all thirteen live
+  checks passed. Logs `/tmp/texttext-reader-recovery-web-verify.log` and
+  `/tmp/texttext-reader-recovery-oracle-deploy.log`.
   [Recovery and live sync evidence](verification/2026-10-08-reader-recovery-live-sync.md).
   Original fixture retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`.
   Supersedes intermediate 1227/1228 candidates; neither was installed.
