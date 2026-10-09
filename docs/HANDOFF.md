@@ -2,14 +2,21 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1222)**, source `e722c893`.
+- Mac `/Applications/TextText.app`: **0.204 (1223)**, source `30e08119`.
   Signed-in startup, existing content and the reported 1185 note passed without
   recovery controls. Automatic reconnect passed during deployment. Saved-body
   cache invalidation passed on 1221. Owner enabled the Mac share permission. PlugInKit still had default election;
   applying the authorized `pluginkit -e use -i app.texttext.mac.share` exposed
   TextText Share in actual Safari. Its form accepted the public verification
   bookmark, but it has not appeared in native search or iCloud files, including
-  after normal app restart. Share inbox filing is a newly reproduced failure.
+  after normal app restart. 1223 enables the previously skipped inbox watcher;
+  signed-in startup and existing saved note passed, but capture still does not
+  appear. The remaining filing path uses the legacy server API rather than the
+  open TextPack workspace. Current source routes note/bookmark/draft shares to
+  that workspace using the durable CLI creation journal. Two new native tests
+  pass for retry after publication, duplicate titles, original-workspace binding
+  and preserving unsupported inbox records. Candidate delivery and actual
+  Safari capture acceptance remain; do not call the extension fixed yet.
   Quick Look/File Provider interactive checks remain.
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md). Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
@@ -26,6 +33,10 @@
   task was removed. The affected 1185 note checkpoint refreshed to epoch 2, Pending false and
   RetiredReason null; old checkpoint archived automatically. Visible banner
   disappearance remains unverified.
+  Latest read-only PC inspection: canonical process 18184 responds; the affected
+  journal has zero pending updates, no batch, no unqueued dirty state and no
+  retirement. No native checkpoint under the current Sync root is pending or
+  retired. Visible editing acceptance still remains.
   Physical PC native suites, 346 shared tests, TypeScript, packaging and
   interactive smoke passed for this candidate.
   [Candidate evidence](verification/2026-10-08-clean-epoch-recovery.md).

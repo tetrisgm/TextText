@@ -1138,6 +1138,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             appendActivity("Sign in to file shared items")
             return
         }
+        let fileWindow = DispatchQueue.main.sync { self.localVaultWindow }
+        if let fileWindow {
+            DispatchQueue.main.async { [weak self] in
+                fileWindow.fileShareInbox(records, reader: reader) { [weak self] failures in
+                    for failure in failures { self?.appendActivity("Share inbox: \(failure)") }
+                }
+            }
+            return
+        }
+        // File workspaces are the canonical capture destination. Their normal
+        // synchronizer uploads these files; the legacy server writer below is
+        // only for the older window mode.
         let client = ServerClient(
             origin: resolveServerOrigin(credentials: credentials),
             token: credentials.token)

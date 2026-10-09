@@ -149,6 +149,25 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             }
         }
     }
+    func fileShareInbox(_ records: [InboxRecord], reader: InboxReader,
+                        completion: @escaping ([String]) -> Void) {
+        guard let root else { completion(["Open a workspace to file shared items."]); return }
+        io.async { [weak self] in
+            var failures: [String] = []
+            var filed = false
+            for record in records {
+                do {
+                    _ = try LocalShareInboxFiler().file(record, root: root)
+                    try reader.deleteConsumed(record)
+                    filed = true
+                } catch { failures.append(error.localizedDescription) }
+            }
+            DispatchQueue.main.async {
+                if filed { self?.emit("texttext:vault-changed", value: [:]) }
+                completion(failures)
+            }
+        }
+    }
     private func importPanel(requestID: String, folder: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
         guard let root else { completion(.failure(VaultBridgeError("Open a folder first."))); return }
         let panel = NSOpenPanel()
