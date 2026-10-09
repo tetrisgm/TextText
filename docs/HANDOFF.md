@@ -11,6 +11,8 @@ implemented or verified.
 The isolated crash probe now passes SIGKILL after ACK, commit-before-ACK replay,
 and existing-writer revocation. Its negative control proves default debounced
 storage alone is insufficient. See the experiment README for limits and commands.
+Template sidecar changes now preserve the current Yjs epoch in the candidate;
+[regression and delivery limits](verification/2026-10-08-template-continuity.md).
 
 ## Active sync repair
 

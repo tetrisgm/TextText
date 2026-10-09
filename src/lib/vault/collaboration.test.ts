@@ -7,7 +7,7 @@ import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { documentText, documentFields, documentTheme, documentPresentation } from "@/lib/collab/document";
 import { openPack } from "@/local-vault/pack";
 import { readDocument } from "@/local-vault/model";
-import { seedVaultCollaboration, applyVaultCollaboration, MAX_VAULT_COLLABORATION_BYTES } from "./collaboration";
+import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, MAX_VAULT_COLLABORATION_BYTES } from "./collaboration";
 
 function fixture() {
   const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
@@ -28,6 +28,17 @@ function mutation(doc: Y.Doc, change: () => void) {
 }
 
 describe("file pack full-document collaboration", () => {
+  it("rejects changed malformed template sidecars but preserves unchanged legacy provenance", () => {
+    const entries = unzipSync(fixture());
+    entries["Shared.textbundle/template-source.json"] = strToU8('{"legacy":true}');
+    const bytes = zipSync(entries), state = seedVaultCollaboration(bytes, "item-1", 1);
+    const identical = projectVaultFileEdit(state, bytes, bytes, "item-1");
+    expect(identical?.epoch).toBe(1);
+    for (const name of ["template.json", "template-source.json"]) {
+      const changed = zipSync({ ...entries, [`Shared.textbundle/${name}`]: strToU8('{"invalid":true}') });
+      expect(() => projectVaultFileEdit(state, bytes, changed, "item-1")).toThrow();
+    }
+  });
   it("seeds JSON-safe optional image fields and reads older valid undefined omissions", () => {
     const entries = unzipSync(fixture());
     const document = emptyDocumentSnapshot();

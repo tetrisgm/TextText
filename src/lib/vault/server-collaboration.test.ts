@@ -9,6 +9,9 @@ import { once } from "node:events";
 import { unzipSync, strFromU8 } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
+import { getBuiltinTemplate } from "@/lib/presentation/templates";
+import { authoringSourceFor } from "@/lib/presentation/authoring-source";
+import { normalizeItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
 import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, mutateVaultDocument, VaultCollaborationEpochError } from "./server-store";
@@ -43,6 +46,40 @@ describe("durable file collaboration", () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
+
+  it("keeps pending human edits through template definition additions, changes and removal", async () => {
+    let state = (await readVaultCollaboration(location()))!;
+    const builtin = getBuiltinTemplate("texttext.note", 1)!;
+    for (const [index, template] of [builtin, { ...builtin, name: "My notes" }, undefined].entries()) {
+      const pending = edit(state, ` human-template-${index}`);
+      const document = emptyDocumentSnapshot(); document.content.body = body(state);
+      const templateAuthoringSource = template ? authoringSourceFor(normalizeItemTypeBlueprint({ name: template.name, fields: [], collection: { layout: "list" } })) : undefined;
+      const bytes = buildTextpack("Note", { document, markdown: `---\ntextTextId: item-1\n---\n\n${body(state)}`, template, templateAuthoringSource });
+      await writeVaultTextpack({ ...location(), relativePath, operationId: `template-${index}`,
+        baseRevision: state.revision, bytes, liveReconcile: true });
+      expect((await readVaultCollaboration(location()))!.epoch).toBe(state.epoch);
+      await push(`pending-template-${index}`, state, pending);
+      state = (await readVaultCollaboration(location()))!;
+      expect(body(state)).toContain(`human-template-${index}`);
+      const entries = unzipSync((await readVaultTextpack(location()))!.bytes);
+      expect(entries["Note.textbundle/template.json"]).toEqual(unzipSync(bytes)["Note.textbundle/template.json"]);
+      expect(entries["Note.textbundle/template-source.json"]).toEqual(unzipSync(bytes)["Note.textbundle/template-source.json"]);
+    }
+  });
+
+  it("keeps pending text when a verified file switches to an embedded custom template", async () => {
+    const state = (await readVaultCollaboration(location()))!;
+    const pending = edit(state, " human during template switch");
+    const template = { ...getBuiltinTemplate("texttext.note", 1)!, id: "local.custom-note", name: "Custom note" };
+    const document = emptyDocumentSnapshot({ id: template.id, version: template.version }); document.content.body = "Hello";
+    await writeVaultTextpack({ ...location(), relativePath, operationId: "switch-template",
+      baseRevision: state.revision, bytes: buildTextpack("Note", { document, markdown: "---\ntextTextId: item-1\n---\n\nHello", template }), liveReconcile: true });
+    expect((await readVaultCollaboration(location()))!.epoch).toBe(state.epoch);
+    await push("pending-switch", state, pending);
+    const stored = unzipSync((await readVaultTextpack(location()))!.bytes);
+    expect(JSON.parse(strFromU8(stored["Note.textbundle/document.json"])).presentation.template.id).toBe(template.id);
+    expect(body((await readVaultCollaboration(location()))!)).toContain("human during template switch");
+  });
 
   it("keeps the epoch when CLI retry receipts arrive during shared editing", async () => {
     const receiptPath = "net.texttext.mutations/" + "a".repeat(64) + ".json";

@@ -4,6 +4,7 @@ import { applyDocumentSnapshot, encodeDocumentBaseline, documentSnapshotFromYDoc
 import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 import { documentAssetSchema, validateDocumentSnapshot } from "@/lib/documents/model";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
+import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { openPack, encodePack } from "@/local-vault/pack";
 import { readDocument, readTemplate, writePayload } from "@/local-vault/model";
 
@@ -89,8 +90,8 @@ export function seedVaultCollaboration(bytes: Uint8Array, itemId: string, epoch:
 }
 
 /** Project a causally based local file edit into the current Yjs epoch.
- * Assets belong to the pack, not the Yjs text identity; other opaque metadata
- * changes still require a separate presentation reconciliation. */
+ * Assets and validated template sidecars belong to the pack, not the Yjs text
+ * identity. Unknown opaque metadata keeps its existing fence. */
 export function projectVaultFileEdit(state: VaultCollaborationState, currentBytes: Uint8Array,
   nextBytes: Uint8Array, itemId: string): VaultCollaborationState | null {
   if (state.revision !== hash(currentBytes) || !Number.isSafeInteger(state.seq) || state.seq >= Number.MAX_SAFE_INTEGER) return null;
@@ -102,16 +103,28 @@ export function projectVaultFileEdit(state: VaultCollaborationState, currentByte
   for (const name of opaqueNames) {
     if (contentNames.has(name) || name.startsWith(beforePack.prefix + "assets/")) continue;
     const before = beforePack.entries[name], after = afterPack.entries[name];
+    if (before && after && before.length === after.length && before.every((byte, index) => byte === after[index])) continue;
+    const relative = name.slice(beforePack.prefix.length);
+    if (relative === "template.json" || relative === "template-source.json") {
+      if (after) {
+        if (after.byteLength > 1024 * 1024) return null;
+        const value = JSON.parse(new TextDecoder().decode(after));
+        if (relative === "template.json") validateTemplateDefinition(value);
+        else authoringSourceSchema.parse(value);
+      }
+      // readTemplate below also requires the resulting document to resolve to
+      // an available definition. Pending text updates retain the new sidecars.
+      continue;
+    }
     // The native CLI adds an immutable retry receipt with each file mutation.
     // It is not document content and must not invalidate concurrent Yjs edits.
-    const relative = name.slice(beforePack.prefix.length);
     if (!before && after && after.length <= 1024 && /^net\.texttext\.mutations\/[a-f0-9]{64}\.json$/.test(relative)) {
       try {
         const receipt = JSON.parse(new TextDecoder().decode(after));
         if (receipt && typeof receipt.fingerprint === "string" && /^[a-f0-9]{64}$/.test(receipt.fingerprint)) continue;
       } catch { /* Unknown metadata retains the epoch fence. */ }
     }
-    if (!before || !after || before.length !== after.length || before.some((byte, index) => byte !== after[index])) return null;
+    return null;
   }
   const doc = new Y.Doc();
   try {
