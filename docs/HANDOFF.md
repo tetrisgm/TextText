@@ -36,7 +36,14 @@ ran in that retry. Further regression exposed loss of human undo after snapshot
 replacement. The repair now maps the external body's edit through the pending
 local edit and checks it against the validated merge before touching Yjs.
 Unit and real browser undo/redo preserve the CLI insertion. Gate log
-`/tmp/texttext-inplace-undo-core.log`; physical collision rerun still required.
+`/tmp/texttext-inplace-undo-core.log` passed: 851 tests, TypeScript and both browser modes.
+Physical PC `inplace3082` and `continuity3082` now pass app+CLI collisions, exact
+marker preservation and flush; the latter continuously verifies the original
+editor is never removed. Independent Mac inspection confirms the earlier run's
+markers arrived. [Receipt](verification/2026-10-08-inplace-file-merge.md).
+Next: crash-window and multiple-importer handling, six-client coordination,
+then verified client installs. PC production app remains stopped; isolated test
+apps closed normally and temporary task registrations were removed.
 No six-client pass has been obtained.
 
 ## Authoritative delivery

@@ -120,6 +120,7 @@ static class Program
         await Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test item did not enter the real document editor.");
         if (DateTimeOffset.UtcNow >= plan.StartUtc) throw new Exception("Editor missed the coordinated start; discard this run and schedule a fresh one.");
         record(new { kind = "ready", plan.ItemId });
+        await view.ExecuteScriptAsync("(()=>{const initial=document.querySelector('[aria-label=\"Document body\"]');window.texttextAcceptanceContinuity={removed:false};const observer=new MutationObserver(()=>{if(!initial.isConnected){window.texttextAcceptanceContinuity.removed=true;observer.disconnect()}});observer.observe(document.body,{childList:true,subtree:true})})()");
         var last = "";
         async Task<string> Snapshot()
         {
@@ -154,6 +155,9 @@ static class Program
         var finish = DateTimeOffset.UtcNow.AddSeconds(plan.ObserveSeconds);
         string final = "";
         while (DateTimeOffset.UtcNow < finish) { final = await Snapshot(); await Task.Delay(100, ct); }
+        var continuous = await view.ExecuteScriptAsync("window.texttextAcceptanceContinuity?.removed === false") == "true";
+        record(new { kind = "editor-continuity", continuous });
+        if (!continuous) throw new Exception("The original editor was removed during the run, even if it later reopened.");
         foreach (var marker in plan.ExpectedMarkers.Concat(Enumerable.Range(0, plan.Rounds).Select(round => Marker(plan, round))).Distinct())
             if (final.Split(marker, StringSplitOptions.None).Length != 2) throw new Exception("Expected marker missing or duplicated in visible editor: " + marker);
         var flush = typeof(MainWindow).GetMethod("FlushEditor", Private) ?? throw new Exception("Missing production flush path.");

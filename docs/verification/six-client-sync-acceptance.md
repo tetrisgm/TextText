@@ -59,6 +59,11 @@ the earlier five-participant attempt was interrupted and did not pass. See
 [live collision receipt](2026-10-08-live-windows-file-collision.md). Windows
 browser orchestration and the complete six-participant run remain outstanding.
 
+The in-place merge candidate `3082bb49` passes two real Windows app/CLI collision
+runs, including continuous observation that the original editor was never removed,
+and browser/unit undo tests. [In-place merge receipt](2026-10-08-inplace-file-merge.md).
+This fixes the reproduced interruption for those cases, not the full matrix.
+
 ## Local two-account baseline receipt
 
 October 8, compiled production source `9189ee96`, loopback server on the Mac,
