@@ -283,7 +283,10 @@ class Native {
     const prior = this.checkpoint, closed = Object.assign(new Error("This shared editing session has closed."), { code: "session_closed" });
     const pending = Boolean(journal.batch || journal.pending.length || journal.unqueuedDirty);
     if (prior) {
-      if (prior.retired) throw closed;
+      // A retirement that only mirrors the retained journal's own `retired` text is lifted by a newer
+      // unretired checkpoint of the same epoch and path; native-originated retirements stay fenced.
+      if (prior.retired && !(prior.journal.retired === prior.retired && !journal.retired && journal.epoch === prior.journal.epoch &&
+        journal.relativePath === prior.journal.relativePath && (journal.journalGeneration ?? 0) > (prior.journal.journalGeneration ?? 0))) throw closed;
       const incoming = journal.journalGeneration ?? 0, retained = prior.journal.journalGeneration ?? 0;
       if (incoming < retained) throw new Error("generation");
       if (incoming === retained) { if (JSON.stringify(journal) !== JSON.stringify(prior.journal)) throw new Error("generation"); return; }
@@ -559,6 +562,85 @@ describe("revival of journals retired by a known older fatal path", () => {
     raw.unqueuedDirty = true; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
     journal.save(key, JSON.stringify(raw));
     const dirty = client(store, journal); await dirty.start();
+    expect(dirty.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+    expect(await store.body()).toBe("Hello");
+  });
+});
+
+describe("revival when the native checkpoint mirrors the browser retirement", () => {
+  const RETIRED = "This note needs to be reopened. Your edits are saved for recovery.";
+  let root: string, store: Store, journal: Journal, native: Native;
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-epoch-mirrored-"));
+    store = new Store(root); journal = new Journal();
+    const written = await writeVaultTextpack({ ...store.location(), relativePath, operationId: "initial", baseRevision: null, bytes: pack("Hello") });
+    native = new Native(written.revision!);
+  });
+  afterEach(async () => {
+    for (const entry of clients.splice(0)) entry.destroy();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+  const open = (options: Partial<FileCollaborationOptions> = {}) => client(store, journal, { ...native.open(), supportsEpochRecovery: true, ...options });
+  /** Mac 0.204 builds 1237-1239: a retired pending browser journal reopened under the older
+   * build was checkpointed with its `retired` text, so the native store now reports it too. */
+  async function mirroredRetiredPending() {
+    const first = open(); await first.start();
+    first.mutate(doc => documentText(doc, "body").insert(5, " pending"));
+    await vi.waitFor(() => expect(native.checkpoint?.pending).toBe(true));
+    first.destroy();
+    const raw = JSON.parse(journal.load(first.journalKey)!) as FileCollaborationJournal;
+    raw.retired = RETIRED; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
+    journal.save(first.journalKey, JSON.stringify(raw));
+    native.checkpoint = { journal: JSON.parse(JSON.stringify(raw)), pending: true, retired: RETIRED };
+    expect(native.open().initialRetirement).toBe(RETIRED);
+    return first.journalKey;
+  }
+
+  it("revives the journal, lifts the native mirror and replays the edit", async () => {
+    await mirroredRetiredPending();
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).not.toBe("recovery");
+    expect(await reopened.flush()).toBe(true);
+    expect(reopened.status).toBe("ready"); expect(reopened.hasPendingChanges).toBe(false);
+    expect(await store.body()).toBe("Hello pending");
+    expect(native.checkpoint?.retired).toBeUndefined(); expect(native.checkpoint?.journal.retired).toBeUndefined();
+    expect(store.pushes).toHaveLength(1);
+    const again = open(); await again.start();
+    expect(again.status).toBe("ready"); expect(store.pushes).toHaveLength(1);
+  });
+
+  it("recovers through the server when the epoch was replaced meanwhile", async () => {
+    await mirroredRetiredPending();
+    await store.replace("Hello remote");
+    const reopened = open(); await reopened.start();
+    expect(await reopened.flush()).toBe(true);
+    expect(reopened.status).toBe("ready");
+    expect(await store.body()).toBe("Hello remote pending");
+    expect(native.checkpoint?.retired).toBeUndefined(); expect(native.archived).toHaveLength(1);
+  });
+
+  it("restores the retirement on both sides when editing access is gone", async () => {
+    const key = await mirroredRetiredPending();
+    store.canEdit = false;
+    const reopened = open(); await reopened.start();
+    expect(reopened.status).toBe("recovery"); expect(reopened.hasPendingChanges).toBe(true);
+    expect(store.pushes).toEqual([]); expect(await store.body()).toBe("Hello");
+    await vi.waitFor(() => expect(native.checkpoint?.retired).toBe(RETIRED));
+    expect((JSON.parse(journal.load(key)!) as FileCollaborationJournal).retired).toBe(RETIRED);
+    expect(reopened.recoveryJournal?.pending).toHaveLength(1);
+  });
+
+  it("keeps native-originated retirements and unqueued edits manual", async () => {
+    const key = await mirroredRetiredPending();
+    native.checkpoint!.retired = "The file changed outside shared editing. Its saved shared journal is available for recovery.";
+    const nativeRetired = open(); await nativeRetired.start();
+    expect(nativeRetired.status).toBe("recovery"); expect(store.pushes).toEqual([]);
+    nativeRetired.destroy();
+    native.checkpoint!.retired = RETIRED;
+    const raw = JSON.parse(journal.load(key)!) as FileCollaborationJournal;
+    raw.unqueuedDirty = true; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
+    journal.save(key, JSON.stringify(raw));
+    const dirty = open(); await dirty.start();
     expect(dirty.status).toBe("recovery"); expect(store.pushes).toEqual([]);
     expect(await store.body()).toBe("Hello");
   });

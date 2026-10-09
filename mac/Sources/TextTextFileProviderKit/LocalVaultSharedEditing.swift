@@ -135,6 +135,17 @@ struct LocalVaultSharedEditingStore: Sendable {
               let raw = journal["recovery"], !(raw is NSNull) else { return nil }
         return Self.recoveryIntent(raw)
     }
+    /// A retirement that only repeats the retained journal's own `retired` text
+    /// was written by the browser client, not found by this store. The reopened
+    /// editor may revive that journal (the server still decides access); a newer
+    /// unretired checkpoint of the same epoch and path lifts it. Retirements this
+    /// store or the sync engine recorded carry other text and stay fenced.
+    private func liftsMirroredRetirement(prior: LocalVaultSharedCheckpoint, incoming: LocalVaultSharedCheckpoint) -> Bool {
+        guard let reason = prior.retiredReason, incoming.retiredReason == nil,
+              let journal = try? JSONSerialization.jsonObject(with: Data(prior.journal.utf8)) as? [String: Any],
+              journal["retired"] as? String == reason else { return false }
+        return incoming.epoch == prior.epoch && incoming.path == prior.path && incoming.journalGeneration > prior.journalGeneration
+    }
     /// A pending journal may only move to a newer epoch when the incoming
     /// checkpoint proves the client adopted the epoch produced by the recovery
     /// intent this store already holds. Server acknowledgement alone never
@@ -333,7 +344,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         let store = LocalVaultDocumentStore(root: root), current = try store.read(path: checkpoint.path)
         let intent = Intent(beforeHash: expectedHash, checkpoint: checkpoint, markdown: markdown, documentJSON: documentJSON)
         if let prior {
-            guard prior.retiredReason == nil else { throw LocalVaultSharedFailure.staleSession }
+            guard prior.retiredReason == nil || liftsMirroredRetirement(prior: prior, incoming: checkpoint) else { throw LocalVaultSharedFailure.staleSession }
             guard checkpoint.journalGeneration >= prior.journalGeneration else { throw LocalVaultSharedFailure.generation }
             if checkpoint.journalGeneration == prior.journalGeneration {
                 let incomingJournal = try JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8))

@@ -511,7 +511,16 @@ export class FileCollaborationClient {
       // A replacement epoch persisted by adoptEpoch whose native checkpoint never
       // ran. It is not a clean baseline until the native store adopts it.
       const unprovenAdoption = Boolean(this.options.checkpoint && retained?.recovery?.adopted);
-      if (retained?.retired && REVIVABLE_RETIREMENTS.includes(retained.retired) && !this.options.initialRetirement &&
+      // Reopening a retired journal under an older build checkpointed it with
+      // its `retired` text, so the native store now reports that same text as
+      // its retirement. That mirror is the browser's own revivable retirement,
+      // not a native finding about the file; the native store lifts it on the
+      // next unretired checkpoint. Native-originated reasons stay manual.
+      const mirroredRetirement = this.options.initialRetirement !== undefined && retained?.retired === this.options.initialRetirement &&
+        REVIVABLE_RETIREMENTS.includes(this.options.initialRetirement) && !retained.unqueuedDirty &&
+        Boolean(retained.pending.length || retained.batch || unprovenAdoption);
+      const initialRetirement = mirroredRetirement ? undefined : this.options.initialRetirement;
+      if (retained?.retired && REVIVABLE_RETIREMENTS.includes(retained.retired) && !initialRetirement &&
           !retained.unqueuedDirty && (retained.pending.length || retained.batch || unprovenAdoption)) {
         // Resume the journal as live pending work. A fresh read below decides
         // access; the server validates history and lifecycle before any merge.
@@ -519,7 +528,7 @@ export class FileCollaborationClient {
         retained = { ...retained, retired: undefined };
         delete retained.retired;
       }
-      if (retained && !this.options.initialRetirement && !retained.pending.length &&
+      if (retained && !initialRetirement && !retained.pending.length &&
           !retained.batch && !retained.unqueuedDirty && !unprovenAdoption && [
             "This file or its access changed. Recover your saved edits before reopening.",
             "This file or your access changed. Pending edits are kept for recovery.",
@@ -540,12 +549,12 @@ export class FileCollaborationClient {
       // journal still holds the exact unadopted intent this journal adopted.
       const staleLocal = retained && this.options.localRevision !== undefined && retained.revision !== this.options.localRevision &&
         !this.nativeAwaitsAdoption(retained);
-      if (staleLocal && !this.options.initialRetirement && !retained!.pending.length && !retained!.batch && !retained!.unqueuedDirty && !retained!.retired && !unprovenAdoption) {
+      if (staleLocal && !initialRetirement && !retained!.pending.length && !retained!.batch && !retained!.unqueuedDirty && !retained!.retired && !unprovenAdoption) {
         // A clean old journal must never project over a file downloaded while closed.
         this.journalGeneration = retained!.journalGeneration ?? 0;
         retained = null;
       }
-      if (retained && !this.options.initialRetirement && !this.options.initialFileChange &&
+      if (retained && !initialRetirement && !this.options.initialFileChange &&
           !retained.pending.length && !retained.batch && !retained.unqueuedDirty && !retained.retired && !unprovenAdoption) {
         // A clean journal is a fallback, not a live baseline or access grant.
         // Native checkpoints also need fresh Yjs IDs after an epoch replacement,
@@ -555,7 +564,7 @@ export class FileCollaborationClient {
         retained = null;
       }
       if (this.options.checkpoint && retained?.retired?.startsWith("The local document checkpoint could not be saved.") &&
-          retained.retired.includes("This shared editing session has closed.") && !this.options.initialRetirement &&
+          retained.retired.includes("This shared editing session has closed.") && !initialRetirement &&
           !retained.pending.length && !retained.batch && !retained.unqueuedDirty) {
         // An old interrupted session can leave a retired browser journal even
         // though its native checkpoint and document are clean. Reopen the file
@@ -567,8 +576,8 @@ export class FileCollaborationClient {
       }
       if (retained) {
         this.restoreRetained(retained);
-        if (this.options.initialRetirement) {
-          this.initialRetirement = this.options.initialRetirement; this.frozen = true; this.canEdit = false;
+        if (initialRetirement) {
+          this.initialRetirement = initialRetirement; this.frozen = true; this.canEdit = false;
           this.report("recovery", this.initialRetirement); return;
         }
         if (staleLocal) {
@@ -598,8 +607,8 @@ export class FileCollaborationClient {
         this.persist();
         if (retained.retired || this.unqueuedDirty) { this.retire(retained.retired ?? "Unsubmitted local edits are kept for recovery."); return; }
       }
-      if (this.options.initialRetirement) {
-        this.initialRetirement = this.options.initialRetirement; this.frozen = true; this.canEdit = false;
+      if (initialRetirement) {
+        this.initialRetirement = initialRetirement; this.frozen = true; this.canEdit = false;
         this.report("recovery", this.initialRetirement); return;
       }
       if (!this.active) { this.report(this.inactiveReason); return; }

@@ -1052,6 +1052,39 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let counts = await transport.counts(); XCTAssertEqual(counts.0, 1); XCTAssertEqual(counts.1, 1)
     }
 
+    func testMirroredBrowserRetirementLiftsOnUnretiredCheckpointButNativeRetirementStays() throws {
+        let reason = "This note needs to be reopened. Your edits are saved for recovery."
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let change = try changes(original, body: "Pending human")
+        func retiredCheckpoint(generation: UInt64) throws -> LocalVaultSharedCheckpoint {
+            var target = try checkpoint(original, generation: generation)
+            var journal = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(target.journal.utf8)) as? [String: Any])
+            journal["retired"] = reason
+            target.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+            target.retiredReason = reason
+            return target
+        }
+        // Mac 0.204 builds 1237-1239 reopened a retired browser journal and checkpointed its own text as the retirement.
+        let mirrored = try store.materialize(checkpoint: retiredCheckpoint(generation: 2), expectedHash: original.hash, markdown: change.0, documentJSON: change.1)
+        XCTAssertEqual(mirrored.checkpoint.retiredReason, reason)
+        // Another epoch or path cannot lift it; neither can a stale generation.
+        var otherEpoch = try checkpoint(original, generation: 3); otherEpoch.epoch = 2
+        otherEpoch.journal = otherEpoch.journal.replacingOccurrences(of: "\"epoch\":1", with: "\"epoch\":2")
+        XCTAssertThrowsError(try store.materialize(checkpoint: otherEpoch, expectedHash: mirrored.document.hash, markdown: change.0, documentJSON: change.1))
+        XCTAssertThrowsError(try store.materialize(checkpoint: try checkpoint(original, generation: 2), expectedHash: mirrored.document.hash, markdown: change.0, documentJSON: change.1))
+        XCTAssertEqual(try XCTUnwrap(store.checkpoint(itemId: itemId)).retiredReason, reason)
+        // The revived journal of the same epoch lifts the mirror and keeps the pending edit.
+        let revived = try store.materialize(checkpoint: try checkpoint(original, generation: 3), expectedHash: mirrored.document.hash, markdown: change.0, documentJSON: change.1)
+        XCTAssertNil(revived.checkpoint.retiredReason); XCTAssertTrue(revived.checkpoint.pending)
+        XCTAssertNil(try XCTUnwrap(store.checkpoint(itemId: itemId)).retiredReason)
+        // A retirement this store recorded itself has no matching journal text and stays fenced.
+        let native = try XCTUnwrap(try store.retire(itemId: itemId, reason: "The file was changed, moved, or deleted outside shared editing. The retained journal is available for recovery."))
+        XCTAssertNotNil(native.retiredReason)
+        XCTAssertThrowsError(try store.materialize(checkpoint: try checkpoint(original, generation: 4), expectedHash: revived.document.hash, markdown: change.0, documentJSON: change.1)) { error in
+            guard case LocalVaultSharedFailure.staleSession = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(try XCTUnwrap(store.checkpoint(itemId: itemId)).retiredReason, native.retiredReason)
+    }
     func testGenerationRegressionAndSameGenerationChangedJournalFail() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
         let change = try changes(original, body: "Shared")
