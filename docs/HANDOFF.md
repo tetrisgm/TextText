@@ -38,8 +38,16 @@ and the signed-in production browser found that note with the saved body.
 
 ## Open work
 
-- The pending editor lifecycle and reload ownership fixes in the current
-  checkout address two failures exposed by the local two-account browser
+- Automatic six-client coordinator: [runner/protocol](../sync/stress/README.md)
+  now provides seeded concurrent append rounds, readiness barriers, exact text
+  and baseline preservation checks, editor continuity, bounded child processes,
+  a live local dashboard, and retained replay/evidence files. Its 13 harness
+  tests are included in the sync client/core gate. The example is explicitly
+  simulated and establishes no physical acceptance. Next integrate the real
+  Windows runners and Mac editor/Safari/direct-file actors with the protocol,
+  then add the named fault scenarios in the acceptance contract. Do not count
+  command-based app appends as native editor input.
+- Source `0f224adb` addresses two failures exposed by the local two-account browser
   collaboration run: undo silently stopped after React StrictMode effect
   replay, and a reload could start a fresh journal while the old page still
   held the pending journal's Web Lock. The full 377-test sync client gate,

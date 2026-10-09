@@ -33,6 +33,58 @@ recovery time and exact final hashes/content. Repeat deterministic seeds and
 retain failing seeds as regression tests in the independently gated sync system.
 A file snapshot over SSH proves stored content, not a visible Windows editor.
 
+## Automatic campaign requirement
+
+The six participants must be driven by a bounded, explicitly started coordinator,
+not by an agent manually typing each edit. The coordinator generates and records
+a seed, fixture identity, source/build identities, and the complete action plan.
+All six report readiness before a round starts. A missing or disconnected actor
+fails readiness; reducing the participant count cannot produce a passing receipt.
+The Mac and Windows app/browser actors must use their real editing input path,
+not mutate Y.Doc, call save APIs, or replace production transports. CLI actors
+write the actual TextPack through ordinary filesystem APIs, without TextText CLI
+or MCP. Both native apps stay running so those file changes are observed.
+
+The live dashboard shows each role, current action, last observation, convergence
+latency, pending work, editor continuity, and resource measurements. Retain a
+machine-readable event stream plus a final receipt. Compare semantic document
+content and attachment hashes; ZIP byte equality is not required. A client that
+only reports its own successful input has not proved convergence.
+
+Campaign stages, implemented and attested separately:
+
+1. Repeated concurrent insert bursts, exact marker multiplicity and document
+   equality, idle settling, and continuous editor observation.
+2. Same-position inserts, overlapping replacements/deletions, multiple fields,
+   Unicode, undo/redo, and sustained typing while both file actors save.
+3. Per-participant transport loss, reconnect, dropped acknowledgements, reload,
+   process termination with pending edits, and restart. Keep the other five
+   active during the fault. Faults target only disposable test participants,
+   never the machine's global network or unrelated services.
+4. TextPack/attachment replacement, invalid intermediate bytes followed by
+   repair, atomic rename, folder moves, deletion/restoration, and stale saves.
+5. Separate-account permission changes and compatibility with retained older
+   journals. Authentication failure is reported, never bypassed.
+
+Each scenario defines its expected semantic result or allowed deterministic
+outcomes before execution. Convergence alone cannot detect six clients agreeing
+on lost edits. Require every accepted operation to be represented in the final
+document or retained version history according to that scenario's policy.
+Observe stable convergence across multiple samples and separately prove durable
+reopen. An intentionally restarted actor may replace its editor only during the
+declared fault window; the other editors must remain mounted throughout.
+
+Default runs must have finite duration/round, output-size, process, memory, and
+request budgets. Stop issuing mutations at the first failure, preserve evidence,
+collect final observations, and shut down only runner-owned processes without
+deleting journals. A hung actor gets a bounded shutdown timeout. Never retry a
+failed seed into a passing result; replay is a new linked receipt. No automatic
+source edits, installs, deployments, or permanent scheduled job are part of this
+runner. An explicit soak invocation may repeat a bounded set of seeds.
+
+Harness simulations test orchestration only. They must be labeled simulated and
+cannot satisfy physical acceptance or substitute for a missing native adapter.
+
 ## Current evidence and gaps
 
 The October 9 [physical six-client live-edit round](2026-10-09-six-client-live-edit.md)

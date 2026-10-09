@@ -1,0 +1,16 @@
+{
+  "mode": "simulated",
+  "seed": 42,
+  "rounds": 5,
+  "timeoutMs": 10000,
+  "fixture": { "workspaceId": "ws-fixture", "itemId": "item-fixture" },
+  "outputDir": ".texttext/sync/stress",
+  "roles": {
+    "mac-app": { "command": ["node", "sync/stress/fake-adapter.mjs"], "env": { "STRESS_FAKE_SHARED": ".texttext/sync/stress/fake-shared" } },
+    "mac-web": { "command": ["node", "sync/stress/fake-adapter.mjs"], "env": { "STRESS_FAKE_SHARED": ".texttext/sync/stress/fake-shared" } },
+    "mac-cli": { "command": ["node", "sync/stress/fake-adapter.mjs"], "env": { "STRESS_FAKE_SHARED": ".texttext/sync/stress/fake-shared" } },
+    "pc-app": { "command": ["node", "sync/stress/fake-adapter.mjs"], "env": { "STRESS_FAKE_SHARED": ".texttext/sync/stress/fake-shared" } },
+    "pc-web": { "command": ["node", "sync/stress/fake-adapter.mjs"], "env": { "STRESS_FAKE_SHARED": ".texttext/sync/stress/fake-shared" } },
+    "pc-cli": { "command": ["node", "sync/stress/fake-adapter.mjs"], "env": { "STRESS_FAKE_SHARED": ".texttext/sync/stress/fake-shared" } }
+  }
+}
