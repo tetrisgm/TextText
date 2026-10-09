@@ -297,3 +297,22 @@ it("routes folder reviews through the bound native HTTP adapter without writing 
   expect(view.messages.some(message => message.method.startsWith("files."))).toBe(false);
   transport.destroy();
 });
+
+it("forwards epoch recovery through native HTTP and preserves terminal recovery errors", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const view = native((method, params) => {
+    if (method === "native.status") return { root: "C:\\TextText", workspaceId: "workspace", name: "Workspace", connected: true, available: true };
+    if (method === "native.http") {
+      expect(params).toMatchObject({ path: "/api/vault/workspace/items/item/collaboration", method: "POST" });
+      expect(JSON.parse(Buffer.from(String(params.body), "base64").toString())).toEqual({ operationId: "recover-1", epoch: 1, recoveryUpdate: "AQ==" });
+      return { status: 409, headers: { "Content-Type": "application/json" }, body: Buffer.from(JSON.stringify({ error: "Saved edits need review", code: "recovery_lifecycle" })).toString("base64") };
+    }
+    throw new Error(`Unexpected ${method}`);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try {
+    await expect(transport.request("collaborationPush", { itemId: "item", operationId: "recover-1", epoch: 1, recoveryUpdate: "AQ==", actorUserId: "untrusted" }))
+      .rejects.toMatchObject({ code: "recovery_lifecycle", status: 409 });
+    expect(view.messages.some(message => message.method.startsWith("files."))).toBe(false);
+  } finally { transport.destroy(); }
+});

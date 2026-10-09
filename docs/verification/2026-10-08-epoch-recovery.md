@@ -64,3 +64,23 @@ The endpoint is not called by the client yet and is not deployed. Archived
 states do not exist retroactively for the older Windows fixture; its original
 journals and history remain unchanged.
 Do not clear that journal or label the Windows failure resolved from these tests.
+
+## Client transport follow-up
+
+The shared web/Windows HTTP adapter now forwards the recovery payload and keeps
+structured recovery rejection codes alongside the HTTP status. Previously it
+discarded the code, and the editor wrapper would replace a nonnumeric code's
+status with undefined. The transport regression covers native HTTP forwarding,
+no local file writes, and lifecycle rejection; 49 focused tests passed in
+`/tmp/texttext-recovery-transport.log`. The shared gate passed 866 tests,
+TypeScript and all three browser continuity modes with an exact-source receipt
+in `/tmp/texttext-recovery-transport-core.log`. This does not activate automatic
+recovery.
+
+Editor continuity still requires an explicit epoch transition design: the
+shared client exposes one readonly Y.Doc, UnifiedDocumentEditor captures it
+once with useState, and the current reset path increments its React key. Simply
+replacing the client or removing that key cannot safely adopt a different Yjs
+epoch. Keep the mounted editor while transitioning its binding or projecting
+through a retained editor document; verify selection and undo as well as DOM
+identity. Native pending-journal adoption remains a separate required gate.

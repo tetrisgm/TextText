@@ -70,8 +70,13 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
   };
   const failure = async (response: Response) => {
     let message = `The workspace request failed (${response.status}).`;
-    try { const payload = await response.json(); if (typeof payload.error === "string") message = payload.error; } catch { /* HTTP status is sufficient. */ }
-    return new VaultError(message, response.status === 401 ? "unauthorized" : String(response.status));
+    let code = response.status === 401 ? "unauthorized" : String(response.status);
+    try {
+      const payload = await response.json();
+      if (typeof payload.error === "string") message = payload.error;
+      if (response.status === 409 && ["recovery_unavailable", "recovery_conflict", "recovery_lifecycle"].includes(payload.code)) code = payload.code;
+    } catch { /* HTTP status is sufficient. */ }
+    return Object.assign(new VaultError(message, code), { status: response.status });
   };
   const listing = async (): Promise<VaultListing> => {
     if (listingRequest) return listingRequest;
@@ -273,7 +278,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       }
       const response = await request(`${base}/${encodeURIComponent(itemId)}/collaboration${method === "collaborationRead" && query.size ? `?${query}` : ""}`, {
         method: method === "collaborationRead" ? "GET" : "POST", credentials: "same-origin", cache: "no-store", signal,
-        ...(method === "collaborationPush" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operationId: params.operationId, epoch: params.epoch, updates: params.updates }) } : {}),
+        ...(method === "collaborationPush" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operationId: params.operationId, epoch: params.epoch, updates: params.updates, recoveryUpdate: params.recoveryUpdate }) } : {}),
       });
       if (!response.ok) throw await failure(response);
       if (response.status === 204) throw new DOMException("Request canceled", "AbortError");

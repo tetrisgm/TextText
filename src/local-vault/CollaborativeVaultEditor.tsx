@@ -181,7 +181,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       request: async (method, params, signal) => {
         try { return await vaultRequest(method === "read" ? "collaborationRead" : "collaborationPush", { ...params, itemId: config.itemId }, signal); }
         catch (error) {
-          if (error instanceof VaultError) Object.assign(error, { status: error.code === "unauthorized" ? 401 : Number(error.code) || undefined });
+          if (error instanceof VaultError && !("status" in error)) Object.assign(error, { status: error.code === "unauthorized" ? 401 : Number(error.code) || undefined });
           throw error;
         }
       },

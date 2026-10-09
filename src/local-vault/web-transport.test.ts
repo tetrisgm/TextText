@@ -341,6 +341,9 @@ describe("web file vault transport", () => {
     expect(calls.at(-1)?.init?.signal).toBe(abort.signal);
     await transport.request("collaborationPush", { itemId: "stable-id", operationId: "op", epoch: 1, updates: ["AAA="], root: "/outside", actorUserId: "fake" }, abort.signal);
     expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual({ operationId: "op", epoch: 1, updates: ["AAA="] });
+    await transport.request("collaborationPush", { itemId: "stable-id", operationId: "recover-op", epoch: 1, recoveryUpdate: "AQ==", root: "/outside", actorUserId: "fake" }, abort.signal);
+    expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual({ operationId: "recover-op", epoch: 1, recoveryUpdate: "AQ==" });
+    expect(calls.at(-1)?.init?.signal).toBe(abort.signal);
     transport.destroy();
     await expect(transport.request("collaborationRead", { itemId: "stable-id" })).rejects.toThrow("closed");
   });
