@@ -21,6 +21,17 @@ See the restart delivery receipt; pending edits remain preserved.
 Canonical PC app remains stopped; preserve/reconcile the earlier retained test
 journal before reopening. Isolated acceptance apps closed normally.
 
+## Additional interruption triggers
+
+Attachment changes now preserve Yjs identities rather than resetting the epoch;
+source b36da30a passed 854 shared tests, TypeScript and all browser modes. The
+failed PC fixture also contains a native CLI retry receipt added after its base.
+Server inspection confirms epoch 2 versus the PC's epoch 1. Current candidate
+keeps valid newly added CLI receipts inside the same session, with a reproduced
+failing baseline and passing regression. Neither server fix is deployed yet;
+the old pending journal still requires reconciliation.
+[Evidence](verification/2026-10-08-attachment-continuity.md).
+
 ## Pending restart candidate
 
 Current source now keeps a valid pending native checkpoint after a same-ID file

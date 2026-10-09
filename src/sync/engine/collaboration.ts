@@ -102,6 +102,15 @@ export function projectVaultFileEdit(state: VaultCollaborationState, currentByte
   for (const name of opaqueNames) {
     if (contentNames.has(name) || name.startsWith(beforePack.prefix + "assets/")) continue;
     const before = beforePack.entries[name], after = afterPack.entries[name];
+    // The native CLI adds an immutable retry receipt with each file mutation.
+    // It is not document content and must not invalidate concurrent Yjs edits.
+    const relative = name.slice(beforePack.prefix.length);
+    if (!before && after && after.length <= 1024 && /^net\.texttext\.mutations\/[a-f0-9]{64}\.json$/.test(relative)) {
+      try {
+        const receipt = JSON.parse(new TextDecoder().decode(after));
+        if (receipt && typeof receipt.fingerprint === "string" && /^[a-f0-9]{64}$/.test(receipt.fingerprint)) continue;
+      } catch { /* Unknown metadata retains the epoch fence. */ }
+    }
     if (!before || !after || before.length !== after.length || before.some((byte, index) => byte !== after[index])) return null;
   }
   const doc = new Y.Doc();

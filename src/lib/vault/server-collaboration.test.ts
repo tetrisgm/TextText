@@ -44,14 +44,17 @@ describe("durable file collaboration", () => {
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
 
-  it("retains local retry receipts through shared editing and agent mutations", async () => {
+  it("keeps the epoch when CLI retry receipts arrive during shared editing", async () => {
     const receiptPath = "net.texttext.mutations/" + "a".repeat(64) + ".json";
     const receipt = new TextEncoder().encode(JSON.stringify({ fingerprint: "b".repeat(64) }));
-    const original = (await readVaultTextpack(location()))!;
-    await writeVaultTextpack({ ...location(), relativePath, operationId: "add-local-receipt",
-      baseRevision: original.revision, bytes: pack("Hello", { [receiptPath]: receipt }) });
     const state = (await readVaultCollaboration(location()))!;
-    await push("shared-after-receipt", state, edit(state, " shared edit"));
+    const pending = edit(state, " shared edit");
+    await writeVaultTextpack({ ...location(), relativePath, operationId: "add-local-receipt",
+      baseRevision: state.revision, bytes: pack("Hello CLI", { [receiptPath]: receipt }), liveReconcile: true });
+    expect((await readVaultCollaboration(location()))!.epoch).toBe(state.epoch);
+    await push("shared-after-receipt", state, pending);
+    const merged = body((await readVaultCollaboration(location()))!);
+    expect(merged).toContain("CLI"); expect(merged).toContain("shared edit");
     const shared = (await readVaultTextpack(location()))!;
     expect(unzipSync(shared.bytes)["Note.textbundle/" + receiptPath]).toEqual(receipt);
     await mutateVaultDocument({ ...location(), operationId: "agent-after-receipt",
@@ -60,6 +63,14 @@ describe("durable file collaboration", () => {
     const saved = (await readVaultTextpack(location()))!;
     expect(unzipSync(saved.bytes)["Note.textbundle/" + receiptPath]).toEqual(receipt);
     expect(strFromU8(unzipSync(saved.bytes)["Note.textbundle/text.md"])).toContain("Agent edit");
+  });
+
+  it("does not treat malformed CLI metadata as a valid retry receipt", async () => {
+    const state = (await readVaultCollaboration(location()))!;
+    const receiptPath = "net.texttext.mutations/" + "a".repeat(64) + ".json";
+    await writeVaultTextpack({ ...location(), relativePath, operationId: "malformed-receipt",
+      baseRevision: state.revision, bytes: pack("Hello", { [receiptPath]: new TextEncoder().encode('{"fingerprint":"invalid"}') }), liveReconcile: true });
+    expect((await readVaultCollaboration(location()))!.epoch).toBe(state.epoch + 1);
   });
 
   it("preserves the actual Markdown path across edits and renames", async () => {

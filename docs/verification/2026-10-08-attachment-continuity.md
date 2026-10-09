@@ -20,3 +20,26 @@ in `/tmp/texttext-attachment-core-final.log`.
 
 This does not resolve the older retired Windows journal, template metadata
 reconciliation, or the six-client acceptance requirement. Not yet deployed.
+
+
+## Native CLI retry receipts
+
+Read-only Oracle inspection of the failed PC fixture confirms server epoch 2,
+sequence 1, while Windows retained epoch 1. Its acknowledged base remains in
+server history. Comparing that base with the current pack found changes to
+`text.md`, `document.json`, and an added `net.texttext.mutations/<hash>.json`.
+The receipt is the native CLI's immutable idempotency marker; treating it as an
+unsupported presentation change resets the epoch during ordinary CLI editing.
+
+The store regression now opens collaboration before a CLI file write with a
+receipt and pending human text. Baseline fails the epoch assertion
+(`/tmp/texttext-receipt-before.log`). The candidate accepts only newly added,
+bounded, correctly named receipts with a valid fingerprint; existing receipt
+changes and unknown metadata retain their fences. The human update still
+commits and both CLI/human content plus receipt bytes survive later mutations.
+Focused tests pass in `/tmp/texttext-receipt-after.log`. Full core gate passes
+855 tests, TypeScript and all three browser modes with an exact-source receipt
+(`/tmp/texttext-receipt-core.log`).
+
+This prevents the reproduced reset path. It does not clear or repair the old
+retired PC journal and has not yet been deployed.
