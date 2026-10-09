@@ -94,3 +94,21 @@ the original editor element remains mounted and no recovery banner appears.
 the existing conflicting-replacement preservation check; nine reconcile tests
 and TypeScript pass. Logs: `/tmp/texttext-local-append-{browser,conflict-browser,unit,tsc}.log`.
 These are controlled browser regressions, not physical six-client acceptance.
+
+## Existing conflict recovery candidate
+
+Windows now revisits only old, unbased `conflict` records whose two preserved
+archives hash exactly to the recorded local hash and server revision. It checks
+identity, current path, lifecycle and permission, then requires equivalent content
+or the generated-header extension policy before establishing that historical
+base and lifting the conflict fence. Later local edits then follow the normal
+durable conditional upload. Recovery archives are retained. Missing evidence
+leaves the original fence intact. Native tests cover an old conflict with a later
+CLI edit and a missing-archive negative case; the full native core suite passes
+in `/tmp/texttext-metadata-recovery-tests.log`.
+
+The earlier aa6a3bd0 Windows build passed its full build/smoke gates:
+`C:\Users\Shokunin\dev\texttext-client-aa6a3bd0\windows\build\candidate-99ffa7d0d79f419491381036747cf09a`.
+It is not installed, and does not contain the subsequent local-editor or
+existing-conflict recovery changes. Build log:
+`C:\Users\Shokunin\dev\texttext-aa6a3bd0-build-retry.log`.

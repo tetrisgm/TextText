@@ -5,6 +5,10 @@
 Latest six-client attempt failed: Windows stayed local and raised an external
 file conflict while other clients continued. Its pending edits remain protected.
 [Failure, test limitations and next investigation](verification/2026-10-08-six-client-full1235.md).
+Source now fixes JSON equivalence, preserves generated metadata through conditional
+upload, reconciles local concurrent appends, and recovers attested old metadata
+conflicts. Native and focused browser tests pass. Build/install the combined
+candidate next; aa6a3bd0 passed Windows gates but predates the last two fixes.
 
 Mac 1235 and Windows source 1163846d are installed. Mac save/reopen and visible
 Windows Edge editing passed; the Mac independently saw the Edge edits.
