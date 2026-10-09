@@ -5,18 +5,14 @@
 Latest six-client attempt failed: Windows stayed local and raised an external
 file conflict while other clients continued. Its pending edits remain protected.
 [Failure, test limitations and next investigation](verification/2026-10-08-six-client-full1235.md).
-Source now fixes JSON equivalence, preserves generated metadata through conditional
-upload, reconciles local concurrent appends, and recovers attested old metadata
-conflicts. Native and focused browser tests pass. Build/install the combined
-candidate next; e1c67014 Windows build exited successfully but its receipt still
-needs collection. A further startup-order failure now has a bounded multiple-edit
-merge and Yjs ownership regression; [repair and remaining acceptance](verification/2026-10-08-multispan-recovery.md).
-The old stuck PC test app was stopped after preserving its full profile, file and
-sync state. Physical recovery and six-client acceptance have not passed.
-
-Mac 1235 and Windows source 1163846d are installed. Mac save/reopen and visible
-Windows Edge editing passed; the Mac independently saw the Edge edits.
-[Receipt and remaining gaps](verification/2026-10-08-client-1235.md).
+Mac 0.204 (1236) and Windows source `248bbb28` are installed. Mac existing-note
+search, edit and saved-file verification passed. Windows recovered all six retained
+PC markers and its CLI marker to disk, then closed with a successful native flush.
+It still could not join shared editing: the upload conflicts while reconciling
+sequential JSON/Markdown edits against the last cloud base. Fable 5.1 Low is
+implementing the representation-baseline repair. Six-client acceptance is not passed.
+[Current installation and failure evidence](verification/2026-10-08-client-1236.md).
+[Multiple-edit merge repair](verification/2026-10-08-multispan-recovery.md).
 The owner requested less custom sync machinery. A bounded standard-provider
 prototype is in `scripts/experiments/hocuspocus`; production replacement is not yet
 implemented or verified.
