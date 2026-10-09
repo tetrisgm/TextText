@@ -3,6 +3,20 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultCollaborationTests: XCTestCase {
+    func testRecoveryResponsePreservesHTTPStatusAndOnlyKnownRecoveryCodes() {
+        for code in ["recovery_unavailable", "recovery_conflict", "recovery_lifecycle"] {
+            let error = LocalVaultCollaborationError.response(status: 409, payload: ["code": code, "error": "Saved edits need review"])
+            XCTAssertEqual(error.code, code)
+            XCTAssertEqual(error.status, 409)
+        }
+        for status in [401, 403, 404, 503] {
+            let error = LocalVaultCollaborationError.response(status: status, payload: ["code": "recovery_lifecycle"])
+            XCTAssertEqual(error.code, String(status))
+            XCTAssertEqual(error.status, status)
+        }
+        XCTAssertEqual(LocalVaultCollaborationError.response(status: 409, payload: ["code": "untrusted"]).code, "409")
+        XCTAssertEqual(LocalVaultCollaborationError.response(status: 409, payload: nil).code, "409")
+    }
     func testTrashRequestsArePinnedAndPreserveRetryIdentity() throws {
         let params = ["itemId": "item", "operationId": "operation", "basePath": "Notes/A.textpack", "baseRevision": String(repeating: "a", count: 64), "relativePath": "Notes/A.textpack"]
         let request = try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "trashRestore", params: params)

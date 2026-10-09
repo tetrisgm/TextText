@@ -92,7 +92,11 @@ invalid epochs. It does not claim native journal attestation from JavaScript.
 All 19 `LocalVaultCollaborationTests` passed on the Mac in
 `/tmp/texttext-mac-recovery-transport.log` using `swift test --package-path mac
 --jobs 2 --filter LocalVaultCollaborationTests`. The automatic recovery caller,
-native adoption and structured native recovery errors are still pending.
+native adoption are still pending. Native recovery errors now preserve known
+recovery codes and their numeric HTTP status through Swift and the JavaScript
+bridge. The 20 Swift relay tests and 10 bridge tests passed in
+`/tmp/texttext-native-recovery-errors-swift.log` and
+`/tmp/texttext-native-recovery-errors-js.log`. No automatic recovery is enabled.
 
 An epoch transition must also move awareness to the authoritative Yjs identities;
 a separate old editor document cannot reuse server relative cursor positions.

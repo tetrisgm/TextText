@@ -382,7 +382,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case .success(let value): self?.emit("texttext:vault-reply", value: ["id": id, "result": value as Any? ?? NSNull()])
                 case .failure(let error):
                     let code = Self.collaborationErrorCode(error, method: method)
-                    self?.emit("texttext:vault-reply", value: ["id": id, "error": ["code": code, "message": error.localizedDescription]])
+                    var detail: [String: Any] = ["code": code, "message": error.localizedDescription]
+                    if let status = (error as? LocalVaultCollaborationError)?.status { detail["status"] = status }
+                    self?.emit("texttext:vault-reply", value: ["id": id, "error": detail])
                 }
             }
             return

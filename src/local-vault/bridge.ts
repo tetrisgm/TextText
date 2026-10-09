@@ -34,7 +34,11 @@ if (typeof window !== "undefined") window.addEventListener("texttext:vault-reply
   if (request.timer) clearTimeout(request.timer);
   request.timer = undefined;
   request.cleanup();
-  if (error) request.reject(new VaultError(typeof error === "string" ? error : error.message, error.code, error.current));
+  if (error) {
+    const failure = new VaultError(typeof error === "string" ? error : error.message, error.code, error.current);
+    if (Number.isInteger(error.status) && error.status >= 400 && error.status <= 599) Object.assign(failure, { status: error.status });
+    request.reject(failure);
+  }
   else request.resolve(result);
 }) as EventListener);
 if (typeof window !== "undefined") window.addEventListener("texttext:vault-picker-open", ((event: CustomEvent) => {

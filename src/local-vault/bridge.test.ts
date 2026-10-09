@@ -150,3 +150,16 @@ it("keeps the regular timeout on bridge calls that do not open a native picker",
   await rejected;
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("retains native recovery codes and HTTP status without leaking request timers", async () => {
+  vi.resetModules(); vi.useFakeTimers();
+  const sent: { id: string }[] = [];
+  const surface = Object.assign(new EventTarget(), { webkit: { messageHandlers: { localVault: { postMessage: (body: { id: string }) => sent.push(body) } } } });
+  vi.stubGlobal("window", surface);
+  const { vaultRequest } = await import("./bridge");
+  const pending = vaultRequest("collaborationPush", { itemId: "item", recoveryUpdate: "AQ==" });
+  const rejected = expect(pending).rejects.toMatchObject({ code: "recovery_lifecycle", status: 409 });
+  surface.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail: { id: sent[0].id, error: { code: "recovery_lifecycle", status: 409, message: "Saved edits need review" } } }));
+  await rejected;
+  expect(vi.getTimerCount()).toBe(0);
+});

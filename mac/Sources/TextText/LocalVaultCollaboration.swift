@@ -6,7 +6,16 @@ import TextTextWorkspaceCore
 struct LocalVaultCollaborationError: LocalizedError {
     let code: String
     let message: String
+    var status: Int? = nil
     var errorDescription: String? { message }
+
+    static func response(status: Int, payload: [String: Any]?) -> Self {
+        let message = (payload?["error"] as? String).map { String($0.prefix(1000)) } ?? "Workspace request could not complete."
+        let recovery = payload?["code"] as? String
+        let code = status == 409 && ["recovery_unavailable", "recovery_conflict", "recovery_lifecycle"].contains(recovery ?? "")
+            ? recovery! : String(status)
+        return Self(code: code, message: message, status: status)
+    }
 }
 
 /// Narrow authenticated relay. No URL or credential is accepted from JavaScript.
@@ -522,8 +531,7 @@ final class LocalVaultCollaboration {
                 let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let succeeded = status == 200 || method == "folderMoveReview" && status == 201
                 guard succeeded, let value else {
-                    let message = (value?["error"] as? String).map { String($0.prefix(1000)) } ?? "Workspace request could not complete."
-                    throw LocalVaultCollaborationError(code: String(status), message: message)
+                    throw LocalVaultCollaborationError.response(status: status, payload: value)
                 }
                 if method.hasPrefix("publication") {
                     guard let itemId = params["itemId"] as? String else {
