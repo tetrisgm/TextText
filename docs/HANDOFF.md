@@ -3,26 +3,33 @@
 ## Current delivery (October 9)
 
 Windows TextText is installed from source `19a79616`; its cold-start evidence
-is `/tmp/texttext-win-final19-delivery.md`. Oracle serves
-`texttext-oracle-20261009T122053Z-19a79616`; the deployment receipt is
-`/tmp/texttext-oracle-19a79616-ship.log`. Algorave remained active.
+is `/tmp/texttext-win-final19-delivery.md`. Oracle serves source `06c3ad60`
+from release `20261009T191004Z-tt-1242-06c3ad60-6ac93a64-97399e`.
+`/private/tmp/texttext-promote-06c3.log` records the exact-source web gate,
+database migration preflight, deployment, and 13 authenticated smoke checks.
+TextText and Algorave remained active after deployment.
 
-Mac 0.204 build 1241 is installed from source `c786b505`. Its exact-source
-release receipt is `/private/tmp/texttext-delivery-1a6abf82/.texttext/release-gate-receipt.json`;
-build, isolated health and install receipts are `/tmp/texttext-mac1241-build-final.log`,
-`/tmp/texttext-mac1241-health.log` and `/tmp/texttext-mac1241-install.log`.
-The isolated app passed 18 checks, and the normal installer passed with one
-warning for the older Finder provider mount. The running app opened the
-selected iCloud workspace and existing note. Build 1240 had already proved
-search, save/reopen and direct CLI/atomic ZIP edit visibility on a test note.
+Mac 0.204 build 1242 is installed from source `06c3ad60`. The local
+Apple Development Store-shaped build preserved native Apple sign-in and all
+three extensions. Its build and installer receipts are
+`/private/tmp/texttext-mac1242-store.log` and
+`/private/tmp/texttext-mac1242-store-install.log`. The installed app reopened
+the signed-in account, selected iCloud workspace, and existing note. The
+standalone build passed 18 isolated health checks in the promotion receipt;
+the Store-shaped build's sandbox prevents that runner from returning its
+private report, so runtime health on the installed build needs UI checks.
+The production browser is signed in on the same note. Its saved late markers
+are also present in the local TextPack's `text.md` and `document.json`; the Mac
+reader accessibility tree displayed a shorter body, requiring a visual/editor
+convergence check before declaring the six-client round complete.
 
 ## Open work
 
 - Source `22a3ffa2` makes stale live epoch bindings fail closed into the
   durable reopen path. The focused 35-test epoch suite, live browser adoption
-  check, TypeScript, and the complete local-Postgres sync gate passed (885
-  shared tests plus native checks). This source is pushed but not yet installed
-  or deployed; installed versions above remain the runtime truth.
+  check, TypeScript, and complete local-Postgres sync gate passed (885 shared
+  tests plus native checks). It is included in the deployed and Mac-installed
+  source above; Windows still needs an update and physical acceptance.
 - The simultaneous Mac/PC app, browser and direct-file small-text round passed
   with all 13 edits visible and identical saved `text.md` hashes. See the
   [physical six-client receipt](verification/2026-10-09-six-client-live-edit.md).
