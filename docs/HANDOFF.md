@@ -5,9 +5,9 @@
 - Mac `/Applications/TextText.app`: **0.204 (1221)**, source `e19d53c3`.
   Signed-in startup, existing content and the reported 1185 note passed without
   recovery controls. Automatic reconnect passed during deployment. Saved-body
-  cache invalidation passed on 1221. Safari share extension is registered but
-  System Settings shows it disabled; enabling/capture remains unverified after
-  native UI automation errors. Quick Look/File Provider interactive checks remain.
+  cache invalidation passed on 1221. Owner enabled the Mac share permission. Fresh Safari Share still omits
+  TextText; registration exists, actual capture remains unverified. System
+  Settings detail actions still fail through native accessibility. Quick Look/File Provider interactive checks remain.
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md). Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
 - Oracle: **texttext-oracle-20261008-e19d53c3-capture-reader**, deployed successfully;
@@ -15,18 +15,24 @@
   previous release retained. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
   [PDF delivery](verification/2026-10-08-pdf-capture.md).
-- Windows installed source remains `f3167c4b`. Current verified candidate source
-  `e19d53c3` passed physical PC native suites, 346 shared tests, TypeScript,
-  packaging and interactive smoke. [Candidate paths](verification/2026-10-08-clean-epoch-recovery.md).
-  Normal-close request remains pending. PC SSH is reachable again; process 44968
-  still runs. Latest candidate path is in the PDF receipt. Do not overwrite a
-  running app or discard pending edits.
+- Windows installed source **e19d53c3**. On the owner's explicit authorization,
+  stopped stale canonical process 44968, verified candidate and staged receipts,
+  and installed. Previous app retained at
+  `C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261008T174544-8303dceb`.
+  Reopened on the interactive desktop (session 1, PID 18184); temporary launch
+  task was removed. Actual recovery-banner disappearance remains unverified.
+  Physical PC native suites, 346 shared tests, TypeScript, packaging and
+  interactive smoke passed for this candidate.
+  [Candidate evidence](verification/2026-10-08-clean-epoch-recovery.md).
 - Real workspace: `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`,
   ID `be28ae03-c64e-4695-80af-04f048f86f37`. Preserve content.
 
 ## Current candidate / immediate work
 
 - Shared Notes backlink cancellation is source-verified and awaits delivery.
+  Exact-source full sync gate passed for e722c893. Clean artifact
+  `/private/tmp/texttext-delivery-e722c893` is building web-only dry-run;
+  log `/tmp/texttext-e722c893-web-build.log`, terminal session 73355.
   Closed/unmounted scans stop after their current batch; old results/errors
   cannot overwrite a reopened panel. Baseline fails the new regression; current
   source, TypeScript and reader rerender checks pass.
@@ -38,7 +44,7 @@
   unit tests and the full browser fixture pass. Oracle deployed and fresh Safari
   acceptance passed. Mac 1221 built, installed and passed signed-in startup,
   existing note and cross-client captured PDF read. Log `/tmp/texttext-mac1221-build.log`.
-  Physical Windows candidate verified, not installed.
+  Physical Windows candidate verified and installed; current visible acceptance pending.
   [Evidence](verification/2026-10-08-pdf-capture.md).
 
 - Delivered source `6e1a9ee7`: bounded PDF text capture and plain-template Parent editing.
@@ -74,8 +80,7 @@
 
 ## Remaining acceptance and product work
 
-- Prioritize Windows false recovery and install current candidate after safe
-  closure. The reported 1185 note has zero pending updates but an old retired
+- Verify Windows false recovery after the authorized candidate install. The reported 1185 note has zero pending updates but an old retired
   journal. [Root-cause evidence](verification/2026-10-08-clean-epoch-recovery.md).
   Then check account,
   existing notes, search, save/reopen, live sync and actual agent/template creation.
