@@ -38,6 +38,16 @@ and the signed-in production browser found that note with the saved body.
 
 ## Open work
 
+- The pending editor lifecycle and reload ownership fixes in the current
+  checkout address two failures exposed by the local two-account browser
+  collaboration run: undo silently stopped after React StrictMode effect
+  replay, and a reload could start a fresh journal while the old page still
+  held the pending journal's Web Lock. The full 377-test sync client gate,
+  StrictMode browser epoch test, and local two-account collaboration run pass.
+  The latter covers same-position inserts, offline two-tab recovery,
+  writer-scoped undo/redo, idle uploads, and permission downgrade. This
+  source is not yet installed or deployed; physical six-client fault rounds
+  remain open.
 - `release/promote-local.sh` now builds and checks the sandboxed Apple
   Development app with native Apple sign-in before Oracle deployment, after
   the isolated standalone health check. This fixes the prior promotion path

@@ -1224,6 +1224,45 @@ describe("durable file collaboration client", () => {
     expect(() => orphan.discardCleanJournal()).toThrow();
   });
 
+  it("waits for the previous page's pending journal lock during reload", async () => {
+    vi.useRealTimers();
+    const key = "texttext:file-collaboration:v1:fixture:owner:pending";
+    const namespace = "texttext:file-collaboration:v1:fixture";
+    const session = new Map([[`${namespace}:owner`, key]]);
+    const records = new Map([[key, JSON.stringify({ version: 1, pending: ["saved-update"] })]]);
+    let occupied = true;
+    const releaseOldPage = setTimeout(() => { occupied = false; }, 60);
+    try {
+      const ownership = createFileCollaborationOwnership({
+        storage: { get length() { return records.size; }, key: index => [...records.keys()][index] ?? null, getItem: name => records.get(name) ?? null },
+        session: { getItem: name => session.get(name) ?? null, setItem: (name, value) => { session.set(name, value); } },
+        tryLock: async name => name === key && occupied ? null : () => {},
+        waitForPreferredMs: 500,
+      });
+      const lease = await ownership.acquire(namespace);
+      expect(lease.key).toBe(key);
+      lease.release();
+      expect(records.size).toBe(1);
+    } finally { clearTimeout(releaseOldPage); }
+  });
+
+  it("does not hide pending edits behind a fresh journal when reload ownership times out", async () => {
+    vi.useRealTimers();
+    const namespace = "texttext:file-collaboration:v1:fixture";
+    const key = `${namespace}:owner:pending`;
+    const session = new Map([[`${namespace}:owner`, key]]);
+    const records = new Map([[key, JSON.stringify({ version: 1, pending: ["saved-update"] })]]);
+    const ownership = createFileCollaborationOwnership({
+      storage: { get length() { return records.size; }, key: index => [...records.keys()][index] ?? null, getItem: name => records.get(name) ?? null },
+      session: { getItem: name => session.get(name) ?? null, setItem: (name, value) => { session.set(name, value); } },
+      tryLock: async () => null,
+      waitForPreferredMs: 10,
+    });
+    await expect(ownership.acquire(namespace)).rejects.toThrow("saved edits are safe");
+    expect(session.get(`${namespace}:owner`)).toBe(key);
+    expect(records.size).toBe(1);
+  });
+
   it("preserves a malformed orphan journal under exclusive ownership for recovery", async () => {
     const server = new Server(), journal = new Journal(), seed = client(server, journal);
     const legacyKey = seed.journalKey; seed.destroy(); journal.values.set(legacyKey, "damaged bytes");

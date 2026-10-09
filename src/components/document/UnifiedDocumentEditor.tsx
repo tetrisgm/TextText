@@ -737,34 +737,21 @@ export function UnifiedDocumentEditor({
   // mutate DOM that React immediately rewrites - it cannot work here. Yjs
   // also gives the thing hand-rolled undo cannot: tracking ONLY this client's
   // edits, so undo never reaches through a collaborator's work.
-  const undoManager = useMemo(
-    () =>
-      // The ROOT map, not the three Y.Texts. text() creates a Y.Text on
-      // demand when the document is still empty, and a remote baseline
-      // arriving afterwards supersedes it - so instances captured at mount
-      // are orphaned by the time anyone types, and undo silently does
-      // nothing. The root map is never replaced.
-      new DocumentUndoManager(
-        documentRoot(doc),
-        {
-          trackedOrigins: new Set([userEditOriginValue]),
-          // Typing coalesces into one step per short burst, the way an editor
-          // does, instead of one step per keystroke.
-          captureTimeout: 400,
-        },
-      ),
-    [doc, userEditOriginValue],
-  );
-  const undoManagerRef = useRef(undoManager);
-  useEffect(() => {
-    undoManagerRef.current = undoManager;
-    return () => undoManager.destroy();
-  }, [undoManager]);
+  const undoManagerRef = useRef<DocumentUndoManager | null>(null);
   // Sublime's undo behaviour: each step remembers where the caret was when it
   // was recorded, and undoing puts the caret back there rather than leaving
   // it wherever it happens to be. Yjs gives us the hook - stack items carry
   // their own metadata - so the selection rides with the step.
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // Create and destroy in the same effect. React may replay effects without
+    // recomputing render memos; reusing a manager destroyed by the first
+    // cleanup silently drops every later undo step.
+    // The ROOT map, not the three Y.Texts, survives a late baseline.
+    const undoManager = new DocumentUndoManager(documentRoot(doc), {
+      trackedOrigins: new Set([userEditOriginValue]),
+      captureTimeout: 400,
+    });
+    undoManagerRef.current = undoManager;
     const onAdded = (event: { stackItem: { meta: Map<string, unknown> }; type: "undo" | "redo" }) => {
       const selection = activeBodySelection();
       if (selection) event.stackItem.meta.set("tt-selection", selection);
@@ -790,8 +777,10 @@ export function UnifiedDocumentEditor({
     return () => {
       undoManager.off("stack-item-added", onAdded);
       undoManager.off("stack-item-popped", onPopped);
+      if (undoManagerRef.current === undoManager) undoManagerRef.current = null;
+      undoManager.destroy();
     };
-  }, [undoManager]);
+  }, [doc, userEditOriginValue]);
   // Replace-all goes through updateText, so it lands as one ordinary local
   // edit: it syncs like any other, and Cmd+Z takes it back in one step.
   const updateTextRef = useRef<

@@ -59,7 +59,7 @@ import React from '${root}/node_modules/react/index.js';import{createRoot}from'$
 window.calls=[];
 setVaultTransport(async(method,params)=>{window.calls.push(method);const result=await (window as any).vaultCall(method,params);if(result&&result.__error)throw new VaultError(result.__error.message,result.__error.code);return result;});
 const initial=${JSON.stringify(file)};
-createRoot(document.getElementById('root')!).render(<div className="vault-app"><CollaborativeVaultEditor initial={initial} root="/shared" startEditing config={{namespace:'https://relay.test',workspaceId:'${workspaceId}',itemId:'${itemId}',localFiles:true}} registerFlush={()=>{}} onChanged={()=>{}} onRemoved={()=>{}}/></div>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><div className="vault-app"><CollaborativeVaultEditor initial={initial} root="/shared" startEditing config={{namespace:'https://relay.test',workspaceId:'${workspaceId}',itemId:'${itemId}',localFiles:true}} registerFlush={()=>{}} onChanged={()=>{}} onRemoved={()=>{}}/></div></React.StrictMode>);
 `);
 await buildLocalVault({entry:path.join(dir,'entry.tsx'),output:dir});browser=await chromium.launch();const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(process.env.EPOCH_DEBUG)console.log('[page]',m.text());});
 const dump=async()=>{console.log('STATE',JSON.stringify(await state()),'calls',JSON.stringify(await page.evaluate(()=>window.calls.slice(-30))),'checkpoints',JSON.stringify(native.checkpoints.map(c=>({...c,recovery:c.recovery&&{...c.recovery,update:'…'}}))),'pushes',JSON.stringify(native.pushes));};

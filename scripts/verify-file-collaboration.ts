@@ -155,6 +155,8 @@ async function main() {
     await Promise.all([append(alice, " SAME-TAB-A"), append(sibling, "SAME-TAB-B ", "start")]);
     const retainedKeys = await alice.evaluate(id => Object.keys(localStorage).filter(key => key.startsWith("texttext:file-collaboration:v1:") && key.includes(id)), itemId);
     check(retainedKeys.length === 2, "both offline tabs retain independent recovery records");
+    check(await alice.evaluate(keys => keys.every(key => JSON.parse(localStorage.getItem(key)!).canEditContent === true), retainedKeys),
+      "both offline journals retain their established edit permission");
     // Allow app assets/navigation while the collaboration transport stays disconnected.
     const collaborationRoute = `${origin}/api/vault/**/collaboration*`;
     await a.route(collaborationRoute, route => route.abort("internetdisconnected"));
@@ -198,6 +200,28 @@ async function main() {
     await until(async () => (await text(bob)) === "Created together in a new folder.",
       "second account opens the new folder's note with its live content", 35000);
     await openTestNote(bob);
+    await openTestNote(alice);
+    const overlapBaseline = await text(alice);
+    check(overlapBaseline !== null && await text(bob) === overlapBaseline,
+      "overlap round starts with two converged editors on the same item");
+    for (const page of [alice, bob]) {
+      await page.getByRole("textbox", { name: "Document body", exact: true }).focus();
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
+    }
+    await Promise.all([
+      alice.keyboard.insertText("[ADA-OVERLAP]"),
+      bob.keyboard.insertText("[GRACE-OVERLAP]"),
+    ]);
+    await until(async () => {
+      const values = [await text(alice), await text(bob)];
+      return values[0] === values[1] && values.every(value =>
+        value?.startsWith(overlapBaseline) &&
+        value.split("[ADA-OVERLAP]").length === 2 &&
+        value.split("[GRACE-OVERLAP]").length === 2);
+    }, "simultaneous same-position inserts converge without losing either complete edit");
+    check(await alice.getByText(/Download recovery|Save my edits as a copy/).count() === 0 &&
+      await bob.getByText(/Download recovery|Save my edits as a copy/).count() === 0,
+    "overlapping edits keep both editors available without a recovery warning");
     await db.update(collaborators).set({ role: "viewer" }).where(eq(collaborators.id, grantId));
     const denied = await bob.request.post(`${origin}/api/vault/${workspaceId}/items/${itemId}/collaboration`, { headers: { Origin: origin }, data: { operationId: randomUUID(), epoch: 1, updates: ["AAA="] } });
     check(denied.status() === 403, "downgraded participant cannot write");

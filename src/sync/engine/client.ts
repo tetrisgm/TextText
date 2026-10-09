@@ -176,6 +176,7 @@ export function createFileCollaborationOwnership(options: {
   storage: Pick<Storage, "length" | "key" | "getItem">;
   session: Pick<Storage, "getItem" | "setItem">;
   tryLock: (name: string) => Promise<(() => void) | null>;
+  waitForPreferredMs?: number;
 }): FileCollaborationOwnership {
   return { async acquire(namespace) {
     const prefix = `${namespace}:owner:`, sessionKey = `${namespace}:owner`;
@@ -201,6 +202,22 @@ export function createFileCollaborationOwnership(options: {
     };
     const priorities = new Map(candidates.map(key => [key, needsRecovery(key)]));
     candidates.sort((a, b) => Number(priorities.get(b)) - Number(priorities.get(a)));
+    // During reload, the old document can still hold its Web Lock while the
+    // new document starts. Reusing a fresh key at that instant would hide its
+    // unsent edits until a later reopen. A separate tab does not wait here.
+    if (preferred && candidates.includes(preferred) && needsRecovery(preferred) && options.waitForPreferredMs) {
+      const deadline = Date.now() + options.waitForPreferredMs;
+      while (Date.now() < deadline) {
+        const release = await options.tryLock(preferred);
+        if (release) {
+          try { options.session.setItem(sessionKey, preferred); }
+          catch (error) { release(); throw error; }
+          return { key: preferred, release };
+        }
+        await new Promise(resolve => setTimeout(resolve, Math.min(50, Math.max(1, deadline - Date.now()))));
+      }
+      throw new Error("Your previous editing session is still closing. Your saved edits are safe; reopen this note in a moment.");
+    }
     candidates.push(`${prefix}${crypto.randomUUID()}`);
     for (const key of candidates) {
       const release = await options.tryLock(key);
@@ -214,7 +231,9 @@ export function createFileCollaborationOwnership(options: {
 }
 function browserOwnership(): FileCollaborationOwnership {
   if (!navigator.locks) throw new Error("This browser cannot safely retain concurrent shared editing sessions.");
+  const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
   return createFileCollaborationOwnership({ storage: localStorage, session: sessionStorage,
+    waitForPreferredMs: navigation?.type === "reload" ? 5_000 : 0,
     tryLock: name => new Promise((resolve, reject) => {
       void navigator.locks.request(name, { mode: "exclusive", ifAvailable: true }, lock => {
         if (!lock) { resolve(null); return; }
