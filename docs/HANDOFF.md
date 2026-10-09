@@ -2,24 +2,17 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1223)**, source `30e08119`.
-  Signed-in startup, existing content and the reported 1185 note passed without
-  recovery controls. Automatic reconnect passed during deployment. Saved-body
-  cache invalidation passed on 1221. Owner enabled the Mac share permission. PlugInKit still had default election;
-  applying the authorized `pluginkit -e use -i app.texttext.mac.share` exposed
-  TextText Share in actual Safari. Its form accepted the public verification
-  bookmark, but it has not appeared in native search or iCloud files, including
-  after normal app restart. 1223 enables the previously skipped inbox watcher;
-  signed-in startup and existing saved note passed, but capture still does not
-  appear. The remaining filing path uses the legacy server API rather than the
-  open TextPack workspace. Current source routes note/bookmark/draft shares to
-  that workspace using the durable CLI creation journal. Two new native tests
-  pass for retry after publication, duplicate titles, original-workspace binding
-  and preserving unsupported inbox records. Candidate delivery and actual
-  Safari capture acceptance remain; do not call the extension fixed yet.
+- Mac `/Applications/TextText.app`: **0.204 (1224)**, source `4734219c`.
+  Signed-in startup and existing saved note/body passed on the real iCloud root.
+  Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
+  finds it immediately, and the same item/title/original URL opens on Oracle.
+  Two roots fixed: startup skipped the share watcher when a file workspace was
+  open; filing still used the legacy server writer. Share note/bookmark/draft
+  now use the durable CLI creation journal and normal file synchronization.
+  Append/file shares remain safely retained in the inbox pending implementation.
   Quick Look/File Provider interactive checks remain.
-  [Current acceptance](verification/2026-10-08-current-client-acceptance.md). Earlier scoped receipt:
-  [Installed receipt](verification/2026-10-08-mac-1218.md).
+  [Share delivery](verification/2026-10-08-share-workspace-delivery.md).
+  [Current acceptance](verification/2026-10-08-current-client-acceptance.md).
 - Oracle: **texttext-oracle-20261008-e722c893-backlinks**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services stayed
   previous release retained. Live Safari automatic PDF capture displayed “Dummy PDF file”
