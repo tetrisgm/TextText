@@ -411,7 +411,9 @@ final class LocalVaultAgentFilesTests: XCTestCase {
                 "title": kind, "body": "Explicit supported type", "kind": kind
             ], root: root)
             let file = try store.read(path: "\(kind).textpack")
-            XCTAssertEqual(MarkdownIdentityCodec.extract(from: file.contents.markdown)?.kind, kind)
+            // Gallery names the presentation template; the shared file schema
+            // stores that content type as media_post.
+            XCTAssertEqual(MarkdownIdentityCodec.extract(from: file.contents.markdown)?.kind, kind == "gallery" ? "media_post" : kind)
             XCTAssertTrue(file.contents.markdown.contains("Explicit supported type"))
         }
     }
@@ -483,6 +485,12 @@ final class LocalVaultAgentFilesTests: XCTestCase {
         XCTAssertEqual((try json(XCTUnwrap(saved.contents.documentJSON))["content"] as? [String: Any])?["fields"] as? [String: String], ["research": "Retained"])
         _ = try run("create_file", arguments: args, root: root)
         XCTAssertEqual(try store.read(path: saved.path).hash, saved.hash)
+        // The snapshot read back from Source carries the canonical closing
+        // newline; the agent's shorter body argument must still match it,
+        // while a body with different text must not.
+        XCTAssertEqual(content["body"] as? String, "Body\n")
+        var otherBody = args; otherBody["body"] = "Other body"; otherBody["idempotencyKey"] = "other-body"
+        XCTAssertThrowsError(try run("create_file", arguments: otherBody, root: root))
         template["name"] = "Different intent"; args["templateJSON"] = try encode(template)
         XCTAssertThrowsError(try run("create_file", arguments: args, root: root))
         args["title"] = "Must not publish"; args["idempotencyKey"] = "different-key"

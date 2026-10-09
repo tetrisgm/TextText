@@ -956,7 +956,11 @@ enum LocalVaultAgentFiles {
                 let title = try string("title"), body = try string("body")
                 let snapshot = try JSONSerialization.jsonObject(with: Data(customDocument!.utf8)) as! [String: Any]
                 let content = snapshot["content"] as! [String: Any]
-                guard content["title"] as? String == title, content["body"] as? String == body,
+                // The store writes the canonical body into both representations,
+                // so a snapshot read back from a file carries the closing newline
+                // the agent's body argument may omit. Compare canonical forms.
+                guard content["title"] as? String == title,
+                      (content["body"] as? String).map(DocumentCreation.canonicalBody) == DocumentCreation.canonicalBody(body),
                       (content["assets"] as? [[String: Any]])?.isEmpty == true else {
                     throw VaultAgentError("Custom creation must match title/body and cannot reference assets it has not imported.")
                 }

@@ -45,6 +45,16 @@ public enum DocumentCreation {
             """
     }
 
+    /// The body bytes a fresh TextPack stores in both text.md and
+    /// document.json: surrounding newlines trimmed, one newline closing a
+    /// non-empty body. A custom snapshot matches the requested body when both
+    /// canonicalize to the same text, so an agent may pass either the body it
+    /// typed or the body it read back from a file.
+    public static func canonicalBody(_ body: String) -> String {
+        let trimmed = body.trimmingCharacters(in: .newlines)
+        return trimmed.isEmpty ? "" : trimmed + "\n"
+    }
+
     /// A filename that will not collide and does not need escaping. The title is
     /// the natural name, since that is what the person will look for in Finder.
     public static func filename(for title: String) -> String {

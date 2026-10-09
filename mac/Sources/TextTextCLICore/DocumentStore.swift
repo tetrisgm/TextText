@@ -355,7 +355,8 @@ public struct DocumentStore: Sendable {
             try BuiltinTextPackDocument.validateMetadata(snapshot: customDocumentJSON, template: customTemplateJSON)
             let snapshot = try JSONSerialization.jsonObject(with: Data(customDocumentJSON.utf8)) as! [String: Any]
             let content = snapshot["content"] as! [String: Any]
-            guard content["title"] as? String == title, content["body"] as? String == body,
+            guard content["title"] as? String == title,
+                  (content["body"] as? String).map(DocumentCreation.canonicalBody) == DocumentCreation.canonicalBody(body),
                   (content["assets"] as? [[String: Any]])?.isEmpty == true else {
                 throw TextTextCLIError.invalidDocument("custom creation must match title/body and contain no unimported assets")
             }
@@ -379,7 +380,7 @@ public struct DocumentStore: Sendable {
         // newline that closes a non-empty body), so both representations
         // express one document and the pack can be stamped as coherent.
         let builtin = try BuiltinTextPackDocument.create(
-            title: title, body: body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n",
+            title: title, body: DocumentCreation.canonicalBody(body),
             kind: effectiveKind, sourceURL: sourceURL, assets: assets)
         var documentJSON = builtin.documentJSON
         if let folderDefault {
