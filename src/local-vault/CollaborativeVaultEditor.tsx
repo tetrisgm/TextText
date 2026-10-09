@@ -440,7 +440,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const readOnly = ready && !canEdit && !detail && status !== "offline" && !blocked;
   const display = useMemo(() => resolveAssets(snapshot), [snapshot, resolveAssets]);
   const experience = templateExperience(template);
-  return <section className="vault-document">
+  return <section className="vault-document" data-collaboration-state={status} data-collaboration-item={config.itemId}>
     {presencePeers.length > 0 && <div className="vault-document-presence"><span aria-label={`${presencePeers.length} ${presencePeers.length === 1 ? "person" : "people"} here: ${presencePeers.slice(0, 3).map(peer => peer.userName).join(", ")}${presencePeers.length > 3 ? ` and ${presencePeers.length - 3} more` : ""}`}
         style={{ display: "inline-flex", alignItems: "center", flexShrink: 0, gap: 3 }}>
         {presencePeers.slice(0, 3).map(peer => <span key={peer.clientId} title={`${peer.userName} is here`}

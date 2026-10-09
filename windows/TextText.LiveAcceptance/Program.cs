@@ -144,6 +144,8 @@ static class Program
         await Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('button[aria-label=\"Edit card\"]') || !!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test reader did not expose its edit action.");
         await view.ExecuteScriptAsync("document.querySelector('button[aria-label=\"Edit card\"]')?.click()");
         await Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test item did not enter the real document editor.");
+        var expectedItem = JsonSerializer.Serialize(plan.ItemId);
+        await Until(async () => await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-state=\"ready\"]');return shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()") == "true", ct, "Test editor did not join the shared document; a local-only editor cannot pass six-client readiness.");
         if (DateTimeOffset.UtcNow >= plan.StartUtc) throw new Exception("Editor missed the coordinated start; discard this run and schedule a fresh one.");
         record(new { kind = "ready", plan.ItemId });
         await view.ExecuteScriptAsync("(()=>{const initial=document.querySelector('[aria-label=\"Document body\"]');window.texttextAcceptanceContinuity={removed:false};const observer=new MutationObserver(()=>{if(!initial.isConnected){window.texttextAcceptanceContinuity.removed=true;observer.disconnect()}});observer.observe(document.body,{childList:true,subtree:true})})()");
