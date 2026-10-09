@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { VaultListing } from "./bridge";
 import { vaultRequest } from "./bridge";
-import { ARTICLE_ENRICHMENT_EVENT, readArticleEnrichmentQueue, removeArticleEnrichment,
+import { ARTICLE_ENRICHMENT_EVENT, ARTICLE_ENRICHMENT_CHANGED_EVENT, readArticleEnrichmentQueue, removeArticleEnrichment,
   runArticleEnrichmentTick } from "./article-enrichment";
 
 export function ArticleEnrichmentWorker({ listing, enabled, skipPath, onChanged }: {
@@ -36,7 +36,10 @@ export function ArticleEnrichmentWorker({ listing, enabled, skipPath, onChanged 
           const result = await runArticleEnrichmentTick([path], vaultRequest, { signal: controller.signal });
           if (!active) return;
           if (result.outcome) removeArticleEnrichment(listing.root, path);
-          if (result.outcome === "written" || result.outcome === "failed") onChangedRef.current();
+          if (result.outcome === "written" || result.outcome === "failed") {
+            window.dispatchEvent(new CustomEvent(ARTICLE_ENRICHMENT_CHANGED_EVENT, { detail: { path } }));
+            onChangedRef.current();
+          }
         } catch (error) {
           if (controller.signal.aborted) throw error;
           // Keep this path for a later app session or queue event, then let

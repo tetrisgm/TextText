@@ -38,6 +38,24 @@ Fresh Safari loaded the corrected deployment and retried the earlier failed W3C
 dummy PDF bookmark. The failure message disappeared and the reader displayed
 “Dummy PDF file”. Automatic capture of a newly created PDF bookmark remains to verify.
 
+## Automatic capture reader invalidation
+
+Live Safari saved the same public PDF with `?verification=1220`. Background
+capture completed, but the already open reader continued to show its pending
+placeholder. Reloading displayed “Dummy PDF file”, proving saved extraction
+succeeded and isolating the stale reader state. The worker refreshed the folder
+listing, while the reader only reloaded on path changes or explicit reader edits.
+
+Current source emits a targeted completion event and reloads that visible reader
+only when it has no pending write or unsaved reader draft. The browser regression
+creates a pending link and requires extracted text to appear without navigation
+or reload. This change is not yet installed or deployed. TypeScript and five
+enrichment/write-baseline tests pass; full shared browser verification passed,
+including automatic capture appearing in the open reader without reload. The
+fixture's keyboard ordering assertion now includes the previously added Parent
+action. This is source acceptance; live acceptance remains after deployment.
+Logs: `/tmp/texttext-auto-capture-reader-{types,unit,browser}.log`.
+
  This extracts embedded text; it does not perform
 OCR, preserve the original PDF as a TextPack attachment, or provide transcripts
 or automatic AI summaries. Empty/image-only PDFs leave the saved link usable.

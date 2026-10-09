@@ -8,7 +8,7 @@ import { readDocument, readTemplate, writePayload } from "./model";
 import type { DocumentFieldValue, DocumentSnapshot } from "@/lib/documents/model";
 import type { DocumentFieldDefinition } from "@/lib/presentation/schema";
 import { articleSource, isLinkPlaceholder } from "@/lib/vault/article-capture";
-import { enrichArticleFile } from "./article-enrichment";
+import { ARTICLE_ENRICHMENT_CHANGED_EVENT, enrichArticleFile } from "./article-enrichment";
 
 function host(url?: string): string {
   try { return url ? new URL(url).hostname.replace(/^www\./, "") : "Saved link"; }
@@ -177,6 +177,18 @@ export function VaultBookmarkLibrary({ items, previews, busy, previewOnly, onOpe
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
   const [readerRevision, setReaderRevision] = useState(0);
+  useEffect(() => {
+    const captured = (event: Event) => {
+      const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+      // The queue writes the TextPack independently of the folder listing.
+      // Reload only its visible reader, never replace an unsaved reader draft.
+      if (path === current?.path && !readerPending.current && !readerDraft.current) {
+        setReaderRevision(value => value + 1);
+      }
+    };
+    window.addEventListener(ARTICLE_ENRICHMENT_CHANGED_EVENT, captured);
+    return () => window.removeEventListener(ARTICLE_ENRICHMENT_CHANGED_EVENT, captured);
+  }, [current?.path]);
   const [retryingCapture, setRetryingCapture] = useState(false);
   const [editingNotePath, setEditingNotePath] = useState("");
   const [noteDraft, setNoteDraft] = useState("");

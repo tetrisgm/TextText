@@ -263,6 +263,7 @@ try {
         document.content.title = request.params.title ?? "Untitled";
         if (request.params.sourceURL) {
           document.content.fields.sourceUrl = request.params.sourceURL;
+          if (request.params.sourceURL === "https://example.com/fresh-reading") document.content.fields.captureStatus = "pending";
           document.content.fields.texttextBookmarkSavedAt = new Date().toISOString();
         }
         result.documentJSON = JSON.stringify(document);
@@ -1474,7 +1475,8 @@ try {
   await page.getByRole("option", { name: /example.com/ }).filter({ hasText: "example.com" }).first().waitFor();
   await bookmarkReader.locator("..").getByRole("listbox", { name: "Saved bookmarks" }).getByRole("option", { selected: true }).filter({ hasText: "example.com" }).first().waitFor();
   assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/fresh-reading"), true);
-  assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.body === "https://example.com/fresh-reading"), true);
+  await bookmarkReader.getByText("The readable article is saved in this same file.", { exact: true }).waitFor();
+  assert.equal([...files].some(([path, file]) => path.startsWith("Bookmarks/") && JSON.parse(file.documentJSON).content.fields.sourceUrl === "https://example.com/fresh-reading" && JSON.parse(file.documentJSON).content.fields.captureStatus === "complete"), true);
   assert.equal(await page.getByRole("article", { name: "Bookmark reader" }).count(), 1);
   assert.equal(await page.getByRole("main", { name: "Edit item" }).count(), 0);
   await bookmarkReader.locator("..").evaluate(element => {
@@ -2799,6 +2801,8 @@ try {
   await page.keyboard.press("Slash");
   await page.getByRole("menu", { name: "Add to note" }).waitFor();
   await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem" && document.activeElement?.textContent === "Tag");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Parent");
   await page.keyboard.press("ArrowDown");
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Link");
   await page.keyboard.press("ArrowDown");

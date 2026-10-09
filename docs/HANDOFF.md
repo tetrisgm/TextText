@@ -21,6 +21,12 @@
 
 ## Current candidate / immediate work
 
+- Live automatic PDF capture saved correct content but left the open reader
+  pending until reload. Current source adds targeted reader invalidation after
+  background capture, preserving unsaved drafts. TypeScript and five related
+  unit tests and the full browser fixture pass. Not delivered.
+  [Evidence](verification/2026-10-08-pdf-capture.md).
+
 - Delivered source `6e1a9ee7`: bounded PDF text capture and plain-template Parent editing.
   Shared capture/enrichment regressions (31 tests), real PDF workers, browser
   note/parent regressions, and TypeScript passed. Standalone traced PDF worker

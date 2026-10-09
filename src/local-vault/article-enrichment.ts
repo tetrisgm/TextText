@@ -11,6 +11,7 @@ import { readDocument, writePayload } from "./model";
 export type ArticleEnrichmentOutcome = "skipped" | "written" | "failed";
 const QUEUE_PREFIX = "texttext:article-enrichment:v1:";
 export const ARTICLE_ENRICHMENT_EVENT = "texttext:article-enrichment-queued";
+export const ARTICLE_ENRICHMENT_CHANGED_EVENT = "texttext:article-enrichment-changed";
 type QueueStorage = Pick<Storage, "getItem" | "setItem">;
 
 function browserStorage(): QueueStorage | undefined {
