@@ -80,3 +80,29 @@ not production persistence. It does not yet validate the complete TextText
 schema, audit writes, browser disk journals, or native imports. Direct server
 transactions also need their own commit-before-broadcast boundary: they do not
 pass through the incoming client's `beforeSync` hook.
+
+## Browser disk persistence probe
+
+`npm run test:browser-crash --prefix scripts/experiments/hocuspocus` evaluates
+pinned `y-indexeddb` 9.0.12 using an isolated Chromium persistent profile and a
+loopback-only origin. It seeds the real DocumentSnapshot baseline, edits offline,
+waits for an IndexedDB transaction barrier, kills the browser process with
+SIGKILL, and restores without supplying the baseline. It then merges a concurrent
+remote binary update twice, crashes again, and checks both markers appear once.
+All browser processes and the bounded server are closed; fixture receipts and
+profile are retained in the system temporary directory.
+
+Both checks passed in `/tmp/texttext-indexeddb-crash.log`; receipt directory:
+`/var/folders/tq/_6yt1vp555qcj2jwgxmz060w0000gn/T/texttext-indexeddb-crash-dUfd7o`.
+The provider's `synced` event reports initial loading, not per-edit persistence.
+The probe's separate transaction spans the database stores and requests strict
+durability after preceding queued writes. This tests process crashes after that
+barrier, not power loss, eviction, Safari, quota failure or native persistence.
+No production client uses this adapter yet.
+
+The isolated `ws` dependency was updated from 8.18.3 to 8.22.0 after npm audit
+reported memory disclosure/exhaustion advisories. The isolated package audit is
+now clean. All three provider compatibility checks and five server crash/disposal
+checks passed again in `/tmp/texttext-provider-updated-ws.log` and
+`/tmp/texttext-provider-updated-ws-crash.log`. Root production dependencies were
+not changed by this experiment.

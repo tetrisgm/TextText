@@ -10,7 +10,9 @@ prototype is in `scripts/experiments/hocuspocus`; production replacement is not 
 implemented or verified.
 The isolated crash probe now passes SIGKILL after ACK, commit-before-ACK replay,
 and existing-writer revocation. Its negative control proves default debounced
-storage alone is insufficient. See the experiment README for limits and commands.
+storage alone is insufficient. The y-indexeddb browser probe also passes two
+Chromium process-crash/replay checks after an explicit disk barrier. See the
+experiment README for limits and commands; neither adapter is in production.
 Oracle now serves `texttext-oracle-20261009T045727Z-6b940d3e`, including concurrent
 file appends and template sidecar changes that preserve the current Yjs epoch;
 [regression and delivery limits](verification/2026-10-08-template-continuity.md).

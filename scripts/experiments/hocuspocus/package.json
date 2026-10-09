@@ -4,12 +4,14 @@
   "type": "module",
   "scripts": {
     "test": "node evaluate.mjs",
-    "test:crash": "node crash-evaluate.mjs"
+    "test:crash": "node crash-evaluate.mjs",
+    "test:browser-crash": "node browser-persistence.mjs"
   },
   "dependencies": {
-    "@hocuspocus/server": "4.7.0",
     "@hocuspocus/provider": "4.7.0",
-    "yjs": "13.6.31",
-    "ws": "8.18.3"
+    "@hocuspocus/server": "4.7.0",
+    "ws": "8.22.0",
+    "y-indexeddb": "9.0.12",
+    "yjs": "13.6.31"
   }
 }
