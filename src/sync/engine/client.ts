@@ -24,7 +24,12 @@ function presentation(value: unknown): FileCollaborationPresentation | undefined
   return { templateJSON: data.templateJSON, templateAuthoringSourceJSON: data.templateAuthoringSourceJSON };
 }
 type Cursor = { epoch: number; seq: number; revision: string; relativePath: string };
-export type FileCollaborationJournal = Cursor & { version: 1; presentation?: FileCollaborationPresentation; journalGeneration?: number; canEditContent?: boolean; canComment?: boolean; update: string; pending: string[]; batch: Batch | null; unqueuedDirty?: boolean; retired?: string };
+/** One durable epoch-recovery intent. `update` is the exact complete Yjs state
+ * sent to the server; its bytes and operation id never change across retries
+ * or restarts, so the server receipt stays idempotent. `adopted` marks that the
+ * authoritative replacement epoch was persisted but native adoption is unproven. */
+export type FileCollaborationRecovery = { operationId: string; epoch: number; update: string; adopted?: boolean };
+export type FileCollaborationJournal = Cursor & { version: 1; presentation?: FileCollaborationPresentation; journalGeneration?: number; canEditContent?: boolean; canComment?: boolean; update: string; pending: string[]; batch: Batch | null; unqueuedDirty?: boolean; retired?: string; recovery?: FileCollaborationRecovery };
 export type FileCollaborationCheckpoint = { journal: FileCollaborationJournal; document: DocumentSnapshot };
 type StateResponse = Cursor & { presentation?: FileCollaborationPresentation; update: string; canEditContent: boolean; canComment: boolean };
 export type FileCollaborationOptions = {
@@ -45,6 +50,13 @@ export type FileCollaborationOptions = {
   reconcileCheckpoint?: (error: unknown) => Promise<boolean>;
   onChange?: (snapshot: DocumentSnapshot, presentation?: FileCollaborationPresentation) => void;
   onStatus?: (status: FileCollaborationStatus, detail?: string) => void;
+  /** Live epoch adoption contract. After automatic recovery the server owns new
+   * Yjs identities, so `client.doc` becomes a different Y.Doc holding the same
+   * text. The callback runs synchronously after the swap and before editing
+   * resumes; the UI must rebind its editor and awareness to `client.doc` and
+   * may restore the caret by text offset. Without this callback the client
+   * freezes after recovery and asks to reopen the note instead. */
+  onDocumentReplaced?: (next: Y.Doc, previous: Y.Doc) => void;
 };
 function encode(bytes: Uint8Array): string {
   let value = "";
@@ -73,6 +85,13 @@ function parseJournal(raw: string): FileCollaborationJournal {
   if (parsed.version !== 1 || !Array.isArray(parsed.pending) || parsed.pending.length > 1024 || (parsed.retired !== undefined && typeof parsed.retired !== "string")) throw new Error("Invalid saved collaboration journal. It has been preserved.");
   if ((parsed.canEditContent !== undefined && typeof parsed.canEditContent !== "boolean") || (parsed.canComment !== undefined && typeof parsed.canComment !== "boolean")) throw new Error("Invalid saved collaboration permissions.");
   if (parsed.unqueuedDirty !== undefined && typeof parsed.unqueuedDirty !== "boolean") throw new Error("Invalid saved collaboration dirty marker.");
+  if (parsed.recovery !== undefined) {
+    const recovery = parsed.recovery;
+    if (!recovery || typeof recovery !== "object" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(recovery.operationId) ||
+        !Number.isSafeInteger(recovery.epoch) || recovery.epoch < 1 || recovery.epoch > parsed.epoch ||
+        (recovery.adopted !== undefined && typeof recovery.adopted !== "boolean")) throw new Error("Invalid saved recovery intent. It has been preserved.");
+    decode(recovery.update);
+  }
   decode(parsed.update);
   for (const update of parsed.pending) decode(update, MAX_UPDATE_CHARS);
   if (parsed.batch !== null) {
@@ -152,7 +171,7 @@ export function createFileCollaborationOwnership(options: {
       try {
         if (raw.length > LIMIT) return true;
         const value = JSON.parse(raw) as Partial<FileCollaborationJournal>;
-        return value.version !== 1 || !Array.isArray(value.pending) || Boolean(value.pending.length || value.batch || value.unqueuedDirty || value.retired);
+        return value.version !== 1 || !Array.isArray(value.pending) || Boolean(value.pending.length || value.batch || value.unqueuedDirty || value.retired || value.recovery);
       }
       catch { return true; }
     };
@@ -183,7 +202,9 @@ function browserOwnership(): FileCollaborationOwnership {
 
 /** One canonical server baseline, one durable upload queue, and one visible long poll. */
 export class FileCollaborationClient {
-  readonly doc = new Y.Doc();
+  private liveDoc = new Y.Doc();
+  /** The current shared document. Automatic epoch recovery replaces it; see `onDocumentReplaced`. */
+  get doc(): Y.Doc { return this.liveDoc; }
   private ownedJournalKey: string;
   get journalKey(): string { return this.ownedJournalKey; }
   private lease: FileCollaborationLease | null = null;
@@ -205,6 +226,8 @@ export class FileCollaborationClient {
   private unreadableJournal = false;
   private rawRecoveryJournal: string | null = null;
   private batch: Batch | null = null;
+  private recovery: FileCollaborationRecovery | null = null;
+  private recovering: Promise<void> | null = null;
   private saved: FileCollaborationJournal | null = null;
   private starting: Promise<void> | null = null;
   private flushing: Promise<boolean> | null = null;
@@ -233,7 +256,9 @@ export class FileCollaborationClient {
   get recoveryJournal(): FileCollaborationJournal | null { return this.saved; }
   get hasUnreadableJournal(): boolean { return this.unreadableJournal; }
   get recoveryRawJournal(): string | null { return this.rawRecoveryJournal; }
-  get hasPendingChanges(): boolean { return Boolean((this.initialRetirement && !this.saved) || this.unreadableJournal || this.unqueuedDirty || this.batch || this.pending.length); }
+  get hasPendingChanges(): boolean { return Boolean((this.initialRetirement && !this.saved) || this.unreadableJournal || this.unqueuedDirty || this.batch || this.pending.length || (this.recovery && !this.recovery.adopted)); }
+  /** A durable recovery intent exists and the replacement epoch is not yet proven adopted. */
+  get isRecovering(): boolean { return this.recovering !== null; }
   get hasBaseline(): boolean { return this.initialized; }
   get epoch(): number | null { return this.current?.epoch ?? null; }
   get sequence(): number | null { return this.current?.seq ?? null; }
@@ -266,7 +291,8 @@ export class FileCollaborationClient {
     if (!this.current) return;
     if (!Number.isSafeInteger(this.journalGeneration) || this.journalGeneration >= Number.MAX_SAFE_INTEGER) throw new Error("Collaboration journal generation limit reached.");
     const saved: FileCollaborationJournal = { version: 1, ...(this.presentation ? { presentation: this.presentation } : {}), journalGeneration: ++this.journalGeneration, ...this.current, canEditContent: this.canEdit, canComment: this.canComment, unqueuedDirty: this.unqueuedDirty, update: encode(Y.encodeStateAsUpdate(this.doc)), pending: [...this.pending], batch: this.batch ? { ...this.batch, updates: [...this.batch.updates] } : null,
-      ...(retired || this.saved?.retired ? { retired: retired ?? this.saved?.retired } : {}) };
+      ...(retired || this.saved?.retired ? { retired: retired ?? this.saved?.retired } : {}),
+      ...(this.recovery ? { recovery: { ...this.recovery } } : {}) };
     this.saved = saved; // Keep recoverable in memory even when browser storage fails.
     const value = JSON.stringify(saved);
     if (new TextEncoder().encode(value).byteLength > LIMIT) throw new Error("Unsaved collaboration history exceeds 4 MiB. Keep this window open and recover your edits.");
@@ -406,6 +432,7 @@ export class FileCollaborationClient {
     this.presentation = presentation(retained.presentation);
     this.current = cursor(retained); this.pending = retained.pending; this.batch = retained.batch;
     this.unqueuedDirty = retained.unqueuedDirty === true; this.saved = retained;
+    this.recovery = retained.recovery ? { ...retained.recovery } : null;
     this.journalGeneration = retained.journalGeneration ?? 0;
     Y.applyUpdate(this.doc, decode(retained.update), REMOTE);
     const snapshot = this.snapshot();
@@ -550,9 +577,16 @@ export class FileCollaborationClient {
         if (retained.epoch !== remote.epoch && !this.hasPendingChanges && !retained.retired) {
           this.notifyExternalFileChange(); return;
         }
-        if (retained.retired || retained.epoch !== remote.epoch || (!remote.canEditContent && this.hasPendingChanges)) {
+        if (retained.retired || (!remote.canEditContent && this.hasPendingChanges)) {
           this.retire(retained.retired ?? "This file or its access changed. Recover your saved edits before reopening."); return;
         }
+        if (retained.epoch !== remote.epoch) {
+          // Pending edits met a replaced epoch. Ask the server to merge them
+          // against its retained history instead of retiring the journal.
+          this.canEdit = true; this.canComment = remote.canComment;
+          this.beginRecovery(); return;
+        }
+        if (this.recovery?.adopted) this.recovery = null; // Replacement epoch confirmed live again.
       }
       Y.applyUpdate(this.doc, decode(remote.update), REMOTE);
       this.adoptPresentation(remote.presentation);
@@ -590,6 +624,8 @@ export class FileCollaborationClient {
         this.initialized && !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement) {
       this.notifyExternalFileChange(); return;
     }
+    if (detail?.code === "epoch_changed" && this.canRecover()) { this.beginRecovery(); return; }
+    if (["recovery_unavailable", "recovery_conflict", "recovery_lifecycle"].includes(detail?.code ?? "")) { this.retire("The changed file could not absorb your saved edits automatically. They are kept for recovery."); return; }
     if ([401, 403, 404].includes(detail?.status ?? 0) || detail?.code === "epoch_changed" || detail?.status === 409) { this.retire("This file or your access changed. Pending edits are kept for recovery."); return; }
     if ([400, 413, 422].includes(detail?.status ?? 0)) { this.retire("The server rejected this edit. Your pending document is kept for recovery."); return; }
     // HTTP service failures remain retryable regardless of server message wording.
@@ -604,15 +640,15 @@ export class FileCollaborationClient {
     else this.schedulePoll(delay);
   }
   private schedulePush(delay: number): void {
-    if (!this.active || this.dead || this.frozen || !this.canEdit || !this.authoritative || (!this.pending.length && !this.batch) || this.pushTimer) return;
+    if (!this.active || this.dead || this.frozen || this.recovering || !this.canEdit || !this.authoritative || (!this.pending.length && !this.batch) || this.pushTimer) return;
     this.pushTimer = setTimeout(() => { this.pushTimer = null; void this.flush(); }, delay);
   }
   private schedulePoll(delay: number): void {
-    if (!this.active || this.dead || this.frozen || this.pollTimer || this.pollController) return;
+    if (!this.active || this.dead || this.frozen || this.recovering || this.pollTimer || this.pollController) return;
     this.pollTimer = setTimeout(() => { this.pollTimer = null; void (this.initialized ? this.poll() : this.start()); }, delay);
   }
   private async poll(): Promise<void> {
-    if (!this.current || !this.active || this.dead || this.frozen) return;
+    if (!this.current || !this.active || this.dead || this.frozen || this.recovering) return;
     try {
       // Recovery must confirm availability immediately, even when no one edited
       // the document while disconnected. Resume long polling after that proof.
@@ -622,7 +658,11 @@ export class FileCollaborationClient {
       if (!remote || !Number.isSafeInteger(remote.epoch) || !Number.isSafeInteger(remote.seq) || remote.seq! < 0 ||
           (remote.unchanged !== undefined && remote.unchanged !== true)) throw new Error("Invalid collaboration response.");
       if (remote.unchanged && (!requested || remote.epoch !== requested.epoch || remote.seq !== requested.seq)) throw new Error("Invalid unchanged collaboration cursor.");
-      if (remote.epoch !== this.current.epoch) { this.notifyExternalFileChange(); return; }
+      if (remote.epoch !== this.current.epoch) {
+        if (remote.canEditContent === true && this.canRecover()) this.beginRecovery();
+        else this.notifyExternalFileChange();
+        return;
+      }
       if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
       if (remote.seq! < this.current.seq) return;
       if (this.canEdit && !remote.canEditContent && this.hasPendingChanges) { this.retire("Editing access was removed. Your document is kept for recovery."); return; }
@@ -637,6 +677,7 @@ export class FileCollaborationClient {
   }
   flush(): Promise<boolean> {
     if (this.flushing) return this.flushing;
+    if (this.recovering) return this.recovering.then(() => this.flush());
     if (this.dead || this.frozen || !this.active || !this.initialized || !this.canEdit || !this.authoritative) return Promise.resolve(false);
     if (this.pushTimer) { clearTimeout(this.pushTimer); this.pushTimer = null; }
     this.flushing = this.upload().finally(() => { this.flushing = null; this.schedulePush(250); });
@@ -665,9 +706,15 @@ export class FileCollaborationClient {
         const remote = await this.request("read", {}) as StateResponse;
         if (this.dead || !this.active || this.frozen) return false;
         cursor(remote);
-        if (remote.epoch !== this.current!.epoch) { this.retire("This file changed after acknowledgement. Your document is kept for recovery."); return false; }
         if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
         if (!remote.canEditContent) { this.retire("Editing access was removed. Your document is kept for recovery."); return false; }
+        if (remote.epoch !== this.current!.epoch) {
+          // The acknowledged batch is part of this document's state; the server
+          // deduplicates it from the retained epoch during recovery.
+          if (this.canRecover()) this.beginRecovery();
+          else this.retire("This file changed after acknowledgement. Your document is kept for recovery.");
+          return false;
+        }
         presentation(remote.presentation);
         Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.adoptPresentation(remote.presentation); this.snapshot();
         if (remote.seq >= this.current!.seq) this.current = cursor(remote);
@@ -733,6 +780,98 @@ export class FileCollaborationClient {
     if (!this.frozen || (!this.saved?.retired && !this.initialRetirement)) throw new Error("There is no retired journal to clear.");
     try { this.storage.remove(this.journalKey); this.saved = null; this.pending = []; this.batch = null; this.unqueuedDirty = false; this.initialRetirement = null; }
     catch (error) { this.fatal(new Error(`Recovery journal could not be removed. ${String(error)}`)); throw error; }
+  }
+  /** Pending edits exist, no retirement fences them, and nothing else owns the journal. */
+  private canRecover(): boolean {
+    return this.initialized && this.canEdit && this.active && !this.dead && !this.frozen && !this.recovering &&
+      !this.unreadableJournal && !this.initialRetirement && !this.saved?.retired && !this.unqueuedDirty && this.hasPendingChanges;
+  }
+  private beginRecovery(): void {
+    if (this.recovering || this.dead || this.frozen) return;
+    this.cancelWork();
+    this.recovering = this.recoverEpoch().finally(() => {
+      this.recovering = null;
+      // A failed attempt re-enters through the poll with upload backoff, never a tight loop.
+      const delay = this.uploadFailures ? Math.min(30_000, 1000 * 2 ** Math.min(this.uploadFailures - 1, 5)) : 0;
+      if (!this.dead && !this.frozen && this.active) { this.schedulePoll(delay); this.schedulePush(delay); }
+    });
+  }
+  /** Send the exact persisted recovery intent; durable before the first send and
+   * reused unchanged on every retry, so a lost acknowledgement replays its receipt. */
+  private async recoverEpoch(): Promise<void> {
+    try {
+      if (!this.current) return;
+      if (this.recovery?.adopted) this.recovery = null; // A later epoch replaced an adopted one; start a new intent.
+      if (!this.recovery) {
+        this.recovery = { operationId: crypto.randomUUID(), epoch: this.current.epoch, update: encode(Y.encodeStateAsUpdate(this.doc)) };
+        this.persist();
+      }
+      const intent = this.recovery;
+      this.report("saving", "Merging saved edits with the changed file…");
+      if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return;
+      const result = await this.request("push", { operationId: intent.operationId, epoch: intent.epoch, recoveryUpdate: intent.update }) as { status?: string; revision?: string };
+      if (this.dead || !this.active || this.frozen) return;
+      if (result.status === "conflict") { this.retire("The file changed during recovery. Your edits are kept for recovery."); return; }
+      if (result.status !== "written" || typeof result.revision !== "string" || !/^[a-f0-9]{64}$/.test(result.revision)) throw new Error("Invalid collaboration acknowledgement.");
+      const remote = await this.request("read", {}) as StateResponse;
+      if (this.dead || !this.active || this.frozen) return;
+      cursor(remote); presentation(remote.presentation);
+      if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
+      if (remote.epoch <= intent.epoch) throw new Error("Invalid collaboration recovery epoch.");
+      if (!remote.canEditContent) { this.retire("Editing access was removed. Your document is kept for recovery."); return; }
+      await this.adoptEpoch(intent, remote);
+    } catch (error) { this.handleFailure(error, true); }
+  }
+  /** Replace the live Y.Doc with the authoritative epoch. Edits typed since the
+   * intent was captured are re-expressed with the new identities and queued. */
+  private async adoptEpoch(intent: FileCollaborationRecovery, remote: StateResponse): Promise<void> {
+    const next = new Y.Doc(), captured = new Y.Doc();
+    let swapped = false;
+    try {
+      Y.applyUpdate(next, decode(remote.update), REMOTE);
+      if (next.store.pendingStructs || next.store.pendingDs || !hasDocumentSnapshot(next)) throw new Error("Invalid collaboration document.");
+      const remoteSnapshot = documentSnapshotFromYDoc(next);
+      Y.applyUpdate(captured, decode(intent.update), REMOTE);
+      const base = documentSnapshotFromYDoc(captured), local = this.snapshot();
+      let late: string | null = null;
+      if (JSON.stringify(base) !== JSON.stringify(local)) {
+        const merged = reconcileDocumentSnapshots(base, local, remoteSnapshot, { concurrentInsertions: "remote-first" });
+        if (merged.status !== "merged") { this.retire("Edits made during recovery conflict with the recovered file. Your document is kept for recovery."); return; }
+        if (JSON.stringify(merged.document) !== JSON.stringify(remoteSnapshot)) {
+          const vector = Y.encodeStateVector(next);
+          applyDocumentSnapshot(next, merged.document, "epoch-recovery");
+          late = encode(Y.encodeStateAsUpdate(next, vector));
+          if (late.length > MAX_UPDATE_CHARS) { this.retire("Edits made during recovery exceed the collaboration limit. Your document is kept for recovery."); return; }
+        }
+      }
+      const previous = this.liveDoc;
+      const rollback = { current: this.current, pending: this.pending, batch: this.batch, recovery: this.recovery, canComment: this.canComment, presentation: this.presentation };
+      previous.off("update", this.changed); next.on("update", this.changed);
+      this.liveDoc = next; swapped = true;
+      this.current = cursor(remote); this.pending = late ? [late] : []; this.batch = null; this.unqueuedDirty = false;
+      this.recovery = { ...intent, adopted: true }; this.canComment = remote.canComment;
+      try { this.adoptPresentation(remote.presentation); this.persist(); }
+      catch (error) {
+        next.off("update", this.changed); previous.on("update", this.changed); this.liveDoc = previous; swapped = false;
+        Object.assign(this, rollback); throw error;
+      }
+      this.options.onDocumentReplaced?.(next, previous);
+      this.options.onChange?.(this.snapshot(), this.presentation);
+      // Native adoption of the replacement epoch must succeed before the old
+      // pending state is dropped from the journal.
+      if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return;
+      this.recovery = null; this.persist();
+      previous.destroy();
+      this.authoritative = true; this.failures = 0; this.uploadFailures = 0;
+      if (!this.options.onDocumentReplaced) {
+        // No live rebinding contract: the mounted editor still shows the old
+        // document, so stop editing and reopen from the clean replacement.
+        this.frozen = true; this.canEdit = false; this.cancelWork();
+        this.report(this.options.checkpoint ? "stale-session" : "stale-file", "Reopening this note…");
+        return;
+      }
+      this.report(this.pending.length ? "saving" : "ready");
+    } finally { captured.destroy(); if (!swapped) next.destroy(); }
   }
   destroy(): void {
     if (this.dead) return;

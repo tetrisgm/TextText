@@ -40,6 +40,8 @@ class Server {
     }
     const id = params.operationId as string; this.pushes.push(id);
     if (!this.canEdit) throw Object.assign(new Error("Forbidden"), { status: 403 });
+    // This fixture retains no epoch history; automatic recovery is refused like a legacy server.
+    if (params.recoveryUpdate !== undefined) throw Object.assign(new Error("No retained history"), { status: 409, code: "recovery_unavailable" });
     if (params.epoch !== this.state.epoch) throw Object.assign(new Error("Epoch"), { status: 409, code: "epoch_changed" });
     if (!this.receipts.has(id)) {
       const next = applyVaultCollaboration(this.state, this.bytes, params.updates as string[]);
@@ -363,7 +365,7 @@ describe("durable file collaboration client", () => {
     expect(reopened.status).toBe("recovery"); expect(reopened.canEdit).toBe(false);
     expect(reopened.recoveryJournal?.pending).toHaveLength(1);
     expect(documentText(reopened.doc, "body").toString()).toBe("Hello pending");
-    expect(server.pushes).toEqual([]);
+    expect(server.pushes).toHaveLength(1); // One refused automatic recovery attempt, then the journal is kept.
   });
 
   it("does not expose or overwrite a clean journal after the initial read is canceled", async () => {
@@ -449,7 +451,7 @@ describe("durable file collaboration client", () => {
       expect(() => editor.mutate(() => {})).toThrow();
       editor.destroy();
       const reopened = client(server, journal); await reopened.start();
-      expect(reopened.status).toBe("recovery"); expect(server.pushes).toHaveLength(0);
+      expect(reopened.status).toBe("recovery"); expect(server.pushes).toHaveLength(epochChanged ? 1 : 0);
       reopened.destroy();
     }
   });
@@ -648,7 +650,7 @@ describe("durable file collaboration client", () => {
     expect(offline.hasPendingChanges).toBe(true); offline.destroy();
     server.state = seedVaultCollaboration(server.bytes, "item-1", 2);
     const resumed = client(server, journal); await resumed.start();
-    expect(resumed.status).toBe("recovery"); expect(server.pushes).toHaveLength(0);
+    expect(resumed.status).toBe("recovery"); expect(server.pushes).toHaveLength(1);
     expect(documentText(resumed.doc, "body").toString()).toBe("Hello offline restart");
     resumed.clearRetiredAfterRecovery(); expect(journal.load(resumed.journalKey)).toBeNull();
   });
