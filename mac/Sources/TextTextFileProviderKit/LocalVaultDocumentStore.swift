@@ -186,8 +186,8 @@ public struct LocalVaultDocumentStore: Sendable {
                 let key = try canonicalMarkdownEntry(archive).path
                 let prefix = String(key.dropLast("text.md".count))
                 let entries: Set<String> = includeTemplate
-                    ? [key, prefix + "document.json", prefix + "template.json", prefix + "template-source.json"]
-                    : [key, prefix + "document.json"]
+                    ? [key, prefix + "document.json", prefix + "template.json", prefix + "template-source.json", prefix + TextTextProjectionBaseline.entryName]
+                    : [key, prefix + "document.json", prefix + TextTextProjectionBaseline.entryName]
                 var selected: [String: Data] = [:], expanded: UInt64 = 0
                 for entry in archive where entries.contains(entry.path) {
                     expanded += entry.uncompressedSize
@@ -200,10 +200,12 @@ public struct LocalVaultDocumentStore: Sendable {
                 let document = selected[prefix + "document.json"]
                 let template = selected[prefix + "template.json"]
                 let templateSource = selected[prefix + "template-source.json"]
+                let projection = selected[prefix + TextTextProjectionBaseline.entryName]
                 let contents = TextTextTextBundleContents(markdown: String(decoding: raw, as: UTF8.self), sourceURL: nil,
                     documentJSON: document.map { String(decoding: $0, as: UTF8.self) },
                     templateJSON: template.map { String(decoding: $0, as: UTF8.self) },
                     templateAuthoringSourceJSON: templateSource.map { String(decoding: $0, as: UTF8.self) },
+                    projectionJSON: projection.map { String(decoding: $0, as: UTF8.self) },
                     assets: [], logicalSize: Int(expanded))
                 return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents,
                     publishedAt: publishedAt(archive, prefix: prefix))
@@ -524,6 +526,7 @@ public struct LocalVaultDocumentStore: Sendable {
     public func write(path: String, expectedHash: String, markdown: String,
                       documentJSON: String?, templateJSON: String?,
                       templateAuthoringSourceJSON: String?,
+                      projectionJSON: String? = nil,
                       addedAssets: [TextTextTextBundleAsset] = [],
                       mutationKey: String? = nil, mutationFingerprint: String? = nil) throws -> Document {
         if let mutationKey {
@@ -594,6 +597,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 let package = try TextTextTextBundlePackage.materialize(
                     canonicalMarkdown: markdown, documentJSON: documentJSON,
                     templateJSON: templateJSON, templateAuthoringSourceJSON: templateAuthoringSourceJSON,
+                    projectionJSON: projectionJSON,
                     assets: before.assets.map { existing in
                         let addition = addedAssets.first { $0.filename == existing.filename }
                         return .init(filename: existing.filename, data: existing.data,
@@ -617,7 +621,16 @@ public struct LocalVaultDocumentStore: Sendable {
                 }
                 let markdownEntry = try canonicalMarkdownEntry(archive)
                 let prefix = String(markdownEntry.path.dropLast("text.md".count))
-                for name in ["text.md", "document.json", "template.json", "template-source.json"] {
+                // A coherent write (projectionJSON given) replaces the projection
+                // sidecar; a Markdown-only or JSON-only write keeps the earlier stamp,
+                // whose digests still say which entry moved.
+                // An unchanged representation keeps its exact bytes, so the stamp's
+                // digest for it stays valid after a Markdown-only or JSON-only write.
+                let replaced = (markdown == before.markdown && projectionJSON == nil ? [] : ["text.md"])
+                    + (documentJSON == before.documentJSON && projectionJSON == nil ? [] : ["document.json"])
+                    + ["template.json", "template-source.json"]
+                    + (projectionJSON == nil ? [] : [TextTextProjectionBaseline.entryName])
+                for name in replaced {
                     if let entry = archive[prefix + name] { try archive.remove(entry) }
                     let replacement = package.url.appendingPathComponent(name)
                     if FileManager.default.fileExists(atPath: replacement.path) {

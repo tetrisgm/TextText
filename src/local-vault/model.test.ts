@@ -69,3 +69,76 @@ describe("observed file representation changes", () => {
     expect(() => readDocument({ ...previous, markdown: file.markdown.replace(/old$/, "Markdown agent edit"), documentJSON: JSON.stringify(after) }, previous)).toThrow("competing edits");
   });
 });
+
+describe("external file changes with projection provenance", () => {
+  /** A file as the app's last coherent save left it: both entries plus the stamp. */
+  function stamped(body = "one\ntwo\nthree") {
+    const document = snapshot();
+    document.content.body = body;
+    document.content.fields.rating = 3;
+    const payload = writePayload({ ...file, documentJSON: JSON.stringify(snapshot()) }, document);
+    expect(payload.projectionJSON).toBeTruthy();
+    return { saved: { ...file, ...payload } as VaultFile, document };
+  }
+  const withJSON = (saved: VaultFile, mutate: (document: ReturnType<typeof snapshot>) => void) => {
+    const document = JSON.parse(saved.documentJSON!);
+    mutate(document);
+    return { ...saved, documentJSON: JSON.stringify(document) };
+  };
+  const withMarkdown = (saved: VaultFile, body: string) => ({ ...saved, markdown: saved.markdown.replace(/one\ntwo\nthree$/, body) });
+
+  it("reads a JSON-only edit over stale Markdown without a previous file", () => {
+    const { saved } = stamped();
+    const edited = withJSON(saved, (document) => { document.content.body = "JSON agent edit"; });
+    expect(readDocument(edited).content.body).toBe("JSON agent edit");
+    expect(readDocument(edited, saved).content.body).toBe("JSON agent edit");
+  });
+
+  it("keeps a JSON-only deletion that stale Markdown still contains", () => {
+    const { saved } = stamped();
+    const edited = withJSON(saved, (document) => { document.content.body = "one\nthree"; });
+    expect(readDocument(edited).content.body).toBe("one\nthree");
+  });
+
+  it("reads a Markdown-only edit over the stamped document and keeps JSON-only fields", () => {
+    const { saved } = stamped();
+    const edited = withMarkdown(saved, "one\ntwo\nthree\nCLI");
+    for (const previous of [undefined, saved]) {
+      const read = readDocument(edited, previous);
+      expect(read.content.body).toBe("one\ntwo\nthree\nCLI");
+      expect(read.content.fields.rating).toBe(3);
+    }
+    expect(readDocument(withMarkdown(saved, "one\nthree")).content.body).toBe("one\nthree");
+  });
+
+  it("merges separate JSON and Markdown edits made after the same save", () => {
+    const { saved } = stamped();
+    const edited = withJSON(withMarkdown(saved, "one\ntwo\nthree\nCLI"), (document) => { document.content.fields.rating = 5; });
+    const read = readDocument(edited);
+    expect(read.content.body).toBe("one\ntwo\nthree\nCLI");
+    expect(read.content.fields.rating).toBe(5);
+    const bodies = withJSON(withMarkdown(saved, "ONE\ntwo\nthree"), (document) => { document.content.body = "one\ntwo\nTHREE"; });
+    expect(readDocument(bodies).content.body).toBe("ONE\ntwo\nTHREE");
+  });
+
+  it("surfaces a proved conflict even when the previous file would have hidden it", () => {
+    const { saved } = stamped();
+    const conflicting = withJSON(withMarkdown(saved, "one\nMD\nthree"), (document) => { document.content.body = "one\nJSON\nthree"; });
+    expect(() => readDocument(conflicting)).toThrow("competing edits");
+    expect(() => readDocument(conflicting, saved)).toThrow("competing edits");
+    // A previous file that already carried the same Markdown would have made the
+    // JSON look like the only change; the stamp proves otherwise.
+    const misleadingPrevious = { ...saved, markdown: conflicting.markdown, projectionJSON: null };
+    expect(() => readDocument(conflicting, misleadingPrevious)).toThrow("competing edits");
+  });
+
+  it("ignores a stamp for another item and keeps the legacy comparison", () => {
+    const { saved } = stamped();
+    const foreign = { ...saved, projectionJSON: saved.projectionJSON!.replace(/"itemId":"[^"]+"/, '"itemId":"other"') };
+    expect(foreign.projectionJSON).not.toBe(saved.projectionJSON);
+    const edited = withJSON(foreign, (document) => { document.content.body = "JSON agent edit"; });
+    // Without provenance and without a previous file, Markdown still overlays JSON.
+    expect(readDocument(edited).content.body).toBe("one\ntwo\nthree");
+    expect(readDocument(edited, foreign).content.body).toBe("JSON agent edit");
+  });
+});

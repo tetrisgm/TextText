@@ -144,7 +144,8 @@ struct LocalVaultSharedEditingStore: Sendable {
         for entry in archive {
             count += 1; total += entry.uncompressedSize
             guard count <= 10000, total <= 64 * 1024 * 1024 else { throw LocalVaultSharedFailure.invalid }
-            if [canonical + "text.md", canonical + "document.json"].contains(entry.path) || (replacingPresentation && [canonical + "template.json", canonical + "template-source.json"].contains(entry.path)) { continue }
+            // The projection sidecar is derived from the two content entries.
+            if [canonical + "text.md", canonical + "document.json", canonical + TextTextProjectionBaseline.entryName].contains(entry.path) || (replacingPresentation && [canonical + "template.json", canonical + "template-source.json"].contains(entry.path)) { continue }
             guard result[entry.path] == nil else { throw LocalVaultSharedFailure.invalid }
             var data = Data(); _ = try archive.extract(entry) { data.append($0) }
             result[entry.path] = TextTextStableDigest.sha256Hex(data)
@@ -229,9 +230,12 @@ struct LocalVaultSharedEditingStore: Sendable {
         var checkpoint = intent.checkpoint
         let document: LocalVaultDocumentStore.Document
         if let current, current.hash == intent.beforeHash {
+            // The shared editor projects both representations from one snapshot;
+            // the store re-digests the stamp over the bytes it writes.
             document = try store.write(path: current.path, expectedHash: current.hash, markdown: intent.markdown,
                 documentJSON: intent.documentJSON, templateJSON: metadata.map { $0.templateJSON } ?? current.contents.templateJSON,
-                templateAuthoringSourceJSON: metadata.map { $0.templateAuthoringSourceJSON } ?? current.contents.templateAuthoringSourceJSON)
+                templateAuthoringSourceJSON: metadata.map { $0.templateAuthoringSourceJSON } ?? current.contents.templateAuthoringSourceJSON,
+                projectionJSON: "")
             if interruptAfterWrite { throw LocalVaultSharedFailure.interrupted }
         } else if let current, contentMatches(current, intent: intent),
                   let bytes = try read(store.url(for: current.path), limit: 64 * 1024 * 1024),

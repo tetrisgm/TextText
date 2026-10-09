@@ -1,4 +1,5 @@
 import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
+import { PROJECTION_BASELINE_ENTRY, stampProjectionBaseline } from "@/lib/documents/projection-baseline";
 import type { VaultFile } from "./bridge";
 
 export type OpenPack = { entries: Record<string, Uint8Array>; prefix: string; file: VaultFile; itemId: string };
@@ -50,7 +51,7 @@ export function openPack(bytes: Uint8Array, path: string, hash: string, expected
     const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", svg: "image/svg+xml", mp4: "video/mp4", mp3: "audio/mpeg", pdf: "application/pdf" };
     return { filename, data: base64(data), contentType: mapping.contentType || types[filename.split(".").at(-1)?.toLowerCase() ?? ""] || "application/octet-stream", ...(typeof mapping.url === "string" ? { remoteURL: mapping.url } : {}) };
   });
-  return { entries, prefix, itemId, file: { path, hash, markdown, documentJSON: text("document.json"), templateJSON: text("template.json"), templateAuthoringSourceJSON: text("template-source.json"), assets } };
+  return { entries, prefix, itemId, file: { path, hash, markdown, documentJSON: text("document.json"), templateJSON: text("template.json"), templateAuthoringSourceJSON: text("template-source.json"), projectionJSON: text(PROJECTION_BASELINE_ENTRY), assets } };
 }
 export function encodePack(pack: Pick<OpenPack, "entries" | "prefix">, changes: Pick<VaultFile, "markdown" | "documentJSON" | "templateJSON" | "templateAuthoringSourceJSON">, addedAssets: readonly PackAssetAddition[] = []): Uint8Array {
   const entries = { ...pack.entries };
@@ -68,6 +69,12 @@ export function encodePack(pack: Pick<OpenPack, "entries" | "prefix">, changes: 
     else if (name !== "document.json") delete entries[pack.prefix + name];
   }
   if (!entries[pack.prefix + "document.json"]) throw new Error("A TextPack requires document.json.");
+  // Projection provenance is computed from the entries being written, never
+  // taken from the caller: a coherent pair is stamped; an incoherent pair (for
+  // example a Markdown-only edit or an asset addition over a diverged file)
+  // keeps the earlier stamp, whose digests still say which entry moved.
+  const stamp = stampProjectionBaseline(packIdentity(changes.markdown), entries[pack.prefix + "text.md"], entries[pack.prefix + "document.json"]);
+  if (stamp) entries[pack.prefix + PROJECTION_BASELINE_ENTRY] = stamp;
   const occupied = new Map(Object.keys(entries).map((name) => [name.normalize("NFC").toLocaleLowerCase(), name]));
   const infoPath = pack.prefix + "info.json";
   const info = entries[infoPath] ? JSON.parse(strFromU8(entries[infoPath])) as Record<string, unknown>

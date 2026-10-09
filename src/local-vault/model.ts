@@ -7,6 +7,7 @@ import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/prese
 import type { Blog, ItemKind, Post } from "@/lib/content";
 import type { VaultFile } from "./bridge";
 import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
+import { projectionItemId, resolveProjection, stampProjectionBaseline } from "@/lib/documents/projection-baseline";
 export const localBlog: Blog = { handle: "local", name: "Workspace", author: "", homeLayout: "list" };
 export class VaultRepresentationConflict extends Error {
   constructor() { super("text.md and document.json contain competing edits. Both representations are preserved in the file."); }
@@ -31,6 +32,15 @@ export function readDocument(file: VaultFile, previous?: VaultFile, previousDocu
   // blank lines and trailing spaces instead of normalizing the saved body.
   const body = file.markdown.match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n(?:\r?\n)?([\s\S]*)$/)?.[1];
   if (body !== undefined) parsed.body = body;
+  // The file's own projection sidecar says which representation moved since
+  // the last coherent save, with or without a previously observed file. A
+  // proved conflict between the two entries is surfaced, never resolved
+  // against the previous file, which is not their common ancestor.
+  if (file.documentJSON && file.projectionJSON) {
+    const own = resolveProjection({ markdown: file.markdown, documentJSON: file.documentJSON, baseline: file.projectionJSON });
+    if (own.status === "document") return own.document;
+    if (own.status === "conflict") throw new VaultRepresentationConflict();
+  }
   if (!previous) return mergeMarkdownIntoDocument(seed, parsed);
   const base = previousDocument ?? readDocument(previous);
   const priorStructured = previous.documentJSON ? validateDocumentSnapshot(JSON.parse(previous.documentJSON)) : base;
@@ -75,11 +85,16 @@ export function writePayload(file: VaultFile, document: DocumentSnapshot, look?:
   const prior = file.markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] ?? "";
   const preservedKeys = new Set(parsePostMarkdownFile(file.markdown).unknownKeys);
   const preserved = prior.split(/\r?\n/).filter((line) => { const key = line.match(/^([A-Za-z][A-Za-z0-9_-]*):/)?.[1]; return key && preservedKeys.has(key); });
+  const finalMarkdown = preserved.length ? markdown.replace(/^---\n/, `---\n${preserved.join("\n")}\n`) : markdown;
+  const documentJSON = JSON.stringify(document);
+  const itemId = projectionItemId(finalMarkdown);
+  const stamp = itemId ? stampProjectionBaseline(itemId, finalMarkdown, documentJSON) : null;
   return {
     path: file.path, hash: file.hash,
-    markdown: preserved.length ? markdown.replace(/^---\n/, `---\n${preserved.join("\n")}\n`) : markdown,
-    documentJSON: JSON.stringify(document),
+    markdown: finalMarkdown,
+    documentJSON,
     templateJSON: JSON.stringify(template),
     templateAuthoringSourceJSON: look ? look.sourceJSON ?? null : file.templateAuthoringSourceJSON ?? null,
+    projectionJSON: stamp ? new TextDecoder().decode(stamp) : file.projectionJSON ?? null,
   };
 }

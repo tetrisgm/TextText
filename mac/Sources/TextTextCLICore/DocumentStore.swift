@@ -272,14 +272,23 @@ public struct DocumentStore: Sendable {
             MarkdownIdentityCodec.inject(into: markdown, itemId: $0.itemId,
                                          folderId: $0.folderId, kind: $0.kind)
         } ?? markdown
+        // `read` canonicalizes document.json; a Markdown-only write must keep
+        // the exact bytes on disk so the carried projection stamp still
+        // attributes the change to text.md alone.
+        let rawDocumentJSON: String? = url.pathExtension.lowercased() == "textbundle"
+            ? (try? Data(contentsOf: url.appendingPathComponent("document.json"))).flatMap { String(data: $0, encoding: .utf8) }
+            : nil
         let package = try TextTextTextBundlePackage.materialize(
             canonicalMarkdown: preservedMarkdown,
-            documentJSON: existing.documentJSON,
+            documentJSON: rawDocumentJSON ?? existing.documentJSON,
             // Carried, not regenerated. Editing the prose must not silently
             // strip the look off the file, which is what dropping this here
             // would have done on every single write.
             templateJSON: existing.templateJSON,
             templateAuthoringSourceJSON: existing.templateAuthoringSourceJSON,
+            // A Markdown-only write keeps the earlier projection stamp so the
+            // app can tell text.md moved and document.json did not.
+            carriedProjectionJSON: existing.projectionJSON,
             assets: assets,
             sourceURL: existing.sourceURL,
             in: temporary)
@@ -366,8 +375,11 @@ public struct DocumentStore: Sendable {
 
         let temporary = try makeTemporaryDirectory()
         defer { try? fileManager.removeItem(at: temporary) }
+        // The snapshot body is the Markdown body byte for byte (including the
+        // newline that closes a non-empty body), so both representations
+        // express one document and the pack can be stamped as coherent.
         let builtin = try BuiltinTextPackDocument.create(
-            title: title, body: body.trimmingCharacters(in: .newlines),
+            title: title, body: body.isEmpty ? "" : body.trimmingCharacters(in: .newlines) + "\n",
             kind: effectiveKind, sourceURL: sourceURL, assets: assets)
         var documentJSON = builtin.documentJSON
         if let folderDefault {
@@ -382,6 +394,10 @@ public struct DocumentStore: Sendable {
             canonicalMarkdown: markdown, documentJSON: customDocumentJSON ?? documentJSON,
             templateJSON: customTemplateJSON ?? folderDefault?.templateJSON ?? builtin.templateJSON,
             templateAuthoringSourceJSON: folderDefault?.authoringSourceJSON,
+            // A fresh pack is one document in both representations; the stamp is
+            // computed from the bytes written and refused if they disagree
+            // (a custom document.json, a bookmark's links line).
+            projectionJSON: "",
             assets: assets, sourceURL: sourceURL, in: temporary)
         let packed = try TextTextTextBundlePackage.zipToTextPack(
             packageURL: package.url, in: temporary)

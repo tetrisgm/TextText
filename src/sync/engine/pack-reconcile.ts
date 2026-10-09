@@ -2,7 +2,9 @@ import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
 import { validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { mergeMarkdownIntoDocument } from "@/lib/documents/sync";
 import { legacyProjectionFromDocument } from "@/lib/documents/legacy";
-import { parsePostMarkdownFile } from "@/lib/markdown-files";
+import {
+  PROJECTION_BASELINE_ENTRY, parseProjectionMarkdown, projectionItemId, resolveProjection, stampProjectionBaseline,
+} from "@/lib/documents/projection-baseline";
 import { reconcileDocumentSnapshots } from "./reconcile";
 
 type Entries = Record<string, Uint8Array>;
@@ -31,10 +33,27 @@ function unpack(bytes: Uint8Array) {
   return { prefix, files, document: validateDocumentSnapshot(JSON.parse(strFromU8(files["document.json"]))) };
 }
 
-function effective(base: ReturnType<typeof unpack>, branch: ReturnType<typeof unpack>): DocumentSnapshot | null {
+type Pack = ReturnType<typeof unpack>;
+
+/** What one pack says about itself through its projection sidecar (see
+ * `resolveProjection`). A proved conflict is returned as such, never folded
+ * into the legacy comparison against the shared base: that base is unrelated
+ * to the two entries' real common ancestor and would resolve the conflict by
+ * accident. */
+function provenanced(pack: Pack): ReturnType<typeof resolveProjection> {
+  return resolveProjection({ markdown: pack.files["text.md"], documentJSON: pack.files["document.json"], baseline: pack.files[PROJECTION_BASELINE_ENTRY] });
+}
+
+/** The document a branch pack expresses relative to the shared base. Packs
+ * with provenance resolve themselves; legacy packs compare each representation
+ * with the base, as before, and refuse when the two representations disagree. */
+function effective(base: Pack, baseDocument: DocumentSnapshot, branch: Pack): DocumentSnapshot | null {
+  const own = provenanced(branch);
+  if (own.status === "document") return own.document;
+  if (own.status === "conflict") return null;
   if (equal(base.files["text.md"], branch.files["text.md"])) return branch.document;
-  const fromMarkdown = mergeMarkdownIntoDocument(base.document, parsePostMarkdownFile(strFromU8(branch.files["text.md"])));
-  const merged = reconcileDocumentSnapshots(base.document, branch.document, fromMarkdown);
+  const fromMarkdown = mergeMarkdownIntoDocument(baseDocument, parseProjectionMarkdown(strFromU8(branch.files["text.md"])));
+  const merged = reconcileDocumentSnapshots(baseDocument, branch.document, fromMarkdown);
   return merged.status === "merged" ? merged.document : null;
 }
 
@@ -61,17 +80,19 @@ export function reconcileTextpacks(baseBytes: Uint8Array, localBytes: Uint8Array
     const base = unpack(baseBytes);
     const local = unpack(localBytes);
     const remote = unpack(remoteBytes);
-    const localDocument = effective(base, local);
-    const remoteDocument = effective(base, remote);
+    const resolvedBase = provenanced(base);
+    const baseDocument = resolvedBase.status === "document" ? resolvedBase.document : base.document;
+    const localDocument = effective(base, baseDocument, local);
+    const remoteDocument = effective(base, baseDocument, remote);
     if (!localDocument || !remoteDocument) return { status: "conflict", paths: ["/document/markdown"] };
-    const result = reconcileDocumentSnapshots(base.document, localDocument, remoteDocument, {
+    const result = reconcileDocumentSnapshots(baseDocument, localDocument, remoteDocument, {
       concurrentInsertions: "remote-first",
     });
     if (result.status === "conflict") return { status: "conflict", paths: result.paths };
     const conflicts: string[] = [];
     const merged: Entries = {};
     for (const name of new Set([...Object.keys(base.files), ...Object.keys(local.files), ...Object.keys(remote.files)])) {
-      if (name === "document.json" || name === "text.md") continue;
+      if (name === "document.json" || name === "text.md" || name === PROJECTION_BASELINE_ENTRY) continue;
       const before = base.files[name], left = local.files[name], right = remote.files[name];
       const value = equal(left, right) ? left : equal(left, before) ? right : equal(right, before) ? left : null;
       if (value === null) conflicts.push(`/entries/${name}`);
@@ -100,6 +121,11 @@ export function reconcileTextpacks(baseBytes: Uint8Array, localBytes: Uint8Array
     if (conflicts.length) return { status: "conflict", paths: conflicts };
     merged["document.json"] = strToU8(JSON.stringify(result.document, null, 2) + "\n");
     merged["text.md"] = strToU8(`---\n${Object.entries(fields).map(([key, value]) => `${key}: ${value}`).join("\n")}\n---\n\n${result.document.content.body}`);
+    // The merged pair is coherent by construction; stamp it so later edits to
+    // either representation can be attributed. An uncoherent pair stays unstamped.
+    const itemId = projectionItemId(strFromU8(merged["text.md"]));
+    const stamp = itemId ? stampProjectionBaseline(itemId, merged["text.md"], merged["document.json"]) : null;
+    if (stamp) merged[PROJECTION_BASELINE_ENTRY] = stamp;
     const output = Object.fromEntries(Object.entries(merged).map(([name, bytes]) => [remote.prefix + name, bytes]));
     return { status: "merged", bytes: zipSync(output, { level: 0, mtime: new Date(1980, 0, 1) }) };
   } catch {

@@ -1,4 +1,5 @@
 import Foundation
+import TextTextWorkspaceCore
 import ZIPFoundation
 
 public enum TextTextTextBundleError: Error, Equatable {
@@ -90,6 +91,9 @@ public struct TextTextTextBundleContents: Equatable, Sendable {
     /// Editable source for the embedded look, stored as `template-source.json`.
     /// The native bridge preserves it without interpreting its schema.
     public let templateAuthoringSourceJSON: String?
+    /// `net.texttext.projection.json`: the last coherent baseline stamped with
+    /// text.md and document.json. Nil for a bundle written before this existed.
+    public let projectionJSON: String?
     public let assets: [TextTextTextBundleAsset]
     public let logicalSize: Int
 }
@@ -131,6 +135,13 @@ public enum TextTextTextBundlePackage {
         documentJSON: String? = nil,
         templateJSON: String? = nil,
         templateAuthoringSourceJSON: String? = nil,
+        /// When non-nil the caller asserts text.md and document.json express
+        /// one document; the sidecar is then re-digested over the local bytes.
+        projectionJSON: String? = nil,
+        /// An existing sidecar to carry verbatim when this write does not
+        /// produce a new stamp (a Markdown-only or JSON-only rewrite). Its
+        /// digests still say which entry moved since the last coherent save.
+        carriedProjectionJSON: String? = nil,
         assets: [MaterializedAsset],
         sourceURL: String?,
         in temporaryDirectory: URL
@@ -152,12 +163,21 @@ public enum TextTextTextBundlePackage {
                 throw TextTextTextBundleError.invalidPackage("Unsafe or duplicate asset name")
             }
             let localReference = "assets/\(asset.filename)"
-            localMarkdown = localMarkdown.replacingOccurrences(
-                of: asset.remoteURL, with: localReference)
-            if let current = localDocumentJSON {
-                localDocumentJSON = try replacingStrings(
-                    inJSON: current,
-                    replacements: [asset.remoteURL: localReference])
+            // An asset carried through with its local reference needs no
+            // rewrite; skipping it keeps document.json byte for byte, which
+            // keeps an earlier projection stamp's digest valid.
+            if asset.remoteURL != localReference {
+                localMarkdown = localMarkdown.replacingOccurrences(
+                    of: asset.remoteURL, with: localReference)
+                // A Markdown-only write over a pack that already carries local
+                // references (the usual case: info.json remembers the remote
+                // URL, document.json does not) keeps document.json byte for
+                // byte: `replacingStrings` only re-serializes when it replaced.
+                if let current = localDocumentJSON {
+                    localDocumentJSON = try replacingStrings(
+                        inJSON: current,
+                        replacements: [asset.remoteURL: localReference])
+                }
             }
             mappings[asset.filename] = TextTextTextBundleRemoteAsset(
                 url: asset.remoteURL, contentType: asset.contentType,
@@ -193,6 +213,20 @@ public enum TextTextTextBundlePackage {
             try sourceData.write(
                 to: packageURL.appendingPathComponent("template-source.json"), options: .atomic)
             logicalSize += sourceData.count
+        }
+
+        if projectionJSON != nil, let localDocumentJSON,
+           let itemId = MarkdownIdentityCodec.extract(from: localMarkdown)?.itemId,
+           let stamp = TextTextProjectionBaseline.stamp(
+               itemId: itemId, markdown: markdownData, documentJSON: Data(localDocumentJSON.utf8)) {
+            try stamp.write(
+                to: packageURL.appendingPathComponent(TextTextProjectionBaseline.entryName), options: .atomic)
+            logicalSize += stamp.count
+        } else if let carriedProjectionJSON, localDocumentJSON != nil {
+            let carried = Data(carriedProjectionJSON.utf8)
+            try carried.write(
+                to: packageURL.appendingPathComponent(TextTextProjectionBaseline.entryName), options: .atomic)
+            logicalSize += carried.count
         }
 
         let info = TextTextTextBundleInfo(sourceURL: sourceURL, remoteAssets: mappings)
@@ -295,6 +329,17 @@ public enum TextTextTextBundlePackage {
                 templateAuthoringSourceJSON = decoded
             }
         }
+        let projectionURL = packageRoot.appendingPathComponent(TextTextProjectionBaseline.entryName)
+        var projectionJSON: String?
+        if FileManager.default.fileExists(atPath: projectionURL.path),
+            let projectionData = try? Data(contentsOf: projectionURL) {
+            logicalSize += projectionData.count
+            // Recovery metadata only: a damaged sidecar is simply absent.
+            if let decoded = String(data: projectionData, encoding: .utf8),
+                (try? decodedJSONObject(decoded, filename: TextTextProjectionBaseline.entryName)) != nil {
+                projectionJSON = decoded
+            }
+        }
         var assets: [TextTextTextBundleAsset] = []
         var remoteURLsByFilename: [String: String] = [:]
         let assetsURL = packageRoot.appendingPathComponent("assets", isDirectory: true)
@@ -336,6 +381,7 @@ public enum TextTextTextBundlePackage {
             documentJSON: documentJSON,
             templateJSON: templateJSON,
             templateAuthoringSourceJSON: templateAuthoringSourceJSON,
+            projectionJSON: projectionJSON,
             assets: assets, logicalSize: logicalSize)
     }
 
@@ -447,12 +493,15 @@ public enum TextTextTextBundlePackage {
         inJSON json: String, replacements: [String: String]
     ) throws -> String {
         let root = try decodedJSONObject(json)
+        var changed = false
         func replace(_ value: Any) -> Any {
             if let string = value as? String {
-                return replacements.reduce(string) { result, replacement in
+                let replaced = replacements.reduce(string) { result, replacement in
                     result.replacingOccurrences(
                         of: replacement.key, with: replacement.value)
                 }
+                if replaced != string { changed = true }
+                return replaced
             }
             if let array = value as? [Any] { return array.map(replace) }
             if let object = value as? [String: Any] {
@@ -460,8 +509,12 @@ public enum TextTextTextBundlePackage {
             }
             return value
         }
+        let replaced = replace(root)
+        // Nothing to rewrite: keep the caller's exact bytes rather than
+        // re-serializing, so an unchanged representation keeps its digest.
+        guard changed else { return json }
         let encoded = try JSONSerialization.data(
-            withJSONObject: replace(root),
+            withJSONObject: replaced,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         guard let result = String(data: encoded, encoding: .utf8) else {
             throw TextTextTextBundleError.invalidPackage("document.json is not UTF-8")

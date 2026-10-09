@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { PROJECTION_BASELINE_ENTRY, projectionItemId, stampProjectionBaseline } from "@/lib/documents/projection-baseline";
 
 /**
  * A `.textpack` as the Mac app writes it: a zip holding one `.textbundle`
@@ -55,6 +56,11 @@ export function buildTextpack(name: string, parts: TextpackParts): Uint8Array {
       entries[`${folder}/template-source.json`] = [strToU8(`${JSON.stringify(parts.templateAuthoringSource, null, 2)}\n`), { level: 0, mtime: EPOCH }];
     }
   }
+  // Stamp projection provenance for a coherent pair; a diverged pair keeps any
+  // sidecar carried in `files`, whose digests still attribute the change.
+  const itemId = projectionItemId(parts.markdown);
+  const stamp = itemId ? stampProjectionBaseline(itemId, entries[`${folder}/text.md`][0], entries[`${folder}/document.json`][0]) : null;
+  if (stamp) entries[`${folder}/${PROJECTION_BASELINE_ENTRY}`] = [stamp, { level: 0, mtime: EPOCH }];
   for (const path of Object.keys(parts.files ?? {}).sort()) {
     if (!safePath(path)) throw new Error("Invalid TextPack entry path");
     const key = `${folder}/${path}`;

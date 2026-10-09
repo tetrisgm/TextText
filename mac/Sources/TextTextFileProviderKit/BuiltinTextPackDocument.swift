@@ -38,7 +38,16 @@ public struct BuiltinTextPackDocument: Sendable {
         }
         var fields: [String: Any] = [:]
         if let sourceURL {
+            // The same three fields the app derives from a `links:` line
+            // (setSourceFields in src/lib/documents/sync.ts): the first link's
+            // address and label, and the whole list. The label falls back to
+            // the address exactly as the shared parser's `label || href` does,
+            // so the Markdown the CLI renders projects this document faithfully.
+            let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = trimmedTitle.isEmpty ? sourceURL : trimmedTitle
             fields["sourceUrl"] = sourceURL
+            fields["sourceLabel"] = label
+            fields["links"] = [["href": sourceURL, "label": label]]
             fields["captureStatus"] = "pending"
             fields["texttextBookmarkSavedAt"] = ISO8601DateFormatter().string(from: Date())
         }

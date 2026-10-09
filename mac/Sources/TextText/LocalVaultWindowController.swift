@@ -572,6 +572,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                             documentJSON: params["documentJSON"] as? String,
                             templateJSON: params["templateJSON"] as? String,
                             templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String,
+                            projectionJSON: params["projectionJSON"] as? String,
                             addedAssets: try Self.pastedAssets(params))
                     })
                 case "create":
@@ -716,6 +717,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             "documentJSON": contents.documentJSON as Any? ?? NSNull(),
             "templateJSON": contents.templateJSON as Any? ?? NSNull(),
             "templateAuthoringSourceJSON": contents.templateAuthoringSourceJSON as Any? ?? NSNull(),
+            "projectionJSON": contents.projectionJSON as Any? ?? NSNull(),
             "assets": contents.assets.map { ["filename": $0.filename,
                 "contentType": $0.contentType ?? "application/octet-stream", "data": $0.data.base64EncodedString(),
                 "remoteURL": $0.remoteURL ?? "assets/\($0.filename)"] }]

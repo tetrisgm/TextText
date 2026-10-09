@@ -4,6 +4,9 @@ export type VaultFile = {
   path: string; hash: string; markdown: string;
   documentJSON?: string | null; templateJSON?: string | null;
   templateAuthoringSourceJSON?: string | null;
+  /** `net.texttext.projection.json`: the last coherent baseline stamped with
+   * text.md and document.json. Computed by writers, never authored. */
+  projectionJSON?: string | null;
   assets?: { filename: string; contentType: string; data: string; remoteURL?: string }[];
 };
 export class VaultError extends Error {

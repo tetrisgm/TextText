@@ -343,6 +343,102 @@ final class DocumentStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "After")
     }
 
+    private func packEntries(_ url: URL) throws -> [String: Data] {
+        let archive = try Archive(url: url, accessMode: .read)
+        var result: [String: Data] = [:]
+        for entry in archive where !entry.path.hasSuffix("/") {
+            var data = Data(); _ = try archive.extract(entry) { data.append($0) }
+            result[String(entry.path.split(separator: "/").last!)] = data
+        }
+        return result
+    }
+
+    func testCreationStampsCoherentProjectionAndMarkdownWritesKeepIt() throws {
+        let url = try store.create(title: "Stamped", body: "First line.")
+        let created = try packEntries(url)
+        let stamp = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(created[TextTextProjectionBaseline.entryName])) as? [String: Any])
+        XCTAssertEqual(stamp["itemId"] as? String, store.itemId(at: url))
+        XCTAssertEqual(stamp["markdownSha256"] as? String, TextTextStableDigest.sha256Hex(try XCTUnwrap(created["text.md"])))
+        XCTAssertEqual(stamp["documentSha256"] as? String, TextTextStableDigest.sha256Hex(try XCTUnwrap(created["document.json"])))
+
+        // The vault path (TextPack) keeps the stamp and document.json bytes.
+        try store.writeMarkdown(try store.readMarkdown(at: url) + "Appended.\n", to: url)
+        let appended = try packEntries(url)
+        XCTAssertEqual(appended[TextTextProjectionBaseline.entryName], created[TextTextProjectionBaseline.entryName])
+        XCTAssertEqual(appended["document.json"], created["document.json"])
+        XCTAssertNotEqual(appended["text.md"], created["text.md"])
+
+        // The package path (TextBundle) carries the stamp through materialize.
+        let bundle = root.appendingPathComponent("Stamped.textbundle", isDirectory: true)
+        let scratch = root.appendingPathComponent("scratch-bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let extracted = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: String(decoding: try XCTUnwrap(created["text.md"]), as: UTF8.self),
+            documentJSON: String(decoding: try XCTUnwrap(created["document.json"]), as: UTF8.self),
+            carriedProjectionJSON: String(decoding: try XCTUnwrap(created[TextTextProjectionBaseline.entryName]), as: UTF8.self),
+            assets: [], sourceURL: nil, in: scratch)
+        try FileManager.default.copyItem(at: extracted.url, to: bundle)
+        try store.writeMarkdown(try store.readMarkdown(at: bundle) + "Bundle append.\n", to: bundle)
+        XCTAssertEqual(try Data(contentsOf: bundle.appendingPathComponent(TextTextProjectionBaseline.entryName)), created[TextTextProjectionBaseline.entryName])
+        XCTAssertEqual(try Data(contentsOf: bundle.appendingPathComponent("document.json")), created["document.json"])
+        XCTAssertTrue(try store.readMarkdown(at: bundle).hasSuffix("Bundle append.\n"))
+
+        // A bookmark's links line projects the same source fields the app
+        // derives from it, so the fresh pack is coherent and stamped.
+        let bookmark = try store.create(title: "Link", body: "", kind: "bookmark", sourceURL: "https://example.com/a")
+        let bookmarkEntries = try packEntries(bookmark)
+        let bookmarkStamp = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(bookmarkEntries[TextTextProjectionBaseline.entryName])) as? [String: Any])
+        let fields = try XCTUnwrap(((bookmarkStamp["document"] as? [String: Any])?["content"] as? [String: Any])?["fields"] as? [String: Any])
+        XCTAssertEqual(fields["sourceUrl"] as? String, "https://example.com/a")
+        XCTAssertEqual(fields["sourceLabel"] as? String, "Link")
+        XCTAssertEqual(fields["links"] as? [[String: String]], [["href": "https://example.com/a", "label": "Link"]])
+        XCTAssertEqual(bookmarkStamp["documentSha256"] as? String, TextTextStableDigest.sha256Hex(try XCTUnwrap(bookmarkEntries["document.json"])))
+    }
+
+    func testMarkdownOnlyWriteKeepsDocumentJSONBytesBehindRemoteURLAssets() throws {
+        // A pack whose asset was captured from a remote address: info.json
+        // remembers the URL, document.json and text.md hold the local reference.
+        // The first materialization rewrites the remote address and stamps the
+        // final bytes; a later Markdown-only write must leave document.json and
+        // the stamp alone, so the stamp still attributes the change to text.md.
+        let remote = "https://cdn.example.com/pictures/dawn.jpg"
+        let identity = "e3333333-3333-4333-8333-333333333333"
+        let created = try BuiltinTextPackDocument.create(title: "Remote", body: "![Dawn](\(remote))\n")
+        var snapshot = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(created.documentJSON.utf8)) as? [String: Any])
+        var content = try XCTUnwrap(snapshot["content"] as? [String: Any])
+        content["assets"] = [["id": "asset-1", "kind": "image", "src": remote, "contentType": "image/jpeg"]]
+        snapshot["content"] = content
+        let remoteJSON = String(decoding: try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
+        let markdown = "---\ntextTextId: \"\(identity)\"\ntitle: \"Remote\"\n---\n\n![Dawn](\(remote))\n"
+        let scratch = root.appendingPathComponent("scratch-remote", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let package = try TextTextTextBundlePackage.materialize(
+            canonicalMarkdown: markdown, documentJSON: remoteJSON, templateJSON: created.templateJSON, projectionJSON: "",
+            assets: [.init(filename: "dawn.jpg", data: Data([0xFF, 0xD8]), remoteURL: remote, contentType: "image/jpeg")],
+            sourceURL: nil, in: scratch)
+        let bundle = root.appendingPathComponent("Remote.textbundle", isDirectory: true)
+        try FileManager.default.copyItem(at: package.url, to: bundle)
+        let documentBefore = try Data(contentsOf: bundle.appendingPathComponent("document.json"))
+        let stampBefore = try Data(contentsOf: bundle.appendingPathComponent(TextTextProjectionBaseline.entryName))
+        let stamp = try XCTUnwrap(try JSONSerialization.jsonObject(with: stampBefore) as? [String: Any])
+        XCTAssertFalse(String(decoding: documentBefore, as: UTF8.self).contains(remote))
+        XCTAssertEqual(stamp["documentSha256"] as? String, TextTextStableDigest.sha256Hex(documentBefore))
+        XCTAssertEqual(stamp["markdownSha256"] as? String, TextTextStableDigest.sha256Hex(try Data(contentsOf: bundle.appendingPathComponent("text.md"))))
+
+        // The reader hands back the remote address; the writer must not let
+        // that round trip re-serialize document.json.
+        let read = try store.readMarkdown(at: bundle)
+        XCTAssertTrue(read.contains(remote))
+        try store.writeMarkdown(read + "Appended.\n", to: bundle)
+        let documentAfter = try Data(contentsOf: bundle.appendingPathComponent("document.json"))
+        XCTAssertEqual(documentAfter, documentBefore)
+        XCTAssertEqual(try Data(contentsOf: bundle.appendingPathComponent(TextTextProjectionBaseline.entryName)), stampBefore)
+        let markdownAfter = try Data(contentsOf: bundle.appendingPathComponent("text.md"))
+        XCTAssertTrue(String(decoding: markdownAfter, as: UTF8.self).hasSuffix("![Dawn](assets/dawn.jpg)\nAppended.\n"))
+        XCTAssertNotEqual(stamp["markdownSha256"] as? String, TextTextStableDigest.sha256Hex(markdownAfter))
+        XCTAssertEqual(stamp["documentSha256"] as? String, TextTextStableDigest.sha256Hex(documentAfter))
+    }
+
     func testTextbundleWritePreservesDirectoryRepresentation() throws {
         let url = try makeTextbundle(named: "Bundled", markdown: "# Before")
 

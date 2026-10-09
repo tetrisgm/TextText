@@ -9,8 +9,9 @@ Mac 0.204 (1236) and Windows source `248bbb28` are installed. Mac existing-note
 search, edit and saved-file verification passed. Windows recovered all six retained
 PC markers and its CLI marker to disk, then closed with a successful native flush.
 It still could not join shared editing: the upload conflicts while reconciling
-sequential JSON/Markdown edits against the last cloud base. Fable 5.1 Low is
-implementing the representation-baseline repair. Six-client acceptance is not passed.
+sequential JSON/Markdown edits against the last cloud base. The representation-baseline repair now passes shared/native tests and focused
+review; build and deploy next. Six-client acceptance is not passed.
+[Repair receipt](verification/2026-10-09-projection-baseline.md).
 [Current installation and failure evidence](verification/2026-10-08-client-1236.md).
 [Multiple-edit merge repair](verification/2026-10-08-multispan-recovery.md).
 The owner requested less custom sync machinery. A bounded standard-provider

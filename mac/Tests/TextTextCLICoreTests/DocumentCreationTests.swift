@@ -126,7 +126,8 @@ final class DocumentCreationTests: XCTestCase {
             XCTAssertEqual(document["schemaVersion"] as? Int, 1)
             let content = try XCTUnwrap(document["content"] as? [String: Any])
             XCTAssertEqual(content["title"] as? String, kind)
-            XCTAssertEqual(content["body"] as? String, "Fresh content.")
+            // The snapshot body equals the Markdown body, newline included.
+            XCTAssertEqual(content["body"] as? String, "Fresh content.\n")
             let presentation = try XCTUnwrap(document["presentation"] as? [String: Any])
             let reference = try XCTUnwrap(presentation["template"] as? [String: Any])
             XCTAssertEqual(reference["id"] as? String, "texttext." + kind)

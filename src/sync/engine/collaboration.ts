@@ -6,6 +6,7 @@ import { documentAssetSchema, validateDocumentSnapshot } from "@/lib/documents/m
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { openPack, encodePack } from "@/local-vault/pack";
+import { PROJECTION_BASELINE_ENTRY } from "@/lib/documents/projection-baseline";
 import { readDocument, readTemplate, writePayload } from "@/local-vault/model";
 import { reconcileDocumentSnapshots } from "./reconcile";
 
@@ -100,7 +101,8 @@ export function projectVaultFileEdit(state: VaultCollaborationState, currentByte
   const beforePack = openPack(currentBytes, "Document.textpack", state.revision, itemId);
   const afterPack = openPack(nextBytes, "Document.textpack", hash(nextBytes), itemId);
   if (beforePack.prefix !== afterPack.prefix) return null;
-  const contentNames = new Set([beforePack.prefix + "text.md", beforePack.prefix + "document.json"]);
+  // The projection sidecar is derived from the two content entries and moves with them.
+  const contentNames = new Set([beforePack.prefix + "text.md", beforePack.prefix + "document.json", beforePack.prefix + PROJECTION_BASELINE_ENTRY]);
   const opaqueNames = new Set([...Object.keys(beforePack.entries), ...Object.keys(afterPack.entries)]);
   for (const name of opaqueNames) {
     if (contentNames.has(name) || name.startsWith(beforePack.prefix + "assets/")) continue;
