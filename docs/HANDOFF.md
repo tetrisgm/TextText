@@ -5,9 +5,12 @@
 - Mac `/Applications/TextText.app`: **0.204 (1222)**, source `e722c893`.
   Signed-in startup, existing content and the reported 1185 note passed without
   recovery controls. Automatic reconnect passed during deployment. Saved-body
-  cache invalidation passed on 1221. Owner enabled the Mac share permission. Fresh Safari Share still omits
-  TextText; registration exists, actual capture remains unverified. System
-  Settings detail actions still fail through native accessibility. Quick Look/File Provider interactive checks remain.
+  cache invalidation passed on 1221. Owner enabled the Mac share permission. PlugInKit still had default election;
+  applying the authorized `pluginkit -e use -i app.texttext.mac.share` exposed
+  TextText Share in actual Safari. Its form accepted the public verification
+  bookmark, but it has not appeared in native search or iCloud files, including
+  after normal app restart. Share inbox filing is a newly reproduced failure.
+  Quick Look/File Provider interactive checks remain.
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md). Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
 - Oracle: **texttext-oracle-20261008-e722c893-backlinks**, deployed successfully;

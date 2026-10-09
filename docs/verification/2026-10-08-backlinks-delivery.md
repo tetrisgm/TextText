@@ -29,3 +29,16 @@ banner disappearance or edit acceptance. Those checks remain.
 Owner enabled Mac share permission. Fresh Safari Share menu still omitted
 TextText although pluginkit lists installed app.texttext.mac.share. Actual
 capture unverified; no permission was changed by this verification.
+
+## Follow-up share acceptance
+
+Explicit owner-authorized PlugInKit use election exposed TextText Share in
+actual Safari on Mac 1222. Native share form loaded New bookmark, received
+public URL https://example.com/?texttext-share=1222 and title Safari share
+verification 1222, and closed after Post. Native command search and independent
+iCloud path search found no created file. A normal restart did not resolve it;
+local CLI search also returns an empty result. Do not claim end-to-end capture.
+AppDelegate.drainShareInbox still uses cached legacy Workspace folder metadata
+and ServerClient.postFile, rather than the local file command path. This is a
+lead to investigate, not a proven cause. Group container inspection from the
+terminal was denied; no privacy bypass or credential logging was attempted.
