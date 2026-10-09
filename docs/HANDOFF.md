@@ -19,9 +19,11 @@ standalone build passed 18 isolated health checks in the promotion receipt;
 the Store-shaped build's sandbox prevents that runner from returning its
 private report, so runtime health on the installed build needs UI checks.
 The production browser is signed in on the same note. Its saved late markers
-are also present in the local TextPack's `text.md` and `document.json`; the Mac
-reader accessibility tree displayed a shorter body, requiring a visual/editor
-convergence check before declaring the six-client round complete.
+are also present in the local TextPack's `text.md` and `document.json`; the
+Mac reader showed them after scrolling. The accessibility tree shortened the
+long body but the visible reader did not. Installed build 1242 found the note
+through Search, saved a new `Mac build 1242 save check` note, reopened it,
+and the signed-in production browser found that note with the saved body.
 
 ## Open work
 
