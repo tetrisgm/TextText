@@ -21,7 +21,7 @@ import { noteIcon } from "@/lib/note-icons";
 import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
-import { VaultError, vaultRequest, type VaultFile, type VaultListing } from "./bridge";
+import { VaultError, vaultRequest, type VaultFile, type VaultItem, type VaultListing } from "./bridge";
 import { asPost, localBlog, readDocument, readTemplate, writePayload, VaultRepresentationConflict, type VaultTemplateSelection } from "./model";
 import { WorkspaceTypeLibrary as LocalTemplateLibrary } from "./LocalTemplateLibrary";
 import { WorkspaceOverview } from "./WorkspaceOverview";
@@ -47,7 +47,7 @@ import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 import { packIdentity } from "./pack";
-import { locateVaultItem } from "./item-location";
+import { locateVaultItemOrResolve } from "./item-location";
 import { prepareSharedNote } from "./new-note-promotion";
 import { readFolderView, resolveFolderView, type FolderViewMetadata } from "./folder-view";
 import { VaultSearch, type VaultSearchAction } from "./VaultSearch";
@@ -309,7 +309,7 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
         // listing so an offline/read error never closes a recoverable draft.
         try {
           const listing = await vaultRequest<VaultListing>("list");
-          const relocated = locateVaultItem(packIdentity(file.current.markdown), listing);
+          const relocated = await locateVaultItemOrResolve(packIdentity(file.current.markdown), file.current.path, listing, itemId => vaultRequest("resolveItemId", { itemId }));
           if (relocated && relocated.path !== file.current.path) {
             if (running.current) await running.current;
             const latest = await vaultRequest<VaultFile>("read", { path: relocated.path });
@@ -505,6 +505,9 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;
 }
 
+function selectedIdentity(file: VaultFile): string | null {
+  try { return packIdentity(file.markdown); } catch { return null; }
+}
 export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null, webAssistant = false }: { allowFolderPicker?: boolean; webAssistant?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
   const shortcut = useShortcutLabel();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -692,7 +695,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   }, []);
   const capabilities = listingCapabilities(listing, access, allowFolderPicker);
   const canCreate = capabilities.create(destinationFolder.trim());
-  const canEditSelected = Boolean(selected && capabilities.edit(selected.path));
+  const canEditSelected = Boolean(selected && capabilities.editItem(selectedIdentity(selected), selected.path));
   useEffect(() => {
     if (templateIntent === null || consumedTemplateIntent.current === templateIntent || !listing || !canCreate) return;
     consumedTemplateIntent.current = templateIntent;
@@ -706,11 +709,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const canSubscribeFeed = canCreate && canReadFeeds && capabilities.create(destinationFolder.trim());
   const sharingWorkspaceId = webWorkspaceId ?? nativeWorkspaceId;
   const canShare = Boolean(webWorkspaceId ? access?.canManageShares : nativeWorkspaceId);
-  const selectedItemId = useMemo(() => {
-    if (!selected) return null;
-    try { return packIdentity(selected.markdown); }
-    catch { return null; }
-  }, [selected]);
+  const selectedItemId = useMemo(() => selected ? selectedIdentity(selected) : null, [selected]);
   const documentReferences = useMemo(() => createVaultDocumentReferences(selectedItemId ?? undefined, selected?.path), [selectedItemId, listing?.root, selected?.path]);
   const selectedFeed = useMemo(() => {
     if (!selected) return { subscription: null, error: "" };
@@ -744,20 +743,26 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const refresh = useCallback(() => {
     const request = ++listingRequest.current;
     return vaultRequest<VaultListing>("list")
-      .then(value => { if (request === listingRequest.current) {
+      .then(async value => {
+        if (request !== listingRequest.current) return;
         const previous = listingRef.current;
-        setDestinationFolder(folder => reconcileFolderLocation(folder, previous, value));
         const opened = selectedRef.current;
+        let relocated: VaultItem | null = null;
         if (opened && previous?.root === value.root) {
-          const relocated = locateVaultItem(packIdentity(opened.markdown), value);
-          if (relocated && relocated.path !== opened.path) {
-            const next = { ...opened, path: relocated.path };
-            selectedRef.current = next; setSelectedState(next);
-            setLiveTitle(title => title?.path === opened.path ? { ...title, path: next.path } : title);
-          }
+          // Otherwise the open file sits at a path the listing no longer has,
+          // flips read-only and unmounts the editor until the manifest catches up.
+          relocated = await locateVaultItemOrResolve(selectedIdentity(opened), opened.path, value, itemId => vaultRequest("resolveItemId", { itemId }));
+          if (request !== listingRequest.current) return;
+          if (selectedRef.current !== opened) relocated = null;
+        }
+        setDestinationFolder(folder => reconcileFolderLocation(folder, previous, value));
+        if (opened && relocated && relocated.path !== opened.path) {
+          const next = { ...opened, path: relocated.path };
+          selectedRef.current = next; setSelectedState(next);
+          setLiveTitle(title => title?.path === opened.path ? { ...title, path: next.path } : title);
         }
         setListing(value);
-      } })
+      })
       .catch((error: Error) => { if (request === listingRequest.current) setError(error.message); });
   }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);

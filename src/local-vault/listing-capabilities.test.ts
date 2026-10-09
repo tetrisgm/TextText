@@ -8,3 +8,9 @@ describe('shared listing capabilities',()=>{
  it('requires both full access and write capability for move/delete',()=>{expect(listingCapabilities({...base,fullAccess:true},null,true).manageFiles).toBe(false);expect(listingCapabilities({...base,fullAccess:true,canCreateContent:true},null,true).manageFiles).toBe(true);});
  it('retains legacy local-only adapter behavior without granting web defaults',()=>{const legacy={root:'/local',items:[{path:'a'}]};expect(listingCapabilities(legacy,null,true).edit('a')).toBe(true);expect(listingCapabilities(legacy,null,false).edit('a')).toBe(false);});
 });
+describe('edit permission by item identity',()=>{
+ const listing:VaultListing={root:'/shared',items:[{path:'Notes/Renamed.textpack',itemId:'a',canEditContent:true},{path:'Notes/b.textpack',itemId:'b',canEditContent:false}],fullAccess:false,canCreateContent:false,writableFolders:[]};
+ it('answers from the identity row when the opened path left the listing',()=>{const c=listingCapabilities(listing,null,true);expect(c.editItem('a','Notes/Old.textpack')).toBe(true);expect(c.editItem('b','Notes/Old.textpack')).toBe(false);});
+ it('never grants an unknown identity or a path row that explicitly denies',()=>{const c=listingCapabilities(listing,null,true);expect(c.editItem('missing','Notes/Old.textpack')).toBe(false);expect(c.editItem(null,'Notes/Old.textpack')).toBe(false);expect(c.editItem('a','Notes/b.textpack')).toBe(false);});
+ it('refuses ambiguous identities',()=>{const c=listingCapabilities({...listing,items:[...listing.items,{path:'Notes/Copy.textpack',itemId:'a',canEditContent:true}]},null,true);expect(c.editItem('a','Notes/Old.textpack')).toBe(false);});
+});

@@ -2,7 +2,21 @@
 
 ## Current delivery
 
-Mac 1237, Windows and Oracle now have the projection-baseline repair. A fresh
+Installed: Mac 0.204 (1238, source `1dcfa980`), Windows source `488746b2`,
+Oracle `6d07ca4b`. Source past those builds is pending delivery: `033b1824`
+(clean journal after failed native checkpoint) and the rename focus fix below.
+Pre-existing shared test failure: three `collaboration-client.test.ts` epoch and
+journal cases fail on `033b1824`; not yet investigated.
+
+Rename focus loss (Mac 1238 physical evidence) is fixed in source: the listing
+row for a freshly renamed path lacks its manifest identity, the open path left
+the listing, and the editor flipped read-only and unmounted. The editor now
+keeps its element, caret and undo through stale and identified listings and
+still loses editing on explicit revocation; browser regression fails on the old
+source and passes now. Build, install and physical rename re-check remain.
+[Receipt](verification/2026-10-09-rename-focus-continuity.md).
+
+Mac 1237, Windows and Oracle had the projection-baseline repair. A fresh
 six-client preflight reproduced Mac editor recovery after a filesystem rename;
 timed input was aborted. [Current failure](verification/2026-10-09-rename-editor-failure.md).
 Windows superseded-upload recovery is committed and building;
