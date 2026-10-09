@@ -47,5 +47,9 @@ handler had the same miss and raised the "moved or deleted" conflict.
 ## Limits
 
 Not rebuilt or installed; physical Mac re-verification of 1238 fixture pending.
-Pre-existing failures in `collaboration-client.test.ts` (3 epoch/journal cases)
-reproduce on `033b1824` without this change.
+Correction: the initial claim of three pre-existing epoch/journal failures was
+not reproduced by an independent clean `033b1824` archive. All 70 tests in
+`collaboration-client.test.ts` pass there; the initial claim is withdrawn.
+Audit command: `npx vitest run src/local-vault/collaboration-client.test.ts`
+with Node 22.19.0 and the repository Vitest configuration. Full audit evidence:
+`/tmp/texttext-epoch-baseline-audit.md`.
