@@ -14,7 +14,7 @@ import { authoringSourceFor } from "@/lib/presentation/authoring-source";
 import { normalizeItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
-import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, mutateVaultDocument, VaultCollaborationEpochError } from "./server-store";
+import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, restoreVaultTextpack, mutateVaultDocument, VaultCollaborationEpochError, VaultCollaborationRecoveryError } from "./server-store";
 const hash = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
 function pack(body: string, files?: Record<string, Uint8Array>) {
   const document = emptyDocumentSnapshot(); document.content.body = body;
@@ -46,6 +46,71 @@ describe("durable file collaboration", () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
+
+  it("durably recovers across every retained epoch and replays its receipt without duplicating edits", async () => {
+    const first = (await readVaultCollaboration(location()))!;
+    await push("accepted-lost-ack", first, edit(first, " [accepted]"));
+    const accepted = (await readVaultCollaboration(location()))!;
+    const offline = new Y.Doc();
+    let recoveryUpdate: string;
+    try {
+      Y.applyUpdate(offline, Buffer.from(accepted.update, "base64"));
+      Y.applyUpdate(offline, Buffer.from(edit(accepted, " [offline]"), "base64"));
+      recoveryUpdate = Buffer.from(Y.encodeStateAsUpdate(offline)).toString("base64");
+    } finally { offline.destroy(); }
+    let state = accepted;
+    for (let n = 0; n < 2; n++) {
+      await writeVaultTextpack({ ...location(), relativePath, operationId: `epoch-replace-${n}`,
+        baseRevision: state.revision, bytes: pack(body(state) + ` [remote-${n}]`, { "opaque.bin": new Uint8Array([n]) }) });
+      state = (await readVaultCollaboration(location()))!;
+    }
+    expect(state.epoch).toBe(first.epoch + 2);
+    const events: unknown[] = [];
+    const input = { ...location(), operationId: "recover-offline", epoch: first.epoch, recoveryUpdate, audit,
+      onReceipt: async (receipt: unknown) => { events.push(receipt); } };
+    const result = await pushVaultCollaboration(input);
+    expect(result.status).toBe("written");
+    const recovered = (await readVaultCollaboration(location()))!;
+    for (const marker of ["[accepted]", "[offline]", "[remote-0]", "[remote-1]"]) expect(body(recovered).split(marker)).toHaveLength(2);
+    expect(recovered.epoch).toBe(state.epoch);
+    expect(events).toContainEqual(expect.objectContaining({ operationId: input.operationId, ...audit }));
+    await push("later-human-edit", recovered, edit(recovered, " [later]"));
+    expect(await pushVaultCollaboration(input)).toEqual(result);
+    await expect(pushVaultCollaboration({ ...input, beforeCommit: async () => { throw Error("Revoked after commit"); } })).rejects.toThrow("Revoked after commit");
+    expect(body((await readVaultCollaboration(location()))!)).toContain("[later]");
+    expect(body((await readVaultCollaboration(location()))!).split("[offline]")).toHaveLength(2);
+    await expect(pushVaultCollaboration({ ...input, recoveryUpdate: "AAA=" })).rejects.toThrow(/reused/);
+    const saved = (await readVaultTextpack(location()))!;
+    expect(unzipSync(saved.bytes)["Note.textbundle/opaque.bin"]).toEqual(new Uint8Array([1]));
+  });
+
+  it("rechecks recovery authorization and refuses to skip a deleted intermediate epoch", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const pending = new Y.Doc(); let recoveryUpdate: string;
+    try { Y.applyUpdate(pending, Buffer.from(initial.update, "base64")); Y.applyUpdate(pending, Buffer.from(edit(initial, " pending"), "base64")); recoveryUpdate = Buffer.from(Y.encodeStateAsUpdate(pending)).toString("base64"); }
+    finally { pending.destroy(); }
+    await writeVaultTextpack({ ...location(), relativePath, operationId: "recovery-epoch", baseRevision: initial.revision,
+      bytes: pack("Hello remote", { "opaque.bin": new Uint8Array([1]) }) });
+    const current = (await readVaultCollaboration(location()))!;
+    const input = { ...location(), operationId: "recover-denied", epoch: initial.epoch, recoveryUpdate, audit };
+    await expect(pushVaultCollaboration({ ...input, beforeCommit: async () => { throw Error("Revoked"); } })).rejects.toThrow("Revoked");
+    expect((await readVaultTextpack(location()))!.revision).toBe(current.revision);
+    await deleteVaultTextpack({ ...location(), operationId: "delete-before-recovery", basePath: relativePath, baseRevision: current.revision });
+    await restoreVaultTextpack({ ...location(), operationId: "restore-before-recovery", basePath: relativePath, relativePath, baseRevision: current.revision });
+    const restored = (await readVaultTextpack(location()))!;
+    await expect(pushVaultCollaboration(input)).rejects.toMatchObject({ code: "recovery_lifecycle" });
+    expect((await readVaultTextpack(location()))!.revision).toBe(restored.revision);
+  });
+
+  it("preserves files when an older installation has no retained binary epoch", async () => {
+    const original = (await readVaultCollaboration(location()))!;
+    await writeVaultTextpack({ ...location(), relativePath, operationId: "legacy-reset", baseRevision: original.revision, bytes: pack("Changed") });
+    const current = (await readVaultCollaboration(location()))!;
+    await fs.rm(path.join(root, workspaceId, ".texttext/collaboration", `${itemId}.epochs`, `${original.epoch}.json`));
+    await expect(pushVaultCollaboration({ ...location(), operationId: "legacy-recover", epoch: original.epoch, recoveryUpdate: original.update, audit }))
+      .rejects.toBeInstanceOf(VaultCollaborationRecoveryError);
+    expect((await readVaultTextpack(location()))!.revision).toBe(current.revision);
+  });
 
   it("keeps pending human edits through template definition additions, changes and removal", async () => {
     let state = (await readVaultCollaboration(location()))!;

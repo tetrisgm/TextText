@@ -23,7 +23,7 @@ import { readDocument, readTemplate, writePayload } from "@/local-vault/model";
 import { openPack, encodePack, packIdentity, replacePackIdentity } from "@/local-vault/pack";
 import { validateDocumentSnapshot } from "@/lib/documents/model";
 import { reconcileTextpacks } from "./pack-reconcile";
-import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, type VaultCollaborationState } from "./collaboration";
+import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, reconcileVaultCollaborationEpoch, type RetainedCollaborationEpoch, type VaultCollaborationState } from "./collaboration";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { validatedLookSource } from "@/lib/presentation/template-library";
 import { mutateVaultItemCommentsInPack, type VaultCommentActor, type VaultCommentMutation } from "@/lib/vault/item-comments";
@@ -899,6 +899,11 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
 export class VaultCollaborationEpochError extends Error {
   constructor(readonly epoch: number) { super("The file changed outside this collaboration session. Reopen and recover pending edits."); }
 }
+export class VaultCollaborationRecoveryError extends Error {
+  constructor(readonly code: "recovery_unavailable" | "recovery_conflict" | "recovery_lifecycle") {
+    super("Saved edits need review before they can be applied.");
+  }
+}
 async function projectObservedMarkdown(layout: Layout, itemId: string, state: VaultCollaborationState,
   currentBytes: Uint8Array): Promise<VaultCollaborationState | null> {
   if (!/^[a-f0-9]{64}$/.test(state.revision)) return null;
@@ -1266,8 +1271,39 @@ export async function leaveVaultPresence(input: VaultPresenceLocation & Pick<Vau
     return { epoch: current.state.epoch, presence: disclosedPresence(current.rows.filter(row => row.clientId !== input.clientId)) };
   });
 }
+async function prepareEpochRecovery(layout: Layout, itemId: string, epoch: number, pending: string,
+  current: VaultCollaborationState, bytes: Uint8Array, relativePath: string, signal?: AbortSignal) {
+  if (epoch >= current.epoch || current.epoch - epoch > 64) throw new VaultCollaborationRecoveryError("recovery_unavailable");
+  const folder = await directory(layout.collaboration, `${segment(itemId)}.epochs`);
+  const readEpoch = async (number: number): Promise<RetainedCollaborationEpoch> => {
+    const raw = await maybeRead(path.join(folder, `${number}.json`));
+    if (!raw) throw new VaultCollaborationRecoveryError("recovery_unavailable");
+    const record = JSON.parse(raw.toString()) as RetainedCollaborationEpoch;
+    if (record.version !== 1 || record.state?.epoch !== number || typeof record.deleted !== "boolean") throw new Error("Invalid retained collaboration epoch");
+    return record;
+  };
+  let result: { state: VaultCollaborationState; bytes: Uint8Array } | undefined;
+  for (let number = epoch; number < current.epoch; number++) {
+    signal?.throwIfAborted();
+    const retained = await readEpoch(number);
+    if (retained.deleted) throw new VaultCollaborationRecoveryError("recovery_lifecycle");
+    const target = number + 1 === current.epoch ? current : (await readEpoch(number + 1)).state;
+    if (!/^[a-f0-9]{64}$/.test(target.revision)) throw new Error("Invalid retained collaboration revision");
+    const targetBytes = number + 1 === current.epoch ? bytes
+      : await maybeRead(path.join(layout.history, itemId, `${target.revision}.textpack`));
+    if (!targetBytes) throw new VaultCollaborationRecoveryError("recovery_unavailable");
+    validatePack(targetBytes, itemId);
+    const merged = reconcileVaultCollaborationEpoch(retained, pending, target, targetBytes, relativePath);
+    if (merged.status !== "merged") throw new VaultCollaborationRecoveryError("recovery_conflict");
+    result = merged;
+    pending = merged.state.update;
+  }
+  if (!result) throw new VaultCollaborationRecoveryError("recovery_unavailable");
+  return result;
+}
+
 export async function pushVaultCollaboration(input: VaultLocation & {
-  itemId: string; operationId: string; epoch: number; updates: string[];
+  itemId: string; operationId: string; epoch: number; updates?: string[]; recoveryUpdate?: string;
   audit: NonNullable<VaultWrite["audit"]>;
   beforeCommit?: (relativePath: string) => Promise<void>;
   signal?: AbortSignal;
@@ -1275,10 +1311,15 @@ export async function pushVaultCollaboration(input: VaultLocation & {
   segment(input.itemId); segment(input.operationId);
   if (!input.audit || !input.onReceipt) throw new Error("Vault collaboration requires its audit sink");
   if (!Number.isSafeInteger(input.epoch) || input.epoch < 1) throw new Error("Invalid collaboration epoch");
-  if (!Array.isArray(input.updates) || !input.updates.length || input.updates.length > 64 ||
+  const recovering = input.recoveryUpdate !== undefined;
+  if (recovering ? (input.updates !== undefined || typeof input.recoveryUpdate !== "string" ||
+      !input.recoveryUpdate.length || input.recoveryUpdate.length > 6 * 1024 * 1024) :
+      (!Array.isArray(input.updates) || !input.updates.length || input.updates.length > 64 ||
       input.updates.some(update => typeof update !== "string" || update.length > 512 * 1024) ||
-      input.updates.reduce((sum, update) => sum + update.length, 0) > 6 * 1024 * 1024) throw new Error("Collaboration update exceeds limits");
-  const requestHash = hash(json(["collaboration", input.itemId, input.epoch, input.updates, input.audit]));
+      input.updates.reduce((sum, update) => sum + update.length, 0) > 6 * 1024 * 1024)) throw new Error("Collaboration update exceeds limits");
+  const requestHash = hash(json(recovering
+    ? ["collaboration-recovery", input.itemId, input.epoch, input.recoveryUpdate, input.audit]
+    : ["collaboration", input.itemId, input.epoch, input.updates, input.audit]));
   const layout = await setup(input);
   return locked(layout, async () => {
     await recover(layout);
@@ -1295,8 +1336,9 @@ export async function pushVaultCollaboration(input: VaultLocation & {
     const item = await collaborationItem(layout, input.itemId);
     if (!item) throw new Error("Collaboration file is missing or deleted");
     const baseline = await collaborationCheckpoint(layout, input.itemId, item);
-    if (baseline.epoch !== input.epoch) throw new VaultCollaborationEpochError(baseline.epoch);
-    const next = applyVaultCollaboration(baseline, item.bytes, input.updates, item.relativePath);
+    if (!recovering && baseline.epoch !== input.epoch) throw new VaultCollaborationEpochError(baseline.epoch);
+    const next = recovering ? await prepareEpochRecovery(layout, input.itemId, input.epoch, input.recoveryUpdate!, baseline, item.bytes, item.relativePath, input.signal)
+      : applyVaultCollaboration(baseline, item.bytes, input.updates!, item.relativePath);
     validatePack(next.bytes, input.itemId);
     await input.beforeCommit?.(item.relativePath);
     input.signal?.throwIfAborted();

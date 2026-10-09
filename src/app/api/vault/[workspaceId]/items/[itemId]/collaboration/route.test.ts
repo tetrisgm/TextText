@@ -3,9 +3,10 @@ const mocks = vi.hoisted(() => ({ authorize: vi.fn(), authorizeMetadata: vi.fn()
 vi.mock("@/app/api/vault/scoped-auth", () => ({ authorizeVaultItem: mocks.authorize, authorizeVaultItemAtPath: mocks.authorize,
   authorizeVaultItemUsingMetadata: mocks.authorizeMetadata }));
 vi.mock("@/lib/store", () => ({ readVaultCollaboration: mocks.read, waitVaultCollaboration: mocks.wait, pushVaultCollaboration: mocks.push,
-  VaultBusyError: class extends Error {}, VaultCollaborationEpochError: class extends Error { constructor(readonly epoch: number) { super("File changed"); } } }));
+  VaultBusyError: class extends Error {}, VaultCollaborationEpochError: class extends Error { constructor(readonly epoch: number) { super("File changed"); } },
+  VaultCollaborationRecoveryError: class extends Error { constructor(readonly code: string) { super("Saved edits need review"); } } }));
 import { GET, POST } from "./route";
-import { VaultCollaborationEpochError } from "@/lib/store";
+import { VaultCollaborationEpochError, VaultCollaborationRecoveryError } from "@/lib/store";
 const url = "https://texttext.test/api/vault/workspace/items/item-1/collaboration";
 const context = { params: Promise.resolve({ workspaceId: "workspace", itemId: "item-1" }) };
 const identity = { root: "/trusted", workspaceId: "workspace", actorUserId: "user-1", actorType: "human", canEditContent: true, canComment: true, relativePath: "Notes/Shared.textpack" };
@@ -78,6 +79,24 @@ describe("file collaboration route", () => {
     mocks.authorize.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 403 }));
     mocks.push.mockImplementation(async (input) => { await input.beforeCommit(state.relativePath); return { status: "written" }; });
     expect((await POST(post(mutation), context)).status).toBe(403);
+  });
+  it("uses the same fresh edit authorization for epoch recovery and its retries", async () => {
+    const recovery = { operationId: "recovery-1", epoch: 1, recoveryUpdate: "AAA=" };
+    expect((await POST(post(recovery), context)).status).toBe(200);
+    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ ...recovery, actorUserId: identity.actorUserId }));
+    expect(mocks.push.mock.calls[0][0].updates).toBeUndefined();
+    mocks.authorize.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 403 }));
+    expect((await POST(post(recovery), context)).status).toBe(403);
+    mocks.authorize.mockResolvedValue(identity);
+    mocks.push.mockRejectedValue(new VaultCollaborationRecoveryError("recovery_lifecycle"));
+    const refused = await POST(post(recovery), context);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ code: "recovery_lifecycle" });
+  });
+  it("rejects ambiguous or malformed recovery payloads", async () => {
+    for (const recoveryUpdate of [null, {}, "", 1]) expect((await POST(post({ operationId: "recover", epoch: 1, recoveryUpdate }), context)).status).toBe(400);
+    expect((await POST(post({ ...mutation, recoveryUpdate: "AAA=" }), context)).status).toBe(400);
+    expect(mocks.push).not.toHaveBeenCalled();
   });
   it("rejects malformed cursors, bodies and declared or streamed oversized bodies", async () => {
     for (const query of ["waitMs=25001", "waitMs=1", "epoch=0&seq=1", "epoch=1&seq=-1", "epoch=1&seq=NaN"]) expect((await GET(new Request(`${url}?${query}`), context)).status).toBe(400);

@@ -46,7 +46,7 @@ import {
 } from "./vault/server-store";
 import { readVaultItemCommentsFromPack, type VaultCommentActor, type VaultCommentMutation } from "./vault/item-comments";
 import { publishedVaultAsset, publishedVaultView, readVaultPublicationFromPack } from "./vault/publication";
-export { VaultBusyError, VaultCollaborationEpochError, VaultPresenceSessionError } from "./vault/server-store";
+export { VaultBusyError, VaultCollaborationEpochError, VaultCollaborationRecoveryError, VaultPresenceSessionError } from "./vault/server-store";
 export type { VaultPresencePeer } from "./vault/server-store";
 export type { VaultLocation, VaultWrite, VaultWriteResult, VaultEntryMutation, VaultEntryResult } from "./vault/server-store";
 import { documentFromStarter } from "./documents/starter";
@@ -184,7 +184,7 @@ export function waitVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> &
   return waitDirectoryCollaboration({ ...input, ...folderMoveCoordinator(input.root) });
 }
 export function pushVaultCollaboration(input: Omit<VaultLocation, "onReceipt"> & {
-  itemId: string; operationId: string; epoch: number; updates: string[];
+  itemId: string; operationId: string; epoch: number; updates?: string[]; recoveryUpdate?: string;
   actorUserId: string; actorType: "human" | "external_agent";
   beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
 }) {

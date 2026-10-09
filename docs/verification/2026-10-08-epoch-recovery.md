@@ -36,11 +36,31 @@ replacements, deletion after invalidation, and an interrupted retention attempt.
 The initial core run refused an attestation because source changed during it;
 only the final run is the passing receipt. No Oracle deployment yet.
 
+## Authorized server operation
+
+The existing collaboration POST now accepts `operationId`, `epoch`, and
+`recoveryUpdate` (the retained complete binary Yjs state encoded as base64),
+mutually exclusive with ordinary `updates`. It uses the same fresh edit
+authorization and app-token attribution checks as normal editing. The store
+walks every retained boundary under its lock, prepares the final result, then
+uses its existing durable intent, audit and idempotency receipt path. A retry
+after another writer edits returns its original receipt without rewriting the
+newer content; authorization is rechecked even on that receipt path.
+
+Missing history, a deleted lifecycle or conflicting content return explicit 409
+recovery codes. No candidate file is committed for those cases. Traversal is
+bounded to 64 epochs per request; it never silently skips missing boundaries.
+The focused store/route tests passed 40 checks in
+`/tmp/texttext-recovery-write-focused.log` before the final additional retry
+revocation assertion. The final shared core gate passed 865 tests, TypeScript
+and all three browser continuity modes with an exact-source receipt in
+`/tmp/texttext-recovery-write-core.log`.
+
 ## Remaining integration
 
-This preparation is not yet an authenticated recovery operation or an automatic
-native/browser reopen flow. The caller still needs permission checks under the
-store lock, idempotent commit/audit, durable replacement of the pending journal,
-and native lease adoption. Archived states do not exist retroactively for the
-older Windows fixture; its original journals and history remain unchanged.
+The client still needs a stable recovery-operation journal, durable replacement
+of the pending journal, and native lease adoption before automatic reopening.
+The endpoint is not called by the client yet and is not deployed. Archived
+states do not exist retroactively for the older Windows fixture; its original
+journals and history remain unchanged.
 Do not clear that journal or label the Windows failure resolved from these tests.

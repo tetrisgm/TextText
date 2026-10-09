@@ -1,5 +1,5 @@
 import { authorizeVaultItem, authorizeVaultItemAtPath, authorizeVaultItemUsingMetadata } from "@/app/api/vault/scoped-auth";
-import { readVaultCollaboration, waitVaultCollaboration, pushVaultCollaboration, VaultBusyError, VaultCollaborationEpochError } from "@/lib/store";
+import { readVaultCollaboration, waitVaultCollaboration, pushVaultCollaboration, VaultBusyError, VaultCollaborationEpochError, VaultCollaborationRecoveryError } from "@/lib/store";
 import { readBoundedJson } from "@/lib/http/bounded-json";
 
 export const runtime = "nodejs";
@@ -11,6 +11,7 @@ function failure(error: unknown) {
   if (error instanceof Response) return error;
   if (error instanceof Error && error.name === "AbortError") return new Response(null, { status: 204, headers });
   if (error instanceof VaultCollaborationEpochError) return Response.json({ error: error.message, epoch: error.epoch, code: "epoch_changed" }, { status: 409, headers });
+  if (error instanceof VaultCollaborationRecoveryError) return Response.json({ error: error.message, code: error.code }, { status: 409, headers });
   if (error instanceof VaultBusyError) return Response.json({ error: "Workspace is busy. Retry this operation." }, { status: 503, headers: { ...headers, "Retry-After": "1" } });
   if (error instanceof Error && /missing or deleted/.test(error.message)) return Response.json({ error: "Item not found" }, { status: 404, headers });
   if (error instanceof Error && /reused/.test(error.message)) return Response.json({ error: "Operation identifier was reused" }, { status: 409, headers });
@@ -57,17 +58,20 @@ export async function POST(request: Request, context: Context) {
     if (editOrigin && !access.canAttributeNativeEditor) return Response.json({ error: "An app token is required for native editor attribution" }, { status: 403, headers });
     const parsed = await readBoundedJson<unknown>(request, 6 * 1024 * 1024);
     if ("error" in parsed) return Response.json({ error: "Invalid or oversized collaboration request" }, { status: parsed.error === "too_large" ? 413 : 400, headers });
-    const value = parsed.value as { operationId?: unknown; epoch?: unknown; updates?: unknown } | null;
+    const value = parsed.value as { operationId?: unknown; epoch?: unknown; updates?: unknown; recoveryUpdate?: unknown } | null;
     if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.operationId !== "string" || !identifier.test(value.operationId) ||
-        typeof value.epoch !== "number" || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || !Array.isArray(value.updates) ||
-        !value.updates.length || value.updates.length > 64 || value.updates.some(update => typeof update !== "string" || update.length > 512 * 1024)) {
+        typeof value.epoch !== "number" || !Number.isSafeInteger(value.epoch) || value.epoch < 1 ||
+        (value.recoveryUpdate !== undefined
+          ? (value.updates !== undefined || typeof value.recoveryUpdate !== "string" || !value.recoveryUpdate.length || value.recoveryUpdate.length > 6 * 1024 * 1024)
+          : (!Array.isArray(value.updates) || !value.updates.length || value.updates.length > 64 || value.updates.some(update => typeof update !== "string" || update.length > 512 * 1024)))) {
       return Response.json({ error: "Invalid collaboration request" }, { status: 400, headers });
     }
     // Final authorization happens inside the store lock, after upload and merge.
     const current = access;
     if (request.signal.aborted) return new Response(null, { status: 204, headers });
     const result = await pushVaultCollaboration({ ...current, actorType: editOrigin ? "human" : current.actorType,
-      operationId: value.operationId, epoch: value.epoch, updates: value.updates as string[],
+      operationId: value.operationId, epoch: value.epoch,
+      ...(value.recoveryUpdate !== undefined ? { recoveryUpdate: value.recoveryUpdate as string } : { updates: value.updates as string[] }),
       signal: request.signal, beforeCommit: async (relativePath: string) => {
         const { workspaceId, itemId } = await context.params;
         const latest = await authorizeVaultItemAtPath(request, workspaceId, itemId, relativePath, "edit");
