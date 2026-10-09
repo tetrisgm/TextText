@@ -92,8 +92,10 @@ async function pendingThenReplaced(store: Store, journal: Journal, replacement =
   expect(await store.epoch()).toBe(oldEpoch + 1);
   return oldEpoch;
 }
+/** Release gates run this file beside the whole suite; the 1s default deadline is too short there. */
+const waitFor = (assertion: () => void) => vi.waitFor(assertion, { timeout: 10_000, interval: 20 });
 async function settled(target: FileCollaborationClient, status: string) {
-  await vi.waitFor(() => expect(target.status).toBe(status), { timeout: 10_000, interval: 20 });
+  await waitFor(() => expect(target.status).toBe(status));
 }
 describe("automatic pending-edit epoch recovery", () => {
   let root: string, store: Store, journal: Journal;
@@ -160,7 +162,7 @@ describe("automatic pending-edit epoch recovery", () => {
     const editor = client(store, journal);
     store.beforePush = async push => { if (push.recovery && !typed) { typed = true; await held; } };
     await editor.start();
-    await vi.waitFor(() => expect(store.pushes).toHaveLength(1));
+    await waitFor(() => expect(store.pushes).toHaveLength(1));
     editor.mutate(doc => documentText(doc, "body").insert(0, "Late "));
     expect(editor.recoveryJournal?.pending.length).toBeGreaterThan(0);
     release();
@@ -284,6 +286,8 @@ class Native {
   archived: FileCollaborationJournal[] = [];
   writes = 0;
   failWith: unknown = null;
+  /** Limit `failWith` to matching checkpoints; a plain `failWith` fails every checkpoint. */
+  failWhen: ((journal: FileCollaborationJournal) => boolean) | null = null;
   constructor(private baselineRevision: string) {}
   /** What `collaborationOpen` returns for the client's constructor. */
   open(): Pick<FileCollaborationOptions, "retainedJournal" | "retainedJournalPath" | "localRevision" | "initialRetirement" | "checkpoint"> {
@@ -291,7 +295,7 @@ class Native {
       localRevision: this.checkpoint?.journal.revision ?? this.baselineRevision, initialRetirement: this.checkpoint?.retired, checkpoint: this.materialize };
   }
   materialize = async ({ journal }: FileCollaborationCheckpoint): Promise<void> => {
-    if (this.failWith) throw this.failWith;
+    if (this.failWith && (!this.failWhen || this.failWhen(journal))) throw this.failWith;
     const prior = this.checkpoint, closed = Object.assign(new Error("This shared editing session has closed."), { code: "session_closed" });
     const pending = Boolean(journal.batch || journal.pending.length || journal.unqueuedDirty);
     if (prior) {
@@ -335,14 +339,22 @@ describe("epoch adoption against a guarded native checkpoint store", () => {
     store.beforePush = async push => { if (push.recovery) { store.beforePush = null; await held; } };
     const editor = open({ onDocumentReplaced: () => {} });
     await editor.start();
-    await vi.waitFor(() => expect(store.pushes).toHaveLength(1));
-    await vi.waitFor(() => expect(native.checkpoint?.journal.recovery?.operationId).toBe(store.pushes[0].operationId));
-    if (late) editor.mutate(doc => documentText(doc, "body").insert(0, late));
+    await waitFor(() => expect(store.pushes).toHaveLength(1));
+    await waitFor(() => expect(native.checkpoint?.journal.recovery?.operationId).toBe(store.pushes[0].operationId));
+    if (late) {
+      editor.mutate(doc => documentText(doc, "body").insert(0, late));
+      // The late edit's own debounced checkpoint lands natively, as it would 200ms after
+      // typing. Only the adoption checkpoint dies; a slow push must not let the pending
+      // checkpoint meet the crash first, which retires the journal before adoption.
+      expect(await editor.flushLocal()).toBe(true);
+      expect(native.checkpoint?.pending).toBe(true);
+    }
     native.failWith = Object.assign(new Error("process died"), { code: "crash" });
+    native.failWhen = journal => journal.epoch > oldEpoch;
     release();
-    await vi.waitFor(() => expect(journal.load(editor.journalKey)).toContain('"adopted":true'));
+    await waitFor(() => expect(journal.load(editor.journalKey)).toContain('"adopted":true'));
     const persisted = JSON.parse(journal.load(editor.journalKey)!) as FileCollaborationJournal;
-    editor.destroy(); native.failWith = null;
+    editor.destroy(); native.failWith = null; native.failWhen = null;
     expect(persisted.epoch).toBe(oldEpoch + 1); expect(persisted.recovery).toMatchObject({ epoch: oldEpoch, adopted: true });
     expect(native.checkpoint?.journal.epoch).toBe(oldEpoch); expect(native.checkpoint?.journal.recovery?.adopted).toBeUndefined();
     expect(native.open().localRevision).not.toBe(persisted.revision);
@@ -427,7 +439,7 @@ describe("epoch adoption against a guarded native checkpoint store", () => {
     const seen: { next: Y.Doc; previous: Y.Doc }[] = [];
     const editor = open({ onDocumentReplaced: async (next, previous) => { seen.push({ next, previous }); await held; } });
     await editor.start();
-    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    await waitFor(() => expect(seen).toHaveLength(1));
     expect(seen[0].previous.isDestroyed).toBe(false); expect(editor.doc).toBe(seen[0].next);
     expect(editor.recoveryJournal?.recovery).toMatchObject({ epoch: oldEpoch, adopted: true });
     editor.mutate(doc => documentText(doc, "body").insert(0, "Meanwhile "));
@@ -447,9 +459,9 @@ describe("epoch adoption against a guarded native checkpoint store", () => {
     const seen: { next: Y.Doc; previous: Y.Doc }[] = [];
     const editor = open({ onDocumentReplaced: async (next, previous) => { seen.push({ next, previous }); await held; } });
     await editor.start();
-    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    await waitFor(() => expect(seen).toHaveLength(1));
     editor.destroy(); release();
-    await vi.waitFor(() => expect(seen[0].previous.isDestroyed).toBe(true));
+    await waitFor(() => expect(seen[0].previous.isDestroyed).toBe(true));
     expect(seen[0].next.isDestroyed).toBe(true);
     // The adoption stayed durable for the next open.
     const persisted = JSON.parse(journal.load(editor.journalKey)!) as FileCollaborationJournal;
@@ -489,7 +501,7 @@ describe("epoch adoption against a guarded native checkpoint store", () => {
     store.beforePush = async push => { if (push.recovery) { store.beforePush = null; await held; } };
     const editor = open({ onDocumentReplaced: () => {} });
     await editor.start();
-    await vi.waitFor(() => expect(store.pushes).toHaveLength(1));
+    await waitFor(() => expect(store.pushes).toHaveLength(1));
     // Deleting the whole body spans the replacement's insertion inside it.
     editor.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, "Bye"); });
     release();
@@ -601,7 +613,7 @@ describe("revival when the native checkpoint mirrors the browser retirement", ()
   async function mirroredRetiredPending() {
     const first = open(); await first.start();
     first.mutate(doc => documentText(doc, "body").insert(5, " pending"));
-    await vi.waitFor(() => expect(native.checkpoint?.pending).toBe(true));
+    await waitFor(() => expect(native.checkpoint?.pending).toBe(true));
     first.destroy();
     const raw = JSON.parse(journal.load(first.journalKey)!) as FileCollaborationJournal;
     raw.retired = RETIRED; raw.journalGeneration = (raw.journalGeneration ?? 0) + 1;
@@ -640,7 +652,7 @@ describe("revival when the native checkpoint mirrors the browser retirement", ()
     const reopened = open(); await reopened.start();
     expect(reopened.status).toBe("recovery"); expect(reopened.hasPendingChanges).toBe(true);
     expect(store.pushes).toEqual([]); expect(await store.body()).toBe("Hello");
-    await vi.waitFor(() => expect(native.checkpoint?.retired).toBe(RETIRED));
+    await waitFor(() => expect(native.checkpoint?.retired).toBe(RETIRED));
     expect((JSON.parse(journal.load(key)!) as FileCollaborationJournal).retired).toBe(RETIRED);
     expect(reopened.recoveryJournal?.pending).toHaveLength(1);
   });
