@@ -24,7 +24,7 @@
   File Provider interactive checks remain.
   [Share delivery](verification/2026-10-08-share-workspace-delivery.md).
   [Current acceptance](verification/2026-10-08-current-client-acceptance.md).
-- Oracle: **texttext-oracle-20261009T020822Z-ee7292ad**, deployed successfully;
+- Oracle: **texttext-oracle-20261009T023037Z-9189ee96**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services remain active; HAProxy unchanged and
   previous release retained. Safari reopened the saved photo and reconnected. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
@@ -68,9 +68,9 @@
   the same source; independent file inspection confirms identity and both markers.
   Logs `/tmp/texttext-mac1232-{build,install}.log` and
   `%TEMP%\texttext-windows-2e0e10c1-build.log`. Windows visible editor remains unverified.
-  Web verification stopped at an outdated bootstrap request-count assertion;
-  promotion intentionally performs one additional capability check. Focused test
-  now checks the exact new count and preservation of denied local drafts.
+  Full web verification passed after updating the exact bootstrap request count
+  and testing a valid recovered draft during denied access/failed saving. Oracle
+  deployed `9189ee96`, thirteen live checks passed; all unrelated services active.
   See `verification/2026-10-08-external-file-promotion.md`.
 
 - Share attachments: installed 1229 (`95dace27`) passed signed-in startup,
@@ -96,6 +96,15 @@
   [Recovery and live sync evidence](verification/2026-10-08-reader-recovery-live-sync.md).
   Original fixture retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`.
   Supersedes intermediate 1227/1228 candidates; neither was installed.
+
+- Owner now explicitly requires **all six simultaneously**: Mac CLI, Windows CLI,
+  both native desktop apps and a browser on each physical machine. The acceptance
+  matrix and remaining real-adapter orchestration are in
+  [six-client acceptance](verification/six-client-sync-acceptance.md).
+  The extended local two-account collaboration run passed twelve alternating
+  small edits (median 448 ms, p95/max 522 ms), concurrent/undo/redo, offline/reload,
+  permission revocation, file/folder visibility and zero idle repeat mutations.
+  Log `/tmp/texttext-six-preflight-latency.log`. This is not a six-client pass.
 
 - Owner's latest acceptance priority: independently measure complete file/asset
   replication, direct CLI edits appearing in open clients, and realtime typing

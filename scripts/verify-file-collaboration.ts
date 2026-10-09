@@ -64,6 +64,33 @@ async function append(page: Page, text: string, edge: "start" | "end" = "end") {
   const body = page.getByRole("textbox", { name: "Document body", exact: true });
   await body.focus(); await page.keyboard.press(process.platform === "darwin" ? (edge === "end" ? "Meta+ArrowDown" : "Meta+ArrowUp") : (edge === "end" ? "Control+End" : "Control+Home")); await page.keyboard.type(text, { delay: 20 });
 }
+/** Input-to-visible-text timings on an isolated local server, including browser dispatch. */
+async function measureSmallEdits(first: Page, second: Page) {
+  const body = (page: Page) => page.getByRole("textbox", { name: "Document body", exact: true });
+  const baseline = await body(first).textContent();
+  check(baseline !== null && await body(second).textContent() === baseline, "latency sample starts from converged text");
+  const samples: number[] = [];
+  for (let index = 0; index < 12; index++) {
+    const [writer, reader] = index % 2 ? [second, first] : [first, second];
+    await body(writer).focus();
+    await writer.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
+    const marker = String.fromCharCode(65 + index);
+    const started = performance.now();
+    await writer.keyboard.insertText(marker);
+    await reader.waitForFunction(expected => document.querySelector('[aria-label="Document body"]')?.textContent === expected,
+      baseline + marker, { timeout: 5000 });
+    samples.push(performance.now() - started);
+    await writer.keyboard.press("Backspace");
+    for (const page of [writer, reader]) await page.waitForFunction(expected =>
+      document.querySelector('[aria-label="Document body"]')?.textContent === expected, baseline, { timeout: 5000 });
+  }
+  const ordered = [...samples].sort((a, b) => a - b);
+  const result = { scope: "local two-account input-to-render", samples: samples.map(ms => Math.round(ms)),
+    medianMs: Math.round(ordered[Math.floor(ordered.length / 2)]),
+    p95Ms: Math.round(ordered[Math.ceil(ordered.length * .95) - 1]), maxMs: Math.round(ordered.at(-1)!) };
+  console.log(`TIMING ${JSON.stringify(result)}`);
+  check(result.p95Ms <= 1000 && result.maxMs <= 2000, "small edits meet local p95 <= 1s and maximum <= 2s");
+}
 async function main() {
   check(["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname), "local server required");
   check(["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.DATABASE_URL!).hostname), "local database required");
@@ -88,6 +115,7 @@ async function main() {
     await until(async () => (await alice.getByLabel(/1 person here:/).count()) > 0 &&
       (await bob.getByLabel(/1 person here:/).count()) > 0,
     "both authenticated editors show the other active participant", 35000);
+    await measureSmallEdits(alice, bob);
     for (const page of [alice, bob]) await page.getByRole("button", { name: "Comments", exact: true }).click();
     const commentMarker = `Comment-${workspaceId.slice(0, 8)}`;
     await alice.getByRole("textbox", { name: "Add a comment" }).fill(commentMarker);

@@ -32,7 +32,10 @@ receipt saved (`/tmp/texttext-external-promotion-core.log`).
 
 This is deterministic browser/bridge regression evidence. It does not certify
 physical iCloud eviction, Windows owner-window behavior or latency percentiles.
-Oracle deployment of this change remains pending; installed-client evidence below.
+Oracle deployed `texttext-oracle-20261009T023037Z-9189ee96` after the full
+web-only verification and thirteen live checks. TextText and all Algorave
+services remain active; HAProxy unchanged. Logs
+`/tmp/texttext-promotion1232-{web-verify,oracle-deploy}.log`.
 
 ## Previous reader-recovery deployment completed
 
