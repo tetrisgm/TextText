@@ -5,6 +5,7 @@ Run on the Mac with Node 22 and the root dependencies installed:
 ```sh
 npm ci --prefix scripts/experiments/hocuspocus --ignore-scripts
 npm test --prefix scripts/experiments/hocuspocus
+npm run test:crash --prefix scripts/experiments/hocuspocus
 ```
 
 This isolated MIT-library evaluation uses Hocuspocus 4.7.0 and the real TextText
@@ -17,7 +18,7 @@ under the system temporary directory. It never reads accounts or user files.
 Passing this proves basic compatibility, not production readiness. No production
 transport or dependency has been replaced. Still required before adoption:
 
-- Durable acknowledgement under process kill before debounced storage runs.
+- Production durable acknowledgement integrated with authorization and audit.
 - Existing authorization, scoped capabilities, revocation and audit semantics.
 - Native checkpoint durability and iCloud/direct-file imports in the same Y.Doc.
 - Browser persistent offline state and interrupted browser restart.
@@ -52,3 +53,30 @@ Primary references reviewed October 8:
 Recorded Mac result: all three checks passed with Node 22.19.0 in
 `/tmp/texttext-provider-repro.log`. This is an orderly restart test, not a
 crash-durability or six-device test.
+
+## Crash probe
+
+`crash-evaluate.mjs` runs a separate server process and kills it with SIGKILL.
+The negative control demonstrates that debounced storage can lose an update
+already acknowledged by the provider. The durable variant uses `beforeSync` to
+validate a complete Yjs update and commit it to SQLite WAL (`synchronous=FULL`)
+before application, broadcast and acknowledgement. It passes both a kill after
+acknowledgement and a kill between commit and acknowledgement, with exactly-once
+content after binary replay. Revocation rejects an existing writer's next update;
+the update remains local, unacknowledged and absent after server restart.
+
+The permission test observes the logical document connection. Hocuspocus can
+close that connection while keeping its multiplexed WebSocket open.
+
+The crash run also reproduced a disposal race: a delayed `connect()` scheduled
+by 4.7.0 can run after `destroy()` and revive its retry loop. The evaluation's
+`DisposableSocket` guards that public lifecycle boundary; it does not patch
+library internals. A fifth assertion checks that late reconnect stays disabled,
+and the process must exit naturally after cleanup.
+
+Recorded result: five checks passed on Node 22.19.0 in
+`/tmp/texttext-provider-crash.log`. This is an isolated storage-ordering probe,
+not production persistence. It does not yet validate the complete TextText
+schema, audit writes, browser disk journals, or native imports. Direct server
+transactions also need their own commit-before-broadcast boundary: they do not
+pass through the incoming client's `beforeSync` hook.

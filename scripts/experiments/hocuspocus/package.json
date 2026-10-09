@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node evaluate.mjs"
+    "test": "node evaluate.mjs",
+    "test:crash": "node crash-evaluate.mjs"
   },
   "dependencies": {
     "@hocuspocus/server": "4.7.0",

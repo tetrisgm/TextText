@@ -8,6 +8,9 @@ Windows Edge editing passed; the Mac independently saw the Edge edits.
 The owner requested less custom sync machinery. A bounded standard-provider
 prototype is in `scripts/experiments/hocuspocus`; production replacement is not yet
 implemented or verified.
+The isolated crash probe now passes SIGKILL after ACK, commit-before-ACK replay,
+and existing-writer revocation. Its negative control proves default debounced
+storage alone is insufficient. See the experiment README for limits and commands.
 
 ## Active sync repair
 
