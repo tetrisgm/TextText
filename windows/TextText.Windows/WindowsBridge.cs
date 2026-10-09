@@ -139,112 +139,122 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
             return null;
         }
         if (method.StartsWith("agent", StringComparison.Ordinal)) return await agent.DispatchAsync(method, p, ct);
+        // Read-only queries never wait behind mutations. Mutations and collaboration
+        // calls can wait for the sync gate without a bound (a slow first remote pass
+        // holds it for the whole manifest download), and the renderer abandons a
+        // bootstrap listing after 8 seconds. Reads only touch the file store under
+        // its own lock, the cached inventory, and gate-bounded sync state.
+        if (IsRead(method)) return await Task.Run(() => Execute(method, p, ct), ct);
         await requests.WaitAsync(ct);
-        try {
-            return await Task.Run(async () => {
-                ct.ThrowIfCancellationRequested();
-                switch (method) {
-                    case "files.connection": return new { connected = true, available = true, onlineReady = lastStatus == "ready", hasConflicts = lastStatus == "conflict", webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri };
-                    case "files.restoreReconcile": {
-                        var itemId=Required(p,"itemId");await sync.ReconcileRestoredAsync(itemId,Required(p,"relativePath"),Required(p,"operationId"),ct);
-                        Volatile.Write(ref inventory,null);
-                        var restored=Find(itemId);
-                        if(restored.Path!=Required(p,"relativePath")||!await sync.IsReadyAsync(itemId,ct))throw new IOException("The restored file is still downloading. Try again.");
-                        return Result(restored);
-                    }
-                    case "files.recoveryDirectory": return files.GetRecoveryDirectory();
-                    case "files.ready": {
-                        // Readiness decides whether the editor joins shared editing now. While a
-                        // sync pass holds the gate the document opens locally and is promoted
-                        // after the pass reports status, so answering "not ready" is safe.
-                        var itemId = Required(p, "itemId");
-                        var ready = await BoundedGateRead(gated => sync.IsReadyAsync(itemId, gated), ct);
-                        return new { ready = ready ?? false };
-                    }
-                    case "files.list": {
-                        var snapshot = Inventory();
-                        var items = snapshot.Files;
-                        var owner = context.Access == "owner";
-                        var read = await BoundedGateRead(async gated => (await sync.CapabilitiesAsync(gated), await sync.FilePermissionsAsync(items, owner, gated)), ct);
-                        if (read is { } current) knownPermissions = current;
-                        else {
-                            // The remote pass holds the gate. Serve the last authoritative permissions
-                            // (or the ownership default) and refresh the renderer once the pass ends.
-                            Interlocked.Exchange(ref permissionsChanged, 1);
-                        }
-                        var (capabilities, permissions) = read ?? knownPermissions ?? (null, new Dictionary<string,bool>());
-                        var folders = snapshot.Folders;
-                        return (object)new { root = context.Root, name = Path.GetFileName(context.Root), folders,
-                            fullAccess=capabilities?.FullAccess ?? owner,canCreateContent=capabilities?.CanCreateContent ?? owner,writableFolders=capabilities?.WritableFolders ?? [],
-                            items = items.Select(f => new { canEditContent=permissions.TryGetValue(f.ItemId,out var allowed) ? allowed : capabilities?.CanWrite(f.ItemId,f.Path,false) ?? owner,itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
-                            revision = TextPackStore.Hash(Encoding.UTF8.GetBytes(string.Join('\n', folders.Select(folder => "folder:"+folder).Concat(items.OrderBy(f => f.Path).Select(f => f.Path + ":" + f.Hash))))) };
-                    }
-                    case "files.read": {
-                        var file = Find(Required(p, "itemId")); var data = files.Read(file.Path);
-                        return new { path = file.Path, hash = TextPackStore.Hash(data), data = Convert.ToBase64String(data) };
-                    }
-                    case "files.text": {
-                        var file = Find(Required(p, "itemId")); var data = files.Read(file.Path);
-                        var markdown = TextPackStore.Markdown(data);
-                        using var archive = new ZipArchive(new MemoryStream(data));
-                        var document = archive.GetEntry(TextPackStore.DocumentPrefix(data) + "document.json");
-                        if (document?.Length > 8 * 1024 * 1024) throw new InvalidDataException("Document snapshot exceeds size limit.");
-                        string? json = null;
-                        if (document is not null) { using var reader = new StreamReader(document.Open()); json = reader.ReadToEnd(); }
-                        return new { path = file.Path, hash = TextPackStore.Hash(data), markdown, documentJSON = json };
-                    }
-                    case "files.write": {
-                        var data = Convert.FromBase64String(Required(p, "data"));
-                        if (TextPackStore.Identity(data) != Required(p, "itemId")) throw new InvalidDataException("Document identity does not match.");
-                        return Result(files.WriteIdempotent(Required(p, "path"), data, Optional(p, "expectedHash"), Required(p, "operationId")));
-                    }
-                    case "files.creationResume":
-                    case "files.creationWrite": {
-                        var scope=Required(p,"creationScope");
-                        if(scope.Length>0) _=files.Resolve(scope);
-                        var capabilities=await sync.CapabilitiesAsync(ct);
-                        var permissions=await sync.FilePermissionsAsync(files.Scan(),context.Access=="owner",ct);
-                        void Authorize(PackFile file,bool existing) {
-                            if(scope.Length>0 && !file.Path.StartsWith(scope+"/",StringComparison.Ordinal)) throw new UnauthorizedAccessException("The created file moved outside this task's folder.");
-                            var allowed=existing ? permissions.TryGetValue(file.ItemId,out var editable) && editable : capabilities?.CanCreate(file.Path) ?? context.Access=="owner";
-                            if(!allowed) throw new UnauthorizedAccessException("Editing access is unavailable.");
-                        }
-                        var created=files.CreateIdempotent(Required(p,"creationOperationId"),Required(p,"creationIntent"),Authorize,
-                            method=="files.creationWrite" ? Required(p,"path") : null,
-                            method=="files.creationWrite" ? Convert.FromBase64String(Required(p,"data")) : null);
-                        return created is null ? null : new {path=created.Path,hash=created.Hash,itemId=created.ItemId};
-                    }
-                    case "files.rename": {
-                        var file = Find(Required(p, "itemId")); var path = Required(p, "path");
-                        files.Rename(file.Path, path, Required(p, "expectedHash")); return Result(files.Describe(path));
-                    }
-                    case "files.delete": {
-                        var file = Find(Required(p, "itemId")); files.Delete(file.Path, Required(p, "expectedHash")); return null;
-                    }
-                    case "collaboration.open": {
-                        var session = await editing.OpenAsync(Required(p, "itemId"), Required(p, "path"), Required(p, "hash"), ct);
-                        return new { sessionToken = session.SessionToken, path = session.Document.Path, hash = session.Document.Hash,
-                            acknowledgedRevision = session.Checkpoint?.AcknowledgedRevision ?? await sync.BaselineRevisionAsync(Required(p, "itemId"), ct) ?? session.Document.Hash,
-                            projectedHash = session.Checkpoint?.ProjectedHash,
-                            journal = session.Checkpoint?.Journal, retiredReason = session.Checkpoint?.RetiredReason,
-                            // The shared client consumes this exact name; only stores that verify and archive authorized epoch adoption may announce it.
-                            capabilities = SharedEditingStore.Capabilities };
-                    }
-                    case "collaboration.checkpoint": {
-                        var file = Find(Required(p, "itemId"));
-                        var bytes = Convert.FromBase64String(Required(p, "data"));
-                        var checkpoint = new SharedCheckpoint(Required(p, "itemId"), file.Path, TextPackStore.Hash(bytes), Required(p, "revision"),
-                            p.GetProperty("epoch").GetInt64(), p.GetProperty("seq").GetInt64(), p.GetProperty("journalGeneration").GetInt64(),
-                            Required(p, "journal"), p.GetProperty("pending").GetBoolean());
-                        var result = await editing.CheckpointAsync(Required(p, "sessionToken"), Required(p, "hash"), bytes, checkpoint, ct);
-                        return Result(result);
-                    }
-                    case "collaboration.close": editing.Close(Required(p, "sessionToken")); return null;
-                    case "collaboration.recover": await editing.RecoverAsync(Required(p, "sessionToken"), Required(p, "recoveryPath"), Required(p, "recoveryHash"), ct); Changed(); return null;
-                    default: throw new NotSupportedException("This desktop operation is not available: " + method);
+        try { return await Task.Run(() => Execute(method, p, ct), ct); }
+        finally { requests.Release(); }
+    }
+
+    static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text";
+
+    async Task<object?> Execute(string method, JsonElement p, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        switch (method) {
+            case "files.connection": return new { connected = true, available = true, onlineReady = lastStatus == "ready", hasConflicts = lastStatus == "conflict", webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri };
+            case "files.restoreReconcile": {
+                var itemId=Required(p,"itemId");await sync.ReconcileRestoredAsync(itemId,Required(p,"relativePath"),Required(p,"operationId"),ct);
+                Volatile.Write(ref inventory,null);
+                var restored=Find(itemId);
+                if(restored.Path!=Required(p,"relativePath")||!await sync.IsReadyAsync(itemId,ct))throw new IOException("The restored file is still downloading. Try again.");
+                return Result(restored);
+            }
+            case "files.recoveryDirectory": return files.GetRecoveryDirectory();
+            case "files.ready": {
+                // Readiness decides whether the editor joins shared editing now. While a
+                // sync pass holds the gate the document opens locally and is promoted
+                // after the pass reports status, so answering "not ready" is safe.
+                var itemId = Required(p, "itemId");
+                var ready = await BoundedGateRead(gated => sync.IsReadyAsync(itemId, gated), ct);
+                return new { ready = ready ?? false };
+            }
+            case "files.list": {
+                var snapshot = Inventory();
+                var items = snapshot.Files;
+                var owner = context.Access == "owner";
+                var read = await BoundedGateRead(async gated => (await sync.CapabilitiesAsync(gated), await sync.FilePermissionsAsync(items, owner, gated)), ct);
+                if (read is { } current) knownPermissions = current;
+                else {
+                    // The remote pass holds the gate. Serve the last authoritative permissions
+                    // (or the ownership default) and refresh the renderer once the pass ends.
+                    Interlocked.Exchange(ref permissionsChanged, 1);
                 }
-            }, ct);
-        } finally { requests.Release(); }
+                var (capabilities, permissions) = read ?? knownPermissions ?? (null, new Dictionary<string,bool>());
+                var folders = snapshot.Folders;
+                return (object)new { root = context.Root, name = Path.GetFileName(context.Root), folders,
+                    fullAccess=capabilities?.FullAccess ?? owner,canCreateContent=capabilities?.CanCreateContent ?? owner,writableFolders=capabilities?.WritableFolders ?? [],
+                    items = items.Select(f => new { canEditContent=permissions.TryGetValue(f.ItemId,out var allowed) ? allowed : capabilities?.CanWrite(f.ItemId,f.Path,false) ?? owner,itemId = f.ItemId, relativePath = f.Path, revision = f.Hash }),
+                    revision = TextPackStore.Hash(Encoding.UTF8.GetBytes(string.Join('\n', folders.Select(folder => "folder:"+folder).Concat(items.OrderBy(f => f.Path).Select(f => f.Path + ":" + f.Hash))))) };
+            }
+            case "files.read": {
+                var file = Find(Required(p, "itemId")); var data = files.Read(file.Path);
+                return new { path = file.Path, hash = TextPackStore.Hash(data), data = Convert.ToBase64String(data) };
+            }
+            case "files.text": {
+                var file = Find(Required(p, "itemId")); var data = files.Read(file.Path);
+                var markdown = TextPackStore.Markdown(data);
+                using var archive = new ZipArchive(new MemoryStream(data));
+                var document = archive.GetEntry(TextPackStore.DocumentPrefix(data) + "document.json");
+                if (document?.Length > 8 * 1024 * 1024) throw new InvalidDataException("Document snapshot exceeds size limit.");
+                string? json = null;
+                if (document is not null) { using var reader = new StreamReader(document.Open()); json = reader.ReadToEnd(); }
+                return new { path = file.Path, hash = TextPackStore.Hash(data), markdown, documentJSON = json };
+            }
+            case "files.write": {
+                var data = Convert.FromBase64String(Required(p, "data"));
+                if (TextPackStore.Identity(data) != Required(p, "itemId")) throw new InvalidDataException("Document identity does not match.");
+                return Result(files.WriteIdempotent(Required(p, "path"), data, Optional(p, "expectedHash"), Required(p, "operationId")));
+            }
+            case "files.creationResume":
+            case "files.creationWrite": {
+                var scope=Required(p,"creationScope");
+                if(scope.Length>0) _=files.Resolve(scope);
+                var capabilities=await sync.CapabilitiesAsync(ct);
+                var permissions=await sync.FilePermissionsAsync(files.Scan(),context.Access=="owner",ct);
+                void Authorize(PackFile file,bool existing) {
+                    if(scope.Length>0 && !file.Path.StartsWith(scope+"/",StringComparison.Ordinal)) throw new UnauthorizedAccessException("The created file moved outside this task's folder.");
+                    var allowed=existing ? permissions.TryGetValue(file.ItemId,out var editable) && editable : capabilities?.CanCreate(file.Path) ?? context.Access=="owner";
+                    if(!allowed) throw new UnauthorizedAccessException("Editing access is unavailable.");
+                }
+                var created=files.CreateIdempotent(Required(p,"creationOperationId"),Required(p,"creationIntent"),Authorize,
+                    method=="files.creationWrite" ? Required(p,"path") : null,
+                    method=="files.creationWrite" ? Convert.FromBase64String(Required(p,"data")) : null);
+                return created is null ? null : new {path=created.Path,hash=created.Hash,itemId=created.ItemId};
+            }
+            case "files.rename": {
+                var file = Find(Required(p, "itemId")); var path = Required(p, "path");
+                files.Rename(file.Path, path, Required(p, "expectedHash")); return Result(files.Describe(path));
+            }
+            case "files.delete": {
+                var file = Find(Required(p, "itemId")); files.Delete(file.Path, Required(p, "expectedHash")); return null;
+            }
+            case "collaboration.open": {
+                var session = await editing.OpenAsync(Required(p, "itemId"), Required(p, "path"), Required(p, "hash"), ct);
+                return new { sessionToken = session.SessionToken, path = session.Document.Path, hash = session.Document.Hash,
+                    acknowledgedRevision = session.Checkpoint?.AcknowledgedRevision ?? await sync.BaselineRevisionAsync(Required(p, "itemId"), ct) ?? session.Document.Hash,
+                    projectedHash = session.Checkpoint?.ProjectedHash,
+                    journal = session.Checkpoint?.Journal, retiredReason = session.Checkpoint?.RetiredReason,
+                    // The shared client consumes this exact name; only stores that verify and archive authorized epoch adoption may announce it.
+                    capabilities = SharedEditingStore.Capabilities };
+            }
+            case "collaboration.checkpoint": {
+                var file = Find(Required(p, "itemId"));
+                var bytes = Convert.FromBase64String(Required(p, "data"));
+                var checkpoint = new SharedCheckpoint(Required(p, "itemId"), file.Path, TextPackStore.Hash(bytes), Required(p, "revision"),
+                    p.GetProperty("epoch").GetInt64(), p.GetProperty("seq").GetInt64(), p.GetProperty("journalGeneration").GetInt64(),
+                    Required(p, "journal"), p.GetProperty("pending").GetBoolean());
+                var result = await editing.CheckpointAsync(Required(p, "sessionToken"), Required(p, "hash"), bytes, checkpoint, ct);
+                return Result(result);
+            }
+            case "collaboration.close": editing.Close(Required(p, "sessionToken")); return null;
+            case "collaboration.recover": await editing.RecoverAsync(Required(p, "sessionToken"), Required(p, "recoveryPath"), Required(p, "recoveryHash"), ct); Changed(); return null;
+            default: throw new NotSupportedException("This desktop operation is not available: " + method);
+        }
     }
 
     async Task<string> ExecuteAgentTool(string path, bool folder, string tool, JsonElement args, string operationId, CancellationToken ct)

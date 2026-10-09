@@ -33,16 +33,37 @@ try {
     try {
         await transport.ManifestStarted.Task.WaitAsync(deadline.Token);
         // The first remote pass now holds the sync gate and will not finish until released.
+        // A restored editor opens its document first; that request waits for the gate without a bound.
+        // The listing and readiness reads sent after it must not queue behind it.
+        using var openCancellation = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        var stalledOpen = bridge.InvokeAsync("collaboration.open", Json(new { itemId = "startup-1", path = local.Path, hash = local.Hash }), openCancellation.Token);
+        await Task.Delay(300, deadline.Token);
+        Assert(!stalledOpen.IsCompleted, "collaboration.open waits for the sync gate");
         var clock = Stopwatch.StartNew();
-        var listing = Json(await bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
+        async Task<JsonElement> Bounded(Task<object?> call) {
+            using var limit = new CancellationTokenSource(WindowsBridge.GateWait + TimeSpan.FromSeconds(6));
+            try { return Json(await call.WaitAsync(limit.Token)); }
+            catch (OperationCanceledException) { Assert(false, "bridge read answers while an earlier request still waits for the sync gate"); throw; }
+        }
+        var listing = await Bounded(bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
         var listed = clock.Elapsed;
         Assert(listed < WindowsBridge.GateWait + TimeSpan.FromSeconds(3), $"listing answers while the sync pass holds the gate ({listed.TotalMilliseconds:F0} ms)");
         Assert(listing.GetProperty("items").GetArrayLength() == 1 && listing.GetProperty("items")[0].GetProperty("itemId").GetString() == "startup-1", "listing contains the local file");
         Assert(listing.GetProperty("items")[0].GetProperty("canEditContent").GetBoolean() && listing.GetProperty("fullAccess").GetBoolean(), "owner default permissions apply before the gate is available");
         clock.Restart();
-        var ready = Json(await bridge.InvokeAsync("files.ready", Json(new { itemId = "startup-1" }), deadline.Token));
+        var ready = await Bounded(bridge.InvokeAsync("files.ready", Json(new { itemId = "startup-1" }), deadline.Token));
         Assert(clock.Elapsed < WindowsBridge.GateWait + TimeSpan.FromSeconds(3) && !ready.GetProperty("ready").GetBoolean(), "readiness answers not-ready instead of waiting for the pass");
         Assert(!events.Contains("texttext:vault-changed"), "no refresh is announced while the pass still runs");
+        // Mutations keep their order: a write sent after the stalled open must not overtake it.
+        var queuedWrite = bridge.InvokeAsync("files.write", Json(new { itemId = "startup-1", path = local.Path, expectedHash = local.Hash, operationId = Guid.NewGuid().ToString("D"), data = Convert.ToBase64String(Pack("startup edited", "startup-1")) }), deadline.Token);
+        await Task.Delay(300, deadline.Token);
+        Assert(!queuedWrite.IsCompleted && !stalledOpen.IsCompleted, "a later mutation still queues behind the stalled open");
+        openCancellation.Cancel();
+        try { await stalledOpen; Assert(false, "cancelled open does not complete"); } catch (OperationCanceledException) { Assert(true, "cancelling the stalled open releases the bridge"); }
+        var written = Json(await queuedWrite.WaitAsync(TimeSpan.FromSeconds(5), deadline.Token));
+        Assert(written.GetProperty("hash").GetString() != local.Hash, "the queued mutation runs once the stalled request leaves");
+        local = new TextPackStore(root, state).Describe(local.Path);
+        await Task.Delay(500, deadline.Token); events.Clear(); // drop the write's own change notification
 
         // Release the pass with restrictive server capabilities; the bridge must ask the renderer to list again.
         transport.Capabilities = new WorkspaceCapabilities(false, false, [], new Dictionary<string, bool> { ["startup-1"] = false });
