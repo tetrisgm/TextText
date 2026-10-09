@@ -56,6 +56,27 @@ fixture's keyboard ordering assertion now includes the previously added Parent
 action. This is source acceptance; live acceptance remains after deployment.
 Logs: `/tmp/texttext-auto-capture-reader-{types,unit,browser}.log`.
 
+Source `e19d53c3` is now deployed as
+`texttext-oracle-20261008-e19d53c3-capture-reader`. Packaging executed the real
+compiled PDF worker; thirteen deployment checks passed. Fresh uncached Safari
+saved the public W3C PDF with `?verification=e19d53c3`; its open reader displayed
+“Dummy PDF file” automatically without navigation, reload or Retry. Independent
+iCloud TextPack inspection confirmed `Bookmarks/www.w3.org 3.textpack` has
+captureStatus complete and capturedSourceBody “Dummy PDF file”.
+
+The matching physical Windows candidate passed native suites, 346 shared tests,
+TypeScript and interactive desktop smoke. Candidate:
+`C:\Users\Shokunin\dev\texttext-client-e19d53c3\windows\build\candidate-22ff4ac78d9240e3b24378e11a00a7b8`.
+Canonical Windows process 44968 still runs; safe replacement awaits normal close.
+Mac 0.204 (1221), source `e19d53c3`, built and installed through the established
+one-off workflow after saving and normal quit. Signature verification covered
+arm64 app, runtime helper and all three extensions. Actual signed-in startup,
+the existing 1185 note without recovery controls, and reading the web-created
+captured PDF passed. Private sandbox runtime health and interactive extensions
+remain unverified. Native automatic capture also passed: saving the public PDF
+with `?verification=mac1221` displayed “Dummy PDF file” in the already open reader
+without reload or Retry.
+
  This extracts embedded text; it does not perform
 OCR, preserve the original PDF as a TextPack attachment, or provide transcripts
 or automatic AI summaries. Empty/image-only PDFs leave the saved link usable.

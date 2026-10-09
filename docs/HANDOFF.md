@@ -2,20 +2,22 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1220)**, source `8090227e`.
+- Mac `/Applications/TextText.app`: **0.204 (1221)**, source `e19d53c3`.
   Signed-in startup, existing content and the reported 1185 note passed without
   recovery controls. Automatic reconnect passed during deployment. Fresh saved-body
-  cache invalidation and extensions on 1220 remain. Earlier scoped receipt:
+  cache invalidation and extensions on 1221 remain. Earlier scoped receipt:
   [Installed receipt](verification/2026-10-08-mac-1218.md).
-- Oracle: **texttext-oracle-20261008-8090227e-clean-epochs**, deployed successfully;
+- Oracle: **texttext-oracle-20261008-e19d53c3-capture-reader**, deployed successfully;
   thirteen live checks passed. TextText and all three Algorave services stayed
-  previous release retained. Live Safari PDF retry captured “Dummy PDF file”.
+  previous release retained. Live Safari automatic PDF capture displayed “Dummy PDF file”
+  without reload; independent iCloud TextPack inspection confirmed persisted content.
   [PDF delivery](verification/2026-10-08-pdf-capture.md).
 - Windows installed source remains `f3167c4b`. Current verified candidate source
-  `8090227e` passed physical PC native suites, 346 shared tests, TypeScript,
+  `e19d53c3` passed physical PC native suites, 346 shared tests, TypeScript,
   packaging and interactive smoke. [Candidate paths](verification/2026-10-08-clean-epoch-recovery.md).
-  Normal-close request remains pending. Latest SSH recheck failed on both existing
-  PC profiles. Do not overwrite a running app or discard pending edits.
+  Normal-close request remains pending. PC SSH is reachable again; process 44968
+  still runs. Latest candidate path is in the PDF receipt. Do not overwrite a
+  running app or discard pending edits.
 - Real workspace: `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`,
   ID `be28ae03-c64e-4695-80af-04f048f86f37`. Preserve content.
 
@@ -24,7 +26,10 @@
 - Live automatic PDF capture saved correct content but left the open reader
   pending until reload. Current source adds targeted reader invalidation after
   background capture, preserving unsaved drafts. TypeScript and five related
-  unit tests and the full browser fixture pass. Not delivered.
+  unit tests and the full browser fixture pass. Oracle deployed and fresh Safari
+  acceptance passed. Mac 1221 built, installed and passed signed-in startup,
+  existing note and cross-client captured PDF read. Log `/tmp/texttext-mac1221-build.log`.
+  Physical Windows candidate verified, not installed.
   [Evidence](verification/2026-10-08-pdf-capture.md).
 
 - Delivered source `6e1a9ee7`: bounded PDF text capture and plain-template Parent editing.
