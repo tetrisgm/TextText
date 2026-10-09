@@ -30,12 +30,12 @@ passes among 19 shared-editing tests. Full native and core gates passed with exa
 tests, TypeScript, both browser modes and native suites. A serial core rerun
 resolved receipt invalidation from concurrent Package.resolved regeneration.
 Logs `/tmp/texttext-restart-{native,windows,windows-build,core-stable}.log`.
-Not installed or physically restart-tested. Older retired journals, overlapping
+Installed as Mac 1234 and Windows source 88e9ad0e; physical restart acceptance is not yet passed. Older retired journals, overlapping
 replacements and six-client acceptance remain outstanding.
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1233)**, source `176228d3`.
+- Mac `/Applications/TextText.app`: **0.204 (1234)**, source `88e9ad0e`.
   Latest install and native app/CLI acceptance: [receipt](verification/2026-10-08-inplace-file-merge.md).
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
@@ -63,28 +63,21 @@ replacements and six-client acceptance remain outstanding.
   previous release retained. Safari reopened the saved photo and reconnected. Live Safari automatic PDF capture displayed “Dummy PDF file”
   without reload; independent iCloud TextPack inspection confirmed persisted content.
   [PDF delivery](verification/2026-10-08-pdf-capture.md).
-- Windows installed source **2e0e10c1**, verified candidate installed and reopened
-  on interactive desktop (PID 43856).
-  [Recovery update and fresh image receipt](verification/2026-10-08-windows-recovery-share.md). Regression suites and actual WPF desktop
-  smoke passed. The Mac Safari capture 1224 independently arrived in Windows'
-  workspace with the exact identity, title and original URL. Temporary build
-  smoke and app launch tasks are removed; previous app retained.
-  [Current Windows receipt](verification/2026-10-08-windows-current-delivery.md).
-  Earlier recovery delivery: on the owner's explicit authorization,
-  stopped stale canonical process 44968, verified candidate and staged receipts,
-  and installed. Previous app retained at
-  `C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261008T174544-8303dceb`.
-  Reopened on the interactive desktop (session 1, PID 18184); temporary launch
-  task was removed. The affected 1185 note checkpoint refreshed to epoch 2, Pending false and
-  RetiredReason null; old checkpoint archived automatically. Visible banner
-  disappearance remains unverified.
-  Latest read-only PC inspection: canonical process 43856 responds; the affected
-  journal has zero pending updates, no batch, no unqueued dirty state and no
-  retirement. No native checkpoint under the current Sync root is pending or
-  retired. Visible editing acceptance still remains.
-  Physical PC native suites, 346 shared tests, TypeScript, packaging and
-  interactive smoke passed for this candidate.
-  [Candidate evidence](verification/2026-10-08-clean-epoch-recovery.md).
+- Windows installed source **88e9ad0e**, candidate verified and replaced the
+  canonical app. Native core/agent suites, shared client tests, TypeScript,
+  packaging and interactive WPF smoke passed. Previous app retained at
+  `C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261008T205348-6c5abe98`.
+  Canonical app remains stopped during acceptance. The real pending fixture A
+  journal is preserved, including a fresh copy under
+  `C:\Users\Shokunin\dev\texttext-live-restart-88e9ad0e\before-native-state`.
+  The restart acceptance attempt stayed on Home before editing; not a sync pass.
+  Diagnostic runner source `98e67022` exposed an empty activation queue on Home.
+  Browser reproduction identified late startup location restoration overwriting
+  an already activated file. Current candidate fences that restoration; new
+  `--early-open` regression fails baseline and passes the fix. Full core gate
+  passed: 853 tests, TypeScript and all three browser modes. Navigation fix
+  still needs desktop delivery and physical restart acceptance.
+  [Current delivery and open failure](verification/2026-10-08-restart-delivery.md).
 - Real workspace: `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`,
   ID `be28ae03-c64e-4695-80af-04f048f86f37`. Preserve content.
 

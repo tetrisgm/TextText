@@ -97,7 +97,7 @@ async function main() {
           scope === 'core' ? coreDatabaseEnvironment() : process.env);
         await run(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit', '--pretty', 'false']);
         if (scope === 'core') {
-          for (const mode of [[], ['--external-file']]) {
+          for (const mode of [[], ['--external-file'], ['--early-open']]) {
             await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-promotion.mts', ...mode]);
           }
         }

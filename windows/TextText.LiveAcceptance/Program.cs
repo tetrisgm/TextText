@@ -117,6 +117,15 @@ static class Program
         if (!Path.GetFullPath(plan.File).StartsWith(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new Exception("Test file is not inside the active workspace; workspace selection was not changed.");
         var core = view!.CoreWebView2;
+        core.WebMessageReceived += (_, message) => {
+            try {
+                using var payload = JsonDocument.Parse(message.WebMessageAsJson);
+                var value = payload.RootElement;
+                if (value.TryGetProperty("method", out var method) &&
+                    method.GetString() is "native.fileOpenResult" or "native.flushResult")
+                    record(new { kind = "activation-reply", method = method.GetString(), result = value.GetProperty("params").Clone() });
+            } catch (JsonException) { }
+        };
         window.ActivateFiles([plan.File]);
         var expectedTitle = JsonSerializer.Serialize(plan.Title);
         await Until(async () => await view.ExecuteScriptAsync($"document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle}") == "true", ct, "Production file activation did not open the test item.");

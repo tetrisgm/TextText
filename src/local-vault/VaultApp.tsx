@@ -554,7 +554,9 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     setLiveTitle(current => current?.path === path && current.title === title ? current : { path, title });
   }, []);
   const selectedRef = useRef<VaultFile | null>(null);
+  const navigationGeneration = useRef(0);
   const setSelected = useCallback((file: VaultFile | null) => {
+    navigationGeneration.current++;
     selectedRef.current = file;
     setLiveTitle(null);
     setSelectedState(file);
@@ -630,8 +632,13 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   useEffect(() => {
     if (!visibleListing?.root || (!allowFolderPicker && !access) || restoredLocationRoot.current === visibleListing.root) return;
     const root = visibleListing.root;
+    const restoringGeneration = navigationGeneration.current;
     restoredLocationRoot.current = root;
     void Promise.resolve().then(() => {
+      if (selectedRef.current || navigationGeneration.current !== restoringGeneration) {
+        setLocationReadyRoot(root);
+        return;
+      }
       if (webWorkspaceId && new URLSearchParams(window.location.search).has("item")) {
         if (!sharedVaultLinkTarget(window.location.search, window.location.hash, visibleListing.items, folders)) {
           setSelected(null);
@@ -653,9 +660,9 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         return;
       }
       void readForOpen(location.path, !allowFolderPicker).then(file => {
-        if (restoredLocationRoot.current === root) setSelected(file);
+        if (restoredLocationRoot.current === root && navigationGeneration.current === restoringGeneration) setSelected(file);
       }).catch(reason => {
-        if (restoredLocationRoot.current === root) {
+        if (restoredLocationRoot.current === root && navigationGeneration.current === restoringGeneration) {
           setSelected(null);
           setError(reason instanceof Error ? `Could not reopen ${location.path}: ${reason.message}` : `Could not reopen ${location.path}.`);
         }

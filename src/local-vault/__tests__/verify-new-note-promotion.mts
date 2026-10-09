@@ -27,7 +27,10 @@ const pack = (text: string, json: string) => {
   return { bytes, file: openPack(bytes, notePath, hash).file };
 };
 let current = pack(markdown, JSON.stringify(initial));
-const externalFile = process.argv.includes("--external-file");
+const earlyOpen = process.argv.includes("--early-open");
+const externalFile = process.argv.includes("--external-file") || earlyOpen;
+let releaseListing = () => {};
+const listingReady = new Promise<void>(resolve => { releaseListing = resolve; });
 let exists = externalFile, syncedHash: string | null = null;
 let remoteState: VaultCollaborationState | null = null;
 let remoteBytes = current.bytes;
@@ -64,7 +67,7 @@ try {
     let result: unknown = null, error: { code: string; message: string } | null = null;
     try {
       switch (request.method) {
-        case "list": result = { root, folders: ["Notes"], items: exists ? [{ path: notePath }] : [] }; break;
+        case "list": if (earlyOpen) await listingReady; result = { root, folders: ["Notes"], items: exists ? [{ path: notePath }] : [] }; break;
         case "connection": result = { connected: true, available: true, workspaceId: config.workspaceId, webURL: "https://texttext.test/vault/workspace" }; break;
         case "folderViews": result = { files: [] }; break;
         case "create": exists = true; result = current.file; break;
@@ -119,10 +122,17 @@ try {
     await page.evaluate(detail => window.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail })), { id: request.id, result, error });
   });
   await page.addInitScript({ content: "window.webkit = { messageHandlers: { localVault: { postMessage(request) { void window.nativeVaultRequest(request); } } } };" });
-  if (externalFile) await page.addInitScript(({ root, notePath }) => {
+  if (externalFile && !earlyOpen) await page.addInitScript(({ root, notePath }) => {
     localStorage.setItem(`texttext:vault-location:${root}`, JSON.stringify({ folder: "Notes", path: notePath }));
   }, { root, notePath });
   await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
+  if (earlyOpen) {
+    await page.waitForFunction(() => typeof (window as any).texttextOpenFile === "function");
+    assert.equal(await page.evaluate(path => (window as any).texttextOpenFile(path), notePath), "opened");
+    releaseListing();
+    await page.waitForFunction(() => document.querySelector(".vault-sidebar")?.textContent?.includes("Notes"));
+    assert.equal(await page.locator(".vault-context-location h2").innerText(), "Untitled", "Startup location restoration must not replace a native file activation.");
+  }
   if (externalFile) {
     await page.getByRole("button", { name: "Edit card", exact: true }).click();
     await page.getByRole("textbox", { name: "Document body", exact: true }).click();
