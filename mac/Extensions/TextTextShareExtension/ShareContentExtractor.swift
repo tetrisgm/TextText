@@ -22,12 +22,12 @@ public enum ShareContentExtractor {
         let group = DispatchGroup()
         let accumulator = ShareContentAccumulator()
 
-        for provider in providers {
+        for (index, provider) in providers.enumerated() {
             loadPlainText(from: provider, group: group, accumulator: accumulator)
-            loadURL(from: provider, group: group, accumulator: accumulator)
-            loadFileURL(from: provider, group: group, accumulator: accumulator)
-            loadPayload(conformingTo: .pdf, defaultExtension: "pdf", from: provider, group: group, accumulator: accumulator)
-            loadPayload(conformingTo: .image, defaultExtension: "image", from: provider, group: group, accumulator: accumulator)
+            loadURL(from: provider, index: index, group: group, accumulator: accumulator)
+            loadFileURL(from: provider, index: index, group: group, accumulator: accumulator)
+            loadPayload(conformingTo: .pdf, defaultExtension: "pdf", from: provider, index: index, group: group, accumulator: accumulator)
+            loadPayload(conformingTo: .image, defaultExtension: "image", from: provider, index: index, group: group, accumulator: accumulator)
         }
 
         group.notify(queue: .main) {
@@ -51,7 +51,7 @@ public enum ShareContentExtractor {
     }
 
     private static func loadURL(
-        from provider: NSItemProvider,
+        from provider: NSItemProvider, index: Int,
         group: DispatchGroup,
         accumulator: ShareContentAccumulator
     ) {
@@ -61,7 +61,7 @@ public enum ShareContentExtractor {
             defer { group.leave() }
             if let url = urlValue(from: item) {
                 if url.isFileURL {
-                    accumulator.setPayload(filename: url.lastPathComponent, data: (try? Data(contentsOf: url)))
+                    accumulator.setPayload(filename: url.lastPathComponent, data: (try? Data(contentsOf: url)), index: index, priority: 2)
                 } else {
                     accumulator.setURL(url.absoluteString)
                 }
@@ -73,7 +73,7 @@ public enum ShareContentExtractor {
     }
 
     private static func loadFileURL(
-        from provider: NSItemProvider,
+        from provider: NSItemProvider, index: Int,
         group: DispatchGroup,
         accumulator: ShareContentAccumulator
     ) {
@@ -82,18 +82,18 @@ public enum ShareContentExtractor {
         provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
             defer { group.leave() }
             guard let url = urlValue(from: item), url.isFileURL else { return }
-            accumulator.setPayload(filename: url.lastPathComponent, data: try? Data(contentsOf: url))
+            accumulator.setPayload(filename: url.lastPathComponent, data: try? Data(contentsOf: url), index: index, priority: 2)
         }
     }
 
     private static func loadPayload(
         conformingTo type: UTType,
         defaultExtension: String,
-        from provider: NSItemProvider,
+        from provider: NSItemProvider, index: Int,
         group: DispatchGroup,
         accumulator: ShareContentAccumulator
     ) {
-        guard accumulator.needsPayload,
+        guard
               let identifier = provider.registeredTypeIdentifiers.first(where: { identifier in
                   UTType(identifier)?.conforms(to: type) == true
               }) else { return }
@@ -106,7 +106,7 @@ public enum ShareContentExtractor {
                 typeIdentifier: identifier,
                 defaultExtension: defaultExtension
             )
-            accumulator.setPayload(filename: filename, data: data)
+            accumulator.setPayload(filename: filename, data: data, index: index, priority: 1)
         }
     }
 
@@ -147,11 +147,7 @@ private final class ShareContentAccumulator {
     private let lock = NSLock()
     private var content = ShareExtractedContent()
 
-    var needsPayload: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return content.payloadData == nil
-    }
+    private var payloads: [Int: (priority: Int, payload: InboxPayload)] = [:]
 
     func setText(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -170,17 +166,21 @@ private final class ShareContentAccumulator {
         lock.unlock()
     }
 
-    func setPayload(filename: String, data: Data?) {
+    func setPayload(filename: String, data: Data?, index: Int, priority: Int) {
         guard let data, !data.isEmpty else { return }
         lock.lock()
-        content.payloads.append(InboxPayload(filename: filename, data: data))
+        if payloads[index] == nil || priority > payloads[index]!.priority {
+            payloads[index] = (priority, InboxPayload(filename: filename, data: data))
+        }
         lock.unlock()
     }
 
     func result() -> ShareExtractedContent {
         lock.lock()
         defer { lock.unlock() }
-        return content
+        var result = content
+        result.payloads = payloads.keys.sorted().compactMap { payloads[$0]?.payload }
+        return result
     }
 }
 #endif
