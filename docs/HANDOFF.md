@@ -2,6 +2,17 @@
 
 ## Current delivery
 
+Pending-epoch recovery core is committed as `451b8325`, with real-store restart,
+lost-ACK and late-edit tests. Native adoption is committed as `7ab6cbca`;
+[native verification](verification/2026-10-09-native-epoch-adoption.md).
+Live editor rebinding is unfinished. The independent review found an adopted
+journal crash window that falsely enters recovery and an old-document lifetime
+leak; fix these before delivery. Resume evidence and scopes:
+`/tmp/texttext-epoch-resume-after-limit.md`, `/tmp/texttext-epoch-core-review.md`.
+Fable stopped at its session limit (reset October 9, 02:50 Pacific); no workers
+remain running. The untracked epoch-adoption helper and tests are preserved,
+with isolated tests and TypeScript passing, but are not integrated or shipped.
+
 Installed: Mac 0.204 (1238, source `1dcfa980`), Windows source `488746b2`,
 Oracle `6d07ca4b`. Source past those builds is pending delivery: `033b1824`
 (clean journal after failed native checkpoint) and the rename focus fix below.
