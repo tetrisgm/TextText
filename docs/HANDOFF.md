@@ -2,7 +2,7 @@
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1230)**, source `f1ba5ec4`.
+- Mac `/Applications/TextText.app`: **0.204 (1231)**, source `c0d37699`.
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
   finds it immediately, and the same item/title/original URL opens on Oracle.
@@ -69,7 +69,9 @@
   Before restart, repairing the fixture directly did not clear the open reader
   error. Fix `c0d37699` reloads errored readers on file changes, preserves healthy
   editors and cancels stale recovery on navigation. TypeScript and the reader
-  browser suite pass. Build 1231 is running; installed acceptance remains.
+  browser suite and exact-source gate pass. Build 1231 installed; actual native
+  reproduction recovered automatically after atomic file repair, without reload
+  or reopening. Windows and Oracle still need the shared UI update.
   [Recovery and live sync evidence](verification/2026-10-08-reader-recovery-live-sync.md).
   Original fixture retained at `/tmp/texttext-photo1229-before-kind-fix.textpack`.
   Supersedes intermediate 1227/1228 candidates; neither was installed.

@@ -44,3 +44,16 @@ These are same-account physical-client samples. Earlier isolated two-account
 concurrent/reconnect evidence remains in `2026-10-08-current-client-acceptance.md`.
 This does not establish a latency percentile, current Windows live typing,
 second-device iCloud behavior, or the entire failure matrix.
+
+## Installed recovery acceptance
+
+Mac **0.204 (1231)**, source `c0d37699`, passed the exact-source gate and signed
+build/install. Signed-in startup retained the live sync note and all three
+markers. Reproduced the invalid kind in the dedicated photo fixture, opened it
+and observed the original parser error. Restored its exact valid bytes through
+an atomic filesystem replacement. The same open app automatically replaced the
+error with the Gallery editor and image control, without reload or navigation.
+The pre-test valid package is retained at
+`/tmp/texttext-photo1231-before-recovery-test.textpack`. No user draft was edited.
+Logs: `/tmp/texttext-mac1231-{build,install}.log`. Windows and Oracle have not yet
+received `c0d37699`; their reader recovery acceptance remains outstanding.
