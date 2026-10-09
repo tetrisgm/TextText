@@ -58,4 +58,28 @@ not six clients. The runner explicitly refocuses the caret before each input;
 natural cursor continuity is covered by the browser/unit tests, not this run.
 Overlapping replacements, custom template-source changes, crash windows,
 multiple external importers and the complete six-client fault schedule remain
-unfinished. Neither installed client nor Oracle was replaced for these tests.
+unfinished. The isolated PC tests did not replace its canonical app or Oracle. Mac delivery is recorded below.
+
+
+## Installed Mac 1233
+
+Source `176228d3`, version 0.204 (1233), installed at
+`/Applications/TextText.app` through the established local Store workflow.
+Exact-source sync gate, native tests and signing checks passed; three extensions
+are present. Logs `/tmp/texttext-mac1233-build.log` and
+`/tmp/texttext-mac1233-install.log`. Installer runtime-health probe was explicitly
+unverified; actual signed-in startup and editing were checked through CUA.
+
+On fixture `81cecae3-6cf9-47e0-9098-53f593832ed8`, two native inputs and three
+atomic CLI TextPack replacements appeared in the open editor. Subsequent native
+typing retained focus. Native undo removed only the second human input; redo
+restored it while all CLI markers remained. Finish returned to the normal reader.
+Independent ZIP inspection found all five markers exactly once, pack SHA256
+`2200b81caff07a8709b72306f9c76dc87f29b536ceb51be794982bdfc95fda71`.
+Before-CLI packs remain under `/tmp/texttext-mac1233-cli/`.
+
+Initial CUA caret placement did not match the requested paragraph, so this run
+does not certify initial selection placement. No Mac MutationObserver was used;
+continuous DOM retention is proven by browser regression and the PC runner.
+Six-client acceptance remains outstanding. The required existing TextText
+changelog was not found by CLI search; no duplicate was created.

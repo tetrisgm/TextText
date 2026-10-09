@@ -2,63 +2,27 @@
 
 ## Active sync repair
 
-External file changes now enter the existing client's serialized checkpoint
-drain instead of immediately closing the editor. A failed native CAS reads the
-fresh same-ID file and merges it with the last materialized snapshot and current
-Yjs document. Independent edits and simultaneous insertions retain the document,
-native lease and editor binding. Custom template-source changes and overlapping
-replacements still preserve recovery state; those are unfinished acceptance work.
-Browser regression covers pending typing, same editor element/focus, and both
-local-first and server-first changes. Unit coverage checks relative cursor
-continuity, persisted merged content and conflict preservation.
-Logs: `/tmp/texttext-inplace-core-final.log`,
-`/tmp/texttext-inplace-browser-external.log`. This candidate is not installed.
-Next: real PC collision run, undo/IME and crash-window coverage, then all six
-simultaneously. Existing `pc-tunnel` access recovered; direct `pc` reset earlier.
-Canonical PC app remains stopped from the earlier authorized acceptance run;
-restore it after preserving/reconciling the retained test-file journal.
-Core gate passed: 850 tests, TypeScript and both browser modes, source `c392f477`.
-Physical PC candidate `C:\Users\Shokunin\dev\texttext-live-acceptance-c392`
-uses that Windows UI (app.js SHA256
-`fb0440a45b4cd1c4b96d2923e5b5781b43703b05378f8f062ed5b8ef2f425eaf`).
-Run `inplacec392` failed before typing at file activation; no sync acceptance
-claim. PC CLI actor succeeded on dedicated fixture 81cecae3-6cf9-47e0-9098-53f593832ed8,
-with its original pack retained under receipts. Local copies:
-`/tmp/texttext-inplace-pc-events.jsonl`, `/tmp/texttext-inplace-pc-result.json`.
-Runner now captures heading/notices/editor availability on failure; rebuild
-passed with zero warnings/errors (`/tmp/texttext-inplace-runner-build.log`).
-Deploy that diagnostic runner to a fresh test directory and diagnose activation
-before scheduling another simultaneous run. Canonical installed clients unchanged.
-The diagnostic retry in `texttext-live-acceptance-cff` opened and edited the same
-fixture successfully; activation failure is intermittent, not explained or fixed.
-Receipts `/tmp/texttext-cff-{events.jsonl,result.json}`. No concurrent file actor
-ran in that retry. Further regression exposed loss of human undo after snapshot
-replacement. The repair now maps the external body's edit through the pending
-local edit and checks it against the validated merge before touching Yjs.
-Unit and real browser undo/redo preserve the CLI insertion. Gate log
-`/tmp/texttext-inplace-undo-core.log` passed: 851 tests, TypeScript and both browser modes.
-Physical PC `inplace3082` and `continuity3082` now pass app+CLI collisions, exact
-marker preservation and flush; the latter continuously verifies the original
-editor is never removed. Independent Mac inspection confirms the earlier run's
-markers arrived. [Receipt](verification/2026-10-08-inplace-file-merge.md).
-Next: crash-window and multiple-importer handling, six-client coordination,
-then verified client installs. PC production app remains stopped; isolated test
-apps closed normally and temporary task registrations were removed.
-No six-client pass has been obtained.
+External-file changes now reconcile through the existing Yjs checkpoint drain,
+retaining the editor, native lease and undo identities. Mac native CAS rejection
+also keeps the lease alive and prevents a second background import while editing.
+Source `176228d3` is installed as Mac 0.204 (1233). Full gates passed, including
+851 shared tests, TypeScript, browser continuity/undo and native suites.
+Actual Mac typing plus three CLI replacements preserved all markers; native
+undo/redo kept CLI edits, and Finish saved normally. PC isolated production-window
+tests also passed app/CLI collisions with continuous editor-element observation.
+[Evidence and limits](verification/2026-10-08-inplace-file-merge.md).
 
-Mac parity audit found its actor still retired the native lease on an external
-file CAS failure and could separately upload the file while editing. It now
-keeps same-ID live sessions protected and allows a validated fresh-revision CAS
-retry. A native regression preserves pending text, rejects the stale revision,
-prevents independent file upload and accepts the merged checkpoint under the
-same token. The full native gate passes
-(`/tmp/texttext-mac-inplace-native-gate.log`). Install this native change with the
-shared UI before physical Mac collision acceptance. Pre-install CUA inspection
-shows saved fixture 1232a in reader mode, no unsaved editor.
+Next: restart with pending edits plus external changes, multiple importers,
+overlapping replacements/template-source changes, and all six physical clients.
+No six-client pass. PC activation failed intermittently before a successful
+retry; root cause remains unexplained. Existing `pc-tunnel` access works.
+Canonical PC app remains stopped; preserve/reconcile the earlier retained test
+journal before reopening. Isolated acceptance apps closed normally.
 
 ## Authoritative delivery
 
-- Mac `/Applications/TextText.app`: **0.204 (1232)**, source `2e0e10c1`.
+- Mac `/Applications/TextText.app`: **0.204 (1233)**, source `176228d3`.
+  Latest install and native app/CLI acceptance: [receipt](verification/2026-10-08-inplace-file-merge.md).
   Signed-in startup and existing saved note/body passed on the real iCloud root.
   Actual Safari share now writes a bookmark into `Bookmarks`, native Command K
   finds it immediately, and the same item/title/original URL opens on Oracle.
