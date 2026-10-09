@@ -1,27 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { noteCardBacklinkExcerpt, noteCardHref } from "@/lib/note-card-links";
 import { vaultRequest, type VaultFile } from "./bridge";
 
 type Source = { path: string; title: string; excerpt: string };
 
 export function VaultCardBacklinks({ itemId, onOpen }: { itemId: string; onOpen: (path: string) => void }) {
+  const generation = useRef(0);
+  useEffect(() => () => { generation.current += 1; }, []);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState("");
   const load = async () => {
-    if (open) { setOpen(false); return; }
+    const request = ++generation.current;
+    if (open) { setOpen(false); setLoading(false); return; }
+    const current = () => generation.current === request;
     setOpen(true);
     setLoading(true);
     setError("");
     try {
       const page = await vaultRequest<{ items: { path: string; title: string }[]; truncated?: boolean }>("search", { query: noteCardHref(itemId).slice(1) });
+      if (!current()) return;
       const candidates = page.items.filter(item => item.path.startsWith("Notes/") && item.path.endsWith(".textpack"));
       const found: Source[] = [];
       for (let offset = 0; offset < candidates.length; offset += 4) {
+        if (!current()) return;
         const batch = await Promise.allSettled(candidates.slice(offset, offset + 4).map(async item => {
           const file = await vaultRequest<VaultFile>("read", { path: item.path });
           const excerpt = noteCardBacklinkExcerpt(file.markdown, itemId);
@@ -31,10 +37,11 @@ export function VaultCardBacklinks({ itemId, onOpen }: { itemId: string; onOpen:
         }));
         for (const result of batch) if (result.status === "fulfilled" && result.value) found.push(result.value);
       }
+      if (!current()) return;
       setSources(found);
       setTruncated(Boolean(page.truncated));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Linked cards could not be found."); }
-    finally { setLoading(false); }
+    } catch (reason) { if (current()) setError(reason instanceof Error ? reason.message : "Linked cards could not be found."); }
+    finally { if (current()) setLoading(false); }
   };
   return <div className="vault-card-backlinks">
     <button type="button" aria-expanded={open} onClick={() => void load()}>↶ {open ? "Hide links" : "Linked from"}</button>

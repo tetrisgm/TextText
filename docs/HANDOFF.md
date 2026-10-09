@@ -26,6 +26,12 @@
 
 ## Current candidate / immediate work
 
+- Shared Notes backlink cancellation is source-verified and awaits delivery.
+  Closed/unmounted scans stop after their current batch; old results/errors
+  cannot overwrite a reopened panel. Baseline fails the new regression; current
+  source, TypeScript and reader rerender checks pass.
+  [Receipt](verification/2026-10-08-backlinks-cancellation.md).
+
 - Live automatic PDF capture saved correct content but left the open reader
   pending until reload. Current source adds targeted reader invalidation after
   background capture, preserving unsaved drafts. TypeScript and five related
