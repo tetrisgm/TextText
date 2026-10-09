@@ -153,9 +153,11 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         journal: native.journal, document: readDocument(file.current),
         presentation: { templateJSON: file.current.templateJSON ?? null, templateAuthoringSourceJSON: file.current.templateAuthoringSourceJSON ?? null },
       } : undefined,
-      reconcileCheckpoint: native ? async () => {
+      reconcileCheckpoint: native ? async error => {
         const before = file.current;
-        const fresh = await vaultRequest<VaultFile>("read", { path: before.path });
+        // The native session follows a file renamed outside TextText; its refusal names the new path.
+        const movedPath = error instanceof VaultError && error.path && error.path !== before.path ? error.path : undefined;
+        const fresh = await vaultRequest<VaultFile>("read", { path: movedPath ?? before.path });
         if (stopped || !shared || !native || fresh.hash === before.hash || packIdentity(fresh.markdown) !== config.itemId) return false;
         // Custom template sources have their own version/metadata protocol.
         // Never silently overwrite a concurrently changed definition.
@@ -163,6 +165,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         if (!shared.reconcileExternalDocument(readDocument(before), readDocument(fresh))) return false;
         file.current = fresh;
         setOpened(fresh);
+        if (movedPath) onTitleChange?.(fresh.path, latestSnapshot.current.content.title);
         return true;
       } : undefined,
       checkpoint: native ? async ({ journal, document: next }) => {

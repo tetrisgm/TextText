@@ -186,6 +186,50 @@ describe("durable file collaboration client", () => {
     expect(editor.hasPendingChanges).toBe(false);
     expect(readDocument(openPack(server.bytes, "Shared.textpack", server.state.revision).file).content.body).toBe("Hello CLI human");
   });
+  it("hands the native refusal to reconciliation so a file renamed and edited outside TextText merges at its new path", async () => {
+    // The Mac actor follows a Finder rename; its `local_changed` refusal names the
+    // new path. Reconciliation must receive that error, read the moved file,
+    // merge it into the same document, and the retried checkpoint lands there.
+    const server = new Server(), journal = new Journal();
+    const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
+    base.content.title = "Shared"; base.content.body = "Hello";
+    const disk = { path: "Notes/Note.textpack", revision: 0, body: "Hello" };
+    let expected = { path: disk.path, revision: 0 };
+    const saved: { path: string; body: string }[] = [], seen: unknown[] = [];
+    const editor: FileCollaborationClient = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request,
+      checkpoint: async value => {
+        if (disk.revision !== expected.revision) {
+          throw Object.assign(new Error("The file changed outside shared editing."), { code: "local_changed", path: disk.path });
+        }
+        saved.push({ path: expected.path, body: value.document.content.body });
+      },
+      reconcileCheckpoint: async error => {
+        seen.push(error);
+        const refusal = error as { code?: string; path?: string };
+        const fresh = structuredClone(base); fresh.content.body = disk.body;
+        const merged = editor.reconcileExternalDocument(base, fresh);
+        if (merged) expected = { path: refusal.path ?? expected.path, revision: disk.revision };
+        return merged;
+      },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    const doc = editor.doc, body = documentText(doc, "body");
+    editor.mutate(() => body.insert(body.length, " human"));
+    const caret = Y.createRelativePositionFromTypeIndex(body, body.length);
+    // Finder rename, then a CLI edit at the new path, while typing is pending.
+    disk.path = "Notes/Renamed.textpack"; disk.revision = 1; disk.body = "Hello CLI";
+    editor.notifyExternalFileChange();
+    expect(await editor.flushLocal()).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ code: "local_changed", path: "Notes/Renamed.textpack" });
+    expect(editor.doc).toBe(doc); expect(editor.canEdit).toBe(true); expect(editor.status).not.toBe("error");
+    expect(body.toString()).toBe("Hello CLI human");
+    expect(Y.createAbsolutePositionFromRelativePosition(caret, doc)?.index).toBe(body.length);
+    expect(saved.at(-1)).toEqual({ path: "Notes/Renamed.textpack", body: "Hello CLI human" });
+    expect(saved.at(-1)?.body).toBe(body.toString());
+    expect(await editor.flush()).toBe(true);
+    expect(editor.hasPendingChanges).toBe(false);
+  });
   it("delivers custom presentation before checkpoint and retains it through offline reopen", async () => {
     const server = new Server(), journal = new Journal();
     const original = openPack(server.bytes, "Shared.textpack", server.state.revision);

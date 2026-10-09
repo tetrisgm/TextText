@@ -40,3 +40,29 @@ ready to ship. Independent review (`/tmp/texttext-rename-review.md`) found:
 Require regressions for delayed/offline rename, stale revision, combined rename
 and content edit, and retained-journal reopen before physical acceptance. Keep
 duplicate-identity ambiguity protected; never guess which copy owns the session.
+
+## Source repair verified
+
+The native session and retained journal now follow a unique same-identity file
+at its new path. External content changes retain the prior projection as the merge
+base and return the new path through `local_changed` to the existing Yjs
+reconciliation. Rename announcements do not occupy the content outbox; stale
+server revisions retry without fabricating a content conflict. Pending closed
+journals follow the same adoption/reconciliation path on reopen.
+
+Lookup checks on-disk identities even for previously indexed files. Ambiguous
+copies retain the pending journal and block ordinary sync from the first retiring
+cycle; no rename is announced. No unconditional extra decoding was added to idle
+polling.
+
+Verification: 225 native FileProviderKit tests, one skipped, zero failures;
+95 shared client/bridge tests and TypeScript passed before the final native-only
+identity guards. Regressions reproduce the old checkpoint-before-sync,
+sync-before-checkpoint, rename-plus-edit, retained-journal reopen and stale-index
+failures. Independent review findings were fixed. Reports:
+`/tmp/texttext-rename-complete-fable.md`, `/tmp/texttext-rename-restart-fable.md`,
+`/tmp/texttext-rename-final-review.md`, `/tmp/texttext-rename-last-test.md`,
+`/tmp/texttext-rename-ambiguity-fable.md`.
+
+Build/install, actual cursor/undo continuity and six-client convergence remain
+unverified for this source. Do not substitute these tests for physical acceptance.

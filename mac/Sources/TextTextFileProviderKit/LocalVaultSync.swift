@@ -139,6 +139,20 @@ public actor LocalVaultSync {
         let replayedOwnWrite = replayBeforeHash == expectedHash && checkpoint?.projectedHash == document.hash && checkpoint?.path == path && checkpoint?.retiredReason == nil
         guard document.hash == expectedHash || replayedOwnWrite,
               MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
+        if let saved = checkpoint, saved.retiredReason == nil, saved.pending, saved.path != path,
+           !FileManager.default.fileExists(atPath: try LocalVaultDocumentStore(root: root).url(for: saved.path).path),
+           try uniqueSameIdentityPath(itemId: itemId, excluding: saved.path) == path {
+            // The file was renamed while the app was closed. The retained
+            // journal follows the unique same-identity file; a different hash
+            // there is reconciled by the reopening editor against the
+            // projection, exactly like an external edit at the old path.
+            _ = try sharedStore.rebase(itemId: itemId, newPath: path, adoptingExternalChange: saved.projectedHash != document.hash)
+            if state.identities == nil { state.identities = [:] }
+            state.identities?.removeValue(forKey: saved.path)
+            state.identities?[path] = itemId
+            try persist()
+            checkpoint = try readSharedCheckpoint(itemId: itemId)
+        }
         if let saved = checkpoint {
             if saved.retiredReason == nil && (saved.path != path || saved.projectedHash != document.hash) {
                 if !saved.pending { try sharedStore.archive(itemId: itemId); checkpoint = nil }
@@ -158,8 +172,9 @@ public actor LocalVaultSync {
     public func materializeSharedEditing(sessionToken: String, itemId: String, expectedHash: String, epoch: Int, seq: Int,
         acknowledgedRevision: String, journalGeneration: UInt64, journal: String, pending: Bool,
         markdown: String, documentJSON: String) throws -> LocalVaultSharedMaterialization {
-        guard let session = sharedSessions[itemId], session.token == sessionToken else { throw LocalVaultSharedFailure.staleSession }
+        guard var session = sharedSessions[itemId], session.token == sessionToken else { throw LocalVaultSharedFailure.staleSession }
         guard !session.retired else { throw LocalVaultSyncFailure.changed }
+        if try followLocalSharedMove(itemId: itemId) { session = sharedSessions[itemId]! }
         if session.hash != expectedHash {
             // A live editor may have reconciled a fresh external file revision.
             // Accept only that exact same-item revision; materialization repeats
@@ -221,14 +236,94 @@ public actor LocalVaultSync {
             try persist()
         }
     }
+    /// The path a live session currently writes to, so an editor whose
+    /// checkpoint was refused as changed can read the file where it now lives.
+    public func sharedSessionPath(sessionToken: String, itemId: String) -> String? {
+        guard let session = sharedSessions[itemId], session.token == sessionToken, !session.retired else { return nil }
+        return session.path
+    }
+    /// The single TextPack, other than `source`, that carries `itemId`. The
+    /// index is not consulted: an outside copy or move can leave a path indexed
+    /// under another item while its bytes now carry this one, so every listed
+    /// file is read on disk. Two or more such files are ambiguous: nil, nothing
+    /// is guessed.
+    private func uniqueSameIdentityPath(itemId: String, excluding source: String) throws -> String? {
+        let store = LocalVaultDocumentStore(root: root)
+        func identity(_ path: String) -> String? {
+            (try? store.readMetadata(path: path)).flatMap { MarkdownIdentityCodec.extract(from: $0.contents.markdown)?.itemId }
+        }
+        var candidates = Set<String>()
+        // An external overwrite can change an indexed file's identity. Verify
+        // every candidate on disk before assigning ownership of a moved session.
+        for path in try store.list() where path != source && identity(path) == itemId {
+            candidates.insert(path)
+        }
+        guard candidates.count == 1 else { return nil }
+        return candidates.first
+    }
+    /// A shared session whose file was renamed or moved outside TextText
+    /// follows the file when exactly one same-identity TextPack exists in the
+    /// vault. Unchanged content keeps checkpointing directly; changed content
+    /// leaves the retained projection as the base so the editor merges the
+    /// external edit in place, exactly as it does without a rename. A closed
+    /// session with a pending journal follows the same way so the app can
+    /// reopen the file where it now lives; a clean closed checkpoint takes the
+    /// existing archive path instead. The old path stays in the sync baseline
+    /// so the next cycle uploads the rename. Several same-identity files are
+    /// ambiguous: nothing is guessed, the caller keeps the existing
+    /// retire-for-recovery protection. Returns true when the session moved.
+    private func followLocalSharedMove(itemId: String) throws -> Bool {
+        let live = sharedSessions[itemId]
+        if live?.retired == true { return false }
+        let checkpoint = try readSharedCheckpoint(itemId: itemId)
+        guard checkpoint?.retiredReason == nil, live != nil || checkpoint?.pending == true else { return false }
+        let source = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
+        let store = LocalVaultDocumentStore(root: root)
+        guard !FileManager.default.fileExists(atPath: try store.url(for: source).path) else { return false }
+        guard let destination = try uniqueSameIdentityPath(itemId: itemId, excluding: source),
+              let moved = try? store.read(path: destination),
+              MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == itemId else { return false }
+        if checkpoint != nil {
+            _ = try sharedStore.rebase(itemId: itemId, newPath: destination, adoptingExternalChange: moved.hash != expected)
+        }
+        if live != nil { sharedSessions[itemId]?.path = destination }
+        if state.identities == nil { state.identities = [:] }
+        state.identities?.removeValue(forKey: source)
+        state.identities?[destination] = itemId
+        try persist()
+        return true
+    }
+    /// Where a non-retired session writes and the bytes it expects there: the
+    /// live session, or a closed session's pending checkpoint.
+    private func followedSharedPath(itemId: String) throws -> (path: String, hash: String)? {
+        let live = sharedSessions[itemId]
+        if live?.retired == true { return nil }
+        let saved = try readSharedCheckpoint(itemId: itemId)
+        if saved?.retiredReason != nil { return nil }
+        if let live {
+            guard saved == nil || saved?.path == live.path else { return nil }
+            return (live.path, live.hash)
+        }
+        guard let saved, saved.pending else { return nil }
+        return (saved.path, saved.projectedHash)
+    }
     /// Rechecked immediately before local install/staging as actor reentrancy can activate editing during network awaits.
     private func sharedProtection(itemId: String) throws -> Bool {
         let checkpoint = try readSharedCheckpoint(itemId: itemId)
         let live = sharedSessions[itemId]
         guard checkpoint != nil || live != nil else { return false }
         if checkpoint == nil, live?.retired == true { return false }
-        let path = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
-        let current = try? LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        var path = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
+        var current = try? LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        if current == nil, try followLocalSharedMove(itemId: itemId) {
+            // The file was renamed or moved outside TextText, while open or
+            // while the app was closed with a pending journal. The session
+            // follows it; a changed projection there takes the same in-place
+            // external-edit branches below instead of retiring.
+            let checkpoint = try readSharedCheckpoint(itemId: itemId), live = sharedSessions[itemId]
+            path = checkpoint?.path ?? live!.path; expected = checkpoint?.projectedHash ?? live!.hash
+            current = try? LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        }
         if let checkpoint, checkpoint.pending, checkpoint.retiredReason == nil, let current, current.hash != checkpoint.projectedHash,
            MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId {
             // Reopening reconciles this file against the retained projection.
@@ -257,7 +352,11 @@ public actor LocalVaultSync {
             }
             _ = try sharedStore.retire(itemId: itemId, reason: "The file was changed, moved, or deleted outside shared editing. The retained journal is available for recovery.")
             sharedSessions[itemId]?.retired = true
-            return false
+            // A retired pending journal protects the item from this cycle on,
+            // the same rule the next cycle applies below. Otherwise the ordinary
+            // path could announce a rename or upload from a stale index while
+            // the move is still ambiguous.
+            return checkpoint?.pending == true
         }
         if checkpoint?.retiredReason != nil || live?.retired == true {
             // Retired shared bytes still need recovery; external file changes took the branch above.
@@ -326,9 +425,15 @@ public actor LocalVaultSync {
         let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: url))
         if state.outbox[itemId] == nil, state.conflicts[itemId] == nil,
            let checkpoint = try LocalVaultSharedEditingStore(root: canonicalRoot).checkpoint(itemId: itemId),
-           checkpoint.pending, checkpoint.retiredReason == nil, checkpoint.path == path {
-            let current = try LocalVaultDocumentStore(root: canonicalRoot).readMetadata(path: path)
-            if current.hash == localHash, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId { return true }
+           checkpoint.pending, checkpoint.retiredReason == nil {
+            let store = LocalVaultDocumentStore(root: canonicalRoot)
+            // A pending journal also reopens a file renamed while the app was
+            // closed; `beginSharedEditing` enforces that it is the unique same-identity file.
+            let sourceURL = try store.url(for: checkpoint.path)
+            if checkpoint.path == path || !FileManager.default.fileExists(atPath: sourceURL.path) {
+                let current = try store.readMetadata(path: path)
+                if current.hash == localHash, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId { return true }
+            }
         }
         guard let baseline = state.baselines[itemId], baseline.path == path,
               baseline.localHash == localHash, baseline.revision.count == 64,
@@ -767,6 +872,8 @@ public actor LocalVaultSync {
                        (localByID[id]?.count ?? 0) == 1,
                        let saved = try readSharedCheckpoint(itemId: id), saved.retiredReason == nil,
                        saved.path != remote.relativePath,
+                       // A local rename the session already follows is announced below, never undone.
+                       state.baselines[id]?.path != remote.relativePath,
                        localByID[id]?.first == saved.path,
                        sharedSessions[id]?.retired != true {
                         let moved = try sharedStore.rebase(itemId: id, newPath: remote.relativePath)
@@ -778,6 +885,34 @@ public actor LocalVaultSync {
                         }
                         activePath = moved.path
                         try persist(); report.downloaded += 1
+                    } else if let remote = remoteByID[id], !remote.isDeleted,
+                              state.outbox[id] == nil, state.conflicts[id] == nil,
+                              let baseline = state.baselines[id], remote.relativePath == baseline.path,
+                              let followed = try followedSharedPath(itemId: id),
+                              followed.path != baseline.path, localByID[id] == [followed.path] {
+                        // The file was renamed locally while open, or while closed
+                        // with a pending journal, and the session already follows
+                        // it. Announce the path directly: no outbox entry, so
+                        // checkpoints and reopen never see `busy`, and no conflict
+                        // copy, since content belongs to the collaboration session.
+                        // The server's current revision is the base; a stale one
+                        // simply retries next cycle.
+                        guard (try? store.readMetadata(path: followed.path))?.hash == followed.hash,
+                              await transport.canOrganize() else { continue }
+                        let saved = followed
+                        activePath = saved.path
+                        do {
+                            let revision = try await transport.rename(itemId: id, from: baseline.path, to: saved.path,
+                                baseRevision: remote.revision, operationId: UUID().uuidString.lowercased())
+                            if var current = state.baselines[id], current.path == baseline.path {
+                                current.path = saved.path; current.revision = revision
+                                state.baselines[id] = current
+                                try persist()
+                            }
+                            report.uploaded += 1; report.hasMore = true
+                        } catch LocalVaultSyncFailure.conflict {
+                            report.hasMore = true
+                        }
                     }
                     continue
                 }

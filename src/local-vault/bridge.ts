@@ -10,7 +10,8 @@ export type VaultFile = {
   assets?: { filename: string; contentType: string; data: string; remoteURL?: string }[];
 };
 export class VaultError extends Error {
-  constructor(message: string, public code?: string, public current?: VaultFile) { super(message); }
+  /** `path` is where a live native session now writes when the file moved outside TextText. */
+  constructor(message: string, public code?: string, public current?: VaultFile, public path?: string) { super(message); }
 }
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -38,7 +39,8 @@ if (typeof window !== "undefined") window.addEventListener("texttext:vault-reply
   request.timer = undefined;
   request.cleanup();
   if (error) {
-    const failure = new VaultError(typeof error === "string" ? error : error.message, error.code, error.current);
+    const failure = new VaultError(typeof error === "string" ? error : error.message, error.code, error.current,
+      typeof error.path === "string" ? error.path : undefined);
     if (Number.isInteger(error.status) && error.status >= 400 && error.status <= 599) Object.assign(failure, { status: error.status });
     request.reject(failure);
   }

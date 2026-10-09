@@ -7,6 +7,8 @@ struct LocalVaultCollaborationError: LocalizedError {
     let code: String
     let message: String
     var status: Int? = nil
+    /// Where the live local session now writes, when the file moved outside TextText.
+    var path: String? = nil
     var errorDescription: String? { message }
 
     static func response(status: Int, payload: [String: Any]?) -> Self {
@@ -464,11 +466,19 @@ final class LocalVaultCollaboration {
         let epoch = try Self.integer(params["epoch"], minimum: 1, maximum: 9_007_199_254_740_991)
         let seq = try Self.integer(params["seq"], minimum: 0, maximum: 9_007_199_254_740_991)
         let generation = try Self.integer(params["journalGeneration"], minimum: 1, maximum: 9_007_199_254_740_991)
-        let saved = try await active.engine.materializeSharedEditing(sessionToken: token, itemId: itemId,
-            expectedHash: hash, epoch: epoch, seq: seq, acknowledgedRevision: revision,
-            journalGeneration: UInt64(generation), journal: journal, pending: pendingNumber.boolValue,
-            markdown: markdown, documentJSON: documentJSON)
-        return ["path": saved.document.path, "hash": saved.document.hash]
+        do {
+            let saved = try await active.engine.materializeSharedEditing(sessionToken: token, itemId: itemId,
+                expectedHash: hash, epoch: epoch, seq: seq, acknowledgedRevision: revision,
+                journalGeneration: UInt64(generation), journal: journal, pending: pendingNumber.boolValue,
+                markdown: markdown, documentJSON: documentJSON)
+            return ["path": saved.document.path, "hash": saved.document.hash]
+        } catch LocalVaultSyncFailure.changed {
+            // The file changed outside the session, possibly at a new path the
+            // actor already follows. The editor reconciles from that path.
+            let current = await active.engine.sharedSessionPath(sessionToken: token, itemId: itemId)
+            throw LocalVaultCollaborationError(code: "local_changed",
+                message: "The file changed outside shared editing.", path: current)
+        }
     }
     func start(id: String, method: String, params: [String: Any], root: URL, completion: @escaping (Result<[String: Any]?, Error>) -> Void) {
         guard tasks[id] == nil, tasks.count < 8 else { completion(.failure(LocalVaultCollaborationError(code: "429", message: "Too many collaboration requests."))); return }

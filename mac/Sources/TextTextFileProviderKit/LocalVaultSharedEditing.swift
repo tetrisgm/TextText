@@ -44,6 +44,9 @@ struct LocalVaultSharedEditingStore: Sendable {
     private struct MoveIntent: Codable {
         var sourcePath: String
         var checkpoint: LocalVaultSharedCheckpoint
+        /// The destination was renamed and edited outside TextText; the retained
+        /// projection stays as the reconciliation base at the new path.
+        var adoptsExternalChange: Bool?
     }
     private struct Intent: Codable {
         var beforeHash: String
@@ -179,8 +182,11 @@ struct LocalVaultSharedEditingStore: Sendable {
     }
     /// Move the projection and its journal as one recoverable operation. Content,
     /// pending update batches and generations remain unchanged.
-    func rebase(itemId: String, newPath: String, interruptAfterIntent: Bool = false,
-                interruptAfterMove: Bool = false) throws -> LocalVaultSharedCheckpoint {
+    /// `adoptingExternalChange` lets a gone source follow a same-identity file
+    /// whose content also changed outside TextText. The caller must have proven
+    /// the destination unique; the projection is kept as the reconciliation base.
+    func rebase(itemId: String, newPath: String, adoptingExternalChange: Bool = false,
+                interruptAfterIntent: Bool = false, interruptAfterMove: Bool = false) throws -> LocalVaultSharedCheckpoint {
         guard var target = try checkpoint(itemId: itemId), target.retiredReason == nil else { throw LocalVaultSharedFailure.staleSession }
         if target.path == newPath { return target }
         let source = target.path
@@ -190,12 +196,23 @@ struct LocalVaultSharedEditingStore: Sendable {
         target.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
         try validate(target)
         let store = LocalVaultDocumentStore(root: root)
-        let current = try store.read(path: source)
-        guard current.hash == target.projectedHash,
-              MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId,
-              !FileManager.default.fileExists(atPath: try store.url(for: newPath).path) else { throw LocalVaultSyncFailure.changed }
+        var adopted = false
+        if FileManager.default.fileExists(atPath: try store.url(for: source).path) {
+            let current = try store.read(path: source)
+            guard current.hash == target.projectedHash,
+                  MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId,
+                  !FileManager.default.fileExists(atPath: try store.url(for: newPath).path) else { throw LocalVaultSyncFailure.changed }
+        } else {
+            // Finder, the CLI or a cloud provider already moved the file. Adopt
+            // the same identity at its new location; a changed projection is
+            // allowed only when the caller asks for external-change adoption.
+            let moved = try store.read(path: newPath)
+            guard MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == itemId,
+                  moved.hash == target.projectedHash || adoptingExternalChange else { throw LocalVaultSyncFailure.changed }
+            adopted = moved.hash != target.projectedHash
+        }
         let directory = try itemDirectory(itemId)
-        let intent = MoveIntent(sourcePath: source, checkpoint: target)
+        let intent = MoveIntent(sourcePath: source, checkpoint: target, adoptsExternalChange: adopted ? true : nil)
         try write(JSONEncoder().encode(intent), to: directory.appendingPathComponent("move-intent.json"))
         if interruptAfterIntent { throw LocalVaultSharedFailure.interrupted }
         return try finishMove(intent, directory: directory, interruptAfterMove: interruptAfterMove)
@@ -214,7 +231,7 @@ struct LocalVaultSharedEditingStore: Sendable {
             if interruptAfterMove { throw LocalVaultSharedFailure.interrupted }
         }
         let moved = try store.read(path: target.path)
-        guard moved.hash == target.projectedHash,
+        guard moved.hash == target.projectedHash || intent.adoptsExternalChange == true,
               MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == target.itemId else { throw LocalVaultSyncFailure.changed }
         try write(JSONEncoder().encode(target), to: directory.appendingPathComponent("checkpoint.json"))
         try FileManager.default.removeItem(at: directory.appendingPathComponent("move-intent.json"))

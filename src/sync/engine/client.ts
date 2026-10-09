@@ -42,7 +42,7 @@ export type FileCollaborationOptions = {
   checkpoint?: (value: FileCollaborationCheckpoint) => Promise<void>;
   /** Reconcile a failed native compare-and-swap before retrying the latest journal.
    * Must retain the native lease and adopt only a freshly read file revision. */
-  reconcileCheckpoint?: () => Promise<boolean>;
+  reconcileCheckpoint?: (error: unknown) => Promise<boolean>;
   onChange?: (snapshot: DocumentSnapshot, presentation?: FileCollaborationPresentation) => void;
   onStatus?: (status: FileCollaborationStatus, detail?: string) => void;
 };
@@ -295,7 +295,7 @@ export class FileCollaborationClient {
       catch (error) {
         if ((error as { code?: string } | null)?.code === "local_changed" && this.options.reconcileCheckpoint && !this.dead && !this.frozen) {
           try {
-            if (await this.options.reconcileCheckpoint()) {
+            if (await this.options.reconcileCheckpoint(error)) {
               this.persist();
               continue;
             }

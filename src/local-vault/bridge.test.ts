@@ -163,3 +163,22 @@ it("retains native recovery codes and HTTP status without leaking request timers
   await rejected;
   expect(vi.getTimerCount()).toBe(0);
 });
+it("carries the native session's new path on a local_changed refusal", async () => {
+  vi.resetModules();
+  const sent: { id: string; method: string; params: Record<string, unknown> }[] = [];
+  const surface = Object.assign(new EventTarget(), { webkit: { messageHandlers: { localVault: { postMessage: (body: typeof sent[number]) => sent.push(body) } } } });
+  vi.stubGlobal("window", surface);
+  const { vaultRequest, VaultError } = await import("./bridge");
+  const pending = vaultRequest("collaborationCheckpoint", { itemId: "item-1", path: "Notes/Note.textpack" });
+  const rejected = expect(pending).rejects.toSatisfy((error: unknown) =>
+    error instanceof VaultError && error.code === "local_changed" && error.path === "Notes/Renamed.textpack" && !("status" in error));
+  surface.dispatchEvent(new CustomEvent("texttext:vault-reply", {
+    detail: { id: sent[0].id, error: { code: "local_changed", message: "The file changed outside shared editing.", path: "Notes/Renamed.textpack" } },
+  }));
+  await rejected;
+  // A reply without a path, or with a non-string path, leaves it undefined.
+  const plain = vaultRequest("collaborationCheckpoint", { itemId: "item-1", path: "Notes/Note.textpack" });
+  const plainRejected = expect(plain).rejects.toSatisfy((error: unknown) => error instanceof VaultError && error.path === undefined);
+  surface.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail: { id: sent[1].id, error: { code: "local_changed", message: "changed", path: 7 } } }));
+  await plainRejected;
+});
