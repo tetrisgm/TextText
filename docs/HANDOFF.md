@@ -66,6 +66,10 @@ and the signed-in production browser found that note with the saved body.
   reopen without a recovery notice, and Mac file catch-up. The installed PC app
   was relaunched afterward. Pending-edit restart and concurrent fault rounds
   remain open.
+- An [agent-created built-in note](verification/2026-10-09-agent-template-cross-client.md)
+  kept one ID under idempotent retry, retained its template version, and
+  appeared in the Mac app, production browser, and Windows files. Custom look
+  authoring and the wider agent permission/proposal matrix remain unverified.
 - The older Windows `Six-client acceptance 1232a` journal could not merge
   automatically across an epoch change. Its edits are retained in the
   recovered TextPack and preinstall sync backup above. Test live recovery
