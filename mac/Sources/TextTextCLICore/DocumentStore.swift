@@ -332,7 +332,8 @@ public struct DocumentStore: Sendable {
         guard assets.count <= 2_000,
               assets.reduce(UInt64(0), { $0 + UInt64($1.data.count) }) <= 64 * 1_024 * 1_024,
               assets.allSatisfy({ TextTextTextBundlePackage.isSafeAssetFilename($0.filename) &&
-                  $0.remoteURL == "assets/\($0.filename)" && ($0.contentType?.utf8.count ?? 0) <= 200 }) else {
+                  $0.remoteURL == "assets/\($0.filename)" && ($0.contentType?.utf8.count ?? 0) <= 200 &&
+                  ($0.title?.utf16.count ?? 0) <= 240 }) else {
             throw TextTextCLIError.invalidDocument("invalid or oversized creation attachments")
         }
         let folderDefault = kind == nil && customDocumentJSON == nil ? try LocalVaultFolderDefault.read(root: root, folder: destination) : nil

@@ -56,7 +56,8 @@ extension DocumentStore {
         if !assets.isEmpty {
             payload["assets"] = assets.sorted { $0.filename < $1.filename }.map {
                 ["filename": $0.filename, "sha256": TextTextStableDigest.sha256Hex($0.data),
-                 "remoteURL": $0.remoteURL, "contentType": $0.contentType.map { $0 as Any } ?? NSNull()] as [String: Any]
+                 "remoteURL": $0.remoteURL, "contentType": $0.contentType.map { $0 as Any } ?? NSNull(),
+                 "title": $0.title.map { $0 as Any } ?? NSNull()] as [String: Any]
             }
         }
         let fingerprint = TextTextStableDigest.sha256Hex(

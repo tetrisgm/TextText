@@ -47,7 +47,7 @@ public struct BuiltinTextPackDocument: Sendable {
             let assetKind = ["image", "video", "audio"].first { mediaType.hasPrefix($0 + "/") } ?? "file"
             return ["id": "asset-" + TextTextStableDigest.sha256Hex(Data(asset.filename.utf8)),
                     "kind": assetKind, "src": "assets/\(asset.filename)",
-                    "title": String(asset.filename.prefix(240)), "contentType": mediaType]
+                    "title": asset.title ?? String(asset.filename.prefix(240)), "contentType": mediaType]
         }
         let document: [String: Any] = [
             "schemaVersion": 1,

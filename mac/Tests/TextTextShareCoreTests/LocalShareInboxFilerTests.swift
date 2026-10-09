@@ -61,6 +61,7 @@ final class LocalShareInboxFilerTests: XCTestCase {
         let content = snapshot["content"] as! [String: Any]
         let assets = content["assets"] as! [[String: Any]]
         XCTAssertEqual(assets.first?["kind"] as? String, "image")
+        XCTAssertEqual(assets.first?["title"] as? String, "image.png")
         XCTAssertEqual(assets.first?["src"] as? String, "assets/" + original.contents.assets[0].filename)
         XCTAssertEqual(try filer.file(record, root: root), created)
         XCTAssertEqual(try files.read(path: original.path).hash, original.hash)

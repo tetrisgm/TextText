@@ -60,7 +60,8 @@ struct LocalShareInboxFiler {
             let ext = type?.preferredFilenameExtension ?? "bin"
             let storedName = "shared-" + TextTextStableDigest.sha256Hex(data) + "." + ext
             assets = [.init(filename: storedName, data: data, remoteURL: "assets/\(storedName)",
-                            contentType: type?.preferredMIMEType ?? "application/octet-stream")]
+                            contentType: type?.preferredMIMEType ?? "application/octet-stream",
+                            title: String(filename.prefix(240)))]
             if !visual {
                 let label = filename.replacingOccurrences(of: "\\", with: "\\\\")
                     .replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")

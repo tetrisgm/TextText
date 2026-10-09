@@ -107,15 +107,17 @@ public enum TextTextTextBundlePackage {
         public let data: Data
         public let remoteURL: String
         public let contentType: String?
+        public let title: String?
 
         public init(
             filename: String, data: Data, remoteURL: String,
-            contentType: String? = nil
+            contentType: String? = nil, title: String? = nil
         ) {
             self.filename = filename
             self.data = data
             self.remoteURL = remoteURL
             self.contentType = contentType
+            self.title = title
         }
     }
 
