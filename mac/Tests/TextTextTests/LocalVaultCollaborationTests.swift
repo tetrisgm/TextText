@@ -198,6 +198,24 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
             method: "collaborationPush", params: ["itemId": "item", "operationId": "op", "epoch": 1, "updates": ["AQ=="], "editOrigin": "native-editor"]))
     }
+    func testRecoveryPushPreservesOperationAndRejectsAmbiguousOrOversizedPayloads() throws {
+        let params: [String: Any] = ["itemId": "item", "operationId": "recovery-1", "epoch": 1, "recoveryUpdate": "AQ=="]
+        let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+            method: "collaborationPush", params: params)
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+        XCTAssertEqual(Set(body.keys), ["operationId", "epoch", "recoveryUpdate"])
+        XCTAssertEqual(body["recoveryUpdate"] as? String, "AQ==")
+        XCTAssertEqual(body["operationId"] as? String, "recovery-1")
+        XCTAssertEqual(request.httpMethod, "POST")
+        // The request factory cannot assert a native journal has accepted the operation.
+        XCTAssertNil(request.value(forHTTPHeaderField: "X-TextText-Edit-Origin"))
+        for extra: [String: Any] in [["updates": ["AQ=="]], ["recoveryUpdate": ""],
+            ["recoveryUpdate": NSNull()], ["recoveryUpdate": String(repeating: "a", count: 6 * 1024 * 1024)],
+            ["editOrigin": "native-editor"], ["epoch": true]] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
+                method: "collaborationPush", params: params.merging(extra) { _, new in new }))
+        }
+    }
     func testPresenceUsesBoundItemEndpointAndWhitelistedSessions() throws {
         let read = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "fixture",
             method: "presenceRead", params: ["itemId": "item-1"])

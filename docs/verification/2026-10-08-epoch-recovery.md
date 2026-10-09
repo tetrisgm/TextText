@@ -84,3 +84,17 @@ replacing the client or removing that key cannot safely adopt a different Yjs
 epoch. Keep the mounted editor while transitioning its binding or projecting
 through a retained editor document; verify selection and undo as well as DOM
 identity. Native pending-journal adoption remains a separate required gate.
+
+Mac's bounded collaboration request factory now accepts the same mutually
+exclusive recovery payload. It rejects ambiguous updates/recovery combinations,
+null or empty payloads, oversized requests, forged edit-origin parameters and
+invalid epochs. It does not claim native journal attestation from JavaScript.
+All 19 `LocalVaultCollaborationTests` passed on the Mac in
+`/tmp/texttext-mac-recovery-transport.log` using `swift test --package-path mac
+--jobs 2 --filter LocalVaultCollaborationTests`. The automatic recovery caller,
+native adoption and structured native recovery errors are still pending.
+
+An epoch transition must also move awareness to the authoritative Yjs identities;
+a separate old editor document cannot reuse server relative cursor positions.
+Preserving the React element alone is insufficient proof of collaborative
+selection or undo correctness.

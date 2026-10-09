@@ -270,14 +270,26 @@ final class LocalVaultCollaboration {
             url.queryItems = query.isEmpty ? nil : query
             request.url = url.url
         } else if method == "collaborationPush" {
-            guard Set(params.keys).isSubset(of: ["itemId", "operationId", "epoch", "updates"]),
-                  let operationId = params["operationId"] as? String, identifier(operationId),
-                  let updates = params["updates"] as? [String], !updates.isEmpty, updates.count <= 64,
-                  updates.allSatisfy({ $0.utf8.count <= 512 * 1024 }) else {
+            guard Set(params.keys).isSubset(of: ["itemId", "operationId", "epoch", "updates", "recoveryUpdate"]),
+                  let operationId = params["operationId"] as? String, identifier(operationId) else {
                 throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration update.")
             }
             let epoch = try integer(params["epoch"], minimum: 1, maximum: 9_007_199_254_740_991)
-            let data = try JSONSerialization.data(withJSONObject: ["operationId": operationId, "epoch": epoch, "updates": updates])
+            var body: [String: Any] = ["operationId": operationId, "epoch": epoch]
+            if let recovery = params["recoveryUpdate"] {
+                guard params["updates"] == nil, let update = recovery as? String,
+                      !update.isEmpty, update.utf8.count <= 6 * 1024 * 1024 else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration recovery.")
+                }
+                body["recoveryUpdate"] = update
+            } else {
+                guard let updates = params["updates"] as? [String], !updates.isEmpty, updates.count <= 64,
+                      updates.allSatisfy({ $0.utf8.count <= 512 * 1024 }) else {
+                    throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration update.")
+                }
+                body["updates"] = updates
+            }
+            let data = try JSONSerialization.data(withJSONObject: body)
             guard data.count <= 6 * 1024 * 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Collaboration update exceeds its size limit.") }
             request.httpMethod = "POST"; request.httpBody = data
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
