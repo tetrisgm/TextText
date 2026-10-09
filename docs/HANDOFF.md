@@ -68,8 +68,11 @@ and the signed-in production browser found that note with the saved body.
   remain open.
 - An [agent-created built-in note](verification/2026-10-09-agent-template-cross-client.md)
   kept one ID under idempotent retry, retained its template version, and
-  appeared in the Mac app, production browser, and Windows files. Custom look
-  authoring and the wider agent permission/proposal matrix remain unverified.
+  appeared in the Mac app, production browser, and Windows files. A
+  [custom agent-authored type](verification/2026-10-09-agent-custom-type-cross-client.md)
+  also passed idempotent creation, item creation, signed-in browser rendering,
+  and Windows file propagation. Type update/remix/retire and the wider agent
+  permission/proposal matrix remain unverified.
 - The older Windows `Six-client acceptance 1232a` journal could not merge
   automatically across an epoch change. Its edits are retained in the
   recovered TextPack and preinstall sync backup above. Test live recovery
