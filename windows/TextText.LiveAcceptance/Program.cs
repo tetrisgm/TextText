@@ -56,6 +56,11 @@ static class Program
                 }
                 catch (Exception error)
                 {
+                    Record(new { kind = "failure-native", closing = Field(window, "closing"),
+                        transitioning = Field(window, "transitioning"), activating = Field(window, "activatingFile"),
+                        attempts = Field(window, "activationAttempts"),
+                        queued = (Field(window, "activationFiles") as IEnumerable<string>)?.Count(),
+                        accountPresent = Field(window, "account") is not null, bridgePresent = Field(window, "bridge") is not null });
                     try
                     {
                         if (Field(window, "web") is WebView2 diagnostic && diagnostic.CoreWebView2 is not null)
