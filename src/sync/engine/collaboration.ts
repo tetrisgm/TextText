@@ -88,8 +88,9 @@ export function seedVaultCollaboration(bytes: Uint8Array, itemId: string, epoch:
   return { epoch, seq: 0, revision, update: Buffer.from(update).toString("base64") };
 }
 
-/** Project a causally based local file edit into the current Yjs epoch. Opaque
- * archive changes still require reopening the pack, so callers fence those. */
+/** Project a causally based local file edit into the current Yjs epoch.
+ * Assets belong to the pack, not the Yjs text identity; other opaque metadata
+ * changes still require a separate presentation reconciliation. */
 export function projectVaultFileEdit(state: VaultCollaborationState, currentBytes: Uint8Array,
   nextBytes: Uint8Array, itemId: string): VaultCollaborationState | null {
   if (state.revision !== hash(currentBytes) || !Number.isSafeInteger(state.seq) || state.seq >= Number.MAX_SAFE_INTEGER) return null;
@@ -99,7 +100,7 @@ export function projectVaultFileEdit(state: VaultCollaborationState, currentByte
   const contentNames = new Set([beforePack.prefix + "text.md", beforePack.prefix + "document.json"]);
   const opaqueNames = new Set([...Object.keys(beforePack.entries), ...Object.keys(afterPack.entries)]);
   for (const name of opaqueNames) {
-    if (contentNames.has(name)) continue;
+    if (contentNames.has(name) || name.startsWith(beforePack.prefix + "assets/")) continue;
     const before = beforePack.entries[name], after = afterPack.entries[name];
     if (!before || !after || before.length !== after.length || before.some((byte, index) => byte !== after[index])) return null;
   }

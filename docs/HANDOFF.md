@@ -80,8 +80,9 @@ replacements and six-client acceptance remain outstanding.
   passed: 853 tests, TypeScript and all three browser modes. Navigation fix
   passed isolated physical activation, but the pending fixture still shows recovery.
   Canonical delivery and successful pending restart acceptance remain outstanding.
-  A separate 1232d runner is awaiting result collection; new PC SSH connections
-  currently reset on both existing profiles, so its CLI actor never started.
+  A separate 1232d runner returned exit 0 (12 inputs, editor continuity); its
+  individual receipts still need collection. New PC SSH connections reset on
+  both existing profiles, so its CLI actor never started.
   [Current delivery and open failure](verification/2026-10-08-restart-delivery.md).
 - Real workspace: `/Users/shokunin/Library/Mobile Documents/com~apple~CloudDocs/TextText/Workspace`,
   ID `be28ae03-c64e-4695-80af-04f048f86f37`. Preserve content.

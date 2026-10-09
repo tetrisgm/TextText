@@ -76,9 +76,10 @@ Original checkpoint copies remain preserved. This is an unresolved recovery
 failure, not a passed restart test.
 
 A separate fixture 1232d continuity run was launched under `receipts-d` with
-12 inputs. Its result is not yet collected: new SSH connections are temporarily
-resetting on both existing PC profiles. The CLI actor did not start. Do not
-count this as a simultaneous app/CLI run. Local runner compilation passed with
+12 inputs. The original live process returned exit 0 and reported acceptance
+passed. New SSH connections are temporarily resetting on both existing PC
+profiles, so individual receipts are not yet collected. The CLI actor did not
+start. Do not count this as a simultaneous app/CLI run. Local runner compilation passed with
 zero warnings/errors (`/tmp/texttext-cursor-observation-build.log`). The runner
 now records bounded protocol cursor/permission observations without response
 content or credentials to distinguish retirement causes on subsequent runs.

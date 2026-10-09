@@ -175,15 +175,40 @@ describe("durable file collaboration", () => {
     expect((await readVaultTextpack(location()))?.revision).toBe(merged.revision);
   });
 
-  it("fences local pack edits that change opaque entries", async () => {
+  it("keeps live text identities when a verified file edit adds, replaces or removes attachments", async () => {
+    let initial = (await readVaultCollaboration(location()))!;
+    const cases: Record<string, Uint8Array>[] = [
+      { "assets/opaque.bin": new Uint8Array([1, 2, 3]) },
+      { "assets/opaque.bin": new Uint8Array([4, 5, 6]), "assets/second.bin": new Uint8Array([7]) },
+      {},
+    ];
+    for (const [index, files] of cases.entries()) {
+      const pending = edit(initial, ` human-${index}`);
+      const changed = pack(body(initial), files);
+      const written = await writeVaultTextpack({ ...location(), relativePath, operationId: `attachment-${index}`,
+        baseRevision: initial.revision, bytes: changed, liveReconcile: true });
+      expect(written.status).toBe("written");
+      const observed = (await readVaultCollaboration(location()))!;
+      expect(observed.epoch).toBe(initial.epoch);
+      await push(`human-after-attachment-${index}`, initial, pending);
+      initial = (await readVaultCollaboration(location()))!;
+      expect(body(initial)).toContain(`human-${index}`);
+      const stored = (await readVaultTextpack(location()))!;
+      const entries = unzipSync(stored.bytes);
+      const assets = Object.fromEntries(Object.entries(entries).filter(([name]) => name.includes("/assets/"))
+        .map(([name, bytes]) => [name.slice(name.indexOf("assets/")), bytes]));
+      expect(assets).toEqual(files);
+    }
+  });
+
+  it("still fences unrelated opaque pack metadata changes", async () => {
     const initial = (await readVaultCollaboration(location()))!;
-    const changed = pack("Hello", { "assets/opaque.bin": new Uint8Array([1, 2, 3]) });
-    const written = await writeVaultTextpack({ ...location(), relativePath, operationId: "local-asset-edit",
+    const changed = pack("Hello", { "opaque.bin": new Uint8Array([1, 2, 3]) });
+    await writeVaultTextpack({ ...location(), relativePath, operationId: "opaque-metadata-edit",
       baseRevision: initial.revision, bytes: changed, liveReconcile: true });
-    expect(written.status).toBe("written");
     const reopened = (await readVaultCollaboration(location()))!;
     expect(reopened.epoch).toBe(initial.epoch + 1);
-    await expect(push("stale-after-asset", initial, edit(initial, " stale")))
+    await expect(push("stale-after-metadata", initial, edit(initial, " stale")))
       .rejects.toBeInstanceOf(VaultCollaborationEpochError);
   });
 
