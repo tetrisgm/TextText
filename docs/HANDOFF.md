@@ -8,7 +8,11 @@ file conflict while other clients continued. Its pending edits remain protected.
 Source now fixes JSON equivalence, preserves generated metadata through conditional
 upload, reconciles local concurrent appends, and recovers attested old metadata
 conflicts. Native and focused browser tests pass. Build/install the combined
-candidate next; aa6a3bd0 passed Windows gates but predates the last two fixes.
+candidate next; e1c67014 Windows build exited successfully but its receipt still
+needs collection. A further startup-order failure now has a bounded multiple-edit
+merge and Yjs ownership regression; [repair and remaining acceptance](verification/2026-10-08-multispan-recovery.md).
+The old stuck PC test app was stopped after preserving its full profile, file and
+sync state. Physical recovery and six-client acceptance have not passed.
 
 Mac 1235 and Windows source 1163846d are installed. Mac save/reopen and visible
 Windows Edge editing passed; the Mac independently saw the Edge edits.

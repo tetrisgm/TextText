@@ -108,6 +108,28 @@ describe("durable file collaboration client", () => {
       expect(body.toString()).toBe("Hello CLI human");
     } finally { undo.destroy(); }
   });
+  it("preserves human undo and caret when an external file prepends and appends", async () => {
+    const server = new Server(), editor = client(server);
+    await editor.start();
+    const base = documentSnapshotFromYDoc(editor.doc);
+    const body = documentText(editor.doc, "body"), doc = editor.doc;
+    const undo = new Y.UndoManager(body, { captureTimeout: 0 });
+    try {
+      editor.mutate(() => body.insert(body.length, " human"));
+      const caret = Y.createRelativePositionFromTypeIndex(body, body.length);
+      const external = structuredClone(base);
+      external.content.body = "before " + base.content.body + " CLI";
+      expect(editor.reconcileExternalDocument(base, external)).toBe(true);
+      expect(editor.doc).toBe(doc);
+      expect(body.toString()).toBe("before Hello CLI human");
+      expect(Y.createAbsolutePositionFromRelativePosition(caret, doc)?.index).toBe(body.length);
+      undo.undo();
+      expect(body.toString()).toBe("before Hello CLI");
+      undo.redo();
+      expect(body.toString()).toBe("before Hello CLI human");
+      expect(await editor.flush()).toBe(true);
+    } finally { undo.destroy(); }
+  });
   it("does not overwrite an overlapping external replacement during checkpoint reconciliation", async () => {
     const server = new Server(), journal = new Journal();
     const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });

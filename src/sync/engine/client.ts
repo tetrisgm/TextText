@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc, documentText, hasDocumentSnapshot } from "@/lib/collab/document";
 import { replaceSharedText } from "@/lib/collab/text-transactions";
-import { externalBodyEdit, reconcileDocumentSnapshots } from "./reconcile";
+import { externalBodyEdits, reconcileDocumentSnapshots } from "./reconcile";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -379,12 +379,11 @@ export class FileCollaborationClient {
     const current = this.snapshot();
     const result = reconcileDocumentSnapshots(base, current, external, { concurrentInsertions: "remote-first" });
     if (result.status !== "merged") return false;
-    const bodyEdit = externalBodyEdit(base.content.body, current.content.body, external.content.body);
-    const projected = bodyEdit ? current.content.body.slice(0, bodyEdit.start) + bodyEdit.replacement + current.content.body.slice(bodyEdit.end) : current.content.body;
-    if (projected !== result.document.content.body) return false;
+    const bodyEdits = externalBodyEdits(base.content.body, current.content.body, external.content.body, result.document.content.body);
+    if (!bodyEdits) return false;
     this.mutate(doc => {
       applyDocumentSnapshot(doc, { ...result.document, content: { ...result.document.content, body: current.content.body } }, "external-file");
-      if (bodyEdit) replaceSharedText(documentText(doc, "body"), bodyEdit.start, bodyEdit.end - bodyEdit.start, bodyEdit.replacement, "external-file");
+      for (const bodyEdit of bodyEdits) replaceSharedText(documentText(doc, "body"), bodyEdit.start, bodyEdit.end - bodyEdit.start, bodyEdit.replacement, "external-file");
     });
     return !this.frozen;
   }

@@ -97,6 +97,7 @@
     "@ai-sdk/openai": "^4.0.16",
     "@auth/core": "0.41.3",
     "ai": "^7.0.29",
+    "diff": "9.0.0",
     "drizzle-orm": "^0.45.2",
     "fast-xml-parser": "^5.11.1",
     "fflate": "^0.8.3",
