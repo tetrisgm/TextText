@@ -90,6 +90,7 @@ public sealed class SyncEngine
             ReconcileLifecycles(state,local,remote);
             RecoverMetadataAdoption(state,local,remote);
             AdoptQueuedUploadPaths(state,local,remote);
+            RetrySupersededUploads(state,local,remote);
             local=store.Scan().ToDictionary(x=>x.ItemId);
             var hadPendingWrites=state.Outbox.Any(x=>!x.Conflicted&&!IsEditing(x.ItemId)&&Permitted(state,x));
             await Drain(state,cancellation);
@@ -202,6 +203,28 @@ public sealed class SyncEngine
             state.Outbox[state.Outbox.IndexOf(op)]=replacement;
             state.Items[op.ItemId]=baseline with{Path=server.RelativePath};
             Save(state);store.ClearIntent(op.ItemId);
+        }
+    }
+    void RetrySupersededUploads(State state,Dictionary<string,PackFile> local,Dictionary<string,RemoteItem> remote) {
+        foreach(var op in state.Outbox.ToArray()) {
+            // A fenced upload is final only for the bytes it carried. A later
+            // local save supersedes those bytes, so the current file is queued
+            // against the same attested base and the server's compare-and-swap
+            // decides whether the change still competes. The superseded payload
+            // stays preserved, the base is never moved, and the receipt identity
+            // changes because the replacement is a new command.
+            if(op.Kind!="upload"||!op.Conflicted||op.Revision==null||op.Payload==null||IsEditing(op.ItemId)
+                ||state.Outbox.Count(x=>x.ItemId==op.ItemId)!=1||store.Intent(op.ItemId)!=null
+                ||!state.Items.TryGetValue(op.ItemId,out var baseline)||baseline.Revision!=op.Revision||baseline.Path!=op.Path||baseline.Lifecycle!=op.Lifecycle
+                ||!local.TryGetValue(op.ItemId,out var file)||file.Path!=op.Path||file.Hash==op.Hash||file.Hash==baseline.Hash
+                ||!remote.TryGetValue(op.ItemId,out var server)||server.Deleted||server.RelativePath!=op.Path||server.Lifecycle!=op.Lifecycle)continue;
+            byte[] bytes;
+            try {bytes=store.Read(file.Path);if(TextPackStore.Hash(bytes)!=file.Hash||TextPackStore.Identity(bytes)!=op.ItemId)continue;}
+            catch(IOException){continue;}catch(InvalidDataException){continue;}catch(UnauthorizedAccessException){continue;}
+            var replacement=new Operation(Guid.NewGuid().ToString(),"upload",op.ItemId,op.Path,null,op.Revision,file.Hash,Convert.ToBase64String(bytes),false,op.Lifecycle);
+            if(!Permitted(state,replacement))continue;
+            store.Preserve(Convert.FromBase64String(op.Payload),"conflict");
+            state.Outbox[state.Outbox.IndexOf(op)]=replacement;Save(state);
         }
     }
     void ReconcileLifecycles(State state,Dictionary<string,PackFile> local,Dictionary<string,RemoteItem> remote) {
