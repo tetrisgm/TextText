@@ -78,7 +78,9 @@ pass (36 and 39 tests). The shared browser client now distinguishes a binary-onl
 sequence from a Yjs update and refreshes assets without remounting the editor;
 native file-change handling adopts asset-only file revisions without retiring a
 pending journal. Focused client/asset tests and TypeScript pass. Fresh physical
-six-client verification remains open; seed 89 is still a failure.
+six-client verification remains open; seed 89 is still a failure. Commit
+`b84e32e6` bounds retries for a failed browser asset read so a transient error
+does not leave an open editor stale. The focused 82 tests and TypeScript pass.
 
 Next: repair live binary-entry propagation while native editors stay mounted,
 verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,
