@@ -54,7 +54,13 @@ asset in the same atomic TextPack write as that actor's planned text edit.
 The replacement bytes must hash to the matching `expectedAssetHashes` entry.
 Use a small disposable asset; the protocol caps the encoded payload at 96 KiB.
 Seed 88 passed three rounds with an unchanged asset and a separate six-client
-reopen. An in-flight replacement still needs a physical receipt.
+reopen. Later single-entry replacements from each CLI passed with fresh-process
+reopens; see the acceptance contract. For simultaneous replacements of two
+different entries, use `assetReplacements` with exactly two entries in the same
+shape, one for `mac-cli` and one for `pc-cli`, with distinct asset paths. The
+runner checks both final hashes at each file actor. Seed 111 passed two real
+six-client rounds with both replacements, followed by seed 112 reopening all
+six clients; receipts are in the acceptance contract.
 
 Set `pattern` to `"overlap-replace"` for four live editors replacing the
 existing fixture sentence while both CLIs append. Set `pattern` to

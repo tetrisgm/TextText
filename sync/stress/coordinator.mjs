@@ -27,6 +27,7 @@ export function mulberry32(seed) {
 export const normalizeText = (text) =>
   String(text).replace(/\r\n/g, '\n');
 export const hashText = (text) => createHash('sha256').update(normalizeText(text)).digest('hex');
+const assetReplacementsOf = (config) => config.assetReplacements ?? (config.assetReplacement ? [config.assetReplacement] : []);
 
 // Deterministic per-round edit plan from the seed.
 export function planRounds(seed, rounds, pattern = 'append') {
@@ -64,8 +65,11 @@ export function validateConfig(config) {
         || path.split('/').some(part => !part || part === '.' || part === '..' || !/^[A-Za-z0-9._-]+$/.test(part))
         || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash))) fail('expectedAssetHashes must contain up to 32 safe asset paths and SHA-256 hashes');
   }
-  if (config.assetReplacement !== undefined) {
-    const a = config.assetReplacement;
+  if (config.assetReplacement !== undefined && config.assetReplacements !== undefined) fail('use one asset replacement format');
+  if (config.assetReplacements !== undefined && (!Array.isArray(config.assetReplacements) || config.assetReplacements.length !== 2))
+    fail('assetReplacements must contain one edit for each CLI actor');
+  const replacementKeys = new Set(), replacementPaths = new Set();
+  for (const a of assetReplacementsOf(config)) {
     if (!a || !['mac-cli', 'pc-cli'].includes(a.role) || !Number.isInteger(a.round) || a.round < 1 || a.round > config.rounds
       || typeof a.path !== 'string' || !a.path.startsWith('assets/')
       || a.path.split('/').some(part => !part || part === '.' || part === '..' || !/^[A-Za-z0-9._-]+$/.test(part))
@@ -74,7 +78,14 @@ export function validateConfig(config) {
       || config.expectedAssetHashes[a.path] !== createHash('sha256').update(Buffer.from(a.bytesBase64, 'base64')).digest('hex')) {
       fail('assetReplacement must be a bounded CLI asset edit matching expectedAssetHashes');
     }
+    const key = `${a.role}:${a.round}`;
+    if (replacementKeys.has(key) || replacementPaths.has(a.path)) fail('assetReplacements must use distinct actors and paths');
+    replacementKeys.add(key); replacementPaths.add(a.path);
   }
+  if (config.assetReplacements && new Set(config.assetReplacements.map(a => a.role)).size !== 2)
+    fail('assetReplacements must use both CLI actors');
+  if (config.assetReplacements && config.assetReplacements[0].round !== config.assetReplacements[1].round)
+    fail('assetReplacements must run in the same round');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
   if (config.offline !== undefined) {
     if (!config.offline || !EDITOR_ROLES.includes(config.offline.role)
@@ -154,9 +165,8 @@ export class Coordinator {
     writeFileSync(this.resultsPath, '');
     const scenario = { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null };
-    if (this.config.assetReplacement) scenario.assetReplacement = { role: this.config.assetReplacement.role,
-      round: this.config.assetReplacement.round, path: this.config.assetReplacement.path,
-      sha256: this.config.expectedAssetHashes[this.config.assetReplacement.path] };
+    if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
+      role: a.role, round: a.round, path: a.path, sha256: this.config.expectedAssetHashes[a.path] }));
     writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern)}, null, 2));
     this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture, scenario });
     this.writeDashboard('running');
@@ -216,9 +226,8 @@ export class Coordinator {
         ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
       scenario: { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
-        ...(this.config.assetReplacement ? { assetReplacement: { role: this.config.assetReplacement.role,
-          round: this.config.assetReplacement.round, path: this.config.assetReplacement.path,
-          sha256: this.config.expectedAssetHashes[this.config.assetReplacement.path] } } : {}) },
+        ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
+          role: a.role, round: a.round, path: a.path, sha256: this.config.expectedAssetHashes[a.path] })) } : {}) },
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
       attestations: this.attestations, outputDir: this.dir,
     };
@@ -326,8 +335,8 @@ export class Coordinator {
     const pending = this.collect(round, 'applied');                       // all-ready barrier
     for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text,
       target: edit.op === 'replace-target' ? this.config.pattern === 'partial-overlap' ? PARTIAL_REPLACE_TARGET : REPLACE_TARGET : undefined,
-      assetReplacement: this.config.assetReplacement?.role === edit.role && this.config.assetReplacement.round === round
-        ? { path: this.config.assetReplacement.path, bytesBase64: this.config.assetReplacement.bytesBase64 } : undefined } }); // concurrent dispatch
+      assetReplacement: assetReplacementsOf(this.config).filter(a => a.role === edit.role && a.round === round)
+        .map(a => ({ path: a.path, bytesBase64: a.bytesBase64 }))[0] } }); // concurrent dispatch
     const applied = await pending;
     for (const edit of edits) if (applied.get(edit.role).editId !== edit.id) throw new StressFailure('applied-mismatch', { round, role: edit.role, expected: edit.id, actual: applied.get(edit.role).editId });
     this.record('edit-barrier', { round, roles: ROLES });

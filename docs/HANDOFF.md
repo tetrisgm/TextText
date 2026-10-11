@@ -2,126 +2,40 @@
 
 ## Current work (October 11)
 
-Latest: `a7aac0c1` receives binary assets after a Mac editor closes.
-Mac Store-shaped build 1253 and the matching Windows candidate are installed.
-On fresh fixture `Notes/Six-client acceptance binary 1253.textpack`, two
-simultaneous six-client rounds with a PC CLI text and asset replacement passed
-with zero rejected edits and exact asset hash, then all six reopened and passed.
-Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-22-46-762Z-101`
-and `stress-2026-10-11T19-23-55-901Z-102` alongside it.
+Source `76322731` defers an open Mac editor's binary upload until it has
+imported a simultaneous direct-file text edit; 39 Mac sync tests pass.
+Store-shaped Mac 0.203 build 1254 is installed in `/Applications` and opened
+the current iCloud workspace with the final test note. The matching Windows
+candidate is installed. No website or public Mac release was deployed.
 
-The reverse Mac CLI combined text and asset edit **failed** on fresh fixture
-`Notes/Six-client acceptance Mac binary 1253.textpack`: all six received the
-new asset but lost the Mac CLI's first-round text marker. Failure receipt:
-`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-26-59-123Z-105`.
-`76322731` now defers open-editor binary upload while its projected text is
-behind the local file. All 39 Mac sync tests pass. A fresh reverse-direction
-fixture `Notes/Six-client acceptance Mac binary 1254.textpack` passed two
-six-client rounds with the Mac CLI replacing text and attachment together,
-zero rejected edits, exact attachment hash, and a separate fresh-process
-six-client reopen. Receipts:
-`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-46-53-400Z-109`
-and `stress-2026-10-11T19-48-30-176Z-110` alongside it. Store-shaped Mac
-build 1254 passed its release checks and is installed in `/Applications`;
-its UI opened the same iCloud workspace and showed the final 12 text markers
-with no recovery banner. The PC “Keep editing” dialog has not yet been
-retested in the normal app and remains open. Preserve the unrelated dirty
-files listed below.
+Physical six-client receipts on fresh fixtures:
 
-Source `80bcd4e2`, `725281fa`, and `ce6f5cba` repair Mac collaboration
-restoration and same-item open races. `fe103e26` preserves an unfocused editor
-during local-to-shared promotion. The focused and unfocused browser regressions,
-TypeScript, and the client and core sync gates passed. A private signed Mac
-stress actor was rebuilt from current source; the installed Mac app remains
-build 1250, and neither Oracle web nor a public Mac release was deployed.
+- PC CLI combined text/attachment replacement and fresh-process reopen:
+  `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-22-46-762Z-101`
+  and `stress-2026-10-11T19-23-55-901Z-102` alongside it.
+- Mac CLI combined text/attachment replacement and reopen after the fix:
+  `stress-2026-10-11T19-46-53-400Z-109` and
+  `stress-2026-10-11T19-48-30-176Z-110` alongside it. The earlier seed 105
+  lost a CLI text marker; its failure receipt is retained.
+- Both CLIs replacing **different** assets during two rounds while four editors
+  changed text, followed by all six reopening: `stress-2026-10-11T20-01-04-011Z-111`
+  and `stress-2026-10-11T20-02-33-181Z-112` alongside it. Zero rejected edits,
+  exact final text and both asset hashes.
 
-Six real clients passed a Mac-app offline edit plus forced crash/restart on
-fixture `Notes/Six-client acceptance Mac crash 1281.textpack`, followed by a
-fresh-process six-client reopen with identical hash
-`c5ad0bbc167d6d21a9039ca07ed4cd5819ba7f88420fc0e94053e1cc76c7890b`.
-Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-08-47-106Z-81`
-and `stress-2026-10-11T15-09-21-179Z-81` alongside it. Earlier Mac and
-Windows transport-loss/reconnect plus reopen receipts are listed in
-[the acceptance contract](verification/six-client-sync-acceptance.md).
+Next: same-entry asset conflict with preserved versions, whole TextPack and folder
+operations, delete/restore, two-account permissions, and sustained latency and
+resource measurements. The normal Windows “Keep editing” close path has not
+been separately reproduced on the latest installed candidate. Do not certify
+full sync or ship a public release until the remaining matrix passes.
 
-The reciprocal PC-app pending-edit crash passed on fresh fixture
-`Notes/Six-client acceptance PC crash 1285.textpack` with zero rejected edits,
-followed by a six-client fresh-process reopen at exact hash
-`f627b9e3a2490d1186d2a13682b3fbf3a50977cdfe44a2abd406844628440408`.
-Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-34-34-103Z-85`
-and `stress-2026-10-11T15-36-19-395Z-85` alongside it. The prior seed 83
-failure and seed 85 first readiness failure remain recorded, not counted as
-passes. The Windows process-stop relay was corrected to wait on its validated
-process object. Initial Mac native activation sometimes reopened the previous
-file. The frontend now gives an explicit native open priority over saved-location
-restoration; early/queued browser regressions and a fresh physical six-client
-reopen passed at `stress-2026-10-11T15-42-38-187Z-85`. Repeat on a new fixture
-before considering the startup race closed.
-
-Fresh seed 87 passed a real six-client partial-overlap round with zero
-rejected edits, then a separate all-client reopen at exact hash
-`d8b0cea3833a8258c95e4ee3f629e144d67b359292884d4825e4c3ff3a92924e`.
-Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-49-54-501Z-87`
-and `stress-2026-10-11T15-51-15-372Z-87` alongside it.
-
-Seed 88 passed three six-client text rounds and fresh reopen while both Mac
-and PC TextPacks retained exact attachment hash
-`b0e8a8eb92c36f8866407013c607f13127ae9f48b7f6750f236851d23426664d`.
-Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-58-24-974Z-88`
-and `stress-2026-10-11T16-00-14-261Z-88`. The harness now requires both file
-actors to attest exact asset bytes. In-flight replacement on fresh fixture
-`Notes/Six-client acceptance asset change 1289.textpack` **failed** seed 89:
-all six clients converged on text, but `assets/data.txt` changed only in the
-PC pack. The Mac pack retained the old hash. Receipt:
-`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T16-11-05-790Z-89`.
-The active native shared session excludes the item from normal pack sync; Yjs
-updates carry text/document data, not changed binary entry bytes. The server
-can project a live asset-only pack edit without resetting its Yjs epoch
-(`src/lib/vault/collaboration.test.ts`), but native upload and remote materialization
-while open need a durable, fenced path. Do not replay seed 89 as a pass.
-The required protocol and regression matrix are in
-[live binary sync](verification/live-binary-sync.md).
-Commit `60ef2040` adds an authenticated binary-entry GET/PATCH surface and an
-atomic per-entry hash/lifecycle compare-and-swap writer that advances the live
-Yjs sequence without replacing text. Store and route tests passed, including
-receipt replay, same-entry conflict, lifecycle fencing, and text edits before
-and after a binary change. A follow-up adds scoped binary transport on web,
-Windows, and Mac, with focused web and Mac relay tests. Native Swift and .NET
-sync transports also now expose the scoped calls; the .NET transport contract
-test passes. Windows now durably stages and sends direct asset changes in an
-open editor. Its native tests cover lost acknowledgment, same-entry conflict,
-and temporary provider-file absence. Windows now keeps queued asset bytes in
-an atomic sidecar file so a large attachment does not inflate the sync-state
-JSON. Mac now durably stages direct asset edits in an open editor and replays
-the same operation after a lost reply and process restart; its 35 focused sync
-tests pass. Windows now applies incoming asset entries to an open editor through
-a recoverable file intent. Native tests cover crashes before and after the file
-write, retained pending text, a subsequent same-session save, and a same-entry
-conflict that preserves both versions. Mac now also receives remote asset changes
-while a shared editor stays open, using an atomic file replacement and a replayable
-binary intent that retains pending text. Focused Mac sync and shared-editing suites
-pass (36 and 39 tests). The shared browser client now distinguishes a binary-only
-sequence from a Yjs update and refreshes assets without remounting the editor;
-native file-change handling adopts asset-only file revisions without retiring a
-pending journal. Focused client/asset tests and TypeScript pass. Fresh physical
-six-client verification remains open; seed 89 is still a failure. Commit
-`b84e32e6` bounds retries for a failed browser asset read so a transient error
-does not leave an open editor stale. The focused 82 tests and TypeScript pass.
-
-Next: repair live binary-entry propagation while native editors stay mounted,
-verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,
-separate-account permissions, and sustained latency/resource tests. Do not
-call sync certified or ship a public release until the matrix passes. The
-unrelated dirty files in `mac/Package.resolved`, assistant attachments, tabs
+Unrelated dirty files in `mac/Package.resolved`, assistant attachments, tabs
 tests, `mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts` belong to
 other work; preserve them.
 
-## Earlier records
-
-[Archived October 9–11 handoffs](archive/texttext-handoff-through-2026-10-11.md).
-
 ## References
 
-- [Sync design](file-vault-collaboration-2026-09-30.md) and [agent interoperability](agent-interoperability.md)
+- [Six-client acceptance and receipts](verification/six-client-sync-acceptance.md)
+- [Live binary sync protocol](verification/live-binary-sync.md)
+- [Detailed prior handoff](archive/texttext-handoff-2026-10-11-stress.md)
+- [Earlier history](archive/texttext-handoff-through-2026-10-11.md)
 - [Oracle operations](../release/oracle/README.md)
-- [Archived earlier handoff](archive/HANDOFF-2026-10-09-pre-final19.md)

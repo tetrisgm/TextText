@@ -77,6 +77,18 @@ test('missing roles are rejected before any process starts', () => {
     assetReplacement: { role: 'pc-cli', round: 1, path: 'assets/photo.png', bytesBase64 } }));
   assert.throws(() => validateConfig({ ...makeConfig(), expectedAssetHashes: { 'assets/photo.png': hash },
     assetReplacement: { role: 'pc-cli', round: 1, path: 'assets/photo.png', bytesBase64 } }), /assetReplacement/);
+  const otherBytesBase64 = Buffer.from('second asset').toString('base64');
+  const otherHash = createHash('sha256').update(Buffer.from(otherBytesBase64, 'base64')).digest('hex');
+  const paired = { ...makeConfig(), expectedAssetHashes: { 'assets/photo.png': replacementHash, 'assets/other.png': otherHash },
+    assetReplacements: [
+      { role: 'pc-cli', round: 1, path: 'assets/photo.png', bytesBase64 },
+      { role: 'mac-cli', round: 1, path: 'assets/other.png', bytesBase64: otherBytesBase64 },
+    ] };
+  assert.doesNotThrow(() => validateConfig(paired));
+  assert.throws(() => validateConfig({ ...paired, assetReplacements: [paired.assetReplacements[0], { ...paired.assetReplacements[1], path: 'assets/photo.png' }] }), /assetReplacement/);
+  assert.throws(() => validateConfig({ ...paired, assetReplacements: [paired.assetReplacements[0], { ...paired.assetReplacements[1], role: 'pc-cli' }] }), /distinct actors/);
+  assert.throws(() => validateConfig({ ...paired, assetReplacements: [paired.assetReplacements[0], { ...paired.assetReplacements[1], round: 2 }] }), /same round/);
+  assert.throws(() => validateConfig({ ...paired, assetReplacement: paired.assetReplacements[0] }), /one asset replacement format/);
 });
 
 test('asset evidence requires both physical file actors to retain the expected bytes', () => {

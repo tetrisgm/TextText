@@ -87,6 +87,19 @@ cannot satisfy physical acceptance or substitute for a missing native adapter.
 
 ## Current evidence and gaps
 
+October 11 paired-asset follow-up: the coordinator now drives two different
+attachment replacements in the same round, one from each direct-file actor.
+On fresh fixture `Notes/Six-client acceptance paired assets 1254.textpack`, all
+six real clients passed two rounds with zero rejected edits and final text hash
+`db3ee9dd3fb9e9dc02b7be70e4f46f8402410cfeff4c32b90de111b816f7dcd7`.
+The Mac and PC file actors both attested the exact new hashes of
+`assets/mac.bin` and `assets/pc.bin`; a separate fresh-process reopen passed
+all six. Receipts:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T20-01-04-011Z-111`
+and `stress-2026-10-11T20-02-33-181Z-112` alongside it. This covers
+different-entry merge, not same-entry conflict preservation. Whole-item moves,
+delete/restore, two-account permissions, and latency distributions remain open.
+
 October 10 physical runner receipts: seed 42 passed one concurrent six-client
 append round; seed 43 passed five rounds; seed 44 passed ten rounds and a
 six-client restart with the exact final body hash. Seed 46 passed a Mac browser
