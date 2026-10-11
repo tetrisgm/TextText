@@ -450,7 +450,9 @@ export class FileCollaborationClient {
   reconcileExternalDocument(base: DocumentSnapshot, external: DocumentSnapshot): boolean {
     if (!this.initialized || !this.canEdit || this.frozen || this.dead) return false;
     const current = this.snapshot();
-    const result = reconcileDocumentSnapshots(base, current, external, { concurrentInsertions: "remote-first" });
+    const result = reconcileDocumentSnapshots(base, current, external, {
+      concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+    });
     if (result.status !== "merged") return false;
     const bodyEdits = externalBodyEdits(base.content.body, current.content.body, external.content.body, result.document.content.body);
     if (!bodyEdits) return false;

@@ -5,7 +5,7 @@ import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import {
-  validateActorConfig, readPack, canonicalRoot, bodyOf, editIdsOf, validateIdentity, appendToPack,
+  validateActorConfig, readPack, canonicalRoot, bodyOf, editIdsOf, validateIdentity, appendToPack, replaceTargetInPack,
   stableRead, applyEdit, transientInvalidPack, observeBody, createActor, sanitizeError, ActorError, TITLE_PREFIX,
 } from './file-adapter.mjs';
 
@@ -114,6 +114,20 @@ test('append keeps frontmatter, every opaque entry and document.json byte for by
   const twice = appendToPack(after, config, '[pc-cli r1 echo9]');
   assert.equal(bodyOf(strFromU8(decompressed(twice).files['Six-client acceptance 2026-10-09.textbundle/text.md'])), `${BASE_BODY}${text}[pc-cli r1 echo9]`);
   assert.throws(() => appendToPack(before, config, ''), /non-empty/);
+});
+
+test('same-span replacement changes only the canonical body and refuses a missing target', () => {
+  const before = buildPack();
+  const config = { itemId: ITEM, title: TITLE };
+  const after = replaceTargetInPack(before, config, 'Existing fixture text.', '[mac-cli r1 kilo42]');
+  const a = decompressed(before), b = decompressed(after);
+  assert.deepEqual(b.order, a.order);
+  for (const name of a.order) {
+    if (name.endsWith('.textbundle/text.md')) continue;
+    assert.ok(Buffer.from(a.files[name] ?? []).equals(Buffer.from(b.files[name] ?? [])), `entry changed: ${name}`);
+  }
+  assert.equal(bodyOf(strFromU8(b.files['Six-client acceptance 2026-10-09.textbundle/text.md'])), '[mac-cli r1 kilo42]\n');
+  assert.throws(() => replaceTargetInPack(after, config, 'Existing fixture text.', '[mac-cli r1 kilo43]'), /exactly once/);
 });
 
 test('mismatched identity refuses to write and leaves the file untouched', async () => {

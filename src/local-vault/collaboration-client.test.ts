@@ -164,6 +164,27 @@ describe("durable file collaboration client", () => {
     expect(editor.reconcileExternalDocument(base, external)).toBe(true);
     expect(documentText(editor.doc, "body").toString()).toBe("[mac-app r1 delta81][mac-cli r1 echo843]");
   });
+  it("keeps the editor mounted and both texts when a CLI replaces its selected span", async () => {
+    const server = new Server(), journal = new Journal();
+    server.bytes = pack("Existing fixture text."); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
+    const editor = client(server, journal);
+    await editor.start();
+    const body = documentText(editor.doc, "body");
+    const undo = new Y.UndoManager(body, { captureTimeout: 0 });
+    const base = documentSnapshotFromYDoc(editor.doc);
+    try {
+      editor.mutate(doc => { const text = documentText(doc, "body"); text.delete(0, text.length); text.insert(0, "[human]"); });
+      const external = structuredClone(base); external.content.body = "[agent]";
+      expect(editor.reconcileExternalDocument(base, external)).toBe(true);
+      expect(documentText(editor.doc, "body")).toBe(body);
+      expect(body.toString()).toBe("[agent][human]");
+      expect(editor.status).not.toBe("error");
+      undo.undo();
+      expect(body.toString()).toBe("[agent]");
+      undo.redo();
+      expect(body.toString()).toBe("[agent][human]");
+    } finally { undo.destroy(); }
+  });
   it("merges a CLI append with pending typing through the same document and native lease", async () => {
     const server = new Server(), journal = new Journal();
     const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });

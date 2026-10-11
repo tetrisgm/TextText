@@ -133,6 +133,16 @@ describe("reconcileDocumentSnapshots", () => {
         .toBe("ONE TWO three FOUR");
     });
 
+    it("keeps both exact same-span replacements in stable order", () => {
+      const { base, local, remote } = replicas("before old after");
+      local.content.body = "before human after";
+      remote.content.body = "before agent after";
+      expect(reconcileDocumentSnapshots(base, local, remote, {
+        concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+      })).toMatchObject({ status: "merged", document: { content: { body: "before agenthuman after" } } });
+      expect(reconcileDocumentSnapshots(base, local, remote, remoteFirst).status).toBe("conflict");
+    });
+
     it("orders coincident insertions remote-first next to other local edits", () => {
       expect(merged("ab cd", "aXb cdL", "aYb cd")).toBe("aYXb cdL");
     });

@@ -36,6 +36,10 @@ test('plan is deterministic for a seed and differs across seeds', () => {
   assert.deepEqual(overlap.map(edit => edit.op), ['insert-start', 'insert-start', 'append', 'insert-start', 'insert-start', 'append']);
   assert.deepEqual(planRounds(7, 1, 'overlap-replace')[0].edits.map(edit => edit.op),
     ['replace-selection', 'replace-selection', 'append', 'replace-selection', 'replace-selection', 'append']);
+  assert.deepEqual(planRounds(7, 1, 'file-overlap')[0].edits.map(edit => edit.op),
+    ['replace-selection', 'replace-selection', 'replace-target', 'replace-selection', 'replace-selection', 'append']);
+  assert.deepEqual(planRounds(8, 1, 'file-overlap')[0].edits.map(edit => edit.op),
+    ['replace-selection', 'replace-selection', 'append', 'replace-selection', 'replace-selection', 'replace-target']);
   assert.ok(planRounds(7, 1, 'unicode')[0].edits.every(edit => edit.text.includes('東京') && edit.text.includes('🧪') && edit.op === 'append'));
 });
 

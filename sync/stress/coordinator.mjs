@@ -36,7 +36,9 @@ export function planRounds(seed, rounds, pattern = 'append') {
       const word = WORDS[Math.floor(rand() * WORDS.length)];
       const n = Math.floor(rand() * 1000);
       const marker = `[${role} r${round} ${word}${n}]`;
-      const op = EDITOR_ROLES.includes(role) && pattern === 'overlap-replace' ? 'replace-selection'
+      const fileReplaceRole = seed % 2 ? 'mac-cli' : 'pc-cli';
+      const op = pattern === 'file-overlap' && role === fileReplaceRole ? 'replace-target'
+        : EDITOR_ROLES.includes(role) && (pattern === 'overlap-replace' || pattern === 'file-overlap') ? 'replace-selection'
         : pattern === 'same-position' && EDITOR_ROLES.includes(role) ? 'insert-start' : 'append';
       return { role, id: `r${round}-${role}`, op, text: pattern === 'unicode' ? `🌿 café 東京 ${marker} 🧪` : marker };
     });
@@ -51,8 +53,8 @@ export function validateConfig(config) {
   if (!MODES.has(config.mode)) fail('mode must be "real" or "simulated"');
   if (!Number.isInteger(config.seed)) fail('seed must be an integer');
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
-  if (config.pattern !== undefined && !['append', 'same-position', 'unicode', 'overlap-replace'].includes(config.pattern)) fail('pattern must be append, same-position, unicode, or overlap-replace');
-  if (config.pattern === 'overlap-replace' && config.rounds !== 1) fail('overlap-replace requires exactly one round');
+  if (config.pattern !== undefined && !['append', 'same-position', 'unicode', 'overlap-replace', 'file-overlap'].includes(config.pattern)) fail('unknown pattern');
+  if (['overlap-replace', 'file-overlap'].includes(config.pattern) && config.rounds > 1) fail('overlap patterns allow one round or a zero-round reopen');
   if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedBaselineHash ?? '')) fail('a zero-round reopen requires expectedBaselineHash');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
   if (config.offline !== undefined) {
@@ -154,7 +156,7 @@ export class Coordinator {
       }
       if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', { evidence });
       this.baseline = normalizeText(texts[0]);
-      if (this.config.pattern === 'overlap-replace' && this.baseline.split(REPLACE_TARGET).length !== 2) {
+      if (['overlap-replace', 'file-overlap'].includes(this.config.pattern) && this.config.rounds > 0 && this.baseline.split(REPLACE_TARGET).length !== 2) {
         throw new StressFailure('replacement-fixture-invalid', { target: REPLACE_TARGET, count: this.baseline.split(REPLACE_TARGET).length - 1 });
       }
       if (this.config.expectedBaselineHash && hashText(this.baseline) !== this.config.expectedBaselineHash) {
@@ -179,7 +181,7 @@ export class Coordinator {
       runId: this.runId, status, failure, mode: this.config.mode,
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real'
-        ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : 'six-client-append-only') : 'none',
+        ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : 'six-client-append-only') : 'none',
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
       attestations: this.attestations, outputDir: this.dir,
     };
@@ -259,7 +261,7 @@ export class Coordinator {
   async runRound({ round, edits }) {
     const started = Date.now();
     const ready = this.collect(round, 'ready');
-    this.broadcast({ type: 'prepare', round, select: this.config.pattern === 'overlap-replace' ? REPLACE_TARGET : undefined });
+    this.broadcast({ type: 'prepare', round, select: ['overlap-replace', 'file-overlap'].includes(this.config.pattern) ? REPLACE_TARGET : undefined });
     await ready;
     const invalidRole = this.config.transientInvalid?.round === round ? this.config.transientInvalid.role : null;
     if (invalidRole) {
@@ -272,7 +274,7 @@ export class Coordinator {
     const offlineRole = this.config.offline?.round === round ? this.config.offline.role : null;
     if (offlineRole) await this.setTransport(round, offlineRole, false);
     const pending = this.collect(round, 'applied');                       // all-ready barrier
-    for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text } }); // concurrent dispatch
+    for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text, target: edit.op === 'replace-target' ? REPLACE_TARGET : undefined } }); // concurrent dispatch
     const applied = await pending;
     for (const edit of edits) if (applied.get(edit.role).editId !== edit.id) throw new StressFailure('applied-mismatch', { round, role: edit.role, expected: edit.id, actual: applied.get(edit.role).editId });
     if (offlineRole) await this.setTransport(round, offlineRole, true);
@@ -312,7 +314,7 @@ export class Coordinator {
         if (remaining.split(edit.text).length !== 2) throw new StressFailure('content-mismatch', { round, role, editId: edit.id });
         remaining = remaining.replace(edit.text, '');
       }
-      const expectedBaseline = this.config.pattern === 'overlap-replace' ? this.baseline.replace(REPLACE_TARGET, '') : this.baseline;
+      const expectedBaseline = ['overlap-replace', 'file-overlap'].includes(this.config.pattern) ? this.baseline.replace(REPLACE_TARGET, '') : this.baseline;
       if (remaining !== expectedBaseline) throw new StressFailure('baseline-lost', { round, role });
     }
     for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);

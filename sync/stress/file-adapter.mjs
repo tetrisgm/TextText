@@ -151,10 +151,20 @@ export function validateIdentity(pack, config) {
 // unchanged, stored (level 0) with the fixed timestamp the app writer uses. document.json is not
 // touched; that is what an ordinary external edit looks like and what the app must reconcile.
 export function appendToPack(bytes, config, text) {
+  return editPack(bytes, config, text);
+}
+
+export function replaceTargetInPack(bytes, config, target, text) {
+  if (typeof target !== 'string' || !target.length || target.length > 1000) throw new ActorError('edit', 'replacement target is invalid');
+  return editPack(bytes, config, text, target);
+}
+
+function editPack(bytes, config, text, target) {
   if (typeof text !== 'string' || !text.length) throw new ActorError('edit', 'edit text must be a non-empty string');
   const pack = readPack(bytes);
-  validateIdentity(pack, config);
-  const nextMarkdown = strToU8(markdownOf(pack) + text);
+  const { markdown, body } = validateIdentity(pack, config);
+  if (target && body.split(target).length !== 2) throw new ActorError('edit', 'replacement target must occur exactly once');
+  const nextMarkdown = strToU8(target ? markdown.slice(0, markdown.length - body.length) + body.replace(target, text) : markdown + text);
   if (nextMarkdown.byteLength > LIMITS.markdownBytes) throw new ActorError('pack-too-large', 'text.md would exceed its limit');
   const zip = {};
   for (const e of pack.entries) zip[e.name] = [e.name === `${pack.root}text.md` ? nextMarkdown : e.data, { level: 0, mtime: EPOCH }];
@@ -189,11 +199,11 @@ export async function stableRead(file, { attempts = 20, settleMs = 50 } = {}) {
 // Read, append, verify the bytes are still what was read, then temp+rename. A concurrent change seen
 // at the final check restarts the whole cycle, a bounded number of times. The pre-edit bytes are kept
 // as a backup in the receipt directory before the original is replaced.
-export async function applyEdit({ file, config, text, round, runDir, journal = () => {}, beforeReplace = () => {} }) {
+export async function applyEdit({ file, config, text, target, round, runDir, journal = () => {}, beforeReplace = () => {} }) {
   for (let attempt = 1; attempt <= WRITE_RETRIES; attempt += 1) {
     const before = await stableRead(file);
     const beforeSha = sha256(before);
-    const next = appendToPack(before, config, text);
+    const next = target ? replaceTargetInPack(before, config, target, text) : appendToPack(before, config, text);
     const backup = join(runDir, `${config.role}-r${round}-a${attempt}-before.textpack`);
     if (existsSync(backup)) throw new ActorError('receipts', 'backup for this round already exists; use a new run');
     writeFileSync(backup, before, { flag: 'wx' });
@@ -303,8 +313,8 @@ export function createActor(config, { platform = process.platform, machineId = h
     async edit(m) {
       requireRun();
       const edit = m.edit ?? {};
-      if (edit.op !== 'append' || typeof edit.id !== 'string' || typeof edit.text !== 'string') throw new ActorError('edit', 'only append edits with id and text are supported');
-      const result = await applyEdit({ file: config.file, config, text: edit.text, round: m.round, runDir: state.runDir, journal });
+      if (!['append', 'replace-target'].includes(edit.op) || typeof edit.id !== 'string' || typeof edit.text !== 'string') throw new ActorError('edit', 'unsupported file edit');
+      const result = await applyEdit({ file: config.file, config, text: edit.text, target: edit.op === 'replace-target' ? edit.target : undefined, round: m.round, runDir: state.runDir, journal });
       journal({ event: 'applied', round: m.round, editId: edit.id, ...result });
       return { type: 'applied', round: m.round, editId: edit.id };
     },

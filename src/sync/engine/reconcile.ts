@@ -64,6 +64,15 @@ export function externalBodyEdits(base: string, local: string, external: string,
   const fast = single ? [single] : [];
   if (project(fast) === merged) return fast;
   const ownSpan = edit(base, local), incomingSpan = edit(base, external);
+  // Both writers replaced precisely the same existing range. The merge keeps
+  // both authored replacements in remote-first order. Insert the external
+  // text next to the local Yjs text instead of deleting/recreating that text;
+  // its identity, selection, and undo ownership must survive reconciliation.
+  if (ownSpan.start === incomingSpan.start && ownSpan.end === incomingSpan.end &&
+      ownSpan.start < ownSpan.end && ownSpan.replacement && incomingSpan.replacement) {
+    const insertion = { start: ownSpan.start, end: ownSpan.start, replacement: incomingSpan.replacement };
+    if (project([insertion]) === merged) return [insertion];
+  }
   const start = Math.min(ownSpan.start, incomingSpan.start);
   const end = Math.max(ownSpan.end, incomingSpan.end), tail = base.length - end;
   const before = base.slice(start, end);
@@ -106,9 +115,16 @@ function edit(base: string, changed: string): TextEdit {
   return { start, end, replacement: changed.slice(start, changedEnd) };
 }
 
-function mergeBody(base: string, local: string, remote: string, concurrentInsertions?: "remote-first"): string | undefined {
+function mergeBody(base: string, local: string, remote: string, concurrentInsertions?: "remote-first", preserveOverlappingReplacement = false): string | undefined {
   const localEdit = edit(base, local), remoteEdit = edit(base, remote);
   if (concurrentInsertions && localEdit.start === localEdit.end && remoteEdit.start === remoteEdit.end && localEdit.start === remoteEdit.start) {
+    return base.slice(0, localEdit.start) + remoteEdit.replacement + localEdit.replacement + base.slice(localEdit.end);
+  }
+  // A direct-file writer and a live editor may replace the exact same text.
+  // Neither replacement can be discarded. Match Yjs's concurrent insertion
+  // behavior with a deterministic order while retaining both authored texts.
+  if (preserveOverlappingReplacement && localEdit.start === remoteEdit.start && localEdit.end === remoteEdit.end &&
+      localEdit.start < localEdit.end && localEdit.replacement && remoteEdit.replacement) {
     return base.slice(0, localEdit.start) + remoteEdit.replacement + localEdit.replacement + base.slice(localEdit.end);
   }
   const edits = [localEdit, remoteEdit].sort((a, b) => a.start - b.start);
@@ -231,7 +247,7 @@ export function reconcileDocumentSnapshots(
   baseInput: DocumentSnapshot,
   localInput: DocumentSnapshot,
   remoteInput: DocumentSnapshot,
-  options?: { concurrentInsertions?: "remote-first" },
+  options?: { concurrentInsertions?: "remote-first"; preserveOverlappingReplacement?: boolean },
 ): DocumentReconciliation {
   const base = validateDocumentSnapshot(baseInput);
   const local = validateDocumentSnapshot(localInput);
@@ -244,7 +260,7 @@ export function reconcileDocumentSnapshots(
     if (equal(right, before)) return left;
     if (path === "/content/body" && typeof before === "string" &&
         typeof left === "string" && typeof right === "string") {
-      const merged = mergeBody(before, left, right, options?.concurrentInsertions);
+      const merged = mergeBody(before, left, right, options?.concurrentInsertions, options?.preserveOverlappingReplacement);
       if (merged !== undefined) return merged;
     } else if (path !== "/presentation/template" && object(before) && object(left) && object(right)) {
       const keys = new Set([...Object.keys(before), ...Object.keys(left), ...Object.keys(right)]);
