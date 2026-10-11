@@ -150,8 +150,12 @@ public sealed class SyncEngine
                         local[id]=store.Describe(moved.Path);
                     }
                     if(!Blocked(state,id)&&state.PendingPull?.ItemId!=id && remote.TryGetValue(id,out var binaryRemote) && !binaryRemote.Deleted &&
-                       state.Items.TryGetValue(id,out var binaryBase))
-                        await SyncOpenBinary(state,local.GetValueOrDefault(id),binaryBase,binaryRemote,cancellation);
+                       state.Items.TryGetValue(id,out var binaryBase)) {
+                        await SyncRemoteBinary(state,local.GetValueOrDefault(id),binaryBase,binaryRemote,cancellation);
+                        if(File.Exists(store.Resolve(state.Items[id].Path)))local[id]=store.Describe(state.Items[id].Path);
+                        else local.Remove(id);
+                        await SyncOpenBinary(state,local.GetValueOrDefault(id),state.Items[id],binaryRemote,cancellation);
+                    }
                     continue;
                 }
                 if(Blocked(state,id))continue;var baseline=pair.Value;var intent=store.Intent(id);
@@ -360,6 +364,36 @@ public sealed class SyncEngine
             if(pending.PayloadHash is not null)try{File.Delete(BinaryPayloadPath(pending.Id));}catch(IOException){}
         } catch(SyncConflictException) {
             state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);
+        }
+    }
+    async Task SyncRemoteBinary(State state,PackFile? local,Baseline baseline,RemoteItem remote,CancellationToken ct) {
+        if(local is null||local.Path!=baseline.Path||baseline.Revision==remote.Revision||
+           baseline.Lifecycle!=remote.Lifecycle||state.BinaryOutbox.Any(x=>x.ItemId==remote.ItemId)||
+           !state.BinaryBaselines.TryGetValue(remote.ItemId,out var known))return;
+        SharedEditingStore.RecoverPendingBinaryProjection(store,remote.ItemId);
+        local=store.Describe(baseline.Path);
+        var manifest=await transport.BinaryManifestAsync(remote.ItemId,ct);
+        if(manifest.Revision!=remote.Revision||manifest.Entries.Length>10000||manifest.Entries.Any(x=>x.Size<0||x.Size>16*1024*1024||
+           !System.Text.RegularExpressions.Regex.IsMatch(x.Sha256,@"^[0-9a-f]{64}$")))return;
+        var remoteHashes=manifest.Entries.ToDictionary(x=>x.Path,x=>x.Sha256,StringComparer.Ordinal);
+        foreach(var entryPath in known.Keys.Union(remoteHashes.Keys,StringComparer.Ordinal).OrderBy(x=>x,StringComparer.Ordinal)) {
+            known.TryGetValue(entryPath,out var prior);remoteHashes.TryGetValue(entryPath,out var target);
+            if(prior==target)continue;
+            var current=BinaryEntryPacks.Assets(store.Read(local.Path));
+            var localHash=current.GetValueOrDefault(entryPath)?.Sha256;
+            if(localHash!=prior&&localHash!=target) {
+                var remotePack=await transport.DownloadAsync(remote.ItemId,ct);
+                if(TextPackStore.Hash(remotePack.Data)==remotePack.Revision)store.Preserve(remotePack.Data,"binary-conflict");
+                state.BinaryOutbox.Add(new(Guid.NewGuid().ToString(),remote.ItemId,entryPath,prior,remote.Lifecycle,null,local.Hash,true));Save(state);
+                return;
+            }
+            if(localHash!=target) {
+                var bytes=target is null?null:await transport.BinaryReadAsync(remote.ItemId,entryPath,ct);
+                if(bytes is not null&&(bytes.Length>16*1024*1024||TextPackStore.Hash(bytes)!=target))throw new InvalidDataException("Remote binary entry changed during download.");
+                local=SharedEditingStore.ApplyRemoteBinary(store,remote.ItemId,local.Path,local.Hash,entryPath,prior,bytes);
+            }
+            if(target is null)known.Remove(entryPath);else known[entryPath]=target;
+            state.Items[remote.ItemId]=baseline with{Hash=local.Hash,Revision=remote.Revision};Save(state);
         }
     }
     string? StateError(State state)=>state.BinaryOutbox.Any(x=>x.Conflicted)?"An attachment changed on another device. The local file is kept for resolution.":state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;

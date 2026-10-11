@@ -328,6 +328,71 @@ static class Test
  Assert(JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(sharedFiles.StateDirectory,"shared-editing","test-1","checkpoint.json")))!.Journal==cp.Journal,"unknown checkpoint version does not erase retained state");
  }
  await EpochAdoptionTests.Run(temp,Assert);
+ foreach(var crashAt in new[]{"intent","file"}) {
+   var inboundStore=new TextPackStore(Path.Combine(temp,"binary-inbound-"+crashAt),Path.Combine(temp,"binary-inbound-device-"+crashAt));
+   var original=BinaryEntryPacks.Patch(Pack("original"),"assets/data.bin",null,new byte[]{1,2});
+   var inboundFile=inboundStore.Write("Notes/Binary.textpack",original);
+   var binaryTransport=new Fake();var binarySync=new SyncEngine(inboundStore,binaryTransport);await binarySync.SyncAsync();
+   var editing=new SharedEditingStore(inboundStore,binarySync);
+   var session=await editing.OpenAsync("test-1",inboundFile.Path,inboundFile.Hash);
+   var pendingPack=BinaryEntryPacks.Patch(Pack("unsent text"),"assets/data.bin",null,new byte[]{1,2});
+   var revision=binaryTransport.Item!.Revision;
+   var journal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision,relativePath=inboundFile.Path,update="AAA=",pending=new[]{"AAA="}});
+   var cp=new SharedCheckpoint("test-1",inboundFile.Path,TextPackStore.Hash(pendingPack),revision,1,0,1,journal,true);
+   await editing.CheckpointAsync(session.SessionToken,inboundFile.Hash,pendingPack,cp);editing.Dispose();
+   var projected=inboundStore.Describe(inboundFile.Path);
+   try{SharedEditingStore.ApplyRemoteBinary(inboundStore,"test-1",inboundFile.Path,projected.Hash,"assets/data.bin",TextPackStore.Hash(new byte[]{1,2}),new byte[]{3,4},
+     interruptAfterIntent:crashAt=="intent",interruptAfterWrite:crashAt=="file");throw new Exception("binary interruption missing");}catch(IOException){}
+   using var restarted=new SharedEditingStore(inboundStore,new SyncEngine(inboundStore,binaryTransport));
+   var reopened=await restarted.OpenAsync("test-1",inboundFile.Path,inboundStore.Describe(inboundFile.Path).Hash);
+   Assert(reopened.Checkpoint?.Pending==true&&reopened.Checkpoint.Journal==journal&&reopened.Checkpoint.ProjectedHash==reopened.Document.Hash,
+     "binary "+crashAt+" recovery retains pending editor journal and updates projection hash");
+   Assert(TextPackStore.Markdown(inboundStore.Read(inboundFile.Path)).EndsWith("unsent text")&&
+     BinaryEntryPacks.Assets(inboundStore.Read(inboundFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{3,4}),
+     "binary "+crashAt+" recovery preserves text and applies remote asset");
+ }
+ {
+   var inboundStore=new TextPackStore(Path.Combine(temp,"binary-inbound-live"),Path.Combine(temp,"binary-inbound-live-device"));
+   var original=BinaryEntryPacks.Patch(Pack("original"),"assets/data.bin",null,new byte[]{1,2});
+   var file=inboundStore.Write("Notes/Binary.textpack",original);
+   var remote=new Fake();var inboundEngine=new SyncEngine(inboundStore,remote);await inboundEngine.SyncAsync();
+   using var editing=new SharedEditingStore(inboundStore,inboundEngine);
+   var session=await editing.OpenAsync("test-1",file.Path,file.Hash);
+   var pendingPack=BinaryEntryPacks.Patch(Pack("unsent text"),"assets/data.bin",null,new byte[]{1,2});
+   var oldRevision=remote.Item!.Revision;
+   var journal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=oldRevision,relativePath=file.Path,update="AAA=",pending=new[]{"AAA="}});
+   var cp=new SharedCheckpoint("test-1",file.Path,TextPackStore.Hash(pendingPack),oldRevision,1,0,1,journal,true);
+   await editing.CheckpointAsync(session.SessionToken,file.Hash,pendingPack,cp);
+   var newRevision=await remote.BinaryPatchAsync("test-1",Guid.NewGuid().ToString(),"assets/data.bin",TextPackStore.Hash(new byte[]{1,2}),null,new byte[]{3,4});
+   await inboundEngine.SyncAsync();
+   var inboundCurrent=inboundStore.Describe(file.Path);
+   Assert(BinaryEntryPacks.Assets(inboundStore.Read(file.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{3,4})&&
+     TextPackStore.Markdown(inboundStore.Read(file.Path)).EndsWith("unsent text"),"remote asset lands in live editor without replacing unsent text");
+   var nextPack=BinaryEntryPacks.Patch(Pack("more unsent text"),"assets/data.bin",null,new byte[]{3,4});
+   var nextJournal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=1,journalGeneration=2,revision=newRevision,relativePath=file.Path,update="AAA=",pending=new[]{"AAA="}});
+   var next=cp with{ProjectedHash=TextPackStore.Hash(nextPack),AcknowledgedRevision=newRevision,Seq=1,JournalGeneration=2,Journal=nextJournal};
+   var saved=await editing.CheckpointAsync(session.SessionToken,inboundCurrent.Hash,nextPack,next);
+   Assert(saved.Hash==TextPackStore.Hash(nextPack)&&TextPackStore.Markdown(inboundStore.Read(file.Path)).EndsWith("more unsent text"),
+     "same mounted editor saves again after remote asset delivery");
+ }
+ {
+   var conflictStore=new TextPackStore(Path.Combine(temp,"binary-inbound-conflict"),Path.Combine(temp,"binary-inbound-conflict-device"));
+   var initialPack=BinaryEntryPacks.Patch(Pack("original"),"assets/data.bin",null,new byte[]{1,2});
+   var file=conflictStore.Write("Notes/Conflict.textpack",initialPack);
+   var remote=new Fake();var conflictEngine=new SyncEngine(conflictStore,remote);await conflictEngine.SyncAsync();
+   using var editing=new SharedEditingStore(conflictStore,conflictEngine);
+   var session=await editing.OpenAsync("test-1",file.Path,file.Hash);
+   var localPack=BinaryEntryPacks.Patch(initialPack,"assets/data.bin",TextPackStore.Hash(new byte[]{1,2}),new byte[]{4,4});
+   conflictStore.Write(file.Path,localPack,file.Hash);
+   await remote.BinaryPatchAsync("test-1",Guid.NewGuid().ToString(),"assets/data.bin",TextPackStore.Hash(new byte[]{1,2}),null,new byte[]{5,5});
+   await conflictEngine.SyncAsync();
+   Assert(BinaryEntryPacks.Assets(conflictStore.Read(file.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{4,4})&&
+     BinaryEntryPacks.Assets(remote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5}),
+     "competing open-file asset edits retain both byte versions");
+   var conflictState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(conflictStore.StateDirectory,"sync.json")))!;
+   Assert(conflictState.BinaryOutbox.Any(x=>x.ItemId=="test-1"&&x.Conflicted)&&conflictEngine.Status.Error!=null,
+     "competing asset edit is reported for resolution");
+ }
  await MirroredRetirementTests.Run(temp,Assert);
  await ExternalCheckpointRaceTests.Run(temp,Assert);
  var isolated=new TextPackStore(Path.Combine(temp,"isolated"),Path.Combine(temp,"isolated-device"));var many=new Many();var isolatedSync=new SyncEngine(isolated,many);

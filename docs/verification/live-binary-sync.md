@@ -21,8 +21,10 @@ provide bounded entry GET/PATCH and atomic hash/lifecycle compare-and-swap with
 durable receipts. The web, Windows, and Mac relays and both native sync transports
 expose these scoped calls.
 Windows and Mac outbound asset staging are implemented and unit tested,
-including durable replay after a lost response. Both native inbound paths
-remain open.
+including durable replay after a lost response. Windows now applies remote
+asset entries through a recoverable shared-editor file intent; the mounted
+editor retains pending text and can save again. Mac inbound and browser asset
+refresh remain open, and the full physical matrix has not passed.
 
 1. Treat each TextPack binary entry as an atomic value with its own SHA-256.
    Keep the package identity, lifecycle, path, and Yjs epoch as fences. An

@@ -8,6 +8,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
 {
     sealed record MoveIntent(int Version,string SourcePath,SharedCheckpoint Checkpoint);
     sealed record Intent(int Version,string BeforeHash,string Payload,SharedCheckpoint Checkpoint);
+    sealed record BinaryIntent(int Version,string ItemId,string Path,string BeforeHash,string AfterHash);
     sealed record Active(string ItemId,string Path,IDisposable Lease);
     readonly Dictionary<string,Active> sessions=[];readonly SemaphoreSlim gate=new(1,1);bool disposed;
     /// Announced by collaboration.open. "epoch-adoption": a pending journal may move to a newer epoch through an authorized, archived recovery intent.
@@ -68,14 +69,14 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
     public static bool HasProtectedState(string stateDirectory,string itemId) {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid remote identity.");
         var directory=System.IO.Path.Combine(stateDirectory,"shared-editing",itemId);
-        if(File.Exists(System.IO.Path.Combine(directory,"move-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"acknowledge.json")))return true;
+        if(File.Exists(System.IO.Path.Combine(directory,"move-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"binary-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"acknowledge.json")))return true;
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
         return cp!=null&&(cp.Version!=1||cp.Pending||cp.RetiredReason!=null);
     }
     internal static bool HasReadyCheckpoint(TextPackStore store,string itemId) {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))return false;
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
-        if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json")))return false;
+        if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"binary-intent.json")))return false;
         try {
             var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
             if(cp==null||cp.ItemId!=itemId||cp.RetiredReason!=null)return false;
@@ -98,7 +99,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
         RecoverMove(store,directory,itemId);
-        if(File.Exists(System.IO.Path.Combine(directory,"intent.json")))throw new IOException("A shared checkpoint is still being recovered.");
+        if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"binary-intent.json")))throw new IOException("A shared checkpoint is still being recovered.");
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"))??throw new InvalidOperationException("No shared projection is available.");
         Validate(store,cp);if(cp.ItemId!=itemId||cp.RetiredReason!=null)throw new InvalidDataException("Shared identity mismatch.");
         if(cp.Path==newPath)return cp;
@@ -128,6 +129,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
     SharedCheckpoint? Recover(string itemId) => store.WithExclusiveMutation(() => {
         var directory=DirectoryFor(itemId);RecoverMove(store,directory,itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
         if(intent!=null) {if(intent.Version!=1)throw new InvalidDataException("Unsupported shared intent.");Finish(intent,directory);}
+        RecoverBinary(store,directory,itemId);
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
     });
     PackFile Finish(Intent intent,string directory) {
@@ -137,6 +139,55 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         else if(current.Hash!=intent.Checkpoint.ProjectedHash){Save(System.IO.Path.Combine(directory,"checkpoint.json"),intent.Checkpoint with{RetiredReason="The file changed outside this editing session. Its shared edits are retained."});store.Preserve(bytes,"shared-conflict");File.Delete(System.IO.Path.Combine(directory,"intent.json"));throw new FileChangedException();}
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),intent.Checkpoint);File.Delete(System.IO.Path.Combine(directory,"intent.json"));return current;
     }
+    static void RecoverBinary(TextPackStore store,string directory,string itemId) {
+        var intent=Read<BinaryIntent>(System.IO.Path.Combine(directory,"binary-intent.json"));
+        if(intent!=null){if(intent.Version!=1||intent.ItemId!=itemId)throw new InvalidDataException("Invalid binary projection intent.");FinishBinary(store,directory,intent);}
+    }
+    public static void RecoverPendingBinaryProjection(TextPackStore store,string itemId) => store.WithExclusiveMutation(() => {
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");
+        var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
+        if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json")))return true;
+        RecoverBinary(store,directory,itemId);
+        return true;
+    });
+    static PackFile FinishBinary(TextPackStore store,string directory,BinaryIntent intent,bool interruptAfterWrite=false) {
+        var target=System.IO.Path.Combine(directory,"binary-next.textpack");
+        if(!File.Exists(target)||new FileInfo(target).Length>64*1024*1024)throw new InvalidDataException("Binary projection is missing or oversized.");
+        var bytes=File.ReadAllBytes(target);
+        if(TextPackStore.Hash(bytes)!=intent.AfterHash||TextPackStore.Identity(bytes)!=intent.ItemId)throw new InvalidDataException("Binary projection changed.");
+        var checkpoint=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
+        if(checkpoint!=null){Validate(store,checkpoint);if(checkpoint.ItemId!=intent.ItemId||checkpoint.Path!=intent.Path||checkpoint.RetiredReason!=null||
+            (checkpoint.ProjectedHash!=intent.BeforeHash&&checkpoint.ProjectedHash!=intent.AfterHash))throw new FileChangedException();}
+        var current=store.Describe(intent.Path);
+        if(current.ItemId!=intent.ItemId)throw new FileChangedException();
+        if(current.Hash==intent.BeforeHash)current=store.Write(intent.Path,bytes,intent.BeforeHash);
+        else if(current.Hash!=intent.AfterHash)throw new FileChangedException();
+        if(interruptAfterWrite)throw new IOException("Interrupted after binary file write.");
+        if(checkpoint!=null&&checkpoint.ProjectedHash!=intent.AfterHash)
+            Save(System.IO.Path.Combine(directory,"checkpoint.json"),checkpoint with{ProjectedHash=intent.AfterHash});
+        File.Delete(System.IO.Path.Combine(directory,"binary-intent.json"));File.Delete(target);
+        return current;
+    }
+    /// The binary projection shares the document's file fence and updates the
+    /// retained checkpoint without touching its Yjs journal or pending edits.
+    public static PackFile ApplyRemoteBinary(TextPackStore store,string itemId,string path,string beforeHash,
+        string entryPath,string? expectedEntryHash,byte[]? replacement,
+        bool interruptAfterIntent=false,bool interruptAfterWrite=false) => store.WithExclusiveMutation(() => {
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")||!ValidHash(beforeHash))throw new InvalidDataException("Invalid binary projection identity.");
+        var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);Directory.CreateDirectory(directory);
+        RecoverBinary(store,directory,itemId);
+        if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json")))throw new IOException("A shared checkpoint is still being recovered.");
+        var current=store.Describe(path);
+        if(current.ItemId!=itemId||current.Hash!=beforeHash)throw new FileChangedException();
+        var checkpoint=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
+        if(checkpoint!=null){Validate(store,checkpoint);if(checkpoint.ItemId!=itemId||checkpoint.Path!=path||checkpoint.ProjectedHash!=beforeHash||checkpoint.RetiredReason!=null)throw new FileChangedException();}
+        var changed=BinaryEntryPacks.Patch(store.Read(path),entryPath,expectedEntryHash,replacement);
+        var intent=new BinaryIntent(1,itemId,path,beforeHash,TextPackStore.Hash(changed));
+        TextPackStore.AtomicWrite(System.IO.Path.Combine(directory,"binary-next.textpack"),changed);
+        Save(System.IO.Path.Combine(directory,"binary-intent.json"),intent);
+        if(interruptAfterIntent)throw new IOException("Interrupted after binary intent.");
+        return FinishBinary(store,directory,intent,interruptAfterWrite);
+    });
     public async Task<SharedSession> OpenAsync(string itemId,string path,string expectedHash,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try {
             ObjectDisposedException.ThrowIf(disposed,this);

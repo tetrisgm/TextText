@@ -66,10 +66,13 @@ test passes. Windows now durably stages and sends direct asset changes in an
 open editor. Its native tests cover lost acknowledgment, same-entry conflict,
 and temporary provider-file absence. Windows now keeps queued asset bytes in
 an atomic sidecar file so a large attachment does not inflate the sync-state
-JSON. Mac now durably stages direct asset
-edits in an open editor and replays the same operation after a lost reply and
-process restart; its 35 focused sync tests pass. Both native inbound paths
-and browser asset refresh remain open; seed 89 is still a failure.
+JSON. Mac now durably stages direct asset edits in an open editor and replays
+the same operation after a lost reply and process restart; its 35 focused sync
+tests pass. Windows now applies incoming asset entries to an open editor through
+a recoverable file intent. Native tests cover crashes before and after the file
+write, retained pending text, a subsequent same-session save, and a same-entry
+conflict that preserves both versions. Mac inbound and browser asset refresh
+remain open; seed 89 is still a failure.
 
 Next: repair live binary-entry propagation while native editors stay mounted,
 verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,
