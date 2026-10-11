@@ -17,7 +17,14 @@ public sealed class RendererFlushGuard
         pending = (id,completion);
         // ExecuteScriptAsync itself does not await a JavaScript Promise. The explicit reply does.
         var script = "void (async()=>{let ok=false;try{ok=typeof window.texttextFlushForSignOut==='function' && await window.texttextFlushForSignOut()===true;}catch{}window.chrome.webview.postMessage({id:" + JsonSerializer.Serialize(id) + ",method:'native.flushResult',params:{ok}});})()";
-        try { await executeScript(script); return await completion.Task.WaitAsync(timeout ?? TimeSpan.FromSeconds(30)); }
+        try {
+            // Both WebView2 dispatch and the JavaScript acknowledgement can stall.
+            // Bound the entire operation, not only the acknowledgement phase.
+            var deadline = timeout ?? TimeSpan.FromSeconds(30);
+            using var limit = new CancellationTokenSource(deadline);
+            await executeScript(script).WaitAsync(limit.Token);
+            return await completion.Task.WaitAsync(limit.Token);
+        }
         catch { return false; }
         finally { pending = null; }
     }

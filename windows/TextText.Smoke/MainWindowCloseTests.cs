@@ -59,6 +59,10 @@ static class MainWindowCloseTests
     public static async Task RunAsync(string root,string receipts,CancellationToken ct)
     {
         var checks=new List<string>();
+        var stalledGuard=new RendererFlushGuard();
+        var neverDispatched=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Check(!await stalledGuard.FlushAsync(_=>neverDispatched.Task,TimeSpan.FromMilliseconds(120)),"stalled WebView dispatch is bounded and fails closed",checks);
+        Check(!await stalledGuard.FlushAsync(_=>Task.CompletedTask,TimeSpan.FromMilliseconds(120)),"missing renderer acknowledgment is bounded and fails closed",checks);
         var fenced=await Create(Path.Combine(root,"retired-sender"),ct);
         var replacement=new WebView2();var fencedBridge=new ActivationBridge();
         try {
@@ -109,6 +113,16 @@ static class MainWindowCloseTests
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
             Check(!success.Window.IsVisible,"actual MainWindow Receive routes flushResult and closes",checks);
         }finally{if(success.Window.IsVisible)ForceClose(success.Window);}
+
+        var transient=await Create(Path.Combine(root,"close-transient"),ct);
+        try {
+            var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            transient.Window.Closed+=(_,_)=>closed.TrySetResult();
+            await transient.View.ExecuteScriptAsync("window.flushCalls=0;window.texttextFlushForSignOut=async()=>++window.flushCalls>1;");
+            transient.Window.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
+            Check(!transient.Window.IsVisible,"transient failed flush retries and closes after durable acknowledgement",checks);
+        }finally{if(transient.Window.IsVisible)ForceClose(transient.Window);}
 
         var failure=await Create(Path.Combine(root,"close-failure"),ct);var observedDialog=0;
         // Win32 MessageBox runs a native modal loop; a DispatcherTimer is not a

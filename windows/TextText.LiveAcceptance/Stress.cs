@@ -4,6 +4,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Web.WebView2.Wpf;
 using TextText.Core;
@@ -17,6 +18,13 @@ using TextText.Windows;
 // CoreWebView2 input pipeline; nothing here appends through the CLI or a document API.
 static class Stress
 {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr state);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+    delegate bool EnumWindowsCallback(IntPtr window, IntPtr state);
+
     sealed class CollaborationTransportGate
     {
         int online = 1;
@@ -51,6 +59,8 @@ static class Stress
             Record(new { kind = "start", config.ItemId, config.WorkspaceId, nativeAssemblySha256 = assemblyHash, nativeAssemblyVersion = version,
                 adapter = "production MainWindow + WindowsBridge", mockedTransport = false });
             var app = new Application();
+            // Keep the mailbox process alive long enough to report close evidence.
+            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             var transport = new CollaborationTransportGate();
             var generationMatch = GenerationPattern.Match(Path.GetFileName(Path.TrimEndingDirectorySeparator(session)));
             var generation = generationMatch.Success ? int.Parse(generationMatch.Groups[1].Value) : 1;
@@ -86,7 +96,8 @@ static class Stress
                     File.WriteAllText(Path.Combine(session, "result.json"), JsonSerializer.Serialize(new { ok = runner.Failure is null && flushed, flushed, error = runner.Failure, config.ItemId }));
                     if (!flushed) exit = 1;
                     typeof(MainWindow).GetField("closing", Program.Private)?.SetValue(window, true);
-                    window.Close();
+                    if (window.IsVisible) window.Close();
+                    app.Shutdown();
                 }
             };
             app.Run(window);
@@ -117,6 +128,8 @@ static class Stress
         string expectedSession => JsonSerializer.Serialize(sessionId);
         bool? flushed;
         int reloads;
+        int sawKeepEditing;
+        readonly TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void Fail(string message) { Failure ??= message; log(new { kind = "failure", message }); }
 
@@ -250,9 +263,70 @@ static class Stress
                     log(new { kind = "observed", round, continuous, sessionPresent = sessionSeen == expectedSession, reloads, editIds });
                     return new { type = "state", round, text, editIds, editor = new { sessionId, reloads } };
                 }
+                case "close-probe":
+                {
+                    if (!opened) throw new Exception("Windows close probe requires a joined editor.");
+                    await RequireSelected(ct);
+                    var result = await CloseProbe(ct);
+                    log(new { kind = "close-probe", result.closed, result.keepEditingDialog, result.flushed });
+                    if (!result.closed || result.keepEditingDialog || !result.flushed)
+                        throw new Exception($"Normal editor close failed: closed={result.closed}, keepEditingDialog={result.keepEditingDialog}, flushed={result.flushed}.");
+                    return new { type = "close-probe", round, closed = true, keepEditingDialog = false, flushed = true };
+                }
                 default:
                     throw new Exception("Unsupported coordinator message type.");
             }
+        }
+
+        async Task<(bool closed, bool keepEditingDialog, bool flushed)> CloseProbe(CancellationToken ct)
+        {
+            async Task RecordEditorState(string stage)
+            {
+                if (view?.CoreWebView2 is null) return;
+                // Only journal metadata is recorded. Never copy document text,
+                // recovery payloads, credentials or file contents into receipts.
+                var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
+                try { log(new { kind = "close-editor-state", stage, value = await view.ExecuteScriptAsync(script).WaitAsync(TimeSpan.FromSeconds(2), ct) }); }
+                catch (Exception error) { log(new { kind = "close-editor-state", stage, error = error.GetType().Name }); }
+            }
+            await RecordEditorState("before");
+            // Observe the native modal dialog from a worker because MessageBox
+            // runs its own modal loop and can block dispatcher timers.
+            _ = Task.Run(() =>
+            {
+                while (!closed.Task.IsCompleted && !ct.IsCancellationRequested)
+                {
+                    IntPtr dialog = IntPtr.Zero;
+                    EnumWindows((handle, _) =>
+                    {
+                        if (!IsWindowVisible(handle)) return true;
+                        GetWindowThreadProcessId(handle, out var processId);
+                        if (processId != Environment.ProcessId) return true;
+                        var title = new StringBuilder(256);
+                        GetWindowText(handle, title, title.Capacity);
+                        if (title.ToString() == "Keep editing") { dialog = handle; return false; }
+                        return true;
+                    }, IntPtr.Zero);
+                    if (dialog != IntPtr.Zero)
+                    {
+                        Interlocked.Exchange(ref sawKeepEditing, 1);
+                        SendMessageTimeout(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero, 0x0002, 1000, out _);
+                        return;
+                    }
+                    Thread.Sleep(40);
+                }
+            }, ct);
+            window.Closed += (_, _) => closed.TrySetResult();
+            window.Close();
+            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+            while (!closed.Task.IsCompleted && Volatile.Read(ref sawKeepEditing) == 0 && DateTimeOffset.UtcNow < deadline)
+                await Task.Delay(40, ct);
+            if (Volatile.Read(ref sawKeepEditing) != 0) { await RecordEditorState("after-dialog"); return (false, true, false); }
+            if (!closed.Task.IsCompleted) throw new Exception("Normal editor close did not finish within 30 seconds.");
+            // MainWindow only raises Closed after its normal close handler's
+            // production FlushEditor path returned success.
+            flushed = true;
+            return (true, false, true);
         }
 
         // Ported from the timed acceptance Run: production ready, same root, activation, real editor, shared document.

@@ -5,9 +5,22 @@
 Source `c6c11fe1` converges same-entry attachment conflicts on the server
 winner while preserving both complete TextPacks. Mac 42-test sync suite and
 Windows core regression suite pass.
-Store-shaped Mac 0.203 build 1254 is installed in `/Applications` and opened
-the current iCloud workspace with the final test note. The matching Windows
-candidate is installed. No website or public Mac release was deployed.
+Store-shaped Mac 0.203 build 1255 is installed in `/Applications`. It opened
+the existing iCloud workspace, found the six-client test note, and saved and
+reopened a test marker. The matching Windows candidate is installed. No website
+or public Mac release was deployed.
+
+The Windows normal-close race remains open. In physical seed 123 all six
+editors converged text and attachment bytes, but the PC app did not answer
+`close-probe` within 100 seconds. Its last native trace showed a clean,
+nonretired journal with no pending edits before `window.Close()`. Source now
+bounds the whole WebView script dispatch and acknowledgment; Windows smoke
+passes that regression plus close retry tests. Physical seed 124 again
+converged all six clients, but SSH reset during shutdown, leaving close
+unverified. Receipts:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T21-39-30-447Z-123`
+and `stress-2026-10-11T21-45-48-281Z-124` alongside it. Do not ship the
+uncommitted close change until a fresh physical close and reopen pass.
 
 Physical six-client receipts on fresh fixtures:
 
@@ -36,7 +49,7 @@ Seed 118 reopened that result on all six clients. Receipts are
 diagnostic, not full acceptance. The source changes used private test actors;
 the installed Mac and Windows apps have not been replaced with these builds.
 
-Next: normal Windows “Keep editing” close path, whole TextPack and folder
+Next: finish the normal Windows “Keep editing” close path, whole TextPack and folder
 operations, delete/restore, two-account permissions, and sustained latency and
 resource measurements. Do not certify
 full sync or ship a public release until the remaining matrix passes.

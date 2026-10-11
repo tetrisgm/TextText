@@ -113,6 +113,10 @@ export function validateConfig(config) {
       fail('transientInvalid must name mac-cli or pc-cli and an existing round');
     }
   }
+  if (config.closeProbe !== undefined && (config.closeProbe !== true || config.mode !== 'real'
+    || config.rounds < 1 || config.restart?.role === 'pc-app')) {
+    fail('closeProbe requires a real run with at least one round and no pc-app restart');
+  }
   const f = config.fixture;
   if (!f || typeof f.workspaceId !== 'string' || !f.workspaceId || typeof f.itemId !== 'string' || !f.itemId) fail('fixture.workspaceId and fixture.itemId are required');
   if (!config.roles || typeof config.roles !== 'object') fail('roles object is required');
@@ -172,7 +176,8 @@ export class Coordinator {
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
     const scenario = { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
-      restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null };
+      restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
+      ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
       role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) }));
     if (this.config.diagnosticSameEntryRace) scenario.diagnosticSameEntryRace = true;
@@ -215,6 +220,7 @@ export class Coordinator {
       if (this.config.rounds === 0) this.checkAssets(baseline, 0);
       for (const role of EDITOR_ROLES) this.checkEditor(0, role, baseline.get(role).editor);
       for (const plan of planRounds(this.config.seed, this.config.rounds, this.config.pattern)) await this.runRound(plan);
+      if (this.config.closeProbe) await this.closeProbe();
     } catch (error) {
       status = 'failed';
       failure = error instanceof StressFailure ? { code: error.code, detail: error.detail } : { code: 'unexpected', detail: { message: String(error?.message ?? error) } };
@@ -232,9 +238,10 @@ export class Coordinator {
       runId: this.runId, status, failure, mode: this.config.mode,
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
-        ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
       scenario: { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
+        ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
           role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) })) } : {}),
         ...(this.config.diagnosticSameEntryRace ? { diagnosticSameEntryRace: true } : {}) },
@@ -415,6 +422,16 @@ export class Coordinator {
     const reply = (await pending).get(role);
     if (reply.online !== online) throw new StressFailure('transport-mismatch', { round, role, online, actual: reply.online });
     this.record('transport', { round, role, online });
+  }
+
+  async closeProbe() {
+    const role = 'pc-app';
+    const pending = this.collect(this.config.rounds, 'close-probe', [role]);
+    this.adapters.get(role).send({ type: 'close-probe', round: this.config.rounds });
+    const result = (await pending).get(role);
+    if (result.closed !== true || result.keepEditingDialog !== false || result.flushed !== true)
+      throw new StressFailure('close-probe-failed', { role, result });
+    this.record('close-probe', { role, round: this.config.rounds, ...result });
   }
 
   async restartActor(round, role) {

@@ -46,11 +46,25 @@ public sealed partial class MainWindow : Window
         };
         Closed += (_,_) => { lifetime.Cancel(); foreach(var request in requests.Values) request.Cancel(); bridge?.Dispose(); web?.Dispose(); http.Dispose(); };
     }
-    private async Task<bool> FlushEditor()
+    private Task<bool> FlushEditor() => FlushEditorWithTimeout(null);
+    private async Task<bool> FlushEditorWithTimeout(TimeSpan? timeout)
     {
         if(web?.CoreWebView2 is not { } core) return true;
         web.IsEnabled = false;
-        return await flushGuard.FlushAsync(async script => { await core.ExecuteScriptAsync(script); });
+        return await flushGuard.FlushAsync(async script => { await core.ExecuteScriptAsync(script); }, timeout);
+    }
+    private async Task<bool> FlushEditorForClose()
+    {
+        // A shared editor can briefly remount while a file change is being
+        // reconciled. Its first flush can report false even though the next
+        // durable checkpoint succeeds. Never close on a failed flush, but give
+        // that transition a short chance to finish before showing a warning.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            if (await FlushEditorWithTimeout(TimeSpan.FromSeconds(8))) return true;
+            if (attempt == 0) await Task.Delay(250);
+        }
+        return false;
     }
     private void ShowSaveFailure() => MessageBox.Show(this,"Your latest edits have not finished saving. TextText will stay open so you can resolve the save in the editor.","Keep editing",MessageBoxButton.OK,MessageBoxImage.Information);
     private async Task RequestClose()
@@ -58,7 +72,7 @@ public sealed partial class MainWindow : Window
         if(transitioning || closing) return;
         transitioning = true;
         try {
-            if(!await FlushEditor()) { ShowSaveFailure(); return; }
+            if(!await FlushEditorForClose()) { ShowSaveFailure(); return; }
             closing = true; Close();
         } finally { transitioning = false; if(!closing && web is not null) web.IsEnabled = true; }
     }

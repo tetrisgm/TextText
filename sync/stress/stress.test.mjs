@@ -105,6 +105,18 @@ test('missing roles are rejected before any process starts', () => {
   assert.equal(coordinator.checkAssets(states, 1), false);
 });
 
+test('Windows live close probe is opt-in and requires a real completed race', () => {
+  const config = makeConfig({ rounds: 1, mode: 'real' });
+  assert.doesNotThrow(() => validateConfig({ ...config, closeProbe: true }));
+  assert.throws(() => validateConfig({ ...makeConfig({ rounds: 1 }), closeProbe: true }), /closeProbe requires a real run/);
+  assert.throws(() => validateConfig({ ...config, closeProbe: false }), /closeProbe requires a real run/);
+  assert.throws(() => validateConfig({ ...config, rounds: 0, closeProbe: true, expectedBaselineHash: 'a'.repeat(64) }), /closeProbe requires a real run/);
+  assert.throws(() => validateConfig({ ...config, restart: { role: 'pc-app', round: 1 }, closeProbe: true }), /closeProbe requires a real run/);
+  const response = new RoundLedger(1, 'close-probe', ['pc-app']);
+  assert.equal(response.accept('pc-app', { type: 'close-probe', closed: true }).reason, 'stale-round');
+  assert.ok(response.accept('pc-app', { type: 'close-probe', round: 1, closed: true }).ok);
+});
+
 test('asset evidence requires both physical file actors to retain the expected bytes', () => {
   const hash = 'a'.repeat(64);
   const config = makeConfig();
