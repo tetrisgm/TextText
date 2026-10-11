@@ -188,11 +188,39 @@ final class LocalVaultCollaboration {
         }
         let endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId)
             .appendingPathComponent("items").appendingPathComponent(itemId)
-            .appendingPathComponent(method.hasPrefix("presence") ? "presence" : method.hasPrefix("comments") ? "comments" : method.hasPrefix("publication") ? "publication" : "collaboration")
+            .appendingPathComponent(method.hasPrefix("binary") ? "binary" : method.hasPrefix("presence") ? "presence" : method.hasPrefix("comments") ? "comments" : method.hasPrefix("publication") ? "publication" : "collaboration")
         var request = URLRequest(url: endpoint, timeoutInterval: 35)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if method == "publicationRead" {
+        if method == "binaryManifest" {
+            guard Set(params.keys) == ["itemId"] else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid binary manifest request.")
+            }
+        } else if method == "binaryRead" {
+            guard Set(params.keys) == ["itemId", "entryPath"], let entry = params["entryPath"] as? String,
+                  entry.hasPrefix("assets/"), entry.utf8.count <= 512,
+                  !entry.contains("\\"), !entry.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }) else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid binary entry request.")
+            }
+            var url = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
+            url.queryItems = [URLQueryItem(name: "entry", value: entry)]
+            request.url = url.url
+        } else if method == "binaryPatch" {
+            guard Set(params.keys) == ["itemId", "operationId", "entryPath", "expectedHash", "expectedLifecycle", "bytesBase64"],
+                  let operationId = params["operationId"] as? String, identifier(operationId),
+                  let entry = params["entryPath"] as? String, entry.hasPrefix("assets/"), entry.utf8.count <= 512,
+                  !entry.contains("\\"), !entry.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }),
+                  params["expectedHash"] is NSNull || (params["expectedHash"] as? String)?.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+                  params["expectedLifecycle"] is NSNull || (params["expectedLifecycle"] as? String).map(identifier) == true,
+                  params["bytesBase64"] is NSNull || (params["bytesBase64"] as? String).map({ $0.utf8.count <= 22 * 1024 * 1024 && Data(base64Encoded: $0)?.base64EncodedString() == $0 }) == true else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid binary entry mutation.")
+            }
+            let data = try JSONSerialization.data(withJSONObject: ["operationId": operationId, "entryPath": entry,
+                "expectedHash": params["expectedHash"]!, "expectedLifecycle": params["expectedLifecycle"]!, "bytesBase64": params["bytesBase64"]!])
+            guard data.count <= 23 * 1024 * 1024 else { throw LocalVaultCollaborationError(code: "413", message: "Binary entry request exceeds its size limit.") }
+            request.httpMethod = "PATCH"; request.httpBody = data
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else if method == "publicationRead" {
             guard Set(params.keys) == ["itemId"] else {
                 throw LocalVaultCollaborationError(code: "400", message: "Invalid publication read request.")
             }
@@ -533,19 +561,21 @@ final class LocalVaultCollaboration {
                         request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin")
                     }
                 }
-                let maxBytes = method == "folderMoveReview" ? 2_100_000 : method == "accountRead" ? 64 * 1024 : method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
+                let maxBytes = method == "binaryRead" ? 16 * 1024 * 1024 : method == "folderMoveReview" ? 2_100_000 : method == "accountRead" ? 64 * 1024 : method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
                 var (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
                 try Task.checkCancellation()
                 // A response can arrive after credential renewal. Retry only
                 // idempotent collaboration operations, once, for the same binding.
-                if status == 401, ["collaborationRead", "collaborationPush"].contains(method),
+                if status == 401, ["collaborationRead", "collaborationPush", "binaryManifest", "binaryRead", "binaryPatch"].contains(method),
                    let renewed = try Self.context(root: root, account: self.credentials()),
                    renewed.binding == context.binding, renewed.token != context.token {
                     request.setValue("Bearer \(renewed.token)", forHTTPHeaderField: "Authorization")
                     (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
                     try Task.checkCancellation()
                 }
-                let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let value = method == "binaryRead" && status == 200
+                    ? ["entryPath": params["entryPath"]!, "bytesBase64": data.base64EncodedString()]
+                    : (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let succeeded = status == 200 || method == "folderMoveReview" && status == 201
                 guard succeeded, let value else {
                     throw LocalVaultCollaborationError.response(status: status, payload: value)

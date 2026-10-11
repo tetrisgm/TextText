@@ -253,6 +253,30 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (!item) throw new VaultError("This file no longer exists.", "not_found");
       return { namespace: typeof location === "undefined" ? "web" : location.origin, workspaceId, itemId: item.itemId };
     }
+    if (["binaryManifest", "binaryRead", "binaryPatch"].includes(method)) {
+      const itemId = String(params.itemId ?? "");
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Invalid binary item.");
+      const endpoint = `${base}/${encodeURIComponent(itemId)}/binary`;
+      if (method === "binaryRead") {
+        const entry = String(params.entryPath ?? "");
+        if (!entry.startsWith("assets/") || entry.includes("..") || entry.includes("\\") || entry.length > 512) throw new Error("Invalid binary entry.");
+        const response = await request(`${endpoint}?entry=${encodeURIComponent(entry)}`, { credentials: "same-origin", cache: "no-store", signal });
+        if (!response.ok) throw await failure(response);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        let encoded = "";
+        for (let offset = 0; offset < bytes.length; offset += 8192) encoded += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+        return { entryPath: entry, bytesBase64: btoa(encoded) };
+      }
+      const response = await request(endpoint, { method: method === "binaryPatch" ? "PATCH" : "GET",
+        credentials: "same-origin", cache: "no-store", signal,
+        ...(method === "binaryPatch" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          operationId: params.operationId, entryPath: params.entryPath, expectedHash: params.expectedHash,
+          expectedLifecycle: params.expectedLifecycle, bytesBase64: params.bytesBase64,
+        }) } : {}),
+      });
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }
     if (method === "collaborationRead" || method === "collaborationPush") {
       const itemId = String(params.itemId);
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)) throw new Error("Invalid collaboration item.");

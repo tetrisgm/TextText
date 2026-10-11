@@ -329,6 +329,30 @@ final class LocalVaultCollaborationTests: XCTestCase {
                 method: method, params: invalid))
         }
     }
+    func testBinaryEntryRequestsStayScopedAndValidateCASFields() throws {
+        let scope = ["itemId": "item-1"]
+        let manifest = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "binaryManifest", params: scope)
+        XCTAssertEqual(manifest.url?.absoluteString, "https://texttext.app/api/vault/workspace/items/item-1/binary")
+        let read = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "binaryRead", params: ["itemId": "item-1", "entryPath": "assets/data.bin"])
+        XCTAssertEqual(read.url?.absoluteString, "https://texttext.app/api/vault/workspace/items/item-1/binary?entry=assets/data.bin")
+        let patch: [String: Any] = ["itemId": "item-1", "operationId": "operation-1", "entryPath": "assets/data.bin",
+            "expectedHash": String(repeating: "a", count: 64), "expectedLifecycle": NSNull(), "bytesBase64": "AAH/"]
+        let request = try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+            method: "binaryPatch", params: patch)
+        XCTAssertEqual(request.httpMethod, "PATCH")
+        let payload = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+        XCTAssertEqual(payload["entryPath"] as? String, "assets/data.bin")
+        XCTAssertEqual(payload["bytesBase64"] as? String, "AAH/")
+        XCTAssertNil(payload["itemId"])
+        for invalid in [patch.merging(["entryPath": "../escape"]) { _, new in new },
+                        patch.merging(["bytesBase64": "not base64"]) { _, new in new },
+                        patch.merging(["url": "https://outside.example"]) { _, new in new }] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: origin, workspaceId: "workspace", token: "app-token",
+                method: "binaryPatch", params: invalid))
+        }
+    }
     func testPublicationUsesBoundItemAndBuildsAValidatedPublicURL() throws {
         let itemId = "item-1", revision = String(repeating: "a", count: 64)
         let operationId = "2bd05f92-c562-4a78-8c0d-b5e41ca3215d"

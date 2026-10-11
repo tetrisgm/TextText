@@ -55,12 +55,14 @@ can project a live asset-only pack edit without resetting its Yjs epoch
 while open need a durable, fenced path. Do not replay seed 89 as a pass.
 The required protocol and regression matrix are in
 [live binary sync](verification/live-binary-sync.md).
-The server now has an authenticated binary-entry GET/PATCH surface and an
+Commit `60ef2040` adds an authenticated binary-entry GET/PATCH surface and an
 atomic per-entry hash/lifecycle compare-and-swap writer that advances the live
-Yjs sequence without replacing text. Store and route tests pass, including
+Yjs sequence without replacing text. Store and route tests passed, including
 receipt replay, same-entry conflict, lifecycle fencing, and text edits before
-and after a binary change. This is not yet a client fix: Mac and Windows native
-editors do not send or materialize these entry operations.
+and after a binary change. A follow-up adds scoped binary transport on web,
+Windows, and Mac, with focused web and Mac relay tests. This is not yet a client
+fix: Mac and Windows native editors do not durably detect, send, or materialize
+entry operations while open.
 
 Next: repair live binary-entry propagation while native editors stay mounted,
 verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,

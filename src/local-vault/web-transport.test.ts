@@ -655,3 +655,26 @@ it("stages a folder move review with authenticated scoped transport and never wr
   expect(request).toHaveBeenCalledOnce();
   transport.destroy();
 });
+
+it("relays binary manifests, exact entry bytes, and a scoped CAS patch", async () => {
+  const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+  const request: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (String(url).includes("?entry=")) return new Response(new Uint8Array([0, 1, 255]));
+    if (init?.method === "PATCH") return Response.json({ status: "written", revision: "b".repeat(64) });
+    return Response.json({ revision: "a".repeat(64), entries: [{ path: "assets/data.bin", sha256: "c".repeat(64), size: 3 }] });
+  };
+  const transport = createWebVaultTransport("workspace", "Workspace", request);
+  const itemId = "item-1";
+  expect(await transport.request("binaryManifest", { itemId })).toMatchObject({ entries: [{ path: "assets/data.bin" }] });
+  expect(await transport.request("binaryRead", { itemId, entryPath: "assets/data.bin" })).toEqual({ entryPath: "assets/data.bin", bytesBase64: "AAH/" });
+  expect(await transport.request("binaryPatch", { itemId, operationId: "op-1", entryPath: "assets/data.bin",
+    expectedHash: "c".repeat(64), expectedLifecycle: null, bytesBase64: "BAUG" })).toMatchObject({ status: "written" });
+  expect(calls.map(call => [call.method, call.url])).toEqual([
+    ["GET", "/api/vault/workspace/items/item-1/binary"],
+    ["GET", "/api/vault/workspace/items/item-1/binary?entry=assets%2Fdata.bin"],
+    ["PATCH", "/api/vault/workspace/items/item-1/binary"],
+  ]);
+  expect(calls[2].body).toEqual({ operationId: "op-1", entryPath: "assets/data.bin", expectedHash: "c".repeat(64), expectedLifecycle: null, bytesBase64: "BAUG" });
+  transport.destroy();
+});
