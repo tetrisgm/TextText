@@ -69,13 +69,14 @@ static class EpochAdoptionTests
             editing.Close(session.SessionToken);
             try{await editing.CheckpointAsync(session.SessionToken,files.Describe(initial.Path).Hash,moreBytes,Checkpoint(initial.Path,moreBytes,revision,3,7,Intent(true,epoch:2)));throw new Exception("closed session adopted");}catch(SharedSessionClosedException){}
         }
+        byte[] crashBytes;
         using(var restarted=new SharedEditingStore(files,sync)) {
             var reopened=await restarted.OpenAsync("test-1",initial.Path,files.Describe(initial.Path).Hash);
             Assert(reopened.Checkpoint?.Epoch==2&&reopened.Checkpoint.Journal==Retained()&&reopened.Checkpoint.RetiredReason==null,"adopted journal survives restart");
             // A new intent in the adopted epoch, then a crash after the durable adoption intent replays on restart with the archive kept.
             var current=files.Describe(initial.Path);var bytes=files.Read(initial.Path);
             await restarted.CheckpointAsync(reopened.SessionToken,current.Hash,bytes,Checkpoint(initial.Path,bytes,revision,2,8,Intent(epoch:2,operationId:"op-second")));
-            var before=Retained();var crashBytes=Pack("crash adoption");
+            var before=Retained();crashBytes=Pack("crash adoption");
             var crashing=Checkpoint(initial.Path,crashBytes,revision,3,9,Intent(true,epoch:2,operationId:"op-second"));
             // Simulate the crash window: the archive and durable intent are on disk, the finish never ran.
             TextPackStore.AtomicWrite(Path.Combine(directory,"recovery-op-second.json"),JsonSerializer.SerializeToUtf8Bytes(JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(directory,"checkpoint.json")))));
@@ -83,7 +84,7 @@ static class EpochAdoptionTests
         }
         using(var replay=new SharedEditingStore(files,sync)) {
             var opened=await replay.OpenAsync("test-1",initial.Path,files.Describe(initial.Path).Hash);
-            Assert(opened.Checkpoint?.Epoch==3&&opened.Document.Hash==TextPackStore.Hash(Pack("crash adoption"))&&File.Exists(Path.Combine(directory,"recovery-op-second.json")),"interrupted adoption replays after restart with its archive intact");
+            Assert(opened.Checkpoint?.Epoch==3&&opened.Document.Hash==TextPackStore.Hash(crashBytes)&&File.Exists(Path.Combine(directory,"recovery-op-second.json")),"interrupted adoption replays after restart with its archive intact");
             // Retired journals cannot adopt even with a matching intent.
             var retired=JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(directory,"checkpoint.json")))! with{RetiredReason="Editing access was removed."};
             TextPackStore.AtomicWrite(Path.Combine(directory,"checkpoint.json"),JsonSerializer.SerializeToUtf8Bytes(retired));
