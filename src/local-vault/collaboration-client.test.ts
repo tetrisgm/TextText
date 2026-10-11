@@ -153,6 +153,32 @@ describe("durable file collaboration client", () => {
     expect(journal.load(editor.journalKey)).toBeTruthy();
     expect(server.pushes).toHaveLength(0);
   });
+  it("keeps editing after a same-span CLI replacement interrupts a native checkpoint retry", async () => {
+    const server = new Server(), journal = new Journal();
+    server.bytes = pack("Existing fixture text."); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
+    let failOnce = false;
+    const checkpoints: string[] = [];
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request,
+      checkpoint: async ({ document }) => {
+        if (failOnce) { failOnce = false; throw Object.assign(new Error("File changed"), { code: "local_changed" }); }
+        checkpoints.push(document.content.body);
+      },
+      reconcileCheckpoint: async () => {
+        const base = documentSnapshotFromYDoc(editor.doc);
+        base.content.body = "Existing fixture text.";
+        const external = structuredClone(base); external.content.body = "[pc-cli r1 alpha17]";
+        return editor.reconcileExternalDocument(base, external);
+      },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    failOnce = true;
+    editor.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, "[pc-app r1 alpha4]"); });
+    expect(await editor.flushLocal()).toBe(true);
+    expect(editor.status).not.toBe("error");
+    expect(documentText(editor.doc, "body").toString()).toBe("[pc-cli r1 alpha17][pc-app r1 alpha4]");
+    expect(checkpoints.at(-1)).toBe("[pc-cli r1 alpha17][pc-app r1 alpha4]");
+  });
   it("keeps an active replacement while a CLI appends to the same file", async () => {
     const server = new Server(), journal = new Journal();
     server.bytes = pack("Existing fixture text."); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
