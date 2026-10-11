@@ -18,8 +18,9 @@ if ($Crash) {
     throw 'Native actor PID no longer belongs to this test session.'
   }
   Stop-Process -Id $actorPid -Force
-  Wait-Process -Id $actorPid -Timeout 15 -ErrorAction SilentlyContinue
-  if (Get-Process -Id $actorPid -ErrorAction SilentlyContinue) { throw 'Native actor remained running after the crash signal.' }
+  # Wait on the validated process object. A just-terminated PID may briefly
+  # remain enumerable (or be reused); neither proves this actor is still open.
+  if (!$process.WaitForExit(15000)) { throw 'Native actor remained running after the crash signal.' }
   $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   if ($null -ne $task) { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }
   exit 0

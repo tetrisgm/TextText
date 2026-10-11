@@ -183,9 +183,15 @@ Both private native actors now retry an Edit click once during reader rerender
 (`da744796`), while still requiring a joined editable document before attesting.
 These receipts do not cover process termination or a long offline interval.
 
-Native pending-edit crash recovery, whole-file/attachment and folder operations,
-permissions, and latency distributions still need physical campaigns. The
-historical notes below predate this runner.
+Mac-app pending-edit crash/restart and separate six-client reopen passed on
+seed 81 (`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-08-47-106Z-81`
+and `stress-2026-10-11T15-09-21-179Z-81`). Reciprocal Windows-app crash/restart
+and reopen passed on seed 85 (`stress-2026-10-11T15-34-34-103Z-85` and
+`stress-2026-10-11T15-36-19-395Z-85`). Both edit rounds had zero rejected
+events. The earlier failed seed 83 and first seed-85 readiness attempt remain
+recorded as failures. Whole-file/attachment and folder operations, separate
+account permissions, and latency distributions still need physical campaigns.
+The historical notes below predate this runner.
 
 The October 9 [physical six-client live-edit round](2026-10-09-six-client-live-edit.md)
 passed simultaneous small-text convergence and saved-file equality. The

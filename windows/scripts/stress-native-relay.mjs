@@ -22,7 +22,12 @@ function task(mode = 'start') {
   if (mode === 'finish') args.push('-Finish');
   if (mode === 'crash') args.push('-Crash');
   const result = spawnSync('powershell.exe', args, { encoding: 'utf8', timeout: 30000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  if (result.status !== 0) throw new Error(mode === 'start' ? 'Native actor could not start.' : mode === 'crash' ? 'Native actor could not be terminated.' : 'Native actor did not flush or exit cleanly.');
+  if (result.status !== 0) {
+    // The lifecycle script contains only private fixture paths and fixed error
+    // strings. Keep its bounded diagnostic in the runner-owned session.
+    writeFileSync(join(session, `task-error-${mode}.txt`), String(result.stderr || result.stdout || 'No task output.').slice(0, 4096));
+    throw new Error(mode === 'start' ? 'Native actor could not start.' : mode === 'crash' ? 'Native actor could not be terminated.' : 'Native actor did not flush or exit cleanly.');
+  }
 }
 async function finishTask() {
   for (let i = 0; i < 300; i++) {
@@ -89,7 +94,10 @@ async function main() {
           if (message.type === 'hello') { helloLine = line; attestation = answer; }
         }
       }
-      catch { fail('Native actor did not reply within the bound.', message.round ?? 0); failed = true; break; }
+      catch (error) {
+        const detail = error instanceof Error && error.message.startsWith('Native actor') ? error.message : 'Native actor did not reply within the bound.';
+        fail(detail, message.round ?? 0); failed = true; break;
+      }
       if (message.type === 'shutdown') { stopped = true; if (answer?.ok !== true) failed = true; break; }
       process.stdout.write(JSON.stringify(answer) + '\n');
       if (answer?.type === 'error') failed = true;
