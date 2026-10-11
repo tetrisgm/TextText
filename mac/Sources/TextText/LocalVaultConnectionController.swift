@@ -14,6 +14,7 @@ final class LocalVaultConnectionController {
     private let session: URLSession
     private var credentialGeneration = 0
     private var connectedCredentialGeneration = 0
+    private var remoteVerified = false
     private var engine: LocalVaultSync?
     var collaborationEngine: LocalVaultSync? { engine }
     private var transport: HTTPLocalVaultSyncTransport?
@@ -44,6 +45,16 @@ final class LocalVaultConnectionController {
                 previousBinding = existing
                 if let account = credentials(), account.origin == existing.origin {
                     capabilities = try? LocalVaultCapabilityCache.read(root: root, binding: existing)
+                    // The saved binding was verified on an earlier connection.
+                    // Restore its local journal synchronously so a reopened
+                    // editor never races server discovery after a crash.
+                    if let portable = try PortableWorkspaceBinding.read(root: root),
+                       portable == (try PortableWorkspaceBinding.normalized(existing)) {
+                        let transport = try HTTPLocalVaultSyncTransport(origin: existing.origin,
+                            workspaceId: existing.workspaceId, token: account.token, session: session)
+                        let engine = try LocalVaultSync(root: root, binding: existing, transport: transport)
+                        self.binding = existing; self.transport = transport; self.engine = engine
+                    }
                 }
             }
         } catch { message = error.localizedDescription }
@@ -78,7 +89,7 @@ final class LocalVaultConnectionController {
     /// Only an old loopback test journal may migrate automatically; another real
     /// server may represent a different account and needs explicit review.
     func connectAutomatically() {
-        guard !stopped, binding == nil || connectedCredentialGeneration != credentialGeneration,
+        guard !stopped, !remoteVerified || connectedCredentialGeneration != credentialGeneration,
               !connecting, credentials() != nil else { return }
         if let previousBinding, !Self.isLoopback(previousBinding.origin),
            let account = credentials(), previousBinding.origin != account.origin {
@@ -131,6 +142,15 @@ final class LocalVaultConnectionController {
         _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: "discovery")
         let selectedId = requestedWorkspaceId ?? previousBinding.flatMap { $0.origin == account.origin ? $0.workspaceId : nil }
         if let selectedId { _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: selectedId) }
+        // Reopen a previously verified local journal before waiting for the
+        // server. A pending editor must remain available through a network
+        // outage or a slow discovery response after process restart.
+        if let existing = try LocalVaultSync.binding(root: root),
+           let selectedId, existing.workspaceId == selectedId,
+           try PortableWorkspaceBinding.normalized(existing) == PortableWorkspaceBinding.normalized(
+               LocalVaultSyncBinding(origin: account.origin, workspaceId: selectedId)) {
+            try await configure(existing, token: account.token, startSync: false)
+        }
         let endpoint = selectedId.map { "api/vault/\($0)/items" } ?? "api/vault"
         var request = URLRequest(url: account.origin.appendingPathComponent(endpoint), timeoutInterval: 30)
         request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
@@ -182,6 +202,7 @@ final class LocalVaultConnectionController {
         message = nil
         watchFailureIsCurrent = false
         if startSync { schedule() }
+        remoteVerified = true
         return status
     }
     struct AvailableWorkspace: Decodable {
