@@ -388,7 +388,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const [retryable, setRetryable] = useState(false);
   const [promoting, setPromoting] = useState(false);
   const [sharedInitial, setSharedInitial] = useState<VaultFile | null>(null);
-  const [resumeBody, setResumeBody] = useState<{ selection: { anchor: number; head: number } | null } | null>(null);
+  const [resumeBody, setResumeBody] = useState<{ selection: { anchor: number; head: number } | null; focused: boolean } | null>(null);
   const localRoot = useRef<HTMLDivElement>(null);
   const localFlush = useRef<(() => Promise<boolean>) | null>(null);
   const onSharedModeRef = useRef(onSharedMode);
@@ -468,9 +468,10 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
           rerun = false;
           const candidate = await config();
           if (!candidate || stopped || !localFlush.current) continue;
-          const focused = document.activeElement;
-          const editingBody = focused instanceof HTMLElement && focused.getAttribute("aria-label") === "Document body" && localRoot.current?.contains(focused);
-          const selection = editingBody ? activeBodySelection() : null;
+          const body = localRoot.current?.querySelector<HTMLElement>('[aria-label="Document body"]');
+          const editingBody = body?.isContentEditable === true;
+          const focused = editingBody && document.activeElement === body;
+          const selection = focused ? activeBodySelection() : null;
           setPromoting(true);
           await new Promise<void>(resolve => {
             const frame = requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
@@ -481,7 +482,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
             hasDraft: () => Boolean(localStorage.getItem(draftKey)), read, config });
           if (!ready || stopped) { setPromoting(false); continue; }
           setSharedInitial(ready.file);
-          if (editingBody) setResumeBody({ selection });
+          if (editingBody) setResumeBody({ selection, focused });
           localStorage.setItem(`texttext:collaboration-config:${root}:${packIdentity(ready.file.markdown)}`, JSON.stringify(ready.config));
           onSharedModeRef.current?.();
           setMode(ready.config);
@@ -499,7 +500,8 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   if (mode === "local") return <><div ref={localRoot} inert={promoting}><VaultEditor {...props} registerFlush={registerLocalFlush} /></div>
     {promoting && <p className="vault-notice" role="status">Connecting this note…</p>}</>;
   if (mode) return <CollaborativeVaultEditor {...props} initial={sharedInitial ? { ...sharedInitial, path: props.initial.path } : props.initial} config={mode}
-    focusNewNote={Boolean(resumeBody) || props.focusNewNote} focusNewNoteOrigin={resumeBody ? null : props.focusNewNoteOrigin}
+    startEditing={Boolean(resumeBody) || props.startEditing}
+    focusNewNote={Boolean(resumeBody?.focused) || props.focusNewNote} focusNewNoteOrigin={resumeBody ? null : props.focusNewNoteOrigin}
     focusNewNoteSelection={resumeBody?.selection} onNewNoteFocusHandled={() => { setResumeBody(null); props.onNewNoteFocusHandled?.(); }}
     onLocalFallback={() => setMode("local")} />;
   return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;

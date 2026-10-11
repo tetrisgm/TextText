@@ -28,6 +28,7 @@ const pack = (text: string, json: string) => {
 };
 let current = pack(markdown, JSON.stringify(initial));
 const queuedOpen = process.argv.includes("--queued-open");
+const unfocusedPromotion = process.argv.includes("--unfocused-promotion");
 const earlyOpen = process.argv.includes("--early-open") || queuedOpen;
 const externalFile = process.argv.includes("--external-file") || earlyOpen;
 let releaseListing = () => {};
@@ -155,6 +156,10 @@ try {
   await until(() => localWrites === 1, "the local note save");
   assert.equal(JSON.parse(current.file.documentJSON!).content.body, "Typed before the first sync.");
   assert.equal(sharedOpens, 0);
+  if (unfocusedPromotion) {
+    await page.evaluate(() => { document.body.tabIndex = -1; document.body.focus(); });
+    assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Document body");
+  }
   syncedHash = current.file.hash;
   await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", {
     detail: { connected: true, available: true, workspaceId },
@@ -165,7 +170,13 @@ try {
       body: (await page.locator("body").innerText()).slice(0, 900), errors });
     throw reason;
   }
-  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
+  if (unfocusedPromotion) {
+    await page.getByRole("textbox", { name: "Document body" }).waitFor();
+    assert.equal(await page.getByRole("textbox", { name: "Document body" }).evaluate(node => (node as HTMLElement).isContentEditable), true,
+      "Promotion must preserve edit mode even when the local editor was not focused.");
+    assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Document body",
+      "Promotion must not steal focus from an unfocused editor.");
+  } else await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Document body");
   assert.equal(await page.getByRole("textbox", { name: "Document body" }).innerText(), "Typed before the first sync.");
   assert.equal(sharedOpens, 1);
   assert.equal(localWrites, 1);
@@ -179,6 +190,7 @@ try {
   assert.equal(localWrites, 1);
   assert.equal(sharedPushes, 0);
   assert.deepEqual(errors, []);
+  if (!unfocusedPromotion) {
   const editor = await page.getByRole("textbox", { name: "Document body" }).elementHandle();
   await page.keyboard.insertText(" Pending human edit.");
   agentEdit(" Agent external edit.");
@@ -206,5 +218,6 @@ try {
   assert.equal(localWrites, 1);
   assert.equal(await page.getByRole("button", { name: "Download recovery" }).count(), 0);
   assert.deepEqual(errors, []);
+  }
   console.log("Promotion and local-first/server-first file edits retain the editor, focus and native session.");
 } finally { await browser.close(); }
