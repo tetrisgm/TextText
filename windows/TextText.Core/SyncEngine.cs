@@ -190,6 +190,17 @@ public sealed class SyncEngine
                     file=store.Describe(server.RelativePath);local[id]=file;
                     baseline=baseline with{Path=file.Path};state.Items[id]=baseline;Save(state);store.ClearIntent(id);
                 }
+                // A prior collaboration checkpoint can move the document cursor
+                // to this revision while its asset cursor is still behind. A
+                // closed editor must finish that binary receive as well.
+                if(file.Hash==baseline.Hash && server.Revision==baseline.Revision &&
+                   state.BinaryBaselines.ContainsKey(id) &&
+                   state.BinaryRevisions.GetValueOrDefault(id)!=server.Revision) {
+                    await SyncRemoteBinary(state,file,baseline,server,cancellation);
+                    file=store.Describe(file.Path);
+                    local[id]=file;
+                    baseline=state.Items[id];
+                }
                 if(file.Hash!=baseline.Hash) { QueueUpload(state,file,baseline.Revision);await Drain(state,cancellation); }
                 else if(baseline.Refresh || server.Revision!=baseline.Revision || server.RelativePath!=file.Path) await Pull(state,id,file,cancellation,server.Lifecycle,server.Revision);
             }

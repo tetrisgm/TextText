@@ -551,6 +551,20 @@ static class Test
   Assert(BinaryEntryPacks.Assets(crossedStore.Read(crossedFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{9,8,7}),
     "binary entry arrives when collaboration advanced document revision first");
  }
+ var closedStore=new TextPackStore(Path.Combine(temp,"binary-closed-checkpoint"),Path.Combine(temp,"binary-closed-checkpoint-device"));
+ var closedInitial=BinaryEntryPacks.Patch(Pack("shared text","binary-closed-checkpoint"),"assets/data.bin",null,[1,2,3]);
+ var closedFile=closedStore.Write("Notes/Closed.textpack",closedInitial);
+ var closedRemote=new Fake{Data=closedInitial,Item=new("binary-closed-checkpoint",closedFile.Path,closedFile.Hash)};
+ var closedEngine=new SyncEngine(closedStore,closedRemote);await closedEngine.SyncAsync();
+ using(var lease=await closedEngine.AcquireCollaborationAsync("binary-closed-checkpoint")) { }
+ await closedRemote.BinaryPatchAsync("binary-closed-checkpoint",Guid.NewGuid().ToString(),"assets/data.bin",TextPackStore.Hash([1,2,3]),null,[6,5,4]);
+ var closedStateFile=Path.Combine(closedStore.StateDirectory,"sync.json");
+ var closedState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(closedStateFile))!;
+ closedState.Items["binary-closed-checkpoint"]=closedState.Items["binary-closed-checkpoint"] with{Revision=closedRemote.Item!.Revision};
+ TextPackStore.AtomicWrite(closedStateFile,JsonSerializer.SerializeToUtf8Bytes(closedState));
+ await closedEngine.SyncAsync();
+ Assert(BinaryEntryPacks.Assets(closedStore.Read(closedFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{6,5,4}),
+   "closed editor receives asset after document checkpoint advanced first");
  Console.WriteLine("All native file and durable sync regression tests passed.");
  }finally{Directory.Delete(temp,true);}}
  sealed class Many:ISyncTransport {
