@@ -164,7 +164,7 @@ export type ProjectionResolution =
  * Refuse that ambiguous history; a fresh coherent save restores provenance.
  */
 function sharedBodyInsertion(base: string, left: string, right: string): boolean {
-  if (base === left || base === right) return false;
+  if (base === left || base === right || left === right) return false;
   // Diffing long divergent bodies is costly. Ambiguity is safer than a guessed
   // merge and the next coherent save re-stamps the pack.
   if (Math.max(base.length, left.length, right.length) > 8192) return true;
