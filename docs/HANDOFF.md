@@ -88,6 +88,8 @@ and the signed-in production browser found that note with the saved body.
   from actual deletion. PC SSH recovered. A fresh six-client PC CLI replay
   passed two rounds with all editors open and exact convergence; receipt:
   `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-44-56-930Z-52`.
+  A second fresh fixture passed five rounds under the same PC CLI fault:
+  `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-47-13-104Z-53`.
   An earlier setup attempt (seed 51) stopped before edits when the Mac actor
   reopened the previously selected note; the fixture was opened explicitly
   before seed 52. The fix is physically verified in the private Windows test

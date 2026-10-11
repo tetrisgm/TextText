@@ -103,6 +103,8 @@ temporary invalid ZIP and has a local regression. A private Windows build
 passed the fresh physical six-client replay, seed 52, for two rounds with exact
 convergence; receipt:
 `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-44-56-930Z-52`.
+A second fresh fixture passed five rounds:
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-47-13-104Z-53`.
 Seed 51 stopped before edits because Mac file activation retained the previous
 note; it is a separate startup/setup failure, not a passed replay.
 Overlapping edits, native offline/crash recovery, whole-file/attachment and
