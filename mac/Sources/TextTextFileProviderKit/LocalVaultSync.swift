@@ -156,6 +156,17 @@ public actor LocalVaultSync {
               MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId else { return false }
         return true
     }
+    private func canCheckpointText(itemId: String, path: String) -> Bool {
+        guard state.outbox[itemId] == nil else { return false }
+        guard let conflict = state.conflicts[itemId] else { return true }
+        // A same-entry binary loser is retained under .texttext/conflicts.
+        // Its unresolved asset must not fence unrelated Yjs text checkpoints.
+        // Full-pack, moved, or restored-item conflicts still block editing.
+        guard let pending = state.binaryOutbox?[itemId], pending.conflicted,
+              pending.path == path, conflict.remotePath == path,
+              pending.lifecycle == state.lifecycles?[itemId] else { return false }
+        return true
+    }
     public func beginSharedEditing(itemId: String, path: String, expectedHash: String) throws -> LocalVaultSharedSession {
         guard sharedSessions[itemId] == nil else { throw LocalVaultSyncFailure.busy }
         let replayBeforeHash = try sharedStore.pendingIntentBeforeHash(itemId: itemId)
@@ -188,7 +199,7 @@ public actor LocalVaultSync {
             guard let baseline = state.baselines[itemId], baseline.path == path, baseline.localHash == document.hash else { throw LocalVaultSyncFailure.changed }
         }
         if checkpoint?.retiredReason == nil {
-            guard state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+            guard canCheckpointText(itemId: itemId, path: path) else { throw LocalVaultSyncFailure.busy }
         }
         let session = SharedSession(token: UUID().uuidString, path: path, hash: document.hash)
         if state.binaryBaselines?[itemId] == nil,
@@ -218,7 +229,7 @@ public actor LocalVaultSync {
             guard fresh.hash == expectedHash,
                   MarkdownIdentityCodec.extract(from: fresh.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
         }
-        guard state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+        guard canCheckpointText(itemId: itemId, path: session.path) else { throw LocalVaultSyncFailure.busy }
         guard var journalObject = try JSONSerialization.jsonObject(with: Data(journal.utf8)) as? [String: Any] else { throw LocalVaultSharedFailure.invalid }
         // The actor owns file location. A browser checkpoint may have been
         // prepared immediately before a remote rename was reconciled.

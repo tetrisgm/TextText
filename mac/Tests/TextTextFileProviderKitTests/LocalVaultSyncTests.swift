@@ -816,6 +816,46 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(currentAsset, Data("remote".utf8))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
+    func testRetainedBinaryConflictDoesNotFenceTextCheckpoint() async throws {
+        let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        _ = try await engine(transport).sync()
+        let document = try LocalVaultDocumentStore(root: root).read(path: path)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        var state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let baseline = try XCTUnwrap((state["baselines"] as? [String: [String: Any]])?[itemId])
+        state["conflicts"] = [itemId: ["localHash": document.hash,
+            "remoteRevision": baseline["revision"] as? String ?? "", "paths": [], "remotePath": path]]
+        try JSONSerialization.data(withJSONObject: state).write(to: stateURL, options: .atomic)
+        do {
+            _ = try await engine(transport).beginSharedEditing(itemId: itemId, path: path, expectedHash: document.hash)
+            XCTFail("A full-pack conflict must still block a new editor")
+        } catch LocalVaultSyncFailure.busy { }
+
+        let lifecycle = (state["lifecycles"] as? [String: String])?[itemId]
+        state["binaryOutbox"] = [itemId: ["itemId": itemId, "path": path,
+            "entryPath": "assets/data.txt", "expectedHash": TextTextStableDigest.sha256Hex(Data("first".utf8)),
+            "lifecycle": lifecycle as Any? ?? NSNull(), "payloadHash": TextTextStableDigest.sha256Hex(Data("local".utf8)),
+            "operationId": UUID().uuidString.lowercased(), "conflicted": true]]
+        try JSONSerialization.data(withJSONObject: state).write(to: stateURL, options: .atomic)
+        let resumed = try engine(transport)
+        let session = try await resumed.beginSharedEditing(itemId: itemId, path: path, expectedHash: document.hash)
+        let journal: [String: Any] = ["version": 1, "journalGeneration": 1, "epoch": 1, "seq": 0,
+            "revision": document.hash, "relativePath": path, "update": "AQ==", "pending": [], "batch": NSNull()]
+        let edited = try BuiltinTextPackDocument.create(title: "Note", body: "Text while asset conflict is retained")
+        let saved = try await resumed.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: document.hash, epoch: 1, seq: 0, acknowledgedRevision: document.hash,
+            journalGeneration: 1, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self),
+            pending: true, markdown: "---\ntextTextId: \"\(itemId)\"\ntitle: \"Note\"\n---\n\nText while asset conflict is retained",
+            documentJSON: edited.documentJSON)
+        XCTAssertTrue(saved.document.contents.markdown.contains("Text while asset conflict is retained"))
+        let archive = try Archive(data: Data(contentsOf: root.appendingPathComponent(path)), accessMode: .read)
+        let asset = try XCTUnwrap(archive["assets/data.txt"])
+        var bytes = Data(); _ = try archive.extract(asset) { bytes.append($0) }
+        XCTAssertEqual(bytes, Data("first".utf8))
+        try await resumed.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
     func testPendingAssetUploadPreservesBothPacksAcrossRestore() async throws {
         let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
         try putLocal(original)
