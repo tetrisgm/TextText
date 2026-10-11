@@ -26,6 +26,7 @@ import { DetachedFileSaveProof } from "./detached-file-save";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { queueArticleEnrichment } from "./article-enrichment";
 import { packIdentity } from "./pack";
+import { refreshBinaryOnlyFile } from "./binary-refresh";
 import { openLocalSharedSession, type NativeSharedSession } from "./shared-open";
 import { currentVaultWindowActive } from "./window-activity";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
@@ -76,6 +77,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const clientRef = useRef<FileCollaborationClient | null>(null);
   const nativeSessionRef = useRef<NativeSharedSession | null>(null);
+  const assetRefreshGeneration = useRef(0);
   useEffect(() => {
     if (packIdentity(initial.markdown) === config.itemId && packIdentity(file.current.markdown) === config.itemId) {
       file.current = { ...file.current, path: initial.path };
@@ -136,6 +138,17 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     let stopped = false;
     let shared: FileCollaborationClient | null = null;
     let native: NativeSharedSession | null = null;
+    const refreshRemoteAssets = () => {
+      if (config.localFiles) return; // Native file-change events carry the materialized pack.
+      const request = ++assetRefreshGeneration.current;
+      const path = file.current.path;
+      void vaultRequest<VaultFile>("read", { path }).then(fresh => {
+        if (stopped || request !== assetRefreshGeneration.current || fresh.path !== file.current.path ||
+            packIdentity(fresh.markdown) !== config.itemId) return;
+        const refreshed = refreshBinaryOnlyFile(file.current, fresh, config.itemId, false);
+        if (refreshed) { file.current = refreshed; setOpened(refreshed); }
+      }).catch(() => { /* The next server sequence or reopen retries the asset read. */ });
+    };
     const closeNative = async () => {
       if (native) {
         const closing = native; native = null;
@@ -204,7 +217,8 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
           throw error;
         }
       },
-      onChange: (next, presentation) => { if (!stopped) { if (presentation) { file.current = { ...file.current, ...presentation }; setOpened(file.current); } latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
+      onChange: (next, presentation) => { if (!stopped) { if (presentation) { file.current = { ...file.current, ...presentation }; setOpened(file.current); } if (JSON.stringify(latestSnapshot.current.content.assets) !== JSON.stringify(next.content.assets)) refreshRemoteAssets(); latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
+      onRemoteNonTextRevision: refreshRemoteAssets,
       onStatus: (next, message) => {
         if (stopped || !shared) return;
         setStatus(next); setDetail(message ?? ""); setCanEdit(shared.canEdit); setClient(shared);
@@ -259,7 +273,12 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
           if (!shared?.hasBaseline || shared.status === "stale-file") return;
           try {
             const latest = await vaultRequest<VaultFile>("read", { path: file.current.path });
-            if (!stopped && latest.hash !== file.current.hash) { shared.notifyExternalFileChange(); return; }
+            if (!stopped && latest.hash !== file.current.hash) {
+              const refreshed = refreshBinaryOnlyFile(file.current, latest, config.itemId, true);
+              if (refreshed) { file.current = refreshed; setOpened(refreshed); }
+              else { shared.notifyExternalFileChange(); }
+              return;
+            }
           } catch { /* A missing or unavailable file keeps the existing recovery path. */ }
         }
       } finally { reading = false; }
@@ -270,7 +289,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     };
     window.addEventListener("texttext:vault-changed", changed);
     return () => { stopped = true; window.removeEventListener("texttext:vault-changed", changed); };
-  }, [config.localFiles, generation]);
+  }, [config.localFiles, config.itemId, generation]);
   const flush = useCallback(async (navigation = false) => {
     const shared = clientRef.current;
     if (!shared) return Boolean(config.localFiles && waitingForExternalSync && !nativeSessionRef.current && detachedSaveRef.current.matches(file.current));

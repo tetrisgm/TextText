@@ -74,8 +74,11 @@ write, retained pending text, a subsequent same-session save, and a same-entry
 conflict that preserves both versions. Mac now also receives remote asset changes
 while a shared editor stays open, using an atomic file replacement and a replayable
 binary intent that retains pending text. Focused Mac sync and shared-editing suites
-pass (36 and 39 tests). Browser asset refresh and physical six-client retest
-remain open; seed 89 is still a failure.
+pass (36 and 39 tests). The shared browser client now distinguishes a binary-only
+sequence from a Yjs update and refreshes assets without remounting the editor;
+native file-change handling adopts asset-only file revisions without retiring a
+pending journal. Focused client/asset tests and TypeScript pass. Fresh physical
+six-client verification remains open; seed 89 is still a failure.
 
 Next: repair live binary-entry propagation while native editors stay mounted,
 verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,

@@ -49,6 +49,8 @@ export type FileCollaborationOptions = {
    * Must retain the native lease and adopt only a freshly read file revision. */
   reconcileCheckpoint?: (error: unknown) => Promise<boolean>;
   onChange?: (snapshot: DocumentSnapshot, presentation?: FileCollaborationPresentation) => void;
+  /** A sequence advanced without a Yjs change, as happens for a binary entry patch. */
+  onRemoteNonTextRevision?: () => void;
   onStatus?: (status: FileCollaborationStatus, detail?: string) => void;
   /** Live epoch adoption contract. After automatic recovery the server owns new
    * Yjs identities, so `client.doc` becomes a different Y.Doc holding the same
@@ -762,7 +764,11 @@ export class FileCollaborationClient {
       if (this.canEdit && !remote.canEditContent && this.hasPendingChanges) { this.retire("Editing access was removed. Your document is kept for recovery."); return; }
       this.canEdit = remote.canEditContent; this.canComment = remote.canComment;
       if (!remote.unchanged && remote.seq! >= this.current.seq) {
+        const priorSeq = this.current.seq;
+        const beforeVector = Y.encodeStateVector(this.doc);
         cursor(remote); presentation(remote.presentation); Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.adoptPresentation(remote.presentation); this.snapshot(); this.current = cursor(remote); this.persist(); this.options.onChange?.(this.snapshot(), this.presentation);
+        const afterVector = Y.encodeStateVector(this.doc);
+        if (remote.seq! > priorSeq && beforeVector.length === afterVector.length && beforeVector.every((byte, index) => byte === afterVector[index])) this.options.onRemoteNonTextRevision?.();
       }
       this.connectionProbePending = false;
       this.authoritative = true; this.failures = 0; this.report(this.uploadFailures ? "offline" : this.pending.length || this.batch ? "saving" : "ready"); this.schedulePush(0); this.schedulePoll(250);
@@ -809,6 +815,8 @@ export class FileCollaborationClient {
           else this.retire("This file changed after acknowledgement. Your document is kept for recovery.");
           return false;
         }
+        const priorSeq = this.current!.seq;
+        const beforeVector = Y.encodeStateVector(this.doc);
         presentation(remote.presentation);
         Y.applyUpdate(this.doc, decode(remote.update), REMOTE); this.adoptPresentation(remote.presentation); this.snapshot();
         if (remote.seq >= this.current!.seq) this.current = cursor(remote);
@@ -817,6 +825,8 @@ export class FileCollaborationClient {
         this.batch = null;
         try { this.persist(); } catch (error) { this.batch = acknowledged; throw error; }
         this.options.onChange?.(this.snapshot(), this.presentation);
+        const afterVector = Y.encodeStateVector(this.doc);
+        if (remote.seq > priorSeq && beforeVector.length === afterVector.length && beforeVector.every((byte, index) => byte === afterVector[index])) this.options.onRemoteNonTextRevision?.();
         if (!await this.flushLocal() || this.dead || !this.active || this.frozen) return false;
         this.uploadFailures = 0;
       }

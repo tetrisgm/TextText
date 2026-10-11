@@ -60,6 +60,21 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
+  it("reports a remote binary-only sequence without resetting the Yjs editor", async () => {
+    const server = new Server(), changed = vi.fn();
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace",
+      itemId: "item-1", journal: new Journal(), request: server.request,
+      onRemoteNonTextRevision: changed });
+    clients.push(editor);
+    await editor.start();
+    const doc = editor.doc, before = documentText(doc, "body").toString();
+    server.state = { ...server.state, seq: server.state.seq + 1, revision: "a".repeat(64) };
+    server.wake();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(editor.doc).toBe(doc);
+    expect(documentText(doc, "body").toString()).toBe(before);
+  });
   it("reconciles a closed-file edit against the native projection and a newer browser journal", async () => {
     const server = new Server(), journal = new Journal(), first = client(server, journal);
     await first.start();
