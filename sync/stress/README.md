@@ -12,8 +12,8 @@ offline, invalid intermediate ZIP, same-position insertion, Unicode, independent
 EOF replacement/append, and both Mac and PC CLI same-span replacement rounds
 have passed, each with a six-client durable reopen. Earlier PC CLI rounds
 failed; the failure and fresh passing receipts are in the acceptance contract.
-Mac and Windows native transport-loss/reconnect rounds also passed with six
-clients and separate durable reopens. Pending-edit native crashes, deletion,
+Mac and Windows native transport-loss/reconnect and pending-edit crash/restart
+rounds also passed with six clients and separate durable reopens. Deletion,
 moves, and latency distributions remain open; see
 `docs/verification/six-client-sync-acceptance.md`.
 Targeted editor transport loss uses `offline`, for example

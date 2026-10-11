@@ -574,6 +574,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingNativeOpen, setPendingNativeOpen] = useState<string | null>(null);
+  const nativeOpenRequested = useRef(false);
   const [destinationFolder, setDestinationFolder] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantRequest, setAssistantRequest] = useState<NativeAssistantRequest | null>(null);
@@ -641,7 +642,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     const restoringGeneration = navigationGeneration.current;
     restoredLocationRoot.current = root;
     void Promise.resolve().then(() => {
-      if (selectedRef.current || navigationGeneration.current !== restoringGeneration) {
+      if (nativeOpenRequested.current || selectedRef.current || navigationGeneration.current !== restoringGeneration) {
         setLocationReadyRoot(root);
         return;
       }
@@ -1071,13 +1072,25 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     else if (destinationFolder.trim()) setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: destinationFolder.trim(), label: destinationFolder.trim().split("/").at(-1) || destinationFolder.trim() });
   };
   useEffect(() => {
-    const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) setPendingNativeOpen(path); };
+    const openFile = (event: Event) => {
+      const path = (event as CustomEvent<{ path: string }>).detail?.path;
+      if (path) {
+        // A Finder request made during startup takes precedence over restoring
+        // the previous location, including a restore read already in flight.
+        nativeOpenRequested.current = true;
+        navigationGeneration.current++;
+        setPendingNativeOpen(path);
+      }
+    };
     const newFile = () => { if (canCreate) createNote(focusedControl()); };
     const nativeWindow = window as Window & { texttextOpenFile?: (path: string) => Promise<string> };
     nativeWindow.texttextOpenFile = async path => {
       if (busy) return "busy";
+      nativeOpenRequested.current = true;
+      navigationGeneration.current++;
       let opened = false;
       await operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); opened = true; }, true);
+      nativeOpenRequested.current = false;
       return opened ? "opened" : "blocked";
     };
     window.addEventListener("texttext:vault-open", openFile);
@@ -1088,7 +1101,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     if (!pendingNativeOpen || busy) return;
     const path = pendingNativeOpen;
     setPendingNativeOpen(null);
-    void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true);
+    void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true)
+      .finally(() => { nativeOpenRequested.current = false; });
   // The native file request remains queued while an earlier navigation finishes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingNativeOpen, busy]);

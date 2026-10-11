@@ -16,6 +16,7 @@ const Y = createRequire(import.meta.url)("yjs") as typeof import("yjs");
 
 const itemId = "new-note-promotion-test";
 const notePath = "Notes/Untitled.textpack";
+const previousPath = "Notes/Previous.textpack";
 const root = "/test/Workspace";
 const markdown = `---\ntextTextId: ${JSON.stringify(itemId)}\ntitle: "Untitled"\n---\n\n`;
 const config = { namespace: "https://texttext.test/", workspaceId: "11111111-1111-4111-8111-111111111111", itemId, localFiles: true };
@@ -27,9 +28,14 @@ const pack = (text: string, json: string) => {
   return { bytes, file: openPack(bytes, notePath, hash).file };
 };
 let current = pack(markdown, JSON.stringify(initial));
+const previous = openPack(buildTextpack("Previous", {
+  markdown: '---\ntextTextId: "previous-note-promotion-test"\ntitle: "Previous"\n---\n\n',
+  document: { ...initial, content: { ...initial.content, title: "Previous" } },
+}), previousPath, "previous-test-hash").file;
 const queuedOpen = process.argv.includes("--queued-open");
+const conflictingRestore = process.argv.includes("--conflicting-restore");
 const unfocusedPromotion = process.argv.includes("--unfocused-promotion");
-const earlyOpen = process.argv.includes("--early-open") || queuedOpen;
+const earlyOpen = process.argv.includes("--early-open") || queuedOpen || conflictingRestore;
 const externalFile = process.argv.includes("--external-file") || earlyOpen;
 let releaseListing = () => {};
 const listingReady = new Promise<void>(resolve => { releaseListing = resolve; });
@@ -72,11 +78,14 @@ try {
     let result: unknown = null, error: { code: string; message: string } | null = null;
     try {
       switch (request.method) {
-        case "list": if (earlyOpen) await listingReady; result = { root, folders: ["Notes"], items: exists ? [{ path: notePath }] : [] }; break;
+        case "list": if (earlyOpen && !conflictingRestore) await listingReady; result = { root, folders: ["Notes"], items: exists ? [{ path: notePath }, ...(conflictingRestore ? [{ path: previousPath }] : [])] : [] }; break;
         case "connection": result = { connected: true, available: true, workspaceId: config.workspaceId, webURL: "https://texttext.test/vault/workspace" }; break;
         case "folderViews": result = { files: [] }; break;
         case "create": exists = true; result = current.file; break;
-        case "read": readCalls++; if (queuedOpen && readCalls === 1) await readReady; result = current.file; break;
+        case "read": readCalls++; if (queuedOpen && readCalls === 1) await readReady;
+          if (conflictingRestore && request.params.path === previousPath) { await readReady; result = previous; }
+          else result = current.file;
+          break;
         case "write": {
           assert.equal(request.params.hash, current.file.hash);
           current = pack(String(request.params.markdown), String(request.params.documentJSON));
@@ -127,13 +136,18 @@ try {
     await page.evaluate(detail => window.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail })), { id: request.id, result, error });
   });
   await page.addInitScript({ content: "window.webkit = { messageHandlers: { localVault: { postMessage(request) { void window.nativeVaultRequest(request); } } } };" });
-  if (externalFile && !earlyOpen) await page.addInitScript(({ root, notePath }) => {
-    localStorage.setItem(`texttext:vault-location:${root}`, JSON.stringify({ folder: "Notes", path: notePath }));
-  }, { root, notePath });
+  if (externalFile && (!earlyOpen || conflictingRestore)) await page.addInitScript(({ root, savedPath }) => {
+    localStorage.setItem(`texttext:vault-location:${root}`, JSON.stringify({ folder: "Notes", path: savedPath }));
+  }, { root, savedPath: conflictingRestore ? previousPath : notePath });
   await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
   if (earlyOpen) {
     await page.waitForFunction(() => typeof (window as any).texttextOpenFile === "function");
-    if (queuedOpen) {
+    if (conflictingRestore) {
+      await until(() => readCalls >= 1, "the saved-location read");
+      await page.evaluate(path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } })), notePath);
+      await until(() => readCalls >= 2, "the explicit native open read");
+      releaseRead();
+    } else if (queuedOpen) {
       await page.evaluate(path => { void (window as any).texttextOpenFile(path); }, notePath);
       await until(() => readCalls === 1, "the first native open read");
       await page.evaluate(path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } })), notePath);

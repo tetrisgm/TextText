@@ -26,8 +26,11 @@ Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-34-34
 and `stress-2026-10-11T15-36-19-395Z-85` alongside it. The prior seed 83
 failure and seed 85 first readiness failure remain recorded, not counted as
 passes. The Windows process-stop relay was corrected to wait on its validated
-process object. Initial Mac native activation can still open the previous file
-before the new fixture; investigate that startup race independently.
+process object. Initial Mac native activation sometimes reopened the previous
+file. The frontend now gives an explicit native open priority over saved-location
+restoration; early/queued browser regressions and a fresh physical six-client
+reopen passed at `stress-2026-10-11T15-42-38-187Z-85`. Repeat on a new fixture
+before considering the startup race closed.
 
 Next: continue overlap and whole TextPack/assets, folder operations,
 separate-account permissions, and sustained latency/resource tests. Do not
