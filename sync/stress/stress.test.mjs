@@ -50,6 +50,19 @@ test('missing roles are rejected before any process starts', () => {
   assert.throws(() => validateConfig(config), /command must be a non-empty string array/);
   assert.throws(() => validateConfig({ ...makeConfig(), fixture: {} }), /fixture/);
   assert.throws(() => validateConfig({ ...makeConfig(), rounds: 0 }), /expectedBaselineHash/);
+  assert.throws(() => validateConfig({ ...makeConfig(), offline: { role: 'pc-app', round: 1 } }), /offline/);
+});
+
+test('one browser may edit offline while the other five remain active, then reconnect', async () => {
+  const config = makeConfig({ rounds: 2 });
+  config.offline = { role: 'mac-web', round: 1 };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(lines.filter(x => x.type === 'transport').map(x => [x.role, x.round, x.online]), [
+    ['mac-web', 1, false], ['mac-web', 1, true],
+  ]);
+  assert.equal(summary.roundsCompleted, 2);
 });
 
 test('reopen baseline must match the prior final hash without issuing edits', async () => {

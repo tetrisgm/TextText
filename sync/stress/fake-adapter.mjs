@@ -44,6 +44,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       // drop-edit: nobody sees the edit (edit ID mismatch). private-edit: only this role sees it (hash divergence).
       if (fault === 'private-edit') { privateEdits.push(m.edit); } else if (fault !== 'drop-edit') writeFileSync(join(shared, `${m.edit.id}.json`), JSON.stringify(m.edit));
       return out({ type: 'applied', round: m.round, editId: m.edit.id });
+    case 'transport':
+      return out({ type: 'transport', round: m.round, online: m.online });
     case 'observe': {
       observations++;
       if (fault === 'reload' && m.round > 1) reloads += 1;

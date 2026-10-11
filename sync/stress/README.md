@@ -14,9 +14,15 @@ file. The adapters never replace the installed app or bypass its sync engine.
 Physical campaigns on October 10 passed one, five, and ten rounds on fresh
 fixtures. This is acceptance evidence for simultaneous append and editor
 continuity. A zero-round six-client reopen against the ten-round final hash
-also passed after the live actors exited. Offline, crash, deletion, replacement, move, and latency scenarios
+also passed after the live actors exited. Native offline, crash, deletion, replacement, move, and latency scenarios
 remain outside this runner's current coverage; see
 `docs/verification/six-client-sync-acceptance.md`.
+Targeted browser transport loss is now covered: set `offline` to
+`{"role":"mac-web","round":1}` or `{"role":"pc-web","round":1}`.
+The selected browser goes offline after the readiness barrier, edits through
+its real editor while the other five clients edit, then reconnects before
+convergence. Both platform-specific physical runs passed. Native transport
+loss and pending-edit crash recovery remain open.
 
 ## Run
 

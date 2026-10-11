@@ -24,8 +24,14 @@ ten-round final hash `546d880493cbb710ee8c0d375683bb26d2d5e37a84915ad7e1bf1aa6db
 Per-role state, timings, and
 dashboard receipts are in `/private/tmp/texttext-six-20261010/results/`.
 
+Browser transport fault runs `stress-2026-10-11T05-19-28-353Z-46` (Mac browser)
+and `stress-2026-10-11T05-21-50-430Z-47` (PC browser) each passed two rounds
+with the selected browser offline during the first concurrent edit, then
+reconnected. `stress-2026-10-11T05-22-23-938Z-48` passed the six-client durable
+reopen against the PC browser fault run's final hash. The harness has 45 tests.
+
 This is real six-client append acceptance, not full sync certification. The
-remaining acceptance contract includes offline/reconnect, conflicting
+remaining acceptance contract includes native offline/reconnect, conflicting
 replacement and deletion, crash/restart, file moves, and sustained latency
 checks. The current runners exercise concurrent app/browser/CLI appends only.
 Keep these receipts and disposable fixture files; do not alter user notes or

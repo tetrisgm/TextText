@@ -49,6 +49,12 @@ export function validateConfig(config) {
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
   if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedBaselineHash ?? '')) fail('a zero-round reopen requires expectedBaselineHash');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
+  if (config.offline !== undefined) {
+    if (!config.offline || !['mac-web', 'pc-web'].includes(config.offline.role)
+      || !Number.isInteger(config.offline.round) || config.offline.round < 1 || config.offline.round > config.rounds) {
+      fail('offline must name mac-web or pc-web and an existing round');
+    }
+  }
   const f = config.fixture;
   if (!f || typeof f.workspaceId !== 'string' || !f.workspaceId || typeof f.itemId !== 'string' || !f.itemId) fail('fixture.workspaceId and fixture.itemId are required');
   if (!config.roles || typeof config.roles !== 'object') fail('roles object is required');
@@ -210,7 +216,7 @@ export class Coordinator {
       const listeners = new Map();
       const done = (fn) => { clearTimeout(timer); for (const [role, l] of listeners) { this.adapters.get(role).off('message', l.m); this.adapters.get(role).off('exit', l.e); this.adapters.get(role).off('error', l.err); } fn(); };
       const timer = setTimeout(() => done(() => reject(new StressFailure('timeout', { round, phase: type, missing: ledger.missing, timeoutMs: this.config.timeoutMs }))), this.config.timeoutMs);
-      for (const role of ROLES) {
+      for (const role of roles) {
         const adapter = this.adapters.get(role);
         const l = {
           err: () => done(() => reject(new StressFailure('adapter-error', { round, role }))),
@@ -240,10 +246,13 @@ export class Coordinator {
     const ready = this.collect(round, 'ready');
     this.broadcast({ type: 'prepare', round });
     await ready;
+    const offlineRole = this.config.offline?.round === round ? this.config.offline.role : null;
+    if (offlineRole) await this.setTransport(round, offlineRole, false);
     const pending = this.collect(round, 'applied');                       // all-ready barrier
     for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text } }); // concurrent dispatch
     const applied = await pending;
     for (const edit of edits) if (applied.get(edit.role).editId !== edit.id) throw new StressFailure('applied-mismatch', { round, role: edit.role, expected: edit.id, actual: applied.get(edit.role).editId });
+    if (offlineRole) await this.setTransport(round, offlineRole, true);
     const expectedEditIds = planRounds(this.config.seed, round).flatMap((p) => p.edits.map((e) => e.id)).sort();
     // A client can report a locally stable state before another replica's save reaches it.
     // Keep all six actors open while checking convergence; a premature failure shuts down
@@ -287,6 +296,14 @@ export class Coordinator {
     this.roundResults.push(result);
     this.record('round', result);
     this.writeDashboard('running');
+  }
+
+  async setTransport(round, role, online) {
+    const pending = this.collect(round, 'transport', [role]);
+    this.adapters.get(role).send({ type: 'transport', round, online });
+    const reply = (await pending).get(role);
+    if (reply.online !== online) throw new StressFailure('transport-mismatch', { round, role, online, actual: reply.online });
+    this.record('transport', { round, role, online });
   }
 
   // App/web editors must keep the same editor session with no reload across rounds.

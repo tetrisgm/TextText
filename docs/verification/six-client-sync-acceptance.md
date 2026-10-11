@@ -87,6 +87,17 @@ cannot satisfy physical acceptance or substitute for a missing native adapter.
 
 ## Current evidence and gaps
 
+October 10 physical runner receipts: seed 42 passed one concurrent six-client
+append round; seed 43 passed five rounds; seed 44 passed ten rounds and a
+six-client restart with the exact final body hash. Seed 46 passed a Mac browser
+offline edit and reconnect while the other five clients edited; seed 47 did
+the same for the PC browser and passed a subsequent six-client restart. See
+`docs/HANDOFF.md` for receipt paths and `sync/stress/README.md` for the runner.
+These prove stage 1 append and browser transport-loss slices of stage 3.
+Overlapping edits, native offline/crash recovery, whole-file/attachment and
+folder operations, permissions, and latency distributions still need physical
+campaigns. The historical notes below predate this runner.
+
 The October 9 [physical six-client live-edit round](2026-10-09-six-client-live-edit.md)
 passed simultaneous small-text convergence and saved-file equality. The
 October 9 [invalid intermediate TextPack round](2026-10-09-invalid-intermediate-textpack.md)

@@ -228,6 +228,12 @@ async function main() {
       if (!await page.evaluate(sharedEditorReady, config.itemId)) throw new StageError('shared-ready', 'editor left the shared document');
       out({ type: 'ready', round: m.round });
     },
+    async transport(m) {
+      if (typeof m.online !== 'boolean') throw new StageError('transport', 'online must be boolean');
+      await assertOnItem();
+      await context.setOffline(!m.online);
+      out({ type: 'transport', round: m.round, online: m.online });
+    },
     async edit(m) {
       const v = validateEdit(m.edit);
       if (!v.ok) throw new StageError('edit', v.reason);
