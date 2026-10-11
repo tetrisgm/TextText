@@ -533,6 +533,24 @@ static class Test
   var conflictState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"sync.json")))!;
   Assert(conflictState.BinaryOutbox.Single().Conflicted&&BinaryEntryPacks.Assets(binaryStore.Read(binaryFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{4,4,4})&&BinaryEntryPacks.Assets(binaryRemote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5,5}),"same-entry conflict retains both byte versions without overwrite");
  }
+ // A collaboration checkpoint may acknowledge a newer document revision
+ // before file sync has received the binary entry from that same revision.
+ var crossedStore=new TextPackStore(Path.Combine(temp,"binary-checkpoint-race"),Path.Combine(temp,"binary-checkpoint-race-device"));
+ var crossedInitial=BinaryEntryPacks.Patch(Pack("shared text","binary-checkpoint-race"),"assets/data.bin",null,[1,2,3]);
+ var crossedFile=crossedStore.Write("Notes/Checkpoint.textpack",crossedInitial);
+ var crossedRemote=new Fake{Data=crossedInitial,Item=new("binary-checkpoint-race",crossedFile.Path,crossedFile.Hash)};
+ var crossedEngine=new SyncEngine(crossedStore,crossedRemote);await crossedEngine.SyncAsync();
+ using(var lease=await crossedEngine.AcquireCollaborationAsync("binary-checkpoint-race")) {
+  await crossedRemote.BinaryPatchAsync("binary-checkpoint-race",Guid.NewGuid().ToString(),"assets/data.bin",TextPackStore.Hash([1,2,3]),null,[9,8,7]);
+  var revision=crossedRemote.Item!.Revision;
+  var stateFile=Path.Combine(crossedStore.StateDirectory,"sync.json");
+  var checkpointState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(stateFile))!;
+  checkpointState.Items["binary-checkpoint-race"]=checkpointState.Items["binary-checkpoint-race"] with{Revision=revision};
+  TextPackStore.AtomicWrite(stateFile,JsonSerializer.SerializeToUtf8Bytes(checkpointState));
+  await crossedEngine.SyncAsync();
+  Assert(BinaryEntryPacks.Assets(crossedStore.Read(crossedFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{9,8,7}),
+    "binary entry arrives when collaboration advanced document revision first");
+ }
  Console.WriteLine("All native file and durable sync regression tests passed.");
  }finally{Directory.Delete(temp,true);}}
  sealed class Many:ISyncTransport {

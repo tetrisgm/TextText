@@ -84,6 +84,9 @@ public actor LocalVaultSync {
         var managedFolders: [String]? = nil
         // Optional for journals written by earlier app versions.
         var binaryBaselines: [String: [String: String]]? = nil
+        // A collaboration checkpoint may advance the document revision before
+        // its binary entries have been fetched on this device.
+        var binaryRevisions: [String: String]? = nil
         var binaryOutbox: [String: BinaryPending]? = nil
     }
     private let root: URL
@@ -193,6 +196,9 @@ public actor LocalVaultSync {
            state.baselines[itemId]?.localHash == document.hash {
             if state.binaryBaselines == nil { state.binaryBaselines = [:] }
             state.binaryBaselines?[itemId] = try binaryAssets(path: path).mapValues { TextTextStableDigest.sha256Hex($0) }
+            let revision = state.baselines[itemId]?.revision
+            if state.binaryRevisions == nil { state.binaryRevisions = [:] }
+            state.binaryRevisions?[itemId] = revision
             try persist()
         }
         sharedSessions[itemId] = session
@@ -559,6 +565,8 @@ public actor LocalVaultSync {
             if bytes == nil { state.binaryBaselines?[itemId]?.removeValue(forKey: pending.entryPath) }
             else { state.binaryBaselines?[itemId, default: [:]][pending.entryPath] = TextTextStableDigest.sha256Hex(bytes!) }
             if state.baselines[itemId]?.path == path { state.baselines[itemId]?.revision = revision }
+            if state.binaryRevisions == nil { state.binaryRevisions = [:] }
+            state.binaryRevisions?[itemId] = revision
             state.binaryOutbox?.removeValue(forKey: itemId)
             try persist()
             if pending.payloadHash != nil { try? FileManager.default.removeItem(at: binaryPayload(pending.operationId)) }
@@ -572,7 +580,7 @@ public actor LocalVaultSync {
     private func receiveOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
         guard !remote.isDeleted, remote.relativePath == path,
               let baseline = state.baselines[itemId], baseline.path == path,
-              baseline.revision != remote.revision,
+              state.binaryRevisions?[itemId] != remote.revision,
               let known = state.binaryBaselines?[itemId],
               state.outbox[itemId] == nil, state.binaryOutbox?[itemId] == nil,
               state.conflicts[itemId] == nil,
@@ -611,8 +619,10 @@ public actor LocalVaultSync {
         if state.baselines[itemId]?.path == path {
             state.baselines[itemId]?.revision = remote.revision
             state.baselines[itemId]?.localHash = try LocalVaultDocumentStore(root: root).readMetadata(path: path).hash
-            try persist()
         }
+        if state.binaryRevisions == nil { state.binaryRevisions = [:] }
+        state.binaryRevisions?[itemId] = remote.revision
+        try persist()
         return didChange
     }
     private func validate(_ pack: LocalVaultRemotePack, itemId: String, path: String) throws {

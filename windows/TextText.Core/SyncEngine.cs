@@ -27,7 +27,7 @@ public sealed class SyncEngine
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
     public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false,string? PayloadHash=null);
-    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
+    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath;
     public SyncStatus Status {get;private set;}=new(false,null,0);
@@ -42,6 +42,7 @@ public sealed class SyncEngine
                     var file=store.Describe(baseline.Path);
                     if(file.ItemId==itemId && file.Hash==baseline.Hash) {
                         state.BinaryBaselines[itemId]=BinaryEntryPacks.Assets(store.Read(file.Path)).ToDictionary(x=>x.Key,x=>x.Value.Sha256);
+                        state.BinaryRevisions[itemId]=baseline.Revision;
                         Save(state);
                     }
                 } catch(IOException) { /* An evicted or invalid file is handled by the existing open path. */ }
@@ -331,6 +332,7 @@ public sealed class SyncEngine
             if(!state.BinaryBaselines.TryGetValue(remote.ItemId,out var hashes)) {
                 if(local.Hash!=baseline.Hash)return; // Do not invent a base after an unknown edit.
                 state.BinaryBaselines[remote.ItemId]=BinaryEntryPacks.Assets(store.Read(local.Path)).ToDictionary(x=>x.Key,x=>x.Value.Sha256);
+                state.BinaryRevisions[remote.ItemId]=baseline.Revision;
                 Save(state);return;
             }
             if(local.Hash==baseline.Hash)return;
@@ -360,6 +362,7 @@ public sealed class SyncEngine
             var locallyCurrent=latestAssets is not null && latestAssets.Count==hashes.Count &&
                 latestAssets.All(x=>hashes.GetValueOrDefault(x.Key)==x.Value.Sha256);
             state.Items[pending.ItemId]=baseline with{Revision=revision,Hash=locallyCurrent?latest!.Hash:baseline.Hash};
+            state.BinaryRevisions[pending.ItemId]=revision;
             state.BinaryOutbox.Remove(pending);Save(state);
             if(pending.PayloadHash is not null)try{File.Delete(BinaryPayloadPath(pending.Id));}catch(IOException){}
         } catch(SyncConflictException) {
@@ -367,7 +370,9 @@ public sealed class SyncEngine
         }
     }
     async Task SyncRemoteBinary(State state,PackFile? local,Baseline baseline,RemoteItem remote,CancellationToken ct) {
-        if(local is null||local.Path!=baseline.Path||baseline.Revision==remote.Revision||
+        // Collaboration checkpoints can advance the document revision before this
+        // device has fetched its assets. Track the asset revision independently.
+        if(local is null||local.Path!=baseline.Path||state.BinaryRevisions.GetValueOrDefault(remote.ItemId)==remote.Revision||
            baseline.Lifecycle!=remote.Lifecycle||state.BinaryOutbox.Any(x=>x.ItemId==remote.ItemId)||
            !state.BinaryBaselines.TryGetValue(remote.ItemId,out var known))return;
         SharedEditingStore.RecoverPendingBinaryProjection(store,remote.ItemId);
@@ -395,6 +400,7 @@ public sealed class SyncEngine
             if(target is null)known.Remove(entryPath);else known[entryPath]=target;
             state.Items[remote.ItemId]=baseline with{Hash=local.Hash,Revision=remote.Revision};Save(state);
         }
+        state.BinaryRevisions[remote.ItemId]=remote.Revision;Save(state);
     }
     string? StateError(State state)=>state.BinaryOutbox.Any(x=>x.Conflicted)?"An attachment changed on another device. The local file is kept for resolution.":state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;
     bool HasLocalWork(State state,Dictionary<string,PackFile> local) {
