@@ -19,10 +19,13 @@ A fresh diagnostic fixture 1273 reproduced it; the Windows UI says "This note
 needs to be reopened. Your edits are saved for recovery." Receipt:
 `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-14-11-581Z-72`.
 Its file and journals remain preserved. The PC test harness now captures the
-visible notice on failure (uncommitted change in `Stress.cs`). The likely path
-is a failed native checkpoint after an older direct file edit races with live
-Yjs changes; prove the exact checkpoint error and fix the common-base merge,
-then replay on a new fixture and durable reopen. The new diagnostic fixture
+visible notice on failure (`a8ac24c4`). The failed native checkpoint was
+using the editor's newer local checkpoint as the base for a direct file edit
+that actually began at the older stamped TextPack projection. A proposed fix
+uses that verified projection as the merge ancestor; its 900 core tests,
+native sync checks, and TypeScript check pass, but it still needs matching
+Mac/Windows builds and physical replay on the fresh fixture 1274, followed by
+a durable reopen. The new diagnostic fixture
 did take roughly two minutes to reach the PC after CLI creation, so also
 measure file creation propagation separately.
 

@@ -14,7 +14,7 @@ import type { PresencePeer } from "@/lib/collab/provider";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { VaultError, vaultRequest, type VaultFile } from "./bridge";
-import { asPost, localBlog, readDocument, readTemplate, writePayload } from "./model";
+import { asPost, externalFileReconciliationBase, localBlog, readDocument, readTemplate, writePayload } from "./model";
 import { ArticleReader } from "./ArticleReader";
 import { toggleNoteTask, VaultNoteDisplay } from "./VaultNoteDisplay";
 import { VaultStoryDisplay } from "./VaultStoryDisplay";
@@ -176,7 +176,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         // Custom template sources have their own version/metadata protocol.
         // Never silently overwrite a concurrently changed definition.
         if (fresh.templateJSON !== before.templateJSON || fresh.templateAuthoringSourceJSON !== before.templateAuthoringSourceJSON) return false;
-        if (!shared.reconcileExternalDocument(readDocument(before), readDocument(fresh))) return false;
+        if (!shared.reconcileExternalDocument(externalFileReconciliationBase(before, fresh, config.itemId), readDocument(fresh))) return false;
         file.current = fresh;
         setOpened(fresh);
         if (movedPath) onTitleChange?.(fresh.path, latestSnapshot.current.content.title);

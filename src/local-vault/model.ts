@@ -7,10 +7,22 @@ import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/prese
 import type { Blog, ItemKind, Post } from "@/lib/content";
 import type { VaultFile } from "./bridge";
 import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
-import { projectionItemId, resolveProjection, stampProjectionBaseline } from "@/lib/documents/projection-baseline";
+import { parseProjectionBaseline, projectionItemId, resolveProjection, sha256Hex, stampProjectionBaseline } from "@/lib/documents/projection-baseline";
 export const localBlog: Blog = { handle: "local", name: "Workspace", author: "", homeLayout: "list" };
 export class VaultRepresentationConflict extends Error {
   constructor() { super("text.md and document.json contain competing edits. Both representations are preserved in the file."); }
+}
+/** An external Markdown edit may have started from the last coherent TextPack
+ * projection, while this window has since checkpointed newer live edits. The
+ * sidecar supplies that file writer's actual ancestor. Using the window's last
+ * checkpoint as the ancestor would make the old file look like a replacement
+ * of every live edit and retire the editor. */
+export function externalFileReconciliationBase(before: VaultFile, fresh: VaultFile, itemId: string): DocumentSnapshot {
+  const baseline = parseProjectionBaseline(fresh.projectionJSON ?? undefined, itemId);
+  if (baseline && fresh.documentJSON &&
+      sha256Hex(fresh.documentJSON) === baseline.documentSha256 &&
+      sha256Hex(fresh.markdown) !== baseline.markdownSha256) return baseline.document;
+  return readDocument(before);
 }
 function patchChanged(before: unknown, after: unknown, target: unknown): unknown {
   if (JSON.stringify(before) === JSON.stringify(after)) return target;

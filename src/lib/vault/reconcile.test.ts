@@ -187,6 +187,27 @@ describe("reconcileDocumentSnapshots", () => {
         .toBe(expected);
     });
 
+    it("retains a partial file edit beside several live replacements", () => {
+      const body = "Existing fixture text.\n";
+      const left = "[pc-web][mac-web][mac-app][mac-cli]";
+      const right = "Existing [pc-cli]\n";
+      const { base, local, remote } = replicas(body);
+      local.content.body = left;
+      remote.content.body = right;
+      const result = reconcileDocumentSnapshots(base, local, remote, {
+        concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+      });
+      expect(result.status).toBe("merged");
+      if (result.status !== "merged") return;
+      expect(result.document.content.body).toContain("[pc-cli]");
+      for (const marker of ["[pc-web]", "[mac-web]", "[mac-app]", "[mac-cli]"]) {
+        expect(result.document.content.body).toContain(marker);
+      }
+      const projected = externalBodyEdits(body, left, right, result.document.content.body);
+      expect(projected?.reduce((text, edit) => text.slice(0, edit.start) + edit.replacement + text.slice(edit.end), left))
+        .toBe(result.document.content.body);
+    });
+
     it("preserves unchanged text inside a multi-edit overlap", () => {
       const { base, local, remote } = replicas("abcdefgh");
       local.content.body = "aXcdYfgh";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { readDocument, writePayload } from "./model";
+import { externalFileReconciliationBase, readDocument, writePayload } from "./model";
 import type { VaultFile } from "./bridge";
 const file: VaultFile = { path: "Notes/Test.textpack", hash: "before", markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Test"\n---\n\nold' };
 function snapshot() {
@@ -109,6 +109,19 @@ describe("external file changes with projection provenance", () => {
       expect(read.content.fields.rating).toBe(3);
     }
     expect(readDocument(withMarkdown(saved, "one\nthree")).content.body).toBe("one\nthree");
+  });
+
+  it("uses a direct file writer's stamped ancestor after a newer live checkpoint", () => {
+    const { saved, document } = stamped("Existing fixture text.\n");
+    const live = structuredClone(document);
+    live.content.body = "[pc-web][mac-web][mac-app][mac-cli]";
+    const before = { ...saved, ...writePayload(saved, live) } as VaultFile;
+    const external = { ...saved, markdown: saved.markdown.replace(/Existing fixture text\.\n$/, "Existing [pc-cli]\n") };
+    const id = "d6090b67-e3bb-46a3-9d34-76061bcb1dbb";
+    expect(externalFileReconciliationBase(before, external, id).content.body).toBe("Existing fixture text.\n");
+    expect(readDocument(external).content.body).toBe("Existing [pc-cli]\n");
+    expect(externalFileReconciliationBase(before, { ...external, projectionJSON: null }, id).content.body)
+      .toBe(live.content.body);
   });
 
   it("merges separate JSON and Markdown edits made after the same save", () => {
