@@ -192,11 +192,11 @@ static class Stress
                 case "edit":
                 {
                     await RequireSelected(ct);
-                    if (!request.TryGetProperty("edit", out var edit) || !edit.TryGetProperty("op", out var op) || op.GetString() != "append") throw new Exception("Only append edits are supported.");
+                    if (!request.TryGetProperty("edit", out var edit) || !edit.TryGetProperty("op", out var op) || op.GetString() is not ("append" or "insert-start")) throw new Exception("Unsupported edit operation.");
                     var id = edit.TryGetProperty("id", out var ie) ? ie.GetString() ?? "" : "";
                     var text = edit.TryGetProperty("text", out var te) ? te.GetString() ?? "" : "";
                     if (!EditIdPattern.IsMatch(id) || text.Length is 0 or > MaxEditText || text.Contains('\n')) throw new Exception("Edit id or text is out of bounds for this adapter.");
-                    await Append(id, text, ct);
+                    await Insert(id, text, op.GetString() == "insert-start", ct);
                     return new { type = "applied", round, editId = id };
                 }
                 case "observe":
@@ -257,12 +257,12 @@ static class Stress
             return parsed.RootElement.GetProperty("body").ValueKind == JsonValueKind.String ? parsed.RootElement.GetProperty("body").GetString() : null;
         }
 
-        async Task Append(string id, string text, CancellationToken ct)
+        async Task Insert(string id, string text, bool start, CancellationToken ct)
         {
             var before = await Body() ?? throw new Exception("Test editor body is not present.");
             if (before.Contains(text)) throw new Exception("Edit text already present before input: " + id);
             // Real contenteditable focus and a collapsed selection at the end, then the exact text through the input pipeline.
-            await view!.ExecuteScriptAsync("(()=>{const e=document.querySelector('[aria-label=\"Document body\"]');e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(false);const s=window.getSelection();s.removeAllRanges();s.addRange(r)})()");
+            await view!.ExecuteScriptAsync($"(()=>{{const e=document.querySelector('[aria-label=\"Document body\"]');e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse({(start ? "true" : "false")});const s=window.getSelection();s.removeAllRanges();s.addRange(r)}})()");
             log(new { kind = "input", editId = id });
             await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
             var deadline = DateTimeOffset.UtcNow + EditBound;

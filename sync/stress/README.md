@@ -29,6 +29,12 @@ atomic repair while all six editors stay open. The Mac CLI physical run passed.
 The initial PC CLI run failed when the Windows editor left its selected file.
 The repaired Windows test build then passed a fresh two-round, six-client PC CLI
 replay. The failing and passing receipts are linked in the acceptance contract.
+Set `pattern` to `"same-position"` to make the four real editors insert at
+the start of the document concurrently while both CLI actors append to the
+underlying TextPack. The runner still checks every exact marker, baseline
+preservation, editor continuity, and identical text. Fresh physical runs of
+one and five rounds passed; see the acceptance contract. This does not cover
+overlapping replacement or deletion.
 
 ## Run
 

@@ -74,7 +74,7 @@ export function validateRound(round) {
 export function validateEdit(edit) {
   if (!edit || typeof edit !== 'object') return { ok: false, reason: 'edit-missing' };
   if (typeof edit.id !== 'string' || !/^r\d{1,5}-(mac|pc)-(app|web|cli)$/.test(edit.id)) return { ok: false, reason: 'edit-id-invalid' };
-  if (edit.op !== 'append') return { ok: false, reason: 'edit-op-unsupported' };
+  if (edit.op !== 'append' && edit.op !== 'insert-start') return { ok: false, reason: 'edit-op-unsupported' };
   if (typeof edit.text !== 'string' || !edit.text.length || edit.text.length > MAX_EDIT_TEXT) return { ok: false, reason: 'edit-text-invalid' };
   const markers = [...edit.text.matchAll(MARKER)];
   const ids = markerEditIds(edit.text);
@@ -115,13 +115,13 @@ export const safeMessage = (error) => String(error?.message ?? error)
 
 const EDITOR = '[aria-label="Document body"]';
 // Caret to the end through a DOM Range on the selection: no document data mutation.
-const caretToEnd = (selector) => {
+const caretToEdge = ({ selector, start }) => {
   const el = document.querySelector(selector);
   if (!el || !el.isContentEditable) return false;
   el.focus();
   const range = document.createRange();
   range.selectNodeContents(el);
-  range.collapse(false);
+  range.collapse(start);
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
@@ -238,7 +238,7 @@ async function main() {
       const v = validateEdit(m.edit);
       if (!v.ok) throw new StageError('edit', v.reason);
       await assertOnItem();
-      if (!await page.evaluate(caretToEnd, EDITOR)) throw new StageError('edit', 'editor not editable');
+      if (!await page.evaluate(caretToEdge, { selector: EDITOR, start: m.edit.op === 'insert-start' })) throw new StageError('edit', 'editor not editable');
       await page.keyboard.insertText(m.edit.text);
       const after = await bodyText();
       if (after.split(m.edit.text).length < 2) throw new StageError('edit', 'inserted text not visible in editor');

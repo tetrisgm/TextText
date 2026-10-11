@@ -378,14 +378,15 @@ final class NativeStressRunner {
             return ["type": "ready", "round": round]
         case "edit":
             try await requireSelected()
-            guard let edit = request["edit"] as? [String: Any], edit["op"] as? String == "append" else { throw NativeStressActor.Failure("Only append edits are supported.") }
+            guard let edit = request["edit"] as? [String: Any], let operation = edit["op"] as? String,
+                  operation == "append" || operation == "insert-start" else { throw NativeStressActor.Failure("Unsupported edit operation.") }
             let id = edit["id"] as? String ?? ""
             let text = edit["text"] as? String ?? ""
             guard Self.editId.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)) != nil,
                   !text.isEmpty, text.count <= NativeStressActor.maxEditText, !text.contains("\n"), !text.contains("\r") else {
                 throw NativeStressActor.Failure("Edit id or text is out of bounds for this adapter.")
             }
-            try await append(id: id, text: text)
+            try await insert(id: id, text: text, start: operation == "insert-start")
             return ["type": "applied", "round": round, "editId": id]
         case "observe":
             try await requireSelected()
@@ -491,12 +492,12 @@ final class NativeStressRunner {
         text.components(separatedBy: needle).count - 1
     }
 
-    private func append(id: String, text: String) async throws {
+    private func insert(id: String, text: String, start: Bool) async throws {
         guard let before = try await body() else { throw NativeStressActor.Failure("Test editor body is not present.") }
         guard !before.contains(text) else { throw NativeStressActor.Failure("Edit text already present before input: " + id) }
         // Real contenteditable focus and a collapsed selection at the end (selection
         // only, no content mutation), then the exact text through native input.
-        let focused = try await evaluate("(()=>{const e=document.querySelector('[aria-label=\"Document body\"]');if(!e||!e.isContentEditable)return false;e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(false);const s=window.getSelection();s.removeAllRanges();s.addRange(r);return true})()")
+        let focused = try await evaluate("(()=>{const e=document.querySelector('[aria-label=\"Document body\"]');if(!e||!e.isContentEditable)return false;e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(\(start ? "true" : "false"));const s=window.getSelection();s.removeAllRanges();s.addRange(r);return true})()")
         guard focused == "true" else { throw NativeStressActor.Failure("Could not place the caret in the document body.") }
         let path = try insertNatively(text)
         record(["kind": "input", "editId": id, "path": path])

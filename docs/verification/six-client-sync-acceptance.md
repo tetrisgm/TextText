@@ -107,7 +107,14 @@ A second fresh fixture passed five rounds:
 `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-47-13-104Z-53`.
 Seed 51 stopped before edits because Mac file activation retained the previous
 note; it is a separate startup/setup failure, not a passed replay.
-Overlapping edits, native offline/crash recovery, whole-file/attachment and
+Same-position insertion by the four real editors while the Mac and PC CLI
+actors appended passed on two fresh fixtures: seed 56, one round, receipt
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-00-38-369Z-56`;
+seed 57, five rounds, receipt
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-02-00-583Z-57`.
+Seed 55 stopped before edits because the disposable Mac test bundle lacked its
+Sparkle rpath; it was rebuilt and verified before seed 56.
+Overlapping replacement/deletion, native offline/crash recovery, whole-file/attachment and
 folder operations, permissions, and latency distributions still need physical
 campaigns. The historical notes below predate this runner.
 

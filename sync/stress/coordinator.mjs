@@ -27,14 +27,14 @@ export const normalizeText = (text) =>
 export const hashText = (text) => createHash('sha256').update(normalizeText(text)).digest('hex');
 
 // Deterministic per-round edit plan from the seed.
-export function planRounds(seed, rounds) {
+export function planRounds(seed, rounds, pattern = 'append') {
   const rand = mulberry32(seed);
   const plan = [];
   for (let round = 1; round <= rounds; round += 1) {
     const edits = ROLES.map((role) => {
       const word = WORDS[Math.floor(rand() * WORDS.length)];
       const n = Math.floor(rand() * 1000);
-      return { role, id: `r${round}-${role}`, op: 'append', text: `[${role} r${round} ${word}${n}]` };
+      return { role, id: `r${round}-${role}`, op: pattern === 'same-position' && EDITOR_ROLES.includes(role) ? 'insert-start' : 'append', text: `[${role} r${round} ${word}${n}]` };
     });
     plan.push({ round, edits });
   }
@@ -47,6 +47,7 @@ export function validateConfig(config) {
   if (!MODES.has(config.mode)) fail('mode must be "real" or "simulated"');
   if (!Number.isInteger(config.seed)) fail('seed must be an integer');
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
+  if (config.pattern !== undefined && !['append', 'same-position'].includes(config.pattern)) fail('pattern must be append or same-position');
   if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedBaselineHash ?? '')) fail('a zero-round reopen requires expectedBaselineHash');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
   if (config.offline !== undefined) {
@@ -118,7 +119,7 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, rounds:planRounds(this.config.seed, this.config.rounds)}, null, 2));
+    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern)}, null, 2));
     this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture });
     this.writeDashboard('running');
   }
@@ -152,7 +153,7 @@ export class Coordinator {
         throw new StressFailure('reopen-hash-mismatch', { expected: this.config.expectedBaselineHash, evidence });
       }
       for (const role of EDITOR_ROLES) this.checkEditor(0, role, baseline.get(role).editor);
-      for (const plan of planRounds(this.config.seed, this.config.rounds)) await this.runRound(plan);
+      for (const plan of planRounds(this.config.seed, this.config.rounds, this.config.pattern)) await this.runRound(plan);
     } catch (error) {
       status = 'failed';
       failure = error instanceof StressFailure ? { code: error.code, detail: error.detail } : { code: 'unexpected', detail: { message: String(error?.message ?? error) } };
@@ -170,7 +171,7 @@ export class Coordinator {
       runId: this.runId, status, failure, mode: this.config.mode,
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real'
-        ? (this.config.rounds === 0 ? 'six-client-reopen' : 'six-client-append-only') : 'none',
+        ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : 'six-client-append-only') : 'none',
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
       attestations: this.attestations, outputDir: this.dir,
     };
@@ -267,7 +268,7 @@ export class Coordinator {
     const applied = await pending;
     for (const edit of edits) if (applied.get(edit.role).editId !== edit.id) throw new StressFailure('applied-mismatch', { round, role: edit.role, expected: edit.id, actual: applied.get(edit.role).editId });
     if (offlineRole) await this.setTransport(round, offlineRole, true);
-    const expectedEditIds = planRounds(this.config.seed, round).flatMap((p) => p.edits.map((e) => e.id)).sort();
+    const expectedEditIds = planRounds(this.config.seed, round, this.config.pattern).flatMap((p) => p.edits.map((e) => e.id)).sort();
     // A client can report a locally stable state before another replica's save reaches it.
     // Keep all six actors open while checking convergence; a premature failure shuts down
     // the very sync processes we are measuring. The deadline still makes stalls visible.
@@ -299,7 +300,7 @@ export class Coordinator {
     }
     for (const role of ROLES) {
       let remaining = normalizeText(states.get(role).text);
-      for (const edit of planRounds(this.config.seed, round).flatMap(p => p.edits)) {
+      for (const edit of planRounds(this.config.seed, round, this.config.pattern).flatMap(p => p.edits)) {
         if (remaining.split(edit.text).length !== 2) throw new StressFailure('content-mismatch', { round, role, editId: edit.id });
         remaining = remaining.replace(edit.text, '');
       }

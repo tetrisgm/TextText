@@ -32,6 +32,8 @@ test('plan is deterministic for a seed and differs across seeds', () => {
   assert.deepEqual(planRounds(7, 3), planRounds(7, 3));
   assert.notDeepEqual(planRounds(7, 3), planRounds(8, 3));
   assert.equal(planRounds(7, 2)[1].edits.length, 6);
+  const overlap = planRounds(7, 1, 'same-position')[0].edits;
+  assert.deepEqual(overlap.map(edit => edit.op), ['insert-start', 'insert-start', 'append', 'insert-start', 'insert-start', 'append']);
 });
 
 test('hash normalizes CRLF but preserves whitespace and Unicode', () => {

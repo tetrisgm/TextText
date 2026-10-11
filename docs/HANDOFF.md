@@ -90,6 +90,10 @@ and the signed-in production browser found that note with the saved body.
   `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-44-56-930Z-52`.
   A second fresh fixture passed five rounds under the same PC CLI fault:
   `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-47-13-104Z-53`.
+  Same-position insertion by all four live editors, concurrent with both CLI
+  file edits, passed one and five rounds on fresh fixtures, receipts:
+  `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-00-38-369Z-56`
+  and `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-02-00-583Z-57`.
   An earlier setup attempt (seed 51) stopped before edits when the Mac actor
   reopened the previously selected note; the fixture was opened explicitly
   before seed 52. The native file-open event now queues behind an in-progress
@@ -99,15 +103,13 @@ and the signed-in production browser found that note with the saved body.
   build, but six-client acceptance is not complete and the installed Windows
   app has not been updated.
 
-- Automatic six-client coordinator: [runner/protocol](../sync/stress/README.md)
-  now provides seeded concurrent append rounds, readiness barriers, exact text
-  and baseline preservation checks, editor continuity, bounded child processes,
-  a live local dashboard, and retained replay/evidence files. Its 13 harness
-  tests are included in the sync client/core gate. The example is explicitly
-  simulated and establishes no physical acceptance. Next integrate the real
-  Windows runners and Mac editor/Safari/direct-file actors with the protocol,
-  then add the named fault scenarios in the acceptance contract. Do not count
-  command-based app appends as native editor input.
+- Automatic six-client [runner/protocol](../sync/stress/README.md) has real
+  Mac and Windows app, browser, and direct-file actors with bounded rounds,
+  retained receipts, restart checks, and browser offline / invalid-file fault
+  options. It passed 47 harness tests. Its simulated example is only a harness
+  check. Physical acceptance remains limited to the slices recorded above;
+  implement and exercise the remaining fault matrix in the
+  [acceptance contract](verification/six-client-sync-acceptance.md).
 - Source `0f224adb` addresses two failures exposed by the local two-account browser
   collaboration run: undo silently stopped after React StrictMode effect
   replay, and a reload could start a fresh journal while the old page still

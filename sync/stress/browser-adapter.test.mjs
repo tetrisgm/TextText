@@ -58,6 +58,7 @@ test('marker-derived edit ids use the coordinator marker format exactly', () => 
 test('planned edits validate; forged, mismatched or oversized edits do not', () => {
   const edit = planRounds(42, 1)[0].edits.find((e) => e.role === 'mac-web');
   assert.equal(validateEdit({ id: edit.id, op: 'append', text: edit.text }).ok, true);
+  assert.equal(validateEdit({ id: edit.id, op: 'insert-start', text: edit.text }).ok, true);
   assert.equal(validateEdit({ id: 'r1-pc-web', op: 'append', text: edit.text }).reason, 'edit-marker-mismatch');
   assert.equal(validateEdit({ id: edit.id, op: 'replace', text: edit.text }).reason, 'edit-op-unsupported');
   assert.equal(validateEdit({ id: edit.id, op: 'append', text: `${edit.text}${edit.text}` }).reason, 'edit-marker-mismatch');
