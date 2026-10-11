@@ -176,7 +176,14 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
                 var current=store.Describe(session.Path);
                 if(prior!=null) {
                     if((prior.RetiredReason!=null&&!LiftsMirroredRetirement(prior,checkpoint))||checkpoint.JournalGeneration<prior.JournalGeneration)throw new InvalidOperationException("Newer or protected shared edits are retained.");
-                    if(checkpoint.JournalGeneration==prior.JournalGeneration){if(checkpoint with{Journal=prior.Journal}!=prior||!System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal),System.Text.Json.Nodes.JsonNode.Parse(prior.Journal))||current.Hash!=prior.ProjectedHash)throw new InvalidOperationException("Conflicting checkpoint generation.");return current;}
+                    if(checkpoint.JournalGeneration==prior.JournalGeneration){
+                        if(checkpoint with{Journal=prior.Journal}!=prior||!System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal),System.Text.Json.Nodes.JsonNode.Parse(prior.Journal)))throw new InvalidOperationException("Conflicting checkpoint generation.");
+                        // A direct file edit can land between a successful checkpoint and
+                        // its idempotent retry. Treat that as a changed file so the live
+                        // client can reconcile it; the journal itself is still intact.
+                        if(current.Hash!=prior.ProjectedHash)throw new FileChangedException();
+                        return current;
+                    }
                 }
                 if(prior!=null&&prior.Pending&&checkpoint.Epoch!=prior.Epoch) {
                     var adoption=AuthorizedAdoption(prior,checkpoint,current);
