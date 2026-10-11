@@ -60,6 +60,9 @@ export interface VaultWrite extends VaultLocation {
 export type VaultWriteResult =
   | { status: "written"; itemId: string; relativePath: string; revision: string }
   | { status: "conflict"; itemId: string; relativePath: string; revision: string | null; conflictPath: string; deleted?: true };
+export class VaultBinaryEntryConflictError extends Error {
+  constructor() { super("This binary entry changed on another client."); }
+}
 export type VaultEntryResult =
   | { status: "moved" | "deleted" | "restored"; itemId: string; relativePath: string; revision: string }
   | { status: "conflict"; itemId: string; relativePath: string; revision: string | null; deleted?: true };
@@ -888,6 +891,73 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
       }
     }
     if (deletedRevision) intent.deletedRevision = deletedRevision;
+    await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
+    await syncDirectory(layout.pending);
+    return apply(layout, intent, pendingDir);
+  });
+}
+
+/** Patch one binary entry without replacing the live Yjs document. The entry
+ * hash is the CAS base; unrelated text and other entries may advance freely. */
+export async function writeVaultBinaryEntry(input: VaultLocation & {
+  itemId: string; operationId: string; entryPath: string; expectedHash: string | null; expectedLifecycle: string | null;
+  bytes: Uint8Array | null; audit: NonNullable<VaultWrite["audit"]>;
+  beforeCommit?: (relativePath: string) => Promise<void>; signal?: AbortSignal;
+}): Promise<VaultWriteResult> {
+  segment(input.itemId); segment(input.operationId);
+  if (!input.audit || !input.onReceipt) throw new Error("Binary entry mutation requires its audit sink");
+  const parts = input.entryPath.split("/");
+  if (parts[0] !== "assets" || parts.length < 2 || input.entryPath.length > 512 ||
+      parts.some(part => !part || part === "." || part === "..") ||
+      /[\\\x00-\x1f]/.test(input.entryPath)) throw new Error("Invalid binary entry path");
+  if (input.expectedHash !== null && !/^[a-f0-9]{64}$/.test(input.expectedHash)) throw new Error("Invalid binary entry hash");
+  if (input.expectedLifecycle !== null) segment(input.expectedLifecycle);
+  if (input.bytes !== null && (!input.bytes.length || input.bytes.length > 16 * 1024 * 1024)) throw new Error("Binary entry exceeds limits");
+  if (input.bytes === null && input.expectedHash === null) throw new Error("Binary entry deletion needs a base hash");
+  const incomingHash = input.bytes === null ? null : hash(input.bytes);
+  const requestHash = hash(json(["binary-entry-v1", input.itemId, input.entryPath, input.expectedHash, input.expectedLifecycle, incomingHash, input.audit]));
+  const layout = await setup(input);
+  return locked(layout, async () => {
+    await recover(layout);
+    input.signal?.throwIfAborted();
+    const saved = await maybeRead(path.join(layout.receipts, `${input.operationId}.json`));
+    if (saved) {
+      const receipt = JSON.parse(saved.toString()) as Receipt<VaultWriteResult>;
+      if (receipt.requestHash !== requestHash) throw new Error("Operation id was reused");
+      await input.beforeCommit?.(receipt.result.relativePath);
+      input.signal?.throwIfAborted();
+      await deliverReceipt(layout, receipt);
+      return receipt.result;
+    }
+    if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
+    const item = await collaborationItem(layout, input.itemId);
+    if (!item) throw new Error("Binary entry file is missing or deleted");
+    const lifecycleRaw = await maybeRead(path.join(layout.control, "lifecycles", `${input.itemId}.json`));
+    const lifecycle = lifecycleRaw ? (JSON.parse(lifecycleRaw.toString()) as { lifecycle?: string }).lifecycle ?? null : null;
+    if (lifecycle !== input.expectedLifecycle) throw new VaultBinaryEntryConflictError();
+    const pack = openPack(item.bytes, item.relativePath, item.revision, input.itemId);
+    const name = pack.prefix + input.entryPath;
+    const collision = Object.keys(pack.entries).find(existing => existing !== name &&
+      existing.normalize("NFC").toLowerCase() === name.normalize("NFC").toLowerCase());
+    if (collision) throw new Error("Invalid binary entry path collision");
+    const current = pack.entries[name];
+    if ((current ? hash(current) : null) !== input.expectedHash) throw new VaultBinaryEntryConflictError();
+    const entries = { ...pack.entries };
+    if (input.bytes === null) delete entries[name];
+    else entries[name] = new Uint8Array(input.bytes);
+    const bytes = zipSync(Object.fromEntries(Object.keys(entries).sort().map(key =>
+      [key, [entries[key], { level: 0, mtime: new Date(1980, 0, 1) }]])), { level: 0, mtime: new Date(1980, 0, 1) });
+    validatePack(bytes, input.itemId);
+    const baseline = await collaborationCheckpoint(layout, input.itemId, item);
+    const collaboration = projectVaultFileEdit(baseline, item.bytes, bytes, input.itemId);
+    if (!collaboration) throw new Error("Binary entry could not join the live document");
+    await input.beforeCommit?.(item.relativePath);
+    input.signal?.throwIfAborted();
+    const pendingDir = await directory(layout.pending, input.operationId);
+    await atomicWrite(path.join(pendingDir, "payload.textpack"), bytes);
+    const intent: Intent = { itemId: input.itemId, operationId: input.operationId,
+      relativePath: item.relativePath, baseRevision: item.revision, revision: hash(bytes),
+      requestHash, workspaceId: input.workspaceId, audit: input.audit, collaboration };
     await atomicWrite(path.join(pendingDir, "intent.json"), json(intent));
     await syncDirectory(layout.pending);
     return apply(layout, intent, pendingDir);

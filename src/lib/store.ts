@@ -39,6 +39,7 @@ import {
   restoreVaultTextpack as restoreDirectoryTextpack,
   listVaultTrash as listDirectoryTrash,
   writeVaultTextpack as writeDirectoryTextpack,
+  writeVaultBinaryEntry as writeDirectoryBinaryEntry,
   type VaultLocation,
   type VaultWrite,
   type VaultMutationReceipt,
@@ -46,7 +47,7 @@ import {
 } from "./vault/server-store";
 import { readVaultItemCommentsFromPack, type VaultCommentActor, type VaultCommentMutation } from "./vault/item-comments";
 import { publishedVaultAsset, publishedVaultView, readVaultPublicationFromPack } from "./vault/publication";
-export { VaultBusyError, VaultCollaborationEpochError, VaultCollaborationRecoveryError, VaultPresenceSessionError } from "./vault/server-store";
+export { VaultBusyError, VaultBinaryEntryConflictError, VaultCollaborationEpochError, VaultCollaborationRecoveryError, VaultPresenceSessionError } from "./vault/server-store";
 export type { VaultPresencePeer } from "./vault/server-store";
 export type { VaultLocation, VaultWrite, VaultWriteResult, VaultEntryMutation, VaultEntryResult } from "./vault/server-store";
 import { documentFromStarter } from "./documents/starter";
@@ -92,6 +93,16 @@ export function writeVaultTextpack(input: Omit<VaultWrite, "onReceipt" | "audit"
 }) {
   if (!db) throw new Error(NO_DATABASE);
   return writeDirectoryTextpack({ ...input,
+    audit: { actorUserId: input.actorUserId, actorType: input.actorType },
+    ...folderMoveCoordinator(input.root),
+  });
+}
+
+export function writeVaultBinaryEntry(input: Omit<Parameters<typeof writeDirectoryBinaryEntry>[0], "onReceipt" | "audit"> & {
+  actorUserId: string; actorType: "human" | "external_agent";
+}) {
+  if (!db) throw new Error(NO_DATABASE);
+  return writeDirectoryBinaryEntry({ ...input,
     audit: { actorUserId: input.actorUserId, actorType: input.actorType },
     ...folderMoveCoordinator(input.root),
   });

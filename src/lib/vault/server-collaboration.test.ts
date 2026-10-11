@@ -14,7 +14,7 @@ import { authoringSourceFor } from "@/lib/presentation/authoring-source";
 import { normalizeItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import { documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
-import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, moveVaultTextpack, deleteVaultTextpack, restoreVaultTextpack, mutateVaultDocument, VaultCollaborationEpochError, VaultCollaborationRecoveryError } from "./server-store";
+import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, writeVaultBinaryEntry, moveVaultTextpack, deleteVaultTextpack, restoreVaultTextpack, mutateVaultDocument, VaultBinaryEntryConflictError, VaultCollaborationEpochError, VaultCollaborationRecoveryError } from "./server-store";
 const hash = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
 function pack(body: string, files?: Record<string, Uint8Array>) {
   const document = emptyDocumentSnapshot(); document.content.body = body;
@@ -46,6 +46,35 @@ describe("durable file collaboration", () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
+
+  it("atomically joins a binary entry change to a live epoch without replacing concurrent text", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    await push("text-before-binary", initial, edit(initial, " live"));
+    const before = (await readVaultCollaboration(location()))!;
+    const first = new Uint8Array([1, 2, 3]), replacement = new Uint8Array([8, 7, 6]);
+    const add = { ...location(), operationId: "add-binary", entryPath: "assets/data.bin",
+      expectedHash: null, expectedLifecycle: null, bytes: first, audit };
+    const added = await writeVaultBinaryEntry(add);
+    expect(await writeVaultBinaryEntry(add)).toEqual(added);
+    const changed = (await readVaultCollaboration(location()))!;
+    expect(changed.epoch).toBe(before.epoch);
+    expect(changed.seq).toBe(before.seq + 1);
+    const replace = { ...add, operationId: "replace-binary", expectedHash: hash(first), bytes: replacement };
+    await writeVaultBinaryEntry(replace);
+    await expect(writeVaultBinaryEntry({ ...replace, operationId: "stale-binary", bytes: first }))
+      .rejects.toBeInstanceOf(VaultBinaryEntryConflictError);
+    const after = (await readVaultCollaboration(location()))!;
+    await push("text-after-binary", after, edit(after, " again"));
+    const final = (await readVaultTextpack(location()))!;
+    expect(unzipSync(final.bytes)["Note.textbundle/assets/data.bin"]).toEqual(replacement);
+    expect(body((await readVaultCollaboration(location()))!)).toBe("Hello live again");
+    await expect(writeVaultBinaryEntry({ ...replace, bytes: new Uint8Array([9]) })).rejects.toThrow(/reused/);
+    await deleteVaultTextpack({ ...location(), operationId: "delete-after-binary", basePath: relativePath, baseRevision: final.revision });
+    await restoreVaultTextpack({ ...location(), operationId: "restore-after-binary", basePath: relativePath,
+      relativePath, baseRevision: final.revision });
+    await expect(writeVaultBinaryEntry({ ...replace, operationId: "old-lifecycle-binary", expectedHash: hash(replacement) }))
+      .rejects.toBeInstanceOf(VaultBinaryEntryConflictError);
+  });
 
   it("durably recovers across every retained epoch and replays its receipt without duplicating edits", async () => {
     const first = (await readVaultCollaboration(location()))!;

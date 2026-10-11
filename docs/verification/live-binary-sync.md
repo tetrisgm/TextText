@@ -16,6 +16,10 @@ materialization must be fixed together.
 
 ## Required protocol
 
+Server foundation: `src/sync/engine/store.ts` and the item `binary` route now
+provide bounded entry GET/PATCH and atomic hash/lifecycle compare-and-swap with
+durable receipts. Native outbound/inbound integration below remains open.
+
 1. Treat each TextPack binary entry as an atomic value with its own SHA-256.
    Keep the package identity, lifecycle, path, and Yjs epoch as fences. An
    asset operation carries the entry path, expected prior hash (or absence),
