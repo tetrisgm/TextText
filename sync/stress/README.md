@@ -58,8 +58,9 @@ Set `pattern` to `"partial-overlap"` to have the four live editors replace
 `Existing fixture text.` while one direct-file actor replaces only
 `fixture text.` and the other appends. Odd/even seeds switch which machine's
 CLI performs the partial replacement. The expected result retains every
-marker once and removes the union of the original text. This pattern has
-focused unit coverage; a physical pass must be recorded separately.
+marker once and removes the union of the original text. Seed 87 passed a
+physical six-client round and a separate durable reopen; see the acceptance
+contract for exact receipts.
 
 ## Run
 

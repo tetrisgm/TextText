@@ -171,6 +171,15 @@ Fresh seed 73 passed the reciprocal Mac CLI partial replacement and reopen:
 and `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-54-06-927Z-73`.
 Both edit rounds kept the four live editors mounted and rejected no events.
 
+Fresh seed 87 passed a six-client partial-overlap round: all four real editors
+replaced the same sentence while the Mac CLI replaced only its trailing span
+and the PC CLI appended. No edit was rejected; all six converged to hash
+`d8b0cea3833a8258c95e4ee3f629e144d67b359292884d4825e4c3ff3a92924e`.
+The first process run and separate all-client reopen are
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-49-54-501Z-87`
+and `stress-2026-10-11T15-51-15-372Z-87` alongside it. This covers one
+partial-overlap shape; it does not establish every deletion/undo interleaving.
+
 Native app transport loss now has two physical six-client append rounds with
 zero rejected edits, followed by separate all-client reopen checks with the
 expected content hashes. Mac app offline/reconnect: seed 74 receipts

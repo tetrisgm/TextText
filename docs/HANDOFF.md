@@ -32,7 +32,13 @@ restoration; early/queued browser regressions and a fresh physical six-client
 reopen passed at `stress-2026-10-11T15-42-38-187Z-85`. Repeat on a new fixture
 before considering the startup race closed.
 
-Next: continue overlap and whole TextPack/assets, folder operations,
+Fresh seed 87 passed a real six-client partial-overlap round with zero
+rejected edits, then a separate all-client reopen at exact hash
+`d8b0cea3833a8258c95e4ee3f629e144d67b359292884d4825e4c3ff3a92924e`.
+Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-49-54-501Z-87`
+and `stress-2026-10-11T15-51-15-372Z-87` alongside it.
+
+Next: continue whole TextPack/assets, folder operations,
 separate-account permissions, and sustained latency/resource tests. Do not
 call sync certified or ship a public release until the matrix passes. The
 unrelated dirty files in `mac/Package.resolved`, assistant attachments, tabs
