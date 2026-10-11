@@ -53,6 +53,8 @@ updates carry text/document data, not changed binary entry bytes. The server
 can project a live asset-only pack edit without resetting its Yjs epoch
 (`src/lib/vault/collaboration.test.ts`), but native upload and remote materialization
 while open need a durable, fenced path. Do not replay seed 89 as a pass.
+The required protocol and regression matrix are in
+[live binary sync](verification/live-binary-sync.md).
 
 Next: repair live binary-entry propagation while native editors stay mounted,
 verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,
