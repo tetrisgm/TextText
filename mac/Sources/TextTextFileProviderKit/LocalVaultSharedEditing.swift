@@ -54,6 +54,15 @@ struct LocalVaultSharedEditingStore: Sendable {
         var markdown: String
         var documentJSON: String
     }
+    private struct BinaryIntent: Codable {
+        var itemId: String
+        var path: String
+        var beforeHash: String
+        var afterHash: String
+        var entryPath: String
+        var expectedAssetHash: String?
+        var assetHash: String?
+    }
     private func itemDirectory(_ itemId: String, create: Bool = false) throws -> URL {
         guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) == itemId.startIndex..<itemId.endIndex else { throw LocalVaultSharedFailure.invalid }
         let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -232,11 +241,111 @@ struct LocalVaultSharedEditingStore: Sendable {
             guard intent.checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
             return try finish(intent, directory: directory).checkpoint
         }
+        if let data = try read(directory.appendingPathComponent("binary-intent.json"), limit: 4096) {
+            let intent = try JSONDecoder().decode(BinaryIntent.self, from: data)
+            guard intent.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
+            _ = try finishBinary(intent, directory: directory)
+        }
         guard let data = try read(directory.appendingPathComponent("checkpoint.json"), limit: 5 * 1024 * 1024) else { return nil }
         let value = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: data)
         guard value.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
         try validate(value)
         return value
+    }
+    private func assetEntry(_ entryPath: String, in archive: Archive) throws -> Entry? {
+        let matches = archive.filter { $0.path == entryPath || $0.path.hasSuffix("/" + entryPath) }
+        guard matches.count <= 1 else { throw LocalVaultSharedFailure.invalid }
+        return matches.first
+    }
+    private func asset(_ entryPath: String, in archive: Archive) throws -> Data? {
+        guard let entry = try assetEntry(entryPath, in: archive) else { return nil }
+        guard entry.uncompressedSize <= 16 * 1024 * 1024 else { throw LocalVaultSharedFailure.invalid }
+        var bytes = Data()
+        _ = try archive.extract(entry) { bytes.append($0) }
+        guard bytes.count <= 16 * 1024 * 1024 else { throw LocalVaultSharedFailure.invalid }
+        return bytes
+    }
+    private func binaryPrefix(_ archive: Archive) throws -> String {
+        if archive["text.md"] != nil, archive["document.json"] != nil { return "" }
+        let candidates = archive.filter { $0.path.hasSuffix("/text.md") && $0.path.split(separator: "/").count == 2 }
+        guard candidates.count == 1 else { throw LocalVaultSharedFailure.invalid }
+        let prefix = String(candidates[0].path.dropLast("text.md".count))
+        guard archive[prefix + "document.json"] != nil else { throw LocalVaultSharedFailure.invalid }
+        return prefix
+    }
+    private func finishBinary(_ intent: BinaryIntent, directory: URL, interruptAfterWrite: Bool = false) throws -> LocalVaultDocumentStore.Document {
+        guard validHash(intent.beforeHash), validHash(intent.afterHash),
+              intent.entryPath.hasPrefix("assets/"), intent.entryPath.utf8.count <= 512,
+              !intent.entryPath.contains("\\"),
+              intent.entryPath.split(separator: "/").allSatisfy({ $0 != "." && $0 != ".." && !$0.isEmpty }),
+              intent.expectedAssetHash == nil || validHash(intent.expectedAssetHash!),
+              intent.assetHash == nil || validHash(intent.assetHash!) else { throw LocalVaultSharedFailure.invalid }
+        guard let bytes = try read(directory.appendingPathComponent("binary-next.textpack"), limit: 64 * 1024 * 1024),
+              TextTextStableDigest.sha256Hex(bytes) == intent.afterHash else { throw LocalVaultSharedFailure.invalid }
+        let store = LocalVaultDocumentStore(root: root)
+        let current = try store.read(path: intent.path)
+        guard MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == intent.itemId else { throw LocalVaultSharedFailure.invalid }
+        let document: LocalVaultDocumentStore.Document
+        if current.hash == intent.beforeHash {
+            document = try store.replaceExact(path: intent.path, expectedHash: intent.beforeHash, bytes: bytes)
+            if interruptAfterWrite { throw LocalVaultSharedFailure.interrupted }
+        } else if current.hash == intent.afterHash { document = current }
+        else { throw LocalVaultSyncFailure.changed }
+        if let data = try read(directory.appendingPathComponent("checkpoint.json"), limit: 5 * 1024 * 1024) {
+            var saved = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: data)
+            try validate(saved)
+            guard saved.itemId == intent.itemId, saved.path == intent.path,
+                  saved.retiredReason == nil,
+                  saved.projectedHash == intent.beforeHash || saved.projectedHash == intent.afterHash else { throw LocalVaultSharedFailure.staleSession }
+            saved.projectedHash = intent.afterHash
+            try write(bytes, to: directory.appendingPathComponent("projection.textpack"))
+            try write(JSONEncoder().encode(saved), to: directory.appendingPathComponent("checkpoint.json"))
+        }
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("binary-intent.json"))
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("binary-next.textpack"))
+        return document
+    }
+    func applyRemoteBinary(itemId: String, path: String, expectedHash: String, entryPath: String,
+                           expectedAssetHash: String?, bytes: Data?, interruptAfterIntent: Bool = false,
+                           interruptAfterWrite: Bool = false) throws -> LocalVaultDocumentStore.Document {
+        guard entryPath.hasPrefix("assets/"), entryPath.utf8.count <= 512,
+              !entryPath.contains("\\"),
+              entryPath.split(separator: "/").allSatisfy({ $0 != "." && $0 != ".." && !$0.isEmpty }),
+              bytes == nil || bytes!.count <= 16 * 1024 * 1024 else { throw LocalVaultSharedFailure.invalid }
+        let directory = try itemDirectory(itemId, create: true)
+        let saved = try checkpoint(itemId: itemId)
+        if let saved {
+            guard saved.path == path, saved.projectedHash == expectedHash,
+                  saved.retiredReason == nil else { throw LocalVaultSharedFailure.staleSession }
+        }
+        let store = LocalVaultDocumentStore(root: root)
+        let document = try store.read(path: path)
+        guard document.hash == expectedHash,
+              MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
+        let original = try Data(contentsOf: store.url(for: path))
+        let archive = try Archive(data: original, accessMode: .read)
+        let prefix = try binaryPrefix(archive)
+        let existingPath = try assetEntry(entryPath, in: archive)?.path
+        let actualHash = try asset(entryPath, in: archive).map(TextTextStableDigest.sha256Hex)
+        guard actualHash == expectedAssetHash else { throw LocalVaultSyncFailure.conflict }
+        let staged = directory.appendingPathComponent("binary-next.textpack")
+        try write(original, to: staged)
+        let updated = try Archive(url: staged, accessMode: .update)
+        if let old = try assetEntry(entryPath, in: updated) { try updated.remove(old) }
+        if let bytes {
+            let assetFile = directory.appendingPathComponent("binary-asset.tmp")
+            try write(bytes, to: assetFile)
+            defer { try? FileManager.default.removeItem(at: assetFile) }
+            try updated.addEntry(with: existingPath ?? prefix + entryPath, fileURL: assetFile, compressionMethod: .deflate)
+        }
+        let next = try Data(contentsOf: staged)
+        guard next.count <= 64 * 1024 * 1024 else { throw LocalVaultSharedFailure.invalid }
+        let intent = BinaryIntent(itemId: itemId, path: path, beforeHash: expectedHash,
+            afterHash: TextTextStableDigest.sha256Hex(next), entryPath: entryPath,
+            expectedAssetHash: expectedAssetHash, assetHash: bytes.map(TextTextStableDigest.sha256Hex))
+        try write(JSONEncoder().encode(intent), to: directory.appendingPathComponent("binary-intent.json"))
+        if interruptAfterIntent { throw LocalVaultSharedFailure.interrupted }
+        return try finishBinary(intent, directory: directory, interruptAfterWrite: interruptAfterWrite)
     }
     /// Move the projection and its journal as one recoverable operation. Content,
     /// pending update batches and generations remain unchanged.

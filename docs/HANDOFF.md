@@ -71,7 +71,10 @@ the same operation after a lost reply and process restart; its 35 focused sync
 tests pass. Windows now applies incoming asset entries to an open editor through
 a recoverable file intent. Native tests cover crashes before and after the file
 write, retained pending text, a subsequent same-session save, and a same-entry
-conflict that preserves both versions. Mac inbound and browser asset refresh
+conflict that preserves both versions. Mac now also receives remote asset changes
+while a shared editor stays open, using an atomic file replacement and a replayable
+binary intent that retains pending text. Focused Mac sync and shared-editing suites
+pass (36 and 39 tests). Browser asset refresh and physical six-client retest
 remain open; seed 89 is still a failure.
 
 Next: repair live binary-entry propagation while native editors stay mounted,

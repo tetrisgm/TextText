@@ -755,6 +755,31 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(first.expectedHash, TextTextStableDigest.sha256Hex(Data("first".utf8)))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
+    func testOpenEditorReceivesRemoteAssetWithoutReplacingTextOrSession() async throws {
+        let first = Data("first".utf8), second = Data("second".utf8)
+        let original = try withAsset(pack("Human text"), bytes: first)
+        try putLocal(original)
+        let transport = FakeVaultTransport(), sync = try engine(transport)
+        await transport.set(itemId: itemId, path: path, data: original)
+        _ = try await sync.sync()
+        let initial = try LocalVaultDocumentStore(root: root).read(path: path)
+        let archiveBefore = try Archive(data: Data(contentsOf: root.appendingPathComponent(path)), accessMode: .read)
+        XCTAssertNotNil(archiveBefore["assets/data.txt"])
+        let session = try await sync.beginSharedEditing(itemId: itemId, path: path, expectedHash: initial.hash)
+        let stateBefore = try JSONSerialization.jsonObject(with: Data(contentsOf: LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json"))) as? [String: Any]
+        XCTAssertEqual(((stateBefore?["binaryBaselines"] as? [String: Any])?[itemId] as? [String: String])?["assets/data.txt"], TextTextStableDigest.sha256Hex(first))
+        await transport.set(itemId: itemId, path: path, data: try withAsset(original, bytes: second))
+        let result = try await sync.sync()
+        XCTAssertTrue(result.errors.isEmpty, "\(result.errors)")
+        XCTAssertEqual(result.downloaded, 1)
+        let received = try LocalVaultDocumentStore(root: root).read(path: path)
+        XCTAssertEqual(received.contents.markdown, initial.contents.markdown)
+        let archiveAfter = try Archive(data: Data(contentsOf: root.appendingPathComponent(path)), accessMode: .read)
+        let assetEntry = try XCTUnwrap(archiveAfter["assets/data.txt"])
+        var receivedAsset = Data(); _ = try archiveAfter.extract(assetEntry) { receivedAsset.append($0) }
+        XCTAssertEqual(receivedAsset, second)
+        try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
 
     func testRemoteDeletionCannotEraseAnOfflineEdit() async throws {
         let original = try pack("Initial")
@@ -831,6 +856,22 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
         let revision = TextTextStableDigest.sha256Hex(Data((operationId + "binary").utf8))
         if loseBinaryReply { loseBinaryReply = false; throw URLError(.networkConnectionLost) }
         return revision
+    }
+    func binaryManifest(itemId: String) throws -> LocalVaultBinaryManifest {
+        guard let item = items[itemId] else { throw LocalVaultSyncFailure.invalidResponse }
+        let archive = try Archive(data: item.data, accessMode: .read)
+        var entries: [LocalVaultBinaryManifest.Entry] = []
+        for entry in archive where entry.path.hasPrefix("assets/") {
+            var bytes = Data(); _ = try archive.extract(entry) { bytes.append($0) }
+            entries.append(.init(path: entry.path, sha256: TextTextStableDigest.sha256Hex(bytes), size: bytes.count))
+        }
+        return .init(revision: item.revision, entries: entries)
+    }
+    func binaryRead(itemId: String, entryPath: String) throws -> Data {
+        guard let item = items[itemId], let entry = try Archive(data: item.data, accessMode: .read)[entryPath] else { throw LocalVaultSyncFailure.invalidResponse }
+        let archive = try Archive(data: item.data, accessMode: .read)
+        var bytes = Data(); _ = try archive.extract(entry) { bytes.append($0) }
+        return bytes
     }
     private var merged: Data?
     func set(itemId: String, path: String, data: Data) {

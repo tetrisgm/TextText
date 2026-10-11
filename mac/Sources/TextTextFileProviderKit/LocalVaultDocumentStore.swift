@@ -523,6 +523,36 @@ public struct LocalVaultDocumentStore: Sendable {
         return Document(path: path, hash: hash, contents: contents, publishedAt: publishedAt(archive, prefix: prefix))
     }
 
+    /// Publish already validated archive bytes under the same coordinated CAS
+    /// used by editor writes. The shared editor stages the intent before calling.
+    func replaceExact(path: String, expectedHash: String, bytes: Data) throws -> Document {
+        guard bytes.count <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+        let target = try url(for: path)
+        var outcome: Result<Document, Error>?
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordinationError) { coordinated in
+            outcome = Result {
+                let current = try readUncoordinated(path: path, url: coordinated)
+                guard current.hash == expectedHash else { throw Failure.changed }
+                let parent = coordinated.deletingLastPathComponent()
+                let packed = parent.appendingPathComponent(".texttext-binary-\(UUID().uuidString).textpack")
+                defer { try? FileManager.default.removeItem(at: packed) }
+                try bytes.write(to: packed, options: .atomic)
+                let replacement = try readUncoordinated(path: path, url: packed)
+                guard let identity = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId,
+                      identity == MarkdownIdentityCodec.extract(from: replacement.contents.markdown)?.itemId else { throw Failure.changed }
+                let latest = try Data(contentsOf: coordinated)
+                guard TextTextStableDigest.sha256Hex(latest) == expectedHash else { throw Failure.changed }
+                try preserve(latest, hash: expectedHash)
+                _ = try FileManager.default.replaceItemAt(coordinated, withItemAt: packed)
+                return try readUncoordinated(path: path, url: coordinated)
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let outcome else { throw CocoaError(.fileWriteUnknown) }
+        return try outcome.get()
+    }
+
     public func write(path: String, expectedHash: String, markdown: String,
                       documentJSON: String?, templateJSON: String?,
                       templateAuthoringSourceJSON: String?,

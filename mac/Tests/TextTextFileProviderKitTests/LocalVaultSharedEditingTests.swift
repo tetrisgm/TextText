@@ -37,6 +37,35 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testIncomingBinaryReplaysAfterBothCrashWindowsWithoutLosingPendingText() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let edited = try changes(original, body: "Unsent human text"), pending = try checkpoint(original)
+        let projected = try store.materialize(checkpoint: pending, expectedHash: original.hash,
+            markdown: edited.0, documentJSON: edited.1)
+        let oldHash = TextTextStableDigest.sha256Hex(Data([1, 2, 255]))
+        let first = Data("remote asset one".utf8)
+        XCTAssertThrowsError(try store.applyRemoteBinary(itemId: itemId, path: path,
+            expectedHash: projected.document.hash, entryPath: "assets/picture.bin",
+            expectedAssetHash: oldHash, bytes: first, interruptAfterIntent: true))
+        let afterIntent = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertEqual(afterIntent.journal, pending.journal)
+        XCTAssertEqual(afterIntent.journalGeneration, pending.journalGeneration)
+        XCTAssertTrue(afterIntent.pending)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).contents.assets.first?.data, first)
+        let second = Data("remote asset two".utf8)
+        XCTAssertThrowsError(try store.applyRemoteBinary(itemId: itemId, path: path,
+            expectedHash: afterIntent.projectedHash, entryPath: "assets/picture.bin",
+            expectedAssetHash: TextTextStableDigest.sha256Hex(first), bytes: second, interruptAfterWrite: true))
+        let afterWrite = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertEqual(afterWrite.journal, pending.journal)
+        XCTAssertEqual(afterWrite.journalGeneration, pending.journalGeneration)
+        XCTAssertEqual(afterWrite.projectedHash, try LocalVaultDocumentStore(root: root).read(path: path).hash)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).contents.assets.first?.data, second)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains("Unsent human text"))
+        XCTAssertThrowsError(try store.applyRemoteBinary(itemId: itemId, path: path,
+            expectedHash: afterWrite.projectedHash, entryPath: "assets/picture.bin",
+            expectedAssetHash: oldHash, bytes: first))
+    }
     func testPendingJournalAndExternalFileRemainReopenableAfterRestart() async throws {
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
@@ -1280,6 +1309,26 @@ private actor SharedTransport: LocalVaultSyncTransport {
     func set(itemId: String, path: String, data: Data) { bytes[itemId] = data; items[itemId] = LocalVaultRemoteItem(itemId: itemId, relativePath: path, revision: TextTextStableDigest.sha256Hex(data)) }
     func counts() -> (Int, Int) { (uploads, downloads) }
     func manifest() async throws -> [LocalVaultRemoteItem] { Array(items.values) }
+    func binaryManifest(itemId: String) async throws -> LocalVaultBinaryManifest {
+        guard let item = items[itemId], let pack = bytes[itemId] else { throw LocalVaultSyncFailure.invalidResponse }
+        let archive = try Archive(data: pack, accessMode: .read)
+        var entries: [LocalVaultBinaryManifest.Entry] = []
+        for entry in archive where entry.path.contains("assets/") && !entry.path.hasSuffix("/") {
+            var data = Data(); _ = try archive.extract(entry) { data.append($0) }
+            let parts = entry.path.split(separator: "/")
+            guard let index = parts.firstIndex(of: "assets") else { continue }
+            entries.append(.init(path: parts[index...].joined(separator: "/"), sha256: TextTextStableDigest.sha256Hex(data), size: data.count))
+        }
+        return .init(revision: item.revision, entries: entries)
+    }
+    func binaryRead(itemId: String, entryPath: String) async throws -> Data {
+        guard let pack = bytes[itemId] else { throw LocalVaultSyncFailure.invalidResponse }
+        let archive = try Archive(data: pack, accessMode: .read)
+        let matches = archive.filter { $0.path == entryPath || $0.path.hasSuffix("/" + entryPath) }
+        guard matches.count == 1 else { throw LocalVaultSyncFailure.invalidResponse }
+        var data = Data(); _ = try archive.extract(matches[0]) { data.append($0) }
+        return data
+    }
     func download(itemId: String) async throws -> LocalVaultRemotePack { downloads += 1; return LocalVaultRemotePack(data: bytes[itemId]!, relativePath: items[itemId]!.relativePath, revision: items[itemId]!.revision) }
     func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String {
         uploads += 1; let revision = TextTextStableDigest.sha256Hex(data); bodies.append((itemId, revision))

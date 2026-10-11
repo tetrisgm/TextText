@@ -569,6 +569,52 @@ public actor LocalVaultSync {
             return false
         }
     }
+    private func receiveOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
+        guard !remote.isDeleted, remote.relativePath == path,
+              let baseline = state.baselines[itemId], baseline.path == path,
+              baseline.revision != remote.revision,
+              let known = state.binaryBaselines?[itemId],
+              state.outbox[itemId] == nil, state.binaryOutbox?[itemId] == nil,
+              state.conflicts[itemId] == nil,
+              state.lifecycles?[itemId] == remote.lifecycle else { return false }
+        let manifest = try await transport.binaryManifest(itemId: itemId)
+        guard manifest.revision == remote.revision else { throw LocalVaultSyncFailure.changed }
+        var incoming: [String: LocalVaultBinaryManifest.Entry] = [:]
+        for entry in manifest.entries {
+            guard entry.path.hasPrefix("assets/"), entry.path.utf8.count <= 512,
+                  !entry.path.contains("\\"), entry.size >= 0, entry.size <= 16 * 1024 * 1024,
+                  entry.sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+                  incoming[entry.path] == nil else { throw LocalVaultSyncFailure.invalidResponse }
+            incoming[entry.path] = entry
+        }
+        var didChange = false
+        for entryPath in Set(known.keys).union(incoming.keys).sorted() where known[entryPath] != incoming[entryPath]?.sha256 {
+            let local = try binaryAssets(path: path)[entryPath].map(TextTextStableDigest.sha256Hex)
+            let old = known[entryPath]
+            let target = incoming[entryPath]?.sha256
+            guard local == old || local == target else { throw LocalVaultSyncFailure.conflict }
+            if local != target {
+                let bytes: Data?
+                if incoming[entryPath] != nil { bytes = try await transport.binaryRead(itemId: itemId, entryPath: entryPath) }
+                else { bytes = nil }
+                guard bytes == nil || (bytes!.count == incoming[entryPath]!.size && TextTextStableDigest.sha256Hex(bytes!) == target) else { throw LocalVaultSyncFailure.invalidResponse }
+                let current = try LocalVaultDocumentStore(root: root).read(path: path)
+                let updated = try sharedStore.applyRemoteBinary(itemId: itemId, path: path,
+                    expectedHash: current.hash, entryPath: entryPath, expectedAssetHash: old, bytes: bytes)
+                sharedSessions[itemId]?.hash = updated.hash
+                didChange = true
+            }
+            if target == nil { state.binaryBaselines?[itemId]?.removeValue(forKey: entryPath) }
+            else { state.binaryBaselines?[itemId, default: [:]][entryPath] = target }
+            try persist()
+        }
+        if state.baselines[itemId]?.path == path {
+            state.baselines[itemId]?.revision = remote.revision
+            state.baselines[itemId]?.localHash = try LocalVaultDocumentStore(root: root).readMetadata(path: path).hash
+            try persist()
+        }
+        return didChange
+    }
     private func validate(_ pack: LocalVaultRemotePack, itemId: String, path: String) throws {
         guard pack.relativePath == path, pack.data.count <= 64 * 1024 * 1024,
               TextTextStableDigest.sha256Hex(pack.data) == pack.revision else { throw LocalVaultSyncFailure.invalidResponse }
@@ -1038,6 +1084,12 @@ public actor LocalVaultSync {
                         } catch LocalVaultSyncFailure.conflict {
                             report.hasMore = true
                         }
+                    }
+                    if let remote = remoteByID[id],
+                       let followed = try followedSharedPath(itemId: id),
+                       try await receiveOpenBinary(itemId: id, path: followed.path, remote: remote) {
+                        report.downloaded += 1
+                        report.hasMore = true
                     }
                     if let remote = remoteByID[id],
                        let followed = try followedSharedPath(itemId: id),
