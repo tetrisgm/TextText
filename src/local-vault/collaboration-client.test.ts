@@ -266,6 +266,22 @@ describe("durable file collaboration client", () => {
       expect(body.toString()).toBe("[agent][human]\n");
     } finally { undo.destroy(); }
   });
+  it("keeps an actual Windows marker replacement and CLI partial replacement in one Yjs editor", async () => {
+    const server = new Server(), journal = new Journal();
+    server.bytes = pack("Existing fixture text.\n"); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
+    const editor = client(server, journal); await editor.start();
+    const base = documentSnapshotFromYDoc(editor.doc), body = documentText(editor.doc, "body");
+    const undo = new Y.UndoManager(body, { captureTimeout: 0 });
+    try {
+      editor.mutate(doc => { const text = documentText(doc, "body"); text.delete(0, text.length); text.insert(0, "[pc-app r1 yankee912]"); });
+      const external = structuredClone(base); external.content.body = "Existing [pc-cli r1 lima215]\n";
+      expect(editor.reconcileExternalDocument(base, external)).toBe(true);
+      expect(documentText(editor.doc, "body")).toBe(body);
+      expect(body.toString()).toBe("[pc-cli r1 lima215][pc-app r1 yankee912]\n");
+      undo.undo();
+      expect(body.toString()).toBe("[pc-cli r1 lima215]\n");
+    } finally { undo.destroy(); }
+  });
   it("merges a CLI append with pending typing through the same document and native lease", async () => {
     const server = new Server(), journal = new Journal();
     const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
