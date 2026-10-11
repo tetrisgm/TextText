@@ -39,9 +39,11 @@ async function main(){
 });
 afterAll(async () => { if (directory) await rm(directory,{recursive:true,force:true}); });
 it("leaves Node's default SIGTERM behavior intact outside the Next lifecycle", async () => {
-  await expect(run(process.execPath,[path.join(directory,"fixture.cjs"),"unmanaged"],{timeout:5000})).rejects.toMatchObject({signal:"SIGTERM"});
+  await expect(run(process.execPath,["--no-experimental-webstorage",path.join(directory,"fixture.cjs"),"unmanaged"],{timeout:5000})).rejects.toMatchObject({signal:"SIGTERM"});
 });
 it("wakes concurrent read polls without signal listener leaks or cancelling durable writes", async () => {
-  const result=await run(process.execPath,[path.join(directory,"fixture.cjs"),"managed"],{timeout:15000});
+  // This child intentionally throws on warnings. Node 26's unrelated WebStorage
+  // warning must not masquerade as a read-drain failure when no storage file is set.
+  const result=await run(process.execPath,["--no-experimental-webstorage",path.join(directory,"fixture.cjs"),"managed"],{timeout:15000});
   expect(result.stdout).toContain("managed drain passed");expect(result.stderr).toBe("");
 },20000);
