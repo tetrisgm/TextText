@@ -2,8 +2,9 @@
 
 ## Current work (October 11)
 
-Source `76322731` defers an open Mac editor's binary upload until it has
-imported a simultaneous direct-file text edit; 39 Mac sync tests pass.
+Source `c6c11fe1` converges same-entry attachment conflicts on the server
+winner while preserving both complete TextPacks. Mac 42-test sync suite and
+Windows core regression suite pass.
 Store-shaped Mac 0.203 build 1254 is installed in `/Applications` and opened
 the current iCloud workspace with the final test note. The matching Windows
 candidate is installed. No website or public Mac release was deployed.
@@ -22,15 +23,22 @@ Physical six-client receipts on fresh fixtures:
   and `stress-2026-10-11T20-02-33-181Z-112` alongside it. Zero rejected edits,
   exact final text and both asset hashes.
 
-Same-entry asset conflict now saves both complete packs before stopping retries
-on Mac and Windows. Restore while an attachment operation awaits acknowledgement
-follows the same rule. Mac sync suite (41 tests) and Windows native regression
-suite pass. These changes are not installed or physically six-client verified yet.
+Same-entry attachment races passed on two fresh physical six-client fixtures,
+with all six text edits retained and no rejected events. In seed 115 Windows
+won; the Mac kept its losing attachment in a conflict copy. Seed 116 reopened
+the result on all six clients. In seed 117 the Windows editor was temporarily
+offline and Mac won; Windows kept its losing attachment in a recovery TextPack.
+Seed 118 reopened that result on all six clients. Receipts are
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T20-50-42-691Z-115`,
+`stress-2026-10-11T20-51-50-684Z-116`,
+`stress-2026-10-11T20-58-04-898Z-117`, and
+`stress-2026-10-11T20-59-58-183Z-118` alongside it. Both races are labeled
+diagnostic, not full acceptance. The source changes used private test actors;
+the installed Mac and Windows apps have not been replaced with these builds.
 
-Next: physical same-entry conflict, whole TextPack and folder
+Next: normal Windows “Keep editing” close path, whole TextPack and folder
 operations, delete/restore, two-account permissions, and sustained latency and
-resource measurements. The normal Windows “Keep editing” close path has not
-been separately reproduced on the latest installed candidate. Do not certify
+resource measurements. Do not certify
 full sync or ship a public release until the remaining matrix passes.
 The stress coordinator has a diagnostic same-entry race mode. Seed 113 ran on
 six physical clients against disposable item `988ca4ca-8bbf-416d-95ad-81df3e4d3225`.
@@ -45,10 +53,9 @@ with a focused regression test. Both platforms now preserve full local and
 remote packs before adopting the server's attachment bytes in the main file.
 The Mac keeps a persisted conflict until adoption finishes, so a stopped
 process can retry that step. The Windows binary outbox clears after adoption.
-Mac 42-test sync suite and Windows core suite pass. These source changes are
-not yet installed; fresh physical six-client convergence, normal close
-behavior, conflict presentation, and the remaining acceptance matrix still
-need verification.
+Mac 42-test sync suite and Windows core suite pass. Fresh physical six-client
+convergence now has both winner directions; normal close behavior, conflict
+presentation, and the remaining acceptance matrix still need verification.
 
 Unrelated dirty files in `mac/Package.resolved`, assistant attachments, tabs
 tests, `mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts` belong to
