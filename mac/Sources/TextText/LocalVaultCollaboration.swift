@@ -414,7 +414,11 @@ final class LocalVaultCollaboration {
             guard Set(params.keys) == ["itemId", "path", "hash"],
                   let path = params["path"] as? String, let hash = params["hash"] as? String,
                   let engine = engine() else { throw LocalVaultCollaborationError(code: "409", message: "This folder is not ready for shared editing.") }
-            let opened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: hash)
+            let opened: LocalVaultSharedSession
+            do { opened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: hash) }
+            catch LocalVaultSyncFailure.changed {
+                throw LocalVaultCollaborationError(code: "local_changed", message: "The file changed before shared editing opened.", path: path)
+            }
             if Task.isCancelled {
                 try? await engine.endSharedEditing(sessionToken: opened.sessionToken, itemId: itemId)
                 throw CancellationError()

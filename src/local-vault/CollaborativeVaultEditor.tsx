@@ -26,11 +26,11 @@ import { DetachedFileSaveProof } from "./detached-file-save";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { queueArticleEnrichment } from "./article-enrichment";
 import { packIdentity } from "./pack";
+import { openLocalSharedSession, type NativeSharedSession } from "./shared-open";
 import { currentVaultWindowActive } from "./window-activity";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
-type NativeSharedSession = { sessionToken: string; path: string; hash: string; projectedHash?: string | null; acknowledgedRevision: string; journal: string | null; retiredReason: string | null; capabilities?: string[] };
 /** The native bridge adopts a recovered epoch only when it advertises this; web relays need no native checkpoint. */
 const EPOCH_ADOPTION = "epoch-adoption";
 export type VaultEditorProps = {
@@ -146,7 +146,9 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     const visibility = () => shared?.setActive(currentVaultWindowActive(), navigator.onLine ? "paused" : "offline");
     const begin = async () => {
       if (config.localFiles) {
-        native = await vaultRequest<NativeSharedSession>("collaborationOpen", { itemId: config.itemId, path: file.current.path, hash: file.current.hash });
+        const result = await openLocalSharedSession(config.itemId, file.current);
+        native = result.native;
+        if (result.file !== file.current) { file.current = result.file; setOpened(result.file); }
         if (stopped) { await closeNative(); return; }
         nativeSessionRef.current = native;
         if (native.hash !== file.current.hash || native.path !== file.current.path) {
