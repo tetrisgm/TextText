@@ -789,7 +789,7 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertTrue(current.contents.markdown.contains("External text"))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
-    func testSameEntryBinaryConflictRetainsBothPacksAndOriginalAsset() async throws {
+    func testSameEntryBinaryConflictRetainsBothPacksAndAdoptsServerAsset() async throws {
         let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
         try putLocal(original)
         let transport = FakeVaultTransport(), sync = try engine(transport)
@@ -804,13 +804,16 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertTrue(result.errors.isEmpty, "\(result.errors)")
         let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
         let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
-        let conflicts = try XCTUnwrap((state["conflicts"] as? [String: Any])?[itemId] as? [String: Any])
-        let paths = try XCTUnwrap(conflicts["paths"] as? [String])
-        XCTAssertEqual(paths.count, 3)
-        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[0])), local)
-        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[1])), remote)
-        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[2])), Data("local".utf8))
-        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), local)
+        XCTAssertNil((state["binaryOutbox"] as? [String: Any])?[itemId])
+        XCTAssertNil((state["conflicts"] as? [String: Any])?[itemId])
+        let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(
+            at: root.appendingPathComponent(".texttext/conflicts"), includingPropertiesForKeys: nil).first)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("local.textpack")), local)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("remote.textpack")), remote)
+        let current = try Archive(data: Data(contentsOf: root.appendingPathComponent(path)), accessMode: .read)
+        let entry = try XCTUnwrap(current["assets/data.txt"])
+        var currentAsset = Data(); _ = try current.extract(entry) { currentAsset.append($0) }
+        XCTAssertEqual(currentAsset, Data("remote".utf8))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
     func testPendingAssetUploadPreservesBothPacksAcrossRestore() async throws {
@@ -883,11 +886,17 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(requests.count, 1)
         let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
         let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
-        let conflict = try XCTUnwrap((state["conflicts"] as? [String: Any])?[itemId] as? [String: Any])
-        let paths = try XCTUnwrap(conflict["paths"] as? [String])
-        XCTAssertEqual(paths.count, 3)
-        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[2])), local)
-        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[1])), try withAsset(original, bytes: remote))
+        XCTAssertNil((state["binaryOutbox"] as? [String: Any])?[itemId])
+        XCTAssertNil((state["conflicts"] as? [String: Any])?[itemId])
+        let current = try Archive(data: Data(contentsOf: root.appendingPathComponent(path)), accessMode: .read)
+        let entry = try XCTUnwrap(current["assets/data.txt"])
+        var currentAsset = Data(); _ = try current.extract(entry) { currentAsset.append($0) }
+        XCTAssertEqual(currentAsset, remote)
+        let conflictRoot = root.appendingPathComponent(".texttext/conflicts")
+        let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: conflictRoot,
+            includingPropertiesForKeys: nil).first)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("local-asset.bin")), local)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("remote.textpack")), try withAsset(original, bytes: remote))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
 

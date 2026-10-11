@@ -385,17 +385,33 @@ public sealed class SyncEngine
             state.BinaryOutbox.Remove(pending);Save(state);
             if(pending.PayloadHash is not null)try{File.Delete(BinaryPayloadPath(pending.Id));}catch(IOException){}
         } catch(SyncConflictException) {
-            // A future checkpoint or cloud-file replacement may change the live
-            // path. Keep independently recoverable copies before suppressing
-            // this operation's retries. The staged asset sidecar remains too.
-            var localPack=store.Read(baseline.Path);
-            if(TextPackStore.Identity(localPack)!=pending.ItemId)throw new InvalidDataException("Local conflict pack identity changed during read.");
-            store.Preserve(localPack,"binary-conflict-local");
             var remotePack=await transport.DownloadAsync(pending.ItemId,ct);
             if(TextPackStore.Hash(remotePack.Data)!=remotePack.Revision)throw new InvalidDataException("Remote conflict pack changed during download.");
-            store.Preserve(remotePack.Data,"binary-conflict-remote");
-            state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);
+            ResolveBinaryConflict(state,local,baseline,pending.EntryPath,remote,remotePack);
+            state.BinaryOutbox.Remove(pending);Save(state);
+            if(pending.PayloadHash is not null)try{File.Delete(BinaryPayloadPath(pending.Id));}catch(IOException){}
         }
+    }
+    void ResolveBinaryConflict(State state,PackFile? local,Baseline baseline,string entryPath,
+        RemoteItem remote,RemotePack remotePack) {
+        if(local is null||local.Path!=baseline.Path)
+            throw new InvalidDataException("Local conflict pack is temporarily unavailable.");
+        var localPack=store.Read(local.Path);
+        if(TextPackStore.Identity(localPack)!=remote.ItemId||TextPackStore.Hash(localPack)!=store.Describe(local.Path).Hash)
+            throw new InvalidDataException("Local conflict pack changed during read.");
+        store.Preserve(localPack,"binary-conflict-local");
+        store.Preserve(remotePack.Data,"binary-conflict-remote");
+        var localAsset=BinaryEntryPacks.Assets(localPack).GetValueOrDefault(entryPath);
+        var remoteAsset=BinaryEntryPacks.Assets(remotePack.Data).GetValueOrDefault(entryPath);
+        var updated=SharedEditingStore.ApplyRemoteBinary(store,remote.ItemId,local.Path,TextPackStore.Hash(localPack),
+            entryPath,localAsset?.Sha256,remoteAsset?.Bytes);
+        if(!state.BinaryBaselines.TryGetValue(remote.ItemId,out var known))throw new InvalidDataException("Binary baseline is missing.");
+        if(remoteAsset is null)known.Remove(entryPath);else known[entryPath]=remoteAsset.Sha256;
+        // Other entries may have changed in the same remote pack. Recheck
+        // their hashes next cycle rather than claiming the whole pack is read.
+        state.BinaryRevisions.Remove(remote.ItemId);
+        state.Items[remote.ItemId]=baseline with{Hash=updated.Hash,Revision=remotePack.Revision};
+        Save(state);
     }
     async Task SyncRemoteBinary(State state,PackFile? local,Baseline baseline,RemoteItem remote,CancellationToken ct) {
         // Collaboration checkpoints can advance the document revision before this
@@ -417,11 +433,7 @@ public sealed class SyncEngine
             if(localHash!=prior&&localHash!=target) {
                 var remotePack=await transport.DownloadAsync(remote.ItemId,ct);
                 if(TextPackStore.Hash(remotePack.Data)!=remotePack.Revision)throw new InvalidDataException("Remote conflict pack changed during download.");
-                var localPack=store.Read(local.Path);
-                if(TextPackStore.Hash(localPack)!=local.Hash)throw new InvalidDataException("Local conflict pack changed during read.");
-                store.Preserve(localPack,"binary-conflict-local");
-                store.Preserve(remotePack.Data,"binary-conflict-remote");
-                state.BinaryOutbox.Add(new(Guid.NewGuid().ToString(),remote.ItemId,entryPath,prior,remote.Lifecycle,null,local.Hash,true));Save(state);
+                ResolveBinaryConflict(state,local,baseline,entryPath,remote,remotePack);
                 return;
             }
             if(localHash!=target) {

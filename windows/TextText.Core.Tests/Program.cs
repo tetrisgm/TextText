@@ -386,12 +386,13 @@ static class Test
    conflictStore.Write(file.Path,localPack,file.Hash);
    await remote.BinaryPatchAsync("test-1",Guid.NewGuid().ToString(),"assets/data.bin",TextPackStore.Hash(new byte[]{1,2}),null,new byte[]{5,5});
    await conflictEngine.SyncAsync();
-   Assert(BinaryEntryPacks.Assets(conflictStore.Read(file.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{4,4})&&
+   Assert(BinaryEntryPacks.Assets(conflictStore.Read(file.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5})&&
      BinaryEntryPacks.Assets(remote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5}),
-     "competing open-file asset edits retain both byte versions");
+     "competing open-file asset adopts the server winner");
    var conflictState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(conflictStore.StateDirectory,"sync.json")))!;
-   Assert(conflictState.BinaryOutbox.Any(x=>x.ItemId=="test-1"&&x.Conflicted)&&conflictEngine.Status.Error!=null,
-     "competing asset edit is reported for resolution");
+   Assert(!conflictState.BinaryOutbox.Any(x=>x.ItemId=="test-1")&&await conflictEngine.IsReadyAsync("test-1")&&
+     File.ReadAllBytes(Path.Combine(conflictStore.GetRecoveryDirectory(),"binary-conflict-local-"+TextPackStore.Hash(localPack)+".textpack")).SequenceEqual(localPack),
+     "competing asset retains the local pack and releases the editor after adopting server bytes");
  }
  await MirroredRetirementTests.Run(temp,Assert);
  await ExternalCheckpointRaceTests.Run(temp,Assert);
@@ -531,11 +532,11 @@ static class Test
   binaryRemote.Item=binaryRemote.Item! with{Revision=TextPackStore.Hash(binaryRemote.Data)};
   await binaryEngine.SyncAsync(localChangesOnly:true);
   var conflictState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"sync.json")))!;
-  Assert(conflictState.BinaryOutbox.Single().Conflicted&&BinaryEntryPacks.Assets(binaryStore.Read(binaryFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{4,4,4})&&BinaryEntryPacks.Assets(binaryRemote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5,5}),"same-entry conflict retains both byte versions without overwrite");
+  Assert(conflictState.BinaryOutbox.Count==0&&BinaryEntryPacks.Assets(binaryStore.Read(binaryFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5,5})&&BinaryEntryPacks.Assets(binaryRemote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5,5}),"same-entry conflict adopts the server winner and clears the outbox");
   var recovery=binaryStore.GetRecoveryDirectory();
   Assert(File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-local-"+TextPackStore.Hash(conflictLocal)+".textpack")).SequenceEqual(conflictLocal)&&
     File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-remote-"+TextPackStore.Hash(binaryRemote.Data)+".textpack")).SequenceEqual(binaryRemote.Data),
-    "same-entry conflict durably copies both packs before stopping retries");
+    "same-entry conflict durably copies both packs before adopting the server winner");
  }
  var racedBinaryStore=new TextPackStore(Path.Combine(temp,"binary-patch-race"),Path.Combine(temp,"binary-patch-race-device"));
  var racedBinaryBase=BinaryEntryPacks.Patch(Pack("Racing text","binary-patch-race"),"assets/data.bin",null,[1,2,3]);
@@ -550,11 +551,12 @@ static class Test
   await racedBinaryEngine.SyncAsync(localChangesOnly:true);
   var raceState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(racedBinaryStore.StateDirectory,"sync.json")))!;
   var raceRecovery=racedBinaryStore.GetRecoveryDirectory();
-  Assert(raceState.BinaryOutbox.Single().Conflicted&&
+  Assert(raceState.BinaryOutbox.Count==0&&BinaryEntryPacks.Assets(racedBinaryStore.Read(racedBinaryFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5,5})&&
     File.ReadAllBytes(Path.Combine(raceRecovery,"binary-conflict-local-"+TextPackStore.Hash(localPack)+".textpack")).SequenceEqual(localPack)&&
     File.ReadAllBytes(Path.Combine(raceRecovery,"binary-conflict-remote-"+TextPackStore.Hash(remotePack)+".textpack")).SequenceEqual(remotePack)&&
-    File.ReadAllBytes(Path.Combine(racedBinaryStore.StateDirectory,"binary-outbox",raceState.BinaryOutbox.Single().Id+".asset")).SequenceEqual(new byte[]{4,4,4}),
-    "binary CAS race saves both packs and staged asset before suppressing retries");
+    (!Directory.Exists(Path.Combine(racedBinaryStore.StateDirectory,"binary-outbox"))||
+     Directory.GetFiles(Path.Combine(racedBinaryStore.StateDirectory,"binary-outbox"),"*.asset").Length==0),
+    "binary CAS race saves both packs, adopts server bytes and clears staged retry data");
  }
  var restoredBinaryStore=new TextPackStore(Path.Combine(temp,"binary-restored"),Path.Combine(temp,"binary-restored-device"));
  var restoredBase=BinaryEntryPacks.Patch(Pack("Restored text","binary-restored"),"assets/data.bin",null,[1,2,3]);

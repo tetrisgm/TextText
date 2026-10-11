@@ -41,8 +41,14 @@ The runner previously labeled this “passed” despite withholding acceptance;
 it now requires matching binary hashes. Mac's open-file sync tried remote
 binary receive before staging the local change, so same-entry collisions
 could remain unrecorded. The order now stages/preserves the local asset first,
-with a focused regression test. Both versions are preserved in a conflict;
-automatic convergence, conflict presentation, and a fresh physical rerun remain.
+with a focused regression test. Both platforms now preserve full local and
+remote packs before adopting the server's attachment bytes in the main file.
+The Mac keeps a persisted conflict until adoption finishes, so a stopped
+process can retry that step. The Windows binary outbox clears after adoption.
+Mac 42-test sync suite and Windows core suite pass. These source changes are
+not yet installed; fresh physical six-client convergence, normal close
+behavior, conflict presentation, and the remaining acceptance matrix still
+need verification.
 
 Unrelated dirty files in `mac/Package.resolved`, assistant attachments, tabs
 tests, `mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts` belong to

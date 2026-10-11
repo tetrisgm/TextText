@@ -493,7 +493,11 @@ public actor LocalVaultSync {
         let url = try LocalVaultDocumentStore(root: root).url(for: path)
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 64 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
-        let archive = try Archive(data: Data(contentsOf: url), accessMode: .read)
+        return try binaryAssets(data: Data(contentsOf: url))
+    }
+    private func binaryAssets(data: Data) throws -> [String: Data] {
+        guard data.count <= 64 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
+        let archive = try Archive(data: data, accessMode: .read)
         var result: [String: Data] = [:], expanded: UInt64 = 0, count = 0
         for entry in archive {
             count += 1; expanded += entry.uncompressedSize
@@ -524,7 +528,7 @@ public actor LocalVaultSync {
         return bytes
     }
 
-    private func preserveBinaryConflict(_ pending: BinaryPending) async throws {
+    private func preserveBinaryConflict(_ pending: BinaryPending) async throws -> LocalVaultRemotePack {
         let remote = try await transport.download(itemId: pending.itemId)
         try validate(remote, itemId: pending.itemId, path: remote.relativePath)
         let local = try Data(contentsOf: LocalVaultDocumentStore(root: root).url(for: pending.path))
@@ -543,12 +547,43 @@ public actor LocalVaultSync {
         }
         state.conflicts[pending.itemId] = Conflict(localHash: localHash, remoteRevision: remote.revision,
                                                   paths: paths, remotePath: remote.relativePath)
+        return remote
+    }
+
+    private func adoptBinaryWinner(_ pending: BinaryPending, winner: LocalVaultRemotePack) throws -> Bool {
+        let path = pending.path, itemId = pending.itemId
+        let winnerAsset = try binaryAssets(data: winner.data)[pending.entryPath]
+        let winnerHash = winnerAsset.map(TextTextStableDigest.sha256Hex)
+        let localHash = try binaryAssets(path: path)[pending.entryPath].map(TextTextStableDigest.sha256Hex)
+        let current = try LocalVaultDocumentStore(root: root).read(path: path)
+        let updated: LocalVaultDocumentStore.Document
+        if localHash == pending.payloadHash {
+            updated = try sharedStore.applyRemoteBinary(itemId: itemId, path: path,
+                expectedHash: current.hash, entryPath: pending.entryPath,
+                expectedAssetHash: pending.payloadHash, bytes: winnerAsset)
+        } else if localHash == winnerHash {
+            // A previous process installed the winner, then stopped before
+            // recording its receipt. The binary intent recovers on read.
+            updated = current
+        } else { return false }
+        sharedSessions[itemId]?.hash = updated.hash
+        if let winnerHash { state.binaryBaselines?[itemId, default: [:]][pending.entryPath] = winnerHash }
+        else { state.binaryBaselines?[itemId]?.removeValue(forKey: pending.entryPath) }
+        if state.baselines[itemId]?.path == path {
+            state.baselines[itemId]?.revision = winner.revision
+            state.baselines[itemId]?.localHash = updated.hash
+        }
+        state.binaryOutbox?.removeValue(forKey: itemId)
+        state.conflicts.removeValue(forKey: itemId)
+        try persist()
+        if pending.payloadHash != nil { try? FileManager.default.removeItem(at: binaryPayload(pending.operationId)) }
+        return true
     }
 
     private func syncOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
         if let pending = state.binaryOutbox?[itemId], !pending.conflicted,
            !remote.isDeleted, (pending.lifecycle != remote.lifecycle || pending.path != remote.relativePath) {
-            try await preserveBinaryConflict(pending)
+            _ = try await preserveBinaryConflict(pending)
             state.binaryOutbox?[itemId]?.conflicted = true
             try persist()
             return false
@@ -558,7 +593,15 @@ public actor LocalVaultSync {
               state.lifecycles?[itemId] == remote.lifecycle,
               await transport.canWrite(itemId: itemId, path: path, existing: true) else { return false }
         var pending = state.binaryOutbox?[itemId]
-        if pending?.conflicted == true { return false }
+        if let pending, pending.conflicted {
+            guard let conflict = state.conflicts[itemId], conflict.remotePath == path,
+                  conflict.paths.allSatisfy({ FileManager.default.fileExists(atPath: root.appendingPathComponent($0).path) })
+            else { return false }
+            let winner = try await transport.download(itemId: itemId)
+            guard winner.revision == conflict.remoteRevision else { return false }
+            try validate(winner, itemId: itemId, path: path)
+            return try adoptBinaryWinner(pending, winner: winner)
+        }
         if pending == nil {
             guard let hashes = state.binaryBaselines?[itemId] else { return false }
             let url = try LocalVaultDocumentStore(root: root).url(for: path)
@@ -601,10 +644,12 @@ public actor LocalVaultSync {
             if pending.payloadHash != nil { try? FileManager.default.removeItem(at: binaryPayload(pending.operationId)) }
             return true
         } catch LocalVaultSyncFailure.conflict {
-            try await preserveBinaryConflict(pending)
+            let winner = try await preserveBinaryConflict(pending)
             state.binaryOutbox?[itemId]?.conflicted = true
             try persist() // Both packs and the exact unsent asset are durable before suppressing retries.
-            return false
+            // The server's CAS winner owns the main path; the losing full pack
+            // remains durable. A racing local edit leaves the conflict fenced.
+            return try adoptBinaryWinner(pending, winner: winner)
         }
     }
     private func receiveOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
