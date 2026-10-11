@@ -1125,16 +1125,18 @@ public actor LocalVaultSync {
                             report.hasMore = true
                         }
                     }
-                    if let remote = remoteByID[id],
-                       let followed = try followedSharedPath(itemId: id),
-                       try await receiveOpenBinary(itemId: id, path: followed.path, remote: remote) {
-                        report.downloaded += 1
-                        report.hasMore = true
-                    }
+                    var uploadedBinary = false
                     if let remote = remoteByID[id],
                        let followed = try followedSharedPath(itemId: id),
                        try await syncOpenBinary(itemId: id, path: followed.path, remote: remote) {
                         report.uploaded += 1
+                        report.hasMore = true
+                        uploadedBinary = true
+                    }
+                    if !uploadedBinary, let remote = remoteByID[id],
+                       let followed = try followedSharedPath(itemId: id),
+                       try await receiveOpenBinary(itemId: id, path: followed.path, remote: remote) {
+                        report.downloaded += 1
                         report.hasMore = true
                     }
                     continue

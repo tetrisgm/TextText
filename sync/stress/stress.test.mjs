@@ -89,6 +89,20 @@ test('missing roles are rejected before any process starts', () => {
   assert.throws(() => validateConfig({ ...paired, assetReplacements: [paired.assetReplacements[0], { ...paired.assetReplacements[1], role: 'pc-cli' }] }), /distinct actors/);
   assert.throws(() => validateConfig({ ...paired, assetReplacements: [paired.assetReplacements[0], { ...paired.assetReplacements[1], round: 2 }] }), /same round/);
   assert.throws(() => validateConfig({ ...paired, assetReplacement: paired.assetReplacements[0] }), /one asset replacement format/);
+  const race = { ...makeConfig(), diagnosticSameEntryRace: true,
+    assetReplacements: [paired.assetReplacements[0], { ...paired.assetReplacements[1], path: 'assets/photo.png' }] };
+  assert.doesNotThrow(() => validateConfig(race));
+  assert.throws(() => validateConfig({ ...race, diagnosticSameEntryRace: false }), /diagnosticSameEntryRace/);
+  assert.throws(() => validateConfig({ ...race, expectedAssetHashes: paired.expectedAssetHashes }), /diagnosticSameEntryRace/);
+  assert.throws(() => validateConfig({ ...race, assetReplacements: [race.assetReplacements[0], { ...race.assetReplacements[1], bytesBase64 }] }), /diagnosticSameEntryRace/);
+  const coordinator = new Coordinator(race);
+  const states = new Map([['mac-cli', { assetHashes: { 'assets/photo.png': replacementHash } }],
+    ['pc-cli', { assetHashes: { 'assets/photo.png': otherHash } }]]);
+  assert.equal(coordinator.checkAssets(states, 1), false);
+  states.get('pc-cli').assetHashes['assets/photo.png'] = replacementHash;
+  assert.equal(coordinator.checkAssets(states, 1), true);
+  states.get('pc-cli').assetHashes['assets/photo.png'] = null;
+  assert.equal(coordinator.checkAssets(states, 1), false);
 });
 
 test('asset evidence requires both physical file actors to retain the expected bytes', () => {

@@ -865,6 +865,32 @@ final class LocalVaultSyncTests: XCTestCase {
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
 
+    func testOpenEditorPreservesBothAssetsWhenSameEntryChangedOnTwoDevices() async throws {
+        let first = Data("first".utf8), local = Data("mac candidate".utf8), remote = Data("pc candidate".utf8)
+        let original = try withAsset(pack("Human text"), bytes: first)
+        try putLocal(original)
+        let transport = FakeVaultTransport(), sync = try engine(transport)
+        await transport.set(itemId: itemId, path: path, data: original)
+        _ = try await sync.sync()
+        let initial = try LocalVaultDocumentStore(root: root).read(path: path)
+        let session = try await sync.beginSharedEditing(itemId: itemId, path: path, expectedHash: initial.hash)
+        try putLocal(try withAsset(original, bytes: local))
+        await transport.set(itemId: itemId, path: path, data: try withAsset(original, bytes: remote))
+        await transport.conflictNextBinaryPatch(with: try withAsset(original, bytes: remote))
+        let result = try await sync.sync()
+        XCTAssertTrue(result.errors.isEmpty, "\(result.errors)")
+        let requests = await transport.binaryRequests()
+        XCTAssertEqual(requests.count, 1)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let conflict = try XCTUnwrap((state["conflicts"] as? [String: Any])?[itemId] as? [String: Any])
+        let paths = try XCTUnwrap(conflict["paths"] as? [String])
+        XCTAssertEqual(paths.count, 3)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[2])), local)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[1])), try withAsset(original, bytes: remote))
+        try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
+
     func testRemoteAssetSurvivesDocumentCheckpointRevisionRace() async throws {
         let first = Data("first".utf8), second = Data("second".utf8)
         let original = try withAsset(pack("Human text"), bytes: first)

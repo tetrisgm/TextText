@@ -62,6 +62,13 @@ runner checks both final hashes at each file actor. Seed 111 passed two real
 six-client rounds with both replacements, followed by seed 112 reopening all
 six clients; receipts are in the acceptance contract.
 
+For an exploratory same-entry race, set `diagnosticSameEntryRace: true` and
+provide two different replacement byte values for the same asset path in
+`assetReplacements`, with no `expectedAssetHashes`. The runner records each
+actor's proposed hash and the two observed file hashes. Differing file hashes
+fail the diagnostic. It never emits an acceptance result: a matching document body alone cannot prove that the losing
+binary version is preserved or that every editor displays the correct asset.
+
 Set `pattern` to `"overlap-replace"` for four live editors replacing the
 existing fixture sentence while both CLIs append. Set `pattern` to
 `"file-overlap"` for the same four editors plus one CLI replacing that exact

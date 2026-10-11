@@ -32,6 +32,17 @@ operations, delete/restore, two-account permissions, and sustained latency and
 resource measurements. The normal Windows “Keep editing” close path has not
 been separately reproduced on the latest installed candidate. Do not certify
 full sync or ship a public release until the remaining matrix passes.
+The stress coordinator has a diagnostic same-entry race mode. Seed 113 ran on
+six physical clients against disposable item `988ca4ca-8bbf-416d-95ad-81df3e4d3225`.
+All text edits converged, but Mac and Windows retained different bytes for
+`assets/data.bin` (SHA-256 `5bb4dc8f...` and `f51f46bf...`). Receipt:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T20-25-52-080Z-113`.
+The runner previously labeled this “passed” despite withholding acceptance;
+it now requires matching binary hashes. Mac's open-file sync tried remote
+binary receive before staging the local change, so same-entry collisions
+could remain unrecorded. The order now stages/preserves the local asset first,
+with a focused regression test. Both versions are preserved in a conflict;
+automatic convergence, conflict presentation, and a fresh physical rerun remain.
 
 Unrelated dirty files in `mac/Package.resolved`, assistant attachments, tabs
 tests, `mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts` belong to

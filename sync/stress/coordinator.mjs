@@ -28,6 +28,9 @@ export const normalizeText = (text) =>
   String(text).replace(/\r\n/g, '\n');
 export const hashText = (text) => createHash('sha256').update(normalizeText(text)).digest('hex');
 const assetReplacementsOf = (config) => config.assetReplacements ?? (config.assetReplacement ? [config.assetReplacement] : []);
+const assetPathsOf = (config) => [...new Set([...Object.keys(config.expectedAssetHashes ?? {}),
+  ...assetReplacementsOf(config).map(a => a.path)])];
+const replacementDigest = a => createHash('sha256').update(Buffer.from(a.bytesBase64, 'base64')).digest('hex');
 
 // Deterministic per-round edit plan from the seed.
 export function planRounds(seed, rounds, pattern = 'append') {
@@ -68,24 +71,29 @@ export function validateConfig(config) {
   if (config.assetReplacement !== undefined && config.assetReplacements !== undefined) fail('use one asset replacement format');
   if (config.assetReplacements !== undefined && (!Array.isArray(config.assetReplacements) || config.assetReplacements.length !== 2))
     fail('assetReplacements must contain one edit for each CLI actor');
+  if (config.diagnosticSameEntryRace !== undefined && config.diagnosticSameEntryRace !== true) fail('diagnosticSameEntryRace must be true');
+  if (config.diagnosticSameEntryRace && !config.assetReplacements) fail('diagnosticSameEntryRace requires two assetReplacements');
   const replacementKeys = new Set(), replacementPaths = new Set();
   for (const a of assetReplacementsOf(config)) {
     if (!a || !['mac-cli', 'pc-cli'].includes(a.role) || !Number.isInteger(a.round) || a.round < 1 || a.round > config.rounds
       || typeof a.path !== 'string' || !a.path.startsWith('assets/')
       || a.path.split('/').some(part => !part || part === '.' || part === '..' || !/^[A-Za-z0-9._-]+$/.test(part))
       || typeof a.bytesBase64 !== 'string' || a.bytesBase64.length > 96 * 1024 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(a.bytesBase64)
-      || !a.bytesBase64.length || !config.expectedAssetHashes
-      || config.expectedAssetHashes[a.path] !== createHash('sha256').update(Buffer.from(a.bytesBase64, 'base64')).digest('hex')) {
+      || !a.bytesBase64.length || (!config.diagnosticSameEntryRace && (!config.expectedAssetHashes
+      || config.expectedAssetHashes[a.path] !== replacementDigest(a)))) {
       fail('assetReplacement must be a bounded CLI asset edit matching expectedAssetHashes');
     }
     const key = `${a.role}:${a.round}`;
-    if (replacementKeys.has(key) || replacementPaths.has(a.path)) fail('assetReplacements must use distinct actors and paths');
+    if (replacementKeys.has(key) || (!config.diagnosticSameEntryRace && replacementPaths.has(a.path))) fail('assetReplacements must use distinct actors and paths');
     replacementKeys.add(key); replacementPaths.add(a.path);
   }
   if (config.assetReplacements && new Set(config.assetReplacements.map(a => a.role)).size !== 2)
     fail('assetReplacements must use both CLI actors');
   if (config.assetReplacements && config.assetReplacements[0].round !== config.assetReplacements[1].round)
     fail('assetReplacements must run in the same round');
+  if (config.diagnosticSameEntryRace && (replacementPaths.size !== 1 ||
+    replacementDigest(config.assetReplacements[0]) === replacementDigest(config.assetReplacements[1]) ||
+    config.expectedAssetHashes !== undefined)) fail('diagnosticSameEntryRace requires two distinct byte values for one path and no expectedAssetHashes');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
   if (config.offline !== undefined) {
     if (!config.offline || !EDITOR_ROLES.includes(config.offline.role)
@@ -166,7 +174,8 @@ export class Coordinator {
     const scenario = { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
-      role: a.role, round: a.round, path: a.path, sha256: this.config.expectedAssetHashes[a.path] }));
+      role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) }));
+    if (this.config.diagnosticSameEntryRace) scenario.diagnosticSameEntryRace = true;
     writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern)}, null, 2));
     this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture, scenario });
     this.writeDashboard('running');
@@ -185,7 +194,7 @@ export class Coordinator {
     try {
       await this.startAdapters();
       const initial = this.collect(0, 'state');
-      this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: Object.keys(this.config.expectedAssetHashes ?? {}) });
+      this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config) });
       const baseline = await initial;
       const texts = ROLES.map(role => baseline.get(role).text);
       const evidence = {};
@@ -222,12 +231,13 @@ export class Coordinator {
     const summary = {
       runId: this.runId, status, failure, mode: this.config.mode,
       // Simulated runs never count as real acceptance, whatever their status.
-      acceptance: status === 'passed' && this.config.mode === 'real'
+      acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
         ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
       scenario: { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
-          role: a.role, round: a.round, path: a.path, sha256: this.config.expectedAssetHashes[a.path] })) } : {}) },
+          role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) })) } : {}),
+        ...(this.config.diagnosticSameEntryRace ? { diagnosticSameEntryRace: true } : {}) },
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
       attestations: this.attestations, outputDir: this.dir,
     };
@@ -305,6 +315,13 @@ export class Coordinator {
   broadcast(message) { for (const a of this.adapters.values()) a.send(message); }
 
   checkAssets(states, round) {
+    if (this.config.diagnosticSameEntryRace) {
+      const path = this.config.assetReplacements[0].path;
+      // Both physical files must agree on the final bytes. Different valid
+      // hashes are a failed race, never a passing diagnostic.
+      const hashes = ['mac-cli', 'pc-cli'].map(role => states.get(role)?.assetHashes?.[path]);
+      return hashes.every(hash => /^[a-f0-9]{64}$/.test(hash ?? '')) && hashes[0] === hashes[1];
+    }
     const expected = this.config.expectedAssetHashes;
     if (!expected) return true;
     for (const role of ['mac-cli', 'pc-cli']) {
@@ -352,7 +369,7 @@ export class Coordinator {
     let samples = 0;
     do {
       const observing = this.collect(round, 'state');
-      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: Object.keys(this.config.expectedAssetHashes ?? {}) });
+      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config) });
       states = await observing;
       observed = {};
       for (const role of ROLES) {
@@ -385,7 +402,8 @@ export class Coordinator {
       if (remaining !== expectedBaseline) throw new StressFailure('baseline-lost', { round, role });
     }
     for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);
-    const result = { round, hash: [...hashes][0], editCount: expectedEditIds.length, durationMs: Date.now() - started };
+    const result = { round, hash: [...hashes][0], editCount: expectedEditIds.length, durationMs: Date.now() - started,
+      ...(this.config.diagnosticSameEntryRace ? { assetHashes: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) } : {}) };
     this.roundResults.push(result);
     this.record('round', result);
     this.writeDashboard('running');
