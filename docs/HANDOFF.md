@@ -2,38 +2,29 @@
 
 ## Current work (October 11)
 
-Source `a61a86c8` is on `origin/main`. The exact-source Node 22 sync gate
-passed 891 core tests plus native checks; the Windows clean build passed its
-native, shared client, TypeScript, UI, and desktop smoke gates. Mac 0.204
-build 1245 and the matching Windows candidate are installed locally. The Mac
-app reopened the signed-in iCloud workspace and the six-client note; the
-Windows installed executable launched and responded. Neither a public Mac
-release nor an Oracle website deployment was made.
+Source `7e780c26` is on `origin/main`. Mac 0.204 build 1246 and the matching
+Windows candidate are installed locally; neither a public Mac release nor an
+Oracle website deployment was made. The exact-source Node 22 sync gate passed
+894 core tests plus native checks. The Windows clean build passed its native,
+384 shared client, TypeScript, UI, and desktop smoke gates. The Mac Store-shaped
+bundle passed signing and extension checks; its sandbox-private runtime health
+report remains inaccessible to the installer, so installed-app health is based
+on launch and the physical editor tests.
 
-Two physical six-client replacement cases passed with all four live editors
-retained and identical file hashes: independent EOF replacement plus CLI append
-(seed 63), and exact same-span replacement by a Mac CLI and four editors
-(seed 65). Each passed a six-client durable reopen. Receipts are linked in
+The PC direct-file replacement failure in seeds 66 and 68 exposed two paths:
+same-generation Windows checkpoint retry classification (`9a5873f2`) and a
+terminal-newline difference between a live editor replacement and a file
+replacement (`7e780c26`). Both have focused regressions. Fresh seed 70 then
+passed reciprocal PC CLI same-span replacement with all six editors/files
+converged and a durable six-client reopen. Fresh seed 71 passed the Mac CLI
+direction and its reopen. Exact receipts and prior failures are in
 [the acceptance contract](verification/six-client-sync-acceptance.md).
 
-The reciprocal fresh fixture (seed 66) exposed a remaining Windows path
-failure: the PC CLI replaced the same baseline sentence while the PC native
-editor was open. That editor entered `collaborationState=error`, lost editability,
-and the PC CLI file held only its own marker while the other four clients
-converged separately. Preserve the failed fixture, native journals, and receipt
-`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-36-04-727Z-66`.
-The first two attempts for seed 66 stopped before editing because the Mac actor
-path was absent, then a native session directory was reused. Those are setup
-failures, not acceptance evidence. Direct SSH to the PC began resetting after
-the failed physical run; retry access before inspecting the native event log.
-Do not rerun on this fixture. Source `9a5873f2` now classifies a same-generation
-checkpoint retry after an external file edit as `FileChangedException`, allowing
-the existing live reconcile path. A focused native regression and the full Mac
-Windows-core suite pass. This is a candidate fix for the observed PC failure,
-not a passed physical replay. Rebuild the Windows candidate when the PC is
-reachable, then use a fresh fixture and repeat both direct-file sides. Native offline/crash
-recovery, partial overlapping replacement/deletion, whole TextPack/assets,
-folder operations, permissions, and sustained latency remain open.
+Next: partial overlapping replacements/deletions, native offline and pending
+edit crash recovery, whole TextPack/assets, folder operations, separate-account
+permissions, and sustained latency/resource runs. Do not call sync fully
+certified until those physical cases pass. Preserve failed fixtures, journals,
+and receipts; use a fresh fixture for each replay.
 
 ## Current status (October 10, late)
 

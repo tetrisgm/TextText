@@ -133,11 +133,28 @@ The reciprocal seed 66 (Windows CLI changing that span) failed after edits:
 `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-36-04-727Z-66`.
 The PC native editor became uneditable with `collaborationState=error`;
 the PC CLI file retained only its own marker, while the other four clients
-converged separately. This is an open regression, not a passing acceptance.
+converged separately. Seed 68 reproduced the failure after a Windows
+checkpoint classification fix:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-54-27-633Z-68`.
+The remaining cause was the terminal newline: live editors replaced the final
+paragraph without it, while direct file writers retained it. `7e780c26`
+reconciles this precise overlap without dropping either edit and adds shared
+client regression coverage; `9a5873f2` covers the Windows checkpoint retry.
+Fresh seed 70 passed the PC CLI replacement with Mac build 1246 and the
+matching installed Windows candidate:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T12-16-35-247Z-70`.
+All six reopened its exact final hash in
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T12-17-14-110Z-70`.
+Fresh seed 71 passed the Mac CLI replacement and six-client durable reopen:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T12-18-42-489Z-71`
+and
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T12-19-16-963Z-71`.
+Both edit rounds kept the four real editors mounted, rejected no events, and
+converged to one exact semantic hash across all six clients.
 The first two seed-66 attempts failed during setup and do not count.
 The earlier failed seeds 62 and 63 remain preserved as regression evidence;
 the passing run used a new fixture and builds carrying `052c0ab7`.
-Same-span replacement/deletion, native offline/crash recovery, whole-file/attachment and
+Partial overlapping replacement/deletion, native offline/crash recovery, whole-file/attachment and
 folder operations, permissions, and latency distributions still need physical
 campaigns. The historical notes below predate this runner.
 

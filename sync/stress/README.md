@@ -9,10 +9,9 @@ up their own remote children; an unresponsive remote actor is a failed run.
 **Status:** all six real-client adapters run against the installed platform
 engines, real browsers, and actual TextPack files. Physical append, browser
 offline, invalid intermediate ZIP, same-position insertion, Unicode, independent
-EOF replacement/append, and Mac CLI same-span replacement rounds have passed.
-A reciprocal PC CLI same-span replacement round failed on October 11: the
-Windows editor entered an error state and the PC CLI file diverged. Preserve
-that receipt and diagnose it before claiming replacement acceptance. Native
+EOF replacement/append, and both Mac and PC CLI same-span replacement rounds
+have passed, each with a six-client durable reopen. Earlier PC CLI rounds
+failed; the failure and fresh passing receipts are in the acceptance contract. Native
 offline/crash, partial overlap/deletion, moves, and latency remain open; see
 `docs/verification/six-client-sync-acceptance.md`.
 Targeted browser transport loss is now covered: set `offline` to
@@ -43,8 +42,9 @@ existing fixture sentence while both CLIs append. Set `pattern` to
 sentence in the TextPack and the other CLI appending. Odd seeds select the Mac
 CLI for replacement; even seeds select the PC CLI. The runner requires every
 marker exactly once, the original sentence removed, identical hashes, and
-continuous editors. Mac CLI seed 65 and its six-client reopen passed. PC CLI
-seed 66 failed after editing; use a fresh fixture for diagnosis and replay.
+continuous editors. PC CLI seed 70 and Mac CLI seed 71 passed with six-client
+durable reopens. Seeds 66 and 68 exposed the Windows checkpoint and terminal
+newline bugs that the current regressions cover.
 
 ## Run
 
