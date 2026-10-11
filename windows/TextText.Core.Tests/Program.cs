@@ -537,6 +537,26 @@ static class Test
     File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-remote-"+TextPackStore.Hash(binaryRemote.Data)+".textpack")).SequenceEqual(binaryRemote.Data),
     "same-entry conflict durably copies both packs before stopping retries");
  }
+ var restoredBinaryStore=new TextPackStore(Path.Combine(temp,"binary-restored"),Path.Combine(temp,"binary-restored-device"));
+ var restoredBase=BinaryEntryPacks.Patch(Pack("Restored text","binary-restored"),"assets/data.bin",null,[1,2,3]);
+ var restoredFile=restoredBinaryStore.Write("Notes/Restored.textpack",restoredBase);
+ var restoredRemote=new Fake{Data=restoredBase,Item=new("binary-restored",restoredFile.Path,restoredFile.Hash)};
+ var restoredBinaryEngine=new SyncEngine(restoredBinaryStore,restoredRemote);await restoredBinaryEngine.SyncAsync();
+ using(var lease=await restoredBinaryEngine.AcquireCollaborationAsync("binary-restored")) {
+  var localPack=BinaryEntryPacks.Patch(restoredBinaryStore.Read(restoredFile.Path),"assets/data.bin",TextPackStore.Hash([1,2,3]),[4,4,4]);
+  restoredBinaryStore.Write(restoredFile.Path,localPack,restoredBinaryStore.Describe(restoredFile.Path).Hash);
+  restoredRemote.FailBinaryAfterCommit=true;
+  try{await restoredBinaryEngine.SyncAsync(localChangesOnly:true);throw new Exception("lost binary ACK accepted");}catch(HttpRequestException){}
+  var newRemote=BinaryEntryPacks.Patch(restoredBase,"assets/data.bin",TextPackStore.Hash([1,2,3]),[5,5,5]);
+  restoredRemote.Data=newRemote;restoredRemote.Item=restoredRemote.Item! with{Revision=TextPackStore.Hash(newRemote),Lifecycle="restored-generation"};
+  await restoredBinaryEngine.SyncAsync(localChangesOnly:true);
+  var binaryRestoreState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(restoredBinaryStore.StateDirectory,"sync.json")))!;
+  var recoveryDir=restoredBinaryStore.GetRecoveryDirectory();
+  Assert(binaryRestoreState.BinaryOutbox.Single().Conflicted&&
+    File.ReadAllBytes(Path.Combine(recoveryDir,"binary-conflict-local-"+TextPackStore.Hash(localPack)+".textpack")).SequenceEqual(localPack)&&
+    File.ReadAllBytes(Path.Combine(recoveryDir,"binary-conflict-remote-"+TextPackStore.Hash(newRemote)+".textpack")).SequenceEqual(newRemote),
+    "pending attachment across restore preserves both complete packs before fencing upload");
+ }
  // A collaboration checkpoint may acknowledge a newer document revision
  // before file sync has received the binary entry from that same revision.
  var crossedStore=new TextPackStore(Path.Combine(temp,"binary-checkpoint-race"),Path.Combine(temp,"binary-checkpoint-race-device"));

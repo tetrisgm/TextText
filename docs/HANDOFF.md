@@ -23,8 +23,9 @@ Physical six-client receipts on fresh fixtures:
   exact final text and both asset hashes.
 
 Same-entry asset conflict now saves both complete packs before stopping retries
-on Mac and Windows. Mac sync suite (40 tests) and Windows native regression
-suite pass. This has not yet been exercised as a six-client physical conflict.
+on Mac and Windows. Restore while an attachment operation awaits acknowledgement
+follows the same rule. Mac sync suite (41 tests) and Windows native regression
+suite pass. These changes are not installed or physically six-client verified yet.
 
 Next: physical same-entry conflict, whole TextPack and folder
 operations, delete/restore, two-account permissions, and sustained latency and

@@ -546,6 +546,13 @@ public actor LocalVaultSync {
     }
 
     private func syncOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
+        if let pending = state.binaryOutbox?[itemId], !pending.conflicted,
+           !remote.isDeleted, (pending.lifecycle != remote.lifecycle || pending.path != remote.relativePath) {
+            try await preserveBinaryConflict(pending)
+            state.binaryOutbox?[itemId]?.conflicted = true
+            try persist()
+            return false
+        }
         guard !remote.isDeleted, remote.relativePath == path,
               let baseline = state.baselines[itemId], baseline.path == path,
               state.lifecycles?[itemId] == remote.lifecycle,

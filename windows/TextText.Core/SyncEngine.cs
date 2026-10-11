@@ -334,7 +334,15 @@ public sealed class SyncEngine
         var pending=state.BinaryOutbox.FirstOrDefault(x=>x.ItemId==remote.ItemId);
         if(pending is {Conflicted:true})return;
         if(baseline.Lifecycle!=remote.Lifecycle) {
-            if(pending is not null) {state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);}
+            if(pending is not null && local is not null) {
+                var localPack=store.Read(local.Path);
+                if(TextPackStore.Hash(localPack)!=local.Hash)throw new InvalidDataException("Local conflict pack changed during read.");
+                var remotePack=await transport.DownloadAsync(remote.ItemId,ct);
+                if(TextPackStore.Hash(remotePack.Data)!=remotePack.Revision)throw new InvalidDataException("Remote conflict pack changed during download.");
+                store.Preserve(localPack,"binary-conflict-local");
+                store.Preserve(remotePack.Data,"binary-conflict-remote");
+                state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);
+            }
             return;
         }
         if(state.Capabilities?.CanWrite(remote.ItemId,baseline.Path,true)==false)return;
