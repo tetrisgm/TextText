@@ -56,14 +56,26 @@ static class Stress
             if (!created) throw new Exception("Close TextText before running the stress adapter; two native writers must not share its device journal.");
             using var log = new StreamWriter(Path.Combine(session, "events.jsonl")) { AutoFlush = true };
             void Record(object value) => log.WriteLine(JsonSerializer.Serialize(new { utc = DateTimeOffset.UtcNow, value }));
+            using var processLifetime = new ManualResetEventSlim();
+            var keeper = new Thread(() => processLifetime.Wait(TimeSpan.FromMinutes(2))) { IsBackground = false, Name = "TextText stress mailbox lifetime" };
+            keeper.Start();
             var assembly = typeof(MainWindow).Assembly;
             var version = assembly.GetName().Version?.ToString() ?? "0";
             var assemblyHash = Program.Hash(File.ReadAllBytes(assembly.Location));
             Record(new { kind = "start", config.ItemId, config.WorkspaceId, nativeAssemblySha256 = assemblyHash, nativeAssemblyVersion = version,
                 adapter = "production MainWindow + WindowsBridge", mockedTransport = false });
             var app = new Application();
+            app.Exit += (_, args) => Record(new { kind = "dispatcher-exit", args.ApplicationExitCode });
+            app.Dispatcher.ShutdownStarted += (_, _) => Record(new { kind = "dispatcher-shutdown-started" });
             // Keep the mailbox process alive long enough to report close evidence.
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            // The tested editor is disposable. A separate offscreen main window
+            // keeps WPF's Run loop alive after that editor raises Closed.
+            var lifetimeWindow = new Window { ShowInTaskbar = false, ShowActivated = false,
+                WindowStyle = WindowStyle.ToolWindow, Width = 1, Height = 1,
+                Left = -10000, Top = -10000, Opacity = 0 };
+            app.MainWindow = lifetimeWindow;
+            lifetimeWindow.Closed += (_, _) => Record(new { kind = "lifetime-window-closed" });
             var transport = new CollaborationTransportGate();
             var generationMatch = GenerationPattern.Match(Path.GetFileName(Path.TrimEndingDirectorySeparator(session)));
             var generation = generationMatch.Success ? int.Parse(generationMatch.Groups[1].Value) : 1;
@@ -77,7 +89,7 @@ static class Stress
                 var runner = new Runner(window, config, session, generation, transport, Record, $"native-mainwindow/{version}/{assemblyHash[..16]}");
                 try
                 {
-                    await runner.Loop(timeout.Token);
+                    await runner.Loop(timeout.Token).ConfigureAwait(false);
                     exit = runner.Failure is null ? 0 : 1;
                 }
                 catch (Exception error)
@@ -99,11 +111,20 @@ static class Stress
                     File.WriteAllText(Path.Combine(session, "result.json"), JsonSerializer.Serialize(new { ok = runner.Failure is null && flushed, flushed, error = runner.Failure, config.ItemId }));
                     if (!flushed) exit = 1;
                     typeof(MainWindow).GetField("closing", Program.Private)?.SetValue(window, true);
-                    if (window.IsVisible) window.Close();
-                    app.Shutdown();
+                    if (!app.Dispatcher.HasShutdownStarted)
+                        _ = app.Dispatcher.BeginInvoke(() => { if (window.IsVisible) window.Close(); app.Shutdown(); });
+                    else processLifetime.Set();
                 }
             };
-            app.Run(window);
+            // Run an explicit dispatcher lifetime. app.Run(window) can return as
+            // soon as the tested main window closes, before the async mailbox
+            // handler writes its close-probe reply and result receipt.
+            lifetimeWindow.Show();
+            window.Show();
+            Record(new { kind = "windows-shown", lifetimeVisible = lifetimeWindow.IsVisible, mainIsLifetime = ReferenceEquals(app.MainWindow, lifetimeWindow) });
+            app.Run();
+            Record(new { kind = "dispatcher-returned", exit });
+            processLifetime.Set();
             return exit;
         }
         catch (Exception error) { Console.Error.WriteLine(error.Message); return 1; }
@@ -158,7 +179,7 @@ static class Stress
                 if (Failure is not null) reply = new { type = "error", round, message = "Adapter already failed: " + Failure };
                 else
                 {
-                    try { reply = await Handle(type, round, request.RootElement, ct); }
+                    try { reply = await Handle(type, round, request.RootElement, ct).ConfigureAwait(type != "close-probe"); }
                     catch (OperationCanceledException) { throw; }
                     catch (Exception error) { Fail(error.Message); reply = new { type = "error", round, message = error.Message }; }
                 }
@@ -270,7 +291,7 @@ static class Stress
                 {
                     if (!opened) throw new Exception("Windows close probe requires a joined editor.");
                     await RequireSelected(ct);
-                    var result = await CloseProbe(ct);
+                    var result = await CloseProbe(ct).ConfigureAwait(false);
                     log(new { kind = "close-probe", result.closed, result.keepEditingDialog, result.flushed });
                     if (!result.closed || result.keepEditingDialog || !result.flushed)
                         throw new Exception($"Normal editor close failed: closed={result.closed}, keepEditingDialog={result.keepEditingDialog}, flushed={result.flushed}.");
@@ -320,11 +341,15 @@ static class Stress
                     Thread.Sleep(40);
                 }
             }, ct);
-            window.Closed += (_, _) => closed.TrySetResult();
+            window.Closing += (_, args) => log(new { kind = "close-window-closing", args.Cancel });
+            window.Closed += (_, _) => { log(new { kind = "close-window-closed" }); closed.TrySetResult(); log(new { kind = "close-window-completion-set" }); };
+            log(new { kind = "close-window-request" });
             window.Close();
-            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
-            while (!closed.Task.IsCompleted && Volatile.Read(ref sawKeepEditing) == 0 && DateTimeOffset.UtcNow < deadline)
-                await Task.Delay(40, ct);
+            log(new { kind = "close-window-returned" });
+            log(new { kind = "close-probe-wait-enter", completed = closed.Task.IsCompleted });
+            try { await closed.Task.WaitAsync(TimeSpan.FromSeconds(30), ct).ConfigureAwait(false); }
+            catch (TimeoutException) { /* Report the close timeout below. */ }
+            log(new { kind = "close-window-outcome", closed = closed.Task.IsCompleted, keepEditingDialog = Volatile.Read(ref sawKeepEditing) != 0 });
             if (Volatile.Read(ref sawKeepEditing) != 0) { await RecordEditorState("after-dialog"); return (false, true, false); }
             if (!closed.Task.IsCompleted) throw new Exception("Normal editor close did not finish within 30 seconds.");
             // MainWindow only raises Closed after its normal close handler's
