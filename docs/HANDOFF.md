@@ -94,6 +94,8 @@ and the signed-in production browser found that note with the saved body.
   file edits, passed one and five rounds on fresh fixtures, receipts:
   `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-00-38-369Z-56`
   and `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-02-00-583Z-57`.
+  Unicode edits across all six clients passed five rounds with exact text
+  equality: `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-06-34-459Z-58`.
   An earlier setup attempt (seed 51) stopped before edits when the Mac actor
   reopened the previously selected note; the fixture was opened explicitly
   before seed 52. The native file-open event now queues behind an in-progress

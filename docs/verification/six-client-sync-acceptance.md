@@ -114,6 +114,9 @@ seed 57, five rounds, receipt
 `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-02-00-583Z-57`.
 Seed 55 stopped before edits because the disposable Mac test bundle lacked its
 Sparkle rpath; it was rebuilt and verified before seed 56.
+Unicode content (accented Latin, Japanese, and emoji) passed five concurrent
+rounds on all six clients, seed 58:
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-06-34-459Z-58`.
 Overlapping replacement/deletion, native offline/crash recovery, whole-file/attachment and
 folder operations, permissions, and latency distributions still need physical
 campaigns. The historical notes below predate this runner.

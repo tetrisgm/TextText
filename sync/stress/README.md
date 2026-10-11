@@ -35,6 +35,9 @@ underlying TextPack. The runner still checks every exact marker, baseline
 preservation, editor continuity, and identical text. Fresh physical runs of
 one and five rounds passed; see the acceptance contract. This does not cover
 overlapping replacement or deletion.
+Set `pattern` to `"unicode"` for concurrent edits containing accented Latin,
+Japanese, and emoji text. A fresh physical five-round run passed on all six
+clients with exact text equality and durable file checks.
 
 ## Run
 

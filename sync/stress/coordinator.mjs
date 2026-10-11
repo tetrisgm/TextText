@@ -34,7 +34,8 @@ export function planRounds(seed, rounds, pattern = 'append') {
     const edits = ROLES.map((role) => {
       const word = WORDS[Math.floor(rand() * WORDS.length)];
       const n = Math.floor(rand() * 1000);
-      return { role, id: `r${round}-${role}`, op: pattern === 'same-position' && EDITOR_ROLES.includes(role) ? 'insert-start' : 'append', text: `[${role} r${round} ${word}${n}]` };
+      const marker = `[${role} r${round} ${word}${n}]`;
+      return { role, id: `r${round}-${role}`, op: pattern === 'same-position' && EDITOR_ROLES.includes(role) ? 'insert-start' : 'append', text: pattern === 'unicode' ? `🌿 café 東京 ${marker} 🧪` : marker };
     });
     plan.push({ round, edits });
   }
@@ -47,7 +48,7 @@ export function validateConfig(config) {
   if (!MODES.has(config.mode)) fail('mode must be "real" or "simulated"');
   if (!Number.isInteger(config.seed)) fail('seed must be an integer');
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
-  if (config.pattern !== undefined && !['append', 'same-position'].includes(config.pattern)) fail('pattern must be append or same-position');
+  if (config.pattern !== undefined && !['append', 'same-position', 'unicode'].includes(config.pattern)) fail('pattern must be append, same-position, or unicode');
   if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedBaselineHash ?? '')) fail('a zero-round reopen requires expectedBaselineHash');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
   if (config.offline !== undefined) {
@@ -171,7 +172,7 @@ export class Coordinator {
       runId: this.runId, status, failure, mode: this.config.mode,
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real'
-        ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : 'six-client-append-only') : 'none',
+        ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : 'six-client-append-only') : 'none',
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
       attestations: this.attestations, outputDir: this.dir,
     };
