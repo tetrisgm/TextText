@@ -45,6 +45,12 @@ marker exactly once, the original sentence removed, identical hashes, and
 continuous editors. PC CLI seed 70 and Mac CLI seed 71 passed with six-client
 durable reopens. Seeds 66 and 68 exposed the Windows checkpoint and terminal
 newline bugs that the current regressions cover.
+Set `pattern` to `"partial-overlap"` to have the four live editors replace
+`Existing fixture text.` while one direct-file actor replaces only
+`fixture text.` and the other appends. Odd/even seeds switch which machine's
+CLI performs the partial replacement. The expected result retains every
+marker once and removes the union of the original text. This pattern has
+focused unit coverage; a physical pass must be recorded separately.
 
 ## Run
 
