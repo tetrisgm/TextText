@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import {
   validateActorConfig, readPack, canonicalRoot, bodyOf, editIdsOf, validateIdentity, appendToPack,
-  stableRead, applyEdit, observeBody, createActor, sanitizeError, ActorError, TITLE_PREFIX,
+  stableRead, applyEdit, transientInvalidPack, observeBody, createActor, sanitizeError, ActorError, TITLE_PREFIX,
 } from './file-adapter.mjs';
 
 const TITLE = `${TITLE_PREFIX}2026-10-09`;
@@ -164,6 +164,17 @@ test('symlinked fixture is rejected before any read or write', async () => {
   symlinkSync(file, link);
   await assert.rejects(stableRead(link), /symbolic link/);
   await assert.rejects(applyEdit({ file: link, config, text: '[mac-cli r1 lima1]', round: 1, runDir: config.receiptDir }), /symbolic link/);
+});
+
+test('invalid intermediate has a backed-up, byte-identical atomic repair', async () => {
+  const { file, config } = fixture();
+  const before = readFileSync(file);
+  const runDir = join(config.receiptDir, 'invalid'); mkdirSync(runDir);
+  const events = [];
+  await transientInvalidPack({ file, config, round: 1, runDir, holdMs: 10, journal: e => events.push(e) });
+  assert.ok(readFileSync(file).equals(before));
+  assert.ok(readFileSync(join(runDir, 'mac-cli-r1-before-invalid.textpack')).equals(before));
+  assert.deepEqual(events.map(e => e.event), ['invalid-intermediate', 'repaired-intermediate']);
 });
 
 test('observe returns the current body for round 0 and waits for every expected marker', async () => {

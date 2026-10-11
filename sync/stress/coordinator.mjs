@@ -55,6 +55,12 @@ export function validateConfig(config) {
       fail('offline must name mac-web or pc-web and an existing round');
     }
   }
+  if (config.transientInvalid !== undefined) {
+    if (!config.transientInvalid || !['mac-cli', 'pc-cli'].includes(config.transientInvalid.role)
+      || !Number.isInteger(config.transientInvalid.round) || config.transientInvalid.round < 1 || config.transientInvalid.round > config.rounds) {
+      fail('transientInvalid must name mac-cli or pc-cli and an existing round');
+    }
+  }
   const f = config.fixture;
   if (!f || typeof f.workspaceId !== 'string' || !f.workspaceId || typeof f.itemId !== 'string' || !f.itemId) fail('fixture.workspaceId and fixture.itemId are required');
   if (!config.roles || typeof config.roles !== 'object') fail('roles object is required');
@@ -246,6 +252,14 @@ export class Coordinator {
     const ready = this.collect(round, 'ready');
     this.broadcast({ type: 'prepare', round });
     await ready;
+    const invalidRole = this.config.transientInvalid?.round === round ? this.config.transientInvalid.role : null;
+    if (invalidRole) {
+      const pendingRepair = this.collect(round, 'perturb', [invalidRole]);
+      this.adapters.get(invalidRole).send({ type: 'perturb', round });
+      const result = (await pendingRepair).get(invalidRole);
+      if (result.repaired !== true) throw new StressFailure('repair-failed', { round, role: invalidRole });
+      this.record('repaired-intermediate', { round, role: invalidRole });
+    }
     const offlineRole = this.config.offline?.round === round ? this.config.offline.role : null;
     if (offlineRole) await this.setTransport(round, offlineRole, false);
     const pending = this.collect(round, 'applied');                       // all-ready barrier

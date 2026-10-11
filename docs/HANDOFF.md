@@ -75,6 +75,20 @@ and the signed-in production browser found that note with the saved body.
 
 ## Open work
 
+- The real six-client stress runner passed seeds 42 (one round), 43 (five), 44
+  (ten), a six-client restart of 44, Mac-browser offline seed 46, PC-browser
+  offline seed 47, and a restart of 47. Receipts are under
+  `/private/tmp/texttext-six-20261010/results/`; the test contract and runner
+  README list the coverage. Mac CLI invalid/intermediate TextPack seed 49 passed
+  two rounds. PC CLI invalid/intermediate seed 50 **failed**: the Windows native
+  editor left its selected document. Its receipt is
+  `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-29-50-412Z-50`.
+  A candidate Windows inventory fix retains the last valid entry during a
+  temporary invalid ZIP and has a focused regression that distinguishes repair
+  from actual deletion. The PC actor's failure-surface log and physical replay
+  still need inspection; PC SSH is currently resetting connections. Do not
+  count the candidate as physically verified or six-client acceptance complete.
+
 - Automatic six-client coordinator: [runner/protocol](../sync/stress/README.md)
   now provides seeded concurrent append rounds, readiness barriers, exact text
   and baseline preservation checks, editor continuity, bounded child processes,

@@ -46,6 +46,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       return out({ type: 'applied', round: m.round, editId: m.edit.id });
     case 'transport':
       return out({ type: 'transport', round: m.round, online: m.online });
+    case 'perturb':
+      return out({ type: 'perturb', round: m.round, repaired: true });
     case 'observe': {
       observations++;
       if (fault === 'reload' && m.round > 1) reloads += 1;

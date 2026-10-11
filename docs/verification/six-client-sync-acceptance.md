@@ -94,6 +94,13 @@ offline edit and reconnect while the other five clients edited; seed 47 did
 the same for the PC browser and passed a subsequent six-client restart. See
 `docs/HANDOFF.md` for receipt paths and `sync/stress/README.md` for the runner.
 These prove stage 1 append and browser transport-loss slices of stage 3.
+Seed 49 passed two rounds with a temporary invalid Mac CLI TextPack repaired
+while all editors stayed open. Seed 50, the corresponding PC CLI case, failed
+when the Windows native editor lost the selected document; see
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-29-50-412Z-50`.
+The source candidate retains the last valid Windows inventory entry through a
+temporary invalid ZIP and has a local regression. Physical replay is required
+before treating that failure as fixed.
 Overlapping edits, native offline/crash recovery, whole-file/attachment and
 folder operations, permissions, and latency distributions still need physical
 campaigns. The historical notes below predate this runner.

@@ -51,6 +51,16 @@ test('missing roles are rejected before any process starts', () => {
   assert.throws(() => validateConfig({ ...makeConfig(), fixture: {} }), /fixture/);
   assert.throws(() => validateConfig({ ...makeConfig(), rounds: 0 }), /expectedBaselineHash/);
   assert.throws(() => validateConfig({ ...makeConfig(), offline: { role: 'pc-app', round: 1 } }), /offline/);
+  assert.throws(() => validateConfig({ ...makeConfig(), transientInvalid: { role: 'pc-web', round: 1 } }), /transientInvalid/);
+});
+
+test('invalid intermediate is repaired before six concurrent edits', async () => {
+  const config = makeConfig({ rounds: 2 });
+  config.transientInvalid = { role: 'pc-cli', round: 1 };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(lines.filter(x => x.type === 'repaired-intermediate').map(x => [x.role, x.round]), [['pc-cli', 1]]);
 });
 
 test('one browser may edit offline while the other five remain active, then reconnect', async () => {

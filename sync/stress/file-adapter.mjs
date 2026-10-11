@@ -215,6 +215,29 @@ export async function applyEdit({ file, config, text, round, runDir, journal = (
   throw new ActorError('contended', `file changed before replacement ${WRITE_RETRIES} times; original left in place`);
 }
 
+// A dedicated invalid intermediate followed by an atomic repair. The original
+// bytes are backed up first. Never overwrite a different writer's intervening
+// change: if the temporary invalid file is no longer ours, leave the backup for
+// recovery and fail the scenario.
+export async function transientInvalidPack({ file, config, round, runDir, journal = () => {}, holdMs = 500 }) {
+  const before = await stableRead(file);
+  validateIdentity(readPack(before), config);
+  const backup = join(runDir, `${config.role}-r${round}-before-invalid.textpack`);
+  writeFileSync(backup, before, { flag: 'wx' });
+  const invalid = Buffer.from('TextText acceptance: incomplete ZIP\n');
+  const damaged = `${file}.${process.pid}.${Date.now()}.invalid.tmp`;
+  writeFileSync(damaged, invalid, { flag: 'wx' });
+  renameSync(damaged, file);
+  journal({ event: 'invalid-intermediate', round, beforeSha256: sha256(before) });
+  await sleep(holdMs);
+  if (!readFileSync(file).equals(invalid)) throw new ActorError('contended', 'another writer changed the invalid intermediate; backup retained');
+  const repaired = `${file}.${process.pid}.${Date.now()}.repair.tmp`;
+  writeFileSync(repaired, before, { flag: 'wx' });
+  renameSync(repaired, file);
+  validateIdentity(readPack(await stableRead(file)), config);
+  journal({ event: 'repaired-intermediate', round, afterSha256: sha256(before) });
+}
+
 // Read the body until every expected ID is present and several consecutive samples agree, bounded.
 // On timeout the last observation is returned anyway; the coordinator records the mismatch as
 // evidence rather than this actor guessing.
@@ -280,6 +303,11 @@ export function createActor(config, { platform = process.platform, machineId = h
       const result = await applyEdit({ file: config.file, config, text: edit.text, round: m.round, runDir: state.runDir, journal });
       journal({ event: 'applied', round: m.round, editId: edit.id, ...result });
       return { type: 'applied', round: m.round, editId: edit.id };
+    },
+    async perturb(m) {
+      requireRun();
+      await transientInvalidPack({ file: config.file, config, round: m.round, runDir: state.runDir, journal });
+      return { type: 'perturb', round: m.round, repaired: true };
     },
     async observe(m) {
       requireRun();

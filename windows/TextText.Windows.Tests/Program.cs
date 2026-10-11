@@ -77,6 +77,24 @@ try {
         Assert(clock.Elapsed < TimeSpan.FromSeconds(1), "listing with a free gate does not pay the bounded wait");
         Assert(!authoritative.GetProperty("fullAccess").GetBoolean() && !authoritative.GetProperty("items")[0].GetProperty("canEditContent").GetBoolean(), "the refreshed listing carries the authoritative permissions");
         Assert(new TextPackStore(root, state).Describe(local.Path).Hash == local.Hash, "the local file is untouched");
+
+        // An external writer may briefly replace a TextPack with incomplete
+        // bytes before its atomic repair. The open editor must keep its known
+        // identity through that interval, then observe the repaired file.
+        var fullPath = Path.Combine(root, local.Path.Replace('/', Path.DirectorySeparatorChar));
+        var original = File.ReadAllBytes(fullPath);
+        File.WriteAllText(fullPath, "incomplete ZIP");
+        await Task.Delay(350, deadline.Token);
+        var intermediate = Json(await bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
+        Assert(intermediate.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("itemId").GetString() == "startup-1"), "invalid intermediate keeps the last valid item in the live listing");
+        File.WriteAllBytes(fullPath, original);
+        await Task.Delay(350, deadline.Token);
+        var repaired = Json(await bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
+        Assert(repaired.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("itemId").GetString() == "startup-1"), "repaired file remains the same item");
+        File.Delete(fullPath);
+        await Task.Delay(350, deadline.Token);
+        var deleted = Json(await bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
+        Assert(!deleted.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("itemId").GetString() == "startup-1"), "actual deletion removes the item from the listing");
     } finally { bridge.Dispose(); await Task.Delay(200); }
 } finally { try { Directory.Delete(temp, true); } catch { /* best effort */ } }
 Console.WriteLine(failures == 0 ? "All Windows bridge startup tests passed." : failures + " failure(s).");

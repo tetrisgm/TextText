@@ -26,6 +26,11 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     readonly System.Threading.Timer notification;
     readonly SemaphoreSlim requests = new(1, 1);
     WorkspaceInventory? inventory;
+    // Keep the last valid identity while a file is briefly unreadable during an
+    // external atomic replacement. A real deletion has no scan error and is not
+    // retained. This prevents a live editor from being removed for a repairable
+    // intermediate ZIP.
+    WorkspaceInventory? lastKnownInventory;
     long inventoryVersion;
     string? lastStatus;
     int permissionsChanged;
@@ -71,6 +76,15 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     WorkspaceInventory Inventory() {
         var cached=Volatile.Read(ref inventory);if(cached is not null)return cached;
         var version=Volatile.Read(ref inventoryVersion);var scanned=files.ScanInventory();
+        var prior=Volatile.Read(ref lastKnownInventory);
+        if(prior is not null && files.LastScanErrors.Count>0) {
+            var errors=files.LastScanErrors.Where(error=>error.Reason=="File is invalid or temporarily unavailable. Its contents have been preserved.")
+                .Select(error=>error.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var retained=prior.Files.Where(file=>errors.Contains(file.Path) && !scanned.Files.Any(current=>current.ItemId==file.ItemId))
+                .Where(file=>{try{return File.Exists(files.Resolve(file.Path));}catch{return false;}}).ToArray();
+            if(retained.Length>0) scanned=new WorkspaceInventory(scanned.Files.Concat(retained).ToArray(),scanned.Folders);
+        }
+        Volatile.Write(ref lastKnownInventory,scanned);
         Volatile.Write(ref inventory,scanned);
         if(version!=Volatile.Read(ref inventoryVersion))Volatile.Write(ref inventory,null);
         return scanned;

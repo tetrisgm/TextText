@@ -23,6 +23,12 @@ The selected browser goes offline after the readiness barrier, edits through
 its real editor while the other five clients edit, then reconnects before
 convergence. Both platform-specific physical runs passed. Native transport
 loss and pending-edit crash recovery remain open.
+Set `transientInvalid` to `{"role":"mac-cli","round":1}` or
+`{"role":"pc-cli","round":1}` to test a brief invalid TextPack write and
+atomic repair while all six editors stay open. The Mac CLI physical run passed.
+The PC CLI run failed when the Windows editor left its selected file; the
+candidate Windows fix has a focused local test but still needs a physical
+replay. The failing receipt is linked in the acceptance contract.
 
 ## Run
 
