@@ -6,16 +6,14 @@ child process per role over JSONL, runs N rounds, and stops at the first
 failure with evidence preserved. It is a command, not a service: no persistent watchers, schedules or hooks are installed. Adapters must clean
 up their own remote children; an unresponsive remote actor is a failed run.
 
-**Status:** the coordinator and all six real-client adapters are implemented.
-The Mac actor uses a private test build of `LocalVaultWindowController`; the
-Windows actor uses the production `MainWindow` in an interactive desktop task;
-Chrome and Edge use the real hosted editor; CLI actors edit the actual TextPack
-file. The adapters never replace the installed app or bypass its sync engine.
-Physical campaigns on October 10 passed one, five, and ten rounds on fresh
-fixtures. This is acceptance evidence for simultaneous append and editor
-continuity. A zero-round six-client reopen against the ten-round final hash
-also passed after the live actors exited. Native offline, crash, deletion, replacement, move, and latency scenarios
-remain outside this runner's current coverage; see
+**Status:** all six real-client adapters run against the installed platform
+engines, real browsers, and actual TextPack files. Physical append, browser
+offline, invalid intermediate ZIP, same-position insertion, Unicode, independent
+EOF replacement/append, and Mac CLI same-span replacement rounds have passed.
+A reciprocal PC CLI same-span replacement round failed on October 11: the
+Windows editor entered an error state and the PC CLI file diverged. Preserve
+that receipt and diagnose it before claiming replacement acceptance. Native
+offline/crash, partial overlap/deletion, moves, and latency remain open; see
 `docs/verification/six-client-sync-acceptance.md`.
 Targeted browser transport loss is now covered: set `offline` to
 `{"role":"mac-web","round":1}` or `{"role":"pc-web","round":1}`.
@@ -38,6 +36,15 @@ overlapping replacement or deletion.
 Set `pattern` to `"unicode"` for concurrent edits containing accented Latin,
 Japanese, and emoji text. A fresh physical five-round run passed on all six
 clients with exact text equality and durable file checks.
+
+Set `pattern` to `"overlap-replace"` for four live editors replacing the
+existing fixture sentence while both CLIs append. Set `pattern` to
+`"file-overlap"` for the same four editors plus one CLI replacing that exact
+sentence in the TextPack and the other CLI appending. Odd seeds select the Mac
+CLI for replacement; even seeds select the PC CLI. The runner requires every
+marker exactly once, the original sentence removed, identical hashes, and
+continuous editors. Mac CLI seed 65 and its six-client reopen passed. PC CLI
+seed 66 failed after editing; use a fresh fixture for diagnosis and replay.
 
 ## Run
 

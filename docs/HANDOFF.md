@@ -1,51 +1,35 @@
 # TextText handoff
 
-## Current verification (October 11)
+## Current work (October 11)
 
-Source `052c0ab7` is on `origin/main`. Its narrow independent EOF
-replacement/append merge fix passed the full Mac sync gate under Node 22 and
-the clean Windows build gate. Mac build 1244 and the matching Windows candidate
-are installed locally; no public release or website deployment was made.
-Before installation, the pending seed-63 Mac edit was exported to
-`~/Downloads/TextText overlap recovery 1261.json` and saved as a separate
-recovered TextPack. The PC checkpoint was copied to
-`C:\Users\Shokunin\dev\texttext-recovery-1261\pc`.
+Source `a61a86c8` is on `origin/main`. The exact-source Node 22 sync gate
+passed 891 core tests plus native checks; the Windows clean build passed its
+native, shared client, TypeScript, UI, and desktop smoke gates. Mac 0.204
+build 1245 and the matching Windows candidate are installed locally. The Mac
+app reopened the signed-in iCloud workspace and the six-client note; the
+Windows installed executable launched and responded. Neither a public Mac
+release nor an Oracle website deployment was made.
 
-Fresh physical six-client overlap replacement seed 63 passed one round with
-exact convergence and all editors retained:
-`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-07-11-624Z-63`.
-All six clients then reopened the exact final hash and passed:
-`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-08-07-908Z-63`.
-These receipts close the reproduced independent EOF conflict. Other same-span
-replacement/deletion, native offline and crash recovery, whole TextPack/assets,
-folder operations, permission changes, and sustained latency remain open in
+Two physical six-client replacement cases passed with all four live editors
+retained and identical file hashes: independent EOF replacement plus CLI append
+(seed 63), and exact same-span replacement by a Mac CLI and four editors
+(seed 65). Each passed a six-client durable reopen. Receipts are linked in
 [the acceptance contract](verification/six-client-sync-acceptance.md).
 
-## Current sync failure (October 11)
-
-The six-client runner now has a one-round `overlap-replace` pattern: four
-real editors select the same existing sentence before the edit barrier, while
-both direct-file actors append. Focused harness tests pass. Physical seed 62
-failed; receipt:
-`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T10-33-38-658Z-62`.
-The Windows native editor accepted its replacement, then reloaded its editor,
-showed only its own marker, lost its active shared document, and failed final
-flush. The Mac TextPack contained four of six markers at inspection. This is
-not a passing acceptance result. Keep the fixture and recovery journals for
-diagnosis. Next trace the Windows native checkpoint's `local_changed` path and
-the shared client's overlapping replacement policy before another live run.
-Fresh-fixture seed 63 failed earlier on the Mac native editor with the same
-recovery state; receipt `stress-2026-10-11T10-41-00-659Z-63`. A focused
-regression reproduced one root cause: replacing the file's final sentence in
-the live editor while an agent appends at EOF was rejected as a boundary
-conflict. `src/sync/engine/reconcile.ts` now merges that specific independent
-pair; 95 relevant reconciliation/collaboration tests pass. This is source-only
-and requires later cross-client verification against builds carrying the fix.
-Current `reconcileDocumentSnapshots` refuses overlapping replacements by
-design; `src/local-vault/collaboration-client.test.ts` asserts retirement in
-that case. Product work must decide and implement a lossless live merge for
-this case rather than relaxing the stress assertion. Neither installed app nor
-the Oracle website was updated for this test.
+The reciprocal fresh fixture (seed 66) exposed a remaining Windows path
+failure: the PC CLI replaced the same baseline sentence while the PC native
+editor was open. That editor entered `collaborationState=error`, lost editability,
+and the PC CLI file held only its own marker while the other four clients
+converged separately. Preserve the failed fixture, native journals, and receipt
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-36-04-727Z-66`.
+The first two attempts for seed 66 stopped before editing because the Mac actor
+path was absent, then a native session directory was reused. Those are setup
+failures, not acceptance evidence. Direct SSH to the PC began resetting after
+the failed physical run; retry access before inspecting the native event log.
+Do not rerun on this fixture. Diagnose and fix the PC checkpoint/file collision,
+then use a new fixture and repeat both direct-file sides. Native offline/crash
+recovery, partial overlapping replacement/deletion, whole TextPack/assets,
+folder operations, permissions, and sustained latency remain open.
 
 ## Current status (October 10, late)
 

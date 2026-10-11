@@ -124,6 +124,17 @@ fixture with Mac 1244 and the matching Windows candidate, seed 63:
 `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-07-11-624Z-63`.
 A six-client durable reopen passed its exact final hash:
 `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-08-07-908Z-63`.
+Exact same-span replacement with the Mac CLI changing the file passed on
+a fresh fixture with Mac 1245 and the matching Windows candidate, seed 65:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-28-30-763Z-65`.
+All six reopened its final hash:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-29-05-836Z-65`.
+The reciprocal seed 66 (Windows CLI changing that span) failed after edits:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-36-04-727Z-66`.
+The PC native editor became uneditable with `collaborationState=error`;
+the PC CLI file retained only its own marker, while the other four clients
+converged separately. This is an open regression, not a passing acceptance.
+The first two seed-66 attempts failed during setup and do not count.
 The earlier failed seeds 62 and 63 remain preserved as regression evidence;
 the passing run used a new fixture and builds carrying `052c0ab7`.
 Same-span replacement/deletion, native offline/crash recovery, whole-file/attachment and
