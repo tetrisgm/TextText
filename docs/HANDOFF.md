@@ -2,7 +2,7 @@
 
 ## Current work (October 11)
 
-Latest source `d1a50853` is on `origin/main`. Its exact-source sync gate passed
+Behavioral candidate `d1a50853` is on `origin/main`. Its exact-source sync gate passed
 901 core tests and all native sync checks; TypeScript passed. Signed local Mac
 0.204 build 1250 is installed and launched. A private matching Mac stress
 actor and untouched fixture 1275 are ready in
@@ -16,6 +16,9 @@ LiveAcceptance assembly, then run fixture 1275 and a fresh-session durable
 reopen. Windows currently has the prior `c2ba73e7` candidate installed.
 No website deployment or public Mac release occurred. Preserve failed fixtures
 and recovery journals.
+The later `f38fd0d5` commit adds a test-only exact-marker Yjs/undo regression;
+its 79-client-test suite and TypeScript check passed. It does not change either
+candidate's runtime code.
 
 ## Earlier October 11 work
 
