@@ -62,6 +62,16 @@ public actor LocalVaultSync {
         var paths: [String]
         var remotePath: String? = nil
     }
+    private struct BinaryPending: Codable {
+        var itemId: String
+        var path: String
+        var entryPath: String
+        var expectedHash: String?
+        var lifecycle: String?
+        var payloadHash: String?
+        var operationId: String
+        var conflicted: Bool = false
+    }
     private struct State: Codable {
         var binding: LocalVaultSyncBinding
         var baselines: [String: Baseline] = [:]
@@ -72,6 +82,9 @@ public actor LocalVaultSync {
         var sharedDownloads: [String: Bool]? = nil
         var lifecycles: [String: String]? = nil
         var managedFolders: [String]? = nil
+        // Optional for journals written by earlier app versions.
+        var binaryBaselines: [String: [String: String]]? = nil
+        var binaryOutbox: [String: BinaryPending]? = nil
     }
     private let root: URL
     private let directory: URL
@@ -103,6 +116,15 @@ public actor LocalVaultSync {
                 }
                 _ = try LocalVaultDocumentStore(root: self.root).url(for: pending.path)
                 if let newPath = pending.newPath { _ = try LocalVaultDocumentStore(root: self.root).url(for: newPath) }
+            }
+            for pending in state.binaryOutbox?.values ?? Dictionary<String, BinaryPending>().values {
+                guard UUID(uuidString: pending.operationId) != nil,
+                      pending.entryPath.hasPrefix("assets/"),
+                      pending.entryPath.utf8.count <= 512,
+                      pending.payloadHash == nil || pending.payloadHash!.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else {
+                    throw LocalVaultSyncFailure.invalidResponse
+                }
+                _ = try LocalVaultDocumentStore(root: self.root).url(for: pending.path)
             }
         } else {
             state = State(binding: binding)
@@ -166,6 +188,13 @@ public actor LocalVaultSync {
             guard state.outbox[itemId] == nil, state.conflicts[itemId] == nil else { throw LocalVaultSyncFailure.busy }
         }
         let session = SharedSession(token: UUID().uuidString, path: path, hash: document.hash)
+        if state.binaryBaselines?[itemId] == nil,
+           state.baselines[itemId]?.path == path,
+           state.baselines[itemId]?.localHash == document.hash {
+            if state.binaryBaselines == nil { state.binaryBaselines = [:] }
+            state.binaryBaselines?[itemId] = try binaryAssets(path: path).mapValues { TextTextStableDigest.sha256Hex($0) }
+            try persist()
+        }
         sharedSessions[itemId] = session
         return LocalVaultSharedSession(sessionToken: session.token, acknowledgedRevision: checkpoint?.acknowledgedRevision ?? state.baselines[itemId]!.revision, document: document, checkpoint: checkpoint)
     }
@@ -453,6 +482,92 @@ public actor LocalVaultSync {
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 64 * 1024 * 1024 else { throw LocalVaultDocumentStore.Failure.tooLarge }
         return TextTextStableDigest.sha256Hex(try Data(contentsOf: url))
+    }
+    private func binaryAssets(path: String) throws -> [String: Data] {
+        let url = try LocalVaultDocumentStore(root: root).url(for: path)
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= 64 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
+        let archive = try Archive(data: Data(contentsOf: url), accessMode: .read)
+        var result: [String: Data] = [:], expanded: UInt64 = 0, count = 0
+        for entry in archive {
+            count += 1; expanded += entry.uncompressedSize
+            guard count <= 10_000, expanded <= 64 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
+            let components = entry.path.split(separator: "/")
+            guard !components.contains(where: { $0 == ".." || $0 == "." }) else { throw LocalVaultSyncFailure.invalidResponse }
+            guard let assetsIndex = components.firstIndex(of: "assets"), assetsIndex < components.count - 1 else { continue }
+            let entryPath = components[assetsIndex...].joined(separator: "/")
+            guard entryPath.utf8.count <= 512, result[entryPath] == nil,
+                  entry.uncompressedSize <= 16 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
+            var bytes = Data()
+            _ = try archive.extract(entry) { bytes.append($0) }
+            guard bytes.count <= 16 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
+            result[entryPath] = bytes
+        }
+        return result
+    }
+    private func binaryPayload(_ operationId: String) -> URL {
+        directory.appendingPathComponent("outbox/\(operationId).asset")
+    }
+    private func stagedBinaryBytes(_ pending: BinaryPending) throws -> Data? {
+        guard let expected = pending.payloadHash else { return nil }
+        let url = binaryPayload(pending.operationId)
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= 16 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
+        let bytes = try Data(contentsOf: url)
+        guard TextTextStableDigest.sha256Hex(bytes) == expected else { throw LocalVaultSyncFailure.invalidResponse }
+        return bytes
+    }
+
+    private func syncOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
+        guard !remote.isDeleted, remote.relativePath == path,
+              let baseline = state.baselines[itemId], baseline.path == path,
+              state.lifecycles?[itemId] == remote.lifecycle,
+              await transport.canWrite(itemId: itemId, path: path, existing: true) else { return false }
+        var pending = state.binaryOutbox?[itemId]
+        if pending?.conflicted == true { return false }
+        if pending == nil {
+            guard let hashes = state.binaryBaselines?[itemId] else { return false }
+            let url = try LocalVaultDocumentStore(root: root).url(for: path)
+            guard FileManager.default.fileExists(atPath: url.path) else { return false }
+            let assets = try binaryAssets(path: path)
+            let changed = Set(hashes.keys).union(assets.keys).sorted().first {
+                hashes[$0] != assets[$0].map { TextTextStableDigest.sha256Hex($0) }
+            }
+            guard let entry = changed else { return false }
+            let operationId = UUID().uuidString.lowercased()
+            let bytes = assets[entry]
+            if let bytes { try writeVaultSyncJournal(bytes, to: binaryPayload(operationId)) }
+            pending = BinaryPending(itemId: itemId, path: path, entryPath: entry,
+                                    expectedHash: hashes[entry], lifecycle: remote.lifecycle,
+                                    payloadHash: bytes.map { TextTextStableDigest.sha256Hex($0) }, operationId: operationId)
+            if state.binaryOutbox == nil { state.binaryOutbox = [:] }
+            state.binaryOutbox?[itemId] = pending
+            try persist() // Exact bytes and operation ID precede the request.
+        }
+        guard let pending, pending.lifecycle == remote.lifecycle, pending.path == path else {
+            if state.binaryOutbox?[itemId] != nil {
+                state.binaryOutbox?[itemId]?.conflicted = true; try persist()
+            }
+            return false
+        }
+        do {
+            let bytes = try stagedBinaryBytes(pending)
+            let revision = try await transport.binaryPatch(itemId: itemId, operationId: pending.operationId,
+                entryPath: pending.entryPath, expectedHash: pending.expectedHash,
+                expectedLifecycle: pending.lifecycle, bytes: bytes)
+            if state.binaryBaselines == nil { state.binaryBaselines = [:] }
+            if bytes == nil { state.binaryBaselines?[itemId]?.removeValue(forKey: pending.entryPath) }
+            else { state.binaryBaselines?[itemId, default: [:]][pending.entryPath] = TextTextStableDigest.sha256Hex(bytes!) }
+            if state.baselines[itemId]?.path == path { state.baselines[itemId]?.revision = revision }
+            state.binaryOutbox?.removeValue(forKey: itemId)
+            try persist()
+            if pending.payloadHash != nil { try? FileManager.default.removeItem(at: binaryPayload(pending.operationId)) }
+            return true
+        } catch LocalVaultSyncFailure.conflict {
+            state.binaryOutbox?[itemId]?.conflicted = true
+            try persist() // The local archive and exact unsent bytes remain available.
+            return false
+        }
     }
     private func validate(_ pack: LocalVaultRemotePack, itemId: String, path: String) throws {
         guard pack.relativePath == path, pack.data.count <= 64 * 1024 * 1024,
@@ -786,6 +901,16 @@ public actor LocalVaultSync {
             if !item.isDeleted, !remotePaths.insert(item.relativePath).inserted { throw LocalVaultSyncFailure.invalidResponse }
             remoteByID[item.itemId] = item
         }
+        // A lost reply can outlive the editor and the process. Replay the exact
+        // durable binary operation before ordinary file reconciliation.
+        for pending in (state.binaryOutbox ?? [:]).values.sorted(by: { $0.path < $1.path }) where !pending.conflicted {
+            guard let remote = remoteByID[pending.itemId] else { continue }
+            do {
+                if try await syncOpenBinary(itemId: pending.itemId, path: pending.path, remote: remote) {
+                    report.uploaded += 1; report.hasMore = true
+                }
+            } catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
+        }
         // A restore is a new lifecycle. Old device deletion intents must not
         // delete it again, and old edits remain recoverable conflicts.
         for remote in manifest where !remote.isDeleted && remote.lifecycle != nil {
@@ -913,6 +1038,12 @@ public actor LocalVaultSync {
                         } catch LocalVaultSyncFailure.conflict {
                             report.hasMore = true
                         }
+                    }
+                    if let remote = remoteByID[id],
+                       let followed = try followedSharedPath(itemId: id),
+                       try await syncOpenBinary(itemId: id, path: followed.path, remote: remote) {
+                        report.uploaded += 1
+                        report.hasMore = true
                     }
                     continue
                 }

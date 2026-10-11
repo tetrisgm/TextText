@@ -140,6 +140,15 @@ final class LocalVaultSyncTests: XCTestCase {
             assets: [], sourceURL: nil, in: temporary)
         return try Data(contentsOf: TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: temporary))
     }
+    private func withAsset(_ pack: Data, bytes: Data) throws -> Data {
+        let archive = try Archive(data: pack, accessMode: .update)
+        if let old = archive["assets/data.txt"] { try archive.remove(old) }
+        let source = root.appendingPathComponent(".asset-\(UUID().uuidString)")
+        try bytes.write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+        try archive.addEntry(with: "assets/data.txt", fileURL: source, compressionMethod: .deflate)
+        return try XCTUnwrap(archive.data)
+    }
     private func putLocal(_ data: Data) throws {
         let url = root.appendingPathComponent(path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -717,6 +726,36 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(after, before)
     }
 
+    func testOpenEditorSendsDirectAssetEditAndReplaysLostReplyAfterRestart() async throws {
+        let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        let session = try await sync.beginSharedEditing(itemId: itemId, path: path,
+            expectedHash: TextTextStableDigest.sha256Hex(original))
+        try putLocal(withAsset(original, bytes: Data("second".utf8)))
+        await transport.loseNextBinaryReply()
+        let interrupted = try await sync.sync()
+        XCTAssertEqual(interrupted.errors.count, 1)
+        let firstRequests = await transport.binaryRequests()
+        XCTAssertEqual(firstRequests.count, 1)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        XCTAssertNotNil((state["binaryOutbox"] as? [String: Any])?[itemId])
+        let restarted = try engine(transport)
+        let replay = try await restarted.sync()
+        XCTAssertTrue(replay.errors.isEmpty, "\(replay.errors)")
+        let requests = await transport.binaryRequests()
+        XCTAssertEqual(requests.count, 2)
+        let first = try XCTUnwrap(requests.first)
+        let second = try XCTUnwrap(requests.dropFirst().first)
+        XCTAssertEqual(first.operationId, second.operationId)
+        XCTAssertEqual(first.bytes, Data("second".utf8))
+        XCTAssertEqual(first.expectedHash, TextTextStableDigest.sha256Hex(Data("first".utf8)))
+        try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
+
     func testRemoteDeletionCannotEraseAnOfflineEdit() async throws {
         let original = try pack("Initial")
         let edited = try pack("Offline edit")
@@ -782,6 +821,17 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     private var failBeforeCommit = false
     func failNextUploadBeforeCommit() { failBeforeCommit = true }
     private var loseReply = false
+    private var loseBinaryReply = false
+    private var binaryTrace: [(operationId: String, expectedHash: String?, bytes: Data?)] = []
+    func loseNextBinaryReply() { loseBinaryReply = true }
+    func binaryRequests() -> [(operationId: String, expectedHash: String?, bytes: Data?)] { binaryTrace }
+    func binaryPatch(itemId: String, operationId: String, entryPath: String, expectedHash: String?, expectedLifecycle: String?, bytes: Data?) throws -> String {
+        binaryTrace.append((operationId, expectedHash, bytes))
+        guard entryPath == "assets/data.txt", items[itemId] != nil else { throw LocalVaultSyncFailure.invalidResponse }
+        let revision = TextTextStableDigest.sha256Hex(Data((operationId + "binary").utf8))
+        if loseBinaryReply { loseBinaryReply = false; throw URLError(.networkConnectionLost) }
+        return revision
+    }
     private var merged: Data?
     func set(itemId: String, path: String, data: Data) {
         items[itemId] = .init(data: data, relativePath: path, revision: TextTextStableDigest.sha256Hex(data))
