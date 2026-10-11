@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { flushForNavigation } from "./navigation-flush";
+import { flushForNavigation, flushNativeForNavigation } from "./navigation-flush";
 
 describe("web vault navigation flush", () => {
   it("leaves a clean editor without a save or listing refresh", async () => {
@@ -21,6 +21,25 @@ describe("web vault navigation flush", () => {
     const changed = vi.fn();
     expect(await flushForNavigation({ hasPendingChanges: true, flush: async () => false }, changed)).toBe(false);
     expect(await flushForNavigation({ hasPendingChanges: true, flush: async () => true }, changed)).toBe(false);
+    expect(changed).not.toHaveBeenCalled();
+  });
+});
+
+describe("native file navigation flush", () => {
+  it("closes after the local checkpoint while cloud acknowledgement is stalled", async () => {
+    const changed = vi.fn();
+    const upload = new Promise<boolean>(() => {});
+    const client = { flushLocal: vi.fn(async () => true), flush: vi.fn(() => upload), hasPendingChanges: true };
+    expect(await flushNativeForNavigation(client, changed)).toBe(true);
+    expect(client.flushLocal).toHaveBeenCalledOnce();
+    expect(client.flush).not.toHaveBeenCalled();
+    expect(client.hasPendingChanges).toBe(true);
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the editor open if the local checkpoint fails", async () => {
+    const changed = vi.fn();
+    expect(await flushNativeForNavigation({ flushLocal: async () => false }, changed)).toBe(false);
     expect(changed).not.toHaveBeenCalled();
   });
 });

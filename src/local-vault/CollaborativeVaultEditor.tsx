@@ -21,7 +21,7 @@ import { VaultStoryDisplay } from "./VaultStoryDisplay";
 import { ArticleCapture } from "./ArticleCapture";
 import { articleSource } from "@/lib/vault/article-capture";
 import { WorkspaceTypeLibrary } from "./LocalTemplateLibrary";
-import { flushForNavigation } from "./navigation-flush";
+import { flushForNavigation, flushNativeForNavigation } from "./navigation-flush";
 import { DetachedFileSaveProof } from "./detached-file-save";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { queueArticleEnrichment } from "./article-enrichment";
@@ -301,6 +301,12 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     const shared = clientRef.current;
     if (!shared) return Boolean(config.localFiles && waitingForExternalSync && !nativeSessionRef.current && detachedSaveRef.current.matches(file.current));
     if (navigation && !config.localFiles) return flushForNavigation(shared, onChanged);
+    if (navigation && config.localFiles) {
+      // Closing or changing files only requires the durable local TextPack and
+      // journal. Remote upload remains queued; a slow connection must not keep
+      // a locally saved editor open behind the native close dialog.
+      return flushNativeForNavigation(shared, onChanged);
+    }
     if (config.localFiles) {
       if (navigator.onLine && shared.hasPendingChanges) await shared.flush();
       if (!await shared.flushLocal()) return false;

@@ -248,7 +248,8 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
                 Save(System.IO.Path.Combine(directory,"intent.json"),intent);return Finish(intent,directory);
             });
             // Never wait for the sync gate while holding the filesystem lock.
-            if(acknowledgedDirectory!=null){await sync.AcknowledgeCheckpointAsync(session.ItemId,session.Path,result.Hash,checkpoint.AcknowledgedRevision,ct);File.Delete(System.IO.Path.Combine(acknowledgedDirectory,"acknowledge.json"));}
+            if(acknowledgedDirectory!=null&&await sync.TryAcknowledgeCheckpointAsync(session.ItemId,session.Path,result.Hash,checkpoint.AcknowledgedRevision,ct))
+                File.Delete(System.IO.Path.Combine(acknowledgedDirectory,"acknowledge.json"));
             return result;
         }finally{gate.Release();}
     }

@@ -21,7 +21,10 @@ static class Stress
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr state);
+    [DllImport("user32.dll")] static extern bool EnumThreadWindows(uint threadId, EnumWindowsCallback callback, IntPtr state);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr dialog, int id);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     delegate bool EnumWindowsCallback(IntPtr window, IntPtr state);
 
@@ -292,16 +295,15 @@ static class Stress
             await RecordEditorState("before");
             // Observe the native modal dialog from a worker because MessageBox
             // runs its own modal loop and can block dispatcher timers.
+            var uiThread = GetWindowThreadProcessId(new System.Windows.Interop.WindowInteropHelper(window).Handle, out _);
             _ = Task.Run(() =>
             {
                 while (!closed.Task.IsCompleted && !ct.IsCancellationRequested)
                 {
                     IntPtr dialog = IntPtr.Zero;
-                    EnumWindows((handle, _) =>
+                    EnumThreadWindows(uiThread, (handle, _) =>
                     {
                         if (!IsWindowVisible(handle)) return true;
-                        GetWindowThreadProcessId(handle, out var processId);
-                        if (processId != Environment.ProcessId) return true;
                         var title = new StringBuilder(256);
                         GetWindowText(handle, title, title.Capacity);
                         if (title.ToString() == "Keep editing") { dialog = handle; return false; }
@@ -310,7 +312,9 @@ static class Stress
                     if (dialog != IntPtr.Zero)
                     {
                         Interlocked.Exchange(ref sawKeepEditing, 1);
-                        SendMessageTimeout(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero, 0x0002, 1000, out _);
+                        var button = GetDlgItem(dialog, 1);
+                        SendMessageTimeout(dialog, 0x0111, new IntPtr(1), button, 0x0002, 1000, out _);
+                        PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero);
                         return;
                     }
                     Thread.Sleep(40);

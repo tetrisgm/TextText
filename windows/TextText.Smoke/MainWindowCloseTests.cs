@@ -145,6 +145,13 @@ static class MainWindowCloseTests
             await Until(()=>Task.FromResult(Volatile.Read(ref observedDialog)==1&&!(bool)Field("transitioning").GetValue(failure.Window)!),ct);
             Check(Volatile.Read(ref observedDialog)==1,"actual MainWindow handles failed renderer flush",checks);
             Check(!closed&&failure.Window.IsVisible&&failure.View.IsEnabled,"failed flush preserves open usable window",checks);
+            Interlocked.Exchange(ref observedDialog,0);
+            await failure.View.ExecuteScriptAsync("window.texttextFlushForSignOut=()=>new Promise(()=>{});");
+            failure.Window.Close();
+            var hangDeadline=DateTimeOffset.UtcNow.AddSeconds(22);
+            while((Volatile.Read(ref observedDialog)==0||(bool)Field("transitioning").GetValue(failure.Window)!)&&DateTimeOffset.UtcNow<hangDeadline)await Task.Delay(50,ct);
+            Check(Volatile.Read(ref observedDialog)==1,"never-settling editor flush returns to an actionable dialog",checks);
+            Check(!closed&&failure.Window.IsVisible,"stalled renderer cannot close an unconfirmed editor",checks);
         }finally{dismiss.Change(Timeout.Infinite,Timeout.Infinite);if(failure.Window.IsVisible)ForceClose(failure.Window);}
         var activationRoot=Path.Combine(root,"activation");
         var activation=await Create(activationRoot,ct);

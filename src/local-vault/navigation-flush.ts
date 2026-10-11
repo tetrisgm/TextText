@@ -7,3 +7,10 @@ export async function flushForNavigation(client: { readonly hasPendingChanges: b
   if (hadPendingChanges) onChanged();
   return true;
 }
+
+/** A native file may close once its current projection and journal are durable on disk. */
+export async function flushNativeForNavigation(client: { flushLocal: () => Promise<boolean> }, onChanged: () => void): Promise<boolean> {
+  if (!await client.flushLocal()) return false;
+  onChanged();
+  return true;
+}

@@ -54,7 +54,18 @@ public sealed class SyncEngine
     sealed class Fence(SyncEngine owner,string id):IDisposable {bool disposed;public void Dispose(){lock(owner.collaborating){if(!disposed){owner.collaborating.Remove(id);disposed=true;}}}}
     bool IsEditing(string id){lock(collaborating)return collaborating.Contains(id)||SharedEditingStore.HasProtectedState(store.StateDirectory,id);}
     public async Task AcknowledgeCheckpointAsync(string itemId,string path,string hash,string revision,CancellationToken ct=default) {
-        await gate.WaitAsync(ct);try {
+        await gate.WaitAsync(ct);try { AcknowledgeCheckpointState(itemId,path,hash,revision); }
+        finally{gate.Release();}
+    }
+    // A local checkpoint is already durable before this is called. If a remote
+    // sync pass owns the gate, its acknowledge.json is replayed by SyncAsync;
+    // the editor must not wait for a network request just to finish a save.
+    public async Task<bool> TryAcknowledgeCheckpointAsync(string itemId,string path,string hash,string revision,CancellationToken ct=default) {
+        if(!await gate.WaitAsync(0,ct))return false;
+        try { AcknowledgeCheckpointState(itemId,path,hash,revision);return true; }
+        finally{gate.Release();}
+    }
+    void AcknowledgeCheckpointState(string itemId,string path,string hash,string revision) {
             if(!collaborating.Contains(itemId))throw new InvalidOperationException("An active collaboration fence is required.");
             var state=Load();
             var candidates=new[]{state.Items.GetValueOrDefault(itemId)?.Path,path}.Where(value=>value!=null).Distinct().ToArray();
@@ -67,7 +78,6 @@ public sealed class SyncEngine
             if(current==null)throw new FileChangedException();path=current.Path;
             if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file changes must synchronize before joining collaboration.");
             state.Items[itemId]=new(path,hash,revision,Lifecycle:state.Items.GetValueOrDefault(itemId)?.Lifecycle);Save(state);
-        }finally{gate.Release();}
     }
     public async Task ReconcileRestoredAsync(string itemId,string path,string lifecycle,CancellationToken ct=default) {
         await SyncAsync(ct);await gate.WaitAsync(ct);try {
