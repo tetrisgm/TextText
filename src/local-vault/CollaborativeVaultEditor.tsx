@@ -138,8 +138,10 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     let stopped = false;
     let shared: FileCollaborationClient | null = null;
     let native: NativeSharedSession | null = null;
-    const refreshRemoteAssets = () => {
+    let assetRetry: ReturnType<typeof setTimeout> | null = null;
+    const refreshRemoteAssets = (attempt = 0) => {
       if (config.localFiles) return; // Native file-change events carry the materialized pack.
+      if (assetRetry) { clearTimeout(assetRetry); assetRetry = null; }
       const request = ++assetRefreshGeneration.current;
       const path = file.current.path;
       void vaultRequest<VaultFile>("read", { path }).then(fresh => {
@@ -147,7 +149,11 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
             packIdentity(fresh.markdown) !== config.itemId) return;
         const refreshed = refreshBinaryOnlyFile(file.current, fresh, config.itemId, false);
         if (refreshed) { file.current = refreshed; setOpened(refreshed); }
-      }).catch(() => { /* The next server sequence or reopen retries the asset read. */ });
+      }).catch(() => {
+        if (!stopped && request === assetRefreshGeneration.current && attempt < 5) {
+          assetRetry = setTimeout(() => refreshRemoteAssets(attempt + 1), Math.min(1000 * 2 ** attempt, 8000));
+        }
+      });
     };
     const closeNative = async () => {
       if (native) {
@@ -218,7 +224,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         }
       },
       onChange: (next, presentation) => { if (!stopped) { if (presentation) { file.current = { ...file.current, ...presentation }; setOpened(file.current); } if (JSON.stringify(latestSnapshot.current.content.assets) !== JSON.stringify(next.content.assets)) refreshRemoteAssets(); latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
-      onRemoteNonTextRevision: refreshRemoteAssets,
+      onRemoteNonTextRevision: () => refreshRemoteAssets(),
       onStatus: (next, message) => {
         if (stopped || !shared) return;
         setStatus(next); setDetail(message ?? ""); setCanEdit(shared.canEdit); setClient(shared);
@@ -253,6 +259,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     });
     return () => {
       stopped = true;
+      if (assetRetry) clearTimeout(assetRetry);
       const saved = shared?.flushLocal() ?? Promise.resolve(true);
       shared?.destroy(); clientRef.current = null;
       void saved.finally(closeNative);
