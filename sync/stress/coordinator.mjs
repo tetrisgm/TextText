@@ -46,7 +46,8 @@ export function validateConfig(config) {
   if (!config || typeof config !== 'object') fail('must be an object');
   if (!MODES.has(config.mode)) fail('mode must be "real" or "simulated"');
   if (!Number.isInteger(config.seed)) fail('seed must be an integer');
-  if (!Number.isInteger(config.rounds) || config.rounds < 1 || config.rounds > 10_000) fail('rounds must be 1..10000');
+  if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
+  if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedBaselineHash ?? '')) fail('a zero-round reopen requires expectedBaselineHash');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
   const f = config.fixture;
   if (!f || typeof f.workspaceId !== 'string' || !f.workspaceId || typeof f.itemId !== 'string' || !f.itemId) fail('fixture.workspaceId and fixture.itemId are required');
@@ -135,6 +136,9 @@ export class Coordinator {
       }
       if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', { evidence });
       this.baseline = normalizeText(texts[0]);
+      if (this.config.expectedBaselineHash && hashText(this.baseline) !== this.config.expectedBaselineHash) {
+        throw new StressFailure('reopen-hash-mismatch', { expected: this.config.expectedBaselineHash, evidence });
+      }
       for (const role of EDITOR_ROLES) this.checkEditor(0, role, baseline.get(role).editor);
       for (const plan of planRounds(this.config.seed, this.config.rounds)) await this.runRound(plan);
     } catch (error) {
@@ -153,7 +157,8 @@ export class Coordinator {
     const summary = {
       runId: this.runId, status, failure, mode: this.config.mode,
       // Simulated runs never count as real acceptance, whatever their status.
-      acceptance: status === 'passed' && this.config.mode === 'real' ? 'six-client-append-only' : 'none',
+      acceptance: status === 'passed' && this.config.mode === 'real'
+        ? (this.config.rounds === 0 ? 'six-client-reopen' : 'six-client-append-only') : 'none',
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
       attestations: this.attestations, outputDir: this.dir,
     };

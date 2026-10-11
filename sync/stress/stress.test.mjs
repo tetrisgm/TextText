@@ -49,6 +49,20 @@ test('missing roles are rejected before any process starts', () => {
   config.roles['pc-cli'] = { command: 'node fake.mjs' };
   assert.throws(() => validateConfig(config), /command must be a non-empty string array/);
   assert.throws(() => validateConfig({ ...makeConfig(), fixture: {} }), /fixture/);
+  assert.throws(() => validateConfig({ ...makeConfig(), rounds: 0 }), /expectedBaselineHash/);
+});
+
+test('reopen baseline must match the prior final hash without issuing edits', async () => {
+  const config = makeConfig({ rounds: 0 });
+  config.expectedBaselineHash = hashText('Existing fixture text.\n');
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  assert.equal(summary.roundsCompleted, 0);
+  assert.equal(summary.acceptance, 'none');
+  const wrong = makeConfig({ rounds: 0 });
+  wrong.expectedBaselineHash = '0'.repeat(64);
+  const failure = await new Coordinator(wrong).run();
+  assert.equal(failure.failure.code, 'reopen-hash-mismatch');
 });
 
 test('ledger rejects stale rounds, duplicates and unexpected types', () => {

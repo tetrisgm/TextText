@@ -13,7 +13,8 @@ Chrome and Edge use the real hosted editor; CLI actors edit the actual TextPack
 file. The adapters never replace the installed app or bypass its sync engine.
 Physical campaigns on October 10 passed one, five, and ten rounds on fresh
 fixtures. This is acceptance evidence for simultaneous append and editor
-continuity. Offline, crash, deletion, replacement, move, and latency scenarios
+continuity. A zero-round six-client reopen against the ten-round final hash
+also passed after the live actors exited. Offline, crash, deletion, replacement, move, and latency scenarios
 remain outside this runner's current coverage; see
 `docs/verification/six-client-sync-acceptance.md`.
 
@@ -56,6 +57,12 @@ Exit 0 only when every round converged. Output goes to a fresh directory
 - `plan.json`: exact seeded edits for replay.
 - `adapters/<role>.last-state.json`: last observed text and editor evidence.
 - `adapters/<role>.stderr.log`: first 64 KB of adapter diagnostics.
+
+For a durable reopen check, set `rounds: 0` and set `expectedBaselineHash` to
+the final round's `hash` in the prior receipt. Use new native session directories.
+The runner opens all six clients, verifies the saved document hash and editor
+mounts, then closes only its own actors. Its acceptance label is
+`six-client-reopen`.
 
 ## Config
 

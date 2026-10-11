@@ -5,7 +5,7 @@
 The seeded [six-client stress runner](../sync/stress/README.md) now uses the
 real Mac and Windows app editors, browsers, and direct TextPack files. The
 private Mac actor and isolated Windows acceptance project compiled and were
-smoke-tested; neither was installed. All 43 harness tests and 377 sync client
+smoke-tested; neither was installed. All 44 harness tests and 377 sync client
 tests pass on the Mac. Windows isolated build passed on the PC with two existing
 NU1510 package warnings and no errors.
 
@@ -18,7 +18,10 @@ all clients open. A simulated regression verifies this behavior. Fresh-fixture
 run `stress-2026-10-11T05-06-08-679Z-43` passed five of five rounds; run
 `stress-2026-10-11T05-09-06-457Z-44` passed ten of ten. All four app/browser
 editors retained their sessions throughout, all direct file actors participated,
-and exact body hashes matched at each round. Per-role state, timings, and
+and exact body hashes matched at each round. The subsequent zero-edit restart
+`stress-2026-10-11T05-14-28-800Z-45` reopened all six clients and matched the
+ten-round final hash `546d880493cbb710ee8c0d375683bb26d2d5e37a84915ad7e1bf1aa6db25bff7`.
+Per-role state, timings, and
 dashboard receipts are in `/private/tmp/texttext-six-20261010/results/`.
 
 This is real six-client append acceptance, not full sync certification. The
