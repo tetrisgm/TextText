@@ -26,7 +26,8 @@ public sealed class SyncEngine
     public sealed record Baseline(string Path,string Hash,string Revision,bool Refresh=false,string? Lifecycle=null);
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
-    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; }
+    public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false);
+    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath;
     public SyncStatus Status {get;private set;}=new(false,null,0);
@@ -35,7 +36,19 @@ public sealed class SyncEngine
     public event Action? CapabilitiesChanged;
     public SyncEngine(TextPackStore store,ISyncTransport transport) { this.store=store;this.transport=transport;statePath=Path.Combine(store.StateDirectory,"sync.json"); }
     public async Task<IDisposable> AcquireCollaborationAsync(string itemId,CancellationToken ct=default) {
-        await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");return new Fence(this,itemId);}finally{gate.Release();}
+        await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");
+            if(!state.BinaryBaselines.ContainsKey(itemId) && state.Items.TryGetValue(itemId,out var baseline)) {
+                try {
+                    var file=store.Describe(baseline.Path);
+                    if(file.ItemId==itemId && file.Hash==baseline.Hash) {
+                        state.BinaryBaselines[itemId]=BinaryEntryPacks.Assets(store.Read(file.Path)).ToDictionary(x=>x.Key,x=>x.Value.Sha256);
+                        Save(state);
+                    }
+                } catch(IOException) { /* An evicted or invalid file is handled by the existing open path. */ }
+                  catch(UnauthorizedAccessException) { /* Keep the previous state; do not infer deletion. */ }
+            }
+            lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");return new Fence(this,itemId);
+        }finally{gate.Release();}
     }
     sealed class Fence(SyncEngine owner,string id):IDisposable {bool disposed;public void Dispose(){lock(owner.collaborating){if(!disposed){owner.collaborating.Remove(id);disposed=true;}}}}
     bool IsEditing(string id){lock(collaborating)return collaborating.Contains(id)||SharedEditingStore.HasProtectedState(store.StateDirectory,id);}
@@ -112,6 +125,11 @@ public sealed class SyncEngine
             foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
             foreach(var pair in state.Items.ToArray()) {
                 cancellation.ThrowIfCancellationRequested();var id=pair.Key;
+                if(!IsEditing(id) && state.BinaryOutbox.Any(x=>x.ItemId==id)) {
+                    if(remote.TryGetValue(id,out var binaryRemote) && !binaryRemote.Deleted)
+                        await SyncOpenBinary(state,local.GetValueOrDefault(id),pair.Value,binaryRemote,cancellation);
+                    continue;
+                }
                 if(IsEditing(id)) {
                     if(!Blocked(state,id)&&state.PendingPull?.ItemId!=id&&remote.TryGetValue(id,out var relocated)&&!relocated.Deleted&&
                        local.TryGetValue(id,out var projection)&&projection.Path!=relocated.RelativePath&&SharedEditingStore.HasReadyCheckpoint(store,id)) {
@@ -119,6 +137,9 @@ public sealed class SyncEngine
                         state.Items[id]=pair.Value with{Path=moved.Path};Save(state);store.ClearIntent(id);
                         local[id]=store.Describe(moved.Path);
                     }
+                    if(!Blocked(state,id)&&state.PendingPull?.ItemId!=id && remote.TryGetValue(id,out var binaryRemote) && !binaryRemote.Deleted &&
+                       state.Items.TryGetValue(id,out var binaryBase))
+                        await SyncOpenBinary(state,local.GetValueOrDefault(id),binaryBase,binaryRemote,cancellation);
                     continue;
                 }
                 if(Blocked(state,id))continue;var baseline=pair.Value;var intent=store.Intent(id);
@@ -281,11 +302,64 @@ public sealed class SyncEngine
             state.Outbox.Remove(op);Save(state);
         }
     }
-    string? StateError(State state)=>state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;
+    async Task SyncOpenBinary(State state,PackFile? local,Baseline baseline,RemoteItem remote,CancellationToken ct) {
+        var pending=state.BinaryOutbox.FirstOrDefault(x=>x.ItemId==remote.ItemId);
+        if(pending is {Conflicted:true})return;
+        if(baseline.Lifecycle!=remote.Lifecycle) {
+            if(pending is not null) {state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);}
+            return;
+        }
+        if(state.Capabilities?.CanWrite(remote.ItemId,baseline.Path,true)==false)return;
+        if(pending is null) {
+            if(local is null || local.Path!=baseline.Path)return; // Missing provider file is never an asset deletion.
+            if(!state.BinaryBaselines.TryGetValue(remote.ItemId,out var hashes)) {
+                if(local.Hash!=baseline.Hash)return; // Do not invent a base after an unknown edit.
+                state.BinaryBaselines[remote.ItemId]=BinaryEntryPacks.Assets(store.Read(local.Path)).ToDictionary(x=>x.Key,x=>x.Value.Sha256);
+                Save(state);return;
+            }
+            if(local.Hash==baseline.Hash)return;
+            var bytes=store.Read(local.Path);
+            if(TextPackStore.Hash(bytes)!=local.Hash)return;
+            var assets=BinaryEntryPacks.Assets(bytes);
+            var changed=hashes.Keys.Union(assets.Keys,StringComparer.Ordinal).OrderBy(x=>x,StringComparer.Ordinal)
+                .FirstOrDefault(path=>hashes.GetValueOrDefault(path)!=assets.GetValueOrDefault(path)?.Sha256);
+            if(changed is null)return;
+            hashes.TryGetValue(changed,out var prior);
+            pending=new(Guid.NewGuid().ToString(),remote.ItemId,changed,prior,baseline.Lifecycle,
+                assets.GetValueOrDefault(changed) is { } entry?Convert.ToBase64String(entry.Bytes):null,local.Hash);
+            state.BinaryOutbox.Add(pending);Save(state); // Exact bytes and operation ID are durable before network I/O.
+        }
+        try {
+            var revision=await transport.BinaryPatchAsync(pending.ItemId,pending.Id,pending.EntryPath,pending.ExpectedHash,pending.Lifecycle,
+                pending.BytesBase64 is null?null:Convert.FromBase64String(pending.BytesBase64),ct);
+            if(!state.BinaryBaselines.TryGetValue(pending.ItemId,out var hashes))throw new InvalidDataException("Binary baseline is missing.");
+            if(pending.BytesBase64 is null)hashes.Remove(pending.EntryPath);
+            else hashes[pending.EntryPath]=TextPackStore.Hash(Convert.FromBase64String(pending.BytesBase64));
+            var latest=local is null?null:store.Describe(local.Path);
+            var latestAssets=latest?.ItemId==pending.ItemId?BinaryEntryPacks.Assets(store.Read(latest.Path)):null;
+            var locallyCurrent=latestAssets is not null && latestAssets.Count==hashes.Count &&
+                latestAssets.All(x=>hashes.GetValueOrDefault(x.Key)==x.Value.Sha256);
+            state.Items[pending.ItemId]=baseline with{Revision=revision,Hash=locallyCurrent?latest!.Hash:baseline.Hash};
+            state.BinaryOutbox.Remove(pending);Save(state);
+        } catch(SyncConflictException) {
+            state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);
+        }
+    }
+    string? StateError(State state)=>state.BinaryOutbox.Any(x=>x.Conflicted)?"An attachment changed on another device. The local file is kept for resolution.":state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;
     bool HasLocalWork(State state,Dictionary<string,PackFile> local) {
+        if(state.BinaryOutbox.Any(x=>!x.Conflicted && state.Capabilities?.CanWrite(x.ItemId,state.Items.GetValueOrDefault(x.ItemId)?.Path??"",true)!=false))return true;
         if(state.Outbox.Any(op=>!op.Conflicted&&!IsEditing(op.ItemId)))return true;
         foreach(var file in local.Values) {
-            if(IsEditing(file.ItemId)||Blocked(state,file.ItemId))continue;
+            if(IsEditing(file.ItemId)) {
+                if(state.BinaryBaselines.TryGetValue(file.ItemId,out var entryHashes) && state.Items.TryGetValue(file.ItemId,out var openBase) && file.Hash!=openBase.Hash) {
+                    try {
+                        var entries=BinaryEntryPacks.Assets(store.Read(file.Path));
+                        if(entries.Count!=entryHashes.Count || entries.Any(x=>entryHashes.GetValueOrDefault(x.Key)!=x.Value.Sha256))return true;
+                    } catch(IOException) { continue; } catch(UnauthorizedAccessException) { continue; }
+                }
+                continue;
+            }
+            if(Blocked(state,file.ItemId))continue;
             if(!state.Items.TryGetValue(file.ItemId,out var baseline)||baseline.Refresh||baseline.Hash!=file.Hash||baseline.Path!=file.Path)return true;
         }
         foreach(var item in state.Items)if(!local.ContainsKey(item.Key)&&!IsEditing(item.Key)&&!Blocked(state,item.Key)&&store.Intent(item.Key)?.Kind=="delete")return true;

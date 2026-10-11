@@ -251,6 +251,17 @@ static class Test
  using(var lease=await fe.AcquireCollaborationAsync("test-1")){var updated=fenced.UpdateMarkdown(ff.Path,TextPackStore.Markdown(fenced.Read(ff.Path))+" collaborative",fenced.Describe(ff.Path).Hash);await fe.SyncAsync();Assert(ft.UploadCount==1,"active collaboration fences file upload");ft.Data=fenced.Read(ff.Path);ft.Item=ft.Item! with{Revision=updated.Hash};await fe.AcknowledgeCheckpointAsync("test-1",ff.Path,updated.Hash,updated.Hash);}
  await fe.SyncAsync();Assert(ft.UploadCount==1,"acknowledged checkpoint avoids duplicate upload");
  var encoded=Pack();using(var ms=new MemoryStream()) {using(var z=new ZipArchive(ms,ZipArchiveMode.Create,true))using(var original=new ZipArchive(new MemoryStream(encoded)))foreach(var e in original.Entries.Reverse()){var copy=z.CreateEntry(e.FullName,CompressionLevel.NoCompression);using var dst=copy.Open();using var src=e.Open();src.CopyTo(dst);}Assert(TextPackStore.Equivalent(encoded,ms.ToArray()),"ZIP encoding changes preserve logical equality");}
+ var binarySeed=Pack("body","binary-id");
+ var binaryAdded=BinaryEntryPacks.Patch(binarySeed,"assets/data.bin",null,[0,1,255]);
+ var binaryEntry=BinaryEntryPacks.Assets(binaryAdded)["assets/data.bin"];
+ Assert(binaryEntry.Bytes.SequenceEqual(new byte[]{0,1,255})&&binaryEntry.Sha256==TextPackStore.Hash([0,1,255]),"binary asset addition preserves exact bytes and hash");
+ using(var before=new ZipArchive(new MemoryStream(binarySeed)))using(var after=new ZipArchive(new MemoryStream(binaryAdded))) {
+     using var oldOpaque=before.GetEntry("unknown.bin")!.Open();using var newOpaque=after.GetEntry("unknown.bin")!.Open();
+     using var oldBytes=new MemoryStream();using var newBytes=new MemoryStream();oldOpaque.CopyTo(oldBytes);newOpaque.CopyTo(newBytes);
+     Assert(oldBytes.ToArray().SequenceEqual(newBytes.ToArray()),"binary patch preserves unrelated opaque entry bytes");
+ }
+ Throws<FileChangedException>(()=>BinaryEntryPacks.Patch(binaryAdded,"assets/data.bin",null,[9]),"binary patch rejects stale entry base");
+ Assert(BinaryEntryPacks.Assets(BinaryEntryPacks.Patch(binaryAdded,"assets/data.bin",binaryEntry.Sha256,null)).Count==0,"binary deletion requires exact prior hash");
  var movingStore=new TextPackStore(Path.Combine(temp,"shared-move"),Path.Combine(temp,"shared-move-device"));
  var movingFile=movingStore.Write("Notes/Moving.textpack",Pack("pending move"));
  var movingDirectory=Path.Combine(movingStore.StateDirectory,"shared-editing","test-1");Directory.CreateDirectory(movingDirectory);
@@ -425,6 +436,36 @@ static class Test
  }
  var editRestore=new TextPackStore(Path.Combine(temp,"restore-edit"),Path.Combine(temp,"restore-edit-device"));var editFile=editRestore.Write("Notes/Edit.textpack",Pack("local pending"));editRestore.Write("Notes/Unrelated.textpack",Pack("unrelated","unrelated"));var editState=new SyncEngine.State();editState.Items["test-1"]=new(editFile.Path,editFile.Hash,"old");editState.Outbox.Add(new("old-edit","upload","test-1",editFile.Path,null,"old",editFile.Hash,Convert.ToBase64String(editRestore.Read(editFile.Path))));TextPackStore.AtomicWrite(Path.Combine(editRestore.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(editState));
  var editsRemote=new Many();editsRemote.Items["test-1"]=new Fake{Data=LifecyclePack("restored"),Item=new("test-1",editFile.Path,"new",Lifecycle:"restored")};await new SyncEngine(editRestore,editsRemote).SyncAsync();Assert(TextPackStore.Markdown(editRestore.Read(editFile.Path)).Contains("local pending")&&editsRemote.Items["unrelated"].UploadCount==1,"old-generation pending edit preserved while unrelated queue converges");
+ var binaryStore=new TextPackStore(Path.Combine(temp,"binary-live"),Path.Combine(temp,"binary-live-device"));
+ var binaryBase=BinaryEntryPacks.Patch(Pack("live text","binary-live"),"assets/data.bin",null,[1,2,3]);
+ var binaryFile=binaryStore.Write("Notes/Binary.textpack",binaryBase);
+ var binaryRemote=new Fake{Data=binaryBase,Item=new("binary-live",binaryFile.Path,binaryFile.Hash)};
+ var binaryEngine=new SyncEngine(binaryStore,binaryRemote);await binaryEngine.SyncAsync();
+ SyncEngine.State pending;
+ using(var lease=await binaryEngine.AcquireCollaborationAsync("binary-live")) {
+  var binaryChanged=BinaryEntryPacks.Patch(binaryStore.Read(binaryFile.Path),"assets/data.bin",TextPackStore.Hash([1,2,3]),[8,7,6]);
+  binaryStore.Write(binaryFile.Path,binaryChanged,binaryStore.Describe(binaryFile.Path).Hash);
+  binaryRemote.FailBinaryAfterCommit=true;
+  try{await binaryEngine.SyncAsync(localChangesOnly:true);throw new Exception("lost binary ACK accepted");}catch(HttpRequestException){}
+  pending=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"sync.json")))!;
+  Assert(pending.BinaryOutbox.Count==1&&pending.BinaryOutbox[0].BytesBase64==Convert.ToBase64String(new byte[]{8,7,6}),"binary bytes and operation survive lost response");
+ }
+ binaryEngine=new SyncEngine(binaryStore,binaryRemote);
+ await binaryEngine.SyncAsync(localChangesOnly:true);
+ using(var lease=await binaryEngine.AcquireCollaborationAsync("binary-live")) {
+  Assert(binaryRemote.BinaryPatchCount==1&&binaryRemote.Operations[^1]==pending.BinaryOutbox[0].Id&&BinaryEntryPacks.Assets(binaryRemote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{8,7,6}),"binary receipt replay converges without duplicate mutation");
+  var physical=binaryStore.Resolve(binaryFile.Path);var hidden=physical+".temporarily-absent";
+  File.Move(physical,hidden);await binaryEngine.SyncAsync(localChangesOnly:true);
+  Assert(binaryRemote.BinaryPatchCount==1&&File.Exists(hidden),"temporarily absent provider file does not infer binary deletion");
+  File.Move(hidden,physical);
+  var conflictLocal=BinaryEntryPacks.Patch(binaryStore.Read(binaryFile.Path),"assets/data.bin",TextPackStore.Hash([8,7,6]),[4,4,4]);
+  binaryStore.Write(binaryFile.Path,conflictLocal,binaryStore.Describe(binaryFile.Path).Hash);
+  binaryRemote.Data=BinaryEntryPacks.Patch(binaryRemote.Data,"assets/data.bin",TextPackStore.Hash([8,7,6]),[5,5,5]);
+  binaryRemote.Item=binaryRemote.Item! with{Revision=TextPackStore.Hash(binaryRemote.Data)};
+  await binaryEngine.SyncAsync(localChangesOnly:true);
+  var conflictState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"sync.json")))!;
+  Assert(conflictState.BinaryOutbox.Single().Conflicted&&BinaryEntryPacks.Assets(binaryStore.Read(binaryFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{4,4,4})&&BinaryEntryPacks.Assets(binaryRemote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5,5}),"same-entry conflict retains both byte versions without overwrite");
+ }
  Console.WriteLine("All native file and durable sync regression tests passed.");
  }finally{Directory.Delete(temp,true);}}
  sealed class Many:ISyncTransport {
@@ -440,11 +481,21 @@ static class Test
   public WorkspaceCapabilities? Capabilities {get;set;}
   public IReadOnlyList<string> Folders {get;set;}=[];
   public IReadOnlyList<string>? AuthoritativeFolders {get;set;}
-  public System.Net.HttpStatusCode? DownloadFailure;public RemoteItem? Item;public byte[] Data=[];public int UploadCount,DeleteCount,ManifestCount;public bool FailAfterCommit,FailBeforeCommit;public Action? BeforeDownload;public List<string> Operations=[];readonly Dictionary<string,string> receipts=[];
+  public System.Net.HttpStatusCode? DownloadFailure;public RemoteItem? Item;public byte[] Data=[];public int UploadCount,DeleteCount,ManifestCount,BinaryPatchCount;public bool FailAfterCommit,FailBeforeCommit,FailBinaryAfterCommit;public Action? BeforeDownload;public List<string> Operations=[];readonly Dictionary<string,string> receipts=[];
   public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default){ManifestCount++;return Task.FromResult<IReadOnlyList<RemoteItem>>(Item==null?[]:[Item]);}
   public Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default){var hook=BeforeDownload;BeforeDownload=null;hook?.Invoke();if(DownloadFailure!=null)throw new HttpRequestException("Remote item unavailable.",null,DownloadFailure);return Task.FromResult(new RemotePack(Data,Item!.RelativePath,Item.Revision));}
   public Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default){Operations.Add(operationId);if(FailBeforeCommit){FailBeforeCommit=false;throw new HttpRequestException("offline before commit");}if(receipts.TryGetValue(operationId,out var old))return Task.FromResult(old);if(Item!=null&&(Item.Revision!=baseRevision||Item.RelativePath!=path))throw new SyncConflictException();Data=data;var revision=TextPackStore.Hash(data);Item=new(itemId,path,revision);receipts[operationId]=revision;UploadCount++;if(FailAfterCommit){FailAfterCommit=false;throw new HttpRequestException("ACK lost");}return Task.FromResult(revision);}
   public Task<string> RenameAsync(string itemId,string from,string to,string baseRevision,string operationId,CancellationToken cancellation=default){if(receipts.TryGetValue(operationId,out var old))return Task.FromResult(old);if(Item==null||Item.RelativePath!=from||Item.Revision!=baseRevision)throw new SyncConflictException();Item=Item with{RelativePath=to};receipts[operationId]=Item.Revision;return Task.FromResult(Item.Revision);}
   public Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default){Item=Item! with{Deleted=true};DeleteCount++;return Task.CompletedTask;}
+  public Task<RemoteBinaryManifest> BinaryManifestAsync(string itemId,CancellationToken cancellation=default)=>Task.FromResult(new RemoteBinaryManifest(Item!.Revision,BinaryEntryPacks.Assets(Data).Values.Select(x=>new RemoteBinaryEntry(x.Path,x.Sha256,x.Bytes.Length)).ToArray()));
+  public Task<byte[]> BinaryReadAsync(string itemId,string entryPath,CancellationToken cancellation=default)=>Task.FromResult(BinaryEntryPacks.Assets(Data)[entryPath].Bytes);
+  public Task<string> BinaryPatchAsync(string itemId,string operationId,string entryPath,string? expectedHash,string? expectedLifecycle,byte[]? bytes,CancellationToken cancellation=default){
+    Operations.Add(operationId);if(receipts.TryGetValue(operationId,out var old))return Task.FromResult(old);
+    if(Item?.Lifecycle!=expectedLifecycle)throw new SyncConflictException();
+    try{Data=BinaryEntryPacks.Patch(Data,entryPath,expectedHash,bytes);}catch(FileChangedException){throw new SyncConflictException();}
+    var revision=TextPackStore.Hash(Data);Item=Item! with{Revision=revision};receipts[operationId]=revision;BinaryPatchCount++;
+    if(FailBinaryAfterCommit){FailBinaryAfterCommit=false;throw new HttpRequestException("Binary ACK lost");}
+    return Task.FromResult(revision);
+  }
  }
 }

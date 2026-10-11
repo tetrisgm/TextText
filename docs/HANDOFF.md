@@ -62,8 +62,10 @@ receipt replay, same-entry conflict, lifecycle fencing, and text edits before
 and after a binary change. A follow-up adds scoped binary transport on web,
 Windows, and Mac, with focused web and Mac relay tests. Native Swift and .NET
 sync transports also now expose the scoped calls; the .NET transport contract
-test passes. This is not yet a client fix: Mac and Windows native editors do
-not durably detect, send, or materialize entry operations while open.
+test passes. Windows now durably stages and sends direct asset changes in an
+open editor. Its native tests cover lost acknowledgment, same-entry conflict,
+and temporary provider-file absence. Mac outbound handling, both inbound
+paths, and browser asset refresh remain open; seed 89 is still a failure.
 
 Next: repair live binary-entry propagation while native editors stay mounted,
 verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,
