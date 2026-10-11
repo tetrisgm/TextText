@@ -2,6 +2,23 @@
 
 ## Current work (October 11)
 
+Latest source `d1a50853` is on `origin/main`. Its exact-source sync gate passed
+901 core tests and all native sync checks; TypeScript passed. Signed local Mac
+0.204 build 1250 is installed and launched. A private matching Mac stress
+actor and untouched fixture 1275 are ready in
+`/private/tmp/texttext-six-20261011/provenance1275/`. Windows `d1a50853`
+build command exited successfully, but SSH began resetting before login before
+its final receipt could be read. **Do not treat it as installed or verified.**
+When SSH returns, read
+`C:\Users\Shokunin\dev\texttext-windows-d1a50853-build.log`, verify its
+candidate receipt, close the normal PC app, install, build the matching
+LiveAcceptance assembly, then run fixture 1275 and a fresh-session durable
+reopen. Windows currently has the prior `c2ba73e7` candidate installed.
+No website deployment or public Mac release occurred. Preserve failed fixtures
+and recovery journals.
+
+## Earlier October 11 work
+
 Source `39aa5405` is on `origin/main`. Its clean Mac gate passed 899 core
 tests and all native file/durable sync checks. Mac 0.204 build 1248 is signed,
 installed in `/Applications/TextText.app`, and launched. The matching Windows
