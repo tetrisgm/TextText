@@ -117,6 +117,8 @@ Sparkle rpath; it was rebuilt and verified before seed 56.
 Unicode content (accented Latin, Japanese, and emoji) passed five concurrent
 rounds on all six clients, seed 58:
 `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-06-34-459Z-58`.
+A six-client restart reopened its exact final Unicode body hash, seed 59:
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-08-11-490Z-59`.
 Overlapping replacement/deletion, native offline/crash recovery, whole-file/attachment and
 folder operations, permissions, and latency distributions still need physical
 campaigns. The historical notes below predate this runner.
