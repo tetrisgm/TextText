@@ -7,18 +7,18 @@ Windows offline-state assertion and failure diagnostics are at `d29ad182`.
 Six real clients passed a Mac-app transport-loss/reconnect round and a separate
 six-client durable reopen with matching hash. Receipts:
 `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T14-14-48-939Z-74`
-and `stress-2026-10-11T14-15-44-433Z-74` beside it. The Windows-offline
-round is still open: the first attempt found a test assertion bug after the
-Windows editor correctly remained editable offline; later retries were
-contaminated by writes from failed rounds or stopped during fixture readiness.
-The fresh CLI-created TextPack `Notes/Six-client acceptance PC offline
-1278.textpack` opened in the Mac reader but its Edit action did not enter an
-editable shared document within 45 seconds (receipt
-`stress-2026-10-11T14-27-54-208Z-78`). Diagnose that fixture path before
-using it for the fault matrix. Do not count it as a collaboration pass. Keep
-both test notes and failed-run receipts until their recovery state is audited.
-Next: establish a fully joined clean fixture, run PC offline, Mac/PC pending
-edit crash and reopen, then complete the remaining acceptance matrix. Neither
+and `stress-2026-10-11T14-15-44-433Z-74` beside it. Windows-app transport
+loss and six-client durable reopen also passed after `da744796` made the
+private actors retry an Edit click during reader rerender. Receipts:
+`stress-2026-10-11T14-33-19-649Z-78` and
+`stress-2026-10-11T14-34-00-345Z-78` in the same results directory. The
+first Mac pending-edit crash attempt stopped at the new fixture's edit
+readiness gate; the second stopped before readiness when direct PC SSH reset.
+`ssh pc-tunnel` also closed. Check machine reachability before resuming; use
+`/private/tmp/texttext-six-20261011/maccrash1279/run.json` with fresh actor
+session paths. Do not count crash recovery as passed. Keep failed fixtures and
+receipts until their recovery state is audited. Next: Mac/PC pending-edit crash
+and reopen, then the remaining acceptance matrix. Neither
 website nor public Mac release was deployed.
 
 Behavioral candidate `d1a50853` is on `origin/main`. Its exact-source sync gate passed

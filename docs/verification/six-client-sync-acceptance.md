@@ -171,7 +171,19 @@ Fresh seed 73 passed the reciprocal Mac CLI partial replacement and reopen:
 and `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-54-06-927Z-73`.
 Both edit rounds kept the four live editors mounted and rejected no events.
 
-Native offline/crash recovery, whole-file/attachment and folder operations,
+Native app transport loss now has two physical six-client append rounds with
+zero rejected edits, followed by separate all-client reopen checks with the
+expected content hashes. Mac app offline/reconnect: seed 74 receipts
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T14-14-48-939Z-74`
+and `stress-2026-10-11T14-15-44-433Z-74`. Windows app offline/reconnect:
+seed 78 receipts `stress-2026-10-11T14-33-19-649Z-78` and
+`stress-2026-10-11T14-34-00-345Z-78`. The private Windows actor initially
+rejected the correct offline UI state; `d29ad182` fixes that test assertion.
+Both private native actors now retry an Edit click once during reader rerender
+(`da744796`), while still requiring a joined editable document before attesting.
+These receipts do not cover process termination or a long offline interval.
+
+Native pending-edit crash recovery, whole-file/attachment and folder operations,
 permissions, and latency distributions still need physical campaigns. The
 historical notes below predate this runner.
 
