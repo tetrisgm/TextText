@@ -271,7 +271,15 @@ static class Stress
             if (active != config.WorkspaceId) throw new Exception("Active workspace does not match the configured fixture workspace.");
             window.ActivateFiles([config.File]);
             await Program.Until(async () => await view!.ExecuteScriptAsync($"document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle}") == "true", ct, "Production file activation did not open the test item.");
-            await Program.Until(async () => await view!.ExecuteScriptAsync("!!document.querySelector('button[aria-label=\"Edit card\"]') || !!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test reader did not expose its edit action.");
+            try
+            {
+                await Program.Until(async () => await view!.ExecuteScriptAsync("!!document.querySelector('button[aria-label=\"Edit card\"]') || !!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test reader did not expose its edit action.");
+            }
+            catch (Exception e)
+            {
+                var state = await view!.ExecuteScriptAsync("JSON.stringify({title:document.querySelector('.vault-context-location h2')?.textContent?.trim(),body:document.querySelector('[aria-label=\"Document body\"]')?.textContent?.slice(0,120),buttons:[...document.querySelectorAll('button')].map(b=>b.getAttribute('aria-label')||b.textContent?.trim()).filter(Boolean).slice(0,30),notices:[...document.querySelectorAll('.vault-notice,[role=\"alert\"]')].map(n=>n.textContent?.trim()).slice(0,5)})");
+                throw new Exception("Test reader did not expose its edit action. State: " + state, e);
+            }
             await view!.ExecuteScriptAsync("document.querySelector('button[aria-label=\"Edit card\"]')?.click()");
             await Program.Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test item did not enter the real document editor.");
             await Program.Until(async () => await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-state=\"ready\"]');return shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()") == "true", ct, "Test editor did not join the shared document; a local-only editor cannot pass six-client readiness.");
@@ -283,7 +291,8 @@ static class Stress
         async Task RequireSelected(CancellationToken ct)
         {
             if (!opened || view?.CoreWebView2 is null) throw new Exception("Editor is not open; hello must succeed first.");
-            var ok = await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-item]');return document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle} && ['ready','saving'].includes(shared?.dataset.collaborationState) && shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()");
+            var allowedStates = transport.Online ? "['ready','saving']" : "['ready','saving','offline','reconnecting']";
+            var ok = await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-item]');return document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle} && {allowedStates}.includes(shared?.dataset.collaborationState) && shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()");
             if (ok != "true")
             {
                 var state = await view.ExecuteScriptAsync("JSON.stringify({title:document.querySelector('.vault-context-location h2')?.textContent?.trim()??null,collaborationState:document.querySelector('[data-collaboration-item]')?.dataset.collaborationState??null,collaborationItem:document.querySelector('[data-collaboration-item]')?.dataset.collaborationItem??null,editable:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable,notices:[...document.querySelectorAll('.vault-notice,[role=\"alert\"]')].map(e=>e.textContent?.trim())})");
