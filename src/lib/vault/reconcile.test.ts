@@ -208,6 +208,23 @@ describe("reconcileDocumentSnapshots", () => {
         .toBe(result.document.content.body);
     });
 
+    it("keeps a partial file replacement beside one live replacement with incidental matching letters", () => {
+      const body = "Existing fixture text.\n";
+      const left = "[pc-app r1 yankee912]";
+      const right = "Existing [pc-cli r1 lima215]\n";
+      const { base, local, remote } = replicas(body);
+      local.content.body = left;
+      remote.content.body = right;
+      const result = reconcileDocumentSnapshots(base, local, remote, {
+        concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+      });
+      expect(result).toMatchObject({ status: "merged", document: { content: { body: "[pc-cli r1 lima215][pc-app r1 yankee912]\n" } } });
+      if (result.status !== "merged") return;
+      const projected = externalBodyEdits(body, left, right, result.document.content.body);
+      expect(projected?.reduce((text, edit) => text.slice(0, edit.start) + edit.replacement + text.slice(edit.end), left))
+        .toBe(result.document.content.body);
+    });
+
     it("preserves unchanged text inside a multi-edit overlap", () => {
       const { base, local, remote } = replicas("abcdefgh");
       local.content.body = "aXcdYfgh";

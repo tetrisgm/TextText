@@ -29,6 +29,15 @@ a durable reopen. The new diagnostic fixture
 did take roughly two minutes to reach the PC after CLI creation, so also
 measure file creation propagation separately.
 
+The first `c2ba73e7` physical replay on fixture 1274 failed the same way:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-29-19-230Z-72`.
+An exact-text unit reproduction showed the snapshot merge was rejecting the
+PC app's full replacement because its marker incidentally shared single
+characters with the old sentence outside the file writer's partial span.
+The next candidate treats only contiguous preserved runs of two or more
+characters as meaningful in that guard, with an exact observed-text regression.
+Fresh fixture 1275 is reserved for the next physical replay.
+
 Remaining cases: native offline/pending-edit crash recovery, whole
 TextPack/assets, folder operations, separate-account permissions, and sustained
 latency/resource runs. Do not call sync certified until the physical cases pass.

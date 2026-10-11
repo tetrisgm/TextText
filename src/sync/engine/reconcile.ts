@@ -171,7 +171,10 @@ function noUncontestedUnchanged(base: string, own: TextEdit, other: TextEdit): b
   for (const change of changes) {
     if (change.added) continue;
     const end = position + change.value.length;
-    if (!change.removed && (position < other.start || end > other.end)) return false;
+    // A single matching character inside a replacement is often accidental
+    // (for example the spaces and letters shared by two unrelated sentences).
+    // Require a contiguous pair before treating it as text the writer kept.
+    if (!change.removed && change.value.length > 1 && (position < other.start || end > other.end)) return false;
     position = end;
   }
   return true;
