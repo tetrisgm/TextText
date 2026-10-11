@@ -173,6 +173,29 @@ describe("reconcileDocumentSnapshots", () => {
       }
     });
 
+    it("retains the file's terminal newline across a partial overlap", () => {
+      const body = "Existing fixture text.\n", left = "[human]", right = "Existing [agent]\n";
+      const { base, local, remote } = replicas(body);
+      local.content.body = left;
+      remote.content.body = right;
+      const expected = "[agent][human]\n";
+      expect(reconcileDocumentSnapshots(base, local, remote, {
+        concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+      })).toMatchObject({ status: "merged", document: { content: { body: expected } } });
+      const projected = externalBodyEdits(body, left, right, expected);
+      expect(projected?.reduce((text, edit) => text.slice(0, edit.start) + edit.replacement + text.slice(edit.end), left))
+        .toBe(expected);
+    });
+
+    it("preserves unchanged text inside a multi-edit overlap", () => {
+      const { base, local, remote } = replicas("abcdefgh");
+      local.content.body = "aXcdYfgh";
+      remote.content.body = "abcQefgh";
+      expect(reconcileDocumentSnapshots(base, local, remote, {
+        concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+      })).toMatchObject({ status: "merged", document: { content: { body: "aXcQYfgh" } } });
+    });
+
     it("orders coincident insertions remote-first next to other local edits", () => {
       expect(merged("ab cd", "aXb cdL", "aYb cd")).toBe("aYXb cdL");
     });

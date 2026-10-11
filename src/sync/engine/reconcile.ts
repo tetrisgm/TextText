@@ -83,6 +83,8 @@ export function externalBodyEdits(base: string, local: string, external: string,
   if (partiallyOverlappingSingleEdits(base, ownSpan, incomingSpan)) {
     const ownEnd = ownSpan.start + ownSpan.replacement.length;
     const edits = [
+      ...(preservesTerminalNewline(base, ownSpan, incomingSpan) && !local.endsWith("\n")
+        ? [{ start: local.length, end: local.length, replacement: "\n" }] : []),
       ...(incomingSpan.end > ownSpan.end ? [{ start: ownEnd, end: ownEnd + incomingSpan.end - ownSpan.end, replacement: "" }] : []),
       incomingSpan.start < ownSpan.start
         ? { start: incomingSpan.start, end: ownSpan.start, replacement: incomingSpan.replacement }
@@ -148,12 +150,37 @@ function partiallyOverlappingSingleEdits(base: string, own: TextEdit, incoming: 
   if (own.start === incoming.start && own.end === incoming.end) return false;
   if (own.start >= incoming.end || incoming.start >= own.end) return false;
   if (Math.max(own.end - own.start, incoming.end - incoming.start,
-    own.replacement.length, incoming.replacement.length) > FALLBACK_SPAN_LIMIT) return false;
-  const ownChanges = fallbackEdits(base.slice(own.start, own.end), own.replacement, 1);
-  const incomingChanges = fallbackEdits(base.slice(incoming.start, incoming.end), incoming.replacement, 0);
-  return ownChanges?.length === 1 && incomingChanges?.length === 1 &&
-    ownChanges[0].start === 0 && ownChanges[0].end === own.end - own.start &&
-    incomingChanges[0].start === 0 && incomingChanges[0].end === incoming.end - incoming.start;
+    own.replacement.length, incoming.replacement.length) > 2_048) return false;
+  // Expanding a short word into a sentence is ambiguous in a snapshot diff:
+  // the apparent overlap may be an incidental shared prefix, not one bounded
+  // replacement. Keep those on the conflict/version-preservation path.
+  if (own.replacement.length > 2 * (own.end - own.start) ||
+      incoming.replacement.length > 2 * (incoming.end - incoming.start)) return false;
+  return noUncontestedUnchanged(base, own, incoming) &&
+    noUncontestedUnchanged(base, incoming, own);
+}
+
+/** Diff matching may retain incidental characters inside a replacement. A
+ * union merge may remove them only when the other writer also replaced that
+ * exact base range; otherwise let the conservative diff path preserve them. */
+function noUncontestedUnchanged(base: string, own: TextEdit, other: TextEdit): boolean {
+  const changes = diffChars(base.slice(own.start, own.end), own.replacement,
+    { maxEditLength: 256 });
+  if (!changes) return false;
+  let position = own.start;
+  for (const change of changes) {
+    if (change.added) continue;
+    const end = position + change.value.length;
+    if (!change.removed && (position < other.start || end > other.end)) return false;
+    position = end;
+  }
+  return true;
+}
+
+function preservesTerminalNewline(base: string, own: TextEdit, incoming: TextEdit): boolean {
+  return base.endsWith("\n") &&
+    Math.min(own.end, incoming.end) === base.length - 1 &&
+    Math.max(own.end, incoming.end) === base.length;
 }
 
 function mergeBody(base: string, local: string, remote: string, concurrentInsertions?: "remote-first", preserveOverlappingReplacement = false): string | undefined {
@@ -174,7 +201,7 @@ function mergeBody(base: string, local: string, remote: string, concurrentInsert
   if (preserveOverlappingReplacement && partiallyOverlappingSingleEdits(base, localEdit, remoteEdit)) {
     return base.slice(0, Math.min(localEdit.start, remoteEdit.start)) +
       remoteEdit.replacement + localEdit.replacement +
-      base.slice(Math.max(localEdit.end, remoteEdit.end));
+      (preservesTerminalNewline(base, localEdit, remoteEdit) ? "\n" : base.slice(Math.max(localEdit.end, remoteEdit.end)));
   }
   const edits = [localEdit, remoteEdit].sort((a, b) => a.start - b.start);
   const [first, second] = edits;
