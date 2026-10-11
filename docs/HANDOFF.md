@@ -26,8 +26,12 @@ The first two attempts for seed 66 stopped before editing because the Mac actor
 path was absent, then a native session directory was reused. Those are setup
 failures, not acceptance evidence. Direct SSH to the PC began resetting after
 the failed physical run; retry access before inspecting the native event log.
-Do not rerun on this fixture. Diagnose and fix the PC checkpoint/file collision,
-then use a new fixture and repeat both direct-file sides. Native offline/crash
+Do not rerun on this fixture. Source `9a5873f2` now classifies a same-generation
+checkpoint retry after an external file edit as `FileChangedException`, allowing
+the existing live reconcile path. A focused native regression and the full Mac
+Windows-core suite pass. This is a candidate fix for the observed PC failure,
+not a passed physical replay. Rebuild the Windows candidate when the PC is
+reachable, then use a fresh fixture and repeat both direct-file sides. Native offline/crash
 recovery, partial overlapping replacement/deletion, whole TextPack/assets,
 folder operations, permissions, and sustained latency remain open.
 
