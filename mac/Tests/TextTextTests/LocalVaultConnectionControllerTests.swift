@@ -88,6 +88,10 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
             credentials: { (URL(string: "https://capability.test")!, "fixture") })
         defer { reopened.stop() }
         XCTAssertNotNil(reopened.collaborationEngine, "The verified local journal must be ready before any network request")
+        let anotherWorkspace = LocalVaultConnectionController(root: root, workspaceId: "another", session: offlineSession,
+            credentials: { (URL(string: "https://capability.test")!, "fixture") })
+        defer { anotherWorkspace.stop() }
+        XCTAssertNil(anotherWorkspace.collaborationEngine, "A different requested workspace must not inherit this journal")
         do {
             _ = try await reopened.connect(startSync: false)
             XCTFail("Discovery should fail in this fixture")

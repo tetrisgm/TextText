@@ -43,7 +43,8 @@ final class LocalVaultConnectionController {
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
                 previousBinding = existing
-                if let account = credentials(), account.origin == existing.origin {
+                if let account = credentials(), account.origin == existing.origin,
+                   requestedWorkspaceId == nil || requestedWorkspaceId == existing.workspaceId {
                     capabilities = try? LocalVaultCapabilityCache.read(root: root, binding: existing)
                     // The saved binding was verified on an earlier connection.
                     // Restore its local journal synchronously so a reopened
