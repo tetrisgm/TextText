@@ -153,6 +153,17 @@ describe("durable file collaboration client", () => {
     expect(journal.load(editor.journalKey)).toBeTruthy();
     expect(server.pushes).toHaveLength(0);
   });
+  it("keeps an active replacement while a CLI appends to the same file", async () => {
+    const server = new Server(), journal = new Journal();
+    server.bytes = pack("Existing fixture text."); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
+    const editor = client(server, journal);
+    await editor.start();
+    const base = documentSnapshotFromYDoc(editor.doc);
+    editor.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, "[mac-app r1 delta81]"); });
+    const external = structuredClone(base); external.content.body += "[mac-cli r1 echo843]";
+    expect(editor.reconcileExternalDocument(base, external)).toBe(true);
+    expect(documentText(editor.doc, "body").toString()).toBe("[mac-app r1 delta81][mac-cli r1 echo843]");
+  });
   it("merges a CLI append with pending typing through the same document and native lease", async () => {
     const server = new Server(), journal = new Journal();
     const base = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });

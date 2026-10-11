@@ -13,6 +13,13 @@ flush. The Mac TextPack contained four of six markers at inspection. This is
 not a passing acceptance result. Keep the fixture and recovery journals for
 diagnosis. Next trace the Windows native checkpoint's `local_changed` path and
 the shared client's overlapping replacement policy before another live run.
+Fresh-fixture seed 63 failed earlier on the Mac native editor with the same
+recovery state; receipt `stress-2026-10-11T10-41-00-659Z-63`. A focused
+regression reproduced one root cause: replacing the file's final sentence in
+the live editor while an agent appends at EOF was rejected as a boundary
+conflict. `src/sync/engine/reconcile.ts` now merges that specific independent
+pair; 95 relevant reconciliation/collaboration tests pass. This is source-only
+and requires later cross-client verification against builds carrying the fix.
 Current `reconcileDocumentSnapshots` refuses overlapping replacements by
 design; `src/local-vault/collaboration-client.test.ts` asserts retirement in
 that case. Product work must decide and implement a lossless live merge for

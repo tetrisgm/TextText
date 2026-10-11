@@ -43,6 +43,15 @@ describe("reconcileDocumentSnapshots", () => {
     });
   });
 
+  it("keeps a CLI append after an active replacement of the final sentence", () => {
+    const { base, local, remote } = replicas("Existing fixture text.");
+    local.content.body = "[mac-app r1 delta81]";
+    remote.content.body = "Existing fixture text.[mac-cli r1 echo843]";
+    expect(reconcileDocumentSnapshots(base, local, remote, { concurrentInsertions: "remote-first" })).toMatchObject({
+      status: "merged", document: { content: { body: "[mac-app r1 delta81][mac-cli r1 echo843]" } },
+    });
+  });
+
   it("preserves both bodies when replacements overlap or inserts share a position", () => {
     for (const [body, left, right] of [["abcdef", "abXYef", "abcZef"], ["ab", "aXb", "aYb"]]) {
       const { base, local, remote } = replicas(body);

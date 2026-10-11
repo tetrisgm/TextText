@@ -250,7 +250,11 @@ static class Stress
         {
             if (!opened || view?.CoreWebView2 is null) throw new Exception("Editor is not open; hello must succeed first.");
             var ok = await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-item]');return document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle} && ['ready','saving'].includes(shared?.dataset.collaborationState) && shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()");
-            if (ok != "true") throw new Exception("Editor is no longer on the dedicated test item in the shared document.");
+            if (ok != "true")
+            {
+                var state = await view.ExecuteScriptAsync("JSON.stringify({title:document.querySelector('.vault-context-location h2')?.textContent?.trim()??null,collaborationState:document.querySelector('[data-collaboration-item]')?.dataset.collaborationState??null,collaborationItem:document.querySelector('[data-collaboration-item]')?.dataset.collaborationItem??null,editable:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})");
+                throw new Exception("Editor is no longer on the dedicated test item in the shared document. State: " + state);
+            }
             ct.ThrowIfCancellationRequested();
         }
 

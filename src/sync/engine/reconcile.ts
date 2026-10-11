@@ -113,10 +113,15 @@ function mergeBody(base: string, local: string, remote: string, concurrentInsert
   }
   const edits = [localEdit, remoteEdit].sort((a, b) => a.start - b.start);
   const [first, second] = edits;
-  // Two insertions at the same position have no agreed ordering. Treat an
-  // insertion at a replacement boundary conservatively for the same reason.
+  // A true replacement of the final span and an append have a clear order.
+  // Keep other boundary cases in the bounded diff path: a broad single-span
+  // edit may actually be a prepend plus append around unchanged text.
+  const trailingAppend = first.start < first.end && first.end === base.length &&
+    second.start === base.length && second.start === second.end &&
+    first.end - first.start <= FALLBACK_SPAN_LIMIT &&
+    !first.replacement.includes(base.slice(first.start, first.end));
   if (first.end > second.start || (first.end === second.start &&
-      (first.start === first.end || second.start === second.end))) {
+      (first.start === first.end || (second.start === second.end && !trailingAppend)))) {
     return concurrentInsertions ? mergeBodyFallback(base, local, remote, localEdit, remoteEdit) : undefined;
   }
   return base.slice(0, first.start) + first.replacement +
