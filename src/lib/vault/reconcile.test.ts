@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { reconcileDocumentSnapshots } from "./reconcile";
+import { externalBodyEdits, reconcileDocumentSnapshots } from "./reconcile";
 
 function replicas(body = "one\ntwo\nthree\n") {
   const base = emptyDocumentSnapshot();
@@ -150,6 +150,27 @@ describe("reconcileDocumentSnapshots", () => {
       expect(reconcileDocumentSnapshots(base, local, remote, {
         concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
       })).toMatchObject({ status: "merged", document: { content: { body: "[pc-cli][pc-app]\n" } } });
+    });
+
+    it("keeps both partial replacements and projects the external change onto the live text", () => {
+      for (const [body, left, right, expected] of [
+        ["abcdefgh", "abLfgh", "abcdRh", "abRLh"],
+        ["abcdefgh", "abcdLh", "abRfgh", "abRLh"],
+        ["abcdefgh", "abfgh", "abcdRh", "abRh"],
+        ["abcdefgh", "abLfgh", "abcdh", "abLh"],
+        ["abcdefgh", "abfgh", "abcdh", "abh"],
+      ]) {
+        const { base, local, remote } = replicas(body);
+        local.content.body = left;
+        remote.content.body = right;
+        expect(reconcileDocumentSnapshots(base, local, remote, {
+          concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+        })).toMatchObject({ status: "merged", document: { content: { body: expected } } });
+        const projected = externalBodyEdits(body, left, right, expected);
+        expect(projected).toBeDefined();
+        expect(projected?.reduce((text, edit) => text.slice(0, edit.start) + edit.replacement + text.slice(edit.end), left))
+          .toBe(expected);
+      }
     });
 
     it("orders coincident insertions remote-first next to other local edits", () => {

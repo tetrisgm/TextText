@@ -80,6 +80,16 @@ export function externalBodyEdits(base: string, local: string, external: string,
     ];
     if (project(edits) === merged) return edits;
   }
+  if (partiallyOverlappingSingleEdits(base, ownSpan, incomingSpan)) {
+    const ownEnd = ownSpan.start + ownSpan.replacement.length;
+    const edits = [
+      ...(incomingSpan.end > ownSpan.end ? [{ start: ownEnd, end: ownEnd + incomingSpan.end - ownSpan.end, replacement: "" }] : []),
+      incomingSpan.start < ownSpan.start
+        ? { start: incomingSpan.start, end: ownSpan.start, replacement: incomingSpan.replacement }
+        : { start: ownSpan.start, end: ownSpan.start, replacement: incomingSpan.replacement },
+    ];
+    if (project(edits) === merged) return edits;
+  }
   const start = Math.min(ownSpan.start, incomingSpan.start);
   const end = Math.max(ownSpan.end, incomingSpan.end), tail = base.length - end;
   const before = base.slice(start, end);
@@ -131,6 +141,21 @@ function trailingNewlineOverlap(base: string, local: TextEdit, remote: TextEdit)
     Boolean(local.replacement && remote.replacement);
 }
 
+/** A true partial overlap of one contiguous replacement/deletion per writer.
+ * The union of removed base text goes away, while both inserted texts survive
+ * in remote-first order. Multi-edit spans stay on the conservative path. */
+function partiallyOverlappingSingleEdits(base: string, own: TextEdit, incoming: TextEdit): boolean {
+  if (own.start === incoming.start && own.end === incoming.end) return false;
+  if (own.start >= incoming.end || incoming.start >= own.end) return false;
+  if (Math.max(own.end - own.start, incoming.end - incoming.start,
+    own.replacement.length, incoming.replacement.length) > FALLBACK_SPAN_LIMIT) return false;
+  const ownChanges = fallbackEdits(base.slice(own.start, own.end), own.replacement, 1);
+  const incomingChanges = fallbackEdits(base.slice(incoming.start, incoming.end), incoming.replacement, 0);
+  return ownChanges?.length === 1 && incomingChanges?.length === 1 &&
+    ownChanges[0].start === 0 && ownChanges[0].end === own.end - own.start &&
+    incomingChanges[0].start === 0 && incomingChanges[0].end === incoming.end - incoming.start;
+}
+
 function mergeBody(base: string, local: string, remote: string, concurrentInsertions?: "remote-first", preserveOverlappingReplacement = false): string | undefined {
   const localEdit = edit(base, local), remoteEdit = edit(base, remote);
   if (concurrentInsertions && localEdit.start === localEdit.end && remoteEdit.start === remoteEdit.end && localEdit.start === remoteEdit.start) {
@@ -145,6 +170,11 @@ function mergeBody(base: string, local: string, remote: string, concurrentInsert
   }
   if (preserveOverlappingReplacement && trailingNewlineOverlap(base, localEdit, remoteEdit)) {
     return base.slice(0, localEdit.start) + remoteEdit.replacement + localEdit.replacement + "\n";
+  }
+  if (preserveOverlappingReplacement && partiallyOverlappingSingleEdits(base, localEdit, remoteEdit)) {
+    return base.slice(0, Math.min(localEdit.start, remoteEdit.start)) +
+      remoteEdit.replacement + localEdit.replacement +
+      base.slice(Math.max(localEdit.end, remoteEdit.end));
   }
   const edits = [localEdit, remoteEdit].sort((a, b) => a.start - b.start);
   const [first, second] = edits;
