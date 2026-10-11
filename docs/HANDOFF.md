@@ -1,5 +1,26 @@
 # TextText handoff
 
+## Current verification (October 11)
+
+Source `052c0ab7` is on `origin/main`. Its narrow independent EOF
+replacement/append merge fix passed the full Mac sync gate under Node 22 and
+the clean Windows build gate. Mac build 1244 and the matching Windows candidate
+are installed locally; no public release or website deployment was made.
+Before installation, the pending seed-63 Mac edit was exported to
+`~/Downloads/TextText overlap recovery 1261.json` and saved as a separate
+recovered TextPack. The PC checkpoint was copied to
+`C:\Users\Shokunin\dev\texttext-recovery-1261\pc`.
+
+Fresh physical six-client overlap replacement seed 63 passed one round with
+exact convergence and all editors retained:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-07-11-624Z-63`.
+All six clients then reopened the exact final hash and passed:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-08-07-908Z-63`.
+These receipts close the reproduced independent EOF conflict. Other same-span
+replacement/deletion, native offline and crash recovery, whole TextPack/assets,
+folder operations, permission changes, and sustained latency remain open in
+[the acceptance contract](verification/six-client-sync-acceptance.md).
+
 ## Current sync failure (October 11)
 
 The six-client runner now has a one-round `overlap-replace` pattern: four

@@ -119,7 +119,14 @@ rounds on all six clients, seed 58:
 `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-06-34-459Z-58`.
 A six-client restart reopened its exact final Unicode body hash, seed 59:
 `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T06-08-11-490Z-59`.
-Overlapping replacement/deletion, native offline/crash recovery, whole-file/attachment and
+An independent EOF replacement/CLI append round passed on a fresh six-client
+fixture with Mac 1244 and the matching Windows candidate, seed 63:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-07-11-624Z-63`.
+A six-client durable reopen passed its exact final hash:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T11-08-07-908Z-63`.
+The earlier failed seeds 62 and 63 remain preserved as regression evidence;
+the passing run used a new fixture and builds carrying `052c0ab7`.
+Same-span replacement/deletion, native offline/crash recovery, whole-file/attachment and
 folder operations, permissions, and latency distributions still need physical
 campaigns. The historical notes below predate this runner.
 
