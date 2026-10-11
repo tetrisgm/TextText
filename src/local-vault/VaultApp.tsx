@@ -571,6 +571,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const [noteEditPath, setNoteEditPath] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingNativeOpen, setPendingNativeOpen] = useState<string | null>(null);
   const [destinationFolder, setDestinationFolder] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantRequest, setAssistantRequest] = useState<NativeAssistantRequest | null>(null);
@@ -1068,7 +1069,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     else if (destinationFolder.trim()) setSharing({ workspaceId: sharingWorkspaceId, scopeType: "folder", scopeKey: destinationFolder.trim(), label: destinationFolder.trim().split("/").at(-1) || destinationFolder.trim() });
   };
   useEffect(() => {
-    const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true); };
+    const openFile = (event: Event) => { const path = (event as CustomEvent<{ path: string }>).detail?.path; if (path) setPendingNativeOpen(path); };
     const newFile = () => { if (canCreate) createNote(focusedControl()); };
     const nativeWindow = window as Window & { texttextOpenFile?: (path: string) => Promise<string> };
     nativeWindow.texttextOpenFile = async path => {
@@ -1081,6 +1082,14 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     window.addEventListener("texttext:vault-new", newFile);
     return () => { delete nativeWindow.texttextOpenFile; window.removeEventListener("texttext:vault-open", openFile); window.removeEventListener("texttext:vault-new", newFile); };
   });
+  useEffect(() => {
+    if (!pendingNativeOpen || busy) return;
+    const path = pendingNativeOpen;
+    setPendingNativeOpen(null);
+    void operate(async () => { setSelected(await readForOpen(path, !allowFolderPicker)); setDestinationFolder(folderForItem(path)); }, true);
+  // The native file request remains queued while an earlier navigation finishes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNativeOpen, busy]);
   const commandActions: VaultSearchAction[] = [];
   const commandFolder = destinationFolder.trim();
   const commandLocation = commandFolder || "the workspace root";

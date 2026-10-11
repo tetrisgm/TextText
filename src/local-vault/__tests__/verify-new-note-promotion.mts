@@ -27,10 +27,14 @@ const pack = (text: string, json: string) => {
   return { bytes, file: openPack(bytes, notePath, hash).file };
 };
 let current = pack(markdown, JSON.stringify(initial));
-const earlyOpen = process.argv.includes("--early-open");
+const queuedOpen = process.argv.includes("--queued-open");
+const earlyOpen = process.argv.includes("--early-open") || queuedOpen;
 const externalFile = process.argv.includes("--external-file") || earlyOpen;
 let releaseListing = () => {};
 const listingReady = new Promise<void>(resolve => { releaseListing = resolve; });
+let releaseRead = () => {};
+const readReady = new Promise<void>(resolve => { releaseRead = resolve; });
+let readCalls = 0;
 let exists = externalFile, syncedHash: string | null = null;
 let remoteState: VaultCollaborationState | null = null;
 let remoteBytes = current.bytes;
@@ -71,7 +75,7 @@ try {
         case "connection": result = { connected: true, available: true, workspaceId: config.workspaceId, webURL: "https://texttext.test/vault/workspace" }; break;
         case "folderViews": result = { files: [] }; break;
         case "create": exists = true; result = current.file; break;
-        case "read": result = current.file; break;
+        case "read": readCalls++; if (queuedOpen && readCalls === 1) await readReady; result = current.file; break;
         case "write": {
           assert.equal(request.params.hash, current.file.hash);
           current = pack(String(request.params.markdown), String(request.params.documentJSON));
@@ -128,7 +132,13 @@ try {
   await page.goto(pathToFileURL(path.resolve("mac/build/LocalVault/index.html")).href);
   if (earlyOpen) {
     await page.waitForFunction(() => typeof (window as any).texttextOpenFile === "function");
-    assert.equal(await page.evaluate(path => (window as any).texttextOpenFile(path), notePath), "opened");
+    if (queuedOpen) {
+      await page.evaluate(path => { void (window as any).texttextOpenFile(path); }, notePath);
+      await until(() => readCalls === 1, "the first native open read");
+      await page.evaluate(path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } })), notePath);
+      releaseRead();
+      await until(() => readCalls >= 2, "the queued native open after the busy navigation");
+    } else assert.equal(await page.evaluate(path => (window as any).texttextOpenFile(path), notePath), "opened");
     releaseListing();
     await page.waitForFunction(() => document.querySelector(".vault-sidebar")?.textContent?.includes("Notes"));
     assert.equal(await page.locator(".vault-context-location h2").innerText(), "Untitled", "Startup location restoration must not replace a native file activation.");
