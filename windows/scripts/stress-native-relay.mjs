@@ -6,22 +6,32 @@ import { readFileSync, mkdirSync, existsSync, writeFileSync, renameSync, statSyn
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { dirname, isAbsolute, join, basename, extname } from 'node:path';
+import { isAbsolute, join, basename, extname } from 'node:path';
 
 const [assembly, configPath, session] = process.argv.slice(2);
 const script = new URL('./stress-native-task.ps1', import.meta.url).pathname.replace(/^\/(?=[A-Za-z]:\/)/, '');
-const taskName = 'TextText-stress-native-' + randomUUID().replaceAll('-', '');
+const taskBase = 'TextText-stress-native-' + randomUUID().replaceAll('-', '');
 const fail = (message, round = 0) => process.stdout.write(JSON.stringify({ type: 'error', round, message }) + '\n');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-function task(finish = false) {
+let generation = 1;
+let actorSession;
+const taskName = () => `${taskBase}-${String(generation).padStart(3, '0')}`;
+function task(mode = 'start') {
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
-    '-Assembly', assembly, '-Config', configPath, '-Session', session, '-TaskName', taskName];
-  if (finish) args.push('-Finish');
+    '-Assembly', assembly, '-Config', configPath, '-Session', actorSession, '-TaskName', taskName()];
+  if (mode === 'finish') args.push('-Finish');
+  if (mode === 'crash') args.push('-Crash');
   const result = spawnSync('powershell.exe', args, { encoding: 'utf8', timeout: 30000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  if (result.status !== 0) throw new Error(finish ? 'Native actor did not flush or exit cleanly.' : 'Native actor could not start.');
+  if (result.status !== 0) throw new Error(mode === 'start' ? 'Native actor could not start.' : mode === 'crash' ? 'Native actor could not be terminated.' : 'Native actor did not flush or exit cleanly.');
+}
+async function finishTask() {
+  for (let i = 0; i < 300; i++) {
+    try { task('finish'); return; } catch { await pause(100); }
+  }
+  throw new Error('Native actor remained open after shutdown.');
 }
 async function reply(seq, limitMs) {
-  const file = join(session, `rep-${String(seq).padStart(6, '0')}.json`);
+  const file = join(actorSession, `rep-${String(seq).padStart(6, '0')}.json`);
   const end = Date.now() + limitMs;
   while (Date.now() < end) {
     if (existsSync(file)) {
@@ -33,7 +43,7 @@ async function reply(seq, limitMs) {
   throw new Error('Native actor did not reply within the bound.');
 }
 async function request(seq, line, type) {
-  const file = join(session, `req-${String(seq).padStart(6, '0')}.json`);
+  const file = join(actorSession, `req-${String(seq).padStart(6, '0')}.json`);
   const tmp = file + '.tmp';
   writeFileSync(tmp, line, { flag: 'wx' });
   renameSync(tmp, file);
@@ -48,8 +58,10 @@ async function main() {
   const file = config.File ?? config.file;
   if (!title?.startsWith('Six-client acceptance ') || basename(file ?? '', extname(file ?? '')) !== title) throw new Error('Not a dedicated acceptance file.');
   mkdirSync(session);
-  task(false);
-  let seq = 0, stopped = false, failed = false;
+  actorSession = join(session, `generation-${String(generation).padStart(3, '0')}`);
+  mkdirSync(actorSession);
+  task();
+  let seq = 0, actorSeq = 0, stopped = false, failed = false, helloLine, attestation;
   try {
     for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
       if (!line.trim()) continue;
@@ -58,21 +70,36 @@ async function main() {
       try { message = JSON.parse(line); } catch { fail('Request is not valid JSON.'); failed = true; break; }
       seq++;
       let answer;
-      try { answer = await request(seq, line, message.type); }
+      try {
+        if (message.type === 'restart') {
+          if (!helloLine || !attestation?.sessionId) throw new Error('Native actor has not attested yet.');
+          task('crash');
+          generation++;
+          actorSession = join(session, `generation-${String(generation).padStart(3, '0')}`);
+          mkdirSync(actorSession);
+          actorSeq = 0;
+          task();
+          const next = await request(++actorSeq, helloLine, 'hello');
+          if (next?.type !== 'attest' || next.generation !== generation || typeof next.sessionId !== 'string' || !next.sessionId)
+            throw new Error('Restarted native actor did not attest.');
+          answer = { type: 'restart', round: message.round ?? 0, generation, beforeSessionId: attestation.sessionId, afterSessionId: next.sessionId };
+          attestation = next;
+        } else {
+          answer = await request(++actorSeq, line, message.type);
+          if (message.type === 'hello') { helloLine = line; attestation = answer; }
+        }
+      }
       catch { fail('Native actor did not reply within the bound.', message.round ?? 0); failed = true; break; }
       if (message.type === 'shutdown') { stopped = true; if (answer?.ok !== true) failed = true; break; }
       process.stdout.write(JSON.stringify(answer) + '\n');
       if (answer?.type === 'error') failed = true;
     }
     if (!stopped) {
-      seq++;
-      try { const ack = await request(seq, JSON.stringify({ type: 'shutdown' }), 'shutdown'); if (ack?.ok !== true) failed = true; }
+      try { const ack = await request(++actorSeq, JSON.stringify({ type: 'shutdown' }), 'shutdown'); if (ack?.ok !== true) failed = true; }
       catch { failed = true; }
     }
-    for (let i = 0; i < 300; i++) {
-      try { task(true); return failed ? 1 : 0; } catch { await pause(100); }
-    }
-    throw new Error('Native actor remained open after shutdown.');
+    await finishTask();
+    return failed ? 1 : 0;
   } catch (error) {
     process.stderr.write(String(error?.message ?? error) + '\n');
     return 1;

@@ -14,12 +14,18 @@ have passed, each with a six-client durable reopen. Earlier PC CLI rounds
 failed; the failure and fresh passing receipts are in the acceptance contract. Native
 offline/crash, partial overlap/deletion, moves, and latency remain open; see
 `docs/verification/six-client-sync-acceptance.md`.
-Targeted browser transport loss is now covered: set `offline` to
-`{"role":"mac-web","round":1}` or `{"role":"pc-web","round":1}`.
-The selected browser goes offline after the readiness barrier, edits through
-its real editor while the other five clients edit, then reconnects before
-convergence. Both platform-specific physical runs passed. Native transport
-loss and pending-edit crash recovery remain open.
+Targeted editor transport loss uses `offline`, for example
+`{"role":"mac-web","round":1}` or `{"role":"pc-app","round":1}`.
+The selected browser or native app goes offline after the readiness barrier,
+edits while the other five clients edit, then reconnects before convergence.
+The browser cases have physical passing receipts. Native support is test-only
+protocol until the platform relays implement it and a physical run passes.
+Set `restart` to `{"role":"mac-app","round":1}` or
+`{"role":"pc-app","round":1}` to crash and relaunch the native process after
+all six edits are visible but before convergence. The relay must preserve the
+pending journal, skip graceful flush, use a fresh mailbox generation, reopen
+the dedicated fixture, and report the new process generation. The first state
+after restart must prove that the editor session ID changed.
 Set `transientInvalid` to `{"role":"mac-cli","round":1}` or
 `{"role":"pc-cli","round":1}` to test a brief invalid TextPack write and
 atomic repair while all six editors stay open. The Mac CLI physical run passed.
@@ -132,6 +138,8 @@ the same type in one round are rejected and recorded, never counted.
 | `{"type":"hello","runId","role","mode","fixture":{workspaceId,itemId}}` | `{"type":"attest","round":0,"mode":"real"\|"simulated","workspaceId","itemId","machineId","adapter"}` |
 | `{"type":"prepare","round"}` | `{"type":"ready","round"}` |
 | `{"type":"edit","round","edit":{id,op:"append",text}}` | `{"type":"applied","round","editId"}` |
+| `{"type":"transport","round","online":false\|true}` | `{"type":"transport","round","online":false\|true}` |
+| `{"type":"restart","round"}` | `{"type":"restart","round","generation"}` |
 | `{"type":"observe","round","expectedEditIds":[...]}` | `{"type":"state","round","text","editIds":[...],"editor"?:{sessionId,reloads}}` |
 | `{"type":"shutdown"}` | process exits |
 
@@ -139,7 +147,12 @@ An adapter may send `{"type":"error","round","message"}` at any time; that
 fails the run as `actor-failed`. Unexpected exit fails it as `actor-exited`.
 
 Per round: all six must be `ready` (barrier) before the six edits are
-dispatched concurrently; then all six `applied` IDs must match the plan. The
+dispatched concurrently; then all six `applied` IDs must match the plan. An
+offline participant reconnects only after this barrier. A configured native
+restart also occurs after this barrier and before reconnect or observation,
+so it tests recovery of an edit that was visible but not given a save wait.
+The restarted app must use its reported new editor session for the remainder
+of the run; every other app and browser keeps its original session. The
 coordinator re-observes temporarily different replicas within the configured
 deadline while all actors remain live. At convergence, every `state` must
 produce one identical hash (only CRLF normalized to LF, `text` at most 64 KB) and exactly the cumulative expected

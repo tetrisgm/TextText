@@ -17,12 +17,19 @@ using TextText.Windows;
 // CoreWebView2 input pipeline; nothing here appends through the CLI or a document API.
 static class Stress
 {
+    sealed class CollaborationTransportGate
+    {
+        int online = 1;
+        public bool Online { get => Volatile.Read(ref online) != 0; set => Volatile.Write(ref online, value ? 1 : 0); }
+    }
+
     sealed record Config(string File, string ItemId, string WorkspaceId, string Title, int TotalMinutes = 20);
     const int MaxRequestBytes = 256 * 1024, MaxText = 64 * 1024, MaxEditText = 1024;
     static readonly TimeSpan ObserveBound = TimeSpan.FromSeconds(30), EditBound = TimeSpan.FromSeconds(15);
     static readonly Regex MarkerPattern = new(@"\[(mac|pc)-(app|web|cli) r(\d+) [a-z]+\d+\]", RegexOptions.Compiled);
     static readonly Regex EditIdPattern = new(@"^r\d{1,5}-pc-app$", RegexOptions.Compiled);
     static readonly Regex IdPattern = new(@"^[a-zA-Z0-9_-]{1,80}$", RegexOptions.Compiled);
+    static readonly Regex GenerationPattern = new(@"^generation-(\d{3})$", RegexOptions.Compiled);
 
     public static int Run(string configPath, string session)
     {
@@ -32,6 +39,7 @@ static class Stress
             Validate(config);
             if (!Path.IsPathFullyQualified(session) || !Directory.Exists(session)) throw new Exception("Stress session directory must be an existing absolute directory created by the relay.");
             if (Directory.EnumerateFiles(session, "rep-*.json").Any() || File.Exists(Path.Combine(session, "events.jsonl"))) throw new Exception("Stress session directory was already used; use a new session directory.");
+            File.WriteAllText(Path.Combine(session, "actor.pid"), Environment.ProcessId.ToString());
             var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(WindowsIdentity.GetCurrent().User!.Value)))[..24];
             using var instance = new Mutex(true, "Global\\TextText.Desktop." + key, out var created);
             if (!created) throw new Exception("Close TextText before running the stress adapter; two native writers must not share its device journal.");
@@ -43,6 +51,9 @@ static class Stress
             Record(new { kind = "start", config.ItemId, config.WorkspaceId, nativeAssemblySha256 = assemblyHash, nativeAssemblyVersion = version,
                 adapter = "production MainWindow + WindowsBridge", mockedTransport = false });
             var app = new Application();
+            var transport = new CollaborationTransportGate();
+            var generationMatch = GenerationPattern.Match(Path.GetFileName(Path.TrimEndingDirectorySeparator(session)));
+            var generation = generationMatch.Success ? int.Parse(generationMatch.Groups[1].Value) : 1;
             MainWindow.WorkspaceFactory = context => new WindowsBridge(context);
             var window = new MainWindow(Path.Combine(Path.GetFullPath(session), "webview-profile"));
             window.ActivateFiles([config.File]);
@@ -50,7 +61,7 @@ static class Stress
             window.Loaded += async (_, _) =>
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(config.TotalMinutes));
-                var runner = new Runner(window, config, session, Record, $"native-mainwindow/{version}/{assemblyHash[..16]}");
+                var runner = new Runner(window, config, session, generation, transport, Record, $"native-mainwindow/{version}/{assemblyHash[..16]}");
                 try
                 {
                     await runner.Loop(timeout.Token);
@@ -95,7 +106,7 @@ static class Stress
         if (TextPackStore.Identity(File.ReadAllBytes(config.File)) != config.ItemId) throw new Exception("Test file identity mismatch.");
     }
 
-    sealed class Runner(MainWindow window, Config config, string session, Action<object> log, string adapterName)
+    sealed class Runner(MainWindow window, Config config, string session, int generation, CollaborationTransportGate transport, Action<object> log, string adapterName)
     {
         public string? Failure { get; private set; }
         WebView2? view;
@@ -184,7 +195,7 @@ static class Stress
                         throw new Exception("Coordinator fixture does not match the configured test item and workspace.");
                     await Open(ct);
                     return new { type = "attest", round = 0, mode = "real", workspaceId = config.WorkspaceId, itemId = config.ItemId,
-                        machineId = System.Net.Dns.GetHostName(), adapter = adapterName };
+                        machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId };
                 }
                 case "prepare":
                     await RequireSelected(ct);
@@ -203,6 +214,29 @@ static class Stress
                     if (!EditIdPattern.IsMatch(id) || text.Length is 0 or > MaxEditText || text.Contains('\n')) throw new Exception("Edit id or text is out of bounds for this adapter.");
                     await Insert(id, text, op.GetString() == "insert-start", op.GetString() == "replace-selection", ct);
                     return new { type = "applied", round, editId = id };
+                }
+                case "transport":
+                {
+                    if (!request.TryGetProperty("online", out var online) || online.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                        throw new Exception("Transport control requires a boolean online value.");
+                    var next = online.GetBoolean();
+                    if (!next) await RequireSelected(ct);
+                    else if (!opened || view?.CoreWebView2 is null) throw new Exception("Editor is not open; hello must succeed first.");
+                    transport.Online = next;
+                    await view!.CoreWebView2.CallDevToolsProtocolMethodAsync("Network.enable", "{}");
+                    await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Network.emulateNetworkConditions", JsonSerializer.Serialize(new {
+                        offline = !next, latency = 0, downloadThroughput = -1, uploadThroughput = -1,
+                        connectionType = next ? "wifi" : "none"
+                    }));
+                    if (!next && await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-item]');return shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()") != "true")
+                        throw new Exception("Native editor stopped being editable when its remote transport went offline.");
+                    if (next)
+                    {
+                        await view.ExecuteScriptAsync("(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.trim()==='Retry');b?.click();return !!b})()");
+                        await Program.Until(async () => await view.ExecuteScriptAsync("['ready','saving'].includes(document.querySelector('[data-collaboration-item]')?.dataset.collaborationState)") == "true", ct, "Native collaboration did not recover after transport restoration.");
+                    }
+                    log(new { kind = "transport", round, online = transport.Online });
+                    return new { type = "transport", round, online = transport.Online };
                 }
                 case "observe":
                 {

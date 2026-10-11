@@ -61,7 +61,10 @@ test('missing roles are rejected before any process starts', () => {
   assert.throws(() => validateConfig(config), /command must be a non-empty string array/);
   assert.throws(() => validateConfig({ ...makeConfig(), fixture: {} }), /fixture/);
   assert.throws(() => validateConfig({ ...makeConfig(), rounds: 0 }), /expectedBaselineHash/);
-  assert.throws(() => validateConfig({ ...makeConfig(), offline: { role: 'pc-app', round: 1 } }), /offline/);
+  assert.doesNotThrow(() => validateConfig({ ...makeConfig(), offline: { role: 'pc-app', round: 1 } }));
+  assert.throws(() => validateConfig({ ...makeConfig(), offline: { role: 'pc-cli', round: 1 } }), /offline/);
+  assert.doesNotThrow(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-app', round: 1 } }));
+  assert.throws(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-web', round: 1 } }), /restart/);
   assert.throws(() => validateConfig({ ...makeConfig(), transientInvalid: { role: 'pc-web', round: 1 } }), /transientInvalid/);
 });
 
@@ -84,6 +87,53 @@ test('one browser may edit offline while the other five remain active, then reco
     ['mac-web', 1, false], ['mac-web', 1, true],
   ]);
   assert.equal(summary.roundsCompleted, 2);
+});
+
+test('one native app may edit offline while the other five remain active, then reconnect', async () => {
+  const config = makeConfig({ rounds: 2 });
+  config.offline = { role: 'pc-app', round: 1 };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(lines.filter(x => x.type === 'transport').map(x => [x.role, x.round, x.online]), [
+    ['pc-app', 1, false], ['pc-app', 1, true],
+  ]);
+  assert.equal(summary.roundsCompleted, 2);
+});
+
+test('native restart occurs after all edits are visible and permits exactly one new editor session', async () => {
+  const config = makeConfig({ rounds: 2 });
+  config.offline = { role: 'mac-app', round: 1 };
+  config.restart = { role: 'mac-app', round: 1 };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const events = lines.filter(x => x.round === 1 && ['transport', 'edit-barrier', 'restart'].includes(x.type));
+  assert.deepEqual(events.map(x => [x.type, x.online]), [
+    ['transport', false], ['edit-barrier', undefined], ['restart', undefined], ['transport', true],
+  ]);
+  const restarted = events.find(x => x.type === 'restart');
+  assert.equal(restarted.role, 'mac-app');
+  assert.equal(restarted.generation, 2);
+  const initial = JSON.parse(readFileSync(join(summary.outputDir, 'adapters', 'mac-app.initial-state.json'), 'utf8'));
+  const final = JSON.parse(readFileSync(join(summary.outputDir, 'adapters', 'mac-app.last-state.json'), 'utf8'));
+  assert.notEqual(initial.editor.sessionId, final.editor.sessionId);
+  for (const role of ['mac-web', 'pc-app', 'pc-web']) {
+    const before = JSON.parse(readFileSync(join(summary.outputDir, 'adapters', `${role}.initial-state.json`), 'utf8'));
+    const after = JSON.parse(readFileSync(join(summary.outputDir, 'adapters', `${role}.last-state.json`), 'utf8'));
+    assert.equal(after.editor.sessionId, before.editor.sessionId, role);
+  }
+  assert.equal(summary.roundsCompleted, 2);
+});
+
+test('failed native relaunch stops before convergence with bounded actor evidence', async () => {
+  const config = makeConfig({ faults: { 'pc-app': 'restart-fail' }, rounds: 1 });
+  config.restart = { role: 'pc-app', round: 1 };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'failed');
+  assert.equal(summary.failure.code, 'actor-failed');
+  assert.equal(summary.failure.detail.role, 'pc-app');
+  assert.equal(summary.roundsCompleted, 0);
 });
 
 test('reopen baseline must match the prior final hash without issuing edits', async () => {

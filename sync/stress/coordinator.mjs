@@ -59,9 +59,15 @@ export function validateConfig(config) {
   if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedBaselineHash ?? '')) fail('a zero-round reopen requires expectedBaselineHash');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
   if (config.offline !== undefined) {
-    if (!config.offline || !['mac-web', 'pc-web'].includes(config.offline.role)
+    if (!config.offline || !EDITOR_ROLES.includes(config.offline.role)
       || !Number.isInteger(config.offline.round) || config.offline.round < 1 || config.offline.round > config.rounds) {
-      fail('offline must name mac-web or pc-web and an existing round');
+      fail('offline must name an app or web editor and an existing round');
+    }
+  }
+  if (config.restart !== undefined) {
+    if (!config.restart || !['mac-app', 'pc-app'].includes(config.restart.role)
+      || !Number.isInteger(config.restart.round) || config.restart.round < 1 || config.restart.round > config.rounds) {
+      fail('restart must name mac-app or pc-app and an existing round');
     }
   }
   if (config.transientInvalid !== undefined) {
@@ -113,6 +119,7 @@ export class Coordinator {
     this.roundResults = [];
     this.attestations = {};
     this.editorBaseline = {};
+    this.restartEvidence = {};
     this.actorStatus = Object.fromEntries(ROLES.map(role => [role, 'starting']));
     this.runId = `stress-${new Date().toISOString().replace(/[:.]/g, '-')}-${config.seed}`;
   }
@@ -278,6 +285,9 @@ export class Coordinator {
     for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text, target: edit.op === 'replace-target' ? this.config.pattern === 'partial-overlap' ? PARTIAL_REPLACE_TARGET : REPLACE_TARGET : undefined } }); // concurrent dispatch
     const applied = await pending;
     for (const edit of edits) if (applied.get(edit.role).editId !== edit.id) throw new StressFailure('applied-mismatch', { round, role: edit.role, expected: edit.id, actual: applied.get(edit.role).editId });
+    this.record('edit-barrier', { round, roles: ROLES });
+    const restartRole = this.config.restart?.round === round ? this.config.restart.role : null;
+    if (restartRole) await this.restartActor(round, restartRole);
     if (offlineRole) await this.setTransport(round, offlineRole, true);
     const expectedEditIds = planRounds(this.config.seed, round, this.config.pattern).flatMap((p) => p.edits.map((e) => e.id)).sort();
     // A client can report a locally stable state before another replica's save reaches it.
@@ -333,11 +343,33 @@ export class Coordinator {
     this.record('transport', { round, role, online });
   }
 
+  async restartActor(round, role) {
+    const pending = this.collect(round, 'restart', [role]);
+    this.adapters.get(role).send({ type: 'restart', round });
+    const reply = (await pending).get(role);
+    if (reply.generation !== 2) {
+      throw new StressFailure('restart-mismatch', { round, role, reply });
+    }
+    const baseline = this.editorBaseline[role];
+    if (!baseline) throw new StressFailure('restart-mismatch', { round, role, baseline, reply });
+    const evidence = { round, generation: reply.generation, sessionId: null };
+    this.restartEvidence[role] = evidence;
+    this.record('restart', { round, role, ...evidence });
+  }
+
   // App/web editors must keep the same editor session with no reload across rounds.
   checkEditor(round, role, editor) {
     if (!editor || typeof editor.sessionId !== 'string' || editor.reloads !== 0) throw new StressFailure('editor-discontinuity', { round, role });
     const base = this.editorBaseline[role];
     if (!base) { this.editorBaseline[role] = { sessionId: editor.sessionId, reloads: editor.reloads }; return; }
+    const restart = this.restartEvidence[role];
+    if (restart && round >= restart.round) {
+      if (restart.sessionId === null) {
+        if (editor.sessionId === base.sessionId) throw new StressFailure('editor-discontinuity', { round, role, restart, actual: { sessionId: editor.sessionId, reloads: editor.reloads } });
+        restart.sessionId = editor.sessionId;
+      } else if (editor.sessionId !== restart.sessionId) throw new StressFailure('editor-discontinuity', { round, role, restart, actual: { sessionId: editor.sessionId, reloads: editor.reloads } });
+      return;
+    }
     if (base.sessionId !== editor.sessionId || base.reloads !== editor.reloads) throw new StressFailure('editor-discontinuity', { round, role, baseline: base, actual: { sessionId: editor.sessionId, reloads: editor.reloads } });
   }
 

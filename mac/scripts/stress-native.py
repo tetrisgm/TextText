@@ -126,10 +126,22 @@ def main():
     os.makedirs(args.session, mode=0o700)
     deadline = time.monotonic() + args.total_minutes * 60
     exit_code = 1
-    stderr_log = open(os.path.join(args.session, "actor.stderr.log"), "wb")
-    process = subprocess.Popen([args.actor, "--stress", args.config, args.session], stdin=subprocess.DEVNULL,
-                               stdout=stderr_log, stderr=stderr_log, env=minimal_env(), cwd=args.session)
-    seq, shutdown_sent = 0, False
+    generation = 0
+    stderr_log = None
+    process = None
+    mailbox = None
+
+    def launch():
+        nonlocal generation, stderr_log, process, mailbox
+        generation += 1
+        mailbox = os.path.join(args.session, f"gen-{generation:04d}")
+        os.makedirs(mailbox, mode=0o700)
+        stderr_log = open(os.path.join(mailbox, "actor.stderr.log"), "wb")
+        process = subprocess.Popen([args.actor, "--stress", args.config, mailbox], stdin=subprocess.DEVNULL,
+                                   stdout=stderr_log, stderr=stderr_log, env=minimal_env(), cwd=mailbox)
+
+    launch()
+    seq, shutdown_sent, hello_line = 0, False, None
     try:
         while not shutdown_sent and time.monotonic() < deadline:
             line = sys.stdin.readline()
@@ -148,15 +160,41 @@ def main():
                 continue
             type_ = message.get("type", "") if isinstance(message, dict) else ""
             round_ = message.get("round", 0) if isinstance(message, dict) and isinstance(message.get("round"), int) else 0
+            if type_ == "restart":
+                if hello_line is None or process.poll() is not None:
+                    fail("Cannot restart an actor that did not open cleanly.", round_)
+                    break
+                # SIGKILL bypasses NSApplication termination and its production
+                # flush. Only the disposable stress actor is targeted.
+                process.kill()
+                process.wait(timeout=10)
+                stderr_log.close()
+                launch()
+                seq = 1
+                write_request(mailbox, seq, hello_line)
+                attestation = wait_reply(mailbox, seq, min(120, args.reply_seconds + 60), deadline, process)
+                if attestation is None:
+                    fail("Native actor did not reopen after the crash.", round_)
+                    break
+                try:
+                    if json.loads(attestation).get("type") != "attest":
+                        raise ValueError("not an attestation")
+                except ValueError:
+                    fail("Native actor did not attest after the crash.", round_)
+                    break
+                emit(json.dumps({"type": "restart", "round": round_, "generation": generation}))
+                continue
             seq += 1
             if process.poll() is not None and seq > 1:
                 fail("Native runner is no longer running.", round_)
                 break
-            write_request(args.session, seq, line)
+            if type_ == "hello":
+                hello_line = line
+            write_request(mailbox, seq, line)
             if type_ == "shutdown":
                 shutdown_sent = True
             wait = min(120, args.reply_seconds + 60) if type_ == "hello" else args.reply_seconds
-            reply = wait_reply(args.session, seq, wait, deadline, process)
+            reply = wait_reply(mailbox, seq, wait, deadline, process)
             if reply is None:
                 fail(f"No native reply within the bound for {type_ or 'request'}.", round_)
                 break
@@ -171,8 +209,8 @@ def main():
         if not shutdown_sent and process.poll() is None:
             # Stdin ended or the relay failed: still ask the runner to flush through production and close.
             seq += 1
-            write_request(args.session, seq, '{"type":"shutdown"}')
-            reply = wait_reply(args.session, seq, args.reply_seconds, deadline, process)
+            write_request(mailbox, seq, '{"type":"shutdown"}')
+            reply = wait_reply(mailbox, seq, args.reply_seconds, deadline, process)
             if reply is not None:
                 try:
                     if json.loads(reply).get("ok") and not relay_failed:
@@ -183,13 +221,14 @@ def main():
         while time.monotonic() < until and process.poll() is None:
             time.sleep(0.5)
         if process.poll() is None:
-            err.write(f"Native runner still running after shutdown; leaving it and {args.session} in place for recovery.\n")
+            err.write(f"Native runner still running after shutdown; leaving it and {mailbox} in place for recovery.\n")
             exit_code = 1
         elif process.returncode != 0:
-            err.write(f"Native runner exited with {process.returncode}. Inspect {args.session}; journals are preserved.\n")
+            err.write(f"Native runner exited with {process.returncode}. Inspect {mailbox}; journals are preserved.\n")
             exit_code = 1
     finally:
-        stderr_log.close()
+        if stderr_log is not None:
+            stderr_log.close()
     return exit_code
 
 

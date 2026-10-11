@@ -236,6 +236,7 @@ final class NativeStressRunner {
     private let deadline: Date
     private(set) var failure: String?
     private var opened = false
+    private var transportOffline = false
     private var flushed: Bool?
     private var reloads = 0
     private var finished = false
@@ -392,6 +393,23 @@ final class NativeStressRunner {
             }
             try await insert(id: id, text: text, start: operation == "insert-start", replacing: operation == "replace-selection")
             return ["type": "applied", "round": round, "editId": id]
+        case "transport":
+            guard opened, let online = request["online"] as? Bool else {
+                throw NativeStressActor.Failure("Transport fault requires an open editor and a boolean online state.")
+            }
+            // This changes only the private actor's production collaboration bridge;
+            // the editor, filesystem watcher and local recovery journal keep running.
+            controller.setStressCollaborationOffline(!online)
+            transportOffline = !online
+            if online {
+                _ = try await evaluate("([...document.querySelectorAll('.vault-notice button')].find(b=>b.textContent?.trim()==='Retry')?.click(), true)")
+                try await until("The test editor did not rejoin after collaboration transport was restored.") {
+                    try await self.evaluate("(()=>{const e=document.querySelector('[data-collaboration-item]');return ['ready','saving'].includes(e?.dataset.collaborationState)&&!!e.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})()") == "true"
+                }
+            }
+            let state = try await evaluate("(()=>{const e=document.querySelector('[data-collaboration-item]');return e?.dataset.collaborationState||null})()")
+            record(["kind": "transport", "round": round, "online": online, "editorState": state])
+            return ["type": "transport", "round": round, "online": online, "state": state]
         case "observe":
             try await requireSelected()
             let raw = request["expectedEditIds"] as? [Any] ?? []
@@ -479,7 +497,8 @@ final class NativeStressRunner {
 
     private func requireSelected() async throws {
         guard opened else { throw NativeStressActor.Failure("Editor is not open; hello must succeed first.") }
-        let ok = try await evaluate("(()=>{const shared=document.querySelector('[data-collaboration-item]');return document.querySelector('.vault-context-location h2')?.textContent?.trim() === \(expectedTitle) && ['ready','saving'].includes(shared?.dataset.collaborationState) && (shared?.dataset.collaborationItem||'').toLowerCase() === \(expectedItem) && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})()")
+        let allowedStates = transportOffline ? "['ready','saving','offline','reconnecting','error']" : "['ready','saving']"
+        let ok = try await evaluate("(()=>{const shared=document.querySelector('[data-collaboration-item]');return document.querySelector('.vault-context-location h2')?.textContent?.trim() === \(expectedTitle) && \(allowedStates).includes(shared?.dataset.collaborationState) && (shared?.dataset.collaborationItem||'').toLowerCase() === \(expectedItem) && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})()")
         guard ok == "true" else { throw NativeStressActor.Failure("Editor is no longer on the dedicated test item in the shared document.") }
         guard Date() < deadline else { throw NativeStressActor.Failure("Stress adapter total time limit reached.") }
     }

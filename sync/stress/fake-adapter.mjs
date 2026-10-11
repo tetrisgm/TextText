@@ -1,6 +1,6 @@
 // Simulated adapter for tests and dry runs. Always attests mode "simulated"; it never claims real acceptance.
 // Six processes share one directory of edit files as a stand-in for the sync server.
-// Faults (STRESS_FAKE_FAULT): fail-round:<n> | drop-edit | hang | stale-ready | dup-ready | reload | wrong-fixture | claim-real
+// Faults (STRESS_FAKE_FAULT): fail-round:<n> | drop-edit | hang | stale-ready | dup-ready | reload | restart-fail | wrong-fixture | claim-real
 import { createInterface } from 'node:readline';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,10 +11,15 @@ let shared = sharedRoot; // scoped per run on hello so repeated runs start empty
 const fault = process.env.STRESS_FAKE_FAULT ?? '';
 const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 let role = 'unknown';
-const sessionId = `editor-${process.pid}`;
+let generation = 1;
+let sessionId = `editor-${process.pid}-${generation}`;
 let reloads = 0;
 const privateEdits = [];
+const pendingEdits = [];
 let observations = 0;
+let online = true;
+
+const publish = (edit) => writeFileSync(join(shared, `${edit.id}.json`), JSON.stringify(edit));
 
 const document = () => {
   const files = readdirSync(shared).filter((f) => f.endsWith('.json')).sort();
@@ -42,10 +47,20 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       return out({ type: 'ready', round: m.round });
     case 'edit':
       // drop-edit: nobody sees the edit (edit ID mismatch). private-edit: only this role sees it (hash divergence).
-      if (fault === 'private-edit') { privateEdits.push(m.edit); } else if (fault !== 'drop-edit') writeFileSync(join(shared, `${m.edit.id}.json`), JSON.stringify(m.edit));
+      if (fault === 'private-edit') { privateEdits.push(m.edit); }
+      else if (fault !== 'drop-edit') { if (online) publish(m.edit); else pendingEdits.push(m.edit); }
       return out({ type: 'applied', round: m.round, editId: m.edit.id });
     case 'transport':
+      online = m.online;
+      if (online) while (pendingEdits.length) publish(pendingEdits.shift());
       return out({ type: 'transport', round: m.round, online: m.online });
+    case 'restart': {
+      if (fault === 'restart-fail') return out({ type: 'error', round: m.round, message: 'injected native restart failure' });
+      generation += 1;
+      sessionId = `editor-${process.pid}-${generation}`;
+      reloads = 0;
+      return out({ type: 'restart', round: m.round, generation });
+    }
     case 'perturb':
       return out({ type: 'perturb', round: m.round, repaired: true });
     case 'observe': {

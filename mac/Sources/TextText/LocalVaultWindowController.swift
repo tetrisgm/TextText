@@ -28,6 +28,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private let credentials: LocalVaultConnectionController.CredentialsProvider
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
+#if TEXTTEXT_STRESS_ACTOR
+    // The private six-client actor can isolate only its own collaboration bridge.
+    // Local TextPack and recovery-journal writes continue while this is set.
+    private var stressCollaborationOffline = false
+    func setStressCollaborationOffline(_ offline: Bool) { stressCollaborationOffline = offline }
+#endif
     private var agent: LocalVaultAgentController?
     var onSelectedFolder: (() -> Void)?
     var onSignIn: (() -> Void)?
@@ -363,6 +369,15 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             return
         }
         if ["folderMoveReview", "trashList", "trashRestore", "accountRead", "collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel", "collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover", "presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave", "shareList", "shareInvite", "shareRole", "shareRevoke", "commentsRead", "commentsAdd", "commentsResolve", "publicationRead", "publicationSet", "feedDiscover", "feedRead", "feedEntry"].contains(method) {
+#if TEXTTEXT_STRESS_ACTOR
+            // Read/push are the hosted collaboration transport. Checkpoint/open
+            // are local durability operations and must remain available offline.
+            if stressCollaborationOffline && (method == "collaborationRead" || method == "collaborationPush") {
+                reply(id, result: .failure(LocalVaultCollaborationError(
+                    code: "503", message: "Stress actor collaboration transport is offline.", status: 503)))
+                return
+            }
+#endif
             if method == "collaborationCancel" {
                 if let requestId = params["requestId"] as? String, requestId.count <= 100 { collaboration?.cancel(requestId) }
                 reply(id, result: .success([:])); return
