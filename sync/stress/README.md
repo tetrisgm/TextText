@@ -11,18 +11,21 @@ engines, real browsers, and actual TextPack files. Physical append, browser
 offline, invalid intermediate ZIP, same-position insertion, Unicode, independent
 EOF replacement/append, and both Mac and PC CLI same-span replacement rounds
 have passed, each with a six-client durable reopen. Earlier PC CLI rounds
-failed; the failure and fresh passing receipts are in the acceptance contract. Native
-offline/crash, partial overlap/deletion, moves, and latency remain open; see
+failed; the failure and fresh passing receipts are in the acceptance contract.
+Mac and Windows native transport-loss/reconnect rounds also passed with six
+clients and separate durable reopens. Pending-edit native crashes, deletion,
+moves, and latency distributions remain open; see
 `docs/verification/six-client-sync-acceptance.md`.
 Targeted editor transport loss uses `offline`, for example
 `{"role":"mac-web","round":1}` or `{"role":"pc-app","round":1}`.
 The selected browser or native app goes offline after the readiness barrier,
 edits while the other five clients edit, then reconnects before convergence.
-The browser cases have physical passing receipts. Native support is test-only
-protocol until the platform relays implement it and a physical run passes.
+The browser and native app cases have physical passing receipts. The native
+transport gate is private to the stress actors; production editing still uses
+its normal local checkpoint and hosted collaboration paths.
 Set `restart` to `{"role":"mac-app","round":1}` or
 `{"role":"pc-app","round":1}` to crash and relaunch the native process after
-all six edits are visible but before convergence. The relay must preserve the
+all six input adapters acknowledge their local edits but before convergence. The relay must preserve the
 pending journal, skip graceful flush, use a fresh mailbox generation, reopen
 the dedicated fixture, and report the new process generation. The first state
 after restart must prove that the editor session ID changed.
