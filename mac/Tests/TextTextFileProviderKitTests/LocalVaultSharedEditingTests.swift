@@ -66,6 +66,31 @@ final class LocalVaultSharedEditingTests: XCTestCase {
             expectedHash: afterWrite.projectedHash, entryPath: "assets/picture.bin",
             expectedAssetHash: oldHash, bytes: first))
     }
+    func testIncomingAssetWhileTextIsPendingKeepsTheEditorCheckpointWritable() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let pending = try checkpoint(original)
+        let first = try changes(original, body: "Unsent human text")
+        let projected = try store.materialize(checkpoint: pending, expectedHash: original.hash,
+            markdown: first.0, documentJSON: first.1)
+        let asset = Data("remote replacement".utf8)
+        let patched = try store.applyRemoteBinary(itemId: itemId, path: path,
+            expectedHash: projected.document.hash, entryPath: "assets/picture.bin",
+            expectedAssetHash: TextTextStableDigest.sha256Hex(Data([1, 2, 255])), bytes: asset)
+        var next = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertEqual(next.projectedHash, patched.hash)
+        XCTAssertTrue(next.pending)
+        next.journalGeneration += 1
+        var journal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(next.journal.utf8)) as? [String: Any])
+        journal["journalGeneration"] = next.journalGeneration
+        next.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        let second = try changes(patched, body: "Unsent human text\nMore typing")
+        let saved = try store.materialize(checkpoint: next, expectedHash: patched.hash,
+            markdown: second.0, documentJSON: second.1)
+        XCTAssertEqual(saved.document.contents.assets.first?.data, asset)
+        XCTAssertTrue(saved.document.contents.markdown.contains("More typing"))
+        XCTAssertTrue(saved.checkpoint.pending)
+        XCTAssertNil(saved.checkpoint.retiredReason)
+    }
     func testPendingJournalAndExternalFileRemainReopenableAfterRestart() async throws {
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
