@@ -1,5 +1,27 @@
 # TextText handoff
 
+## Current status (October 10, late)
+
+Source `45b8a234` is on `origin/main`. Windows candidate
+`candidate-02ec763e824443858eec3eb3aca81f87` passed its clean build and
+was installed on the PC; the installed app launched and remained running.
+Mac 0.204 build 1243 was built from the same clean source, passed 887 shared
+tests and native build checks, was signed, and replaced `/Applications/TextText.app`.
+It reopened the signed-in iCloud workspace and existing six-client note;
+installed-app Search found that note. The Mac installer could not read the
+Store sandbox's runtime health report, so this is UI verification rather than
+a passing runtime health receipt. The helper copied into the sandboxed app
+cannot be run directly from an unsandboxed shell; build used the working
+Codex CLI as input. Neither public release nor Oracle web deployment changed.
+
+Physical six-client receipts through Unicode seed 59 are recorded in
+[the acceptance contract](verification/six-client-sync-acceptance.md).
+Remaining sync acceptance: overlapping replacements/deletions, native offline
+and pending-edit crash, whole TextPack and attachment changes, folder moves,
+permission changes, and sustained latency/resource checks. Do not call the
+system fully certified until these pass. The earlier history below remains
+for receipt lookup; its installed-build statements predate this section.
+
 ## Current work (October 10)
 
 The seeded [six-client stress runner](../sync/stress/README.md) now uses the
