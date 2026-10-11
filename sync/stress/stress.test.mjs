@@ -107,7 +107,11 @@ test('native restart occurs after all edits are visible and permits exactly one 
   config.restart = { role: 'mac-app', round: 1 };
   const summary = await new Coordinator(config).run();
   assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  const plan = JSON.parse(readFileSync(join(summary.outputDir, 'plan.json'), 'utf8'));
+  assert.deepEqual(plan.scenario, { pattern: 'append', offline: config.offline, restart: config.restart, transientInvalid: null });
+  assert.deepEqual(summary.scenario, plan.scenario);
   const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(lines.find(x => x.type === 'run-start').scenario, plan.scenario);
   const events = lines.filter(x => x.round === 1 && ['transport', 'edit-barrier', 'restart'].includes(x.type));
   assert.deepEqual(events.map(x => [x.type, x.online]), [
     ['transport', false], ['edit-barrier', undefined], ['restart', undefined], ['transport', true],

@@ -134,8 +134,10 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern)}, null, 2));
-    this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture });
+    const scenario = { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+      restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null };
+    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern)}, null, 2));
+    this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture, scenario });
     this.writeDashboard('running');
   }
 
@@ -190,6 +192,8 @@ export class Coordinator {
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real'
         ? (this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+      scenario: { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+        restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null },
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
       attestations: this.attestations, outputDir: this.dir,
     };
