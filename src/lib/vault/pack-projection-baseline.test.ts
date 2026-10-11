@@ -208,11 +208,13 @@ describe("reconciling packs with projection provenance", () => {
 
   it("does not let a stale sidecar invent chronology once both entries left it", () => {
     // A writer without provenance support rewrote both entries after the stamp,
-    // then the CLI appended. The stamp proves nothing about that rewrite, so the
-    // same ambiguity as a legacy pack remains: a conflict, never a guess.
+    // then the CLI appended. The stamp proves nothing about that rewrite, so
+    // the same ambiguity as a legacy pack remains: a conflict, never a guess.
     const stamped = coherent("one\ntwo\nthree");
     const rewritten = change(legacy("one\ntwo\nthree\nfour"), { [PROJECTION_BASELINE_ENTRY]: entry(stamped, PROJECTION_BASELINE_ENTRY) });
     expect(reconcileTextpacks(base, markdownOnly(rewritten, "one\ntwo\nthree\nfour\nfive"), base)).toEqual({ status: "conflict", paths: ["/document/markdown"] });
+    // This apparently disjoint edit is also ambiguous: both entries contain
+    // the unrecorded "four", which a blind merge would duplicate.
     expect(reconcileTextpacks(base, markdownOnly(rewritten, "ONE\ntwo\nthree\nfour"), base)).toEqual({ status: "conflict", paths: ["/document/markdown"] });
     // A coherent rewrite that re-stamps restores attribution.
     expect(jsonBody(merged(reconcileTextpacks(base, markdownOnly(coherent("one\ntwo\nthree\nfour"), "one\ntwo\nthree\nfour\nfive"), base)))).toBe("one\ntwo\nthree\nfour\nfive");

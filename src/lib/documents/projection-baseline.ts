@@ -1,6 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { strFromU8, strToU8 } from "fflate";
+import { diffChars } from "diff";
 import { validateDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
 import { mergeMarkdownIntoDocument } from "@/lib/documents/sync";
 import { parsePostMarkdownFile, type ParsedPostMarkdownFile } from "@/lib/markdown-files";
@@ -158,6 +159,20 @@ export type ProjectionResolution =
   /** No usable sidecar. The caller keeps its legacy behaviour. */
   | { status: "legacy" };
 
+/** A stale stamp can predate an unrecorded coherent rewrite. If both entries
+ * then contain the same new text, merging them independently can duplicate it.
+ * Refuse that ambiguous history; a fresh coherent save restores provenance.
+ */
+function sharedBodyInsertion(base: string, left: string, right: string): boolean {
+  if (base === left || base === right) return false;
+  // Diffing long divergent bodies is costly. Ambiguity is safer than a guessed
+  // merge and the next coherent save re-stamps the pack.
+  if (Math.max(base.length, left.length, right.length) > 8192) return true;
+  const additions = (body: string) => diffChars(base, body).filter(change => change.added).map(change => change.value);
+  const leftAdditions = additions(left), rightAdditions = additions(right);
+  return leftAdditions.some(a => rightAdditions.some(b => a.includes(b) || b.includes(a)));
+}
+
 /** What one pack says about itself. A coherent pair is one document whatever
  * the sidecar says; otherwise the stamped baseline attributes the change: a
  * JSON-only change keeps its JSON, including deletions; a Markdown-only change
@@ -183,6 +198,7 @@ export function resolveProjection(input: { markdown: Uint8Array | string; docume
   let fromMarkdown: DocumentSnapshot;
   try { fromMarkdown = mergeMarkdownIntoDocument(provenance.baseline, parseProjectionMarkdown(markdownText)); } catch { return { status: "legacy" }; }
   if (!provenance.documentChanged) return { status: "document", document: fromMarkdown, provenance };
+  if (sharedBodyInsertion(provenance.baseline.content.body, document.content.body, fromMarkdown.content.body)) return { status: "conflict" };
   const merged = reconcileDocumentSnapshots(provenance.baseline, document, fromMarkdown);
   return merged.status === "merged" ? { status: "document", document: merged.document, provenance } : { status: "conflict" };
 }
