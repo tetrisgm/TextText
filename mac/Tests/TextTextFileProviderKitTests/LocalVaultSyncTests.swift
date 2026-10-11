@@ -834,10 +834,18 @@ final class LocalVaultSyncTests: XCTestCase {
         } catch LocalVaultSyncFailure.busy { }
 
         let lifecycle = (state["lifecycles"] as? [String: String])?[itemId]
-        state["binaryOutbox"] = [itemId: ["itemId": itemId, "path": path,
+        var binaryPending: [String: Any] = ["itemId": itemId, "path": path,
             "entryPath": "assets/data.txt", "expectedHash": TextTextStableDigest.sha256Hex(Data("first".utf8)),
-            "lifecycle": lifecycle as Any? ?? NSNull(), "payloadHash": TextTextStableDigest.sha256Hex(Data("local".utf8)),
-            "operationId": UUID().uuidString.lowercased(), "conflicted": true]]
+            "lifecycle": "different-lifecycle", "payloadHash": TextTextStableDigest.sha256Hex(Data("local".utf8)),
+            "operationId": UUID().uuidString.lowercased(), "conflicted": true]
+        state["binaryOutbox"] = [itemId: binaryPending]
+        try JSONSerialization.data(withJSONObject: state).write(to: stateURL, options: .atomic)
+        do {
+            _ = try await engine(transport).beginSharedEditing(itemId: itemId, path: path, expectedHash: document.hash)
+            XCTFail("A conflict from another lifecycle must still block the editor")
+        } catch LocalVaultSyncFailure.busy { }
+        binaryPending["lifecycle"] = lifecycle as Any? ?? NSNull()
+        state["binaryOutbox"] = [itemId: binaryPending]
         try JSONSerialization.data(withJSONObject: state).write(to: stateURL, options: .atomic)
         let resumed = try engine(transport)
         let session = try await resumed.beginSharedEditing(itemId: itemId, path: path, expectedHash: document.hash)
