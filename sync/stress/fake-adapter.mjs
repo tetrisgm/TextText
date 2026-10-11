@@ -14,12 +14,13 @@ let role = 'unknown';
 const sessionId = `editor-${process.pid}`;
 let reloads = 0;
 const privateEdits = [];
+let observations = 0;
 
 const document = () => {
   const files = readdirSync(shared).filter((f) => f.endsWith('.json')).sort();
   const edits = [...files.map((f) => JSON.parse(readFileSync(join(shared, f), 'utf8'))), ...privateEdits];
   const baseline = fault === 'baseline-lost' && edits.length ? '' : 'Existing fixture text.\n';
-  return { text: baseline + (fault === 'lie-content' ? '' : edits.map((e) => e.text).join('')), editIds: edits.map((e) => e.id) };
+  return { text: (fault === 'different-baseline' ? 'Different fixture text.\n' : baseline) + (fault === 'lie-content' ? '' : edits.map((e) => e.text).join('')), editIds: edits.map((e) => e.id) };
 };
 
 createInterface({ input: process.stdin }).on('line', (line) => {
@@ -44,12 +45,17 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (fault === 'private-edit') { privateEdits.push(m.edit); } else if (fault !== 'drop-edit') writeFileSync(join(shared, `${m.edit.id}.json`), JSON.stringify(m.edit));
       return out({ type: 'applied', round: m.round, editId: m.edit.id });
     case 'observe': {
+      observations++;
       if (fault === 'reload' && m.round > 1) reloads += 1;
       // Make the shared directory's content "arrive" in two steps so concurrent writers are observed after a short settle.
-      setTimeout(() => out({ type: 'state', round: m.round, ...document(), editor: role.endsWith('-cli') ? undefined : { sessionId, reloads } }), 20);
+      setTimeout(() => {
+        const state = document();
+        if (fault === 'late-observe' && m.round === 1 && observations === 2) state.text += ' transient';
+        out({ type: 'state', round: m.round, ...state, editor: role.endsWith('-cli') ? undefined : { sessionId, reloads } });
+      }, 20);
       return;
     }
     case 'shutdown':
-      process.exit(0);
+      process.exit(fault === 'shutdown-fail' ? 1 : 0);
   }
 });

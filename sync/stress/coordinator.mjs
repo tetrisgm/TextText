@@ -126,7 +126,14 @@ export class Coordinator {
       this.broadcast({ type: 'observe', round: 0, expectedEditIds: [] });
       const baseline = await initial;
       const texts = ROLES.map(role => baseline.get(role).text);
-      if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', {});
+      const evidence = {};
+      for (const role of ROLES) {
+        const state = baseline.get(role);
+        const valid = typeof state.text === 'string' && state.text.length <= MAX_TEXT;
+        evidence[role] = { hash: valid ? hashText(state.text) : null };
+        if (valid) writeFileSync(join(this.dir, 'adapters', `${role}.initial-state.json`), JSON.stringify(state));
+      }
+      if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', { evidence });
       this.baseline = normalizeText(texts[0]);
       for (const role of EDITOR_ROLES) this.checkEditor(0, role, baseline.get(role).editor);
       for (const plan of planRounds(this.config.seed, this.config.rounds)) await this.runRound(plan);
@@ -135,7 +142,13 @@ export class Coordinator {
       failure = error instanceof StressFailure ? { code: error.code, detail: error.detail } : { code: 'unexpected', detail: { message: String(error?.message ?? error) } };
       this.record('failure', failure);
     } finally {
-      await this.stopAdapters();
+      const stopped = await this.stopAdapters();
+      const failed = stopped.filter(({ exit }) => exit?.code !== 0 || exit?.signal);
+      if (status === 'passed' && failed.length) {
+        status = 'failed';
+        failure = { code: 'shutdown-failed', detail: { actors: failed } };
+        this.record('failure', failure);
+      }
     }
     const summary = {
       runId: this.runId, status, failure, mode: this.config.mode,
@@ -227,19 +240,31 @@ export class Coordinator {
     const applied = await pending;
     for (const edit of edits) if (applied.get(edit.role).editId !== edit.id) throw new StressFailure('applied-mismatch', { round, role: edit.role, expected: edit.id, actual: applied.get(edit.role).editId });
     const expectedEditIds = planRounds(this.config.seed, round).flatMap((p) => p.edits.map((e) => e.id)).sort();
-    const observing = this.collect(round, 'state');
-    this.broadcast({ type: 'observe', round, expectedEditIds });
-    const states = await observing;
-    const observed = {};
-    for (const role of ROLES) {
-      const s = states.get(role);
-      if (typeof s.text !== 'string' || s.text.length > MAX_TEXT) throw new StressFailure('state-invalid', { round, role, reason: 'text missing or over bound' });
-      writeFileSync(join(this.dir, 'adapters', `${role}.last-state.json`), JSON.stringify({round, text:s.text, editor:s.editor, editIds:s.editIds}));
-      observed[role] = { hash: hashText(s.text), editIds: [...new Set(Array.isArray(s.editIds) ? s.editIds : [])].sort(), editor: s.editor };
-    }
-    const hashes = new Set(Object.values(observed).map((o) => o.hash));
+    // A client can report a locally stable state before another replica's save reaches it.
+    // Keep all six actors open while checking convergence; a premature failure shuts down
+    // the very sync processes we are measuring. The deadline still makes stalls visible.
+    let states, observed, hashes;
+    const convergenceDeadline = Date.now() + this.config.timeoutMs;
+    let samples = 0;
+    do {
+      const observing = this.collect(round, 'state');
+      this.broadcast({ type: 'observe', round, expectedEditIds });
+      states = await observing;
+      observed = {};
+      for (const role of ROLES) {
+        const s = states.get(role);
+        if (typeof s.text !== 'string' || s.text.length > MAX_TEXT) throw new StressFailure('state-invalid', { round, role, reason: 'text missing or over bound' });
+        writeFileSync(join(this.dir, 'adapters', `${role}.last-state.json`), JSON.stringify({round, text:s.text, editor:s.editor, editIds:s.editIds}));
+        observed[role] = { hash: hashText(s.text), editIds: [...new Set(Array.isArray(s.editIds) ? s.editIds : [])].sort(), editor: s.editor };
+      }
+      hashes = new Set(Object.values(observed).map((o) => o.hash));
+      samples++;
+      if (hashes.size === 1) break;
+      this.record('convergence-pending', { round, sample: samples, hashes: Object.fromEntries(ROLES.map(r => [r, observed[r].hash])) });
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } while (Date.now() < convergenceDeadline);
     const evidence = Object.fromEntries(ROLES.map((r) => [r, { hash: observed[r].hash, editIds: observed[r].editIds }]));
-    if (hashes.size !== 1) throw new StressFailure('hash-divergence', { round, evidence });
+    if (hashes.size !== 1) throw new StressFailure('hash-divergence', { round, samples, durationMs: Date.now() - started, evidence });
     for (const role of ROLES) {
       const ids = observed[role].editIds;
       if (ids.length !== expectedEditIds.length || ids.some((id, i) => id !== expectedEditIds[i])) throw new StressFailure('edit-id-mismatch', { round, role, expected: expectedEditIds, actual: ids });
@@ -268,10 +293,15 @@ export class Coordinator {
   }
 
   async stopAdapters() {
-    await Promise.all([...this.adapters.values()].map(async (a) => {
-      const exit = await a.stop();
+    return await Promise.all([...this.adapters.values()].map(async (a) => {
+      // Native actors flush the production journal before exiting. Give that operation
+      // its normal request budget instead of killing a healthy save after two seconds.
+      let exit;
+      try { exit = await a.stop(Math.min(60_000, Math.max(2_000, this.config.timeoutMs))); }
+      catch { exit = { code: null, signal: 'stop-error' }; }
       if (a.stderr) writeFileSync(join(this.dir, 'adapters', `${a.role}.stderr.log`), a.stderr);
       this.record('adapter-stopped', { role: a.role, exit });
+      return { role: a.role, exit };
     }));
   }
 

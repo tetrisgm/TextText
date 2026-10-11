@@ -1,5 +1,33 @@
 # TextText handoff
 
+## Current work (October 10)
+
+The seeded [six-client stress runner](../sync/stress/README.md) now uses the
+real Mac and Windows app editors, browsers, and direct TextPack files. The
+private Mac actor and isolated Windows acceptance project compiled and were
+smoke-tested; neither was installed. All 43 harness tests and 377 sync client
+tests pass on the Mac. Windows isolated build passed on the PC with two existing
+NU1510 package warnings and no errors.
+
+Real run `stress-2026-10-11T05-00-43-801Z-42` passed one simultaneous-edit
+round across all six clients. Reusing that fixture for seed 43 exposed a
+three-way temporary divergence. The coordinator stopped the live clients as
+soon as each replica contained all six role IDs, before their different
+suffixes converged. It now re-observes within a bounded window while keeping
+all clients open. A simulated regression verifies this behavior. Fresh-fixture
+run `stress-2026-10-11T05-06-08-679Z-43` passed five of five rounds; run
+`stress-2026-10-11T05-09-06-457Z-44` passed ten of ten. All four app/browser
+editors retained their sessions throughout, all direct file actors participated,
+and exact body hashes matched at each round. Per-role state, timings, and
+dashboard receipts are in `/private/tmp/texttext-six-20261010/results/`.
+
+This is real six-client append acceptance, not full sync certification. The
+remaining acceptance contract includes offline/reconnect, conflicting
+replacement and deletion, crash/restart, file moves, and sustained latency
+checks. The current runners exercise concurrent app/browser/CLI appends only.
+Keep these receipts and disposable fixture files; do not alter user notes or
+journals. No public Mac release was made.
+
 ## Current delivery (October 9)
 
 Windows TextText is installed from source `06c3ad60`. Its self-contained

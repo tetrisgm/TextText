@@ -17,15 +17,17 @@ static class Program
     sealed record Plan(string File, string ItemId, string Title, string RunId,
         DateTimeOffset StartUtc, int Rounds, int IntervalMs, int ObserveSeconds,
         string[] ExpectedMarkers, string? RecoveryProfile = null, bool VerifyOnly = false);
-    const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
-    static object? Field(MainWindow window, string name) => typeof(MainWindow).GetField(name, Private)?.GetValue(window);
-    static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    internal const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+    internal static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
+    internal static object? Field(MainWindow window, string name) => typeof(MainWindow).GetField(name, Private)?.GetValue(window);
+    internal static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     static string Marker(Plan plan, int round) => $"[pc-app:{plan.RunId}:{round:D2}]";
 
     [STAThread] static int Main(string[] args)
     {
-        if (args.Length != 2) { Console.Error.WriteLine("Usage: TextText.LiveAcceptance <plan.json> <new-receipt-directory>"); return 2; }
+        // Coordinator mailbox mode: see Stress.cs. Same production window, mutex and flush path.
+        if (args.Length == 3 && args[0] == "--stress") return Stress.Run(args[1], args[2]);
+        if (args.Length != 2) { Console.Error.WriteLine("Usage: TextText.LiveAcceptance <plan.json> <new-receipt-directory> | --stress <config.json> <session-directory>"); return 2; }
         try
         {
             var plan = JsonSerializer.Deserialize<Plan>(File.ReadAllText(args[0]), Json) ?? throw new Exception("Missing plan");
@@ -112,7 +114,7 @@ static class Program
         if(plan.RecoveryProfile is {} profile && (!Path.IsPathFullyQualified(profile)||!Directory.Exists(profile)))throw new Exception("Recovery requires an existing, preserved test profile.");
     }
 
-    static async Task Until(Func<Task<bool>> condition, CancellationToken ct, string message)
+    internal static async Task Until(Func<Task<bool>> condition, CancellationToken ct, string message)
     {
         using var bound = CancellationTokenSource.CreateLinkedTokenSource(ct);
         bound.CancelAfter(TimeSpan.FromSeconds(45));

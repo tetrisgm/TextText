@@ -95,6 +95,13 @@ test('hash divergence and edit ID mismatch fail with per-role evidence', async (
   assert.ok(drop.summary.failure.detail.expected.includes('r1-pc-cli'));
 });
 
+test('temporary replica divergence is re-observed before shutting down the clients', async () => {
+  const { summary, lines } = await runWith({ faults: { 'pc-web': 'late-observe' }, rounds: 1 });
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  assert.equal(summary.roundsCompleted, 1);
+  assert.ok(lines.some(line => line.type === 'convergence-pending' && line.round === 1));
+});
+
 test('timeout names the missing roles and still stops every adapter', async () => {
   const { summary, lines } = await runWith({ faults: { 'mac-app': 'hang' }, timeoutMs: 500, rounds: 1 });
   assert.equal(summary.failure.code, 'timeout');
@@ -137,4 +144,27 @@ test('failed process launch terminates the run and records failure', async () =>
   const summary = await new Coordinator(config).run();
   assert.equal(summary.status, 'failed');
   assert.match(summary.failure.code, /actor-exited|adapter-error/);
+});
+
+
+test('baseline disagreement retains all six actual initial observations before any edits', async () => {
+  const { summary } = await runWith({ faults: { 'pc-cli': 'different-baseline' } });
+  assert.equal(summary.failure.code, 'baseline-divergence');
+  assert.equal(summary.roundsCompleted, 0);
+  assert.equal(Object.keys(summary.failure.detail.evidence).length, 6);
+  for (const role of ROLES) {
+    const state = JSON.parse(readFileSync(join(summary.outputDir, 'adapters', `${role}.initial-state.json`), 'utf8'));
+    assert.equal(state.round, 0);
+    assert.equal(state.text, role === 'pc-cli' ? 'Different fixture text.\n' : 'Existing fixture text.\n');
+  }
+});
+
+
+test('successful rounds cannot hide a failed final flush or actor shutdown', async () => {
+  const { summary } = await runWith({ faults: { 'pc-app': 'shutdown-fail' }, rounds: 1 });
+  assert.equal(summary.roundsCompleted, 1);
+  assert.equal(summary.status, 'failed');
+  assert.equal(summary.acceptance, 'none');
+  assert.equal(summary.failure.code, 'shutdown-failed');
+  assert.deepEqual(summary.failure.detail.actors.map(a => a.role), ['pc-app']);
 });

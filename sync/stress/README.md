@@ -6,11 +6,16 @@ child process per role over JSONL, runs N rounds, and stops at the first
 failure with evidence preserved. It is a command, not a service: no persistent watchers, schedules or hooks are installed. Adapters must clean
 up their own remote children; an unresponsive remote actor is a failed run.
 
-**Status: the coordinator, protocol, fake adapter and tests are delivered.
-Native (Mac/Windows app), browser and CLI adapters that speak this protocol
-against real TextText clients are separate integration work, not yet
-delivered.** Until they exist, only `simulated` runs are possible and no run
-here constitutes real acceptance evidence.
+**Status:** the coordinator and all six real-client adapters are implemented.
+The Mac actor uses a private test build of `LocalVaultWindowController`; the
+Windows actor uses the production `MainWindow` in an interactive desktop task;
+Chrome and Edge use the real hosted editor; CLI actors edit the actual TextPack
+file. The adapters never replace the installed app or bypass its sync engine.
+Physical campaigns on October 10 passed one, five, and ten rounds on fresh
+fixtures. This is acceptance evidence for simultaneous append and editor
+continuity. Offline, crash, deletion, replacement, move, and latency scenarios
+remain outside this runner's current coverage; see
+`docs/verification/six-client-sync-acceptance.md`.
 
 ## Run
 
@@ -18,6 +23,29 @@ here constitutes real acceptance evidence.
 node sync/stress/run.mjs sync/stress/example.simulated.json
 node --test sync/stress/stress.test.mjs
 ```
+
+For a real run, create a fresh, dedicated `Six-client acceptance …` TextPack
+in the selected workspace and wait until the file is present on both machines.
+Make a config with `mode: "real"` and these role commands:
+
+| Role | Driver |
+| --- | --- |
+| `mac-app` | `python3 mac/scripts/stress-native.py --actor <private flagged .app>/Contents/MacOS/TextText --config <mac-app.json> --session <new directory>` |
+| `mac-web` | `node sync/stress/browser-adapter.mjs <mac-web.json>` |
+| `mac-cli` | `node sync/stress/file-adapter.mjs <mac-cli.json>` |
+| `pc-app` | `ssh pc node <pc-source>/scripts/stress-native-relay.mjs <acceptance.dll> <pc-app.json> <new directory>` |
+| `pc-web` | `ssh pc node <pc-source>/sync/stress/browser-adapter.mjs <pc-web.json>` |
+| `pc-cli` | `ssh pc node <pc-source>/sync/stress/file-adapter.mjs <pc-cli.json>` |
+
+Use a fresh fixture for each run and one new session directory per native run.
+Close the normal native apps before
+starting their test actors; the browsers may remain signed in. `auth: "saved-app"`
+exchanges the already signed-in native account in memory for a browser session.
+The private Mac actor must be built with `-DTEXTTEXT_STRESS_ACTOR` and signed
+with the normal app group entitlement. Its test config and session need an
+explicit sandbox-readable writable location. The Windows relay registers a
+one-shot interactive task and unregisters it after a clean exit. No secrets
+go in the coordinator config or arguments.
 
 Exit 0 only when every round converged. Output goes to a fresh directory
 `<outputDir>/<runId>/` (the example uses ignored `.texttext/sync/stress/`):
@@ -70,8 +98,10 @@ An adapter may send `{"type":"error","round","message"}` at any time; that
 fails the run as `actor-failed`. Unexpected exit fails it as `actor-exited`.
 
 Per round: all six must be `ready` (barrier) before the six edits are
-dispatched concurrently; then all six `applied` IDs must match the plan; then
-every `state` must produce one identical hash (only CRLF normalized to LF, `text` at most 64 KB) and exactly the cumulative expected
+dispatched concurrently; then all six `applied` IDs must match the plan. The
+coordinator re-observes temporarily different replicas within the configured
+deadline while all actors remain live. At convergence, every `state` must
+produce one identical hash (only CRLF normalized to LF, `text` at most 64 KB) and exactly the cumulative expected
 edit ID set. App and web roles must report `editor` with the same `sessionId`
 as the initial round-zero observation, with zero `reloads`. Each exact planned
 text must occur once; removing those texts must reproduce the original baseline

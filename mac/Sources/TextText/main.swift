@@ -16,6 +16,17 @@ NativeWorkspaceCommandRegistry.makeServer = {
 }
 NativeWorkspaceCommandRegistry.openURL = { NSWorkspace.shared.open($0) }
 
+#if TEXTTEXT_STRESS_ACTOR
+// Six-client stress actor (mac-app role), compiled only with
+// `-Xswiftc -DTEXTTEXT_STRESS_ACTOR`; see NativeStressRunner.swift. Product
+// builds never contain this branch. Invoked by mac/scripts/stress-native.py as
+// `TextText --stress <config.json> <session-dir>`; it runs the production
+// LocalVaultWindowController instead of AppDelegate and never returns.
+if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--stress" {
+    NativeStressActor.run(arguments: CommandLine.arguments)
+}
+#endif
+
 // App-owned release/runtime verification. This uses the same checks the
 // installed app runs on first launch and each day, without creating UI.
 if ProcessInfo.processInfo.environment["TEXTTEXT_HEALTH_CHECK"] == "1" {
