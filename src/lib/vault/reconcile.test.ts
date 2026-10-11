@@ -143,6 +143,15 @@ describe("reconcileDocumentSnapshots", () => {
       expect(reconcileDocumentSnapshots(base, local, remote, remoteFirst).status).toBe("conflict");
     });
 
+    it("keeps both replacements when the editor also removes the final newline", () => {
+      const { base, local, remote } = replicas("Existing fixture text.\n");
+      local.content.body = "[pc-app]";
+      remote.content.body = "[pc-cli]\n";
+      expect(reconcileDocumentSnapshots(base, local, remote, {
+        concurrentInsertions: "remote-first", preserveOverlappingReplacement: true,
+      })).toMatchObject({ status: "merged", document: { content: { body: "[pc-cli][pc-app]\n" } } });
+    });
+
     it("orders coincident insertions remote-first next to other local edits", () => {
       expect(merged("ab cd", "aXb cdL", "aYb cd")).toBe("aYXb cdL");
     });

@@ -73,6 +73,13 @@ export function externalBodyEdits(base: string, local: string, external: string,
     const insertion = { start: ownSpan.start, end: ownSpan.start, replacement: incomingSpan.replacement };
     if (project([insertion]) === merged) return [insertion];
   }
+  if (trailingNewlineOverlap(base, ownSpan, incomingSpan)) {
+    const edits = [
+      ...(!local.endsWith("\n") ? [{ start: local.length, end: local.length, replacement: "\n" }] : []),
+      { start: ownSpan.start, end: ownSpan.start, replacement: incomingSpan.replacement },
+    ];
+    if (project(edits) === merged) return edits;
+  }
   const start = Math.min(ownSpan.start, incomingSpan.start);
   const end = Math.max(ownSpan.end, incomingSpan.end), tail = base.length - end;
   const before = base.slice(start, end);
@@ -115,6 +122,15 @@ function edit(base: string, changed: string): TextEdit {
   return { start, end, replacement: changed.slice(start, changedEnd) };
 }
 
+/** Contenteditable may consume the terminal paragraph newline while a direct
+ * file replacement keeps it. Both edits still replace the same visible text. */
+function trailingNewlineOverlap(base: string, local: TextEdit, remote: TextEdit): boolean {
+  return base.endsWith("\n") && local.start === remote.start && local.start < base.length - 1 &&
+    Math.min(local.end, remote.end) === base.length - 1 &&
+    Math.max(local.end, remote.end) === base.length &&
+    Boolean(local.replacement && remote.replacement);
+}
+
 function mergeBody(base: string, local: string, remote: string, concurrentInsertions?: "remote-first", preserveOverlappingReplacement = false): string | undefined {
   const localEdit = edit(base, local), remoteEdit = edit(base, remote);
   if (concurrentInsertions && localEdit.start === localEdit.end && remoteEdit.start === remoteEdit.end && localEdit.start === remoteEdit.start) {
@@ -126,6 +142,9 @@ function mergeBody(base: string, local: string, remote: string, concurrentInsert
   if (preserveOverlappingReplacement && localEdit.start === remoteEdit.start && localEdit.end === remoteEdit.end &&
       localEdit.start < localEdit.end && localEdit.replacement && remoteEdit.replacement) {
     return base.slice(0, localEdit.start) + remoteEdit.replacement + localEdit.replacement + base.slice(localEdit.end);
+  }
+  if (preserveOverlappingReplacement && trailingNewlineOverlap(base, localEdit, remoteEdit)) {
+    return base.slice(0, localEdit.start) + remoteEdit.replacement + localEdit.replacement + "\n";
   }
   const edits = [localEdit, remoteEdit].sort((a, b) => a.start - b.start);
   const [first, second] = edits;
