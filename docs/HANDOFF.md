@@ -2,14 +2,16 @@
 
 ## Current work (October 11)
 
-Source `7e780c26` is on `origin/main`. Mac 0.204 build 1246 and the matching
-Windows candidate are installed locally; neither a public Mac release nor an
-Oracle website deployment was made. The exact-source Node 22 sync gate passed
-894 core tests plus native checks. The Windows clean build passed its native,
-384 shared client, TypeScript, UI, and desktop smoke gates. The Mac Store-shaped
-bundle passed signing and extension checks; its sandbox-private runtime health
-report remains inaccessible to the installer, so installed-app health is based
-on launch and the physical editor tests.
+Source `ef3d2907` is on `origin/main`. Mac 0.204 build 1247 is installed and
+launched locally from that clean source; neither a public Mac release nor an
+Oracle website deployment was made. Its exact-source Node 22 sync gate passed
+896 core tests plus native checks, and the Store-shaped bundle passed signing
+and extension checks. The sandbox-private runtime health report remains
+inaccessible to the installer. The Windows app still runs the previously
+verified `7e780c26` candidate; its new `ef3d2907` source was transferred to
+the PC and the build was started, but the PC's SSH server then began resetting
+connections before login. Inspect its build log and receipt once access returns;
+do not treat the remote command's exit as proof that the new candidate passed.
 
 The PC direct-file replacement failure in seeds 66 and 68 exposed two paths:
 same-generation Windows checkpoint retry classification (`9a5873f2`) and a
@@ -20,7 +22,14 @@ converged and a durable six-client reopen. Fresh seed 71 passed the Mac CLI
 direction and its reopen. Exact receipts and prior failures are in
 [the acceptance contract](verification/six-client-sync-acceptance.md).
 
-Next: partial overlapping replacements/deletions, native offline and pending
+Partial overlapping replacement/deletion now has focused merge, Yjs undo, and
+runner tests (`dc561876`, `ef3d2907`). A fresh seed-72 fixture and six-client
+config are ready in `/private/tmp/texttext-six-20261011/partial1272/`, but the
+physical run is pending the PC build/install and SSH recovery. The TextText
+project changelog named by the repository contract was not present in the
+currently selected local workspace; do not create a duplicate.
+
+Next: physical partial overlap, native offline and pending
 edit crash recovery, whole TextPack/assets, folder operations, separate-account
 permissions, and sustained latency/resource runs. Do not call sync fully
 certified until those physical cases pass. Preserve failed fixtures, journals,
