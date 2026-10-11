@@ -375,18 +375,22 @@ final class NativeStressRunner {
                     "machineId": NativeStressActor.hostName(), "adapter": adapterName]
         case "prepare":
             try await requireSelected()
+            if request["select"] as? String == "Existing fixture text." {
+                let selected = try await evaluate("(()=>{const e=document.querySelector('[aria-label=\"Document body\"]');if(!e?.isContentEditable||e.textContent.split('Existing fixture text.').length!==2)return false;const w=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);let n;while(n=w.nextNode()){const i=n.textContent.indexOf('Existing fixture text.');if(i<0)continue;e.focus();const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+22);const s=window.getSelection();s.removeAllRanges();s.addRange(r);return s.toString()==='Existing fixture text.'}return false})()")
+                guard selected == "true" else { throw NativeStressActor.Failure("Replacement target could not be selected.") }
+            }
             return ["type": "ready", "round": round]
         case "edit":
             try await requireSelected()
             guard let edit = request["edit"] as? [String: Any], let operation = edit["op"] as? String,
-                  operation == "append" || operation == "insert-start" else { throw NativeStressActor.Failure("Unsupported edit operation.") }
+                  operation == "append" || operation == "insert-start" || operation == "replace-selection" else { throw NativeStressActor.Failure("Unsupported edit operation.") }
             let id = edit["id"] as? String ?? ""
             let text = edit["text"] as? String ?? ""
             guard Self.editId.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)) != nil,
                   !text.isEmpty, text.count <= NativeStressActor.maxEditText, !text.contains("\n"), !text.contains("\r") else {
                 throw NativeStressActor.Failure("Edit id or text is out of bounds for this adapter.")
             }
-            try await insert(id: id, text: text, start: operation == "insert-start")
+            try await insert(id: id, text: text, start: operation == "insert-start", replacing: operation == "replace-selection")
             return ["type": "applied", "round": round, "editId": id]
         case "observe":
             try await requireSelected()
@@ -492,12 +496,14 @@ final class NativeStressRunner {
         text.components(separatedBy: needle).count - 1
     }
 
-    private func insert(id: String, text: String, start: Bool) async throws {
+    private func insert(id: String, text: String, start: Bool, replacing: Bool) async throws {
         guard let before = try await body() else { throw NativeStressActor.Failure("Test editor body is not present.") }
         guard !before.contains(text) else { throw NativeStressActor.Failure("Edit text already present before input: " + id) }
         // Real contenteditable focus and a collapsed selection at the end (selection
         // only, no content mutation), then the exact text through native input.
-        let focused = try await evaluate("(()=>{const e=document.querySelector('[aria-label=\"Document body\"]');if(!e||!e.isContentEditable)return false;e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(\(start ? "true" : "false"));const s=window.getSelection();s.removeAllRanges();s.addRange(r);return true})()")
+        let focused = try await evaluate(replacing
+            ? "window.getSelection()?.toString()==='Existing fixture text.'"
+            : "(()=>{const e=document.querySelector('[aria-label=\"Document body\"]');if(!e||!e.isContentEditable)return false;e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(\(start ? "true" : "false"));const s=window.getSelection();s.removeAllRanges();s.addRange(r);return true})()")
         guard focused == "true" else { throw NativeStressActor.Failure("Could not place the caret in the document body.") }
         let path = try insertNatively(text)
         record(["kind": "input", "editId": id, "path": path])

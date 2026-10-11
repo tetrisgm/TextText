@@ -188,15 +188,20 @@ static class Stress
                 }
                 case "prepare":
                     await RequireSelected(ct);
+                    if (request.TryGetProperty("select", out var selection) && selection.GetString() == "Existing fixture text.")
+                    {
+                        var selected = await view!.ExecuteScriptAsync("(()=>{const e=document.querySelector('[aria-label=\"Document body\"]');if(!e?.isContentEditable||e.textContent.split('Existing fixture text.').length!==2)return false;const w=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);let n;while(n=w.nextNode()){const i=n.textContent.indexOf('Existing fixture text.');if(i<0)continue;e.focus();const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+22);const s=window.getSelection();s.removeAllRanges();s.addRange(r);return s.toString()==='Existing fixture text.'}return false})()");
+                        if (selected != "true") throw new Exception("Replacement target could not be selected.");
+                    }
                     return new { type = "ready", round };
                 case "edit":
                 {
                     await RequireSelected(ct);
-                    if (!request.TryGetProperty("edit", out var edit) || !edit.TryGetProperty("op", out var op) || op.GetString() is not ("append" or "insert-start")) throw new Exception("Unsupported edit operation.");
+                    if (!request.TryGetProperty("edit", out var edit) || !edit.TryGetProperty("op", out var op) || op.GetString() is not ("append" or "insert-start" or "replace-selection")) throw new Exception("Unsupported edit operation.");
                     var id = edit.TryGetProperty("id", out var ie) ? ie.GetString() ?? "" : "";
                     var text = edit.TryGetProperty("text", out var te) ? te.GetString() ?? "" : "";
                     if (!EditIdPattern.IsMatch(id) || text.Length is 0 or > MaxEditText || text.Contains('\n')) throw new Exception("Edit id or text is out of bounds for this adapter.");
-                    await Insert(id, text, op.GetString() == "insert-start", ct);
+                    await Insert(id, text, op.GetString() == "insert-start", op.GetString() == "replace-selection", ct);
                     return new { type = "applied", round, editId = id };
                 }
                 case "observe":
@@ -257,12 +262,16 @@ static class Stress
             return parsed.RootElement.GetProperty("body").ValueKind == JsonValueKind.String ? parsed.RootElement.GetProperty("body").GetString() : null;
         }
 
-        async Task Insert(string id, string text, bool start, CancellationToken ct)
+        async Task Insert(string id, string text, bool start, bool replacing, CancellationToken ct)
         {
             var before = await Body() ?? throw new Exception("Test editor body is not present.");
             if (before.Contains(text)) throw new Exception("Edit text already present before input: " + id);
             // Real contenteditable focus and a collapsed selection at the end, then the exact text through the input pipeline.
-            await view!.ExecuteScriptAsync($"(()=>{{const e=document.querySelector('[aria-label=\"Document body\"]');e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse({(start ? "true" : "false")});const s=window.getSelection();s.removeAllRanges();s.addRange(r)}})()");
+            if (replacing)
+            {
+                if (await view!.ExecuteScriptAsync("window.getSelection()?.toString()==='Existing fixture text.'") != "true") throw new Exception("Replacement selection changed before input.");
+            }
+            else await view!.ExecuteScriptAsync($"(()=>{{const e=document.querySelector('[aria-label=\"Document body\"]');e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse({(start ? "true" : "false")});const s=window.getSelection();s.removeAllRanges();s.addRange(r)}})()");
             log(new { kind = "input", editId = id });
             await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
             var deadline = DateTimeOffset.UtcNow + EditBound;

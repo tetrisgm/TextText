@@ -1,5 +1,24 @@
 # TextText handoff
 
+## Current sync failure (October 11)
+
+The six-client runner now has a one-round `overlap-replace` pattern: four
+real editors select the same existing sentence before the edit barrier, while
+both direct-file actors append. Focused harness tests pass. Physical seed 62
+failed; receipt:
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T10-33-38-658Z-62`.
+The Windows native editor accepted its replacement, then reloaded its editor,
+showed only its own marker, lost its active shared document, and failed final
+flush. The Mac TextPack contained four of six markers at inspection. This is
+not a passing acceptance result. Keep the fixture and recovery journals for
+diagnosis. Next trace the Windows native checkpoint's `local_changed` path and
+the shared client's overlapping replacement policy before another live run.
+Current `reconcileDocumentSnapshots` refuses overlapping replacements by
+design; `src/local-vault/collaboration-client.test.ts` asserts retirement in
+that case. Product work must decide and implement a lossless live merge for
+this case rather than relaxing the stress assertion. Neither installed app nor
+the Oracle website was updated for this test.
+
 ## Current status (October 10, late)
 
 Source `45b8a234` is on `origin/main`. Windows candidate

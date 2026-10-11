@@ -71,6 +71,18 @@ test('reads the real pack, picks the bundle root and ignores assets/text.md', ()
   assert.throws(() => readPack(strToU8('not a zip')), /not a readable ZIP/);
 });
 
+test('accepts a CLI-created pack with no optional Markdown title', () => {
+  const bytes = buildPack();
+  const pack = decompressed(bytes);
+  const name = 'Six-client acceptance 2026-10-09.textbundle/text.md';
+  const markdown = strFromU8(pack.files[name]).replace(/^title:.*\n/m, '');
+  const entries = Object.fromEntries(pack.order.map((n) => [n, [n === name ? strToU8(markdown) : pack.files[n] ?? new Uint8Array(0), { level: 0 }]]));
+  assert.equal(validateIdentity(readPack(zipSync(entries)), { itemId: ITEM, title: TITLE }).body, BASE_BODY);
+  const malformed = markdown.replace(/^textTextId:/m, 'title: not-json\ntitle: still-not-json\ntextTextId:');
+  const invalidEntries = Object.fromEntries(pack.order.map((n) => [n, [n === name ? strToU8(malformed) : pack.files[n] ?? new Uint8Array(0), { level: 0 }]]));
+  assert.throws(() => validateIdentity(readPack(zipSync(invalidEntries)), { itemId: ITEM, title: TITLE }), /text.md title/);
+});
+
 test('body and edit-id derivation follow the editor projection and the planned marker shape', () => {
   assert.equal(bodyOf('---\na: 1\n---\n\nhello\n'), 'hello\n');
   assert.equal(bodyOf('---\na: 1\n---\nhello\n'), 'hello\n');

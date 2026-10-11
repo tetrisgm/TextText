@@ -105,6 +105,7 @@ export function markdownOf(pack) {
 function frontmatterValue(markdown, key) {
   const header = markdown.replace(/^﻿/, '').match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/)?.[1] ?? '';
   const values = [...header.matchAll(new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, 'gm'))];
+  if (values.length === 0) return undefined;
   if (values.length !== 1) return null;
   let value = values[0][1];
   if (value.startsWith('"')) { try { value = JSON.parse(value); } catch { return null; } }
@@ -124,8 +125,9 @@ export function editIdsOf(body) {
   return [...ids].sort();
 }
 
-// Identity lives in both representations: text.md frontmatter (textTextId, title) and document.json
-// (a schema-v1 snapshot whose title agrees). The pack does not record its workspace; that comes from
+// Identity lives in text.md (textTextId) and document.json (schema-v1 title).
+// CLI-created packs may omit the optional Markdown title; an explicit title must still agree.
+// The pack does not record its workspace; that comes from
 // the actor config and must equal the coordinator's fixture before anything is written.
 export function validateIdentity(pack, config) {
   const markdown = markdownOf(pack);
@@ -138,7 +140,9 @@ export function validateIdentity(pack, config) {
   const id = frontmatterValue(markdown, 'textTextId');
   if (id !== config.itemId) throw new ActorError('identity', 'text.md textTextId does not match the configured item');
   const title = frontmatterValue(markdown, 'title');
-  if (title !== config.title) throw new ActorError('identity', 'text.md title does not match the configured acceptance title');
+  if (title !== undefined) {
+    if (title !== config.title) throw new ActorError('identity', 'text.md title does not match the configured acceptance title');
+  }
   if (document.content.title !== config.title) throw new ActorError('identity', 'document.json title does not match the configured acceptance title');
   return { markdown, body: bodyOf(markdown) };
 }

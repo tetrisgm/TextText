@@ -74,7 +74,7 @@ export function validateRound(round) {
 export function validateEdit(edit) {
   if (!edit || typeof edit !== 'object') return { ok: false, reason: 'edit-missing' };
   if (typeof edit.id !== 'string' || !/^r\d{1,5}-(mac|pc)-(app|web|cli)$/.test(edit.id)) return { ok: false, reason: 'edit-id-invalid' };
-  if (edit.op !== 'append' && edit.op !== 'insert-start') return { ok: false, reason: 'edit-op-unsupported' };
+  if (!['append', 'insert-start', 'replace-selection'].includes(edit.op)) return { ok: false, reason: 'edit-op-unsupported' };
   if (typeof edit.text !== 'string' || !edit.text.length || edit.text.length > MAX_EDIT_TEXT) return { ok: false, reason: 'edit-text-invalid' };
   const markers = [...edit.text.matchAll(MARKER)];
   const ids = markerEditIds(edit.text);
@@ -126,6 +126,25 @@ const caretToEdge = ({ selector, start }) => {
   sel.removeAllRanges();
   sel.addRange(range);
   return true;
+};
+const selectExactText = ({ selector, target }) => {
+  const el = document.querySelector(selector);
+  if (!el?.isContentEditable || el.textContent.split(target).length !== 2) return false;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const offset = node.textContent.indexOf(target);
+    if (offset < 0) continue;
+    el.focus();
+    const range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, offset + target.length);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return selection.toString() === target;
+  }
+  return false;
 };
 const installContinuity = (selector) => {
   const el = document.querySelector(selector);
@@ -226,6 +245,7 @@ async function main() {
     async prepare(m) {
       await assertOnItem();
       if (!await page.evaluate(sharedEditorReady, config.itemId)) throw new StageError('shared-ready', 'editor left the shared document');
+      if (m.select && !await page.evaluate(selectExactText, { selector: EDITOR, target: m.select })) throw new StageError('prepare', 'replacement target could not be selected');
       out({ type: 'ready', round: m.round });
     },
     async transport(m) {
@@ -238,7 +258,9 @@ async function main() {
       const v = validateEdit(m.edit);
       if (!v.ok) throw new StageError('edit', v.reason);
       await assertOnItem();
-      if (!await page.evaluate(caretToEdge, { selector: EDITOR, start: m.edit.op === 'insert-start' })) throw new StageError('edit', 'editor not editable');
+      if (m.edit.op === 'replace-selection') {
+        if (!await page.evaluate(() => window.getSelection()?.toString() === 'Existing fixture text.')) throw new StageError('edit', 'replacement selection changed before input');
+      } else if (!await page.evaluate(caretToEdge, { selector: EDITOR, start: m.edit.op === 'insert-start' })) throw new StageError('edit', 'editor not editable');
       await page.keyboard.insertText(m.edit.text);
       const after = await bodyText();
       if (after.split(m.edit.text).length < 2) throw new StageError('edit', 'inserted text not visible in editor');
