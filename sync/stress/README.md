@@ -26,9 +26,9 @@ loss and pending-edit crash recovery remain open.
 Set `transientInvalid` to `{"role":"mac-cli","round":1}` or
 `{"role":"pc-cli","round":1}` to test a brief invalid TextPack write and
 atomic repair while all six editors stay open. The Mac CLI physical run passed.
-The PC CLI run failed when the Windows editor left its selected file; the
-candidate Windows fix has a focused local test but still needs a physical
-replay. The failing receipt is linked in the acceptance contract.
+The initial PC CLI run failed when the Windows editor left its selected file.
+The repaired Windows test build then passed a fresh two-round, six-client PC CLI
+replay. The failing and passing receipts are linked in the acceptance contract.
 
 ## Run
 

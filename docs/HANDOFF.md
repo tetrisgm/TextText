@@ -83,11 +83,16 @@ and the signed-in production browser found that note with the saved body.
   two rounds. PC CLI invalid/intermediate seed 50 **failed**: the Windows native
   editor left its selected document. Its receipt is
   `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-29-50-412Z-50`.
-  A candidate Windows inventory fix retains the last valid entry during a
+  Windows inventory fix `b8ce3147` retains the last valid entry during a
   temporary invalid ZIP and has a focused regression that distinguishes repair
-  from actual deletion. The PC actor's failure-surface log and physical replay
-  still need inspection; PC SSH is currently resetting connections. Do not
-  count the candidate as physically verified or six-client acceptance complete.
+  from actual deletion. PC SSH recovered. A fresh six-client PC CLI replay
+  passed two rounds with all editors open and exact convergence; receipt:
+  `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-44-56-930Z-52`.
+  An earlier setup attempt (seed 51) stopped before edits when the Mac actor
+  reopened the previously selected note; the fixture was opened explicitly
+  before seed 52. The fix is physically verified in the private Windows test
+  build, but six-client acceptance is not complete and the installed Windows
+  app has not been updated.
 
 - Automatic six-client coordinator: [runner/protocol](../sync/stress/README.md)
   now provides seeded concurrent append rounds, readiness barriers, exact text

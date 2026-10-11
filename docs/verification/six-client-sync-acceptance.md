@@ -98,9 +98,13 @@ Seed 49 passed two rounds with a temporary invalid Mac CLI TextPack repaired
 while all editors stayed open. Seed 50, the corresponding PC CLI case, failed
 when the Windows native editor lost the selected document; see
 `/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-29-50-412Z-50`.
-The source candidate retains the last valid Windows inventory entry through a
-temporary invalid ZIP and has a local regression. Physical replay is required
-before treating that failure as fixed.
+Source `b8ce3147` retains the last valid Windows inventory entry through a
+temporary invalid ZIP and has a local regression. A private Windows build
+passed the fresh physical six-client replay, seed 52, for two rounds with exact
+convergence; receipt:
+`/private/tmp/texttext-six-20261010/results/stress-2026-10-11T05-44-56-930Z-52`.
+Seed 51 stopped before edits because Mac file activation retained the previous
+note; it is a separate startup/setup failure, not a passed replay.
 Overlapping edits, native offline/crash recovery, whole-file/attachment and
 folder operations, permissions, and latency distributions still need physical
 campaigns. The historical notes below predate this runner.
