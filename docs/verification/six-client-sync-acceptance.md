@@ -190,6 +190,17 @@ Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-58-24
 and `stress-2026-10-11T16-00-14-261Z-88` alongside it. This proves asset
 preservation during text edits, not an asset replacement while editors are open.
 
+The next fresh fixture, `Notes/Six-client acceptance asset change 1289.textpack`,
+failed the asset-replacement gate on seed 89. Text converged across all six
+clients, but `assets/data.txt` in the PC TextPack changed to SHA-256
+`895692fe69b1996a44038642c0ebc53f814382d12caef20c5d720ac74d4b55d3`
+while the Mac TextPack kept
+`774fad1cfcea3a4d01cfe03035eeb72d315cb748eda21e25d32b0994b20b1d03`.
+Receipt: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T16-11-05-790Z-89`.
+This is a product failure: open native sessions suppress ordinary pack sync,
+and document collaboration does not transport changed asset bytes. A later
+asset fix must pass on a new fixture, including an all-client reopen.
+
 Native app transport loss now has two physical six-client append rounds with
 zero rejected edits, followed by separate all-client reopen checks with the
 expected content hashes. Mac app offline/reconnect: seed 74 receipts

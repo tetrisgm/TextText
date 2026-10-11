@@ -42,14 +42,20 @@ Seed 88 passed three six-client text rounds and fresh reopen while both Mac
 and PC TextPacks retained exact attachment hash
 `b0e8a8eb92c36f8866407013c607f13127ae9f48b7f6750f236851d23426664d`.
 Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-58-24-974Z-88`
-and `stress-2026-10-11T16-00-14-261Z-88`. The harness now accepts an in-flight
-CLI asset replacement with bounded bytes and requires both file actors to
-report the expected hash; focused tests passed. Physical replacement fixture
-1289 is ready on the Mac, but PC SSH reset while copying its updated test
-actor. Resume that test using the existing `pc`/`pc-tunnel` profiles when
-access returns. This is not evidence that in-flight replacement passes.
+and `stress-2026-10-11T16-00-14-261Z-88`. The harness now requires both file
+actors to attest exact asset bytes. In-flight replacement on fresh fixture
+`Notes/Six-client acceptance asset change 1289.textpack` **failed** seed 89:
+all six clients converged on text, but `assets/data.txt` changed only in the
+PC pack. The Mac pack retained the old hash. Receipt:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T16-11-05-790Z-89`.
+The active native shared session excludes the item from normal pack sync; Yjs
+updates carry text/document data, not changed binary entry bytes. The server
+can project a live asset-only pack edit without resetting its Yjs epoch
+(`src/lib/vault/collaboration.test.ts`), but native upload and remote materialization
+while open need a durable, fenced path. Do not replay seed 89 as a pass.
 
-Next: run the in-flight asset replacement, then whole TextPack and folder operations,
+Next: repair live binary-entry propagation while native editors stay mounted,
+verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,
 separate-account permissions, and sustained latency/resource tests. Do not
 call sync certified or ship a public release until the matrix passes. The
 unrelated dirty files in `mac/Package.resolved`, assistant attachments, tabs

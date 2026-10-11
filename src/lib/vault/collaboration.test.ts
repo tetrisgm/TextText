@@ -80,6 +80,29 @@ describe("file pack full-document collaboration", () => {
       expect(() => projectVaultFileEdit(state, bytes, changed, "item-1")).toThrow();
     }
   });
+  it("keeps a replaced asset through a live file projection and later Yjs edit", () => {
+    const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1);
+    const writer = client(initial.update);
+    try {
+      const update = mutation(writer, () => documentText(writer, "body").insert(5, " live"));
+      const accepted = applyVaultCollaboration(initial, bytes, [update]);
+      const entries = unzipSync(accepted.bytes);
+      const replacement = new Uint8Array([9, 8, 7, 6]);
+      entries["Shared.textbundle/assets/picture.bin"] = replacement;
+      const changed = zipSync(entries);
+      const projected = projectVaultFileEdit(accepted.state, accepted.bytes, changed, "item-1");
+      expect(projected).toMatchObject({ epoch: 1, seq: accepted.state.seq + 1 });
+      expect(projected?.revision).not.toBe(accepted.state.revision);
+      if (!projected) throw Error("Expected asset projection");
+      const later = client(projected.update);
+      try {
+        const more = mutation(later, () => documentText(later, "body").insert(0, "next "));
+        const final = applyVaultCollaboration(projected, changed, [more]);
+        expect(readDocument(openPack(final.bytes, "Note.textpack", final.state.revision).file).content.body).toBe("next Hello live");
+        expect(unzipSync(final.bytes)["Shared.textbundle/assets/picture.bin"]).toEqual(replacement);
+      } finally { later.destroy(); }
+    } finally { writer.destroy(); }
+  });
   it("seeds JSON-safe optional image fields and reads older valid undefined omissions", () => {
     const entries = unzipSync(fixture());
     const document = emptyDocumentSnapshot();
