@@ -2,6 +2,18 @@
 
 ## Reproduced failure
 
+October 11 physical follow-up: PC CLI combined text and binary replacement
+passed two six-client rounds and fresh reopen (seed 101/102). The reciprocal
+Mac CLI replacement initially lost its first-round text while the binary
+arrived everywhere (seed 105, a real failure). `76322731` prevents the Mac
+binary uploader from racing ahead of an open editor's external text import.
+On a new fixture, Mac CLI combined replacement passed two rounds with all
+six clients and zero rejected edits, then all six reopened with the same
+text and exact asset hash. Receipts:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-46-53-400Z-109`
+and `stress-2026-10-11T19-48-30-176Z-110` alongside it. These passes cover
+the two tested edit directions; other acceptance cases below remain open.
+
 The six-client seed 89 receipt at
 `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T16-11-05-790Z-89`
 shows all six clients converging on document text while a PC CLI replacement

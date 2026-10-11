@@ -2,6 +2,32 @@
 
 ## Current work (October 11)
 
+Latest: `a7aac0c1` receives binary assets after a Mac editor closes.
+Mac Store-shaped build 1253 and the matching Windows candidate are installed.
+On fresh fixture `Notes/Six-client acceptance binary 1253.textpack`, two
+simultaneous six-client rounds with a PC CLI text and asset replacement passed
+with zero rejected edits and exact asset hash, then all six reopened and passed.
+Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-22-46-762Z-101`
+and `stress-2026-10-11T19-23-55-901Z-102` alongside it.
+
+The reverse Mac CLI combined text and asset edit **failed** on fresh fixture
+`Notes/Six-client acceptance Mac binary 1253.textpack`: all six received the
+new asset but lost the Mac CLI's first-round text marker. Failure receipt:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-26-59-123Z-105`.
+`76322731` now defers open-editor binary upload while its projected text is
+behind the local file. All 39 Mac sync tests pass. A fresh reverse-direction
+fixture `Notes/Six-client acceptance Mac binary 1254.textpack` passed two
+six-client rounds with the Mac CLI replacing text and attachment together,
+zero rejected edits, exact attachment hash, and a separate fresh-process
+six-client reopen. Receipts:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T19-46-53-400Z-109`
+and `stress-2026-10-11T19-48-30-176Z-110` alongside it. Store-shaped Mac
+build 1254 passed its release checks and is installed in `/Applications`;
+its UI opened the same iCloud workspace and showed the final 12 text markers
+with no recovery banner. The PC “Keep editing” dialog has not yet been
+retested in the normal app and remains open. Preserve the unrelated dirty
+files listed below.
+
 Source `80bcd4e2`, `725281fa`, and `ce6f5cba` repair Mac collaboration
 restoration and same-item open races. `fe103e26` preserves an unfocused editor
 during local-to-shared promotion. The focused and unfocused browser regressions,
