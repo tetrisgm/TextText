@@ -199,7 +199,7 @@ public sealed partial class MainWindow : Window
     }
     private async void Receive(object? sender,CoreWebView2WebMessageReceivedEventArgs e)
     {
-        if(!ReferenceEquals(sender, web?.CoreWebView2) || !IsLocal(e.Source)) return;
+        if(!ReferenceEquals(sender, CurrentCore()) || !IsLocal(e.Source)) return;
         string? id = null, method = null;
         try {
             using var message = JsonDocument.Parse(e.WebMessageAsJson);
@@ -212,7 +212,7 @@ public sealed partial class MainWindow : Window
             if(method == "native.flushResult") { flushGuard.Accept(id,parameters.TryGetProperty("ok",out var ok) && ok.ValueKind == JsonValueKind.True); return; }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             if(!requests.TryAdd(id,cancellation)) return;
-            try { var result = await Dispatch(method,parameters,cancellation.Token); if (ReferenceEquals(sender, web?.CoreWebView2)) Reply(new { id,result }); }
+            try { var result = await Dispatch(method,parameters,cancellation.Token); ReplyForSource(sender, new { id,result }); }
             finally { requests.TryRemove(id,out _); }
         }
         catch(OperationCanceledException) { ReplyForSource(sender, new { id,error = new { message = "Request cancelled",code = "CANCELLED" } }); }
@@ -281,8 +281,19 @@ public sealed partial class MainWindow : Window
         while((count = await input.ReadAsync(buffer,ct)) > 0) { if(output.Length + count > limit) throw new InvalidDataException("Response exceeds size limit."); output.Write(buffer,0,count); }
         return new { status = (int)response.StatusCode, headers = response.Headers.Concat(response.Content.Headers).Where(h => !h.Key.Equals("Set-Cookie",StringComparison.OrdinalIgnoreCase)).ToDictionary(h => h.Key,h => string.Join(", ",h.Value)),body = Convert.ToBase64String(output.ToArray()) };
     }
-    private void ReplyForSource(object? sender, object value) { if (ReferenceEquals(sender, web?.CoreWebView2)) Reply(value); }
-    private void Reply(object value) { if(web?.CoreWebView2 is { } core) core.PostWebMessageAsJson(JsonSerializer.Serialize(value)); }
+    private CoreWebView2? CurrentCore()
+    {
+        if(closing || lifetime.IsCancellationRequested) return null;
+        try { return web?.CoreWebView2; }
+        catch(ObjectDisposedException) { return null; }
+    }
+    private void ReplyForSource(object? sender, object value) { if (sender is not null && ReferenceEquals(sender, CurrentCore())) Reply(value); }
+    private void Reply(object value)
+    {
+        if(CurrentCore() is not { } core) return;
+        try { core.PostWebMessageAsJson(JsonSerializer.Serialize(value)); }
+        catch(ObjectDisposedException) { /* The window closed while an async request was finishing. */ }
+    }
     private Task EmitForView(WebView2 owner, string name, object? detail) => Dispatcher.InvokeAsync(() => {
         if (ReferenceEquals(owner, web)) Reply(new { @event = name, detail });
     }).Task;

@@ -104,6 +104,7 @@ static class MainWindowCloseTests
         var success=await Create(Path.Combine(root,"close-success"),ct);
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);success.Window.Closed+=(_,_)=>closed.TrySetResult();
+            var closedSource=success.View.CoreWebView2;
             await success.View.ExecuteScriptAsync("window.flushStarted=false;window.texttextFlushForSignOut=()=>new Promise(resolve=>{window.flushStarted=true;window.finishFlush=()=>resolve(true)});");
             success.Window.Close();
             await Until(async()=>await success.View.ExecuteScriptAsync("window.flushStarted") == "true",ct);
@@ -112,6 +113,9 @@ static class MainWindowCloseTests
             try {await success.View.ExecuteScriptAsync("window.finishFlush()");}catch(Exception)when(closed.Task.IsCompleted){ /* Closing disposes WebView before its script callback can return. */ }
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
             Check(!success.Window.IsVisible,"actual MainWindow Receive routes flushResult and closes",checks);
+            var lateReply=typeof(MainWindow).GetMethod("ReplyForSource",PrivateInstance)??throw new Exception("Missing native reply path.");
+            lateReply.Invoke(success.Window,[closedSource,new { id="late-close-reply" }]);
+            Check(true,"late native reply after WebView disposal does not crash the dispatcher",checks);
         }finally{if(success.Window.IsVisible)ForceClose(success.Window);}
 
         var transient=await Create(Path.Combine(root,"close-transient"),ct);

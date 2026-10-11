@@ -56,9 +56,7 @@ static class Stress
             if (!created) throw new Exception("Close TextText before running the stress adapter; two native writers must not share its device journal.");
             using var log = new StreamWriter(Path.Combine(session, "events.jsonl")) { AutoFlush = true };
             void Record(object value) => log.WriteLine(JsonSerializer.Serialize(new { utc = DateTimeOffset.UtcNow, value }));
-            using var processLifetime = new ManualResetEventSlim();
-            var keeper = new Thread(() => processLifetime.Wait(TimeSpan.FromMinutes(2))) { IsBackground = false, Name = "TextText stress mailbox lifetime" };
-            keeper.Start();
+            using var actorCompleted = new ManualResetEventSlim();
             var assembly = typeof(MainWindow).Assembly;
             var version = assembly.GetName().Version?.ToString() ?? "0";
             var assemblyHash = Program.Hash(File.ReadAllBytes(assembly.Location));
@@ -104,16 +102,19 @@ static class Stress
                 }
                 finally
                 {
-                    // Production flush-on-close. A failed flush keeps journals and the failure recorded;
-                    // this disposable test window still closes so the one-off task ends.
-                    var flushed = false;
-                    try { flushed = await runner.Flush(); } catch (Exception error) { runner.Fail(error.Message); }
-                    File.WriteAllText(Path.Combine(session, "result.json"), JsonSerializer.Serialize(new { ok = runner.Failure is null && flushed, flushed, error = runner.Failure, config.ItemId }));
-                    if (!flushed) exit = 1;
-                    typeof(MainWindow).GetField("closing", Program.Private)?.SetValue(window, true);
-                    if (!app.Dispatcher.HasShutdownStarted)
-                        _ = app.Dispatcher.BeginInvoke(() => { if (window.IsVisible) window.Close(); app.Shutdown(); });
-                    else processLifetime.Set();
+                    try
+                    {
+                        // Keep the mailbox receipt and event log open until the
+                        // asynchronous close reply and final flush have finished.
+                        var flushed = false;
+                        try { flushed = await runner.Flush().ConfigureAwait(false); } catch (Exception error) { runner.Fail(error.Message); }
+                        File.WriteAllText(Path.Combine(session, "result.json"), JsonSerializer.Serialize(new { ok = runner.Failure is null && flushed, flushed, error = runner.Failure, config.ItemId }));
+                        if (!flushed) exit = 1;
+                        typeof(MainWindow).GetField("closing", Program.Private)?.SetValue(window, true);
+                        if (!app.Dispatcher.HasShutdownStarted)
+                            _ = app.Dispatcher.BeginInvoke(() => { if (window.IsVisible) window.Close(); app.Shutdown(); });
+                    }
+                    finally { actorCompleted.Set(); }
                 }
             };
             // Run an explicit dispatcher lifetime. app.Run(window) can return as
@@ -122,9 +123,20 @@ static class Stress
             lifetimeWindow.Show();
             window.Show();
             Record(new { kind = "windows-shown", lifetimeVisible = lifetimeWindow.IsVisible, mainIsLifetime = ReferenceEquals(app.MainWindow, lifetimeWindow) });
-            app.Run();
+            try { app.Run(); }
+            catch (Exception error)
+            {
+                // A WPF dispatcher failure must not dispose the mailbox log
+                // while its async Loaded handler is still writing the result.
+                Record(new { kind = "dispatcher-failed", error = error.GetType().Name, message = error.Message[..Math.Min(error.Message.Length, 300)], stack = (error.StackTrace ?? "")[..Math.Min(error.StackTrace?.Length ?? 0, 2000)] });
+                exit = 1;
+            }
             Record(new { kind = "dispatcher-returned", exit });
-            processLifetime.Set();
+            if (!actorCompleted.Wait(TimeSpan.FromMinutes(config.TotalMinutes + 1)))
+            {
+                Record(new { kind = "actor-completion-timeout" });
+                return 1;
+            }
             return exit;
         }
         catch (Exception error) { Console.Error.WriteLine(error.Message); return 1; }
