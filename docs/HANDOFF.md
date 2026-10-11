@@ -64,7 +64,9 @@ Windows, and Mac, with focused web and Mac relay tests. Native Swift and .NET
 sync transports also now expose the scoped calls; the .NET transport contract
 test passes. Windows now durably stages and sends direct asset changes in an
 open editor. Its native tests cover lost acknowledgment, same-entry conflict,
-and temporary provider-file absence. Mac now durably stages direct asset
+and temporary provider-file absence. Windows now keeps queued asset bytes in
+an atomic sidecar file so a large attachment does not inflate the sync-state
+JSON. Mac now durably stages direct asset
 edits in an open editor and replays the same operation after a lost reply and
 process restart; its 35 focused sync tests pass. Both native inbound paths
 and browser asset refresh remain open; seed 89 is still a failure.

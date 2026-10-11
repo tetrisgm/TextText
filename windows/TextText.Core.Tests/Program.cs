@@ -448,7 +448,9 @@ static class Test
   binaryRemote.FailBinaryAfterCommit=true;
   try{await binaryEngine.SyncAsync(localChangesOnly:true);throw new Exception("lost binary ACK accepted");}catch(HttpRequestException){}
   pending=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"sync.json")))!;
-  Assert(pending.BinaryOutbox.Count==1&&pending.BinaryOutbox[0].BytesBase64==Convert.ToBase64String(new byte[]{8,7,6}),"binary bytes and operation survive lost response");
+  Assert(pending.BinaryOutbox.Count==1&&pending.BinaryOutbox[0].PayloadHash==TextPackStore.Hash(new byte[]{8,7,6})&&
+    File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"binary-outbox",pending.BinaryOutbox[0].Id+".asset")).SequenceEqual(new byte[]{8,7,6}),
+    "binary bytes and operation survive lost response outside sync state");
  }
  binaryEngine=new SyncEngine(binaryStore,binaryRemote);
  await binaryEngine.SyncAsync(localChangesOnly:true);

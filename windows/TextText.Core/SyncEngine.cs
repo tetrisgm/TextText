@@ -26,7 +26,7 @@ public sealed class SyncEngine
     public sealed record Baseline(string Path,string Hash,string Revision,bool Refresh=false,string? Lifecycle=null);
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
-    public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false);
+    public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false,string? PayloadHash=null);
     public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath;
@@ -87,6 +87,18 @@ public sealed class SyncEngine
         var bytes=JsonSerializer.SerializeToUtf8Bytes(state);
         if(File.Exists(statePath)&&File.ReadAllBytes(statePath).AsSpan().SequenceEqual(bytes))return;
         TextPackStore.AtomicWrite(statePath,bytes);DurabilityChanged?.Invoke();
+    }
+    string BinaryPayloadPath(string operationId) {
+        if(!Guid.TryParse(operationId,out _))throw new InvalidDataException("Invalid binary operation.");
+        return Path.Combine(store.StateDirectory,"binary-outbox",operationId+".asset");
+    }
+    byte[]? BinaryPayload(BinaryPending pending) {
+        if(pending.PayloadHash is null)return pending.BytesBase64 is null?null:Convert.FromBase64String(pending.BytesBase64);
+        var path=BinaryPayloadPath(pending.Id);
+        if(new FileInfo(path).Length>16*1024*1024)throw new InvalidDataException("Binary payload exceeds bounds.");
+        var bytes=File.ReadAllBytes(path);
+        if(TextPackStore.Hash(bytes)!=pending.PayloadHash)throw new InvalidDataException("Binary payload changed during recovery.");
+        return bytes;
     }
     void Report(bool running,string? error,int pending) { Status=new(running,error,pending);StatusChanged?.Invoke(Status); }
     public async Task SyncAsync(CancellationToken cancellation=default,bool localChangesOnly=false)
@@ -325,22 +337,27 @@ public sealed class SyncEngine
                 .FirstOrDefault(path=>hashes.GetValueOrDefault(path)!=assets.GetValueOrDefault(path)?.Sha256);
             if(changed is null)return;
             hashes.TryGetValue(changed,out var prior);
-            pending=new(Guid.NewGuid().ToString(),remote.ItemId,changed,prior,baseline.Lifecycle,
-                assets.GetValueOrDefault(changed) is { } entry?Convert.ToBase64String(entry.Bytes):null,local.Hash);
+            var operationId=Guid.NewGuid().ToString();
+            var payload=assets.GetValueOrDefault(changed)?.Bytes;
+            if(payload is not null)TextPackStore.AtomicWrite(BinaryPayloadPath(operationId),payload);
+            pending=new(operationId,remote.ItemId,changed,prior,baseline.Lifecycle,null,local.Hash,
+                PayloadHash:payload is null?null:TextPackStore.Hash(payload));
             state.BinaryOutbox.Add(pending);Save(state); // Exact bytes and operation ID are durable before network I/O.
         }
         try {
+            var bytes=BinaryPayload(pending);
             var revision=await transport.BinaryPatchAsync(pending.ItemId,pending.Id,pending.EntryPath,pending.ExpectedHash,pending.Lifecycle,
-                pending.BytesBase64 is null?null:Convert.FromBase64String(pending.BytesBase64),ct);
+                bytes,ct);
             if(!state.BinaryBaselines.TryGetValue(pending.ItemId,out var hashes))throw new InvalidDataException("Binary baseline is missing.");
-            if(pending.BytesBase64 is null)hashes.Remove(pending.EntryPath);
-            else hashes[pending.EntryPath]=TextPackStore.Hash(Convert.FromBase64String(pending.BytesBase64));
+            if(bytes is null)hashes.Remove(pending.EntryPath);
+            else hashes[pending.EntryPath]=TextPackStore.Hash(bytes);
             var latest=local is null?null:store.Describe(local.Path);
             var latestAssets=latest?.ItemId==pending.ItemId?BinaryEntryPacks.Assets(store.Read(latest.Path)):null;
             var locallyCurrent=latestAssets is not null && latestAssets.Count==hashes.Count &&
                 latestAssets.All(x=>hashes.GetValueOrDefault(x.Key)==x.Value.Sha256);
             state.Items[pending.ItemId]=baseline with{Revision=revision,Hash=locallyCurrent?latest!.Hash:baseline.Hash};
             state.BinaryOutbox.Remove(pending);Save(state);
+            if(pending.PayloadHash is not null)try{File.Delete(BinaryPayloadPath(pending.Id));}catch(IOException){}
         } catch(SyncConflictException) {
             state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);
         }
