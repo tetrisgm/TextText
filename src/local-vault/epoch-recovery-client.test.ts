@@ -691,13 +691,17 @@ describe("revival of the legacy access-changed retirement over a pending native 
     await fs.rm(root, { recursive: true, force: true });
   });
   const open = (options: Partial<FileCollaborationOptions> = {}) => client(store, journal, { ...native.open(), supportsEpochRecovery: true, ...options });
-  async function legacyRetiredPending() {
+  async function legacyRetiredPending(conflictingTail = false) {
     const first = open(); await first.start();
     expect(first.status).toBe("ready");
     first.mutate(doc => documentText(doc, "body").insert(5, " A"));
     store.loseAck = true;
     expect(await first.flush()).toBe(false);
-    first.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " B"));
+    first.mutate(doc => {
+      const body = documentText(doc, "body");
+      if (conflictingTail) { body.delete(6, 1); body.insert(6, "B"); }
+      else body.insert(body.length, " B");
+    });
     expect(await first.flushLocal()).toBe(true);
     first.destroy();
     const raw = JSON.parse(journal.load(first.journalKey)!) as FileCollaborationJournal;
@@ -776,13 +780,13 @@ describe("revival of the legacy access-changed retirement over a pending native 
   });
 
   it("keeps every edit for manual recovery when the moved-on epoch cannot absorb them", async () => {
-    const { key, raw } = await legacyRetiredPending();
+    const { key, raw } = await legacyRetiredPending(true);
     await store.replace("Hello changed");
     const reopened = open(); await reopened.start();
     await settled(reopened, "recovery");
     expect(reopened.recoveryJournal?.retired).toBe("The changed file could not absorb your saved edits automatically. They are kept for recovery.");
     expect(await store.body()).toBe("Hello changed");
-    expect(documentText(reopened.doc, "body").toString()).toBe("Hello A B");
+    expect(documentText(reopened.doc, "body").toString()).toBe("Hello B");
     const now = JSON.parse(journal.load(key)!) as FileCollaborationJournal;
     expect(now.pending).toEqual(raw.pending); expect(now.batch).toEqual(raw.batch); expect(now.epoch).toBe(raw.epoch);
     expect(store.pushes.filter(push => push.recovery)).toHaveLength(1);
