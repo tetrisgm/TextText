@@ -180,6 +180,16 @@ The first process run and separate all-client reopen are
 and `stress-2026-10-11T15-51-15-372Z-87` alongside it. This covers one
 partial-overlap shape; it does not establish every deletion/undo interleaving.
 
+Seed 88 passed three concurrent append rounds with a bundled asset, and a
+separate all-client reopen. The Mac and PC file actors attested the identical
+decompressed `assets/photo.png` SHA-256
+`b0e8a8eb92c36f8866407013c607f13127ae9f48b7f6750f236851d23426664d`
+throughout; all six editors converged to final text hash
+`b64e7d86a774cef215e889e6a7154084738831ca15e5901d2d763018b9fad33f`.
+Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-58-24-974Z-88`
+and `stress-2026-10-11T16-00-14-261Z-88` alongside it. This proves asset
+preservation during text edits, not an asset replacement while editors are open.
+
 Native app transport loss now has two physical six-client append rounds with
 zero rejected edits, followed by separate all-client reopen checks with the
 expected content hashes. Mac app offline/reconnect: seed 74 receipts

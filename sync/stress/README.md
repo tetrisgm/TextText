@@ -45,6 +45,17 @@ Set `pattern` to `"unicode"` for concurrent edits containing accented Latin,
 Japanese, and emoji text. A fresh physical five-round run passed on all six
 clients with exact text equality and durable file checks.
 
+Set `expectedAssetHashes` to a map of up to 32 `assets/...` paths to SHA-256
+hex digests. Both physical CLI actors then attest the exact decompressed asset
+bytes on every observation, including a durable reopen; matching text alone
+cannot pass. Set `assetReplacement` to `{ "role": "pc-cli", "round": 1,
+"path": "assets/data.txt", "bytesBase64": "..." }` to replace one existing
+asset in the same atomic TextPack write as that actor's planned text edit.
+The replacement bytes must hash to the matching `expectedAssetHashes` entry.
+Use a small disposable asset; the protocol caps the encoded payload at 96 KiB.
+Seed 88 passed three rounds with an unchanged asset and a separate six-client
+reopen. An in-flight replacement still needs a physical receipt.
+
 Set `pattern` to `"overlap-replace"` for four live editors replacing the
 existing fixture sentence while both CLIs append. Set `pattern` to
 `"file-overlap"` for the same four editors plus one CLI replacing that exact

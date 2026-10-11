@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -66,6 +67,36 @@ test('missing roles are rejected before any process starts', () => {
   assert.doesNotThrow(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-app', round: 1 } }));
   assert.throws(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-web', round: 1 } }), /restart/);
   assert.throws(() => validateConfig({ ...makeConfig(), transientInvalid: { role: 'pc-web', round: 1 } }), /transientInvalid/);
+  const hash = 'a'.repeat(64);
+  assert.doesNotThrow(() => validateConfig({ ...makeConfig(), expectedAssetHashes: { 'assets/photo.png': hash } }));
+  assert.throws(() => validateConfig({ ...makeConfig(), expectedAssetHashes: { '../photo.png': hash } }), /expectedAssetHashes/);
+  assert.throws(() => validateConfig({ ...makeConfig(), expectedAssetHashes: { 'assets/photo.png': 'bad' } }), /expectedAssetHashes/);
+  const bytesBase64 = Buffer.from('new asset bytes').toString('base64');
+  const replacementHash = createHash('sha256').update(Buffer.from(bytesBase64, 'base64')).digest('hex');
+  assert.doesNotThrow(() => validateConfig({ ...makeConfig(), expectedAssetHashes: { 'assets/photo.png': replacementHash },
+    assetReplacement: { role: 'pc-cli', round: 1, path: 'assets/photo.png', bytesBase64 } }));
+  assert.throws(() => validateConfig({ ...makeConfig(), expectedAssetHashes: { 'assets/photo.png': hash },
+    assetReplacement: { role: 'pc-cli', round: 1, path: 'assets/photo.png', bytesBase64 } }), /assetReplacement/);
+});
+
+test('asset evidence requires both physical file actors to retain the expected bytes', () => {
+  const hash = 'a'.repeat(64);
+  const config = makeConfig();
+  config.expectedAssetHashes = { 'assets/photo.png': hash };
+  const coordinator = new Coordinator(config);
+  const states = new Map([['mac-cli', { assetHashes: { 'assets/photo.png': hash } }], ['pc-cli', { assetHashes: { 'assets/photo.png': hash } }]]);
+  assert.equal(coordinator.checkAssets(states, 1), true);
+  states.get('pc-cli').assetHashes['assets/photo.png'] = null;
+  assert.equal(coordinator.checkAssets(states, 1), false);
+  assert.throws(() => coordinator.checkAssets(states, 0), /asset-mismatch/);
+});
+
+test('a converged text round cannot pass without attachment evidence', async () => {
+  const config = makeConfig({ rounds: 1, timeoutMs: 500 });
+  config.expectedAssetHashes = { 'assets/photo.png': 'a'.repeat(64) };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'failed');
+  assert.equal(summary.failure.code, 'asset-mismatch');
 });
 
 test('invalid intermediate is repaired before six concurrent edits', async () => {

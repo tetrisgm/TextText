@@ -125,6 +125,16 @@ export function editIdsOf(body) {
   return [...ids].sort();
 }
 
+export function assetHashesOf(pack, paths) {
+  if (!Array.isArray(paths) || paths.length > 32 || paths.some(path => typeof path !== 'string' || !safePath(path) || !path.startsWith('assets/'))) {
+    throw new ActorError('observe', 'asset paths must be a bounded list below assets/');
+  }
+  return Object.fromEntries(paths.map(path => {
+    const entry = pack.entries.find(e => e.name === `${pack.root}${path}`);
+    return [path, entry ? sha256(entry.data) : null];
+  }));
+}
+
 // Identity lives in text.md (textTextId) and document.json (schema-v1 title).
 // CLI-created packs may omit the optional Markdown title; an explicit title must still agree.
 // The pack does not record its workspace; that comes from
@@ -159,15 +169,26 @@ export function replaceTargetInPack(bytes, config, target, text) {
   return editPack(bytes, config, text, target);
 }
 
-function editPack(bytes, config, text, target) {
+function editPack(bytes, config, text, target, assetReplacement) {
   if (typeof text !== 'string' || !text.length) throw new ActorError('edit', 'edit text must be a non-empty string');
   const pack = readPack(bytes);
   const { markdown, body } = validateIdentity(pack, config);
   if (target && body.split(target).length !== 2) throw new ActorError('edit', 'replacement target must occur exactly once');
   const nextMarkdown = strToU8(target ? markdown.slice(0, markdown.length - body.length) + body.replace(target, text) : markdown + text);
   if (nextMarkdown.byteLength > LIMITS.markdownBytes) throw new ActorError('pack-too-large', 'text.md would exceed its limit');
+  let assetPath = null; let assetBytes = null;
+  if (assetReplacement !== undefined) {
+    assetPath = assetReplacement?.path;
+    const encoded = assetReplacement?.bytesBase64;
+    if (typeof assetPath !== 'string' || !safePath(assetPath) || !assetPath.startsWith('assets/')
+      || typeof encoded !== 'string' || !encoded.length || encoded.length > 96 * 1024
+      || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) throw new ActorError('edit', 'invalid asset replacement');
+    assetBytes = Uint8Array.from(Buffer.from(encoded, 'base64'));
+    if (!pack.entries.some(e => e.name === `${pack.root}${assetPath}`)) throw new ActorError('edit', 'asset replacement target is missing');
+  }
   const zip = {};
-  for (const e of pack.entries) zip[e.name] = [e.name === `${pack.root}text.md` ? nextMarkdown : e.data, { level: 0, mtime: EPOCH }];
+  for (const e of pack.entries) zip[e.name] = [e.name === `${pack.root}text.md` ? nextMarkdown
+    : e.name === `${pack.root}${assetPath}` ? assetBytes : e.data, { level: 0, mtime: EPOCH }];
   return zipSync(zip, { mtime: EPOCH });
 }
 
@@ -199,11 +220,12 @@ export async function stableRead(file, { attempts = 20, settleMs = 50 } = {}) {
 // Read, append, verify the bytes are still what was read, then temp+rename. A concurrent change seen
 // at the final check restarts the whole cycle, a bounded number of times. The pre-edit bytes are kept
 // as a backup in the receipt directory before the original is replaced.
-export async function applyEdit({ file, config, text, target, round, runDir, journal = () => {}, beforeReplace = () => {} }) {
+export async function applyEdit({ file, config, text, target, assetReplacement, round, runDir, journal = () => {}, beforeReplace = () => {} }) {
   for (let attempt = 1; attempt <= WRITE_RETRIES; attempt += 1) {
     const before = await stableRead(file);
     const beforeSha = sha256(before);
-    const next = target ? replaceTargetInPack(before, config, target, text) : appendToPack(before, config, text);
+    const next = assetReplacement ? editPack(before, config, text, target, assetReplacement)
+      : target ? replaceTargetInPack(before, config, target, text) : appendToPack(before, config, text);
     const backup = join(runDir, `${config.role}-r${round}-a${attempt}-before.textpack`);
     if (existsSync(backup)) throw new ActorError('receipts', 'backup for this round already exists; use a new run');
     writeFileSync(backup, before, { flag: 'wx' });
@@ -255,7 +277,7 @@ export async function transientInvalidPack({ file, config, round, runDir, journa
 // Read the body until every expected ID is present and several consecutive samples agree, bounded.
 // On timeout the last observation is returned anyway; the coordinator records the mismatch as
 // evidence rather than this actor guessing.
-export async function observeBody({ file, config, expectedEditIds = [], maxMs = config.observeMaxMs ?? OBSERVE.maxMs, pollMs = OBSERVE.pollMs, stableSamples = OBSERVE.stableSamples }) {
+export async function observeBody({ file, config, expectedEditIds = [], expectedAssetPaths = [], maxMs = config.observeMaxMs ?? OBSERVE.maxMs, pollMs = OBSERVE.pollMs, stableSamples = OBSERVE.stableSamples }) {
   const deadline = Date.now() + maxMs;
   const expected = new Set(expectedEditIds);
   let last = null; let agree = 0; let sample;
@@ -263,7 +285,7 @@ export async function observeBody({ file, config, expectedEditIds = [], maxMs = 
     const bytes = await stableRead(file);
     const pack = readPack(bytes);
     const { body } = validateIdentity(pack, config);
-    sample = { body, editIds: editIdsOf(body), sha256: sha256(bytes) };
+    sample = { body, editIds: editIdsOf(body), assetHashes: assetHashesOf(pack, expectedAssetPaths), sha256: sha256(bytes) };
     agree = last && last.sha256 === sample.sha256 ? agree + 1 : 1;
     last = sample;
     const complete = [...expected].every((id) => sample.editIds.includes(id));
@@ -314,7 +336,8 @@ export function createActor(config, { platform = process.platform, machineId = h
       requireRun();
       const edit = m.edit ?? {};
       if (!['append', 'replace-target'].includes(edit.op) || typeof edit.id !== 'string' || typeof edit.text !== 'string') throw new ActorError('edit', 'unsupported file edit');
-      const result = await applyEdit({ file: config.file, config, text: edit.text, target: edit.op === 'replace-target' ? edit.target : undefined, round: m.round, runDir: state.runDir, journal });
+      const result = await applyEdit({ file: config.file, config, text: edit.text, target: edit.op === 'replace-target' ? edit.target : undefined,
+        assetReplacement: edit.assetReplacement, round: m.round, runDir: state.runDir, journal });
       journal({ event: 'applied', round: m.round, editId: edit.id, ...result });
       return { type: 'applied', round: m.round, editId: edit.id };
     },
@@ -325,9 +348,9 @@ export function createActor(config, { platform = process.platform, machineId = h
     },
     async observe(m) {
       requireRun();
-      const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [] });
-      journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, stable: o.stable, timedOut: o.timedOut });
-      return { type: 'state', round: m.round, text: o.body, editIds: o.editIds };
+      const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [], expectedAssetPaths: m.expectedAssetPaths ?? [] });
+      journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, assetHashes: o.assetHashes, stable: o.stable, timedOut: o.timedOut });
+      return { type: 'state', round: m.round, text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
     },
     async shutdown() { journal({ event: 'shutdown' }); return null; },
   };

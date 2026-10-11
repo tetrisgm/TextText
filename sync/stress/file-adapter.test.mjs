@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync, symlinkSync, mkdirSync } from 'node:fs';
 import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import {
-  validateActorConfig, readPack, canonicalRoot, bodyOf, editIdsOf, validateIdentity, appendToPack, replaceTargetInPack,
+  validateActorConfig, readPack, canonicalRoot, bodyOf, editIdsOf, assetHashesOf, validateIdentity, appendToPack, replaceTargetInPack,
   stableRead, applyEdit, transientInvalidPack, observeBody, createActor, sanitizeError, ActorError, TITLE_PREFIX,
 } from './file-adapter.mjs';
 
@@ -69,6 +70,29 @@ test('reads the real pack, picks the bundle root and ignores assets/text.md', ()
   assert.throws(() => canonicalRoot([{ name: 'a/b/text.md' }, { name: 'a/b/document.json' }]), /exactly one canonical/);
   assert.throws(() => canonicalRoot([{ name: 'x/text.md' }, { name: 'x/document.json' }, { name: 'text.md' }, { name: 'document.json' }]), /exactly one canonical/);
   assert.throws(() => readPack(strToU8('not a zip')), /not a readable ZIP/);
+});
+
+test('asset hash evidence comes from the archive payload and reports missing files', () => {
+  const pack = readPack(buildPack());
+  const expected = createHash('sha256').update(PNG).digest('hex');
+  assert.deepEqual(assetHashesOf(pack, ['assets/photo.png', 'assets/missing.png']), {
+    'assets/photo.png': expected, 'assets/missing.png': null,
+  });
+  assert.throws(() => assetHashesOf(pack, ['../text.md']), /asset paths/);
+  assert.throws(() => assetHashesOf(pack, Array(33).fill('assets/photo.png')), /asset paths/);
+});
+
+test('direct-file edit atomically replaces one asset while preserving every other entry', async () => {
+  const { file, config, dir } = fixture();
+  const before = readPack(readFileSync(file));
+  const replacement = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+  await applyEdit({ file, config, text: '[mac-cli r1 alpha1]', round: 1, runDir: dir,
+    assetReplacement: { path: 'assets/photo.png', bytesBase64: Buffer.from(replacement).toString('base64') } });
+  const after = readPack(readFileSync(file));
+  assert.equal(bodyOf(strFromU8(after.entries.find(e => e.name === `${after.root}text.md`).data)), `${BASE_BODY}[mac-cli r1 alpha1]`);
+  const changed = after.entries.filter(e => !Buffer.from(e.data).equals(Buffer.from(before.entries.find(b => b.name === e.name).data))).map(e => e.name);
+  assert.deepEqual(changed.sort(), [`${after.root}assets/photo.png`, `${after.root}text.md`].sort());
+  assert.deepEqual(after.entries.find(e => e.name === `${after.root}assets/photo.png`).data, replacement);
 });
 
 test('accepts a CLI-created pack with no optional Markdown title', () => {
@@ -240,12 +264,12 @@ test('actor protocol: attests real on its platform, refuses foreign fixture, run
   const runDir = join(config.receiptDir, 'run-x');
   assert.ok(existsSync(join(runDir, 'journal.jsonl')));
   r = await actor.handle({ type: 'observe', round: 0, expectedEditIds: [] });
-  assert.deepEqual(r, { type: 'state', round: 0, text: BASE_BODY, editIds: [] });
+  assert.deepEqual(r, { type: 'state', round: 0, text: BASE_BODY, editIds: [], assetHashes: {} });
   assert.deepEqual(await actor.handle({ type: 'prepare', round: 1 }), { type: 'ready', round: 1 });
   r = await actor.handle({ type: 'edit', round: 1, edit: { id: 'r1-mac-cli', op: 'append', text: '[mac-cli r1 delta8]' } });
   assert.deepEqual(r, { type: 'applied', round: 1, editId: 'r1-mac-cli' });
   r = await actor.handle({ type: 'observe', round: 1, expectedEditIds: ['r1-mac-cli'] });
-  assert.deepEqual(r, { type: 'state', round: 1, text: `${BASE_BODY}[mac-cli r1 delta8]`, editIds: ['r1-mac-cli'] });
+  assert.deepEqual(r, { type: 'state', round: 1, text: `${BASE_BODY}[mac-cli r1 delta8]`, editIds: ['r1-mac-cli'], assetHashes: {} });
   r = await actor.handle({ type: 'edit', round: 2, edit: { id: 'x', op: 'replace', text: 'nope' } });
   assert.equal(r.type, 'error');
   assert.equal(await actor.handle({ type: 'shutdown' }), null);
