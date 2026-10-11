@@ -154,9 +154,26 @@ converged to one exact semantic hash across all six clients.
 The first two seed-66 attempts failed during setup and do not count.
 The earlier failed seeds 62 and 63 remain preserved as regression evidence;
 the passing run used a new fixture and builds carrying `052c0ab7`.
-Partial overlapping replacement/deletion, native offline/crash recovery, whole-file/attachment and
-folder operations, permissions, and latency distributions still need physical
-campaigns. The historical notes below predate this runner.
+Partial overlap previously failed on PC file-edits with four live editors:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-04-19-431Z-72`,
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-14-11-581Z-72`,
+and `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-29-19-230Z-72`.
+The common ancestor had to come from the TextPack projection stamp; then an
+incidental one-character match inside the editor replacement still caused the
+bounded overlap guard to reject it. `c2ba73e7` and `d1a50853` have regressions
+for both paths. With Mac 0.204 build 1250 and the matching installed Windows
+candidate, fresh seed 72 passed PC CLI partial replacement and six-client
+durable reopen:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-50-09-345Z-72`
+and `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-51-13-975Z-72`.
+Fresh seed 73 passed the reciprocal Mac CLI partial replacement and reopen:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-53-22-965Z-73`
+and `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-54-06-927Z-73`.
+Both edit rounds kept the four live editors mounted and rejected no events.
+
+Native offline/crash recovery, whole-file/attachment and folder operations,
+permissions, and latency distributions still need physical campaigns. The
+historical notes below predate this runner.
 
 The October 9 [physical six-client live-edit round](2026-10-09-six-client-live-edit.md)
 passed simultaneous small-text convergence and saved-file equality. The

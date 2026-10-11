@@ -4,18 +4,19 @@
 
 Behavioral candidate `d1a50853` is on `origin/main`. Its exact-source sync gate passed
 901 core tests and all native sync checks; TypeScript passed. Signed local Mac
-0.204 build 1250 is installed and launched. A private matching Mac stress
-actor and untouched fixture 1275 are ready in
-`/private/tmp/texttext-six-20261011/provenance1275/`. Windows `d1a50853`
-build command exited successfully, but SSH began resetting before login before
-its final receipt could be read. **Do not treat it as installed or verified.**
-When SSH returns, read
-`C:\Users\Shokunin\dev\texttext-windows-d1a50853-build.log`, verify its
-candidate receipt, close the normal PC app, install, build the matching
-LiveAcceptance assembly, then run fixture 1275 and a fresh-session durable
-reopen. Windows currently has the prior `c2ba73e7` candidate installed.
+0.204 build 1250 is installed and launched. Windows `d1a50853` candidate
+`candidate-ce72d1f5681a4050b609241fa64d4ee7` passed its receipt and desktop
+smoke, was installed, and launched. SSH recovered after an intermittent reset.
+Fresh seed 72 passed PC CLI partial replacement on all six live clients and a
+fresh-session durable reopen. Fresh seed 73 passed the reciprocal Mac CLI
+replacement and reopen. Exact receipts are in
+[the acceptance contract](verification/six-client-sync-acceptance.md).
+The native app still needs live startup/UI verification beyond the test actor;
+the installer cannot read Store sandbox runtime health.
 No website deployment or public Mac release occurred. Preserve failed fixtures
-and recovery journals.
+and recovery journals. Next: offline/crash pending edits with other clients
+active, whole TextPack/asset/folder tests, separate-account permission changes,
+and sustained latency/resource measurements. Do not call sync certified yet.
 The later `f38fd0d5` commit adds a test-only exact-marker Yjs/undo regression;
 its 79-client-test suite and TypeScript check passed. It does not change either
 candidate's runtime code.
