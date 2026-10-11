@@ -4,8 +4,9 @@
 
 Source `80bcd4e2` restores the Mac collaboration engine synchronously from a
 previously verified folder binding before network discovery. Source `725281fa`
-retries a same-item local file change between reader read and editor open. Both
-are on `origin/main`. Targeted Mac connection/session tests, TypeScript, and the
+retries a same-item local file change between reader read and editor open;
+`ce6f5cba` fences the restored engine to the requested workspace. All are on
+`origin/main`. Targeted Mac connection/session tests, TypeScript, and the
 focused shared-open test passed. A private signed Mac stress actor was rebuilt
 from this source and bundled local-vault UI; the installed Mac app is still
 build 1250, and neither Oracle web nor a public Mac release was deployed.
