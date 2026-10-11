@@ -331,7 +331,7 @@ final class NativeStressRunner {
                 do { response = try await handle(type: type, round: round, request: request) }
                 catch {
                     fail(error.localizedDescription)
-                    if let surface = try? await evaluate("JSON.stringify({heading:document.querySelector('.vault-context-location h2')?.textContent,buttons:[...document.querySelectorAll('button')].map(x=>x.getAttribute('aria-label')||x.textContent?.trim()).filter(Boolean).slice(0,30),visibleText:document.body.innerText.slice(-700),editor:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable,collab:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')})") {
+                    if let surface = try? await evaluate("JSON.stringify({heading:document.querySelector('.vault-context-location h2')?.textContent,buttons:[...document.querySelectorAll('button')].map(x=>x.getAttribute('aria-label')||x.textContent?.trim()).filter(Boolean).slice(0,30),notices:[...document.querySelectorAll('[role=alert],.vault-notice')].map(x=>x.textContent?.trim()).filter(Boolean).slice(0,8),visibleTextStart:document.body.innerText.slice(0,1000),editor:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable,collab:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')})") {
                         record(["kind": "failure-surface", "state": String(surface.prefix(4096))])
                     }
                     response = ["type": "error", "round": round, "message": error.localizedDescription]
