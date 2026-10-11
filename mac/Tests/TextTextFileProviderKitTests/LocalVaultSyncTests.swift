@@ -812,6 +812,35 @@ final class LocalVaultSyncTests: XCTestCase {
         try await restarted.endSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId)
     }
 
+    func testRemoteAssetArrivesAfterCheckpointAndEditorCloses() async throws {
+        let first = Data("first".utf8), second = Data("second".utf8)
+        let original = try withAsset(pack("Human text"), bytes: first)
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        await transport.set(itemId: itemId, path: path, data: original)
+        let initial = try engine(transport)
+        _ = try await initial.sync()
+        let initialDocument = try LocalVaultDocumentStore(root: root).read(path: path)
+        let session = try await initial.beginSharedEditing(itemId: itemId, path: path, expectedHash: initialDocument.hash)
+        try await initial.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let changed = try withAsset(original, bytes: second)
+        await transport.set(itemId: itemId, path: path, data: changed)
+        let revision = TextTextStableDigest.sha256Hex(changed)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        var state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        var baselines = try XCTUnwrap(state["baselines"] as? [String: [String: Any]])
+        baselines[itemId]?["revision"] = revision
+        state["baselines"] = baselines
+        try JSONSerialization.data(withJSONObject: state).write(to: stateURL, options: .atomic)
+        let restarted = try engine(transport)
+        let result = try await restarted.sync()
+        XCTAssertTrue(result.errors.isEmpty, "\(result.errors)")
+        let archive = try Archive(data: Data(contentsOf: root.appendingPathComponent(path)), accessMode: .read)
+        let entry = try XCTUnwrap(archive["assets/data.txt"])
+        var received = Data(); _ = try archive.extract(entry) { received.append($0) }
+        XCTAssertEqual(received, second)
+    }
+
     func testRemoteDeletionCannotEraseAnOfflineEdit() async throws {
         let original = try pack("Initial")
         let edited = try pack("Offline edit")

@@ -1228,6 +1228,19 @@ public actor LocalVaultSync {
                     state.sharedDownloads?.removeValue(forKey: id)
                     try persist()
                 }
+                // A collaboration checkpoint can acknowledge this document
+                // revision while the binary receive is still outstanding.
+                // Finish it even when the shared editor has since closed.
+                if let baseline, let remote,
+                   baseline.path == path, baseline.localHash == current.hash,
+                   baseline.revision == remote.revision,
+                   state.binaryBaselines?[id] != nil,
+                   state.binaryRevisions?[id] != remote.revision {
+                    if try await receiveOpenBinary(itemId: id, path: path, remote: remote) {
+                        report.downloaded += 1; report.hasMore = true
+                    }
+                    continue
+                }
                 if remote?.revision == current.hash {
                     state.baselines[id] = Baseline(path: path, revision: current.hash, localHash: current.hash)
                     state.conflicts.removeValue(forKey: id)
