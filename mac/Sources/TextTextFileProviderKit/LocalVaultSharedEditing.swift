@@ -252,6 +252,26 @@ struct LocalVaultSharedEditingStore: Sendable {
         try validate(value)
         return value
     }
+
+    /// A direct writer may replace text and an asset in the same TextPack.
+    /// Do not publish its asset separately until the open editor has imported
+    /// the text; otherwise a later checkpoint can mistake that file revision
+    /// for an asset-only change and discard the writer's text.
+    func projectionContentMatches(itemId: String, path: String) throws -> Bool {
+        guard let saved = try checkpoint(itemId: itemId) else { return true }
+        guard saved.path == path,
+              let bytes = try read(itemDirectory(itemId).appendingPathComponent("projection.textpack"), limit: 64 * 1024 * 1024) else { return false }
+        let archive = try Archive(data: bytes, accessMode: .read)
+        let prefix = try binaryPrefix(archive)
+        func entry(_ name: String) throws -> String? {
+            guard let file = archive[prefix + name], file.uncompressedSize <= 2 * 1024 * 1024 else { return nil }
+            var data = Data(); _ = try archive.extract(file) { data.append($0) }
+            return String(data: data, encoding: .utf8)
+        }
+        let current = try LocalVaultDocumentStore(root: root).readMetadata(path: path, includeTemplate: true).contents
+        return try current.markdown == entry("text.md") && current.documentJSON == entry("document.json") &&
+            current.templateJSON == entry("template.json") && current.templateAuthoringSourceJSON == entry("template-source.json")
+    }
     private func assetEntry(_ entryPath: String, in archive: Archive) throws -> Entry? {
         let matches = archive.filter { $0.path == entryPath || $0.path.hasSuffix("/" + entryPath) }
         guard matches.count <= 1 else { throw LocalVaultSharedFailure.invalid }

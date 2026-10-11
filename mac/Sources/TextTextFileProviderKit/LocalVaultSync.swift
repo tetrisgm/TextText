@@ -540,6 +540,7 @@ public actor LocalVaultSync {
                 hashes[$0] != assets[$0].map { TextTextStableDigest.sha256Hex($0) }
             }
             guard let entry = changed else { return false }
+            guard try sharedStore.projectionContentMatches(itemId: itemId, path: path) else { return false }
             let operationId = UUID().uuidString.lowercased()
             let bytes = assets[entry]
             if let bytes { try writeVaultSyncJournal(bytes, to: binaryPayload(operationId)) }

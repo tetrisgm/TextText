@@ -755,6 +755,40 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(first.expectedHash, TextTextStableDigest.sha256Hex(Data("first".utf8)))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
+
+    func testOpenEditorDefersCombinedExternalTextAndAssetEdit() async throws {
+        let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        let sync = try engine(transport)
+        _ = try await sync.sync()
+        let session = try await sync.beginSharedEditing(itemId: itemId, path: path,
+            expectedHash: TextTextStableDigest.sha256Hex(original))
+        let baseline = try LocalVaultDocumentStore(root: root).read(path: path)
+        let journal: [String: Any] = ["version": 1, "journalGeneration": 1, "epoch": 1, "seq": 0,
+            "revision": baseline.hash, "relativePath": path, "update": "AQ==", "pending": [], "batch": NSNull()]
+        let encodedJournal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        _ = try await sync.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: baseline.hash, epoch: 1, seq: 0, acknowledgedRevision: baseline.hash,
+            journalGeneration: 1, journal: encodedJournal, pending: false,
+            markdown: baseline.contents.markdown, documentJSON: try XCTUnwrap(baseline.contents.documentJSON))
+        let archive = try Archive(data: withAsset(original, bytes: Data("second".utf8)), accessMode: .update)
+        let markdown = try XCTUnwrap(archive.first { $0.path == "text.md" || $0.path.hasSuffix("/text.md") })
+        var text = Data(); _ = try archive.extract(markdown) { text.append($0) }
+        try archive.remove(markdown)
+        let source = root.appendingPathComponent(".combined-\(UUID().uuidString)")
+        try (text + Data("External text\n".utf8)).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+        try archive.addEntry(with: markdown.path, fileURL: source, compressionMethod: .deflate)
+        try putLocal(try XCTUnwrap(archive.data))
+        let result = try await sync.sync()
+        XCTAssertTrue(result.errors.isEmpty, "\(result.errors)")
+        let requests = await transport.binaryRequests()
+        XCTAssertTrue(requests.isEmpty)
+        let current = try LocalVaultDocumentStore(root: root).read(path: path)
+        XCTAssertTrue(current.contents.markdown.contains("External text"))
+        try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
     func testOpenEditorReceivesRemoteAssetWithoutReplacingTextOrSession() async throws {
         let first = Data("first".utf8), second = Data("second".utf8)
         let original = try withAsset(pack("Human text"), bytes: first)
