@@ -2,6 +2,38 @@
 
 ## Current work (October 11)
 
+Source `39aa5405` is on `origin/main`. Its clean Mac gate passed 899 core
+tests and all native file/durable sync checks. Mac 0.204 build 1248 is signed,
+installed in `/Applications/TextText.app`, and launched. The matching Windows
+candidate `candidate-f5ee9ce07a31405b93bbfe3128b7c756` passed its receipt
+and native desktop smoke, was installed, and launched on the PC. No public Mac
+release or Oracle website deployment occurred.
+
+Partial-overlap six-client seed 72 is **not passing**. The first attempt on
+fixture 1272 stopped before edits when the Mac test actor failed to enter edit
+mode; a fresh actor session did edit. That run then failed when the Windows
+editor entered `error` while the PC CLI's partial direct-file replacement stayed
+separate from the other four clients. Receipt:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-04-19-431Z-72`.
+A fresh diagnostic fixture 1273 reproduced it; the Windows UI says "This note
+needs to be reopened. Your edits are saved for recovery." Receipt:
+`/private/tmp/texttext-six-20261011/results/stress-2026-10-11T13-14-11-581Z-72`.
+Its file and journals remain preserved. The PC test harness now captures the
+visible notice on failure (uncommitted change in `Stress.cs`). The likely path
+is a failed native checkpoint after an older direct file edit races with live
+Yjs changes; prove the exact checkpoint error and fix the common-base merge,
+then replay on a new fixture and durable reopen. The new diagnostic fixture
+did take roughly two minutes to reach the PC after CLI creation, so also
+measure file creation propagation separately.
+
+Remaining cases: native offline/pending-edit crash recovery, whole
+TextPack/assets, folder operations, separate-account permissions, and sustained
+latency/resource runs. Do not call sync certified until the physical cases pass.
+The TextText project changelog named by the repository contract was not present
+in the currently selected local workspace; do not create a duplicate.
+
+## Earlier October 11 handoff
+
 Source `ef3d2907` is on `origin/main`. Mac 0.204 build 1247 is installed and
 launched locally from that clean source; neither a public Mac release nor an
 Oracle website deployment was made. Its exact-source Node 22 sync gate passed
