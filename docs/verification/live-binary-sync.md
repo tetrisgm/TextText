@@ -18,7 +18,8 @@ materialization must be fixed together.
 
 Server foundation: `src/sync/engine/store.ts` and the item `binary` route now
 provide bounded entry GET/PATCH and atomic hash/lifecycle compare-and-swap with
-durable receipts. The web, Windows, and Mac relays expose these scoped calls.
+durable receipts. The web, Windows, and Mac relays and both native sync transports
+expose these scoped calls.
 Native outbound/inbound integration below remains open.
 
 1. Treat each TextPack binary entry as an atomic value with its own SHA-256.

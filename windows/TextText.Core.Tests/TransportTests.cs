@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using TextText.Core;
 static class TransportTests
 {
@@ -36,5 +37,22 @@ static class TransportTests
         var forbiddenCalls=0;
         using(var client=new HttpClient(new Handler(request=>{forbiddenCalls++;return Task.FromResult(forbiddenCalls==1?Json("{}",HttpStatusCode.TooManyRequests):Json("{\"items\":[]}"));}))) {var transport=new HttpSyncTransport(client,new("https://sync.example"),"workspace-1",()=>Task.FromResult("test-token"));try{await transport.ManifestAsync();}catch(HttpRequestException){}Check((await transport.ManifestAsync()).Count==0&&forbiddenCalls==2,"429 can retry on next scheduled pass");}
         using(var client=new HttpClient(new Handler(request=>{var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent([4,5,6])};response.Headers.TryAddWithoutValidation("ETag","\"download-hash\"");response.Headers.TryAddWithoutValidation("X-TextText-Path",Uri.EscapeDataString(path));return Task.FromResult(response);}))) {var transport=new HttpSyncTransport(client,new("https://sync.example"),"workspace-1",()=>Task.FromResult("test-token"));var pack=await transport.DownloadAsync("one");Check(pack.RelativePath==path&&pack.Revision=="download-hash"&&pack.Data.SequenceEqual(new byte[]{4,5,6}),"download decodes path/revision and preserves bytes");}
+        var binaryCalls=0;
+        using(var client=new HttpClient(new Handler(async request=>{
+            Check(request.RequestUri!.AbsolutePath=="/api/vault/workspace-1/items/item-1/binary","binary request stays within item scope");
+            Check(request.Headers.Authorization?.Parameter=="test-token","binary request uses bearer authentication");
+            binaryCalls++;
+            if(binaryCalls==1)return Json("{\"revision\":\""+new string('a',64)+"\",\"entries\":[{\"path\":\"assets/data.bin\",\"sha256\":\""+new string('b',64)+"\",\"size\":3}]}");
+            if(binaryCalls==2){Check(request.RequestUri.Query=="?entry=assets%2Fdata.bin","binary entry path is query encoded");return new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent([0,1,255])};}
+            Check(request.Method==HttpMethod.Patch,"binary mutation uses PATCH");
+            using var body=JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            Check(body.RootElement.GetProperty("operationId").GetString()=="operation-1"&&body.RootElement.GetProperty("bytesBase64").GetString()=="AAH/"&&body.RootElement.GetProperty("expectedLifecycle").ValueKind==JsonValueKind.Null,"binary CAS payload preserves operation, bytes, and lifecycle");
+            return Json("{\"revision\":\""+new string('c',64)+"\"}");
+        }))) {var transport=new HttpSyncTransport(client,new("https://sync.example"),"workspace-1",()=>Task.FromResult("test-token"));
+            var manifest=await transport.BinaryManifestAsync("item-1");
+            Check(manifest.Entries.Length==1&&manifest.Entries[0].Sha256==new string('b',64),"binary manifest decodes entry hash");
+            Check((await transport.BinaryReadAsync("item-1","assets/data.bin")).SequenceEqual(new byte[]{0,1,255}),"binary read preserves bytes");
+            Check(await transport.BinaryPatchAsync("item-1","operation-1","assets/data.bin",new string('b',64),null,[0,1,255])==new string('c',64),"binary mutation returns revision");
+        }
     }
 }

@@ -3,6 +3,8 @@ using System.IO.Compression;
 namespace TextText.Core;
 public sealed record RemoteItem(string ItemId,string RelativePath,string Revision,bool Deleted=false,string? Lifecycle=null,string? RestoreFromRevision=null,bool? CanEditContent=null);
 public sealed record RemotePack(byte[] Data,string RelativePath,string Revision);
+public sealed record RemoteBinaryEntry(string Path,string Sha256,int Size);
+public sealed record RemoteBinaryManifest(string Revision,RemoteBinaryEntry[] Entries);
 public interface ISyncTransport
 {
     IReadOnlyList<string> Folders => [];
@@ -13,6 +15,9 @@ public interface ISyncTransport
     Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default);
     Task<string> RenameAsync(string itemId,string from,string to,string baseRevision,string operationId,CancellationToken cancellation=default);
     Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default);
+    Task<RemoteBinaryManifest> BinaryManifestAsync(string itemId,CancellationToken cancellation=default) => throw new NotSupportedException();
+    Task<byte[]> BinaryReadAsync(string itemId,string entryPath,CancellationToken cancellation=default) => throw new NotSupportedException();
+    Task<string> BinaryPatchAsync(string itemId,string operationId,string entryPath,string? expectedHash,string? expectedLifecycle,byte[]? bytes,CancellationToken cancellation=default) => throw new NotSupportedException();
 }
 public sealed class SyncConflictException() : IOException("The remote file changed; both copies are preserved.");
 public sealed record SyncStatus(bool Running,string? Error,int Pending);

@@ -42,6 +42,26 @@ public sealed class HttpSyncTransport : ISyncTransport
         etag=response.Headers.ETag?.ToString();return cached;
     }
     Uri Item(string id)=>new(endpoint+"/"+Uri.EscapeDataString(id));
+    Uri Binary(string id)=>new(Item(id)+"/binary");
+    public async Task<RemoteBinaryManifest> BinaryManifestAsync(string itemId,CancellationToken cancellation=default) {
+        using var response=await Send(()=>new(HttpMethod.Get,Binary(itemId)),cancellation);
+        var manifest=JsonSerializer.Deserialize<RemoteBinaryManifest>(await Bytes(response,cancellation),Json)??throw new InvalidDataException("Invalid binary manifest.");
+        if(!System.Text.RegularExpressions.Regex.IsMatch(manifest.Revision,@"^[a-f0-9]{64}$") || manifest.Entries is null || manifest.Entries.Length>10000 ||
+           manifest.Entries.Any(x=>!x.Path.StartsWith("assets/",StringComparison.Ordinal)||x.Size<0||x.Size>64*1024*1024||!System.Text.RegularExpressions.Regex.IsMatch(x.Sha256,@"^[a-f0-9]{64}$")))
+            throw new InvalidDataException("Invalid binary manifest.");
+        return manifest;
+    }
+    public async Task<byte[]> BinaryReadAsync(string itemId,string entryPath,CancellationToken cancellation=default) {
+        if(!entryPath.StartsWith("assets/",StringComparison.Ordinal)||entryPath.Contains("..",StringComparison.Ordinal)||entryPath.Contains('\\')||entryPath.Length>512)throw new InvalidDataException("Invalid binary entry path.");
+        using var response=await Send(()=>new(HttpMethod.Get,new Uri(Binary(itemId)+"?entry="+Uri.EscapeDataString(entryPath))),cancellation);
+        return await Bytes(response,cancellation);
+    }
+    public async Task<string> BinaryPatchAsync(string itemId,string operationId,string entryPath,string? expectedHash,string? expectedLifecycle,byte[]? bytes,CancellationToken cancellation=default) {
+        if(bytes?.Length>16*1024*1024)throw new InvalidDataException("Binary entry too large.");
+        return await Mutation(()=>new HttpRequestMessage(HttpMethod.Patch,Binary(itemId)) { Content=new StringContent(JsonSerializer.Serialize(new {
+            operationId,entryPath,expectedHash,expectedLifecycle,bytesBase64=bytes==null?null:Convert.ToBase64String(bytes),
+        }),Encoding.UTF8,"application/json") },cancellation);
+    }
     public async Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default) {
         using var response=await Send(()=>new(HttpMethod.Get,Item(itemId)),cancellation);
         var revision=response.Headers.ETag?.Tag.Trim('"')??throw new InvalidDataException("Missing revision.");

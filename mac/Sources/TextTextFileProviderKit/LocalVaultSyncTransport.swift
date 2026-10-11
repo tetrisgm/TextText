@@ -63,6 +63,19 @@ public protocol LocalVaultSyncTransport: Sendable {
     func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String
     func rename(itemId: String, from: String, to: String, baseRevision: String, operationId: String) async throws -> String
     func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws
+    func binaryManifest(itemId: String) async throws -> LocalVaultBinaryManifest
+    func binaryRead(itemId: String, entryPath: String) async throws -> Data
+    func binaryPatch(itemId: String, operationId: String, entryPath: String, expectedHash: String?, expectedLifecycle: String?, bytes: Data?) async throws -> String
+}
+
+public struct LocalVaultBinaryManifest: Codable, Sendable {
+    public struct Entry: Codable, Sendable {
+        public let path: String
+        public let sha256: String
+        public let size: Int
+    }
+    public let revision: String
+    public let entries: [Entry]
 }
 
 public extension LocalVaultSyncTransport {
@@ -70,6 +83,9 @@ public extension LocalVaultSyncTransport {
     func authoritativeFolders() async -> [String]? { nil }
     func canOrganize() async -> Bool { true }
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool { true }
+    func binaryManifest(itemId: String) async throws -> LocalVaultBinaryManifest { throw LocalVaultSyncFailure.invalidResponse }
+    func binaryRead(itemId: String, entryPath: String) async throws -> Data { throw LocalVaultSyncFailure.invalidResponse }
+    func binaryPatch(itemId: String, operationId: String, entryPath: String, expectedHash: String?, expectedLifecycle: String?, bytes: Data?) async throws -> String { throw LocalVaultSyncFailure.invalidResponse }
 }
 
 /// Bearer credentials live only in this transport, never in vault files.
@@ -185,6 +201,41 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
               let encodedPath = response.value(forHTTPHeaderField: "X-TextText-Path"),
               let path = encodedPath.removingPercentEncoding else { throw LocalVaultSyncFailure.invalidResponse }
         return .init(data: data, relativePath: path, revision: etag.trimmingCharacters(in: CharacterSet(charactersIn: "\"")))
+    }
+
+    public func binaryManifest(itemId: String) async throws -> LocalVaultBinaryManifest {
+        let (data, _) = try await send(request(endpoint.appendingPathComponent(itemId).appendingPathComponent("binary")))
+        let manifest = try JSONDecoder().decode(LocalVaultBinaryManifest.self, from: data)
+        guard manifest.revision.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              manifest.entries.count <= 10_000,
+              manifest.entries.allSatisfy({ $0.path.hasPrefix("assets/") && $0.size >= 0 && $0.size <= 64 * 1024 * 1024 &&
+                  $0.sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil }) else {
+            throw LocalVaultSyncFailure.invalidResponse
+        }
+        return manifest
+    }
+
+    public func binaryRead(itemId: String, entryPath: String) async throws -> Data {
+        guard entryPath.hasPrefix("assets/"), entryPath.utf8.count <= 512,
+              !entryPath.contains("\\"), !entryPath.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }) else {
+            throw LocalVaultSyncFailure.invalidResponse
+        }
+        var url = URLComponents(url: endpoint.appendingPathComponent(itemId).appendingPathComponent("binary"), resolvingAgainstBaseURL: false)!
+        url.queryItems = [URLQueryItem(name: "entry", value: entryPath)]
+        return try await send(request(url.url!)).0
+    }
+
+    public func binaryPatch(itemId: String, operationId: String, entryPath: String, expectedHash: String?, expectedLifecycle: String?, bytes: Data?) async throws -> String {
+        guard bytes == nil || bytes!.count <= 16 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
+        var request = request(endpoint.appendingPathComponent(itemId).appendingPathComponent("binary"))
+        request.httpMethod = "PATCH"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["operationId": operationId, "entryPath": entryPath,
+            "expectedHash": expectedHash as Any? ?? NSNull(), "expectedLifecycle": expectedLifecycle as Any? ?? NSNull(),
+            "bytesBase64": bytes?.base64EncodedString() as Any? ?? NSNull()])
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Receipt: Decodable { let revision: String }
+        let (data, _) = try await send(request)
+        return try JSONDecoder().decode(Receipt.self, from: data).revision
     }
 
     public func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String {

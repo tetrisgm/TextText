@@ -60,9 +60,10 @@ atomic per-entry hash/lifecycle compare-and-swap writer that advances the live
 Yjs sequence without replacing text. Store and route tests passed, including
 receipt replay, same-entry conflict, lifecycle fencing, and text edits before
 and after a binary change. A follow-up adds scoped binary transport on web,
-Windows, and Mac, with focused web and Mac relay tests. This is not yet a client
-fix: Mac and Windows native editors do not durably detect, send, or materialize
-entry operations while open.
+Windows, and Mac, with focused web and Mac relay tests. Native Swift and .NET
+sync transports also now expose the scoped calls; the .NET transport contract
+test passes. This is not yet a client fix: Mac and Windows native editors do
+not durably detect, send, or materialize entry operations while open.
 
 Next: repair live binary-entry propagation while native editors stay mounted,
 verify with a fresh six-client fixture and separate reopen; then whole TextPack and folder operations,
