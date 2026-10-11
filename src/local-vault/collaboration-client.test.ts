@@ -158,7 +158,7 @@ describe("durable file collaboration client", () => {
     server.bytes = pack("Existing fixture text."); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
     let failOnce = false;
     const checkpoints: string[] = [];
-    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+    const editor: FileCollaborationClient = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
       request: server.request,
       checkpoint: async ({ document }) => {
         if (failOnce) { failOnce = false; throw Object.assign(new Error("File changed"), { code: "local_changed" }); }
