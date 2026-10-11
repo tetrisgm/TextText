@@ -482,6 +482,10 @@ final class NativeStressRunner {
             try await self.evaluate("!!document.querySelector('button[aria-label=\"Edit card\"]') || !!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true"
         }
         _ = try await evaluate("(document.querySelector('button[aria-label=\"Edit card\"]')?.click(), true)")
+        try await Task.sleep(for: .seconds(1))
+        if try await evaluate("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") != "true" {
+            _ = try await evaluate("(document.querySelector('button[aria-label=\"Edit card\"]')?.click(), true)")
+        }
         try await until("Test item did not enter the real document editor.") {
             try await self.evaluate("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true"
         }
