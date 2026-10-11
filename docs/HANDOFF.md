@@ -22,7 +22,11 @@ Physical six-client receipts on fresh fixtures:
   and `stress-2026-10-11T20-02-33-181Z-112` alongside it. Zero rejected edits,
   exact final text and both asset hashes.
 
-Next: same-entry asset conflict with preserved versions, whole TextPack and folder
+Same-entry asset conflict now saves both complete packs before stopping retries
+on Mac and Windows. Mac sync suite (40 tests) and Windows native regression
+suite pass. This has not yet been exercised as a six-client physical conflict.
+
+Next: physical same-entry conflict, whole TextPack and folder
 operations, delete/restore, two-account permissions, and sustained latency and
 resource measurements. The normal Windows “Keep editing” close path has not
 been separately reproduced on the latest installed candidate. Do not certify

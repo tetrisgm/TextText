@@ -524,6 +524,27 @@ public actor LocalVaultSync {
         return bytes
     }
 
+    private func preserveBinaryConflict(_ pending: BinaryPending) async throws {
+        let remote = try await transport.download(itemId: pending.itemId)
+        try validate(remote, itemId: pending.itemId, path: remote.relativePath)
+        let local = try Data(contentsOf: LocalVaultDocumentStore(root: root).url(for: pending.path))
+        let localHash = TextTextStableDigest.sha256Hex(local)
+        let folder = ".texttext/conflicts/\(pending.operationId)"
+        let destination = root.appendingPathComponent(folder)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let localPath = "\(folder)/local.textpack", remotePath = "\(folder)/remote.textpack"
+        try local.write(to: root.appendingPathComponent(localPath), options: .atomic)
+        try remote.data.write(to: root.appendingPathComponent(remotePath), options: .atomic)
+        var paths = [localPath, remotePath]
+        if let bytes = try stagedBinaryBytes(pending) {
+            let assetPath = "\(folder)/local-asset.bin"
+            try bytes.write(to: root.appendingPathComponent(assetPath), options: .atomic)
+            paths.append(assetPath)
+        }
+        state.conflicts[pending.itemId] = Conflict(localHash: localHash, remoteRevision: remote.revision,
+                                                  paths: paths, remotePath: remote.relativePath)
+    }
+
     private func syncOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
         guard !remote.isDeleted, remote.relativePath == path,
               let baseline = state.baselines[itemId], baseline.path == path,
@@ -573,8 +594,9 @@ public actor LocalVaultSync {
             if pending.payloadHash != nil { try? FileManager.default.removeItem(at: binaryPayload(pending.operationId)) }
             return true
         } catch LocalVaultSyncFailure.conflict {
+            try await preserveBinaryConflict(pending)
             state.binaryOutbox?[itemId]?.conflicted = true
-            try persist() // The local archive and exact unsent bytes remain available.
+            try persist() // Both packs and the exact unsent asset are durable before suppressing retries.
             return false
         }
     }

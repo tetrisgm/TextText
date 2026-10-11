@@ -532,6 +532,10 @@ static class Test
   await binaryEngine.SyncAsync(localChangesOnly:true);
   var conflictState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"sync.json")))!;
   Assert(conflictState.BinaryOutbox.Single().Conflicted&&BinaryEntryPacks.Assets(binaryStore.Read(binaryFile.Path))["assets/data.bin"].Bytes.SequenceEqual(new byte[]{4,4,4})&&BinaryEntryPacks.Assets(binaryRemote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5,5}),"same-entry conflict retains both byte versions without overwrite");
+  var recovery=binaryStore.GetRecoveryDirectory();
+  Assert(File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-local-"+TextPackStore.Hash(conflictLocal)+".textpack")).SequenceEqual(conflictLocal)&&
+    File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-remote-"+TextPackStore.Hash(binaryRemote.Data)+".textpack")).SequenceEqual(binaryRemote.Data),
+    "same-entry conflict durably copies both packs before stopping retries");
  }
  // A collaboration checkpoint may acknowledge a newer document revision
  // before file sync has received the binary entry from that same revision.

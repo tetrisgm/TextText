@@ -789,6 +789,30 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertTrue(current.contents.markdown.contains("External text"))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
+    func testSameEntryBinaryConflictRetainsBothPacksAndOriginalAsset() async throws {
+        let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
+        try putLocal(original)
+        let transport = FakeVaultTransport(), sync = try engine(transport)
+        _ = try await sync.sync()
+        let session = try await sync.beginSharedEditing(itemId: itemId, path: path,
+            expectedHash: TextTextStableDigest.sha256Hex(original))
+        let local = try withAsset(original, bytes: Data("local".utf8))
+        let remote = try withAsset(original, bytes: Data("remote".utf8))
+        try putLocal(local)
+        await transport.conflictNextBinaryPatch(with: remote)
+        let result = try await sync.sync()
+        XCTAssertTrue(result.errors.isEmpty, "\(result.errors)")
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let conflicts = try XCTUnwrap((state["conflicts"] as? [String: Any])?[itemId] as? [String: Any])
+        let paths = try XCTUnwrap(conflicts["paths"] as? [String])
+        XCTAssertEqual(paths.count, 3)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[0])), local)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[1])), remote)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(paths[2])), Data("local".utf8))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), local)
+        try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
     func testOpenEditorReceivesRemoteAssetWithoutReplacingTextOrSession() async throws {
         let first = Data("first".utf8), second = Data("second".utf8)
         let original = try withAsset(pack("Human text"), bytes: first)
@@ -941,12 +965,19 @@ private actor FakeVaultTransport: LocalVaultSyncTransport {
     func failNextUploadBeforeCommit() { failBeforeCommit = true }
     private var loseReply = false
     private var loseBinaryReply = false
+    private var nextBinaryConflict: Data?
     private var binaryTrace: [(operationId: String, expectedHash: String?, bytes: Data?)] = []
     func loseNextBinaryReply() { loseBinaryReply = true }
+    func conflictNextBinaryPatch(with data: Data) { nextBinaryConflict = data }
     func binaryRequests() -> [(operationId: String, expectedHash: String?, bytes: Data?)] { binaryTrace }
     func binaryPatch(itemId: String, operationId: String, entryPath: String, expectedHash: String?, expectedLifecycle: String?, bytes: Data?) throws -> String {
         binaryTrace.append((operationId, expectedHash, bytes))
         guard entryPath == "assets/data.txt", items[itemId] != nil else { throw LocalVaultSyncFailure.invalidResponse }
+        if let changed = nextBinaryConflict {
+            nextBinaryConflict = nil
+            set(itemId: itemId, path: items[itemId]!.relativePath, data: changed)
+            throw LocalVaultSyncFailure.conflict
+        }
         let revision = TextTextStableDigest.sha256Hex(Data((operationId + "binary").utf8))
         if loseBinaryReply { loseBinaryReply = false; throw URLError(.networkConnectionLost) }
         return revision
