@@ -30,7 +30,7 @@ it("does not join another item or loop on an unchanged file", async () => {
       opens++;
       throw new VaultError("changed", "local_changed");
     }) as typeof vaultRequest;
-    await expect(openLocalSharedSession(itemId, file("old"), request)).rejects.toMatchObject({ code: "local_changed" });
+    await expect(openLocalSharedSession(itemId, file("old"), request, 0)).rejects.toMatchObject({ code: "local_changed" });
     expect(opens).toBeLessThanOrEqual(5);
   }
 });
