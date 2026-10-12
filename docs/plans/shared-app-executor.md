@@ -1,6 +1,6 @@
 # TextText implementation playbook
 
-Status: executable handoff, not implementation completion. Updated October 11, 2026.
+Status: executable handoff, not implementation completion. Updated October 12, 2026.
 
 Read this first, then the [master plan](shared-app-durability-execution.md). The master plan defines scope and phase IDs; this document defines how to execute it with a smaller model. Keep both current. A checked task requires linked evidence, not an assertion.
 
@@ -31,7 +31,7 @@ The current installed Windows candidate is `candidate-25e161b899b84b3182631c25e2
 - Run 176 passed one physical concurrent round and Windows close: `/private/tmp/texttext-six-20261011/results/stress-2026-10-12T03-06-06-569Z-176`.
 - Final native smoke receipt: `C:\Users\Shokunin\dev\texttext-release-136bc176\windows\build\smoke-receipts-8c7ac8ba999e41f99674107c6438950f`.
 - Candidate `candidate-fadaf025bf7b467fb41ef79c41f86172` predates the final close-request fix. Do not install it as evidence of that fix.
-- Mac installed identity was 0.204 build 1259. Re-read its plist before using this fact.
+- Mac 0.204 build 1260 is installed from a pristine committed source; see [Mac local install](../verification/2026-10-12-mac-local-install.md). Re-read its plist before using this fact.
 - PC SSH resets were caused by WebView2 locking the Windows account; the persistent workaround and original sshd configuration are in [the account-lockout receipt](../verification/2026-10-11-windows-account-lockout.md). Read the fleet reference before any machine work.
 - Runs 171–174 failed. Keep those failures. One successful round does not close their diagnostic gap.
 
