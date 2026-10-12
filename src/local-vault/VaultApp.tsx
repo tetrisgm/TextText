@@ -45,6 +45,7 @@ import { CaptureDialog, captureInput } from "./CaptureDialog";
 import { FeedSubscribeDialog, FeedSubscriptionReader } from "./VaultFeeds";
 import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
+import { hasPendingFileCollaborationJournal } from "@/sync/engine/client";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 import { packIdentity } from "./pack";
 import { locateVaultItemOrResolve } from "./item-location";
@@ -393,9 +394,9 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const localFlush = useRef<(() => Promise<boolean>) | null>(null);
   const onSharedModeRef = useRef(onSharedMode);
   useEffect(() => { onSharedModeRef.current = onSharedMode; }, [onSharedMode]);
-  const registerLocalFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails) => {
+  const registerLocalFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails, durabilityResult) => {
     localFlush.current = flush;
-    registerFlush(flush, currentFile, publishFlush, saveStoryDetails);
+    registerFlush(flush, currentFile, publishFlush, saveStoryDetails, durabilityResult);
   }, [registerFlush]);
   useEffect(() => {
     let stopped = false;
@@ -426,16 +427,11 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
       if (stored) {
         const previous = JSON.parse(stored) as VaultCollaborationConfig;
         const key = `texttext:file-collaboration:v1:${JSON.stringify([previous.namespace.replace(/\/$/, ""), previous.workspaceId, previous.itemId])}`;
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const journal = JSON.parse(raw);
-            if (journal.retired || journal.unqueuedDirty || journal.batch || journal.pending?.length) { setMode(previous); return; }
-          } catch {
-            // Let the shared client expose the intact unreadable journal for
-            // recovery instead of silently opening another persistence path.
-            setMode(previous); return;
-          }
+        try { if (await hasPendingFileCollaborationJournal(key)) { setMode(previous); return; } }
+        catch {
+          // Let the shared client expose an intact or unreadable IndexedDB
+          // journal instead of silently opening another persistence path.
+          setMode(previous); return;
         }
       }
       setMode("local");
@@ -687,15 +683,25 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     } catch { /* Browsing still works when local storage is disabled. */ }
   }, [destinationFolder, listing?.root, locationReadyRoot, selected]);
   const flushRef = useRef<(navigation?: boolean) => Promise<boolean>>(async () => true);
+  const durabilityResultRef = useRef<() => Promise<import("@/sync/engine/client").FileCollaborationDurabilityResult | null>>(async () => null);
   useEffect(() => {
-    const nativeWindow = window as Window & { texttextFlushForSignOut?: () => Promise<boolean> };
+    const nativeWindow = window as Window & {
+      texttextFlushForSignOut?: () => Promise<boolean>;
+      texttextFlushForNativeClose?: () => Promise<{ ok: boolean; durability: import("@/sync/engine/client").FileCollaborationDurabilityResult | { outcome: "durable" | "pending" } | null }>;
+    };
     nativeWindow.texttextFlushForSignOut = () => flushRef.current(true);
-    return () => { delete nativeWindow.texttextFlushForSignOut; };
+    nativeWindow.texttextFlushForNativeClose = async () => {
+      const ok = await flushRef.current(true);
+      const durability = await durabilityResultRef.current();
+      return { ok, durability: durability ?? { outcome: ok ? "durable" : "pending" } };
+    };
+    return () => { delete nativeWindow.texttextFlushForSignOut; delete nativeWindow.texttextFlushForNativeClose; };
   }, []);
   const publishFlushRef = useRef<() => Promise<string | false>>(async () => false);
   const saveStoryDetailsRef = useRef<(details: StoryDetails) => Promise<string | false>>(async () => false);
-  const registerFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails) => {
+  const registerFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails, durabilityResult) => {
     flushRef.current = flush; publishFlushRef.current = publishFlush; saveStoryDetailsRef.current = saveStoryDetails; currentFileRef.current = currentFile;
+    durabilityResultRef.current = durabilityResult ?? (async () => null);
   }, []);
   const capabilities = listingCapabilities(listing, access, allowFolderPicker);
   const canCreate = capabilities.create(destinationFolder.trim());

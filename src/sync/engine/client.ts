@@ -12,7 +12,17 @@ const REMOTE = Symbol("file-collaboration-remote");
 const LIMIT = 4 * 1024 * 1024;
 export type FileCollaborationStatus = "ready" | "saving" | "paused" | "reconnecting" | "offline" | "stale-file" | "stale-session" | "recovery" | "error";
 export type FileCollaborationRequest = (method: "read" | "push", params: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
-export interface FileCollaborationJournalStore { load(key: string): string | null; save(key: string, value: string): void; remove(key: string): void }
+export interface FileCollaborationJournalStore {
+  load(key: string): string | null;
+  save(key: string, value: string): void;
+  remove(key: string): void;
+  /** Optional transaction-backed browser path. Legacy stores stay synchronous. */
+  loadCopies?(key: string): Promise<{ committed: string | null; fallback: string | null }>;
+  listCommitted?(): Promise<string[]>;
+  loadCommitted?(key: string): Promise<string | null>;
+  migrate?(key: string, value: string): Promise<void>;
+  commit?(key: string, generation: number): Promise<void>;
+}
 export type FileCollaborationDurabilityOutcome = "durable" | "pending" | "storage-unavailable" | "invalid-journal" | "stale-lifecycle";
 export type FileCollaborationDurabilityResult = {
   workspaceId: string; itemId: string; lifecycle: string; generation: number;
@@ -171,9 +181,185 @@ function immutableCheckpoint(value: FileCollaborationCheckpoint): FileCollaborat
   freeze(copy); return copy;
 }
 class RequestFailure { constructor(readonly cause: unknown) {} }
-const localJournal: FileCollaborationJournalStore = {
-  load: key => localStorage.getItem(key), save: (key, value) => localStorage.setItem(key, value), remove: key => localStorage.removeItem(key),
-};
+class JournalStorageFailure extends Error {}
+const JOURNAL_DB = "texttext-file-collaboration";
+const JOURNAL_DB_VERSION = 1;
+const JOURNAL_STORE = "journals";
+type StoredJournal = { key: string; postId: string; schemaVersion: 1; generation: number; raw: string | null };
+let journalDatabase: Promise<IDBDatabase> | null = null;
+function openJournalDatabase(): Promise<IDBDatabase> {
+  if (typeof indexedDB === "undefined") return Promise.reject(new Error("Transactional browser storage is unavailable."));
+  if (journalDatabase) return journalDatabase;
+  journalDatabase = new Promise((resolve, reject) => {
+    const request = indexedDB.open(JOURNAL_DB, JOURNAL_DB_VERSION);
+    let settled = false;
+    const fail = (error: unknown) => { if (!settled) { settled = true; journalDatabase = null; reject(error); } };
+    request.onupgradeneeded = event => {
+      const db = request.result;
+      if ((event as IDBVersionChangeEvent).oldVersion > JOURNAL_DB_VERSION) { request.transaction?.abort(); return; }
+      if (!db.objectStoreNames.contains(JOURNAL_STORE)) db.createObjectStore(JOURNAL_STORE, { keyPath: "postId" });
+    };
+    request.onblocked = () => fail(new Error("Transactional browser storage upgrade is blocked by another TextText window."));
+    request.onerror = () => fail(request.error ?? new Error("Transactional browser storage could not be opened."));
+    request.onsuccess = () => {
+      if (settled) { request.result.close(); return; }
+      settled = true;
+      const db = request.result;
+      db.onversionchange = () => { db.close(); journalDatabase = null; };
+      resolve(db);
+    };
+  });
+  return journalDatabase;
+}
+function readStoredJournal(key: string): Promise<StoredJournal | null> {
+  return new Promise(async (resolve, reject) => {
+    let db: IDBDatabase;
+    try { db = await openJournalDatabase(); } catch (error) { reject(error); return; }
+    let row: StoredJournal | null = null;
+    let transaction: IDBTransaction;
+    try { transaction = db.transaction(JOURNAL_STORE, "readonly"); }
+    catch (error) { reject(error); return; }
+    const request = transaction.objectStore(JOURNAL_STORE).get(key);
+    request.onsuccess = () => { row = (request.result as StoredJournal | undefined) ?? null; };
+    transaction.oncomplete = () => { resolve(row); };
+    transaction.onerror = transaction.onabort = () => { reject(transaction.error ?? new Error("Transactional browser journal read failed.")); };
+  });
+}
+function listStoredJournals(): Promise<StoredJournal[]> {
+  return new Promise(async (resolve, reject) => {
+    let db: IDBDatabase;
+    try { db = await openJournalDatabase(); } catch (error) { reject(error); return; }
+    let transaction: IDBTransaction;
+    try { transaction = db.transaction(JOURNAL_STORE, "readonly"); }
+    catch (error) { reject(error); return; }
+    let rows: StoredJournal[] = [];
+    const request = transaction.objectStore(JOURNAL_STORE).getAll();
+    request.onsuccess = () => { rows = (request.result as StoredJournal[] | undefined) ?? []; };
+    transaction.oncomplete = () => { resolve(rows); };
+    transaction.onerror = transaction.onabort = () => { reject(transaction.error ?? new Error("Transactional browser journal index could not be read.")); };
+  });
+}
+function writeStoredJournal(key: string, row: StoredJournal, verifyRaw?: string): Promise<void> {
+  return new Promise(async (resolve, reject) => {
+    let db: IDBDatabase;
+    try { db = await openJournalDatabase(); } catch (error) { reject(error); return; }
+    let transaction: IDBTransaction;
+    try {
+      try { transaction = db.transaction(JOURNAL_STORE, "readwrite", { durability: "strict" }); }
+      catch { transaction = db.transaction(JOURNAL_STORE, "readwrite"); }
+    } catch (error) { reject(error); return; }
+    const store = transaction.objectStore(JOURNAL_STORE);
+    store.put(row);
+    if (verifyRaw !== undefined) {
+      const readback = store.get(key);
+      readback.onsuccess = () => {
+        const saved = readback.result as StoredJournal | undefined;
+        if (!saved || saved.schemaVersion !== 1 || saved.raw !== verifyRaw) transaction.abort();
+      };
+    }
+    transaction.oncomplete = () => { resolve(); };
+    transaction.onerror = transaction.onabort = () => { reject(transaction.error ?? new Error("Transactional browser journal write failed or did not validate.")); };
+  });
+}
+class BrowserJournalStore implements FileCollaborationJournalStore {
+  private writes: Promise<void> = Promise.resolve();
+  private persistenceRequest: Promise<void> | null = null;
+  private requestPersistentStorage(): Promise<void> {
+    if (this.persistenceRequest) return this.persistenceRequest;
+    this.persistenceRequest = (async () => {
+      if (typeof navigator === "undefined" || !navigator.storage?.persist) return;
+      try { await navigator.storage.persist(); } catch { /* Denial does not invalidate a committed journal. */ }
+    })();
+    return this.persistenceRequest;
+  }
+  load(key: string): string | null { return localStorage.getItem(key); }
+  async listCommitted(): Promise<string[]> {
+    await this.requestPersistentStorage();
+    let rows: StoredJournal[];
+    try { rows = await listStoredJournals(); }
+    catch (error) { throw new JournalStorageFailure("Transactional browser journal index read failed. " + String(error)); }
+    for (const row of rows) {
+      if (row.schemaVersion !== 1 || typeof row.key !== "string" || row.postId !== row.key ||
+          !Number.isSafeInteger(row.generation) || row.generation < 0 || (row.raw !== null && typeof row.raw !== "string")) {
+        throw new Error("Transactional browser journal index contains an unsupported or invalid row. It is preserved.");
+      }
+    }
+    return rows.filter(row => row.raw !== null).map(row => row.key);
+  }
+  async loadCommitted(key: string): Promise<string | null> { return (await readStoredJournal(key))?.raw ?? null; }
+  async loadCopies(key: string): Promise<{ committed: string | null; fallback: string | null }> {
+    await this.requestPersistentStorage();
+    let stored: StoredJournal | null;
+    try { stored = await readStoredJournal(key); }
+    catch (error) { throw new JournalStorageFailure("Transactional browser journal read failed. " + String(error)); }
+    if (stored && (stored.schemaVersion !== 1 || stored.key !== key || !Number.isSafeInteger(stored.generation) || stored.generation < 0 || (stored.raw !== null && typeof stored.raw !== "string"))) {
+      throw new Error("Transactional browser journal has an unsupported or invalid schema. It is preserved.");
+    }
+    return { committed: stored?.raw ?? null, fallback: stored?.raw === null && stored ? null : localStorage.getItem(key) };
+  }
+  save(key: string, value: string): void {
+    let generation = 0;
+    try {
+      const parsed = JSON.parse(value) as { journalGeneration?: unknown };
+      if (Number.isSafeInteger(parsed.journalGeneration) && (parsed.journalGeneration as number) >= 0) generation = parsed.journalGeneration as number;
+    } catch { throw new Error("Collaboration journal serialization failed."); }
+    // localStorage remains a recoverable compatibility copy. It never grants
+    // a durability acknowledgement; that follows the IDB transaction below.
+    try { localStorage.setItem(key, value); } catch { /* IDB may still commit the complete journal. */ }
+    const next = this.writes.catch(() => {}).then(() => writeStoredJournal(key, { key, postId: key, schemaVersion: 1, generation, raw: value }));
+    this.writes = next;
+    void next.catch(() => {});
+  }
+  async migrate(key: string, value: string): Promise<void> {
+    let generation = 0;
+    try {
+      const parsed = JSON.parse(value) as { journalGeneration?: unknown };
+      if (Number.isSafeInteger(parsed.journalGeneration) && (parsed.journalGeneration as number) >= 0) generation = parsed.journalGeneration as number;
+    } catch { throw new Error("Legacy collaboration journal is invalid and was preserved."); }
+    try {
+      await writeStoredJournal(key, { key, postId: key, schemaVersion: 1, generation, raw: value }, value);
+      const check = await readStoredJournal(key);
+      if (check?.schemaVersion !== 1 || check.raw !== value || check.generation !== generation) throw new Error("Legacy collaboration journal migration did not round-trip; the original copy is preserved.");
+    } catch (error) { throw new JournalStorageFailure("Legacy collaboration journal migration did not commit; the original copy is preserved. " + String(error)); }
+  }
+  async commit(key: string, generation: number): Promise<void> {
+    await this.requestPersistentStorage();
+    await this.writes;
+    const stored = await readStoredJournal(key);
+    if (!stored || stored.schemaVersion !== 1 || stored.key !== key || stored.raw === null || stored.generation < generation) {
+      throw new Error("The transactional browser journal does not cover the requested generation.");
+    }
+    let committedGeneration: unknown;
+    try { committedGeneration = (JSON.parse(stored.raw) as { journalGeneration?: unknown }).journalGeneration; }
+    catch { throw new Error("The transactional browser journal cannot be validated."); }
+    if (committedGeneration !== stored.generation || !Number.isSafeInteger(committedGeneration) || (committedGeneration as number) < generation) {
+      throw new Error("The transactional browser journal generation does not match its committed record.");
+    }
+  }
+  remove(key: string): void {
+    // A tombstone prevents an old localStorage fallback from being migrated
+    // back after a successful clear. Keep the fallback until IDB commits it.
+    let oldFallback: string | null = null;
+    try { oldFallback = localStorage.getItem(key); } catch { /* The transactional record still controls removal. */ }
+    const next = this.writes.catch(() => {}).then(async () => {
+      await writeStoredJournal(key, { key, postId: key, schemaVersion: 1, generation: 0, raw: null });
+      try { if (localStorage.getItem(key) === oldFallback) localStorage.removeItem(key); } catch { /* the durable tombstone wins */ }
+    });
+    this.writes = next;
+    void next.catch(() => {});
+  }
+}
+const localJournal: FileCollaborationJournalStore = new BrowserJournalStore();
+/** Inspect both the transactional copy and its compatibility fallback when
+ * bootstrap has lost connectivity after a previous shared open. */
+export async function hasPendingFileCollaborationJournal(key: string): Promise<boolean> {
+  if (!localJournal.loadCopies) return false;
+  const copies = await localJournal.loadCopies(key);
+  const raw = selectFileCollaborationJournal(copies.committed, copies.fallback);
+  if (raw === null) return false;
+  const journal = parseJournal(raw);
+  return Boolean(journal.retired || journal.unqueuedDirty || journal.batch || journal.pending.length || journal.recovery);
+}
 
 export type FileCollaborationLease = { key: string; release: () => void };
 export type FileCollaborationOwnership = { acquire: (namespace: string) => Promise<FileCollaborationLease> };
@@ -183,6 +369,7 @@ export function createFileCollaborationOwnership(options: {
   storage: Pick<Storage, "length" | "key" | "getItem">;
   session: Pick<Storage, "getItem" | "setItem">;
   tryLock: (name: string) => Promise<(() => void) | null>;
+  durableJournals?: Pick<FileCollaborationJournalStore, "listCommitted" | "loadCommitted">;
   waitForPreferredMs?: number;
 }): FileCollaborationOwnership {
   return { async acquire(namespace) {
@@ -196,9 +383,16 @@ export function createFileCollaborationOwnership(options: {
       if (key && (key === namespace || key.startsWith(prefix)) && !candidates.includes(key)) candidates.push(key);
       if (candidates.length > 256) throw new Error("Too many collaboration recovery journals. Existing records are preserved.");
     }
+    if (options.durableJournals?.listCommitted) {
+      const durable = await options.durableJournals.listCommitted();
+      for (const key of durable) {
+        if ((key === namespace || key.startsWith(prefix)) && !candidates.includes(key)) candidates.push(key);
+        if (candidates.length > 256) throw new Error("Too many collaboration recovery journals. Existing records are preserved.");
+      }
+    }
     // Resume unsent or unreadable orphan records before reusing a clean record.
-    const needsRecovery = (key: string): boolean => {
-      const raw = options.storage.getItem(key);
+    const needsRecovery = async (key: string): Promise<boolean> => {
+      const raw = options.storage.getItem(key) ?? await options.durableJournals?.loadCommitted?.(key) ?? null;
       if (!raw) return false;
       try {
         if (raw.length > LIMIT) return true;
@@ -207,12 +401,13 @@ export function createFileCollaborationOwnership(options: {
       }
       catch { return true; }
     };
-    const priorities = new Map(candidates.map(key => [key, needsRecovery(key)]));
+    const priorities = new Map<string, boolean>();
+    for (const key of candidates) priorities.set(key, await needsRecovery(key));
     candidates.sort((a, b) => Number(priorities.get(b)) - Number(priorities.get(a)));
     // During reload, the old document can still hold its Web Lock while the
     // new document starts. Reusing a fresh key at that instant would hide its
     // unsent edits until a later reopen. A separate tab does not wait here.
-    if (preferred && candidates.includes(preferred) && needsRecovery(preferred) && options.waitForPreferredMs) {
+    if (preferred && candidates.includes(preferred) && priorities.get(preferred) && options.waitForPreferredMs) {
       const deadline = Date.now() + options.waitForPreferredMs;
       while (Date.now() < deadline) {
         const release = await options.tryLock(preferred);
@@ -241,6 +436,7 @@ function browserOwnership(): FileCollaborationOwnership {
   const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
   return createFileCollaborationOwnership({ storage: localStorage, session: sessionStorage,
     waitForPreferredMs: navigation?.type === "reload" ? 5_000 : 0,
+    durableJournals: localJournal,
     tryLock: name => new Promise((resolve, reject) => {
       void navigator.locks.request(name, { mode: "exclusive", ifAvailable: true }, lock => {
         if (!lock) { resolve(null); return; }
@@ -356,7 +552,7 @@ export class FileCollaborationClient {
     let storageError: unknown;
     try {
       this.storage.save(this.journalKey, value);
-      this.storageSavedGeneration = saved.journalGeneration!;
+      if (!this.storage.commit) this.storageSavedGeneration = saved.journalGeneration!;
       this.storageSaveFailed = false;
     } catch (error) { storageError = error; this.storageSaveFailed = true; }
     if (this.options.checkpoint && !this.checkpointError && this.initialFileReconciled) this.queueCheckpoint(immutableCheckpoint({ journal: saved, document: this.snapshot() }));
@@ -431,13 +627,33 @@ export class FileCollaborationClient {
   async flushLocal(): Promise<boolean> {
     if (!this.current || !this.initialized) return false;
     if (!this.options.checkpoint) {
-      if (this.storageSaveFailed && !this.unreadableJournal) {
+      if (this.storage.commit) {
+        while (!this.unreadableJournal) {
+          if (this.storageSaveFailed) {
+            try { this.persist(); } catch { /* The failed generation remains unacknowledged. */ }
+          }
+          const target = this.journalGeneration;
+          try {
+            await this.storage.commit(this.journalKey, target);
+            this.storageSavedGeneration = Math.max(this.storageSavedGeneration, target);
+            this.storageSaveFailed = false;
+          } catch {
+            this.storageSaveFailed = true;
+            this.report("error", "The collaboration journal could not be committed to browser storage. Keep this window open and retry saving.");
+            return false;
+          }
+          if (this.journalGeneration === target) break;
+        }
+      } else if (this.storageSaveFailed && !this.unreadableJournal) {
         try { this.persist(); } catch { /* The failed generation remains unacknowledged. */ }
       }
       return !this.unreadableJournal && this.storageSavedGeneration >= this.journalGeneration;
     }
     this.startCheckpointDrain();
-    while (this.checkpointRunning) { await this.checkpointRunning; this.startCheckpointDrain(); }
+    while (this.checkpointSavedGeneration < this.journalGeneration && (this.checkpointRunning || this.checkpointQueued)) {
+      if (this.checkpointRunning) await this.checkpointRunning;
+      this.startCheckpointDrain();
+    }
     return !this.checkpointError && !this.unreadableJournal && this.checkpointSavedGeneration >= this.journalGeneration;
   }
   async flushLocalResult(): Promise<FileCollaborationDurabilityResult> {
@@ -446,6 +662,8 @@ export class FileCollaborationClient {
     const result = (outcome: FileCollaborationDurabilityOutcome): FileCollaborationDurabilityResult => ({
       workspaceId: this.options.workspaceId, itemId: this.options.itemId, lifecycle, generation, outcome,
     });
+    if (this.unreadableJournal) return result(this.storageSaveFailed ? "storage-unavailable" : "invalid-journal");
+    if (this.storageSaveFailed && !this.options.checkpoint) return result("storage-unavailable");
     if (!this.current || !this.initialized) return result("pending");
     if (await this.flushLocal()) return result("durable");
     if (this.unreadableJournal) return result("invalid-journal");
@@ -506,16 +724,60 @@ export class FileCollaborationClient {
     });
     return !this.frozen;
   }
-  private load(): FileCollaborationJournal | null {
-    try { return this.loadJournal(); }
-    catch (error) { this.unreadableJournal = true; throw error; }
+  private load(): FileCollaborationJournal | null | Promise<FileCollaborationJournal | null> {
+    if (this.storage.loadCopies) return this.loadJournal().catch(error => {
+      this.unreadableJournal = true;
+      if (error instanceof JournalStorageFailure) this.storageSaveFailed = true;
+      throw error;
+    });
+    try {
+      let raw = this.storage.load(this.journalKey);
+      const browserJournal = raw;
+      this.rawRecoveryJournal = this.options.retainedJournal !== undefined
+        ? JSON.stringify({ browser: raw, native: this.options.retainedJournal }) : raw;
+      raw = selectFileCollaborationJournal(raw, this.options.retainedJournal ?? null, this.options.retainedJournalPath);
+      if (raw === null) { this.rawRecoveryJournal = null; return null; }
+      const parsed = parseJournal(raw);
+      if (browserJournal !== null) this.storageSavedGeneration = parseJournal(browserJournal).journalGeneration ?? 0;
+      this.rawRecoveryJournal = null;
+      return parsed;
+    } catch (error) { this.unreadableJournal = true; throw new Error("Collaboration journal could not be read. " + String(error)); }
   }
-  private loadJournal(): FileCollaborationJournal | null {
-    let raw: string | null;
-    try { raw = this.storage.load(this.journalKey); } catch (error) { throw new Error(`Collaboration journal could not be read. ${String(error)}`); }
-    const browserJournal = raw;
-    this.rawRecoveryJournal = this.options.retainedJournal !== undefined
-      ? JSON.stringify({ browser: raw, native: this.options.retainedJournal }) : raw;
+  private async loadJournal(): Promise<FileCollaborationJournal | null> {
+    let raw: string | null, browserJournal: string | null;
+    if (this.storage.loadCopies) {
+      let copies: { committed: string | null; fallback: string | null };
+      let transactionalStorageAvailable = true;
+      try { copies = await this.storage.loadCopies(this.journalKey); }
+      catch (error) {
+        let fallback: string | null = null;
+        try { fallback = this.storage.load(this.journalKey); } catch { /* Keep the read failure visible. */ }
+        this.rawRecoveryJournal = JSON.stringify({ fallback, native: this.options.retainedJournal ?? null });
+        if (!(error instanceof JournalStorageFailure) || !this.options.checkpoint) {
+          throw new JournalStorageFailure("Transactional collaboration journal could not be read. " + String(error));
+        }
+        // Native checkpoints remain an independent durability boundary. When
+        // IDB is unavailable, continue from the intact compatibility/native
+        // copy and let the native checkpoint decide whether work is durable.
+        transactionalStorageAvailable = false;
+        this.storageSaveFailed = true;
+        copies = { committed: null, fallback };
+      }
+      this.rawRecoveryJournal = JSON.stringify({ committed: copies.committed, fallback: copies.fallback, native: this.options.retainedJournal ?? null });
+      browserJournal = selectFileCollaborationJournal(copies.committed, copies.fallback);
+      if (transactionalStorageAvailable && browserJournal !== null && browserJournal !== copies.committed) {
+        if (!this.storage.migrate) throw new Error("Legacy collaboration journal requires a transactional migration; the original copy is preserved.");
+        await this.storage.migrate(this.journalKey, browserJournal);
+        const verified = await this.storage.loadCopies(this.journalKey);
+        if (verified.committed !== browserJournal) throw new Error("Collaboration journal migration failed round-trip validation; the original copy is preserved.");
+      }
+      raw = browserJournal;
+    } else {
+      try { raw = this.storage.load(this.journalKey); } catch (error) { throw new Error("Collaboration journal could not be read. " + String(error)); }
+      browserJournal = raw;
+      this.rawRecoveryJournal = this.options.retainedJournal !== undefined
+        ? JSON.stringify({ browser: raw, native: this.options.retainedJournal }) : raw;
+    }
     raw = selectFileCollaborationJournal(raw, this.options.retainedJournal ?? null, this.options.retainedJournalPath);
     if (raw === null) { this.rawRecoveryJournal = null; return null; }
     const parsed = parseJournal(raw);
@@ -580,7 +842,8 @@ export class FileCollaborationClient {
         if (this.dead) { lease.release(); return; }
         this.lease = lease; this.ownedJournalKey = lease.key;
       }
-      let retained = this.load();
+      const loaded = this.load();
+      let retained = loaded instanceof Promise ? await loaded : loaded;
       // A replacement epoch persisted by adoptEpoch whose native checkpoint never
       // ran. It is not a clean baseline until the native store adopts it.
       const unprovenAdoption = Boolean(this.options.checkpoint && retained?.recovery?.adopted);
@@ -744,6 +1007,7 @@ export class FileCollaborationClient {
       if (this.pending.length || this.batch) this.schedulePush(0);
       this.schedulePoll(0);
     } catch (error) {
+      if (error instanceof JournalStorageFailure) this.storageSaveFailed = true;
       if (cleanWebFallback && error instanceof RequestFailure && this.active && !this.dead && !this.frozen && !this.initialized) {
         const detail = error.cause as { status?: number; code?: string } | null;
         if ((detail as { name?: string } | null)?.name === "AbortError") { this.handleFailure(error); return; }

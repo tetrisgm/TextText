@@ -8,7 +8,8 @@ import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import * as Y from "yjs";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc, documentText } from "@/lib/collab/document";
 import { applyVaultCollaboration, seedVaultCollaboration } from "@/lib/vault/collaboration";
-import { FileCollaborationClient, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, selectFileCollaborationJournal, createFileCollaborationOwnership } from "./collaboration-client";
+import { FileCollaborationClient, type FileCollaborationJournalStore, type FileCollaborationRequest, type FileCollaborationCheckpoint, selectFileCollaborationJournal, createFileCollaborationOwnership, hasPendingFileCollaborationJournal } from "./collaboration-client";
+import { outboxIndexedDB } from "@/lib/__tests__/helpers/outbox-indexeddb";
 
 class Journal implements FileCollaborationJournalStore {
   values = new Map<string, string>(); fail = false;
@@ -57,7 +58,7 @@ function client(server: Server, journal = new Journal(), request = server.reques
   clients.push(result); return result;
 }
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.useRealTimers(); });
+afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("durable file collaboration client", () => {
   it("reports a remote binary-only sequence without resetting the Yjs editor", async () => {
@@ -729,6 +730,118 @@ describe("durable file collaboration client", () => {
     expect(result.lifecycle).toContain('"workspace"');
     expect(result.generation).toBeGreaterThan(0);
     expect(await editor.flushLocal()).toBe(false);
+  });
+
+  it("preserves the legacy journal when opening transactional browser storage is blocked", async () => {
+    const server = new Server(), legacy = client(server, new Journal());
+    await legacy.start(); legacy.mutate(doc => documentText(doc, "body").insert(5, " blocked"));
+    const raw = JSON.stringify(legacy.recoveryJournal);
+    legacy.destroy();
+    const request = {} as IDBOpenDBRequest;
+    vi.stubGlobal("indexedDB", { open: () => { queueMicrotask(() => request.onblocked?.(new Event("blocked") as IDBVersionChangeEvent)); return request; } });
+    vi.stubGlobal("localStorage", { getItem: () => raw, setItem() {}, removeItem() {} });
+    const ownership = { acquire: async () => ({ key: "blocked-open", release() {} }) };
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      active: false, request: async () => { throw new Error("offline"); }, ownership });
+    clients.push(reopened); await reopened.start();
+    expect(reopened.status).toBe("error");
+    expect(reopened.hasUnreadableJournal).toBe(true);
+    expect(JSON.parse(reopened.recoveryRawJournal!).fallback).toBe(raw);
+    expect((await reopened.flushLocalResult()).outcome).toBe("storage-unavailable");
+    expect((await reopened.flushLocalResult()).generation).toBe(0);
+  });
+
+  it("preserves an unsupported IndexedDB journal schema on startup", async () => {
+    const idb = outboxIndexedDB(); vi.stubGlobal("indexedDB", idb.indexedDB);
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem() {}, removeItem() {} });
+    const key = `texttext:file-collaboration:v1:${JSON.stringify(["https://texttext.test", "workspace", "item-1"])}`;
+    const row = { key, postId: key, schemaVersion: 99, generation: 7, raw: "unsupported bytes" };
+    idb.records.set(key, row);
+    const ownership = { acquire: async (namespace: string) => ({ key: namespace, release() {} }) };
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      active: false, request: async () => { throw new Error("offline"); }, ownership });
+    clients.push(editor); await editor.start();
+    expect(editor.status).toBe("error"); expect(editor.hasUnreadableJournal).toBe(true);
+    expect((await editor.flushLocalResult()).outcome).toBe("storage-unavailable");
+    expect(idb.records.get(key)).toEqual(row);
+    idb.triggerVersionChange();
+  });
+
+  it("acknowledges browser durability only after the journal transaction commits and restores the fallback", async () => {
+    const idb = outboxIndexedDB(), fallback = new Map<string, string>();
+    let quotaExceeded = false;
+    vi.stubGlobal("indexedDB", idb.indexedDB);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => fallback.get(key) ?? null,
+      setItem: (key: string, value: string) => { if (quotaExceeded) throw new Error("quota exceeded"); fallback.set(key, value); },
+      removeItem: (key: string) => { fallback.delete(key); },
+    });
+    const server = new Server(), ownership = { acquire: async () => ({ key: "browser-test", release() {} }) };
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      request: server.request, ownership });
+    clients.push(editor); await editor.start(); expect(await editor.flushLocal()).toBe(true);
+    const key = editor.journalKey;
+    expect(idb.records.get(key)).toMatchObject({ key, postId: key, schemaVersion: 1, raw: expect.any(String) });
+    idb.holdNextWrite();
+    editor.mutate(doc => documentText(doc, "body").insert(5, " gate"));
+    vi.advanceTimersByTime(250);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(server.pushes).toHaveLength(0);
+    editor.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " late"));
+    idb.release();
+    for (let i = 0; i < 40 && server.pushes.length === 0; i++) await Promise.resolve();
+    expect(server.pushes).toHaveLength(1);
+    await vi.runAllTicks();
+    await editor.flush();
+    expect(documentText(editor.doc, "body").toString()).toBe("Hello gate late");
+    editor.setActive(false, "offline");
+    idb.failNextWrite();
+    editor.mutate(doc => documentText(doc, "body").insert(5, " transaction"));
+    expect((await editor.flushLocalResult()).outcome).toBe("storage-unavailable");
+    const committedBeforeRestart = idb.records.get(key) as { raw: string; generation: number };
+    expect(JSON.parse(committedBeforeRestart.raw).update).toBeTruthy();
+    expect(JSON.parse(committedBeforeRestart.raw).pending).toHaveLength(0);
+    expect(JSON.parse(fallback.get(key)!).pending).toHaveLength(1);
+    expect(await hasPendingFileCollaborationJournal(key)).toBe(true);
+    editor.destroy();
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      active: false, request: async () => { throw new Error("offline"); }, ownership });
+    clients.push(reopened); await reopened.start();
+    expect(documentText(reopened.doc, "body").toString()).toBe("Hello transaction gate late");
+    expect(reopened.hasPendingChanges).toBe(true);
+    const migrated = idb.records.get(key) as { raw: string; generation: number };
+    expect(JSON.parse(migrated.raw).pending).toHaveLength(1);
+    expect(await reopened.flushLocal()).toBe(true);
+    quotaExceeded = true;
+    reopened.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " quota"));
+    expect(await reopened.flushLocal()).toBe(true);
+    const afterQuota = idb.records.get(key) as { raw: string; generation: number };
+    expect(afterQuota.generation).toBeGreaterThan(JSON.parse(fallback.get(key)!).journalGeneration);
+    reopened.destroy();
+    const afterRestart = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      active: false, request: async () => { throw new Error("offline"); }, ownership });
+    clients.push(afterRestart); await afterRestart.start();
+    expect(documentText(afterRestart.doc, "body").toString()).toBe("Hello transaction gate late quota");
+    quotaExceeded = false;
+    idb.failNextWrite();
+    afterRestart.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " migration"));
+    expect((await afterRestart.flushLocalResult()).outcome).toBe("storage-unavailable");
+    afterRestart.destroy();
+    const legacyRaw = fallback.get(key)!;
+    idb.failNextWrite();
+    const failedMigration = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      active: false, request: async () => { throw new Error("offline"); }, ownership });
+    clients.push(failedMigration); await failedMigration.start();
+    expect(failedMigration.hasUnreadableJournal).toBe(true);
+    expect(fallback.get(key)).toBe(legacyRaw);
+    failedMigration.destroy();
+    const recoveredMigration = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      active: false, request: async () => { throw new Error("offline"); }, ownership });
+    clients.push(recoveredMigration); await recoveredMigration.start();
+    expect(documentText(recoveredMigration.doc, "body").toString()).toBe("Hello transaction gate late quota migration");
+    const migratedAfterRestart = JSON.parse((idb.records.get(key) as { raw: string }).raw);
+    expect(migratedAfterRestart.update).toBe(JSON.parse(legacyRaw).update);
+    expect(migratedAfterRestart.pending).toEqual(JSON.parse(legacyRaw).pending);
   });
 
   it("distinguishes a quiet pause from offline and revalidates before sending pending edits", async () => {

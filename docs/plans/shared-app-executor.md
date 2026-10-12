@@ -213,7 +213,7 @@ node sync/stress/run.mjs <fresh-real-config.json>
 | Packet | State | Next concrete step |
 | --- | --- | --- |
 | A | Partial | [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); candidate installed and sealed; verify installed ordinary use, repeated opens, and the historical refusal |
-| B | In progress | False browser durability acknowledgement is fixed; implement and validate the versioned transactional browser journal, migration, failure matrix, and typed boundary |
+| B | In progress | [Transactional browser journal progress](../verification/2026-10-11-packet-a-b-progress.md); verify the typed result in Windows native smoke, then close server commit-before-ack evidence |
 | C | Waiting for B | Design lifecycle/result interface against the ownership map |
 | D | Inventory in progress | [Application parity inventory](../verification/application-parity-matrix.md); complete entry-point sweep, then record the no-editor runtime decision |
 | E | Waiting for contracts | Enumerate external-write/materialization interleavings |

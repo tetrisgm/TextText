@@ -23,6 +23,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private var watcher: WorkspaceFolderWatcher?
     private var openError: String?
     private var pendingPath: String?
+    private(set) var lastFlushDurability: [String: Any]?
     private var switchingWorkspace = false
     private var loaded = false
     private let credentials: LocalVaultConnectionController.CredentialsProvider
@@ -123,10 +124,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         Task { @MainActor in
             do {
                 let value = try await webView.callAsyncJavaScript(
-                    "return await window.texttextFlushForSignOut?.() ?? false",
+                    "return await window.texttextFlushForNativeClose?.() ?? {ok:false,durability:{outcome:'pending'}}",
                     arguments: [:], in: nil, contentWorld: .page
                 )
-                completion(value as? Bool == true)
+                let result = value as? [String: Any]
+                self.lastFlushDurability = result?["durability"] as? [String: Any]
+                completion(result?["ok"] as? Bool == true && self.lastFlushDurability?["outcome"] as? String == "durable")
             } catch {
                 completion(false)
             }

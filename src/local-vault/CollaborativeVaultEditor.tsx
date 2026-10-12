@@ -38,7 +38,7 @@ export type VaultEditorProps = {
   documentReferences?: import("@/lib/presentation/workspace-reference-choices").DocumentReferenceSource;
   onOpenReference?: (id: string) => void;
   referenceChoices?: readonly import("@/lib/presentation/workspace-reference-choices").WorkspaceReferenceChoice[];
-  readOnly?: boolean; initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>, saveStoryDetails: (details: StoryDetails) => Promise<string | false>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
+  readOnly?: boolean; initial: VaultFile; root: string; onChanged: () => void; onRemoved: () => void; onTitleChange?: (path: string, title: string) => void; registerFlush: (flush: (navigation?: boolean) => Promise<boolean>, currentFile: () => VaultFile, publishFlush: () => Promise<string | false>, saveStoryDetails: (details: StoryDetails) => Promise<string | false>, durabilityResult?: () => Promise<import("@/sync/engine/client").FileCollaborationDurabilityResult | null>) => void; startEditing?: boolean; focusNewNote?: boolean; focusNewNoteTitle?: boolean; focusNewNoteOrigin?: HTMLElement | null; focusNewNoteSelection?: { anchor: number; head: number } | null; onNewNoteFocusHandled?: () => void };
 function substitute<T>(value: T, assets: Map<string, string>): T {
   if (typeof value === "string") {
     let text = value as string;
@@ -349,7 +349,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     updateArticle(document => applyStoryDetails(document, details));
     return publishFlush();
   }, [publishFlush, updateArticle]);
-  useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails); }, [flush, publishFlush, registerFlush, saveStoryDetails]);
+  useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails, async () => clientRef.current?.flushLocalResult() ?? null); }, [flush, publishFlush, registerFlush, saveStoryDetails]);
   const reset = useCallback(async (recovered = false, waitForSync = false) => {
     detachedSaveRef.current.clear();
     const shared = clientRef.current;

@@ -140,6 +140,16 @@ const retained=JSON.parse(native.journal);const lastRecovery=native.pushes.filte
 assert.equal(retained.epoch,epochBefore+1,'the native journal stays on the old epoch');
 assert.deepEqual({operationId:retained.recovery?.operationId,adopted:retained.recovery?.adopted},{operationId:lastRecovery.operationId,adopted:undefined},'the unadopted intent that the server already committed is retained for native adoption on reopen');
 assert.equal(await serverBody(),'Hello remote local typed outside more','the server committed the recovery; the intent waits for its native adoption');
+await page.waitForFunction(async()=>{
+ const legacy=Object.keys(localStorage).map(key=>[key,localStorage.getItem(key)]).find(([,raw])=>{try{return JSON.parse(raw).itemId==='item-1';}catch{return false;}});
+ if(!legacy)return false;
+ const request=indexedDB.open('texttext-file-collaboration');
+ const db=await new Promise((resolve,reject)=>{request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+ const tx=db.transaction('journals','readonly'),read=tx.objectStore('journals').get(legacy[0]);
+ const row=await new Promise((resolve,reject)=>{read.onsuccess=()=>resolve(read.result);read.onerror=()=>reject(read.error);});
+ const committed=new Promise((resolve,reject)=>{tx.oncomplete=()=>resolve(true);tx.onerror=tx.onabort=()=>reject(tx.error);});
+ await committed;db.close();return row?.schemaVersion===1&&row.raw===legacy[1]&&JSON.parse(row.raw).itemId==='item-1';
+},null,{timeout:10000});
 assert.deepEqual(errors,[]);
-console.log('PASS live epoch adoption: pending and late edits recovered into the replaced epoch through the real client and store; body element, focus and mapped caret kept; awareness rejoined; undo crossed the adoption without discarding the remote edit; dropped recovery push replayed with the same intent; journal clean; a failed native adoption checkpoint fails closed with the intent retained.');
+console.log('PASS live epoch adoption and IndexedDB persistence: pending and late edits recovered into the replaced epoch through the real client and store; body element, focus and mapped caret kept; awareness rejoined; undo crossed the adoption without discarding the remote edit; dropped recovery push replayed with the same intent; browser journal transaction committed; a failed native adoption checkpoint fails closed with the intent retained.');
 }finally{await browser?.close();await rm(dir,{recursive:true,force:true});await rm(vault,{recursive:true,force:true});}

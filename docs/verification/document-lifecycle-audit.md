@@ -8,15 +8,15 @@ Status: active. October 11, 2026. This records confirmed behavior and the remain
 | --- | --- | --- |
 | UI edit | `CollaborativeVaultEditor` and `FileCollaborationClient` | Yjs changes call `persist`; current state and pending operations are serialized to the browser/WebView journal before checkpoint scheduling. A synchronous storage failure throws. |
 | Native local checkpoint | `FileCollaborationClient` → `vaultRequest(collaborationCheckpoint)` → Mac `LocalVaultCollaboration` / Windows `WindowsBridge` and `SharedEditingStore` | The native bridge materializes TextPack and durable journal. `checkpointSavedGeneration` advances only after the checkpoint promise resolves. A rejected checkpoint latches `checkpointError` and makes subsequent `flushLocal` false. |
-| Browser local state | `FileCollaborationClient` storage adapter | `flushLocal` checks unreadable journal when no native checkpoint exists. Current storage guarantees and eviction behavior still require P1 audit. |
+| Browser local state | `FileCollaborationClient` storage adapter | Browser journals use a versioned IndexedDB record and acknowledge only after its transaction commits; localStorage remains a validated compatibility fallback. Migration, quota, blocked open, unsupported schema, transaction abort, real-browser commit and offline reopen are covered. Explicit site-data deletion and eviction remain outside the browser guarantee. |
 | Server collaboration | `FileCollaborationClient` → hosted vault routes and `src/sync/engine/store.ts` | CRDT updates, epoch, sequence, idempotency and permission checks. Network completion is separate from native local checkpoint. |
 | Native background file sync | Mac `LocalVaultSync.swift` / Windows `SyncEngine.cs` | Separate platform policies manage file baselines and upload/download queues. Collaboration fences protect files under active editing. Policy parity remains to be audited. |
 | External file change | Native file watcher → bridge event → `CollaborativeVaultEditor` → `FileCollaborationClient.notifyExternalFileChange` | Existing reconciliation may retry `local_changed`; a failing checkpoint can freeze the editor and show recovery. Stable-write and duplicate-arrival behavior needs P4 coverage. |
 | Native file activation | Windows `MainWindow.Activation.cs` queue → native flush guard → renderer `texttextOpenFile` → React `operate` | Two activation requests for one path could be queued. The second could flush or navigate an already-open editor while collaboration was active. This is now deduplicated while queued/in progress and covered by native smoke. |
-| Native close | Windows `MainWindow.Closing` → `RequestClose` → `RendererFlushGuard` → renderer `texttextFlushForSignOut` → `flushNativeForNavigation` / `flushLocal` | Closing needs an acknowledged native local checkpoint. Failed flush keeps the window open. Close during activation is now retained and retried after successful activation flush; a controlled native smoke test covers this ordering. |
-| Browser navigation | `flushForNavigation` | Uses server `flush` for pending changes. Native navigation uses local `flushLocal`; this inconsistency requires P1/P2 resolution. |
+| Native close | Windows `MainWindow.Closing` → `RequestClose` → `RendererFlushGuard` → renderer `texttextFlushForNativeClose` → `flushNativeForNavigation` / `flushLocal` | The native-only response carries `ok` and the typed workspace/item/lifecycle/generation/outcome. Native close accepts only `ok` with `outcome: durable`; failure keeps the window open. Windows smoke verification is pending. |
+| Browser navigation | `flushForNavigation` | Waits for the typed local journal commit before leaving; it does not depend on server availability. |
 
-The renderer installs `texttextFlushForSignOut` in a `VaultApp` effect and changes its target via `registerFlush`. The editor's React lifetime currently controls which flush function the native shell calls. P2 will audit remount and stale callback ordering before extracting ownership.
+The renderer installs separate boolean sign-out and typed native-close hooks in a `VaultApp` effect and changes their targets via `registerFlush`. The editor's React lifetime currently controls which flush function the native shell calls. P2 will audit remount and stale callback ordering before extracting ownership.
 
 ## Windows close incident
 
@@ -26,7 +26,7 @@ Run 175 passed but still had an earlier `saved` activation flush. The actor now 
 
 A separate native WebView regression now confirms that a close requested during an unresolved file activation waits and completes after the activation flush succeeds. Previously that close request was silently dropped. This ordering fix passed native desktop smoke; a new sealed build and installed-app verification remain pending.
 
-The native guard still returns a Boolean. Diagnostics currently report `saved`, `rejected`, `busy`, `timeout`, or dispatch failure; renderer diagnostics distinguish a missing hook, rejected hook, and exception. No document text, token, or journal body is logged. A future typed result should identify the requested and persisted lifecycle/generation without exposing content.
+The native close guard's decision remains Boolean, while its reply also retains the typed durability result for diagnostics. Diagnostics report `saved`, `rejected`, `busy`, `timeout`, or dispatch failure; renderer diagnostics distinguish a missing hook, rejected hook, and exception. No document text, token, or journal body is logged.
 
 ## Remaining P0 work
 

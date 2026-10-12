@@ -9,17 +9,21 @@ describe("web vault navigation flush", () => {
     expect(changed).not.toHaveBeenCalled();
   });
 
-  it("waits for pending edits and refreshes the listing after acknowledgement", async () => {
-    const client = { hasPendingChanges: true, flush: vi.fn(async () => { client.hasPendingChanges = false; return true; }) };
+  it("navigates after the local journal commits while remote acknowledgement is stalled", async () => {
+    const client = { hasPendingChanges: true, flush: vi.fn(async () => new Promise<boolean>(() => {})),
+      flushLocalResult: vi.fn(async () => ({ outcome: "durable" })) };
     const changed = vi.fn();
     expect(await flushForNavigation(client, changed)).toBe(true);
-    expect(client.flush).toHaveBeenCalledOnce();
+    expect(client.flushLocalResult).toHaveBeenCalledOnce();
+    expect(client.flush).not.toHaveBeenCalled();
+    expect(client.hasPendingChanges).toBe(true);
     expect(changed).toHaveBeenCalledOnce();
   });
 
   it("keeps navigation blocked when a save fails or concurrent edits remain", async () => {
     const changed = vi.fn();
-    expect(await flushForNavigation({ hasPendingChanges: true, flush: async () => false }, changed)).toBe(false);
+    expect(await flushForNavigation({ hasPendingChanges: true, flush: async () => false,
+      flushLocalResult: async () => ({ outcome: "storage-unavailable" }) }, changed)).toBe(false);
     expect(await flushForNavigation({ hasPendingChanges: true, flush: async () => true }, changed)).toBe(false);
     expect(changed).not.toHaveBeenCalled();
   });

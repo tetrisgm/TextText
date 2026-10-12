@@ -105,7 +105,7 @@ static class MainWindowCloseTests
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);success.Window.Closed+=(_,_)=>closed.TrySetResult();
             var closedSource=success.View.CoreWebView2;
-            await success.View.ExecuteScriptAsync("window.flushStarted=false;window.texttextFlushForSignOut=()=>new Promise(resolve=>{window.flushStarted=true;window.finishFlush=()=>resolve(true)});");
+            await success.View.ExecuteScriptAsync("window.flushStarted=false;window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.flushStarted=true;window.finishFlush=()=>resolve({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}})});");
             success.Window.Close();
             await Until(async()=>await success.View.ExecuteScriptAsync("window.flushStarted") == "true",ct);
             Check(success.Window.IsVisible&&!closed.Task.IsCompleted,"actual MainWindow waits for pending editor flush",checks);
@@ -113,6 +113,8 @@ static class MainWindowCloseTests
             try {await success.View.ExecuteScriptAsync("window.finishFlush()");}catch(Exception)when(closed.Task.IsCompleted){ /* Closing disposes WebView before its script callback can return. */ }
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
             Check(!success.Window.IsVisible,"actual MainWindow Receive routes flushResult and closes",checks);
+            var durableResult=(Field("flushGuard").GetValue(success.Window) as RendererFlushGuard)?.LastDurability;
+            Check(durableResult is { Outcome:"durable",Generation:3,WorkspaceId:"fixture" },"native close guard retains typed renderer durability result",checks);
             var lateReply=typeof(MainWindow).GetMethod("ReplyForSource",PrivateInstance)??throw new Exception("Missing native reply path.");
             lateReply.Invoke(success.Window,[closedSource,new { id="late-close-reply" }]);
             Check(true,"late native reply after WebView disposal does not crash the dispatcher",checks);
@@ -122,7 +124,7 @@ static class MainWindowCloseTests
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             transient.Window.Closed+=(_,_)=>closed.TrySetResult();
-            await transient.View.ExecuteScriptAsync("window.flushCalls=0;window.texttextFlushForSignOut=async()=>++window.flushCalls>1;");
+            await transient.View.ExecuteScriptAsync("window.flushCalls=0;window.texttextFlushForNativeClose=async()=>({ok:++window.flushCalls>1,durability:{outcome:window.flushCalls>1?'durable':'storage-unavailable'}});");
             transient.Window.Close();
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
             Check(!transient.Window.IsVisible,"transient failed flush retries and closes after durable acknowledgement",checks);
@@ -145,12 +147,12 @@ static class MainWindowCloseTests
         },IntPtr.Zero),null,Timeout.Infinite,Timeout.Infinite);
         try {
             var closed=false;failure.Window.Closed+=(_,_)=>closed=true;
-            await failure.View.ExecuteScriptAsync("window.texttextFlushForSignOut=async()=>false;");dismiss.Change(0,40);failure.Window.Close();
+            await failure.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=async()=>({ok:false,durability:{outcome:'storage-unavailable'}});");dismiss.Change(0,40);failure.Window.Close();
             await Until(()=>Task.FromResult(Volatile.Read(ref observedDialog)==1&&!(bool)Field("transitioning").GetValue(failure.Window)!),ct);
             Check(Volatile.Read(ref observedDialog)==1,"actual MainWindow handles failed renderer flush",checks);
             Check(!closed&&failure.Window.IsVisible&&failure.View.IsEnabled,"failed flush preserves open usable window",checks);
             Interlocked.Exchange(ref observedDialog,0);
-            await failure.View.ExecuteScriptAsync("window.texttextFlushForSignOut=()=>new Promise(()=>{});");
+            await failure.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=()=>new Promise(()=>{});");
             failure.Window.Close();
             var hangDeadline=DateTimeOffset.UtcNow.AddSeconds(22);
             while((Volatile.Read(ref observedDialog)==0||(bool)Field("transitioning").GetValue(failure.Window)!)&&DateTimeOffset.UtcNow<hangDeadline)await Task.Delay(50,ct);
@@ -167,7 +169,7 @@ static class MainWindowCloseTests
             Field("root").SetValue(activation.Window,workspace);
             Field("account").SetValue(activation.Window,new Account("isolated-unused",Guid.NewGuid().ToString(),"Fixture"));
             Field("bridge").SetValue(activation.Window,new ActivationBridge());
-            await activation.View.ExecuteScriptAsync("window.opened=[];window.busyOnce=true;window.texttextOpenFile=async path=>{if(window.busyOnce){window.busyOnce=false;return 'busy';}window.opened.push(path);return 'opened';};window.texttextFlushForSignOut=()=>new Promise(resolve=>{window.finishActivationFlush=()=>{window.texttextFlushForSignOut=async()=>true;resolve(true)};});");
+            await activation.View.ExecuteScriptAsync("window.opened=[];window.busyOnce=true;window.texttextOpenFile=async path=>{if(window.busyOnce){window.busyOnce=false;return 'busy';}window.opened.push(path);return 'opened';};window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.finishActivationFlush=()=>{window.texttextFlushForNativeClose=async()=>({ok:true,durability:{outcome:'durable'}});resolve({ok:true,durability:{outcome:'durable'}})};});");
             activation.Window.ActivateFiles([target]);
             await Until(async()=>await activation.View.ExecuteScriptAsync("typeof window.finishActivationFlush==='function'")=="true",ct);
             activation.Window.ActivateFiles([target]);
@@ -180,7 +182,7 @@ static class MainWindowCloseTests
             await Until(()=>Task.FromResult(!(bool)Field("activatingFile").GetValue(activation.Window)!),ct);
             var activationClosed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             activation.Window.Closed+=(_,_)=>activationClosed.TrySetResult();
-            await activation.View.ExecuteScriptAsync("window.texttextFlushForSignOut=()=>new Promise(resolve=>{window.finishCloseDuringActivation=()=>{window.texttextFlushForSignOut=async()=>true;resolve(true)}});");
+            await activation.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.finishCloseDuringActivation=()=>{window.texttextFlushForNativeClose=async()=>({ok:true,durability:{outcome:'durable'}});resolve({ok:true,durability:{outcome:'durable'}})}});");
             activation.Window.ActivateFiles([target]);
             await Until(async()=>await activation.View.ExecuteScriptAsync("typeof window.finishCloseDuringActivation==='function'")=="true",ct);
             activation.Window.Close();

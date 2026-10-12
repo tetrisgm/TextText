@@ -4,8 +4,11 @@
 export function outboxIndexedDB() {
   const records = new Map<string, unknown>();
   let failRetirement = false;
+  let failNextWrite = false;
   let holdRetirement = false;
+  let holdNextWrite = false;
   let held: (() => void) | undefined;
+  let lastDatabase: { onversionchange: ((event: IDBVersionChangeEvent) => void) | null } | undefined;
   const microtask = (fn: () => void) => { void Promise.resolve().then(fn); };
   const waiting: (() => void)[] = [];
   let active = false;
@@ -20,6 +23,7 @@ export function outboxIndexedDB() {
       const request = {} as IDBOpenDBRequest;
       const database = {
         close() {},
+        onversionchange: null as ((event: IDBVersionChangeEvent) => void) | null,
         objectStoreNames: { contains: () => true },
         transaction(_store: string, mode: string) {
           const writes = new Map<string, unknown>(), deletes = new Set<string>();
@@ -60,7 +64,9 @@ export function outboxIndexedDB() {
             },
           };
           const commit = () => {
-            if (retirement && failRetirement) transaction.onabort?.();
+            const fail = (retirement && failRetirement) || (mode === "readwrite" && failNextWrite);
+            if (mode === "readwrite" && failNextWrite) failNextWrite = false;
+            if (fail) transaction.onabort?.();
             else {
               if (mode === "readwrite") {
                 for (const key of deletes) records.delete(key);
@@ -73,7 +79,10 @@ export function outboxIndexedDB() {
           const run = () => {
             const pending = requests.shift();
             if (pending) { pending(); microtask(run); }
-            else if (retirement && holdRetirement) held = commit;
+            else if ((retirement && holdRetirement) || (mode === "readwrite" && holdNextWrite)) {
+              if (mode === "readwrite" && holdNextWrite) holdNextWrite = false;
+              held = commit;
+            }
             else commit();
           };
           waiting.push(run);
@@ -81,6 +90,7 @@ export function outboxIndexedDB() {
           return transaction;
         },
       };
+      lastDatabase = database;
       Object.assign(request, { result: database });
       microtask(() => request.onsuccess?.({} as Event));
       return request;
@@ -90,7 +100,10 @@ export function outboxIndexedDB() {
     indexedDB,
     records,
     failRetirement: () => { failRetirement = true; },
+    failNextWrite: () => { failNextWrite = true; },
     holdRetirement: () => { holdRetirement = true; },
-    release: () => { const commit = held; held = undefined; holdRetirement = false; commit?.(); },
+    holdNextWrite: () => { holdNextWrite = true; },
+    triggerVersionChange: () => lastDatabase?.onversionchange?.({} as IDBVersionChangeEvent),
+    release: () => { const commit = held; held = undefined; holdRetirement = false; holdNextWrite = false; commit?.(); },
   };
 }
