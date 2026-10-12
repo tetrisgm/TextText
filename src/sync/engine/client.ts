@@ -364,17 +364,28 @@ export class FileCollaborationClient {
     });
   }
   private async drainCheckpoints(): Promise<void> {
+    let reconciliationAttempts = 0;
     while (this.checkpointQueued && !this.checkpointError) {
       const value = this.checkpointQueued; this.checkpointQueued = null;
-      try { await this.options.checkpoint!(value); this.checkpointSavedGeneration = value.journal.journalGeneration!; }
+      try { await this.options.checkpoint!(value); this.checkpointSavedGeneration = value.journal.journalGeneration!; reconciliationAttempts = 0; }
       catch (error) {
         if ((error as { code?: string } | null)?.code === "local_changed" && this.options.reconcileCheckpoint && !this.dead && !this.frozen) {
-          try {
-            if (await this.options.reconcileCheckpoint(error)) {
-              this.persist();
-              continue;
-            }
-          } catch { /* Keep the original failed checkpoint and its recoverable journal. */ }
+          // An external writer's atomic replacement can be reported before its
+          // new bytes are visible to the next read. Retry the read/merge a few
+          // times, but never spin on a genuine overlapping edit or bad file.
+          let reconciled = false;
+          for (let read = 0; read < 3 && reconciliationAttempts < 6; read++) {
+            reconciliationAttempts++;
+            try {
+              if (await this.options.reconcileCheckpoint(error)) {
+                this.persist();
+                reconciled = Boolean(this.checkpointQueued);
+                break;
+              }
+            } catch { /* Keep the original failed checkpoint and its recoverable journal. */ }
+            await Promise.resolve();
+          }
+          if (reconciled) continue;
         }
         this.checkpointError = error; this.checkpointQueued = null;
         if (this.dead) continue;

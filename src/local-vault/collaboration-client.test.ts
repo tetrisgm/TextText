@@ -223,6 +223,44 @@ describe("durable file collaboration client", () => {
     expect(saved.at(-1)?.document.content.body).toBe("Hello kept");
     expect(editor.canEdit).toBe(true);
   });
+  it("retries a changed file read that briefly precedes the atomic replacement", async () => {
+    const server = new Server();
+    let changed = false, reads = 0;
+    const editor: FileCollaborationClient = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal: new Journal(),
+      request: server.request,
+      checkpoint: async () => { if (changed) throw Object.assign(new Error("File changed"), { code: "local_changed" }); },
+      reconcileCheckpoint: async () => {
+        reads++;
+        if (reads === 1) return false;
+        const document = documentSnapshotFromYDoc(editor.doc);
+        changed = false;
+        return editor.reconcileExternalDocument(document, structuredClone(document));
+      },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    changed = true;
+    editor.mutate(doc => documentText(doc, "body").insert(5, " retained"));
+    expect(await editor.flushLocal()).toBe(true);
+    expect(reads).toBe(2);
+    expect(editor.canEdit).toBe(true);
+    expect(documentText(editor.doc, "body").toString()).toBe("Hello retained");
+  });
+  it("bounds changed-file reconciliation that cannot make progress", async () => {
+    const server = new Server();
+    let changed = false, reads = 0;
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal: new Journal(),
+      request: server.request,
+      checkpoint: async () => { if (changed) throw Object.assign(new Error("File changed"), { code: "local_changed" }); },
+      reconcileCheckpoint: async () => { reads++; return true; },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    changed = true;
+    editor.mutate(doc => documentText(doc, "body").insert(5, " retained"));
+    expect(await editor.flushLocal()).toBe(false);
+    expect(reads).toBe(6);
+    expect(editor.status).toBe("error");
+    expect(editor.recoveryJournal).toBeTruthy();
+  });
   it("keeps an active replacement while a CLI appends to the same file", async () => {
     const server = new Server(), journal = new Journal();
     server.bytes = pack("Existing fixture text."); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
