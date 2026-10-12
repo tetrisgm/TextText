@@ -215,7 +215,7 @@ node sync/stress/run.mjs <fresh-real-config.json>
 | A | Partial | [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); candidate installed and sealed; verify installed ordinary use, repeated opens, and the historical refusal |
 | B | In progress | False browser durability acknowledgement is fixed; implement and validate the versioned transactional browser journal, migration, failure matrix, and typed boundary |
 | C | Waiting for B | Design lifecycle/result interface against the ownership map |
-| D | Inventory ready | Produce feature ownership matrix and runtime decision |
+| D | Inventory in progress | [Application parity inventory](../verification/application-parity-matrix.md); complete entry-point sweep, then record the no-editor runtime decision |
 | E | Waiting for contracts | Enumerate external-write/materialization interleavings |
 | F | Existing tests, incomplete | Inventory covered crash boundaries, add missing failpoints |
 | G | Audit ready | Inventory shared agent/template command paths and workflow gaps |
