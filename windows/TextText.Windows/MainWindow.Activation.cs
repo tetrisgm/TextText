@@ -10,6 +10,7 @@ public sealed partial class MainWindow
     private readonly Queue<string> activationFiles = new();
     private DispatcherTimer? activationTimer;
     private bool activatingFile;
+    private string? activatingPath;
     private int activationAttempts;
     private (string Id, TaskCompletionSource<string> Completion)? pendingOpen;
     private void AcceptFileOpen(string id, JsonElement parameters)
@@ -23,7 +24,9 @@ public sealed partial class MainWindow
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
         foreach (var path in paths.Take(16))
-            if (activationFiles.Count < 16) activationFiles.Enqueue(path);
+            if (activationFiles.Count < 16 &&
+                !string.Equals(activatingPath, path, StringComparison.OrdinalIgnoreCase) &&
+                !activationFiles.Contains(path, StringComparer.OrdinalIgnoreCase)) activationFiles.Enqueue(path);
         if (activationFiles.Count == 0) return;
         if (activationTimer is null)
         {
@@ -37,6 +40,7 @@ public sealed partial class MainWindow
     {
         if (activatingFile || transitioning || closing || account is null || bridge is null || web?.CoreWebView2 is not { } core) return;
         activatingFile = true;
+        var activationFlushed = false;
         try
         {
             // NavigationCompleted precedes React effects; wait for the real editor guard.
@@ -46,6 +50,7 @@ public sealed partial class MainWindow
                 return;
             }
             if (!activationFiles.TryPeek(out var target)) { activationTimer?.Stop(); return; }
+            activatingPath = target;
             string relative;
             try { relative = FileActivation.Resolve(new TextPackStore(root), target); }
             catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
@@ -61,6 +66,7 @@ public sealed partial class MainWindow
             }
             transitioning = true;
             if (!await FlushEditor()) { activationFiles.Dequeue(); ShowSaveFailure(); return; }
+            activationFlushed = true;
             var id = Guid.NewGuid().ToString();
             var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             pendingOpen = (id, completion);
@@ -75,9 +81,12 @@ public sealed partial class MainWindow
         { if (activationFiles.Count > 0) activationFiles.Dequeue(); if (!closing) MessageBox.Show(this, "The file could not be opened. Please try again.", "Open file", MessageBoxButton.OK, MessageBoxImage.Information); }
         finally
         {
-            pendingOpen = null; transitioning = false; activatingFile = false;
+            pendingOpen = null; transitioning = false; activatingFile = false; activatingPath = null;
             if (!closing && web is not null) web.IsEnabled = true;
             if (activationFiles.Count == 0) activationTimer?.Stop();
+            var requestedClose = closeAfterActivation;
+            closeAfterActivation = false;
+            if (requestedClose && activationFlushed && !closing) _ = RequestClose();
         }
     }
 }

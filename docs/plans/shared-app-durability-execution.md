@@ -179,7 +179,7 @@ Exit: installed clients and Oracle run the verified behavior, all required evide
 
 | Phase | State | Commit/evidence | Remaining blocker |
 | --- | --- | --- | --- |
-| P0 Baseline/audit | Not started under this plan | Earlier run 175 pass; runs 171–174 fail | Retrieve close trace; isolate rejected operation |
+| P0 Baseline/audit | In progress | [Lifecycle audit](../verification/document-lifecycle-audit.md); run 176 pass and Windows smoke; runs 171–174 fail | Activation/close ordering now passes native smoke; identify checkpoint refusal and verify installed build identities |
 | P1 Durability contract | Not started | Existing sync engine/journals are inputs | Acknowledgement and adapter audit |
 | P2 Lifecycle | Not started | Existing lifecycle code is input | Deterministic reproduction |
 | P3 Shared app | Not started | Shared renderer/commands already exist | Parity/duplicate-policy inventory |

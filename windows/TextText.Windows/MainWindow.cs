@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
     private INativeWorkspaceBridge? bridge;
     private string root = "";
     private bool closing, transitioning;
+    private bool closeAfterActivation;
     private readonly RendererFlushGuard flushGuard = new();
     private readonly string? webViewProfile;
     // Integration tests can isolate browser drafts while retaining the real
@@ -50,7 +51,8 @@ public sealed partial class MainWindow : Window
     private async Task<bool> FlushEditorWithTimeout(TimeSpan? timeout)
     {
         if(web?.CoreWebView2 is not { } core) return true;
-        web.IsEnabled = false;
+        // The renderer must be able to execute its flush hook before the
+        // native view is disabled. Closing is already fenced by transitioning.
         return await flushGuard.FlushAsync(async script => { await core.ExecuteScriptAsync(script); }, timeout);
     }
     private async Task<bool> FlushEditorForClose()
@@ -69,7 +71,8 @@ public sealed partial class MainWindow : Window
     private void ShowSaveFailure() => MessageBox.Show(this,"Your latest edits have not finished saving. TextText will stay open so you can resolve the save in the editor.","Keep editing",MessageBoxButton.OK,MessageBoxImage.Information);
     private async Task RequestClose()
     {
-        if(transitioning || closing) return;
+        if(closing) return;
+        if(transitioning) { if(activatingFile) closeAfterActivation = true; return; }
         transitioning = true;
         try {
             if(!await FlushEditorForClose()) { ShowSaveFailure(); return; }

@@ -318,9 +318,13 @@ static class Stress
         {
             async Task RecordEditorState(string stage)
             {
+                var guard = typeof(MainWindow).GetField("flushGuard", Program.Private)?.GetValue(window);
+                var inFlight = guard is not null && typeof(RendererFlushGuard).GetField("pending", Program.Private)?.GetValue(guard) is not null;
+                var lastOutcome = guard is null ? null : typeof(RendererFlushGuard).GetField("lastOutcome", Program.Private)?.GetValue(guard) as string;
+                log(new { kind = "close-guard-state", stage, inFlight, lastOutcome });
                 // Only journal metadata is recorded. Never copy document text,
                 // recovery payloads, credentials or file contents into receipts.
-                var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,sharedState:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')??null,bridgeErrors:window.__texttextStressBridgeErrors??[],closeFlush:window.__texttextCloseFlush??[],journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
+                var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,hook:typeof window.texttextFlushForSignOut,nativeFlush:window.__texttextNativeFlushDiagnostic??null,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,sharedState:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')??null,bridgeErrors:window.__texttextStressBridgeErrors??[],closeFlush:window.__texttextCloseFlush??[],journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
                 try {
                     // CloseProbe resumes on a worker after its bounded wait; WebView2
                     // remains owned by the dispatcher even when the dialog was dismissed.
@@ -336,7 +340,8 @@ static class Stress
             // close hook. A false result with a clean checkpoint is actionable.
             if (view is { } diagnosticView)
             {
-                await diagnosticView.Dispatcher.InvokeAsync(() => diagnosticView.ExecuteScriptAsync("(()=>{const original=window.texttextFlushForSignOut;if(typeof original!=='function')return false;window.__texttextCloseFlush=[];window.texttextFlushForSignOut=async()=>{const started=performance.now();try{const ok=await original();window.__texttextCloseFlush.push({ok:ok===true,ms:Math.round(performance.now()-started)});return ok}catch(error){window.__texttextCloseFlush.push({error:true,ms:Math.round(performance.now()-started)});throw error}};return true})()" )).Task.Unwrap().WaitAsync(TimeSpan.FromSeconds(2), ct);
+                var installed = await diagnosticView.Dispatcher.InvokeAsync(() => diagnosticView.ExecuteScriptAsync("(()=>{const original=window.texttextFlushForSignOut;if(typeof original!=='function')return false;window.__texttextCloseFlush=[];window.texttextFlushForSignOut=async()=>{const started=performance.now();try{const ok=await original();window.__texttextCloseFlush.push({ok:ok===true,ms:Math.round(performance.now()-started)});return ok}catch(error){window.__texttextCloseFlush.push({error:true,ms:Math.round(performance.now()-started)});throw error}};return true})()" )).Task.Unwrap().WaitAsync(TimeSpan.FromSeconds(2), ct);
+                log(new { kind = "close-hook-installed", installed });
             }
             // Observe the native modal dialog from a worker because MessageBox
             // runs its own modal loop and can block dispatcher timers.
@@ -400,7 +405,6 @@ static class Stress
                 throw new Exception("Test file is not inside the active workspace; workspace selection was not changed.");
             var active = typeof(MainWindow).GetProperty("ActiveWorkspaceId", Program.Private)?.GetValue(window) as string;
             if (active != config.WorkspaceId) throw new Exception("Active workspace does not match the configured fixture workspace.");
-            window.ActivateFiles([config.File]);
             await Program.Until(async () => await view!.ExecuteScriptAsync($"document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle}") == "true", ct, "Production file activation did not open the test item.");
             try
             {

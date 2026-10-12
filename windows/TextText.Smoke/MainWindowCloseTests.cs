@@ -170,11 +170,24 @@ static class MainWindowCloseTests
             await activation.View.ExecuteScriptAsync("window.opened=[];window.busyOnce=true;window.texttextOpenFile=async path=>{if(window.busyOnce){window.busyOnce=false;return 'busy';}window.opened.push(path);return 'opened';};window.texttextFlushForSignOut=()=>new Promise(resolve=>{window.finishActivationFlush=()=>{window.texttextFlushForSignOut=async()=>true;resolve(true)};});");
             activation.Window.ActivateFiles([target]);
             await Until(async()=>await activation.View.ExecuteScriptAsync("typeof window.finishActivationFlush==='function'")=="true",ct);
+            activation.Window.ActivateFiles([target]);
+            Check(((Queue<string>)Field("activationFiles").GetValue(activation.Window)!).Count==1,"duplicate activation while file is opening keeps one queued request",checks);
             Check(await activation.View.ExecuteScriptAsync("window.opened.length")=="0","file activation waits for durable editor flush",checks);
             await activation.View.ExecuteScriptAsync("window.finishActivationFlush()");
             await Until(async()=>await activation.View.ExecuteScriptAsync("window.opened.length")=="1",ct);
             Check(await activation.View.ExecuteScriptAsync("window.opened[0]")=="\"Example.textpack\"","busy file activation retries and routes native acknowledgement",checks);
             Check(activation.Window.IsVisible&&activation.View.IsEnabled,"file activation leaves existing host usable",checks);
+            await Until(()=>Task.FromResult(!(bool)Field("activatingFile").GetValue(activation.Window)!),ct);
+            var activationClosed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            activation.Window.Closed+=(_,_)=>activationClosed.TrySetResult();
+            await activation.View.ExecuteScriptAsync("window.texttextFlushForSignOut=()=>new Promise(resolve=>{window.finishCloseDuringActivation=()=>{window.texttextFlushForSignOut=async()=>true;resolve(true)}});");
+            activation.Window.ActivateFiles([target]);
+            await Until(async()=>await activation.View.ExecuteScriptAsync("typeof window.finishCloseDuringActivation==='function'")=="true",ct);
+            activation.Window.Close();
+            Check(activation.Window.IsVisible&&!activationClosed.Task.IsCompleted,"close waits for in-progress file activation",checks);
+            await activation.View.ExecuteScriptAsync("window.finishCloseDuringActivation()");
+            await activationClosed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
+            Check(!activation.Window.IsVisible,"close requested during activation finishes after durable flush",checks);
         } finally { ForceClose(activation.Window); }
         await File.WriteAllTextAsync(Path.Combine(receipts,"main-window-close.json"),JsonSerializer.Serialize(new{ok=true,checks}),ct);
     }
