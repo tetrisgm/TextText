@@ -318,20 +318,26 @@ static class Stress
         {
             async Task RecordEditorState(string stage)
             {
-                if (view?.CoreWebView2 is null) return;
                 // Only journal metadata is recorded. Never copy document text,
                 // recovery payloads, credentials or file contents into receipts.
-                var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,sharedState:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')??null,bridgeErrors:window.__texttextStressBridgeErrors??[],journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
+                var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,sharedState:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')??null,bridgeErrors:window.__texttextStressBridgeErrors??[],closeFlush:window.__texttextCloseFlush??[],journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
                 try {
                     // CloseProbe resumes on a worker after its bounded wait; WebView2
                     // remains owned by the dispatcher even when the dialog was dismissed.
                     var activeView = view;
-                    var value = await activeView.Dispatcher.InvokeAsync(() => activeView.ExecuteScriptAsync(script)).Task.Unwrap().WaitAsync(TimeSpan.FromSeconds(2), ct);
+                    if (activeView is null) return;
+                    var value = await activeView.Dispatcher.InvokeAsync(() => activeView.CoreWebView2 is null ? Task.FromResult("null") : activeView.ExecuteScriptAsync(script)).Task.Unwrap().WaitAsync(TimeSpan.FromSeconds(2), ct);
                     log(new { kind = "close-editor-state", stage, value });
                 }
                 catch (Exception error) { log(new { kind = "close-editor-state", stage, error = error.GetType().Name }); }
             }
             await RecordEditorState("before");
+            // Capture only the boolean result and timing of the production
+            // close hook. A false result with a clean checkpoint is actionable.
+            if (view is { } diagnosticView)
+            {
+                await diagnosticView.Dispatcher.InvokeAsync(() => diagnosticView.ExecuteScriptAsync("(()=>{const original=window.texttextFlushForSignOut;if(typeof original!=='function')return false;window.__texttextCloseFlush=[];window.texttextFlushForSignOut=async()=>{const started=performance.now();try{const ok=await original();window.__texttextCloseFlush.push({ok:ok===true,ms:Math.round(performance.now()-started)});return ok}catch(error){window.__texttextCloseFlush.push({error:true,ms:Math.round(performance.now()-started)});throw error}};return true})()" )).Task.Unwrap().WaitAsync(TimeSpan.FromSeconds(2), ct);
+            }
             // Observe the native modal dialog from a worker because MessageBox
             // runs its own modal loop and can block dispatcher timers.
             var uiThread = GetWindowThreadProcessId(new System.Windows.Interop.WindowInteropHelper(window).Handle, out _);
