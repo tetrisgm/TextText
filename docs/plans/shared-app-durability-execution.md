@@ -181,14 +181,14 @@ Exit: installed clients and Oracle run the verified behavior, all required evide
 
 | Phase | State | Commit/evidence | Remaining blocker |
 | --- | --- | --- | --- |
-| P0 Baseline/audit | In progress | [Lifecycle audit](../verification/document-lifecycle-audit.md); run 176 pass and Windows smoke; runs 171–174 fail | Activation/close ordering now passes native smoke; identify checkpoint refusal and verify installed build identities |
-| P1 Durability contract | Not started | Existing sync engine/journals are inputs | Acknowledgement and adapter audit |
+| P0 Baseline/audit | In progress | [Lifecycle audit](../verification/document-lifecycle-audit.md); [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); Windows candidate seal and installed startup verified | Explain the historical flush refusal and verify the installed candidate in normal workspace use; retain runs 171–174 as failures |
+| P1 Durability contract | In progress | False browser-only durability acknowledgement reproduced and fixed in `20109926`; typed outcome regressions pass in `58fd7b78` | Versioned transactional browser persistence, migration/interruption matrix, complete native/browser boundary |
 | P2 Lifecycle | Not started | Existing lifecycle code is input | Deterministic reproduction |
-| P3 Shared app | Not started | Shared renderer/commands already exist | Parity/duplicate-policy inventory |
+| P3 Shared app | In progress | [Initial application parity inventory](../verification/application-parity-matrix.md) | Feature entry-point sweep, no-editor runtime decision, policy migration |
 | P4 External files | Not started | Prior physical receipts linked in acceptance contract | Remaining races/provider semantics |
 | P5 Regression campaign | Not started | Existing suites retained | Controlled fault boundaries |
 | P6 Six clients | Incomplete existing evidence | Acceptance contract | Full matrix and soak |
 | P7 Performance | Incomplete existing evidence | Preserve prior search receipts | Cross-platform distributions/resources |
 | P8 Install/readiness | Not started | Existing installed builds in handoff | Prior phase gates |
 
-Next execution: playbook packet A for installed Windows verification and remaining P0 evidence; packet B for the browser durability reproduction. Trace retrieval and the initial ownership map are done. Do not repeat them.
+Next execution: finish Packet B's transactional browser journal and migration/failure coverage; continue Packet A's installed Windows normal-use and historical-refusal checks. The SSH username mismatch is diagnosed and the existing qualified aliases work. The initial shared-app ownership inventory is recorded. Do not repeat completed trace retrieval or the original browser-only false-ack reproduction.
