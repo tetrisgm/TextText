@@ -321,7 +321,7 @@ static class Stress
                 if (view?.CoreWebView2 is null) return;
                 // Only journal metadata is recorded. Never copy document text,
                 // recovery payloads, credentials or file contents into receipts.
-                var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
+                var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,sharedState:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')??null,bridgeErrors:window.__texttextStressBridgeErrors??[],journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
                 try {
                     // CloseProbe resumes on a worker after its bounded wait; WebView2
                     // remains owned by the dispatcher even when the dialog was dismissed.
@@ -385,6 +385,10 @@ static class Stress
                 return view?.CoreWebView2 is not null && await view.ExecuteScriptAsync("typeof window.texttextOpenFile === 'function'") == "true";
             }, ct, "Production desktop did not become ready with its saved sign-in.");
             log(new { kind = "workspace-ready" });
+            // Record only bridge error codes, never messages, document bytes or
+            // authentication payloads. A late checkpoint refusal can explain a
+            // close dialog even when the current journal is otherwise clean.
+            await view!.ExecuteScriptAsync("window.__texttextStressBridgeErrors=[];window.chrome.webview.addEventListener('message',event=>{let value=event.data;try{if(typeof value==='string')value=JSON.parse(value);const code=value?.error?.code;if(typeof code==='string'){const entries=window.__texttextStressBridgeErrors;entries.push(code.slice(0,48));if(entries.length>32)entries.shift()}}catch{}})");
             var root = Program.Field(window, "root") as string ?? throw new Exception("Missing production workspace root.");
             if (!Path.GetFullPath(config.File).StartsWith(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 throw new Exception("Test file is not inside the active workspace; workspace selection was not changed.");
