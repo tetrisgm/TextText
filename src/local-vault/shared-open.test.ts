@@ -24,10 +24,24 @@ it("joins the updated same-identity file after sync wins the read/open race", as
 
 it("does not join another item or loop on an unchanged file", async () => {
   for (const fresh of [file("new", "different"), file("old")]) {
+    let opens = 0;
     const request = (async <T,>(method: string): Promise<T> => {
       if (method === "read") return fresh as T;
+      opens++;
       throw new VaultError("changed", "local_changed");
     }) as typeof vaultRequest;
     await expect(openLocalSharedSession(itemId, file("old"), request)).rejects.toMatchObject({ code: "local_changed" });
+    expect(opens).toBeLessThanOrEqual(5);
   }
+});
+
+it("retries a native baseline race even when the file bytes are unchanged", async () => {
+  let opens = 0;
+  const request = (async <T,>(method: string): Promise<T> => {
+    if (method === "read") return file("old") as T;
+    if (++opens === 1) throw new VaultError("native baseline pending", "local_changed");
+    return { sessionToken: "session", path: file("old").path, hash: "old" } as T;
+  }) as typeof vaultRequest;
+  expect((await openLocalSharedSession(itemId, file("old"), request)).native.sessionToken).toBe("session");
+  expect(opens).toBe(2);
 });

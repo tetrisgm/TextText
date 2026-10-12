@@ -1399,6 +1399,50 @@ describe("durable file collaboration client", () => {
     }
   });
 
+  it("resumes a pending journal after the native file catches up to the same server epoch during restart", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start();
+    const oldRevision = server.state.revision;
+    first.mutate(doc => documentText(doc, "body").insert(5, " Mac offline"));
+    const pending = journal.load(first.journalKey)!;
+    first.destroy();
+
+    const other = client(server);
+    await other.start();
+    other.mutate(doc => documentText(doc, "body").insert(0, "PC "));
+    expect(await other.flush()).toBe(true);
+    expect(server.state.revision).not.toBe(oldRevision);
+    journal.values.set(first.journalKey, pending);
+    const checkpoint = vi.fn(async () => {});
+    const resumed = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal, request: server.request, localRevision: server.state.revision, checkpoint });
+    clients.push(resumed);
+    await resumed.start();
+    expect(resumed.status).toBe("saving");
+    expect(resumed.canEdit).toBe(true);
+    expect(documentText(resumed.doc, "body").toString()).toContain("Mac offline");
+    expect(documentText(resumed.doc, "body").toString()).toContain("PC ");
+    expect(await resumed.flush()).toBe(true);
+    expect(readDocument(openPack(server.bytes, "Shared.textpack", server.state.revision).file).content.body).toContain("Mac offline");
+    expect(checkpoint).toHaveBeenCalled();
+  });
+
+  it("keeps pending edits in recovery when the active native file differs from the server revision", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start();
+    first.mutate(doc => documentText(doc, "body").insert(5, " pending"));
+    first.destroy();
+    const checkpoint = vi.fn(async () => {});
+    const reopened = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal, request: server.request, localRevision: "f".repeat(64), checkpoint });
+    clients.push(reopened);
+    await reopened.start();
+    expect(reopened.status).toBe("recovery");
+    expect(reopened.hasPendingChanges).toBe(true);
+    expect(server.pushes).toHaveLength(0);
+    expect(checkpoint).not.toHaveBeenCalled();
+  });
+
   it("isolates concurrent tab journals, resumes reloads and discovers closed-tab pending journals", async () => {
     const server = new Server(), journal = new Journal(), locks = new Set<string>();
     const sessionA = new Map<string, string>(), sessionB = new Map<string, string>();

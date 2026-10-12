@@ -10,14 +10,17 @@ export async function openLocalSharedSession(
   request: typeof vaultRequest = vaultRequest,
 ): Promise<{ native: NativeSharedSession; file: VaultFile }> {
   let file = initial;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const native = await request<NativeSharedSession>("collaborationOpen", { itemId, path: file.path, hash: file.hash });
       return { native, file };
     } catch (error) {
-      if (!(error instanceof VaultError) || error.code !== "local_changed" || attempt === 2) throw error;
+      if (!(error instanceof VaultError) || error.code !== "local_changed" || attempt === 4) throw error;
       const fresh = await request<VaultFile>("read", { path: error.path ?? file.path });
-      if (packIdentity(fresh.markdown) !== itemId || fresh.hash === file.hash) throw error;
+      if (packIdentity(fresh.markdown) !== itemId) throw error;
+      // Native sync can update its baseline just after the WebView read, with
+      // identical file bytes. Bound this retry; a real mismatch still fails.
+      if (fresh.hash === file.hash) await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
       file = fresh;
     }
   }

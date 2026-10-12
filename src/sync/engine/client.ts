@@ -620,11 +620,15 @@ export class FileCollaborationClient {
           this.initialRetirement = initialRetirement; this.frozen = true; this.canEdit = false;
           this.report("recovery", this.initialRetirement); return;
         }
-        if (staleLocal) {
+        // A downloaded revision may have advanced while this process was down.
+        // Keep the pending Yjs journal intact until a fresh server read proves
+        // that the native file is exactly that server revision and same epoch.
+        if (staleLocal && !this.active) {
           this.initialRetirement = "The local file changed while shared edits were pending. Recover your saved edits before reopening.";
           this.frozen = true; this.canEdit = false;
           this.report("recovery", this.initialRetirement); return;
         }
+        if (staleLocal) this.canEdit = false;
         if (this.options.initialFileChange && !retained.retired && !this.unqueuedDirty) {
           const external = this.options.initialFileChange;
           const baseline = parseJournal(external.journal);
@@ -644,7 +648,7 @@ export class FileCollaborationClient {
           } finally { projected.destroy(); }
           this.initialFileReconciled = true;
         }
-        this.persist();
+        if (!staleLocal) this.persist();
         if (retained.retired || this.unqueuedDirty) { this.retire(retained.retired ?? "Unsubmitted local edits are kept for recovery."); return; }
       }
       if (initialRetirement) {
@@ -657,6 +661,13 @@ export class FileCollaborationClient {
       const remote = value as StateResponse; cursor(remote);
       presentation(remote.presentation);
       if (typeof remote.canEditContent !== "boolean" || typeof remote.canComment !== "boolean") throw new Error("Invalid collaboration permissions.");
+      if (staleLocal && retained && (remote.revision !== this.options.localRevision ||
+          remote.epoch !== retained.epoch || remote.relativePath !== retained.relativePath || !remote.canEditContent ||
+          retained.retired || retained.unqueuedDirty)) {
+        this.initialRetirement = "The local file changed while shared edits were pending. Recover your saved edits before reopening.";
+        this.frozen = true; this.canEdit = false;
+        this.report("recovery", this.initialRetirement); return;
+      }
       if (cleanRetiredRefresh) this.saved = null;
       this.current = cursor(remote);
       if (retained) {
