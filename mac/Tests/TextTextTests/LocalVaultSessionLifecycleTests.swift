@@ -6,6 +6,22 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultSessionLifecycleTests: XCTestCase {
+    func testNativeCloseRequiresTypedDurableResult() {
+        let durable: [String: Any] = ["ok": true, "durability": [
+            "workspaceId": "workspace", "itemId": "item", "lifecycle": "lifecycle", "generation": 8, "outcome": "durable",
+        ]]
+        let accepted = LocalVaultWindowController.nativeFlushDecision(durable)
+        XCTAssertTrue(accepted.acknowledged)
+        XCTAssertEqual(accepted.durability?["generation"] as? Int, 8)
+
+        for outcome in ["pending", "storage-unavailable", "invalid-journal", "stale-lifecycle"] {
+            let rejected = LocalVaultWindowController.nativeFlushDecision(["ok": true, "durability": ["outcome": outcome]])
+            XCTAssertFalse(rejected.acknowledged, "\(outcome) must not release the native close guard")
+        }
+        XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(true).acknowledged,
+            "An untyped Boolean cannot satisfy the native durability contract")
+    }
+
     @MainActor
     func testClosingAndReopeningWindowPreservesPendingCheckpointSession() async throws {
         _ = NSApplication.shared

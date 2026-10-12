@@ -26,13 +26,13 @@ Status: initial code-owner inventory; feature-level behavior and visual acceptan
 
 - The same workspace UI and validated document model are used across the three surfaces. UI sharing is not yet equivalent to shared lifecycle ownership: `CollaborativeVaultEditor` still creates the collaboration client as part of the editor lifetime.
 - Browser, Mac and Windows durability adapters differ by design. Browser persistence, native checkpoints and file materialization need one typed contract, while retaining platform-specific filesystem primitives.
-- Mac `LocalVaultSync.swift` and Windows `TextText.Core/SyncEngine.cs` both implement background file synchronization policy. The shared Yjs client does not replace those engines; a policy migration needs an explicit runtime decision and adapter conformance evidence.
+- Mac `LocalVaultSync.swift` and Windows `TextText.Core/SyncEngine.cs` both implement background file synchronization policy. The shared Yjs client does not replace those engines; the runtime choice and no-editor behavior are recorded in the [shared runtime decision](shared-runtime-decision.md), while policy migration still needs adapter conformance evidence.
 - The public workspace pages and the authenticated `/vault/[workspaceId]` application are distinct routes. Do not treat public reading as the native app home route. Audit the owner’s older home-route expectation against the current installed behavior before removing either path.
 - No parity row is accepted from code presence alone. Installed light/dark behavior, editing, search invalidation, comments, sharing, templates, agents, recovery, account changes and platform input conventions still require receipts.
 
 ## Next actions
 
-1. Finish Packet B's transactional browser persistence design and failure/migration coverage.
-2. Inventory the route and all entry points per feature (UI, native shell, CLI and hosted MCP), marking shared path, adapter, legacy duplicate or missing path.
-3. Make the supported no-editor coordinator/runtime decision with startup, packaging, offline, shutdown, memory and security tradeoffs before adding a runtime.
-4. Consolidate native sync policy only in bounded vertical slices after ownership and adapter contracts are proven.
+1. Complete Packet B's Windows native smoke and server commit-before-ack gates.
+2. Inventory each feature entry point (UI, native shell, CLI and hosted MCP), marking shared path, adapter, legacy duplicate or missing path.
+3. Implement the chosen no-editor/runtime behavior through bounded coordinator and adapter slices; do not add a second runtime.
+4. Consolidate native sync policy only after ownership and adapter contracts are proven.

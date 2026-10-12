@@ -182,7 +182,7 @@ Exit: installed clients and Oracle run the verified behavior, all required evide
 | Phase | State | Commit/evidence | Remaining blocker |
 | --- | --- | --- | --- |
 | P0 Baseline/audit | In progress | [Lifecycle audit](../verification/document-lifecycle-audit.md); [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); Windows candidate seal and installed startup verified | Explain the historical flush refusal and verify the installed candidate in normal workspace use; retain runs 171–174 as failures |
-| P1 Durability contract | In progress | [Transactional browser journal progress](../verification/2026-10-11-packet-a-b-progress.md); 96 focused tests, real Chromium persistence check, and 405 client-gate tests pass | Verify typed outcomes through Windows native smoke; complete server commit-before-ack evidence |
+| P1 Durability contract | In progress | [Durability ordering](../verification/collaboration-durability-ordering.md); 96 focused tests, 29 server collaboration tests, Mac typed-result test, and Windows native smoke pass | Adapter conformance matrix and exact-source Windows candidate verification; retain crash/power-loss gates in P5/F |
 | P2 Lifecycle | Not started | Existing lifecycle code is input | Deterministic reproduction |
 | P3 Shared app | In progress | [Initial application parity inventory](../verification/application-parity-matrix.md) | Feature entry-point sweep, no-editor runtime decision, policy migration |
 | P4 External files | Not started | Prior physical receipts linked in acceptance contract | Remaining races/provider semantics |
@@ -191,4 +191,4 @@ Exit: installed clients and Oracle run the verified behavior, all required evide
 | P7 Performance | Incomplete existing evidence | Preserve prior search receipts | Cross-platform distributions/resources |
 | P8 Install/readiness | Not started | Existing installed builds in handoff | Prior phase gates |
 
-Next execution: verify Packet B's typed native bridge on Windows, then continue Packet C lifecycle ownership and Packet A's installed Windows normal-use and historical-refusal checks. The SSH username mismatch is diagnosed and the existing qualified aliases work. The initial shared-app ownership inventory is recorded. Do not repeat completed trace retrieval or the original browser-only false-ack reproduction.
+Next execution: regain the existing Windows SSH path to seal the post-fix candidate and verify installed use, while starting Packet C lifecycle ownership and the adapter conformance matrix. The original short-username SSH failure is diagnosed; a separate post-key-exchange connection reset now blocks Windows build publication. The initial shared-app ownership inventory and runtime decision are recorded. Do not repeat completed trace retrieval or the original browser-only false-ack reproduction.

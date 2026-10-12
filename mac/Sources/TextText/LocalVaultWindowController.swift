@@ -10,6 +10,11 @@ import TextTextShareCore
 /// The existing document editor, bundled locally, talking only to the folder
 /// the person selected. Hosted pages cannot invoke this filesystem bridge.
 final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, NSWindowDelegate {
+    static func nativeFlushDecision(_ value: Any?) -> (acknowledged: Bool, durability: [String: Any]?) {
+        let result = value as? [String: Any]
+        let durability = result?["durability"] as? [String: Any]
+        return (result?["ok"] as? Bool == true && durability?["outcome"] as? String == "durable", durability)
+    }
     static var entryURL: URL? {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("LocalVault/index.html"),
               FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -127,9 +132,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     "return await window.texttextFlushForNativeClose?.() ?? {ok:false,durability:{outcome:'pending'}}",
                     arguments: [:], in: nil, contentWorld: .page
                 )
-                let result = value as? [String: Any]
-                self.lastFlushDurability = result?["durability"] as? [String: Any]
-                completion(result?["ok"] as? Bool == true && self.lastFlushDurability?["outcome"] as? String == "durable")
+                let decision = Self.nativeFlushDecision(value)
+                self.lastFlushDurability = decision.durability
+                completion(decision.acknowledged)
             } catch {
                 completion(false)
             }

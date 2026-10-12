@@ -213,9 +213,9 @@ node sync/stress/run.mjs <fresh-real-config.json>
 | Packet | State | Next concrete step |
 | --- | --- | --- |
 | A | Partial | [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); candidate installed and sealed; verify installed ordinary use, repeated opens, and the historical refusal |
-| B | In progress | [Transactional browser journal progress](../verification/2026-10-11-packet-a-b-progress.md); verify the typed result in Windows native smoke, then close server commit-before-ack evidence |
+| B | In progress | [Transactional browser journal progress](../verification/2026-10-11-packet-a-b-progress.md); complete adapter conformance and seal exact-source Windows build |
 | C | Waiting for B | Design lifecycle/result interface against the ownership map |
-| D | Inventory in progress | [Application parity inventory](../verification/application-parity-matrix.md); complete entry-point sweep, then record the no-editor runtime decision |
+| D | Inventory in progress | [Application parity inventory](../verification/application-parity-matrix.md); runtime decision recorded; complete feature entry-point sweep and policy migration plan |
 | E | Waiting for contracts | Enumerate external-write/materialization interleavings |
 | F | Existing tests, incomplete | Inventory covered crash boundaries, add missing failpoints |
 | G | Audit ready | Inventory shared agent/template command paths and workflow gaps |

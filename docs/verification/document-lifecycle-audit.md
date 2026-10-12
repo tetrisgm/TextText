@@ -1,6 +1,6 @@
 # Document lifecycle audit
 
-Status: active. October 11, 2026. This records confirmed behavior and the remaining diagnostic gap for [the execution plan](../plans/shared-app-durability-execution.md).
+Status: active. October 11, 2026. This records confirmed behavior and the remaining diagnostic gap for [the execution plan](../plans/shared-app-durability-execution.md). Persistence ordering and crash boundaries are summarized in [the durability ordering contract](collaboration-durability-ordering.md).
 
 ## Owners and sequence
 
