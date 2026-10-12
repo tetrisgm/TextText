@@ -717,6 +717,15 @@ describe("durable file collaboration client", () => {
     expect(saved.at(-1)?.document.content.body).toBe("Hello durable natively");
   });
 
+  it("fences durability results to one client lifecycle even when the item and epoch match", async () => {
+    const server = new Server(), first = client(server, new Journal()), second = client(server, new Journal());
+    await Promise.all([first.start(), second.start()]);
+    const firstResult = await first.flushLocalResult(), secondResult = await second.flushLocalResult();
+    expect(firstResult).toMatchObject({ workspaceId: "workspace", itemId: "item-1", outcome: "durable" });
+    expect(secondResult).toMatchObject({ workspaceId: "workspace", itemId: "item-1", outcome: "durable" });
+    expect(firstResult.lifecycle).not.toBe(secondResult.lifecycle);
+  });
+
   it("keeps an uninitialized flush pending and reports a rejected native checkpoint", async () => {
     const server = new Server(), checkpoint = vi.fn(async () => { throw new Error("Disk is unavailable"); });
     const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",

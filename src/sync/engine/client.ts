@@ -449,6 +449,7 @@ function browserOwnership(): FileCollaborationOwnership {
 /** One canonical server baseline, one durable upload queue, and one visible long poll. */
 export class FileCollaborationClient {
   private liveDoc = new Y.Doc();
+  private readonly lifecycleId = crypto.randomUUID();
   /** The current shared document. Automatic epoch recovery replaces it; see `onDocumentReplaced`. */
   get doc(): Y.Doc { return this.liveDoc; }
   private ownedJournalKey: string;
@@ -658,7 +659,7 @@ export class FileCollaborationClient {
   }
   async flushLocalResult(): Promise<FileCollaborationDurabilityResult> {
     const generation = this.journalGeneration;
-    const lifecycle = JSON.stringify([this.options.workspaceId, this.options.itemId, this.current?.epoch ?? null]);
+    const lifecycle = JSON.stringify([this.options.workspaceId, this.options.itemId, this.current?.epoch ?? null, this.lifecycleId]);
     const result = (outcome: FileCollaborationDurabilityOutcome): FileCollaborationDurabilityResult => ({
       workspaceId: this.options.workspaceId, itemId: this.options.itemId, lifecycle, generation, outcome,
     });
