@@ -1,0 +1,11 @@
+# Native local-file close receipt (October 11)
+
+Packet A/B. Invariant: a successful local TextPack flush may close a native window only with an explicit file identity and saved-file hash; a shared editor still needs its collaboration durability result. The home screen retains its separate explicit idle receipt.
+
+Source commit `6f55e0f5` adds a local-file receipt after the file bridge returns a successful save. The producer is bound to the active local editor, selected TextPack path, workspace root, item ID, and returned file hash. Mac and Windows native guards reject a missing hash. A feed reader or shared editor cannot use the local-file receipt path.
+
+Mac `npx tsc --noEmit`, full `npm run mac:test`, and portable Windows agent tests passed. A pristine archive of `6f55e0f5` and the Windows build input both fingerprinted `cedbc88fd61d51c7366bdc42346c7af7b94d96024d7a2a563ba28de553b4f680`. Windows `build.ps1` passed locked install, runtime checks, native/core/agent tests, shared client tests, typecheck, UI build, publish, and desktop smoke; smoke receipt: `C:\Users\Shokunin\dev\texttext-packet-b-84feed8d\windows\build\smoke-receipts-565a1dac634f417ea00d938952c6b144`.
+
+Sealed candidate `candidate-25e161b899b84b3182631c25e2ac5f44` was installed at `C:\Users\Shokunin\AppData\Local\Programs\TextText`. Its prior app is preserved at `C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261011T234057-f89779c7`. The rebuilt production-window actor opened the existing note from an idle home without a recovery notice and verified its visible body and unchanged TextPack hash: `windows\build\installed-verify-receipts-6f55e0f5-absolute`. The installed executable started in the signed-in desktop, accepted a normal close, and exited. Its interactive close receipt is `windows\build\installed-close-6f55e0f5.json`; the existing note hash remained `034523ab695852ba9060bbaee116631106843c609b042414b185317cff2aa5a4`.
+
+Limits: the production-window actor is separately built from the same source, not the installed executable. The installed executable's home close did not involve a new local-file edit. That edit/reopen flow and repeated six-client acceptance remain open. A first attempt to query the installed window from the SSH session found no cross-session window handle; the interactive-session close then passed.

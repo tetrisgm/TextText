@@ -23,7 +23,9 @@ These are architectural requirements, not invitations to redesign the product:
 
 ## Current evidence to retain
 
-Commit `92d680fa` adds Windows activation deduplication, preserves close requests during activation, and adds native regressions/diagnostics. The latest close fix and empty-home activation repair passed Windows smoke and are installed in sealed candidate `candidate-55fd0897522c43fc9778e9a5c934f65e` from `63045c8e`; see [native receipt](../verification/2026-10-11-native-empty-home.md).
+Commit `92d680fa` adds Windows activation deduplication, preserves close requests during activation, and adds native regressions/diagnostics. The earlier close fix and empty-home activation repair passed Windows smoke in sealed candidate `candidate-55fd0897522c43fc9778e9a5c934f65e` from `63045c8e`; see [native receipt](../verification/2026-10-11-native-empty-home.md).
+
+The current installed Windows candidate is `candidate-25e161b899b84b3182631c25e2ac5f44` from `6f55e0f5`. It adds the explicit local-file close receipt; the installed home close and production-window note reopen passed. See [local-file receipt](../verification/2026-10-11-native-local-file-receipt.md). New-item local edit/reopen and the broader acceptance campaign remain open.
 
 - Run 175 trace is now available: `/tmp/texttext-pc-events175.jsonl`.
 - Run 176 passed one physical concurrent round and Windows close: `/private/tmp/texttext-six-20261011/results/stress-2026-10-12T03-06-06-569Z-176`.
