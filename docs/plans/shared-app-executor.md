@@ -212,8 +212,8 @@ node sync/stress/run.mjs <fresh-real-config.json>
 
 | Packet | State | Next concrete step |
 | --- | --- | --- |
-| A | Partial | Build/install final Windows close fix; finish identity/refusal audit |
-| B | Ready | Reproduce failed browser persistence returning a successful local flush |
+| A | Partial | [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); candidate installed and sealed; explain historical refusal and verify ordinary installed use |
+| B | In progress | Reproduced false browser durability acknowledgement and fixed it; finish storage contract, failure matrix, and transactional persistence decision |
 | C | Waiting for B | Design lifecycle/result interface against the ownership map |
 | D | Inventory ready | Produce feature ownership matrix and runtime decision |
 | E | Waiting for contracts | Enumerate external-write/materialization interleavings |

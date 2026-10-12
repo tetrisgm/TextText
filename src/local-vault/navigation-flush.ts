@@ -9,8 +9,14 @@ export async function flushForNavigation(client: { readonly hasPendingChanges: b
 }
 
 /** A native file may close once its current projection and journal are durable on disk. */
-export async function flushNativeForNavigation(client: { flushLocal: () => Promise<boolean> }, onChanged: () => void): Promise<boolean> {
-  if (!await client.flushLocal()) return false;
+export async function flushNativeForNavigation(client: {
+  flushLocal: () => Promise<boolean>;
+  flushLocalResult?: () => Promise<{ outcome: string }>;
+}, onChanged: () => void): Promise<boolean> {
+  const durable = client.flushLocalResult
+    ? (await client.flushLocalResult()).outcome === "durable"
+    : await client.flushLocal();
+  if (!durable) return false;
   onChanged();
   return true;
 }

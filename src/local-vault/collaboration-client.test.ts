@@ -696,7 +696,24 @@ describe("durable file collaboration client", () => {
     editor.mutate(doc => documentText(doc, "body").insert(0, "Unsaved "));
     expect(editor.status).toBe("error"); expect(editor.canEdit).toBe(false);
     expect(editor.recoveryJournal?.pending).toHaveLength(1);
+    expect((await editor.flushLocalResult()).outcome).toBe("storage-unavailable");
+    expect(await editor.flushLocal()).toBe(false);
     expect(documentText(editor.doc, "body").toString()).toContain("Unsaved");
+    journal.fail = false;
+    expect(await editor.flushLocal()).toBe(true);
+    expect(JSON.parse(journal.load(editor.journalKey)!).pending).toHaveLength(1);
+  });
+
+  it("accepts a failed browser save only after the native checkpoint covers that generation", async () => {
+    const server = new Server(), journal = new Journal(), saved: FileCollaborationCheckpoint[] = [];
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request, checkpoint: async value => { saved.push(value); } });
+    clients.push(editor); await editor.start(); expect(await editor.flushLocal()).toBe(true);
+    journal.fail = true;
+    editor.mutate(doc => documentText(doc, "body").insert(5, " durable natively"));
+    expect(editor.status).toBe("error");
+    expect((await editor.flushLocalResult()).outcome).toBe("durable");
+    expect(saved.at(-1)?.document.content.body).toBe("Hello durable natively");
   });
 
   it("distinguishes a quiet pause from offline and revalidates before sending pending edits", async () => {

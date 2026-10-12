@@ -42,4 +42,12 @@ describe("native file navigation flush", () => {
     expect(await flushNativeForNavigation({ flushLocal: async () => false }, changed)).toBe(false);
     expect(changed).not.toHaveBeenCalled();
   });
+
+  it("requires the typed local durability outcome when the client provides it", async () => {
+    const changed = vi.fn(), flushLocal = vi.fn(async () => true);
+    const flushLocalResult = vi.fn(async () => ({ outcome: "storage-unavailable" }));
+    expect(await flushNativeForNavigation({ flushLocal, flushLocalResult }, changed)).toBe(false);
+    expect(flushLocal).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+  });
 });

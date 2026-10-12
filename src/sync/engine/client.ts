@@ -13,6 +13,11 @@ const LIMIT = 4 * 1024 * 1024;
 export type FileCollaborationStatus = "ready" | "saving" | "paused" | "reconnecting" | "offline" | "stale-file" | "stale-session" | "recovery" | "error";
 export type FileCollaborationRequest = (method: "read" | "push", params: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
 export interface FileCollaborationJournalStore { load(key: string): string | null; save(key: string, value: string): void; remove(key: string): void }
+export type FileCollaborationDurabilityOutcome = "durable" | "pending" | "storage-unavailable" | "invalid-journal" | "stale-lifecycle";
+export type FileCollaborationDurabilityResult = {
+  workspaceId: string; itemId: string; lifecycle: string; generation: number;
+  outcome: FileCollaborationDurabilityOutcome;
+};
 type Batch = { operationId: string; updates: string[]; acknowledged?: boolean; revision?: string };
 export type FileCollaborationPresentation = { templateJSON: string | null; templateAuthoringSourceJSON: string | null };
 function presentation(value: unknown): FileCollaborationPresentation | undefined {
@@ -283,6 +288,9 @@ export class FileCollaborationClient {
   private failures = 0;
   private uploadFailures = 0;
   private journalGeneration = 0;
+  /** Highest browser journal generation whose storage adapter confirmed save. */
+  private storageSavedGeneration = -1;
+  private storageSaveFailed = false;
   private presentation: FileCollaborationPresentation | undefined;
   private initialRetirement: string | null = null;
   private checkpointQueued: FileCollaborationCheckpoint | null = null;
@@ -346,7 +354,11 @@ export class FileCollaborationClient {
     const value = JSON.stringify(saved);
     if (new TextEncoder().encode(value).byteLength > LIMIT) throw new Error("Unsaved collaboration history exceeds 4 MiB. Keep this window open and recover your edits.");
     let storageError: unknown;
-    try { this.storage.save(this.journalKey, value); } catch (error) { storageError = error; }
+    try {
+      this.storage.save(this.journalKey, value);
+      this.storageSavedGeneration = saved.journalGeneration!;
+      this.storageSaveFailed = false;
+    } catch (error) { storageError = error; this.storageSaveFailed = true; }
     if (this.options.checkpoint && !this.checkpointError && this.initialFileReconciled) this.queueCheckpoint(immutableCheckpoint({ journal: saved, document: this.snapshot() }));
     if (storageError) throw new Error(`Collaboration journal could not be saved. Keep this window open to recover your edits. ${String(storageError)}`);
   }
@@ -417,10 +429,29 @@ export class FileCollaborationClient {
     this.report("stale-file", "Refreshing the file changed outside TextText…");
   }
   async flushLocal(): Promise<boolean> {
-    if (!this.options.checkpoint) return !this.unreadableJournal;
+    if (!this.current || !this.initialized) return false;
+    if (!this.options.checkpoint) {
+      if (this.storageSaveFailed && !this.unreadableJournal) {
+        try { this.persist(); } catch { /* The failed generation remains unacknowledged. */ }
+      }
+      return !this.unreadableJournal && this.storageSavedGeneration >= this.journalGeneration;
+    }
     this.startCheckpointDrain();
     while (this.checkpointRunning) { await this.checkpointRunning; this.startCheckpointDrain(); }
     return !this.checkpointError && !this.unreadableJournal && this.checkpointSavedGeneration >= this.journalGeneration;
+  }
+  async flushLocalResult(): Promise<FileCollaborationDurabilityResult> {
+    const generation = this.journalGeneration;
+    const lifecycle = JSON.stringify([this.options.workspaceId, this.options.itemId, this.current?.epoch ?? null]);
+    const result = (outcome: FileCollaborationDurabilityOutcome): FileCollaborationDurabilityResult => ({
+      workspaceId: this.options.workspaceId, itemId: this.options.itemId, lifecycle, generation, outcome,
+    });
+    if (!this.current || !this.initialized) return result("pending");
+    if (await this.flushLocal()) return result("durable");
+    if (this.unreadableJournal) return result("invalid-journal");
+    if (this.dead) return result("stale-lifecycle");
+    if (this.storageSaveFailed || this.storageSavedGeneration < this.journalGeneration || this.checkpointError) return result("storage-unavailable");
+    return result("pending");
   }
   private notifyRecoverableSnapshot(): void {
     try { this.options.onChange?.(this.snapshot(), this.presentation); }
@@ -482,11 +513,13 @@ export class FileCollaborationClient {
   private loadJournal(): FileCollaborationJournal | null {
     let raw: string | null;
     try { raw = this.storage.load(this.journalKey); } catch (error) { throw new Error(`Collaboration journal could not be read. ${String(error)}`); }
+    const browserJournal = raw;
     this.rawRecoveryJournal = this.options.retainedJournal !== undefined
       ? JSON.stringify({ browser: raw, native: this.options.retainedJournal }) : raw;
     raw = selectFileCollaborationJournal(raw, this.options.retainedJournal ?? null, this.options.retainedJournalPath);
     if (raw === null) { this.rawRecoveryJournal = null; return null; }
     const parsed = parseJournal(raw);
+    if (browserJournal !== null) this.storageSavedGeneration = parseJournal(browserJournal).journalGeneration ?? 0;
     this.rawRecoveryJournal = null;
     return parsed;
   }
