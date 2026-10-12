@@ -1,7 +1,9 @@
 # Shared application and durable collaboration: execution plan
 
-Status: planned, not complete. Owner: TextText implementation agent.
+Status: implementation in progress, not complete. Owner: TextText implementation agent.
 Created: October 11, 2026. Execute on `main` in this repository.
+
+Start with the [implementation playbook](shared-app-executor.md): bounded packets, decisions, commands, acceptance oracles, and a paste-ready prompt.
 
 ## Objective and scope
 
@@ -18,8 +20,8 @@ This plan supersedes ad hoc retries as the execution order. It complements the d
 - Browser navigation uses remote flushing while native navigation uses local checkpoints in `src/local-vault/navigation-flush.ts`. Their durability semantics need alignment.
 - Windows runs 171–174 converged text but failed normal close. Run 174 had a rejected guard result before the close probe and no recorded wrapped-hook invocation during it. This does not identify the originating operation.
 - Run 175 passed one simultaneous round and normal Windows close. Receipt: `/private/tmp/texttext-six-20261011/results/stress-2026-10-12T02-31-06-349Z-175`. Treat the defect as intermittent and unresolved.
-- Run 175's detailed Windows trace was not retrieved because SSH reset after the completed run. PC availability is not evidence about document correctness. Retry the established SSH path without changing machine networking or creating access paths.
-- Current uncommitted Windows diagnostics and the speculative removal of WebView disabling require review. Do not ship that removal merely because one later run passed.
+- Run 175 trace was retrieved at `/tmp/texttext-pc-events175.jsonl`. Run 176 passed one physical round and Windows close. Both remain partial evidence. PC access recovered using the qualified existing local account; follow the fleet reference.
+- Commit `92d680fa` contains diagnostics, activation deduplication and close-during-activation handling. Final native smoke passed; a fresh sealed candidate and installed verification remain pending. The original checkpoint refusal still needs investigation.
 - Installed versions, candidate paths, and earlier receipts are recorded in [HANDOFF](../HANDOFF.md); inspect actual binaries before relying on those records.
 
 ## Execution rules
@@ -189,4 +191,4 @@ Exit: installed clients and Oracle run the verified behavior, all required evide
 | P7 Performance | Incomplete existing evidence | Preserve prior search receipts | Cross-platform distributions/resources |
 | P8 Install/readiness | Not started | Existing installed builds in handoff | Prior phase gates |
 
-Next execution: P0.1–P0.5. First inspect current dirty Windows changes, retrieve the run 175 trace if reachable, and compare activation/close lifetimes. Produce the ownership map and deterministic failing case before another broad six-client campaign. Continue local audit work if PC access is temporarily unavailable.
+Next execution: playbook packet A for installed Windows verification and remaining P0 evidence; packet B for the browser durability reproduction. Trace retrieval and the initial ownership map are done. Do not repeat them.
