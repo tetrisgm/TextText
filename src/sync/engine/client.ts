@@ -615,6 +615,11 @@ export class FileCollaborationClient {
         this.report("stale-session", "Reopening this note…"); return;
       }
       if (retained) {
+        if (staleLocal && !this.active) {
+          // A hidden window cannot verify the native revision against the
+          // server. Leave the journal untouched and retry when it is active.
+          this.report(this.inactiveReason); return;
+        }
         this.restoreRetained(retained);
         if (initialRetirement) {
           this.initialRetirement = initialRetirement; this.frozen = true; this.canEdit = false;
@@ -623,11 +628,6 @@ export class FileCollaborationClient {
         // A downloaded revision may have advanced while this process was down.
         // Keep the pending Yjs journal intact until a fresh server read proves
         // that the native file is exactly that server revision and same epoch.
-        if (staleLocal && !this.active) {
-          this.initialRetirement = "The local file changed while shared edits were pending. Recover your saved edits before reopening.";
-          this.frozen = true; this.canEdit = false;
-          this.report("recovery", this.initialRetirement); return;
-        }
         if (staleLocal) this.canEdit = false;
         if (this.options.initialFileChange && !retained.retired && !this.unqueuedDirty) {
           const external = this.options.initialFileChange;

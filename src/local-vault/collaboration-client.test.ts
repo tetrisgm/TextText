@@ -1386,15 +1386,23 @@ describe("durable file collaboration client", () => {
     await original.start(); const clean = journal.load(original.journalKey)!;
     original.mutate(doc => documentText(doc, "body").insert(5, " pending"));
     const pending = journal.load(original.journalKey)!; original.destroy();
-    for (const [raw, expected] of [[clean, "paused"], [pending, "recovery"]] as const) {
+    for (const raw of [clean, pending]) {
       journal.values.set(original.journalKey, raw); const checkpoint = vi.fn(async () => {});
+      const readsBeforeOpen = server.reads;
       const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", active: false,
         journal, request: server.request, localRevision: "f".repeat(64), checkpoint });
       clients.push(editor); await editor.start(); await editor.flushLocal();
-      expect(editor.status).toBe(expected); expect(editor.canEdit).toBe(false);
-      expect(editor.hasBaseline).toBe(expected === "recovery");
+      expect(editor.status).toBe("paused"); expect(editor.canEdit).toBe(false);
+      expect(editor.hasBaseline).toBe(false);
       expect(journal.load(editor.journalKey)).toBe(raw); expect(checkpoint).not.toHaveBeenCalled();
-      if (expected === "recovery") { expect(editor.hasPendingChanges).toBe(true); expect(documentText(editor.doc, "body").toString()).toBe("Hello pending"); }
+      expect(server.reads).toBe(readsBeforeOpen);
+      editor.setActive(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(server.reads).toBeGreaterThan(readsBeforeOpen);
+      if (raw === pending) {
+        expect(editor.status).toBe("recovery");
+        expect(documentText(editor.doc, "body").toString()).toBe("Hello pending");
+      } else expect(editor.status).toBe("ready");
       editor.destroy();
     }
   });
