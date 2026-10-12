@@ -208,14 +208,14 @@ node --test sync/stress/stress.test.mjs
 node sync/stress/run.mjs <fresh-real-config.json>
 ```
 
-`npm run test:sync` requires the local database workflow documented by the repo. Do not substitute production database credentials. Native Windows entry points are `windows/scripts/build.ps1` and `windows/scripts/smoke.ps1`; install is a separate `windows/scripts/install.ps1` invocation after inspecting its parameters. The existing PC checkout is `C:\Users\Shokunin\dev\texttext-release-136bc176`; verify/synchronize relevant source and fingerprints before building. Use PowerShell encoded commands for nontrivial remote commands because SSH lands in cmd.exe.
+`npm run test:sync` requires the local database workflow documented by the repo. Do not substitute production database credentials. Native Windows entry points are `windows/scripts/build.ps1` and `windows/scripts/smoke.ps1`; install is a separate `windows/scripts/install.ps1` invocation after inspecting its parameters. The current Windows staging checkout is `C:\Users\Shokunin\dev\texttext-packet-b-84feed8d`; verify/synchronize relevant source and fingerprints before building. Use PowerShell encoded commands for nontrivial remote commands because SSH lands in cmd.exe.
 
 ## Execution ledger
 
 | Packet | State | Next concrete step |
 | --- | --- | --- |
-| A | Partial | [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); candidate installed and sealed; verify installed ordinary use, repeated opens, and the historical refusal |
-| B | In progress | [Transactional browser journal progress](../verification/2026-10-11-packet-a-b-progress.md); finish storage-adapter conformance and crash/restart coverage, then seal exact-source Windows build |
+| A | Partial | [Current Windows receipt](../verification/2026-10-11-native-local-file-receipt.md); installed home close and note reopen pass; repeat physical edits and investigate the historical activation refusal |
+| B | In progress | [Synchronous transaction failure fix](../verification/2026-10-12-browser-transaction-sync-throw.md) passes local checks; finish adapter/crash conformance and close-input races, then build exact-source app candidates |
 | C | Waiting for B | Design lifecycle/result interface against the ownership map |
 | D | Inventory in progress | [Application parity inventory](../verification/application-parity-matrix.md); runtime decision recorded; complete feature entry-point sweep and policy migration plan |
 | E | Waiting for contracts | Enumerate external-write/materialization interleavings |

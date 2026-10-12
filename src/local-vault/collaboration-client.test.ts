@@ -851,6 +851,34 @@ describe("durable file collaboration client", () => {
     const migratedAfterRestart = JSON.parse((idb.records.get(key) as { raw: string }).raw);
     expect(migratedAfterRestart.update).toBe(JSON.parse(legacyRaw).update);
     expect(migratedAfterRestart.pending).toEqual(JSON.parse(legacyRaw).pending);
+    idb.triggerVersionChange();
+  });
+
+  it("rejects a synchronous transactional write failure without hanging the close barrier", async () => {
+    const idb = outboxIndexedDB(), fallback = new Map<string, string>();
+    vi.stubGlobal("indexedDB", idb.indexedDB);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => fallback.get(key) ?? null,
+      setItem: (key: string, value: string) => { fallback.set(key, value); },
+      removeItem: (key: string) => { fallback.delete(key); },
+    });
+    const server = new Server(), ownership = { acquire: async () => ({ key: "browser-test", release() {} }) };
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      request: server.request, ownership });
+    clients.push(editor); await editor.start();
+    expect(await editor.flushLocal()).toBe(true);
+    editor.setActive(false, "offline");
+    const before = idb.records.get(editor.journalKey);
+    idb.throwPuts();
+    editor.mutate(doc => documentText(doc, "body").insert(5, " unsaved"));
+    expect((await editor.flushLocalResult()).outcome).toBe("storage-unavailable");
+    expect(idb.records.get(editor.journalKey)).toEqual(before);
+    expect(JSON.parse(fallback.get(editor.journalKey)!).pending).toHaveLength(1);
+    expect(server.pushes).toHaveLength(0);
+    idb.allowPuts();
+    expect(await editor.flushLocal()).toBe(true);
+    expect(JSON.parse((idb.records.get(editor.journalKey) as { raw: string }).raw).pending).toHaveLength(1);
+    idb.triggerVersionChange();
   });
 
   it("distinguishes a quiet pause from offline and revalidates before sending pending edits", async () => {

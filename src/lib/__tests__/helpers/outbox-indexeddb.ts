@@ -5,6 +5,7 @@ export function outboxIndexedDB() {
   const records = new Map<string, unknown>();
   let failRetirement = false;
   let failNextWrite = false;
+  let throwPuts = false;
   let holdRetirement = false;
   let holdNextWrite = false;
   let held: (() => void) | undefined;
@@ -29,10 +30,12 @@ export function outboxIndexedDB() {
           const writes = new Map<string, unknown>(), deletes = new Set<string>();
           const requests: (() => void)[] = [];
           let retirement = false;
+          let aborted = false;
           const transaction = {
             oncomplete: null as (() => void) | null,
             onerror: null as (() => void) | null,
             onabort: null as (() => void) | null,
+            abort() { if (!aborted) { aborted = true; transaction.onabort?.(); next(); } },
             objectStore() {
               return {
                 get(key: string) {
@@ -55,6 +58,7 @@ export function outboxIndexedDB() {
                   return result;
                 },
                 put(row: Row) {
+                  if (throwPuts) throw new DOMException("Storage is full", "QuotaExceededError");
                   retirement ||= !!row.documentPostId;
                   deletes.delete(row.postId);
                   writes.set(row.postId, structuredClone(row));
@@ -77,6 +81,7 @@ export function outboxIndexedDB() {
             next();
           };
           const run = () => {
+            if (aborted) return;
             const pending = requests.shift();
             if (pending) { pending(); microtask(run); }
             else if ((retirement && holdRetirement) || (mode === "readwrite" && holdNextWrite)) {
@@ -101,6 +106,8 @@ export function outboxIndexedDB() {
     records,
     failRetirement: () => { failRetirement = true; },
     failNextWrite: () => { failNextWrite = true; },
+    throwPuts: () => { throwPuts = true; },
+    allowPuts: () => { throwPuts = false; },
     holdRetirement: () => { holdRetirement = true; },
     holdNextWrite: () => { holdNextWrite = true; },
     triggerVersionChange: () => lastDatabase?.onversionchange?.({} as IDBVersionChangeEvent),

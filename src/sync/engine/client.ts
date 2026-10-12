@@ -211,54 +211,53 @@ function openJournalDatabase(): Promise<IDBDatabase> {
   });
   return journalDatabase;
 }
-function readStoredJournal(key: string): Promise<StoredJournal | null> {
-  return new Promise(async (resolve, reject) => {
-    let db: IDBDatabase;
-    try { db = await openJournalDatabase(); } catch (error) { reject(error); return; }
+async function readStoredJournal(key: string): Promise<StoredJournal | null> {
+  const db = await openJournalDatabase();
+  return new Promise((resolve, reject) => {
     let row: StoredJournal | null = null;
-    let transaction: IDBTransaction;
-    try { transaction = db.transaction(JOURNAL_STORE, "readonly"); }
-    catch (error) { reject(error); return; }
-    const request = transaction.objectStore(JOURNAL_STORE).get(key);
-    request.onsuccess = () => { row = (request.result as StoredJournal | undefined) ?? null; };
-    transaction.oncomplete = () => { resolve(row); };
-    transaction.onerror = transaction.onabort = () => { reject(transaction.error ?? new Error("Transactional browser journal read failed.")); };
+    let transaction: IDBTransaction | undefined;
+    try {
+      transaction = db.transaction(JOURNAL_STORE, "readonly");
+      transaction.oncomplete = () => { resolve(row); };
+      transaction.onerror = transaction.onabort = () => { reject(transaction?.error ?? new Error("Transactional browser journal read failed.")); };
+      const request = transaction.objectStore(JOURNAL_STORE).get(key);
+      request.onsuccess = () => { row = (request.result as StoredJournal | undefined) ?? null; };
+    } catch (error) { reject(error); try { transaction?.abort(); } catch { /* The original storage error is decisive. */ } }
   });
 }
-function listStoredJournals(): Promise<StoredJournal[]> {
-  return new Promise(async (resolve, reject) => {
-    let db: IDBDatabase;
-    try { db = await openJournalDatabase(); } catch (error) { reject(error); return; }
-    let transaction: IDBTransaction;
-    try { transaction = db.transaction(JOURNAL_STORE, "readonly"); }
-    catch (error) { reject(error); return; }
+async function listStoredJournals(): Promise<StoredJournal[]> {
+  const db = await openJournalDatabase();
+  return new Promise((resolve, reject) => {
+    let transaction: IDBTransaction | undefined;
     let rows: StoredJournal[] = [];
-    const request = transaction.objectStore(JOURNAL_STORE).getAll();
-    request.onsuccess = () => { rows = (request.result as StoredJournal[] | undefined) ?? []; };
-    transaction.oncomplete = () => { resolve(rows); };
-    transaction.onerror = transaction.onabort = () => { reject(transaction.error ?? new Error("Transactional browser journal index could not be read.")); };
+    try {
+      transaction = db.transaction(JOURNAL_STORE, "readonly");
+      transaction.oncomplete = () => { resolve(rows); };
+      transaction.onerror = transaction.onabort = () => { reject(transaction?.error ?? new Error("Transactional browser journal index could not be read.")); };
+      const request = transaction.objectStore(JOURNAL_STORE).getAll();
+      request.onsuccess = () => { rows = (request.result as StoredJournal[] | undefined) ?? []; };
+    } catch (error) { reject(error); try { transaction?.abort(); } catch { /* The original storage error is decisive. */ } }
   });
 }
-function writeStoredJournal(key: string, row: StoredJournal, verifyRaw?: string): Promise<void> {
-  return new Promise(async (resolve, reject) => {
-    let db: IDBDatabase;
-    try { db = await openJournalDatabase(); } catch (error) { reject(error); return; }
-    let transaction: IDBTransaction;
+async function writeStoredJournal(key: string, row: StoredJournal, verifyRaw?: string): Promise<void> {
+  const db = await openJournalDatabase();
+  return new Promise((resolve, reject) => {
+    let transaction: IDBTransaction | undefined;
     try {
       try { transaction = db.transaction(JOURNAL_STORE, "readwrite", { durability: "strict" }); }
       catch { transaction = db.transaction(JOURNAL_STORE, "readwrite"); }
-    } catch (error) { reject(error); return; }
-    const store = transaction.objectStore(JOURNAL_STORE);
-    store.put(row);
-    if (verifyRaw !== undefined) {
-      const readback = store.get(key);
-      readback.onsuccess = () => {
-        const saved = readback.result as StoredJournal | undefined;
-        if (!saved || saved.schemaVersion !== 1 || saved.raw !== verifyRaw) transaction.abort();
-      };
-    }
-    transaction.oncomplete = () => { resolve(); };
-    transaction.onerror = transaction.onabort = () => { reject(transaction.error ?? new Error("Transactional browser journal write failed or did not validate.")); };
+      transaction.oncomplete = () => { resolve(); };
+      transaction.onerror = transaction.onabort = () => { reject(transaction?.error ?? new Error("Transactional browser journal write failed or did not validate.")); };
+      const store = transaction.objectStore(JOURNAL_STORE);
+      store.put(row);
+      if (verifyRaw !== undefined) {
+        const readback = store.get(key);
+        readback.onsuccess = () => {
+          const saved = readback.result as StoredJournal | undefined;
+          if (!saved || saved.schemaVersion !== 1 || saved.raw !== verifyRaw) transaction?.abort();
+        };
+      }
+    } catch (error) { reject(error); try { transaction?.abort(); } catch { /* The original storage error is decisive. */ } }
   });
 }
 class BrowserJournalStore implements FileCollaborationJournalStore {

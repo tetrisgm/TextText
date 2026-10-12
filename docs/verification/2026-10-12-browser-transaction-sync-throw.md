@@ -1,0 +1,7 @@
+# Browser journal synchronous failure (October 12)
+
+Packet B. Invariant: a synchronous IndexedDB request exception must reject the journal operation and the close barrier must return a nondurable result. No uncommitted edit may be acknowledged as locally durable.
+
+Before this change, `readStoredJournal`, `listStoredJournals`, and `writeStoredJournal` used `new Promise(async executor)`. A synchronous `objectStore` request exception rejected the executor's private promise without settling the outer promise. A save or close could wait indefinitely. The transactional adapter now opens the database before constructing the request promise and catches request setup failures inside its executor, rejecting the operation and aborting the transaction when possible. A regression injects synchronous `QuotaExceededError` into every `put`, checks `storage-unavailable` and an unchanged committed record, then permits writes and verifies recovery of the pending edit. The IndexedDB test double also releases an aborted transaction queue.
+
+Verification: focused collaboration tests 92/92, shared-client gate 407/407, `npx tsc --noEmit`, and full `npm run mac:test` passed. No local app or Oracle web deployment includes this change yet; source commit and artifact identity are recorded in Git. Remaining Packet B gates include browser crash/reload conformance across every persistence boundary, input during close, and native checkpoint failure ordering.
