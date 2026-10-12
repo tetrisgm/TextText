@@ -1423,10 +1423,15 @@ describe("durable file collaboration client", () => {
     journal.values.set(first.journalKey, pending);
     const checkpoint = vi.fn(async () => {});
     const resumed = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
-      journal, request: server.request, localRevision: server.state.revision, checkpoint });
+      journal, request: server.request, localRevision: server.state.revision, checkpoint, active: false });
     clients.push(resumed);
     await resumed.start();
-    expect(resumed.status).toBe("saving");
+    expect(resumed.status).toBe("paused");
+    expect(resumed.hasBaseline).toBe(false);
+    expect(journal.load(first.journalKey)).toBe(pending);
+    resumed.setActive(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(["saving", "ready"]).toContain(resumed.status);
     expect(resumed.canEdit).toBe(true);
     expect(documentText(resumed.doc, "body").toString()).toContain("Mac offline");
     expect(documentText(resumed.doc, "body").toString()).toContain("PC ");
