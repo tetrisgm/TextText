@@ -14,6 +14,10 @@ Remaining after close: repeat background-open recovery probes; prove explicit sa
 
 Keep unrelated dirty files untouched: `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts`. Main has unpushed work; no website or public release was deployed.
 
+## Execution order
+
+Follow [Shared application and durability execution plan](plans/shared-app-durability-execution.md). Start with P0 ownership/close-failure audit; the latest one-round run 175 passed but does not resolve the intermittent failure. The plan contains phase gates and the progress ledger.
+
 ## References
 
 - [Prior detailed handoff and receipts](archive/texttext-handoff-pre-6a6f0462.md)
