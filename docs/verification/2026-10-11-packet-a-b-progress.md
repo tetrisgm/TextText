@@ -26,7 +26,7 @@ Date: October 11, 2026. Source checkout: `main` at `4f51d0dd` before the local d
 
 ## Next actions
 
-1. Verify ordinary use of the newly installed Windows candidate with the existing workspace; preserve every file and recovery journal.
+1. The new candidate opened an existing test note through the production window. Complete a new-item installed edit/reopen and the historical close-refusal explanation; preserve every file and recovery journal.
 2. Complete adapter conformance and crash-boundary fixtures; keep localStorage bytes until migration failure coverage is complete.
 3. Continue the acceptance matrix only after the applicable shared durability gates pass. Keep failed runs 171–174 and asset conflict run 89 as failures.
 
@@ -35,3 +35,7 @@ Date: October 11, 2026. Source checkout: `main` at `4f51d0dd` before the local d
 - The typed durability response is now required to carry nonempty workspace, item, and lifecycle identifiers, a nonnegative generation, and `outcome: durable` before either native shell releases its close guard. This closes a gap where an incomplete object containing only the durable label could pass the native boundary.
 - Verification: full `npm run mac:test` passed, including the typed close-gate test. `dotnet run --project windows/TextText.Agent.Tests/TextText.Agent.Tests.csproj` passed the portable Windows renderer guard checks, including missing fields and malformed field types, and the existing agent checks. These checks exercise the native decision code; they do not replace the WebView2 desktop smoke or an installed Windows candidate.
 - The full post-fix Windows build passed all required checks and sealed `candidate-dcaff9307bab48ac87f67791ec698b16`. Its source fingerprint matches a pristine archive of `01745e4e`. Installation verified the candidate and preserved rollback. Two further desktop smoke runs passed while auditing the WebView2 lockout workaround; [candidate and infrastructure receipts](2026-10-11-windows-account-lockout.md).
+
+## Follow-up: empty home activation
+
+The strict typed guard exposed an empty-home regression: a file-open request called native flush before a document was selected, and the renderer returned only an incomplete durable label. The new explicit idle receipt permits this transition after successful flush. Full typed receipts remain required for open documents. The [failed and passing production-window receipts](2026-10-11-native-empty-home.md) include an unchanged existing TextPack hash.

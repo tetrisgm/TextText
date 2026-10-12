@@ -23,14 +23,14 @@ These are architectural requirements, not invitations to redesign the product:
 
 ## Current evidence to retain
 
-Commit `92d680fa` adds Windows activation deduplication, preserves close requests during activation, and adds native regressions/diagnostics. The latest close fix passed Windows smoke but has not been installed in a newly sealed Windows candidate.
+Commit `92d680fa` adds Windows activation deduplication, preserves close requests during activation, and adds native regressions/diagnostics. The latest close fix and empty-home activation repair passed Windows smoke and are installed in sealed candidate `candidate-55fd0897522c43fc9778e9a5c934f65e` from `63045c8e`; see [native receipt](../verification/2026-10-11-native-empty-home.md).
 
 - Run 175 trace is now available: `/tmp/texttext-pc-events175.jsonl`.
 - Run 176 passed one physical concurrent round and Windows close: `/private/tmp/texttext-six-20261011/results/stress-2026-10-12T03-06-06-569Z-176`.
 - Final native smoke receipt: `C:\Users\Shokunin\dev\texttext-release-136bc176\windows\build\smoke-receipts-8c7ac8ba999e41f99674107c6438950f`.
 - Candidate `candidate-fadaf025bf7b467fb41ef79c41f86172` predates the final close-request fix. Do not install it as evidence of that fix.
 - Mac installed identity was 0.204 build 1259. Re-read its plist before using this fact.
-- PC SSH recovered using the qualified local account. Both existing profiles now use it. Read the fleet reference; do not create another key/profile or assume an SSH error means the PC is off.
+- PC SSH resets were caused by WebView2 locking the Windows account; the persistent workaround and original sshd configuration are in [the account-lockout receipt](../verification/2026-10-11-windows-account-lockout.md). Read the fleet reference before any machine work.
 - Runs 171–174 failed. Keep those failures. One successful round does not close their diagnostic gap.
 
 Temporary receipt paths may disappear. Before relying on one, check existence and copy redacted summaries into a durable verification record. Never commit tokens, browser profiles, full user documents or raw journals.
