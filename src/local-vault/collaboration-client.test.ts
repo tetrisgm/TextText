@@ -716,6 +716,21 @@ describe("durable file collaboration client", () => {
     expect(saved.at(-1)?.document.content.body).toBe("Hello durable natively");
   });
 
+  it("keeps an uninitialized flush pending and reports a rejected native checkpoint", async () => {
+    const server = new Server(), checkpoint = vi.fn(async () => { throw new Error("Disk is unavailable"); });
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal: new Journal(), request: server.request, checkpoint });
+    clients.push(editor);
+    expect(await editor.flushLocalResult()).toMatchObject({ workspaceId: "workspace", itemId: "item-1", generation: 0, outcome: "pending" });
+    await editor.start();
+    const result = await editor.flushLocalResult();
+    expect(checkpoint).toHaveBeenCalled();
+    expect(result).toMatchObject({ workspaceId: "workspace", itemId: "item-1", outcome: "storage-unavailable" });
+    expect(result.lifecycle).toContain('"workspace"');
+    expect(result.generation).toBeGreaterThan(0);
+    expect(await editor.flushLocal()).toBe(false);
+  });
+
   it("distinguishes a quiet pause from offline and revalidates before sending pending edits", async () => {
     const server = new Server(), journal = new Journal(), editor = client(server, journal);
     await editor.start(); await vi.advanceTimersByTimeAsync(1);

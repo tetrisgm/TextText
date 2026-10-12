@@ -212,12 +212,12 @@ node sync/stress/run.mjs <fresh-real-config.json>
 
 | Packet | State | Next concrete step |
 | --- | --- | --- |
-| A | Partial | [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); candidate installed and sealed; explain historical refusal and verify ordinary installed use |
-| B | In progress | Reproduced false browser durability acknowledgement and fixed it; finish storage contract, failure matrix, and transactional persistence decision |
+| A | Partial | [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); candidate installed and sealed; verify installed ordinary use, repeated opens, and the historical refusal |
+| B | In progress | False browser durability acknowledgement is fixed; implement and validate the versioned transactional browser journal, migration, failure matrix, and typed boundary |
 | C | Waiting for B | Design lifecycle/result interface against the ownership map |
 | D | Inventory ready | Produce feature ownership matrix and runtime decision |
 | E | Waiting for contracts | Enumerate external-write/materialization interleavings |
 | F | Existing tests, incomplete | Inventory covered crash boundaries, add missing failpoints |
 | G | Audit ready | Inventory shared agent/template command paths and workflow gaps |
-| H | Partial historical evidence | Attest new candidates, then run focused cases before soak |
+| H | Partial historical evidence | Attest six current client identities, then run fresh focused cases before the 100-round campaign and soak |
 | I | Waiting for gates | Install/deploy only verified candidates and check real use |

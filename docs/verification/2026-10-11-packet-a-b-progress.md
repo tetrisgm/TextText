@@ -14,7 +14,7 @@ Date: October 11, 2026. Source checkout: `main` at `4f51d0dd` before the local d
 
 - Reproduction added to `src/local-vault/collaboration-client.test.ts`: after the journal store rejects a local edit, `flushLocal()` returned `true` without a native checkpoint. The focused test failed with the observed `true` before the fix.
 - The client now acknowledges a browser generation only after `save()` returns successfully. A later flush retries a transient failed save. Native checkpoint success remains a valid local durability boundary even when browser storage fails. `flushLocalResult()` exposes workspace, item, lifecycle, generation, and typed outcome; native navigation uses the typed result when available.
-- Focused collaboration/navigation suites: 92 passed. TypeScript passed. `npm run test:sync:client`: 401 passed, exact-source receipt generated.
+- Focused collaboration/navigation suites: 93 passed, including uninitialized and rejected-native-checkpoint outcomes. TypeScript passed. `npm run test:sync:client`: 402 passed, exact-source receipt generated.
 - Packet B remains open: the browser adapter is still synchronous `localStorage`; versioned IndexedDB/transaction behavior and migration preservation are not implemented. Serialization/size, quota, initial-empty/restored-state, and interruption matrices remain to be completed. The result type is an initial boundary, not completion of the storage contract.
 
 ## Next actions
