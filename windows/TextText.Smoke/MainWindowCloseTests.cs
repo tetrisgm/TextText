@@ -124,10 +124,10 @@ static class MainWindowCloseTests
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             transient.Window.Closed+=(_,_)=>closed.TrySetResult();
-            await transient.View.ExecuteScriptAsync("window.flushCalls=0;window.texttextFlushForNativeClose=async()=>({ok:++window.flushCalls>1,durability:{outcome:window.flushCalls>1?'durable':'storage-unavailable'}});");
+            await transient.View.ExecuteScriptAsync("window.flushCalls=0;window.texttextFlushForNativeClose=async()=>{window.flushCalls++;return window.flushCalls>1?{ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}}:{ok:true,durability:{outcome:'durable'}}};");
             transient.Window.Close();
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
-            Check(!transient.Window.IsVisible,"transient failed flush retries and closes after durable acknowledgement",checks);
+            Check(!transient.Window.IsVisible,"incomplete durability receipt retries and closes after a complete acknowledgement",checks);
         }finally{if(transient.Window.IsVisible)ForceClose(transient.Window);}
 
         var failure=await Create(Path.Combine(root,"close-failure"),ct);var observedDialog=0;
@@ -169,7 +169,7 @@ static class MainWindowCloseTests
             Field("root").SetValue(activation.Window,workspace);
             Field("account").SetValue(activation.Window,new Account("isolated-unused",Guid.NewGuid().ToString(),"Fixture"));
             Field("bridge").SetValue(activation.Window,new ActivationBridge());
-            await activation.View.ExecuteScriptAsync("window.opened=[];window.busyOnce=true;window.texttextOpenFile=async path=>{if(window.busyOnce){window.busyOnce=false;return 'busy';}window.opened.push(path);return 'opened';};window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.finishActivationFlush=()=>{window.texttextFlushForNativeClose=async()=>({ok:true,durability:{outcome:'durable'}});resolve({ok:true,durability:{outcome:'durable'}})};});");
+            await activation.View.ExecuteScriptAsync("window.opened=[];window.busyOnce=true;window.texttextOpenFile=async path=>{if(window.busyOnce){window.busyOnce=false;return 'busy';}window.opened.push(path);return 'opened';};window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.finishActivationFlush=()=>{window.texttextFlushForNativeClose=async()=>({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}});resolve({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}})};});");
             activation.Window.ActivateFiles([target]);
             await Until(async()=>await activation.View.ExecuteScriptAsync("typeof window.finishActivationFlush==='function'")=="true",ct);
             activation.Window.ActivateFiles([target]);
@@ -182,7 +182,7 @@ static class MainWindowCloseTests
             await Until(()=>Task.FromResult(!(bool)Field("activatingFile").GetValue(activation.Window)!),ct);
             var activationClosed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             activation.Window.Closed+=(_,_)=>activationClosed.TrySetResult();
-            await activation.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.finishCloseDuringActivation=()=>{window.texttextFlushForNativeClose=async()=>({ok:true,durability:{outcome:'durable'}});resolve({ok:true,durability:{outcome:'durable'}})}});");
+            await activation.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.finishCloseDuringActivation=()=>{window.texttextFlushForNativeClose=async()=>({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}});resolve({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}})}});");
             activation.Window.ActivateFiles([target]);
             await Until(async()=>await activation.View.ExecuteScriptAsync("typeof window.finishCloseDuringActivation==='function'")=="true",ct);
             activation.Window.Close();
