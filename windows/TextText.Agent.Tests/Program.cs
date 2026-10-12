@@ -68,6 +68,13 @@ pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return T
 Check(flush.Accept(issuedId!,true,JsonDocument.Parse("{\"outcome\":\"durable\",\"itemId\":\"item\"}").RootElement,true),"Invalid idle receipt did not complete");
 Check(!await pendingFlush,"Incomplete document receipt bypassed the idle guard");
 pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
+var localFileDurability = JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemId\":\"item\",\"lifecycle\":\"local-file:Notes/Note.textpack\",\"fileHash\":\"saved-hash\",\"outcome\":\"local-file-durable\"}").RootElement;
+Check(flush.Accept(issuedId!,true,localFileDurability),"Local-file acknowledgement did not complete");
+Check(await pendingFlush,"Complete local-file receipt could not close");
+pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
+Check(flush.Accept(issuedId!,true,JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemId\":\"item\",\"lifecycle\":\"local-file:Notes/Note.textpack\",\"outcome\":\"local-file-durable\"}").RootElement),"Missing file hash did not complete");
+Check(!await pendingFlush,"Local-file receipt without a saved hash allowed close");
+pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
 var invalidTypedDurability = JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemId\":\"item\",\"lifecycle\":\"lifecycle\",\"generation\":\"bad\",\"outcome\":\"durable\"}").RootElement;
 Check(flush.Accept(issuedId!,true,invalidTypedDurability),"Invalid typed result did not complete the pending handshake");
 Check(!await pendingFlush,"Invalid typed durability result allowed close");

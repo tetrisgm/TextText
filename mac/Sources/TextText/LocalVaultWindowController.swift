@@ -18,8 +18,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             && (durability?["lifecycle"] as? String)?.isEmpty == false
             && (durability?["generation"] as? Int).map { $0 >= 0 } == true
             && durability?["outcome"] as? String == "durable"
+        let localFile = (durability?["workspaceId"] as? String)?.isEmpty == false
+            && (durability?["itemId"] as? String)?.isEmpty == false
+            && (durability?["lifecycle"] as? String)?.isEmpty == false
+            && (durability?["fileHash"] as? String)?.isEmpty == false
+            && durability?["generation"] == nil
+            && durability?["outcome"] as? String == "local-file-durable"
         let idle = result?["idle"] as? Bool == true && durability?.count == 1 && durability?["outcome"] as? String == "durable"
-        return (result?["ok"] as? Bool == true && (complete || idle), durability)
+        return (result?["ok"] as? Bool == true && (complete || localFile || idle), durability)
     }
     static var entryURL: URL? {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("LocalVault/index.html"),

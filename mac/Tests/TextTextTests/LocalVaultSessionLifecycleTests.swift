@@ -26,6 +26,15 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
             "An explicitly empty editor can leave the home screen")
         XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(["ok": false, "idle": true, "durability": ["outcome": "durable"]]).acknowledged)
         XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(["ok": true, "idle": true, "durability": ["outcome": "durable", "itemId": "item"]]).acknowledged)
+        let localFile: [String: Any] = ["ok": true, "durability": [
+            "workspaceId": "workspace", "itemId": "item", "lifecycle": "local-file:Notes/Note.textpack",
+            "fileHash": "saved-file-hash", "outcome": "local-file-durable",
+        ]]
+        XCTAssertTrue(LocalVaultWindowController.nativeFlushDecision(localFile).acknowledged)
+        XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(["ok": true, "durability": [
+            "workspaceId": "workspace", "itemId": "item", "lifecycle": "local-file:Notes/Note.textpack",
+            "outcome": "local-file-durable",
+        ]]).acknowledged)
         XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(true).acknowledged,
             "An untyped Boolean cannot satisfy the native durability contract")
     }

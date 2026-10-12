@@ -396,7 +396,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   useEffect(() => { onSharedModeRef.current = onSharedMode; }, [onSharedMode]);
   const registerLocalFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails, durabilityResult) => {
     localFlush.current = flush;
-    registerFlush(flush, currentFile, publishFlush, saveStoryDetails, durabilityResult);
+    registerFlush(flush, currentFile, publishFlush, saveStoryDetails, durabilityResult, "local-file");
   }, [registerFlush]);
   useEffect(() => {
     let stopped = false;
@@ -684,25 +684,32 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   }, [destinationFolder, listing?.root, locationReadyRoot, selected]);
   const flushRef = useRef<(navigation?: boolean) => Promise<boolean>>(async () => true);
   const durabilityResultRef = useRef<() => Promise<import("@/sync/engine/client").FileCollaborationDurabilityResult | null>>(async () => null);
+  const localFileModeRef = useRef(false);
   useEffect(() => {
     const nativeWindow = window as Window & {
       texttextFlushForSignOut?: () => Promise<boolean>;
-      texttextFlushForNativeClose?: () => Promise<{ ok: boolean; idle: boolean; durability: import("@/sync/engine/client").FileCollaborationDurabilityResult | { outcome: "durable" | "pending" } | null }>;
+      texttextFlushForNativeClose?: () => Promise<{ ok: boolean; idle: boolean; durability: import("@/sync/engine/client").FileCollaborationDurabilityResult | { outcome: "durable" | "pending" } | { outcome: "local-file-durable"; workspaceId: string; itemId: string; lifecycle: string; fileHash: string } | null }>;
     };
     nativeWindow.texttextFlushForSignOut = () => flushRef.current(true);
     nativeWindow.texttextFlushForNativeClose = async () => {
       const ok = await flushRef.current(true);
       const durability = await durabilityResultRef.current();
+      const selectedFile = selectedRef.current;
+      const currentFile = currentFileRef.current?.();
+      const localFile = ok && localFileModeRef.current && durability === null && selectedFile && currentFile?.path === selectedFile.path ? currentFile : null;
       return { ok, idle: ok && selectedRef.current === null && durability === null,
-        durability: durability ?? { outcome: ok ? "durable" : "pending" } };
+        durability: durability ?? (localFile ? { outcome: "local-file-durable", workspaceId: listingRef.current?.root ?? "",
+          itemId: packIdentity(localFile.markdown), lifecycle: `local-file:${localFile.path}`, fileHash: localFile.hash }
+          : { outcome: ok ? "durable" : "pending" }) };
     };
     return () => { delete nativeWindow.texttextFlushForSignOut; delete nativeWindow.texttextFlushForNativeClose; };
   }, []);
   const publishFlushRef = useRef<() => Promise<string | false>>(async () => false);
   const saveStoryDetailsRef = useRef<(details: StoryDetails) => Promise<string | false>>(async () => false);
-  const registerFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails, durabilityResult) => {
+  const registerFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails, durabilityResult, mode) => {
     flushRef.current = flush; publishFlushRef.current = publishFlush; saveStoryDetailsRef.current = saveStoryDetails; currentFileRef.current = currentFile;
     durabilityResultRef.current = durabilityResult ?? (async () => null);
+    localFileModeRef.current = mode === "local-file";
   }, []);
   const capabilities = listingCapabilities(listing, access, allowFolderPicker);
   const canCreate = capabilities.create(destinationFolder.trim());
@@ -734,6 +741,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     currentFileRef.current = () => selected;
     flushRef.current = async () => true;
     durabilityResultRef.current = async () => null;
+    localFileModeRef.current = false;
     publishFlushRef.current = async () => {
       const itemId = packIdentity(selected.markdown);
       const saved = await vaultRequest<{ revision: string }>("publicationRead", { itemId });
@@ -839,7 +847,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const closeRemoved = useCallback((removedPath?: string) => {
     if (removedPath && selectedRef.current?.path !== removedPath) return;
     setImportedGalleryPath(null);
-    setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
+    setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null; localFileModeRef.current = false;
     flushRef.current = async () => true; publishFlushRef.current = async () => false; saveStoryDetailsRef.current = async () => false;
     durabilityResultRef.current = async () => null;
   }, [setSelected]);
@@ -912,7 +920,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       const opened = await vaultRequest<VaultListing>("open");
       restoredLocationRoot.current = ""; setLocationReadyRoot("");
       listingRequest.current++;
-      setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true; durabilityResultRef.current = async () => null;
+      setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true; durabilityResultRef.current = async () => null; localFileModeRef.current = false;
     });
   };
   const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => { setTemplateQuery(""); setTemplatePicker(true); }); };
@@ -1387,7 +1395,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
             const observed = currentFileRef.current?.();
             if (!observed || observed.path !== selected.path) throw new Error("Wait for this file to finish opening.");
             await vaultRequest("delete", { path: observed.path, hash: observed.hash });
-            setSelected(null); setFileAction(null); setCommentsOpen(false); currentFileRef.current = null; flushRef.current = async () => true; durabilityResultRef.current = async () => null; refresh();
+            setSelected(null); setFileAction(null); setCommentsOpen(false); currentFileRef.current = null; flushRef.current = async () => true; durabilityResultRef.current = async () => null; localFileModeRef.current = false; refresh();
           })}>Delete file</button>
           <button onClick={() => setFileAction(null)}>Cancel</button>
         </div>}

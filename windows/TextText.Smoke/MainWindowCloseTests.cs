@@ -130,6 +130,16 @@ static class MainWindowCloseTests
             Check(!emptyHome.Window.IsVisible,"an explicitly empty home screen closes without a document receipt",checks);
         }finally{if(emptyHome.Window.IsVisible)ForceClose(emptyHome.Window);}
 
+        var localFile=await Create(Path.Combine(root,"close-local-file"),ct);
+        try {
+            var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            localFile.Window.Closed+=(_,_)=>closed.TrySetResult();
+            await localFile.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=async()=>({ok:true,idle:false,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'local-file:Note.textpack',fileHash:'saved-hash',outcome:'local-file-durable'}})");
+            localFile.Window.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
+            Check(!localFile.Window.IsVisible,"a saved local TextPack closes with its file receipt",checks);
+        }finally{if(localFile.Window.IsVisible)ForceClose(localFile.Window);}
+
         var transient=await Create(Path.Combine(root,"close-transient"),ct);
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
