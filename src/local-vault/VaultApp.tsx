@@ -732,6 +732,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     if (!selected || (!selectedFeed.subscription && !selectedFeed.error)) return;
     currentFileRef.current = () => selected;
     flushRef.current = async () => true;
+    durabilityResultRef.current = async () => null;
     publishFlushRef.current = async () => {
       const itemId = packIdentity(selected.markdown);
       const saved = await vaultRequest<{ revision: string }>("publicationRead", { itemId });
@@ -839,6 +840,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     setImportedGalleryPath(null);
     setSelected(null); setFileAction(null); setCommentsOpen(false); setPublishing(null); currentFileRef.current = null;
     flushRef.current = async () => true; publishFlushRef.current = async () => false; saveStoryDetailsRef.current = async () => false;
+    durabilityResultRef.current = async () => null;
   }, [setSelected]);
   const operate = async (action: () => Promise<void>, navigation = false) => {
     if (busy) return;
@@ -909,7 +911,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       const opened = await vaultRequest<VaultListing>("open");
       restoredLocationRoot.current = ""; setLocationReadyRoot("");
       listingRequest.current++;
-      setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true;
+      setListing(opened); setSelected(null); setCommentsOpen(false); setDestinationFolder(""); flushRef.current = async () => true; durabilityResultRef.current = async () => null;
     });
   };
   const openTemplateLibrary = () => { closeMoreActions(); void operate(async () => { setTemplateQuery(""); setTemplatePicker(true); }); };
@@ -1384,7 +1386,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
             const observed = currentFileRef.current?.();
             if (!observed || observed.path !== selected.path) throw new Error("Wait for this file to finish opening.");
             await vaultRequest("delete", { path: observed.path, hash: observed.hash });
-            setSelected(null); setFileAction(null); setCommentsOpen(false); currentFileRef.current = null; flushRef.current = async () => true; refresh();
+            setSelected(null); setFileAction(null); setCommentsOpen(false); currentFileRef.current = null; flushRef.current = async () => true; durabilityResultRef.current = async () => null; refresh();
           })}>Delete file</button>
           <button onClick={() => setFileAction(null)}>Cancel</button>
         </div>}
