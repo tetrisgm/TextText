@@ -194,6 +194,35 @@ describe("durable file collaboration client", () => {
     expect(documentText(editor.doc, "body").toString()).toBe("[pc-cli r1 alpha17][pc-app r1 alpha4]");
     expect(checkpoints.at(-1)).toBe("[pc-cli r1 alpha17][pc-app r1 alpha4]");
   });
+  it("keeps a durable local checkpoint when an attachment changes during typing", async () => {
+    const server = new Server(), journal = new Journal();
+    let diskRevision = 0, expectedRevision = 0;
+    const saved: FileCollaborationCheckpoint[] = [];
+    const editor: FileCollaborationClient = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal,
+      request: server.request,
+      checkpoint: async value => {
+        if (diskRevision !== expectedRevision) throw Object.assign(new Error("Attachment changed"), { code: "local_changed" });
+        saved.push(value);
+      },
+      reconcileCheckpoint: async () => {
+        // The archive bytes changed, while its document representation did not.
+        const document = documentSnapshotFromYDoc(editor.doc);
+        if (!editor.reconcileExternalDocument(document, structuredClone(document))) return false;
+        expectedRevision = diskRevision;
+        return true;
+      },
+    });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    const doc = editor.doc;
+    editor.mutate(value => documentText(value, "body").insert(5, " kept"));
+    diskRevision++;
+    editor.notifyExternalFileChange();
+    expect(await editor.flushLocal()).toBe(true);
+    expect(editor.doc).toBe(doc);
+    expect(documentText(doc, "body").toString()).toBe("Hello kept");
+    expect(saved.at(-1)?.document.content.body).toBe("Hello kept");
+    expect(editor.canEdit).toBe(true);
+  });
   it("keeps an active replacement while a CLI appends to the same file", async () => {
     const server = new Server(), journal = new Journal();
     server.bytes = pack("Existing fixture text."); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
