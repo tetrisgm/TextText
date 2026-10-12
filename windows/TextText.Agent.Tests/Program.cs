@@ -62,6 +62,10 @@ var typedDurability = JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemI
 Check(flush.Accept(issuedId!,true,JsonDocument.Parse("{\"outcome\":\"durable\"}").RootElement),"Malformed result did not complete the pending handshake");
 Check(!await pendingFlush,"Malformed durability result allowed close");
 pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
+var invalidTypedDurability = JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemId\":\"item\",\"lifecycle\":\"lifecycle\",\"generation\":\"bad\",\"outcome\":\"durable\"}").RootElement;
+Check(flush.Accept(issuedId!,true,invalidTypedDurability),"Invalid typed result did not complete the pending handshake");
+Check(!await pendingFlush,"Invalid typed durability result allowed close");
+pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
 Check(flush.Accept(issuedId!,true,typedDurability),"Typed flush acknowledgement rejected"); Check(await pendingFlush,"Durable flush was not accepted");
 Check(!await flush.FlushAsync(script => { flush.Accept(FlushId(script),false); return Task.CompletedTask; }),"Failed save allowed close");
 Check(!await flush.FlushAsync(_ => Task.CompletedTask,TimeSpan.FromMilliseconds(10)),"Timeout allowed close");

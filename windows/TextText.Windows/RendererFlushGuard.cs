@@ -11,9 +11,11 @@ public sealed class RendererFlushGuard
     public bool Accept(string id,bool success,JsonElement? durability = null)
     {
         if(pending is not { } request || request.Id != id) return false;
-        LastDurability = durability is { ValueKind: JsonValueKind.Object } value
-            ? JsonSerializer.Deserialize<RendererDurabilityResult>(value.GetRawText(),new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-            : null;
+        LastDurability = null;
+        if(durability is { ValueKind: JsonValueKind.Object } value) {
+            try { LastDurability = JsonSerializer.Deserialize<RendererDurabilityResult>(value.GetRawText(),new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+            catch(JsonException) { /* A malformed renderer receipt must fail closed, not escape the bridge callback. */ }
+        }
         var complete = LastDurability is { Outcome: "durable", WorkspaceId.Length: > 0, ItemId.Length: > 0,
             Lifecycle.Length: > 0, Generation: >= 0 };
         return request.Completion.TrySetResult(success && complete);
