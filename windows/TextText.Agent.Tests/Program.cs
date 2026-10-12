@@ -58,7 +58,11 @@ var pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); retu
 Check(!pendingFlush.IsCompleted,"Closing did not wait for durable renderer acknowledgement");
 Check(!flush.Accept("other-window",true),"Flush accepted another window acknowledgement");
 Check(!await flush.FlushAsync(_ => Task.CompletedTask),"Concurrent destructive transition accepted");
-Check(flush.Accept(issuedId!,true),"Flush acknowledgement rejected"); Check(await pendingFlush,"Durable flush was not accepted");
+var typedDurability = JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemId\":\"item\",\"lifecycle\":\"lifecycle\",\"generation\":8,\"outcome\":\"durable\"}").RootElement;
+Check(flush.Accept(issuedId!,true,JsonDocument.Parse("{\"outcome\":\"durable\"}").RootElement),"Malformed result did not complete the pending handshake");
+Check(!await pendingFlush,"Malformed durability result allowed close");
+pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
+Check(flush.Accept(issuedId!,true,typedDurability),"Typed flush acknowledgement rejected"); Check(await pendingFlush,"Durable flush was not accepted");
 Check(!await flush.FlushAsync(script => { flush.Accept(FlushId(script),false); return Task.CompletedTask; }),"Failed save allowed close");
 Check(!await flush.FlushAsync(_ => Task.CompletedTask,TimeSpan.FromMilliseconds(10)),"Timeout allowed close");
 Console.WriteLine("PASS renderer flush waits, fences acknowledgements and keeps failed saves open");

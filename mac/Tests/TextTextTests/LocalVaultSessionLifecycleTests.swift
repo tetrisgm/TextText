@@ -15,9 +15,13 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         XCTAssertEqual(accepted.durability?["generation"] as? Int, 8)
 
         for outcome in ["pending", "storage-unavailable", "invalid-journal", "stale-lifecycle"] {
-            let rejected = LocalVaultWindowController.nativeFlushDecision(["ok": true, "durability": ["outcome": outcome]])
+            let rejected = LocalVaultWindowController.nativeFlushDecision(["ok": true, "durability": [
+                "workspaceId": "workspace", "itemId": "item", "lifecycle": "lifecycle", "generation": 8, "outcome": outcome,
+            ]])
             XCTAssertFalse(rejected.acknowledged, "\(outcome) must not release the native close guard")
         }
+        XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(["ok": true, "durability": ["outcome": "durable"]]).acknowledged,
+            "A durable label without its lifecycle identity must not release the native close guard")
         XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(true).acknowledged,
             "An untyped Boolean cannot satisfy the native durability contract")
     }

@@ -13,7 +13,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     static func nativeFlushDecision(_ value: Any?) -> (acknowledged: Bool, durability: [String: Any]?) {
         let result = value as? [String: Any]
         let durability = result?["durability"] as? [String: Any]
-        return (result?["ok"] as? Bool == true && durability?["outcome"] as? String == "durable", durability)
+        let complete = (durability?["workspaceId"] as? String)?.isEmpty == false
+            && (durability?["itemId"] as? String)?.isEmpty == false
+            && (durability?["lifecycle"] as? String)?.isEmpty == false
+            && (durability?["generation"] as? Int).map { $0 >= 0 } == true
+            && durability?["outcome"] as? String == "durable"
+        return (result?["ok"] as? Bool == true && complete, durability)
     }
     static var entryURL: URL? {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("LocalVault/index.html"),

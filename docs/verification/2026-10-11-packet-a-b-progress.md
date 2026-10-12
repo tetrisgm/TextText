@@ -27,3 +27,10 @@ Date: October 11, 2026. Source checkout: `main` at `4f51d0dd` before the local d
 1. Reconnect to Windows, publish/seal a candidate from the exact post-fix source, and verify the installed app with the existing workspace; preserve every file and recovery journal.
 2. Complete adapter conformance and crash-boundary fixtures; keep localStorage bytes until migration failure coverage is complete.
 3. Continue the acceptance matrix only after the applicable shared durability gates pass. Keep failed runs 171–174 and asset conflict run 89 as failures.
+
+## Follow-up: typed native durability boundary
+
+- The typed durability response is now required to carry nonempty workspace, item, and lifecycle identifiers, a nonnegative generation, and `outcome: durable` before either native shell releases its close guard. This closes a gap where an incomplete object containing only the durable label could pass the native boundary.
+- Verification: `swift test --package-path mac --filter testNativeCloseRequiresTypedDurableResult` passed 1 selected test. `dotnet run --project windows/TextText.Agent.Tests/TextText.Agent.Tests.csproj` passed the portable Windows renderer guard checks and the existing agent checks. These checks exercise the native decision code; they do not replace the WebView2 desktop smoke or an installed Windows candidate.
+- The latest Windows `OpenSSH/Operational` output confirms the configured key was accepted at 8:08 PM, followed by a connection close at 8:10 PM. A fresh Mac `ssh pc whoami` probe still resets at `192.168.1.68:22`. The short-username failure explains the earlier failures only. The cause of this later post-authentication reset remains unknown; no sshd, account, or firewall changes were made.
+- Next precise Windows evidence: recent `OpenSSH/Admin`, `Application`, and `System` warning/error events plus `Get-Service sshd`, captured around one fresh connection attempt. Continue independent local adapter and crash-boundary work while that access issue is diagnosed.

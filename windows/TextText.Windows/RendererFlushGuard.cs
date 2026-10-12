@@ -14,7 +14,9 @@ public sealed class RendererFlushGuard
         LastDurability = durability is { ValueKind: JsonValueKind.Object } value
             ? JsonSerializer.Deserialize<RendererDurabilityResult>(value.GetRawText(),new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             : null;
-        return request.Completion.TrySetResult(success);
+        var complete = LastDurability is { Outcome: "durable", WorkspaceId.Length: > 0, ItemId.Length: > 0,
+            Lifecycle.Length: > 0, Generation: >= 0 };
+        return request.Completion.TrySetResult(success && complete);
     }
     public async Task<bool> FlushAsync(Func<string,Task> executeScript,TimeSpan? timeout = null)
     {
