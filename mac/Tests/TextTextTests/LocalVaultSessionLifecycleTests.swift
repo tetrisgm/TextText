@@ -22,6 +22,10 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         }
         XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(["ok": true, "durability": ["outcome": "durable"]]).acknowledged,
             "A durable label without its lifecycle identity must not release the native close guard")
+        XCTAssertTrue(LocalVaultWindowController.nativeFlushDecision(["ok": true, "idle": true, "durability": ["outcome": "durable"]]).acknowledged,
+            "An explicitly empty editor can leave the home screen")
+        XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(["ok": false, "idle": true, "durability": ["outcome": "durable"]]).acknowledged)
+        XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(["ok": true, "idle": true, "durability": ["outcome": "durable", "itemId": "item"]]).acknowledged)
         XCTAssertFalse(LocalVaultWindowController.nativeFlushDecision(true).acknowledged,
             "An untyped Boolean cannot satisfy the native durability contract")
     }

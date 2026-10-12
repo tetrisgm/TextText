@@ -8,7 +8,7 @@ public sealed class RendererFlushGuard
     private (string Id,TaskCompletionSource<bool> Completion)? pending;
     private string lastOutcome = "none";
     public RendererDurabilityResult? LastDurability { get; private set; }
-    public bool Accept(string id,bool success,JsonElement? durability = null)
+    public bool Accept(string id,bool success,JsonElement? durability = null,bool idle = false)
     {
         if(pending is not { } request || request.Id != id) return false;
         LastDurability = null;
@@ -18,7 +18,9 @@ public sealed class RendererFlushGuard
         }
         var complete = LastDurability is { Outcome: "durable", WorkspaceId.Length: > 0, ItemId.Length: > 0,
             Lifecycle.Length: > 0, Generation: >= 0 };
-        return request.Completion.TrySetResult(success && complete);
+        var emptyEditor = idle && durability is { ValueKind: JsonValueKind.Object } idleValue &&
+            idleValue.EnumerateObject().Count() == 1 && LastDurability is { Outcome: "durable", WorkspaceId: null, ItemId: null, Lifecycle: null, Generation: null };
+        return request.Completion.TrySetResult(success && (complete || emptyEditor));
     }
     public async Task<bool> FlushAsync(Func<string,Task> executeScript,TimeSpan? timeout = null)
     {
@@ -26,7 +28,7 @@ public sealed class RendererFlushGuard
         var id = Guid.NewGuid().ToString(); var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         pending = (id,completion);
         // ExecuteScriptAsync itself does not await a JavaScript Promise. The explicit reply does.
-        var script = "void (async()=>{let ok=false,durability=null,reason='missing-hook';try{if(typeof window.texttextFlushForNativeClose==='function'){reason='rejected';const result=await window.texttextFlushForNativeClose();durability=result?.durability??null;ok=result?.ok===true&&durability?.outcome==='durable';if(ok)reason='saved'}}catch{reason='exception'}window.__texttextNativeFlushDiagnostic={reason,durability,at:Date.now()};window.chrome.webview.postMessage({id:" + JsonSerializer.Serialize(id) + ",method:'native.flushResult',params:{ok,durability}});})()";
+        var script = "void (async()=>{let ok=false,idle=false,durability=null,reason='missing-hook';try{if(typeof window.texttextFlushForNativeClose==='function'){reason='rejected';const result=await window.texttextFlushForNativeClose();durability=result?.durability??null;idle=result?.idle===true&&result?.ok===true&&durability?.outcome==='durable'&&Object.keys(durability).length===1;ok=result?.ok===true&&(idle||durability?.outcome==='durable');if(ok)reason=idle?'idle':'saved'}}catch{reason='exception'}window.__texttextNativeFlushDiagnostic={reason,durability,at:Date.now()};window.chrome.webview.postMessage({id:" + JsonSerializer.Serialize(id) + ",method:'native.flushResult',params:{ok,idle,durability}});})()";
         try {
             // Both WebView2 dispatch and the JavaScript acknowledgement can stall.
             // Bound the entire operation, not only the acknowledgement phase.

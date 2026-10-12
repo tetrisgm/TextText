@@ -212,7 +212,7 @@ public sealed partial class MainWindow : Window
             method = input.GetProperty("method").GetString()!;
             var parameters = input.TryGetProperty("params",out var p) ? p.Clone() : JsonSerializer.SerializeToElement(new {});
             if(method == "native.fileOpenResult") { AcceptFileOpen(id, parameters); return; }
-            if(method == "native.flushResult") { flushGuard.Accept(id,parameters.TryGetProperty("ok",out var ok) && ok.ValueKind == JsonValueKind.True,parameters.TryGetProperty("durability",out var durability) ? durability : null); return; }
+            if(method == "native.flushResult") { flushGuard.Accept(id,parameters.TryGetProperty("ok",out var ok) && ok.ValueKind == JsonValueKind.True,parameters.TryGetProperty("durability",out var durability) ? durability : null,parameters.TryGetProperty("idle",out var idle) && idle.ValueKind == JsonValueKind.True); return; }
             using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             if(!requests.TryAdd(id,cancellation)) return;
             try { var result = await Dispatch(method,parameters,cancellation.Token); ReplyForSource(sender, new { id,result }); }

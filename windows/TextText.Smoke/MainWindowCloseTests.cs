@@ -120,6 +120,16 @@ static class MainWindowCloseTests
             Check(true,"late native reply after WebView disposal does not crash the dispatcher",checks);
         }finally{if(success.Window.IsVisible)ForceClose(success.Window);}
 
+        var emptyHome=await Create(Path.Combine(root,"close-empty-home"),ct);
+        try {
+            var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            emptyHome.Window.Closed+=(_,_)=>closed.TrySetResult();
+            await emptyHome.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=async()=>({ok:true,idle:true,durability:{outcome:'durable'}})");
+            emptyHome.Window.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
+            Check(!emptyHome.Window.IsVisible,"an explicitly empty home screen closes without a document receipt",checks);
+        }finally{if(emptyHome.Window.IsVisible)ForceClose(emptyHome.Window);}
+
         var transient=await Create(Path.Combine(root,"close-transient"),ct);
         try {
             var closed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -687,13 +687,14 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   useEffect(() => {
     const nativeWindow = window as Window & {
       texttextFlushForSignOut?: () => Promise<boolean>;
-      texttextFlushForNativeClose?: () => Promise<{ ok: boolean; durability: import("@/sync/engine/client").FileCollaborationDurabilityResult | { outcome: "durable" | "pending" } | null }>;
+      texttextFlushForNativeClose?: () => Promise<{ ok: boolean; idle: boolean; durability: import("@/sync/engine/client").FileCollaborationDurabilityResult | { outcome: "durable" | "pending" } | null }>;
     };
     nativeWindow.texttextFlushForSignOut = () => flushRef.current(true);
     nativeWindow.texttextFlushForNativeClose = async () => {
       const ok = await flushRef.current(true);
       const durability = await durabilityResultRef.current();
-      return { ok, durability: durability ?? { outcome: ok ? "durable" : "pending" } };
+      return { ok, idle: ok && selectedRef.current === null && durability === null,
+        durability: durability ?? { outcome: ok ? "durable" : "pending" } };
     };
     return () => { delete nativeWindow.texttextFlushForSignOut; delete nativeWindow.texttextFlushForNativeClose; };
   }, []);

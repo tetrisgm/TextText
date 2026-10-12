@@ -62,6 +62,12 @@ var typedDurability = JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemI
 Check(flush.Accept(issuedId!,true,JsonDocument.Parse("{\"outcome\":\"durable\"}").RootElement),"Malformed result did not complete the pending handshake");
 Check(!await pendingFlush,"Malformed durability result allowed close");
 pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
+Check(flush.Accept(issuedId!,true,JsonDocument.Parse("{\"outcome\":\"durable\"}").RootElement,true),"Empty-editor acknowledgement did not complete");
+Check(await pendingFlush,"Explicitly empty editor could not close");
+pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
+Check(flush.Accept(issuedId!,true,JsonDocument.Parse("{\"outcome\":\"durable\",\"itemId\":\"item\"}").RootElement,true),"Invalid idle receipt did not complete");
+Check(!await pendingFlush,"Incomplete document receipt bypassed the idle guard");
+pendingFlush = flush.FlushAsync(script => { issuedId = FlushId(script); return Task.CompletedTask; });
 var invalidTypedDurability = JsonDocument.Parse("{\"workspaceId\":\"workspace\",\"itemId\":\"item\",\"lifecycle\":\"lifecycle\",\"generation\":\"bad\",\"outcome\":\"durable\"}").RootElement;
 Check(flush.Accept(issuedId!,true,invalidTypedDurability),"Invalid typed result did not complete the pending handshake");
 Check(!await pendingFlush,"Invalid typed durability result allowed close");

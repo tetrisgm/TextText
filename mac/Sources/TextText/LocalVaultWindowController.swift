@@ -18,7 +18,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             && (durability?["lifecycle"] as? String)?.isEmpty == false
             && (durability?["generation"] as? Int).map { $0 >= 0 } == true
             && durability?["outcome"] as? String == "durable"
-        return (result?["ok"] as? Bool == true && complete, durability)
+        let idle = result?["idle"] as? Bool == true && durability?.count == 1 && durability?["outcome"] as? String == "durable"
+        return (result?["ok"] as? Bool == true && (complete || idle), durability)
     }
     static var entryURL: URL? {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("LocalVault/index.html"),
