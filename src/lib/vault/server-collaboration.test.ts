@@ -113,6 +113,27 @@ describe("durable file collaboration", () => {
     expect(unzipSync(saved.bytes)["Note.textbundle/opaque.bin"]).toEqual(new Uint8Array([1]));
   });
 
+  it("replays a durable collaboration receipt when the response is lost after commit", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const operationId = "commit-before-ack", update = edit(initial, " committed");
+    let loseFirstReceipt = true;
+    const delivered: unknown[] = [];
+    const input = { ...location(), operationId, epoch: initial.epoch, updates: [update], audit,
+      onReceipt: async (receipt: unknown) => {
+        if (loseFirstReceipt) { loseFirstReceipt = false; throw new Error("response lost after durable commit"); }
+        delivered.push(receipt);
+      } };
+    await expect(pushVaultCollaboration(input)).rejects.toThrow("response lost after durable commit");
+    const committed = (await readVaultCollaboration(location()))!;
+    expect(body(committed)).toBe("Hello committed");
+    const replay = await pushVaultCollaboration(input);
+    const reopened = (await readVaultCollaboration(location()))!;
+    expect(replay).toMatchObject({ status: "written", revision: committed.revision });
+    expect(reopened.seq).toBe(committed.seq);
+    expect(body(reopened)).toBe("Hello committed");
+    expect(delivered).toContainEqual(expect.objectContaining({ operationId, ...audit }));
+  });
+
   it("rechecks recovery authorization and refuses to skip a deleted intermediate epoch", async () => {
     const initial = (await readVaultCollaboration(location()))!;
     const pending = new Y.Doc(); let recoveryUpdate: string;
