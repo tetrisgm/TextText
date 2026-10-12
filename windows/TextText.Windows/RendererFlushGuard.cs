@@ -12,7 +12,7 @@ public sealed class RendererFlushGuard
     {
         if(pending is not { } request || request.Id != id) return false;
         LastDurability = durability is { ValueKind: JsonValueKind.Object } value
-            ? JsonSerializer.Deserialize<RendererDurabilityResult>(value.GetRawText())
+            ? JsonSerializer.Deserialize<RendererDurabilityResult>(value.GetRawText(),new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             : null;
         return request.Completion.TrySetResult(success);
     }
