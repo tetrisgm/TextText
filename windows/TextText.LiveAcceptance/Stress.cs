@@ -322,7 +322,13 @@ static class Stress
                 // Only journal metadata is recorded. Never copy document text,
                 // recovery payloads, credentials or file contents into receipts.
                 var script = "(()=>{const id=" + expectedItem + ";const keys=Object.keys(localStorage).filter(k=>k.startsWith('texttext:file-collaboration:v1:')&&k.includes(id));return {online:navigator.onLine,notice:document.querySelector('.vault-notice')?.textContent?.slice(0,180)??null,journals:keys.map(k=>{try{const j=JSON.parse(localStorage.getItem(k));return {generation:j.journalGeneration,epoch:j.epoch,pending:j.pending?.length??0,batch:!!j.batch,retired:!!j.retired,unqueuedDirty:!!j.unqueuedDirty}}catch{return {unreadable:true}}})}})()";
-                try { log(new { kind = "close-editor-state", stage, value = await view.ExecuteScriptAsync(script).WaitAsync(TimeSpan.FromSeconds(2), ct) }); }
+                try {
+                    // CloseProbe resumes on a worker after its bounded wait; WebView2
+                    // remains owned by the dispatcher even when the dialog was dismissed.
+                    var activeView = view;
+                    var value = await activeView.Dispatcher.InvokeAsync(() => activeView.ExecuteScriptAsync(script)).Task.Unwrap().WaitAsync(TimeSpan.FromSeconds(2), ct);
+                    log(new { kind = "close-editor-state", stage, value });
+                }
                 catch (Exception error) { log(new { kind = "close-editor-state", stage, error = error.GetType().Name }); }
             }
             await RecordEditorState("before");
