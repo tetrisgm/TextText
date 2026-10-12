@@ -182,7 +182,7 @@ Exit: installed clients and Oracle run the verified behavior, all required evide
 | Phase | State | Commit/evidence | Remaining blocker |
 | --- | --- | --- | --- |
 | P0 Baseline/audit | In progress | [Lifecycle audit](../verification/document-lifecycle-audit.md); [Packet A/B progress](../verification/2026-10-11-packet-a-b-progress.md); Windows candidate seal and installed startup verified | Explain the historical flush refusal and verify the installed candidate in normal workspace use; retain runs 171–174 as failures |
-| P1 Durability contract | In progress | [Durability ordering](../verification/collaboration-durability-ordering.md); 96 focused tests, 29 server collaboration tests, Mac typed-result test, and Windows native smoke pass | Adapter conformance matrix and exact-source Windows candidate verification; retain crash/power-loss gates in P5/F |
+| P1 Durability contract | In progress | [Durability ordering](../verification/collaboration-durability-ordering.md); 97 focused tests, 29 server collaboration tests, Mac typed-result test, and Windows native smoke pass | Adapter conformance matrix and exact-source Windows candidate verification; retain crash/power-loss gates in P5/F |
 | P2 Lifecycle | Not started | Existing lifecycle code is input | Deterministic reproduction |
 | P3 Shared app | In progress | [Initial application parity inventory](../verification/application-parity-matrix.md) | Feature entry-point sweep, no-editor runtime decision, policy migration |
 | P4 External files | Not started | Prior physical receipts linked in acceptance contract | Remaining races/provider semantics |
