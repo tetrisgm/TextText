@@ -31,5 +31,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Cloud sessions cannot release: that needs the Mac's signing keys, Keychain and
   SSH access. Push a branch or open a PR and say what needs shipping.
 - Nothing from the owner's Mac reaches cloud sessions: not their global
-  instructions, logins, Keychain, or `~/dev/stack` (retired). Do not go looking
-  for them.
+  instructions, logins, or Keychain. Do not go looking for them.
