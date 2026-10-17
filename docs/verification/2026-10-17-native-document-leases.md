@@ -20,3 +20,9 @@ The active document session now retains a device-private OS lock: nonblocking `f
 ## Remaining scope
 
 This establishes competing document session exclusion and process-death takeover. Background mirror cooperation across separate actors, mixed-version writers, physical current-app account transitions, and wider editor/IME continuity still require their own checks. Installed binaries remain unchanged. Do not treat this as proof that a second process's background sync already honors the new document lock.
+
+## Follow-up: duplicate open in one Windows store
+
+The same-store `OpenAsync` path implicitly closed an existing session before opening another. The new duplicate-view regression failed against that path (`/private/tmp/texttext-t09-duplicate-open-before.log`). It now refuses the duplicate without changing ownership. The caller must finish saving and explicitly close its own handle before replacement.
+
+The full Windows Core suite passes on the Mac after the fix (`/private/tmp/texttext-t09-duplicate-open-after.log`). The existing late-close test now checkpoints pending work, verifies duplicate refusal, explicitly releases, reopens the retained journal, and verifies a late old close/checkpoint cannot affect the replacement. It retains its pending-content and stale-token assertions. The newer physical PC check shares the SSH dependency in the [workspace-writer receipt](2026-10-17-native-workspace-writer.md).

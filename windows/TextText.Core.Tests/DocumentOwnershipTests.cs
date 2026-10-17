@@ -12,6 +12,8 @@ static class DocumentOwnershipTests
         var second=new SyncEngine(store,remote);
         using var b=new SharedEditingStore(new TextPackStore(store.Root,store.StateDirectory),second);
         var active=await a.OpenAsync(original.ItemId,original.Path,original.Hash);var refused=false;
+        var duplicateRefused=false;try{await a.OpenAsync(original.ItemId,original.Path,original.Hash);}catch(IOException){duplicateRefused=true;}
+        assert(duplicateRefused,"duplicate open cannot silently retire another live native view");
         try {await b.OpenAsync(original.ItemId,original.Path,original.Hash);}catch(IOException){refused=true;}
         assert(refused,"another native actor cannot acquire the live document");
         await first.SyncAsync();

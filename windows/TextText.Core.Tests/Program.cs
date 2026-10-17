@@ -321,8 +321,11 @@ static class Test
  }
  var sharedTransport=new Fake();var sharedFiles=new TextPackStore(Path.Combine(temp,"shared"),Path.Combine(temp,"shared-device"));var initial=sharedFiles.Write("Notes/Shared.textpack",Pack());var sharedSync=new SyncEngine(sharedFiles,sharedTransport);await sharedSync.SyncAsync();
  using(var shared=new SharedEditingStore(sharedFiles,sharedSync)) {
- var firstSession=await shared.OpenAsync("test-1",initial.Path,sharedFiles.Describe(initial.Path).Hash);var secondSession=await shared.OpenAsync("test-1",initial.Path,firstSession.Document.Hash);shared.Close(firstSession.SessionToken);
+ var firstSession=await shared.OpenAsync("test-1",initial.Path,sharedFiles.Describe(initial.Path).Hash);
  var content=Pack("shared-pending");var cp=new SharedCheckpoint("test-1",initial.Path,TextPackStore.Hash(content),sharedTransport.Item!.Revision,1,0,1,JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=sharedTransport.Item.Revision,relativePath=initial.Path,update="AAA=",pending=new[]{"AAA="}}),true);
+ await shared.CheckpointAsync(firstSession.SessionToken,firstSession.Document.Hash,content,cp);
+ var refusedDuplicate=false;try{await shared.OpenAsync("test-1",initial.Path,TextPackStore.Hash(content));}catch(IOException){refusedDuplicate=true;}Assert(refusedDuplicate,"duplicate view cannot retire a session with pending work");
+ shared.Close(firstSession.SessionToken);var secondSession=await shared.OpenAsync("test-1",initial.Path,TextPackStore.Hash(content));shared.Close(firstSession.SessionToken);
  await shared.CheckpointAsync(secondSession.SessionToken,secondSession.Document.Hash,content,cp);Assert(TextPackStore.Markdown(sharedFiles.Read(initial.Path)).EndsWith("shared-pending"),"late close cannot invalidate replacement session");
  try{await shared.CheckpointAsync(firstSession.SessionToken,secondSession.Document.Hash,content,cp);throw new Exception("stale session accepted");}catch(InvalidOperationException){}
  shared.Close(secondSession.SessionToken);await sharedSync.SyncAsync();Assert(sharedTransport.UploadCount==1,"pending journal fences file sync after close");

@@ -222,7 +222,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     public async Task<SharedSession> OpenAsync(string itemId,string path,string expectedHash,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try {
             ObjectDisposedException.ThrowIf(disposed,this);
-            foreach(var token in sessions.Where(x=>x.Value.ItemId==itemId).Select(x=>x.Key).ToArray())CloseInternal(token);
+            if(sessions.Values.Any(session=>session.ItemId==itemId))throw new IOException("This document is already open in another editor. Close that editor before reopening it.");
             var lease=await sync.AcquireCollaborationAsync(itemId,ct);
             try {return store.WithExclusiveMutation(() => {
                 // Only a retained move intent can attest the requested old path.
