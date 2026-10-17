@@ -412,6 +412,7 @@ static class Test
  }
  await MirroredRetirementTests.Run(temp,Assert);
  await ExternalCheckpointRaceTests.Run(temp,Assert);
+ StableFileStoreTests.Run(temp,Assert);
  await CheckpointAccountTests.Run(temp,Assert);
  await AccountRootOwnershipTests.Run(temp,Assert);
  await AccountStateAdoptionTests.Run(temp,Assert);

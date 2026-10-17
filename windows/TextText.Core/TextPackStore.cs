@@ -18,6 +18,7 @@ public sealed class TextPackStore
     public string StateDirectory { get; }
     public IReadOnlyList<ScanError> LastScanErrors {get;private set;}=[];
     public event Action? Changed;
+    internal Action? BeforeWriteCommitForTesting { get; set; }
     readonly object gate = new();
     internal T WithExclusiveMutation<T>(Func<T> action) { lock(gate) return action(); }
     public TextPackStore(string root, string? stateDirectory = null)
@@ -72,7 +73,19 @@ public sealed class TextPackStore
         }
     }
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-    public byte[] Read(string path) { lock(gate) return File.ReadAllBytes(Resolve(path)); }
+    static byte[] ReadProjection(string full)
+    {
+        // On Windows this sharing mode excludes in-place writes and rename-over
+        // while the bounded snapshot is open. Never allocate from unchecked size.
+        using var stream = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+        var length = stream.Length;
+        if (length > 64 * 1024 * 1024) throw new InvalidDataException("TextPack too large.");
+        var bytes = new byte[checked((int)length)];
+        stream.ReadExactly(bytes);
+        if (stream.ReadByte() != -1) throw new FileChangedException();
+        return bytes;
+    }
+    public byte[] Read(string path) { lock(gate) return ReadProjection(Resolve(path)); }
     public PackFile Describe(string path) { var bytes = Read(path); return new(path, Hash(bytes), Identity(bytes)); }
     public static string Identity(byte[] bytes)
     {
@@ -203,17 +216,27 @@ public sealed class TextPackStore
     }
 
     public static void AtomicWrite(string path, byte[] bytes, bool overwrite = true)
+        => AtomicWrite(path, bytes, overwrite, null);
+    static void AtomicWrite(string path, byte[] bytes, bool overwrite, Action? beforeCommit)
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!); CheckLinks(path);
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try { using(var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { stream.Write(bytes); stream.Flush(true); } CheckLinks(path); File.Move(temp,path,overwrite); }
+        try { using(var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { stream.Write(bytes); stream.Flush(true); } CheckLinks(path); beforeCommit?.Invoke(); File.Move(temp,path,overwrite); }
         finally { if(File.Exists(temp)) File.Delete(temp); }
     }
-    void Match(string full, string? expected) { if (File.Exists(full) ? expected == null || Hash(File.ReadAllBytes(full)) != expected : expected != null) throw new FileChangedException(); }
+    void Match(string full, string? expected) { if (File.Exists(full) ? expected == null || Hash(ReadProjection(full)) != expected : expected != null) throw new FileChangedException(); }
     public PackFile Write(string path, byte[] bytes, string? expectedHash = null)
     {
         var id = Identity(bytes);
-        lock(gate) { var full=Resolve(path); Match(full,expectedHash); if(File.Exists(full)) { var previous=File.ReadAllBytes(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); } AtomicWrite(full,bytes,overwrite:expectedHash!=null); }
+        lock(gate) { var full=Resolve(path); Match(full,expectedHash); if(File.Exists(full)) { var previous=ReadProjection(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); }
+            AtomicWrite(full, bytes, expectedHash != null, () => {
+                BeforeWriteCommitForTesting?.Invoke();
+                // Staging and fsync can take time. Recheck after both, so an
+                // external save during preparation remains available to merge.
+                // File.Move itself is not a filesystem-wide compare-and-swap.
+                CheckLinks(full); Match(full, expectedHash);
+            });
+        }
         Changed?.Invoke(); return new(path,Hash(bytes),id);
     }
     // Persist intent before writing and completion before returning. A retry
@@ -325,13 +348,13 @@ public sealed class TextPackStore
     public void Rename(string from,string to,string expectedHash)
     {
         lock(gate) { var source=Resolve(from); var target=Resolve(to); Match(source,expectedHash); if(File.Exists(target)) throw new IOException("Destination exists.");
-            var intent=new FileIntent("rename",Identity(File.ReadAllBytes(source)),from,expectedHash,to); RecordIntent(intent);
+            var intent=new FileIntent("rename",Identity(ReadProjection(source)),from,expectedHash,to); RecordIntent(intent);
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!); File.Move(source,target); }
         Changed?.Invoke();
     }
     public void Delete(string path,string expectedHash)
     {
-        lock(gate) { var full=Resolve(path); Match(full,expectedHash); var bytes=File.ReadAllBytes(full); Preserve(bytes,"trash"); RecordIntent(new("delete",Identity(bytes),path,expectedHash)); File.Delete(full); } Changed?.Invoke();
+        lock(gate) { var full=Resolve(path); Match(full,expectedHash); var bytes=ReadProjection(full); Preserve(bytes,"trash"); RecordIntent(new("delete",Identity(bytes),path,expectedHash)); File.Delete(full); } Changed?.Invoke();
     }
     void RecordIntent(FileIntent intent) => AtomicWrite(System.IO.Path.Combine(StateDirectory,"intent-"+intent.ItemId+".json"),JsonSerializer.SerializeToUtf8Bytes(intent));
     public FileIntent? Intent(string id) { var path=System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"); return File.Exists(path)?JsonSerializer.Deserialize<FileIntent>(File.ReadAllBytes(path)):null; }

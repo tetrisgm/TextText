@@ -7,6 +7,7 @@ import TextTextWorkspaceCore
 /// dependency. Callers retain the read hash and reconcile a rejected save.
 public struct LocalVaultDocumentStore: Sendable {
     public let root: URL
+    var writeObservationForTesting: (@Sendable (String) throws -> Void)?
     public init(root: URL) { self.root = root.standardizedFileURL.resolvingSymlinksInPath() }
 
     private func canonicalMarkdownEntry(_ archive: Archive) throws -> Entry {
@@ -179,9 +180,7 @@ public struct LocalVaultDocumentStore: Sendable {
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(readingItemAt: target, options: [], error: &coordinationError) { coordinated in
             outcome = Result {
-                guard (try coordinated.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
-                let bytes = try Data(contentsOf: coordinated)
-                guard bytes.count <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
+                let bytes = try StableFileSnapshot.read(coordinated)
                 let archive = try Archive(data: bytes, accessMode: .read)
                 let key = try canonicalMarkdownEntry(archive).path
                 let prefix = String(key.dropLast("text.md".count))
@@ -226,8 +225,8 @@ public struct LocalVaultDocumentStore: Sendable {
             var coordinationError: NSError?
             NSFileCoordinator().coordinate(readingItemAt: target, options: [], error: &coordinationError) { coordinated in
                 outcome = Result {
-                    guard (try coordinated.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
-                    let archive = try Archive(url: coordinated, accessMode: .read)
+                    let bytes = try StableFileSnapshot.read(coordinated)
+                    let archive = try Archive(data: bytes, accessMode: .read)
                     let markdown = try canonicalMarkdownEntry(archive)
                     let prefix = String(markdown.path.dropLast("text.md".count))
                     guard let entry = archive[prefix + "document.json"] else { return nil }
@@ -494,9 +493,7 @@ public struct LocalVaultDocumentStore: Sendable {
     private func readUncoordinated(path: String, url: URL) throws -> Document {
         // Bound bridge memory before ZIP parsing; the package reader also
         // validates expanded entry sizes and rejects traversal/symlink entries.
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 64 * 1024 * 1024 else { throw Failure.tooLarge }
-        let bytes = try Data(contentsOf: url)
+        let bytes = try StableFileSnapshot.read(url)
         return try parseDocument(path: path, bytes: bytes, preserveHistory: true)
     }
 
@@ -541,11 +538,13 @@ public struct LocalVaultDocumentStore: Sendable {
                 let replacement = try readUncoordinated(path: path, url: packed)
                 guard let identity = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId,
                       identity == MarkdownIdentityCodec.extract(from: replacement.contents.markdown)?.itemId else { throw Failure.changed }
-                let latest = try Data(contentsOf: coordinated)
+                try writeObservationForTesting?("prepared")
+                let latest = try StableFileSnapshot.read(coordinated)
                 guard TextTextStableDigest.sha256Hex(latest) == expectedHash else { throw Failure.changed }
                 try preserve(latest, hash: expectedHash)
                 _ = try FileManager.default.replaceItemAt(coordinated, withItemAt: packed)
-                return try readUncoordinated(path: path, url: coordinated)
+                try writeObservationForTesting?("replaced")
+                return replacement
             }
         }
         if let coordinationError { throw coordinationError }
@@ -640,7 +639,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 // Update only owned content entries. Keep opaque metadata and
                 // unknown asset entries exactly as supplied by other tools.
                 let packed = temporary.appendingPathComponent("updated.textpack")
-                let originalBytes = try Data(contentsOf: coordinated)
+                let originalBytes = try StableFileSnapshot.read(coordinated)
                 guard TextTextStableDigest.sha256Hex(originalBytes) == expectedHash else { throw Failure.changed }
                 try originalBytes.write(to: packed)
                 let archive = try Archive(url: packed, accessMode: .update)
@@ -697,11 +696,17 @@ public struct LocalVaultDocumentStore: Sendable {
                 }
                 let handle = try FileHandle(forWritingTo: packed)
                 try handle.synchronize(); try handle.close()
-                let latestBytes = try Data(contentsOf: coordinated)
+                let replacement = try readUncoordinated(path: path, url: packed)
+                try writeObservationForTesting?("prepared")
+                let latestBytes = try StableFileSnapshot.read(coordinated)
                 guard TextTextStableDigest.sha256Hex(latestBytes) == expectedHash else { throw Failure.changed }
                 try preserve(latestBytes, hash: expectedHash)
                 _ = try FileManager.default.replaceItemAt(coordinated, withItemAt: packed)
-                return try readUncoordinated(path: path, url: coordinated)
+                try writeObservationForTesting?("replaced")
+                // Return this operation's exact projection. A subsequent
+                // external save must fail the caller's hash check, never be
+                // acknowledged under this operation's unrelated journal.
+                return replacement
             }
         }
         if let coordinationError { throw coordinationError }
