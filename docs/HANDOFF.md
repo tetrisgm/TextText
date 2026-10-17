@@ -18,9 +18,11 @@ T02 SSH workaround persistence is verified through an intervening October 13 reb
 
 T05 controlled activation cases now pass, including repeat after completion, navigation away and close during activation. The original run174 refusal receipt was never recorded; its exact reason remains a bounded historical gap. T06 now covers Mac permission denial and Windows cancellation/blocked checkpoint replacement with restart recovery. The [adapter matrix](verification/adapter-conformance-matrix.md) lists remaining common-fixture, ENOSPC and crash-boundary gaps.
 
+T07 now fixes captured-barrier waiting on later remote checkpoints and stale lifecycle replies; [source verification](verification/2026-10-17-captured-local-barrier.md) passes 101 focused tests, 410 client checks, TypeScript and the real browser epoch test. This newer source fix is not installed or deployed. Final-release input and account boundaries remain open.
+
 Continue independent T06/T07 work while Oracle cleanup approval is pending; then reuse the already verified web archive through the documented web-only workflow. T04 installed offline/reconnect and wider scenarios remain open. T08 onward, full physical six-client matrix, 100 seeded rounds, 60-minute soak, performance and final coherent delivery are unfinished. One passing round does not complete acceptance.
 
-The owner authorized creating a dedicated second TextText account. It is now authenticated through normal MXroute email sign-in in a private isolated browser profile; T23 permission checks are in progress. No developer-login bypass is authorized.
+The owner authorized creating a dedicated second TextText account. It is now authenticated through normal MXroute email sign-in in a private isolated browser profile; T23 viewer/edit/revoke-with-offline-work/viewer-regrant checks passed against the existing deployed bundle. Account-switch, agent identity and current-source physical gates remain open. No developer-login bypass is authorized.
 
 Keep unrelated dirty files untouched: `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, `scripts/.probe-editor.ts`. No public Mac release was published.
 

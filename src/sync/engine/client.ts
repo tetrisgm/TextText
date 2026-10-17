@@ -484,6 +484,8 @@ export class FileCollaborationClient {
   private failures = 0;
   private uploadFailures = 0;
   private journalGeneration = 0;
+  /** Accepted editor updates, excluding remote persistence/acknowledgement traffic. */
+  private localEditVersion = 0n;
   /** Highest browser journal generation whose storage adapter confirmed save. */
   private storageSavedGeneration = -1;
   private storageSaveFailed = false;
@@ -494,6 +496,7 @@ export class FileCollaborationClient {
   private checkpointTimer: ReturnType<typeof setTimeout> | null = null;
   private checkpointError: unknown = null;
   private checkpointSavedGeneration = -1;
+  private checkpointProgress = new Set<() => void>();
   private initialFileReconciled: boolean;
   private readonly supportsEpochRecovery: boolean;
   /** Original retirement of a revived journal, restored if the server refuses it. */
@@ -568,14 +571,25 @@ export class FileCollaborationClient {
     if (this.checkpointRunning || !this.checkpointQueued || this.checkpointError) return;
     this.checkpointRunning = this.drainCheckpoints().finally(() => {
       this.checkpointRunning = null;
+      this.signalCheckpointProgress();
       if (this.checkpointQueued && !this.checkpointError) this.startCheckpointDrain();
     });
+  }
+  private signalCheckpointProgress(): void {
+    const waiting = [...this.checkpointProgress];
+    this.checkpointProgress.clear();
+    for (const resolve of waiting) resolve();
   }
   private async drainCheckpoints(): Promise<void> {
     let reconciliationAttempts = 0;
     while (this.checkpointQueued && !this.checkpointError) {
       const value = this.checkpointQueued; this.checkpointQueued = null;
-      try { await this.options.checkpoint!(value); this.checkpointSavedGeneration = value.journal.journalGeneration!; reconciliationAttempts = 0; }
+      try {
+        await this.options.checkpoint!(value);
+        this.checkpointSavedGeneration = value.journal.journalGeneration!;
+        reconciliationAttempts = 0;
+        this.signalCheckpointProgress();
+      }
       catch (error) {
         if ((error as { code?: string } | null)?.code === "local_changed" && this.options.reconcileCheckpoint && !this.dead && !this.frozen) {
           // An external writer's atomic replacement can be reported before its
@@ -626,13 +640,16 @@ export class FileCollaborationClient {
   }
   async flushLocal(): Promise<boolean> {
     if (!this.current || !this.initialized) return false;
-    if (!this.options.checkpoint) {
-      if (this.storage.commit) {
-        while (!this.unreadableJournal) {
-          if (this.storageSaveFailed) {
+    for (;;) {
+      // Remote traffic may keep advancing the journal. Cover accepted local
+      // input without requiring that unrelated background work becomes idle.
+      const target = this.journalGeneration, inputVersion = this.localEditVersion;
+      if (!this.options.checkpoint) {
+        if (this.storage.commit) {
+          if (this.storageSaveFailed && !this.unreadableJournal) {
             try { this.persist(); } catch { /* The failed generation remains unacknowledged. */ }
           }
-          const target = this.journalGeneration;
+          if (this.unreadableJournal) return false;
           try {
             await this.storage.commit(this.journalKey, target);
             this.storageSavedGeneration = Math.max(this.storageSavedGeneration, target);
@@ -642,30 +659,39 @@ export class FileCollaborationClient {
             this.report("error", "The collaboration journal could not be committed to browser storage. Keep this window open and retry saving.");
             return false;
           }
-          if (this.journalGeneration === target) break;
+        } else if (this.storageSaveFailed && !this.unreadableJournal) {
+          try { this.persist(); } catch { /* The failed generation remains unacknowledged. */ }
         }
-      } else if (this.storageSaveFailed && !this.unreadableJournal) {
-        try { this.persist(); } catch { /* The failed generation remains unacknowledged. */ }
+        if (this.unreadableJournal || this.storageSaveFailed || this.storageSavedGeneration < target) return false;
+      } else {
+        this.startCheckpointDrain();
+        while (this.checkpointSavedGeneration < target && !this.checkpointError &&
+            (this.checkpointRunning || this.checkpointQueued)) {
+          // A drain can continue with a later remote projection. Wake on each
+          // committed checkpoint instead of waiting for the whole drain.
+          await new Promise<void>(resolve => this.checkpointProgress.add(resolve));
+          this.startCheckpointDrain();
+        }
+        if (this.checkpointError || this.unreadableJournal || this.checkpointSavedGeneration < target) return false;
       }
-      return !this.unreadableJournal && this.storageSavedGeneration >= this.journalGeneration;
+      // Input is still allowed by callers. Extend only for new local edits;
+      // incoming remote changes do not move this barrier.
+      if (this.localEditVersion === inputVersion) return true;
     }
-    this.startCheckpointDrain();
-    while (this.checkpointSavedGeneration < this.journalGeneration && (this.checkpointRunning || this.checkpointQueued)) {
-      if (this.checkpointRunning) await this.checkpointRunning;
-      this.startCheckpointDrain();
-    }
-    return !this.checkpointError && !this.unreadableJournal && this.checkpointSavedGeneration >= this.journalGeneration;
   }
   async flushLocalResult(): Promise<FileCollaborationDurabilityResult> {
-    const generation = this.journalGeneration;
-    const lifecycle = JSON.stringify([this.options.workspaceId, this.options.itemId, this.current?.epoch ?? null, this.lifecycleId]);
+    const generation = this.journalGeneration, epoch = this.current?.epoch ?? null;
+    const lifecycle = JSON.stringify([this.options.workspaceId, this.options.itemId, epoch, this.lifecycleId]);
     const result = (outcome: FileCollaborationDurabilityOutcome): FileCollaborationDurabilityResult => ({
       workspaceId: this.options.workspaceId, itemId: this.options.itemId, lifecycle, generation, outcome,
     });
+    if (this.dead) return result("stale-lifecycle");
     if (this.unreadableJournal) return result(this.storageSaveFailed ? "storage-unavailable" : "invalid-journal");
     if (this.storageSaveFailed && !this.options.checkpoint) return result("storage-unavailable");
     if (!this.current || !this.initialized) return result("pending");
-    if (await this.flushLocal()) return result("durable");
+    const durable = await this.flushLocal();
+    if (this.dead || (this.current?.epoch ?? null) !== epoch) return result("stale-lifecycle");
+    if (durable) return result("durable");
     if (this.unreadableJournal) return result("invalid-journal");
     if (this.dead) return result("stale-lifecycle");
     if (this.storageSaveFailed || this.storageSavedGeneration < this.journalGeneration || this.checkpointError) return result("storage-unavailable");
@@ -688,6 +714,7 @@ export class FileCollaborationClient {
   }
   private changed = (update: Uint8Array, origin: unknown): void => {
     if (this.dead || origin === REMOTE) return;
+    this.localEditVersion++;
     this.unqueuedDirty = true;
     if (!this.initialized || !this.canEdit || this.frozen) { this.retire("Editing access changed. Your local document is kept for recovery."); return; }
     try {

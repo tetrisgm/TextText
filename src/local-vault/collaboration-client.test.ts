@@ -1765,4 +1765,75 @@ describe("durable detached external-file navigation", () => {
     expect(unreadableJournal.load(unreadable.journalKey)).toBe("damaged journal");
     expect(proof.matches(savedFile)).toBe(false);
   });
+
+});
+
+describe("local durability barriers", () => {
+  function heldCheckpoints() {
+    const values: FileCollaborationCheckpoint[] = [], releases: (() => void)[] = [];
+    let held = false;
+    return { values, hold() { held = true; },
+      checkpoint: async (value: FileCollaborationCheckpoint) => {
+        values.push(value);
+        if (held) await new Promise<void>(resolve => releases.push(resolve));
+      },
+      releaseNext() { releases.shift()?.(); },
+      releaseAll() { held = false; while (releases.length) releases.shift()!(); },
+      get waiting() { return releases.length; },
+    };
+  }
+
+  it("finishes the captured native close barrier while a later remote checkpoint is still blocked", async () => {
+    const server = new Server(), held = heldCheckpoints();
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal: new Journal(), request: server.request, checkpoint: held.checkpoint });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    const other = client(server); await other.start();
+    held.hold(); editor.mutate(doc => documentText(doc, "body").insert(5, " local"));
+    let settled = false;
+    const closing = editor.flushLocalResult().then(result => { settled = true; return result; });
+    try {
+      other.mutate(doc => documentText(doc, "body").insert(0, "remote "));
+      expect(await other.flush()).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      held.releaseNext();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(held.waiting).toBe(1); // A later remote projection is still saving.
+      expect(settled).toBe(true);
+      expect((await closing).outcome).toBe("durable");
+      expect(documentText(editor.doc, "body").toString()).toContain("local");
+      expect(documentText(editor.doc, "body").toString()).toContain("remote");
+    } finally { held.releaseAll(); await closing; }
+  });
+
+  it("extends an in-flight local barrier for additional accepted local input", async () => {
+    const server = new Server(), held = heldCheckpoints();
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal: new Journal(), request: server.request, checkpoint: held.checkpoint });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    held.hold(); editor.mutate(doc => documentText(doc, "body").insert(5, " first"));
+    let settled = false;
+    const closing = editor.flushLocalResult().then(result => { settled = true; return result; });
+    try {
+      editor.mutate(doc => documentText(doc, "body").insert(11, " later"));
+      held.releaseNext(); await vi.advanceTimersByTimeAsync(0);
+      expect(held.waiting).toBe(1);
+      expect(settled).toBe(false);
+      held.releaseNext(); await vi.advanceTimersByTimeAsync(0);
+      expect((await closing).outcome).toBe("durable");
+      expect(held.values.at(-1)?.document.content.body).toBe("Hello first later");
+    } finally { held.releaseAll(); await closing; }
+  });
+
+  it("rejects a retired client lifecycle even if its final checkpoint later succeeds", async () => {
+    const server = new Server(), held = heldCheckpoints();
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+      journal: new Journal(), request: server.request, checkpoint: held.checkpoint });
+    clients.push(editor); await editor.start(); await editor.flushLocal();
+    held.hold(); editor.mutate(doc => documentText(doc, "body").insert(5, " retained"));
+    const closing = editor.flushLocalResult();
+    editor.destroy(); held.releaseAll();
+    expect((await closing).outcome).toBe("stale-lifecycle");
+  });
+
 });
