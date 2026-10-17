@@ -376,7 +376,7 @@ Initial states reflect repository evidence on October 17; no new implementation/
 | T02 | Reboot/overnight observed | October 13 boot, policy retained, zero 4625/4740 since October 12; fresh-environment replay pending |
 | T03–T04 | Ready after T01/access | Deliver `e61d2622`, verify new-item installed close/reopen |
 | T05 | Partial | Preserve bounded historical gap; controlled ordering and refusal diagnostics |
-| T06 | Partial | Inventory coverage and fill adapter conformance gaps |
+| T06 | Coverage inventoried | [Adapter matrix](../verification/adapter-conformance-matrix.md); fill native disk/permission/cancellation and cross-adapter fixture gaps |
 | T07 | Open | Close-input and account transition races |
 | T08–T09 | Open | Shared ownership, fencing and continuity after contract work |
 | T10 | Partial inventory | Complete per-flow ownership and host feasibility |
