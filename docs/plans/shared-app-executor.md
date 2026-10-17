@@ -2,7 +2,9 @@
 
 Status: executable handoff, not implementation completion. Updated October 12, 2026.
 
-Read this first, then the [master plan](shared-app-durability-execution.md). The master plan defines scope and phase IDs; this document defines how to execute it with a smaller model. Keep both current. A checked task requires linked evidence, not an assertion.
+For the current task order, start with the [detailed completion checklist](shared-app-finish-checklist.md). The packet descriptions below retain architectural context; historical next-step statements must be reconciled with that checklist and current evidence.
+
+Read this, then the [master plan](shared-app-durability-execution.md). The master plan defines scope and phase IDs; this document defines how to execute it with a smaller model. Keep both current. A checked task requires linked evidence, not an assertion.
 
 ## Paste this into the implementation agent
 

@@ -20,6 +20,8 @@ Keep unrelated dirty files untouched: `mac/Package.resolved`, `src/components/wo
 
 ## Execution order
 
+Start with the [detailed completion checklist](plans/shared-app-finish-checklist.md), prepared October 17: T01 refreshes current identities; T03–T04 deliver the committed save fix and verify new-item installed close/reopen. It breaks the remaining master scope into 27 tasks with dependencies and evidence requirements. Historical October 12 identities above must be rechecked.
+
 Continue the [implementation playbook](plans/shared-app-executor.md) and [master plan](plans/shared-app-durability-execution.md). Packet A candidate installation and existing-note reopen are verified; finish the historical refusal explanation and a new-item installed edit/reopen. Packet B is in progress; the first storage-failure regression is fixed, but the browser persistence contract is not complete.
 
 ## References
