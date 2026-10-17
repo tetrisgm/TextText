@@ -47,6 +47,34 @@ public struct LocalVaultMirrorScheduleDecision: Codable, Equatable, Sendable {
     public let action: String, delayMs: Int?, consecutiveFailures: Int
 }
 
+public struct LocalVaultMirrorLifecycleObservation: Codable, Equatable, Sendable {
+    public let remotePresent: Bool, remoteDeleted: Bool
+    public let remoteLifecycle: String?, remoteRevision: String?
+    public let editorOwned: Bool
+    public let baselineLifecycle: String?, baselineRevision: String?, pendingKind: String?, pendingLifecycle: String?, pendingBaseRevision: String?
+    public let pendingConflicted: Bool
+    public init(remotePresent: Bool, remoteDeleted: Bool, remoteLifecycle: String?, remoteRevision: String?, editorOwned: Bool,
+                baselineLifecycle: String?, baselineRevision: String?, pendingKind: String?, pendingLifecycle: String?, pendingBaseRevision: String?, pendingConflicted: Bool) {
+        self.remotePresent = remotePresent; self.remoteDeleted = remoteDeleted; self.remoteLifecycle = remoteLifecycle; self.remoteRevision = remoteRevision
+        self.editorOwned = editorOwned; self.baselineLifecycle = baselineLifecycle; self.baselineRevision = baselineRevision
+        self.pendingKind = pendingKind; self.pendingLifecycle = pendingLifecycle; self.pendingBaseRevision = pendingBaseRevision; self.pendingConflicted = pendingConflicted
+    }
+    private enum CodingKeys: String, CodingKey { case remotePresent, remoteDeleted, remoteLifecycle, remoteRevision, editorOwned, baselineLifecycle, baselineRevision, pendingKind, pendingLifecycle, pendingBaseRevision, pendingConflicted }
+    // The shared contract distinguishes an explicit null from a missing field.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(remotePresent, forKey: .remotePresent); try c.encode(remoteDeleted, forKey: .remoteDeleted)
+        try c.encode(remoteLifecycle, forKey: .remoteLifecycle); try c.encode(remoteRevision, forKey: .remoteRevision)
+        try c.encode(editorOwned, forKey: .editorOwned); try c.encode(baselineLifecycle, forKey: .baselineLifecycle)
+        try c.encode(baselineRevision, forKey: .baselineRevision); try c.encode(pendingKind, forKey: .pendingKind)
+        try c.encode(pendingLifecycle, forKey: .pendingLifecycle); try c.encode(pendingBaseRevision, forKey: .pendingBaseRevision)
+        try c.encode(pendingConflicted, forKey: .pendingConflicted)
+    }
+}
+public struct LocalVaultMirrorLifecycleDecision: Codable, Equatable, Sendable {
+    public let baseline: String, pending: String
+}
+
 /// Validates the existing page's pure policy RPC. This contains no mirror algorithm.
 public actor LocalVaultMirrorPolicy {
     public typealias Evaluate = @Sendable (String) async throws -> String
@@ -83,6 +111,10 @@ public actor LocalVaultMirrorPolicy {
     private struct ScheduleReply: Decodable {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorScheduleObservation, decision: LocalVaultMirrorScheduleDecision
+    }
+    private struct LifecycleReply: Decodable {
+        let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
+        let observed: LocalVaultMirrorLifecycleObservation, decision: LocalVaultMirrorLifecycleDecision
     }
     public init(digest: String, scope: LocalVaultMirrorScope, timeoutNanoseconds: UInt64 = 5_000_000_000, evaluate: @escaping Evaluate) {
         self.digest = digest; self.scope = scope; self.evaluate = evaluate; self.timeoutNanoseconds = timeoutNanoseconds
@@ -168,6 +200,20 @@ public actor LocalVaultMirrorPolicy {
         let current = try await call("handshake", as: Identity.self)
         try check(current.version, current.digest, current.pageId, current.generation)
         return decision
+    }
+    public func lifecycle(_ observed: LocalVaultMirrorLifecycleObservation) async throws -> LocalVaultMirrorLifecycleDecision {
+        await acquire(); defer { release() }
+        try await prepare()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let reply = try await call("lifecycle", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: LifecycleReply.self)
+        try check(reply.version, reply.digest, reply.pageId, reply.generation)
+        guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
+              ["keep", "adopt", "defer"].contains(reply.decision.baseline),
+              ["none", "keep", "adopt", "retire-delete", "fence-edit", "keep-fenced", "defer"].contains(reply.decision.pending) else { throw Failure.stale }
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+        return reply.decision
     }
 
 }

@@ -94,6 +94,108 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertNotNil((state["outbox"] as? [String: Any])?[itemId])
     }
 
+    func testRestoreDuringLifecycleRPCPreservesOriginalPendingJournal() async throws {
+        let transport = FakeVaultTransport()
+        await transport.set(itemId: itemId, path: path, data: try pack("original"))
+        let initial = try engine(transport); _ = try await initial.sync()
+        let localBytes = try pack("local pending"); try putLocal(localBytes); await transport.failNextUploadBeforeCommit()
+        _ = try await initial.sync()
+        await transport.restore(itemId: itemId, path: path, data: try pack("first restore"), lifecycle: "first")
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let before = try Data(contentsOf: stateURL)
+        let second = try pack("second restore"), id = itemId, remotePath = path
+        let policy = makeTestMirrorPolicy(workspaceId: "workspace") { script in
+            if script.contains(".lifecycle(") { await transport.restore(itemId: id, path: remotePath, data: second, lifecycle: "second") }
+        }
+        let sync = try LocalVaultSync(root: root, binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"), transport: transport, mirrorPolicy: policy)
+        do { _ = try await sync.sync(); XCTFail("A second restore must invalidate the decision") }
+        catch LocalVaultSyncFailure.changed {}
+        XCTAssertEqual(try Data(contentsOf: stateURL), before)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains("local pending"))
+        let recovered = try await engine(transport).sync()
+        XCTAssertEqual(Set(recovered.conflicts).count, 2, "Fresh retry retains both local staged bytes and the latest restored bytes")
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(recovered.conflicts[0])), localBytes)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(recovered.conflicts[1])), second)
+    }
+
+    func testRestoreDuringLifecycleRPCDoesNotRetireOldDeletionIntent() async throws {
+        let transport = FakeVaultTransport()
+        await transport.set(itemId: itemId, path: path, data: try pack("original"))
+        let initial = try engine(transport); _ = try await initial.sync()
+        let store = LocalVaultDocumentStore(root: root)
+        let file = try store.read(path: path); try store.delete(path: path, expectedHash: file.hash)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        var state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let baseline = try XCTUnwrap((state["baselines"] as? [String: [String: Any]])?[itemId])
+        state["outbox"] = [itemId: ["itemId": itemId, "path": path, "hash": file.hash, "baseRevision": baseline["revision"]!, "operationId": "de111111-1111-4111-8111-111111111111", "action": "delete"]]
+        try JSONSerialization.data(withJSONObject: state).write(to: stateURL, options: .atomic)
+        let before = try Data(contentsOf: stateURL)
+        let intent = try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: itemId)
+        await transport.restore(itemId: itemId, path: path, data: try pack("first"), lifecycle: "first")
+        let second = try pack("second"), id = itemId, remotePath = path
+        let policy = makeTestMirrorPolicy(workspaceId: "workspace") { script in
+            if script.contains(".lifecycle(") { await transport.restore(itemId: id, path: remotePath, data: second, lifecycle: "second") }
+        }
+        let sync = try LocalVaultSync(root: root, binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"), transport: transport, mirrorPolicy: policy)
+        do { _ = try await sync.sync(); XCTFail("Fresh manifest must fence old deletion retirement") }
+        catch LocalVaultSyncFailure.changed {}
+        XCTAssertEqual(try Data(contentsOf: stateURL), before)
+        XCTAssertEqual(try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: itemId), intent)
+        let remote = await transport.manifest(); XCTAssertFalse(try XCTUnwrap(remote.first).isDeleted)
+    }
+
+    func testRestoreDuringLifecycleConflictDownloadKeepsOriginalOperation() async throws {
+        let transport = FakeVaultTransport()
+        await transport.set(itemId: itemId, path: path, data: try pack("original"))
+        let initial = try engine(transport); _ = try await initial.sync()
+        let local = try pack("local staged edit"); try putLocal(local); await transport.failNextUploadBeforeCommit()
+        _ = try await initial.sync()
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let before = try Data(contentsOf: stateURL)
+        await transport.restore(itemId: itemId, path: path, data: try pack("first"), lifecycle: "first")
+        let second = try pack("second")
+        await transport.raceDownload(data: second, lifecycle: "second")
+        do { _ = try await engine(transport).sync(); XCTFail("Changed download must retain staged operation") }
+        catch LocalVaultSyncFailure.changed {}
+        XCTAssertEqual(try Data(contentsOf: stateURL), before)
+        let recovered = try await engine(transport).sync()
+        XCTAssertEqual(Set(recovered.conflicts).count, 2)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(recovered.conflicts[0])), local)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(recovered.conflicts[1])), second)
+    }
+
+    func testMissingOrCorruptLifecyclePayloadNeverRetiresPendingOperation() async throws {
+        let originalRoot = root!; defer { root = originalRoot }
+        for corrupt in [false, true] {
+            let transport = FakeVaultTransport()
+            await transport.set(itemId: itemId, path: path, data: try pack("original"))
+            let initial = try engine(transport); _ = try await initial.sync()
+            try putLocal(pack("pending recovery")); await transport.failNextUploadBeforeCommit()
+            _ = try await initial.sync()
+            let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+            let before = try Data(contentsOf: stateURL)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: before) as? [String: Any])
+            let pending = try XCTUnwrap((object["outbox"] as? [String: [String: Any]])?[itemId])
+            let operation = try XCTUnwrap(pending["operationId"] as? String)
+            let payload = stateURL.deletingLastPathComponent().appendingPathComponent("outbox/" + operation + ".textpack")
+            let original = try Data(contentsOf: payload)
+            if corrupt { try Data("corrupt".utf8).write(to: payload) } else { try FileManager.default.removeItem(at: payload) }
+            await transport.restore(itemId: itemId, path: path, data: try pack("restored"), lifecycle: "restored")
+            do { _ = try await engine(transport).sync(); XCTFail("Unavailable payload must retain the original operation") } catch {}
+            XCTAssertEqual(try Data(contentsOf: stateURL), before)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".texttext/conflicts/" + operation).path))
+            try original.write(to: payload)
+            let recovered = try await engine(transport).sync()
+            XCTAssertEqual(Set(recovered.conflicts).count, 2)
+            // A distinct local workspace for the second case, preserving the first recovery until teardown.
+            if !corrupt {
+                let next = root.appendingPathComponent("second-case")
+                try FileManager.default.createDirectory(at: next, withIntermediateDirectories: true)
+                root = next
+            }
+        }
+    }
+
     func testPassiveRestoreRetiresOldDeletionButHonorsNewDeletion() async throws {
         let transport = FakeVaultTransport()
         await transport.set(itemId: itemId, path: path, data: try pack("before"))

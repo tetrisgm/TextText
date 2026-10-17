@@ -30,6 +30,10 @@ static class MirrorPolicyTests
             var scheduleObservation=vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!;
             check(await policy.ScheduleAsync(scheduleObservation)==vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json),"source schedule vector: "+vector.GetProperty("name"));
         }
+        foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-lifecycle.json"))).RootElement.EnumerateArray()) {
+            var policy=NativePolicyTestHost.Create();
+            check(await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!)==vector.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(json),"source lifecycle vector: "+vector.GetProperty("name"));
+        }
         check(MirrorFailure.Outcome(new HttpRequestException("ignored",null,System.Net.HttpStatusCode.Unauthorized))=="auth-required","401 classified structurally");
         check(MirrorFailure.Outcome(new HttpRequestException("401 text is not status"))=="transient","network error text cannot invent authentication failure");
         check(MirrorFailure.Outcome(new IOException("offline"))=="storage","storage failure is not a generic network retry");

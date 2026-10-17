@@ -47,12 +47,12 @@ public struct LocalVaultSyncReport: Sendable {
 /// Each pass is sequential and bounded. A journal entry and its exact bytes are
 /// durable before upload, so an interrupted request reuses its operation ID.
 public actor LocalVaultSync {
-    private struct Baseline: Codable {
+    private struct Baseline: Codable, Equatable {
         var path: String
         var revision: String
         var localHash: String
     }
-    private struct Pending: Codable {
+    private struct Pending: Codable, Equatable {
         var itemId: String
         var path: String
         var hash: String
@@ -64,7 +64,7 @@ public actor LocalVaultSync {
         var lifecycle: String? = nil
         var originMarkerHash: String? = nil
     }
-    private struct Conflict: Codable {
+    private struct Conflict: Codable, Equatable {
         var localHash: String
         var remoteRevision: String
         var paths: [String]
@@ -830,19 +830,19 @@ public actor LocalVaultSync {
         }
     }
 
-    private func preserveConflict(_ pending: Pending, remote: LocalVaultRemotePack) throws -> [String] {
+    private func preserveConflict(_ pending: Pending, remote: LocalVaultRemotePack, verifiedLocal: Data? = nil) throws -> [String] {
         try validate(remote, itemId: pending.itemId, path: remote.relativePath)
         let folder = ".texttext/conflicts/\(pending.operationId)"
         let destination = root.appendingPathComponent(folder)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         var paths: [String] = []
-        if let local = try? Data(contentsOf: payload(pending)) {
+        if let local = verifiedLocal ?? (try? Data(contentsOf: payload(pending))) {
             let path = "\(folder)/local-\((pending.path as NSString).lastPathComponent)"
-            try local.write(to: root.appendingPathComponent(path), options: .atomic)
+            try writeVaultSyncJournal(local, to: root.appendingPathComponent(path))
             paths.append(path)
         }
         let remotePath = "\(folder)/remote-\((remote.relativePath as NSString).lastPathComponent)"
-        try remote.data.write(to: root.appendingPathComponent(remotePath), options: .atomic)
+        try writeVaultSyncJournal(remote.data, to: root.appendingPathComponent(remotePath))
         paths.append(remotePath)
         state.conflicts[pending.itemId] = Conflict(localHash: pending.hash, remoteRevision: remote.revision,
                                                  paths: paths, remotePath: remote.relativePath)
@@ -1070,6 +1070,113 @@ public actor LocalVaultSync {
         }
     }
 
+    private struct LifecyclePlan {
+        let remote: LocalVaultRemoteItem, baseline: Baseline?, pending: Pending?, conflict: Conflict?, lifecycle: String?, intent: Data?
+        let decision: LocalVaultMirrorLifecycleDecision
+    }
+    private func requireCurrentLifecycle(_ plan: LifecyclePlan, remote: [String: LocalVaultRemoteItem]) throws {
+        try Task.checkCancellation()
+        let id = plan.remote.itemId
+        guard let current = remote[id], current.revision == plan.remote.revision, current.lifecycle == plan.remote.lifecycle,
+              current.relativePath == plan.remote.relativePath, current.isDeleted == plan.remote.isDeleted,
+              try !sharedProtection(itemId: id), state.baselines[id] == plan.baseline, state.outbox[id] == plan.pending,
+              state.conflicts[id] == plan.conflict, state.lifecycles?[id] == plan.lifecycle,
+              try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id) == plan.intent else { throw LocalVaultSyncFailure.changed }
+    }
+    private func reconcileLifecycles(manifest: [LocalVaultRemoteItem], report: inout LocalVaultSyncReport) async throws {
+        guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
+        var plans: [LifecyclePlan] = []
+        for remote in manifest where !remote.isDeleted && remote.lifecycle != nil {
+            let id = remote.itemId
+            guard try !sharedProtection(itemId: id) else { continue }
+            let baseline = state.baselines[id], pending = state.outbox[id], conflict = state.conflicts[id], lifecycle = state.lifecycles?[id]
+            let intent = try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id)
+            let decision = try await mirrorPolicy.lifecycle(.init(remotePresent: true, remoteDeleted: false,
+                remoteLifecycle: remote.lifecycle, remoteRevision: remote.revision, editorOwned: false,
+                baselineLifecycle: lifecycle, baselineRevision: baseline?.revision, pendingKind: pending.map { $0.action ?? "upload" },
+                pendingLifecycle: pending?.lifecycle, pendingBaseRevision: pending?.baseRevision, pendingConflicted: false))
+            try Task.checkCancellation()
+            guard try !sharedProtection(itemId: id), state.baselines[id] == baseline, state.outbox[id] == pending,
+                  state.conflicts[id] == conflict, state.lifecycles?[id] == lifecycle,
+                  try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id) == intent else { throw LocalVaultSyncFailure.changed }
+            plans.append(.init(remote: remote, baseline: baseline, pending: pending, conflict: conflict, lifecycle: lifecycle,
+                intent: intent, decision: decision))
+        }
+        let needsRefresh = try plans.contains { plan in
+            if plan.decision.baseline == "adopt" || ["adopt", "retire-delete", "fence-edit"].contains(plan.decision.pending) { return true }
+            guard let baseline = plan.baseline, plan.lifecycle != plan.remote.lifecycle, plan.pending == nil, plan.conflict == nil else { return false }
+            return !FileManager.default.fileExists(atPath: try LocalVaultDocumentStore(root: root).url(for: baseline.path).path)
+        }
+        guard needsRefresh else { return }
+        // Echoed observations attest a snapshot, not the server's current restore generation.
+        func indexed(_ items: [LocalVaultRemoteItem]) throws -> [String: LocalVaultRemoteItem] {
+            var result: [String: LocalVaultRemoteItem] = [:]
+            for item in items {
+                guard result[item.itemId] == nil else { throw LocalVaultSyncFailure.invalidResponse }
+                result[item.itemId] = item
+            }
+            return result
+        }
+        var current = try indexed(await transport.manifest())
+        try await mirrorPolicy.ready()
+        for plan in plans { try requireCurrentLifecycle(plan, remote: current) }
+        for plan in plans {
+            let id = plan.remote.itemId
+            // Stream recovery one item at a time; never retain an entire outbox's archives in memory.
+            var localPayload: Data?, remotePack: LocalVaultRemotePack?
+            if plan.decision.pending == "fence-edit", let pending = plan.pending {
+                let bytes = try StableFileSnapshot.read(payload(pending))
+                guard TextTextStableDigest.sha256Hex(bytes) == pending.hash else { throw LocalVaultSyncFailure.invalidResponse }
+                localPayload = bytes
+                let pack = try await transport.download(itemId: id)
+                try validate(pack, itemId: id, path: plan.remote.relativePath)
+                guard pack.revision == plan.remote.revision, pack.relativePath == plan.remote.relativePath else { throw LocalVaultSyncFailure.changed }
+                remotePack = pack
+                current = try indexed(await transport.manifest())
+                try await mirrorPolicy.ready()
+            }
+            // Recheck even a later metadata-only plan after a prior recovery download suspended this actor.
+            try requireCurrentLifecycle(plan, remote: current)
+            // No suspension from the ownership check through this operation's journal writes.
+            let before = state
+            do {
+            if plan.decision.baseline == "adopt" {
+                if state.lifecycles == nil { state.lifecycles = [:] }
+                state.lifecycles?[id] = plan.remote.lifecycle
+            }
+            if var pending = plan.pending {
+                switch plan.decision.pending {
+                case "adopt": pending.lifecycle = plan.remote.lifecycle; state.outbox[id] = pending
+                case "fence-edit":
+                    guard let pack = remotePack, let bytes = localPayload else { throw LocalVaultSyncFailure.invalidResponse }
+                    report.conflicts += try preserveConflict(pending, remote: pack, verifiedLocal: bytes)
+                    state.outbox.removeValue(forKey: id)
+                case "retire-delete": state.outbox.removeValue(forKey: id)
+                default: break
+                }
+            }
+            try persist()
+            } catch { state = before; throw error }
+            if let pending = plan.pending, ["retire-delete", "fence-edit"].contains(plan.decision.pending) {
+                if plan.decision.pending == "retire-delete", let intent = plan.intent,
+                   try LocalVaultDeviceState.hasDeletion(root: root, itemId: id, path: pending.path, hash: pending.hash) {
+                    try LocalVaultDeviceState.clearDeletion(root: root, itemId: id, matching: intent)
+                }
+                try? FileManager.default.removeItem(at: payload(pending))
+            }
+            if let baseline = state.baselines[id], state.lifecycles?[id] != plan.remote.lifecycle,
+               state.outbox[id] == nil, state.conflicts[id] == nil,
+               !FileManager.default.fileExists(atPath: try LocalVaultDocumentStore(root: root).url(for: baseline.path).path) {
+                let beforeCleanup = state
+                do { state.baselines.removeValue(forKey: id); try persist() }
+                catch { state = beforeCleanup; throw error }
+                if let intent = plan.intent, try LocalVaultDeviceState.hasDeletion(root: root, itemId: id, path: baseline.path, hash: baseline.localHash) {
+                    try LocalVaultDeviceState.clearDeletion(root: root, itemId: id, matching: intent)
+                }
+            }
+        }
+    }
+
     public func sync(maxItems: Int = 128) async throws -> LocalVaultSyncReport {
         try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
         guard !running else { throw LocalVaultSyncFailure.busy }
@@ -1111,40 +1218,7 @@ public actor LocalVaultSync {
                 }
             } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
-        // A restore is a new lifecycle. Old device deletion intents must not
-        // delete it again, and old edits remain recoverable conflicts.
-        for remote in manifest where !remote.isDeleted && remote.lifecycle != nil {
-            let id = remote.itemId
-            guard try !sharedProtection(itemId: id) else { continue }
-            if state.lifecycles?[id] == nil, state.baselines[id]?.revision == remote.revision, let lifecycle = remote.lifecycle {
-                if state.lifecycles == nil { state.lifecycles = [:] }; state.lifecycles?[id] = lifecycle
-            }
-            if var pending = state.outbox[id], pending.lifecycle == nil, pending.baseRevision == remote.revision {
-                pending.lifecycle = remote.lifecycle; state.outbox[id] = pending
-            }
-            try persist()
-            if let pending = state.outbox[id], pending.lifecycle != remote.lifecycle {
-                if pending.action != "delete" {
-                    let pack = try await transport.download(itemId: id)
-                    report.conflicts += try preserveConflict(pending, remote: pack)
-                }
-                state.outbox.removeValue(forKey: id)
-                try persist()
-                if pending.action == "delete", try LocalVaultDeviceState.hasDeletion(root: root, itemId: id, path: pending.path, hash: pending.hash) {
-                    try LocalVaultDeviceState.clearDeletion(root: root, itemId: id)
-                }
-                try? FileManager.default.removeItem(at: payload(pending))
-            }
-            if let baseline = state.baselines[id], state.lifecycles?[id] != remote.lifecycle,
-               state.outbox[id] == nil, state.conflicts[id] == nil,
-               !FileManager.default.fileExists(atPath: try LocalVaultDocumentStore(root: root).url(for: baseline.path).path) {
-                state.baselines.removeValue(forKey: id)
-                try persist()
-                if try LocalVaultDeviceState.hasDeletion(root: root, itemId: id, path: baseline.path, hash: baseline.localHash) {
-                    try LocalVaultDeviceState.clearDeletion(root: root, itemId: id)
-                }
-            }
-        }
+        try await reconcileLifecycles(manifest: manifest, report: &report)
         // Retry exact journal entries before producing new operations.
         var writablePending: [Pending] = []
         for pending in state.outbox.values.sorted(by: { $0.path < $1.path }) {

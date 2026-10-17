@@ -21,6 +21,7 @@ static class Test
  Assert(unavailableStore.Describe(unavailableFile.Path).Hash==unavailableFile.Hash && (beforeUnavailable is null?!File.Exists(unavailablePath):File.ReadAllBytes(unavailablePath).SequenceEqual(beforeUnavailable)),"missing policy preserves file and durable sync journal");
  await DocumentOwnershipTests.Run(temp,Assert);
  await MirrorPolicyTests.Run(Assert);
+ await MirrorLifecycleTests.Run(temp,Assert);
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed","legacy-conflict","legacy-missing-proof","legacy-corrupt-proof"}) {
  var metadataStore=new TextPackStore(Path.Combine(temp,"metadata-"+failure),Path.Combine(temp,"metadata-state-"+failure));
@@ -411,6 +412,7 @@ static class Test
      "competing asset retains the local pack and releases the editor after adopting server bytes");
  }
  await MirroredRetirementTests.Run(temp,Assert);
+ await LocalRenameTests.Run(temp,Assert);
  await ExternalCheckpointRaceTests.Run(temp,Assert);
  StableFileStoreTests.Run(temp,Assert);
  await CheckpointAccountTests.Run(temp,Assert);

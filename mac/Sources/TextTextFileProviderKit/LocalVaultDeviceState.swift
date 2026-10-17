@@ -74,6 +74,19 @@ public enum LocalVaultDeviceState {
         return intent.itemId == itemId && intent.path == path && intent.hash == hash
     }
 
+    // Full intent identity for decisions that cross an async policy/transport boundary.
+    static func deletionSnapshot(root: URL, itemId: String) throws -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        let target = try deletionURL(root: root, itemId: itemId)
+        return FileManager.default.fileExists(atPath: target.path) ? try Data(contentsOf: target) : nil
+    }
+    static func clearDeletion(root: URL, itemId: String, matching snapshot: Data) throws {
+        lock.lock(); defer { lock.unlock() }
+        let target = try deletionURL(root: root, itemId: itemId)
+        guard FileManager.default.fileExists(atPath: target.path), try Data(contentsOf: target) == snapshot else { return }
+        try FileManager.default.removeItem(at: target)
+    }
+
     public static func clearDeletion(root: URL, itemId: String) throws {
         lock.lock()
         defer { lock.unlock() }

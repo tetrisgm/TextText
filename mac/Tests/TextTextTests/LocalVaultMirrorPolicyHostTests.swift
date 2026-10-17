@@ -6,6 +6,7 @@ import TextTextFileProviderKit
 
 final class LocalVaultMirrorPolicyHostTests: XCTestCase {
     private struct Manifest: Decodable { let digest: String }
+    private struct LifecycleVector: Decodable { let name: String, observed: LocalVaultMirrorLifecycleObservation, decision: LocalVaultMirrorLifecycleDecision }
     private struct ScheduleVector: Decodable { let name: String, observed: LocalVaultMirrorScheduleObservation, decision: LocalVaultMirrorScheduleDecision }
     private struct Vector: Decodable { let name: String, observed: LocalVaultMirrorObservation, disposition: LocalVaultMirrorDisposition }
     func testUnresponsivePolicyTimesOutAndRetiresItsLease() async throws {
@@ -29,6 +30,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         let manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: base.appendingPathComponent("mirror-policy.json")))
         let vectors = try JSONDecoder().decode([Vector].self, from: Data(contentsOf: base.appendingPathComponent("vectors.json")))
         let schedules = try JSONDecoder().decode([ScheduleVector].self, from: Data(contentsOf: base.appendingPathComponent("schedule-vectors.json")))
+        let lifecycles = try JSONDecoder().decode([LifecycleVector].self, from: Data(contentsOf: base.appendingPathComponent("lifecycle-vectors.json")))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-policy-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let controller = LocalVaultWindowController(entry: base.appendingPathComponent("index.html"), root: root, websiteDataStore: .nonPersistent())
@@ -71,6 +73,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
             let result = try await policy.schedule(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
         }
+        for vector in lifecycles {
+            let result = try await policy.lifecycle(vector.observed)
+            XCTAssertEqual(result, vector.decision, vector.name)
+        }
         // Exercise the production window's close guard and retained page.
         window.performClose(nil)
         let closeDeadline = Date().addingTimeInterval(10)
@@ -80,6 +86,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         XCTAssertEqual(closedResult, vectors[0].disposition)
         for vector in schedules {
             let result = try await policy.schedule(vector.observed)
+            XCTAssertEqual(result, vector.decision, "Closed host: " + vector.name)
+        }
+        for vector in lifecycles {
+            let result = try await policy.lifecycle(vector.observed)
             XCTAssertEqual(result, vector.decision, "Closed host: " + vector.name)
         }
         for field in ["scope", "requestId", "observed", "digest", "pageId", "disposition"] {

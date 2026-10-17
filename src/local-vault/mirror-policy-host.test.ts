@@ -1,3 +1,4 @@
+import lifecycleVectors from "../../sync/fixtures/mirror-lifecycle.json";
 import { describe, expect, it } from "vitest";
 import { createMirrorPolicyHost } from "./mirror-policy-host";
 import { mirrorDisposition, validateMirrorObservation } from "../sync/engine/mirror-policy";
@@ -23,6 +24,17 @@ describe("portable mirror policy host", () => {
     }
     host.retire();
     expect(() => host.schedule({...request, observed: schedules[0].observed})).toThrow("Stale");
+  });
+  it("fences lifecycle decisions and echoes every observation", () => {
+    const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
+    for (const vector of lifecycleVectors) {
+      const input = {...request, observed: vector.observed};
+      expect(host.lifecycle(input)).toEqual({...input, decision: vector.decision});
+      expect(() => host.lifecycle({...input, generation: 0})).toThrow("Stale");
+      expect(() => host.lifecycle({...input, observed: {...vector.observed, operationId: "untrusted"}})).toThrow();
+    }
+    host.retire();
+    expect(() => host.lifecycle({...request, observed: lifecycleVectors[0].observed})).toThrow("Stale");
   });
   it("requires an exact build, page and bound identity and echoes immutable observations", () => {
     const host = createMirrorPolicyHost(digest, pageId);

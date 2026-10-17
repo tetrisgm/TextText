@@ -10,6 +10,9 @@ public sealed class MirrorPolicyUnavailableException(string message,Exception? i
 public sealed class MirrorPolicyTimeoutException(Exception inner) : TimeoutException("Mirror policy timed out.",inner);
 public sealed record MirrorScheduleObservation(string Outcome,int ConsecutiveFailures,bool HasEligiblePending,bool Rerun);
 public sealed record MirrorScheduleDecision(string Action,int? DelayMs,int ConsecutiveFailures);
+public sealed record MirrorLifecycleObservation(bool RemotePresent,bool RemoteDeleted,string? RemoteLifecycle,string? RemoteRevision,bool EditorOwned,
+    string? BaselineLifecycle,string? BaselineRevision,string? PendingKind,string? PendingLifecycle,string? PendingBaseRevision,bool PendingConflicted);
+public sealed record MirrorLifecycleDecision(string Baseline,string Pending);
 public static class MirrorFailure
 {
     // Concrete transport/storage classifications only; never inspect error text.
@@ -39,13 +42,16 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
     int retired;
     public void Retire() => Interlocked.Exchange(ref retired, 1);
 
-    public async Task ReadyAsync(CancellationToken ct = default) => await ExecuteAsync(null,null,ct);
+    public async Task ReadyAsync(CancellationToken ct = default) => await ExecuteAsync(null,null,null,ct);
     public async Task<MirrorDisposition> DecideAsync(MirrorObservation observed, CancellationToken ct = default) =>
-        (MirrorDisposition)(await ExecuteAsync(observed,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror disposition."));
+        (MirrorDisposition)(await ExecuteAsync(observed,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror disposition."));
     public async Task<MirrorScheduleDecision> ScheduleAsync(MirrorScheduleObservation observed,CancellationToken ct=default) =>
-        (MirrorScheduleDecision)(await ExecuteAsync(null,observed,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror schedule."));
+        (MirrorScheduleDecision)(await ExecuteAsync(null,observed,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror schedule."));
 
-    private async Task<object?> ExecuteAsync(MirrorObservation? observed, MirrorScheduleObservation? schedule, CancellationToken ct)
+    public async Task<MirrorLifecycleDecision> LifecycleAsync(MirrorLifecycleObservation observed,CancellationToken ct=default) =>
+        (MirrorLifecycleDecision)(await ExecuteAsync(null,null,observed,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror lifecycle decision."));
+
+    private async Task<object?> ExecuteAsync(MirrorObservation? observed, MirrorScheduleObservation? schedule, MirrorLifecycleObservation? lifecycle, CancellationToken ct)
     {
         await gate.WaitAsync(ct);
         try {
@@ -75,17 +81,23 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
                     generation=binding.RootElement.GetProperty("generation").GetInt64();
                 }
             }
-            if(observed is null && schedule is null) {
+            if(observed is null && schedule is null && lifecycle is null) {
                 using var confirmed = await Call("handshake"); Identity(confirmed.RootElement);
                 return null;
             }
             var requestId = Guid.NewGuid().ToString();
-            using var result = await Call(schedule is null ? "evaluate" : "schedule", new { version = 1, digest, pageId, generation, scope, requestId, observed=(object?)schedule??observed });
+            using var result = await Call(lifecycle is not null ? "lifecycle" : schedule is null ? "evaluate" : "schedule", new { version = 1, digest, pageId, generation, scope, requestId, observed=(object?)lifecycle??(object?)schedule??observed });
             var value = result.RootElement; Identity(value);
             if(value.GetProperty("scope").Deserialize<MirrorScope>(Json) != scope || value.GetProperty("requestId").GetString() != requestId ||
-               (schedule is null ? value.GetProperty("observed").Deserialize<MirrorObservation>(Json) != observed : value.GetProperty("observed").Deserialize<MirrorScheduleObservation>(Json) != schedule)) throw new MirrorPolicyUnavailableException("Stale mirror policy reply.");
+               (lifecycle is not null ? value.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(Json) != lifecycle : schedule is null ? value.GetProperty("observed").Deserialize<MirrorObservation>(Json) != observed : value.GetProperty("observed").Deserialize<MirrorScheduleObservation>(Json) != schedule)) throw new MirrorPolicyUnavailableException("Stale mirror policy reply.");
             // Recheck the current page after the decision RPC, before returning authority.
             using var current = await Call("handshake"); Identity(current.RootElement);
+            if(lifecycle is not null) {
+                var decision=value.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(Json)??throw new MirrorPolicyUnavailableException("Missing mirror lifecycle decision.");
+                if(decision.Baseline is not ("keep" or "adopt" or "defer") || decision.Pending is not ("none" or "keep" or "adopt" or "retire-delete" or "fence-edit" or "keep-fenced" or "defer"))
+                    throw new MirrorPolicyUnavailableException("Invalid mirror lifecycle decision.");
+                return decision;
+            }
             if(schedule is not null) {
                 var decision=value.GetProperty("decision").Deserialize<MirrorScheduleDecision>(Json)??throw new MirrorPolicyUnavailableException("Missing mirror schedule.");
                 if(decision.Action is not ("run" or "wait-change" or "wait-credentials" or "wait-reopen" or "stop") ||

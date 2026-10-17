@@ -34,7 +34,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         TextPackStore.AtomicWrite(System.IO.Path.Combine(directory,"archived-account-"+Guid.NewGuid().ToString("N")+".json"),File.ReadAllBytes(file));
         File.Delete(file);
     }
-    sealed record MoveIntent(int Version,string SourcePath,SharedCheckpoint Checkpoint);
+    sealed record MoveIntent(int Version,string SourcePath,SharedCheckpoint Checkpoint,bool AdoptsExternalChange=false);
     sealed record Intent(int Version,string BeforeHash,string Payload,SharedCheckpoint Checkpoint);
     sealed record BinaryIntent(int Version,string ItemId,string Path,string BeforeHash,string AfterHash);
     sealed record Active(string ItemId,string Path,IDisposable Lease);
@@ -101,12 +101,32 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
         return cp!=null&&(cp.Version!=1||cp.Pending||cp.RetiredReason!=null);
     }
+    static PackFile UniqueProjection(TextPackStore store,string itemId) {
+        var matches=store.Scan().Where(file=>file.ItemId==itemId).ToArray();
+        // An unreadable subtree can hide a second copy. Never choose a path
+        // while the inventory cannot prove that this identity is unique.
+        if(matches.Length==0&&store.LastScanErrors.Count==0)throw new FileNotFoundException("The shared projection is temporarily unavailable.");
+        if(matches.Length!=1||store.LastScanErrors.Count!=0)throw new FileChangedException();
+        var current=store.Describe(matches[0].Path);
+        if(current.ItemId!=itemId||current.Hash!=matches[0].Hash)throw new FileChangedException();
+        return current;
+    }
+    internal static SharedCheckpoint? FollowLocalProjection(TextPackStore store,string itemId) => store.WithExclusiveMutation(() => {
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");
+        var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
+        var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
+        if(cp==null)return null;
+        Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");
+        if(cp.RetiredReason!=null||File.Exists(store.Resolve(cp.Path)))return cp;
+        var target=UniqueProjection(store,itemId);
+        return RebaseProjection(store,itemId,target.Path,adoptingExternalChange:true);
+    });
     internal static bool HasReadyCheckpoint(TextPackStore store,string itemId) {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))return false;
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
         if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"binary-intent.json")))return false;
         try {
-            var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
+            var cp=FollowLocalProjection(store,itemId);
             if(cp==null||cp.ItemId!=itemId||cp.RetiredReason!=null)return false;
             Validate(store,cp);var file=store.Describe(cp.Path);
             return file.ItemId==itemId&&file.Path==cp.Path&&(file.Hash==cp.ProjectedHash||cp.Pending);
@@ -117,13 +137,25 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         foreach(var file in System.IO.Directory.EnumerateFiles(root,"acknowledge.json",SearchOption.AllDirectories)) {
             var cp=Read<SharedCheckpoint>(file)!;if(cp.Version!=1||cp.Pending||!ValidHash(cp.ProjectedHash)||!ValidHash(cp.AcknowledgedRevision))throw new InvalidDataException("Invalid checkpoint acknowledgement.");
             if(File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(file)!,"intent.json")))continue;
+            var projection=FollowLocalProjection(store,cp.ItemId);
+            if(projection!=null&&projection.Path!=cp.Path) {
+                // A path-only rebase may finish while this clean acknowledgement
+                // waits for the sync gate. Require every other checkpoint field
+                // and journal value to match; never borrow a newer generation.
+                var journal=System.Text.Json.Nodes.JsonNode.Parse(cp.Journal)!;journal["relativePath"]=projection.Path;
+                if(cp with{Path=projection.Path,Journal=projection.Journal}!=projection||
+                   !System.Text.Json.Nodes.JsonNode.DeepEquals(journal,System.Text.Json.Nodes.JsonNode.Parse(projection.Journal)))continue;
+                cp=projection;
+            }
             var current=store.Describe(cp.Path);if(current.ItemId!=cp.ItemId||current.Hash!=cp.ProjectedHash)continue;
             if(state.Outbox.Any(x=>x.ItemId==cp.ItemId)||state.PendingPull?.ItemId==cp.ItemId)continue;
-            state.Items[cp.ItemId]=new(cp.Path,cp.ProjectedHash,cp.AcknowledgedRevision);completed.Add(file);
+            var prior=state.Items.GetValueOrDefault(cp.ItemId);
+            var path=prior?.Path??cp.Path;
+            state.Items[cp.ItemId]=new(path,cp.ProjectedHash,cp.AcknowledgedRevision,Lifecycle:prior?.Lifecycle);completed.Add(file);
         }return completed;
     }
     public static SharedCheckpoint RebaseProjection(TextPackStore store,string itemId,string newPath,
-        bool interruptAfterIntent=false,bool interruptAfterMove=false) => store.WithExclusiveMutation(() => {
+        bool interruptAfterIntent=false,bool interruptAfterMove=false,bool adoptingExternalChange=false) => store.WithExclusiveMutation(() => {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
         RecoverMove(store,directory,itemId);
@@ -131,11 +163,16 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"))??throw new InvalidOperationException("No shared projection is available.");
         Validate(store,cp);if(cp.ItemId!=itemId||cp.RetiredReason!=null)throw new InvalidDataException("Shared identity mismatch.");
         if(cp.Path==newPath)return cp;
-        var source=store.Describe(cp.Path);
-        if(source.ItemId!=itemId||source.Hash!=cp.ProjectedHash||File.Exists(store.Resolve(newPath)))throw new FileChangedException();
+        if(File.Exists(store.Resolve(cp.Path))) {
+            var source=store.Describe(cp.Path);
+            if(source.ItemId!=itemId||source.Hash!=cp.ProjectedHash||File.Exists(store.Resolve(newPath)))throw new FileChangedException();
+        } else {
+            var observed=UniqueProjection(store,itemId);
+            if(observed.Path!=newPath||(!adoptingExternalChange&&observed.Hash!=cp.ProjectedHash))throw new FileChangedException();
+        }
         var journal=System.Text.Json.Nodes.JsonNode.Parse(cp.Journal)!;journal["relativePath"]=newPath;
         var target=cp with{Path=newPath,Journal=journal.ToJsonString()};Validate(store,target);
-        var intent=new MoveIntent(1,cp.Path,target);Save(System.IO.Path.Combine(directory,"move-intent.json"),intent);
+        var intent=new MoveIntent(1,cp.Path,target,adoptingExternalChange);Save(System.IO.Path.Combine(directory,"move-intent.json"),intent);
         if(interruptAfterIntent)throw new IOException("Interrupted before shared move.");
         return FinishMove(store,directory,intent,interruptAfterMove);
     });
@@ -151,7 +188,8 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
             store.Rename(intent.SourcePath,cp.Path,current.Hash);
             if(interruptAfterMove)throw new IOException("Interrupted after shared move.");
         }
-        var moved=store.Describe(cp.Path);if(moved.ItemId!=cp.ItemId||moved.Hash!=cp.ProjectedHash)throw new FileChangedException();
+        var moved=intent.AdoptsExternalChange?UniqueProjection(store,cp.ItemId):store.Describe(cp.Path);
+        if(moved.Path!=cp.Path||moved.ItemId!=cp.ItemId||(!intent.AdoptsExternalChange&&moved.Hash!=cp.ProjectedHash))throw new FileChangedException();
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);File.Delete(System.IO.Path.Combine(directory,"move-intent.json"));return cp;
     }
     SharedCheckpoint? Recover(string itemId) => store.WithExclusiveMutation(() => {
@@ -225,12 +263,15 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
             if(sessions.Values.Any(session=>session.ItemId==itemId))throw new IOException("This document is already open in another editor. Close that editor before reopening it.");
             var lease=await sync.AcquireCollaborationAsync(itemId,ct);
             try {return store.WithExclusiveMutation(() => {
-                // Only a retained move intent can attest the requested old path.
-                // Never substitute another checkpoint merely because a file is missing.
+                // A retained intent/checkpoint may attest its own old path.
+                // Never substitute another checkpoint for an unrelated missing path.
                 PrepareAccount(itemId,path,expectedHash);
                 var move=Read<MoveIntent>(System.IO.Path.Combine(DirectoryFor(itemId),"move-intent.json"));
                 var cp=Recover(itemId);
                 if(move!=null&&move.SourcePath==path&&move.Checkpoint.ItemId==itemId&&cp?.Path==move.Checkpoint.Path&&expectedHash==move.Checkpoint.ProjectedHash)path=cp.Path;
+                var retainedPath=cp?.Path;
+                cp=FollowLocalProjection(store,itemId);
+                if(cp!=null&&retainedPath!=cp.Path&&path==retainedPath&&expectedHash==cp.ProjectedHash)path=cp.Path;
                 var file=store.Describe(path);if(file.ItemId!=itemId || (file.Hash!=expectedHash && file.Hash!=cp?.ProjectedHash))throw new FileChangedException();
                 if(cp!=null&&file.Hash!=cp.ProjectedHash){var directory=DirectoryFor(itemId);if(!cp.Pending&&cp.RetiredReason==null){Save(System.IO.Path.Combine(directory,"archived-"+Guid.NewGuid().ToString("N")+".json"),cp);File.Delete(System.IO.Path.Combine(directory,"checkpoint.json"));cp=null;}}
                 var token=Guid.NewGuid().ToString();sessions[token]=new(itemId,path,lease);return new SharedSession(token,file,cp);
@@ -245,6 +286,12 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
             var result=store.WithExclusiveMutation(() => {
                 var prior=Recover(session.ItemId);
                 if(checkpoint.Path!=session.Path&&checkpoint.Path!=prior?.Path)throw new InvalidDataException("Checkpoint identity mismatch.");
+                prior=FollowLocalProjection(store,session.ItemId);
+                if(prior==null&&!File.Exists(store.Resolve(session.Path))) {
+                    var moved=UniqueProjection(store,session.ItemId);
+                    if(moved.Hash!=expectedHash)throw new FileChangedException();
+                    session=session with{Path=moved.Path};sessions[sessionToken]=session;
+                }
                 // A sync pass may relocate the durable projection while this
                 // browser request is still prepared against the old path.
                 if(prior is {RetiredReason:null} && prior.Path!=session.Path) {

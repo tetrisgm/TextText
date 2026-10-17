@@ -17,6 +17,7 @@ static class MirrorPolicyTests
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"mirror-policy.json")));
         using var vectors = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"vectors.json")));
         using var schedules = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"schedule-vectors.json")));
+        using var lifecycles = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"lifecycle-vectors.json")));
         var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var view = new WebView2();
         var window = new MainWindow { Title="Isolated policy host",Width=700,Height=500,Content=view };
@@ -46,11 +47,19 @@ static class MirrorPolicyTests
                 var result=await policy.ScheduleAsync(vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!,ct);
                 if(result!=vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json))throw new Exception("Schedule vector failed: "+vector.GetProperty("name"));
             }
+            foreach(var vector in lifecycles.RootElement.EnumerateArray()) {
+                var result=await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!,ct);
+                if(result!=vector.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(json))throw new Exception("Lifecycle vector failed: "+vector.GetProperty("name"));
+            }
             var first=vectors.RootElement[0].GetProperty("observed").Deserialize<MirrorObservation>(json)!;
             window.Hide();await policy.DecideAsync(first,ct);
             foreach(var vector in schedules.RootElement.EnumerateArray()) {
                 var result=await policy.ScheduleAsync(vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!,ct);
                 if(result!=vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json))throw new Exception("Hidden schedule vector failed");
+            }
+            foreach(var vector in lifecycles.RootElement.EnumerateArray()) {
+                var result=await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!,ct);
+                if(result!=vector.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(json))throw new Exception("Lifecycle vector failed: "+vector.GetProperty("name"));
             }
             foreach(var field in new[]{"scope","requestId","observed","digest","pageId","disposition"}) {
                 var bad=new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-a","workspace","connection-a"),async(script,token)=>{

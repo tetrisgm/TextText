@@ -82,7 +82,9 @@ static class CheckpointFailureTests
         var saved = await editing.CheckpointAsync(session.SessionToken, initial.Hash, first, Checkpoint(first, spec.GetProperty("firstGeneration").GetInt64()));
         var directory = Path.Combine(files.StateDirectory, "shared-editing", "test-1");
         var journal = Path.Combine(directory, "checkpoint.json"); var previous = File.ReadAllBytes(journal);
-        var projected = Path.Combine(files.Root, initial.Path); var held = Path.Combine(files.Root, "unavailable-projection.textpack");
+        var projected = Path.Combine(files.Root, initial.Path); var held = Path.Combine(files.StateDirectory, "unavailable-projection.textpack");
+        // Hold outside the managed root: another visible same-ID TextPack is
+        // a valid external rename, not an unavailable projection.
         File.Move(projected, held);
         var next = Pack(spec.GetProperty("pendingBody").GetString()!); var generation = spec.GetProperty("nextGeneration").GetInt64();
         var refused = false;

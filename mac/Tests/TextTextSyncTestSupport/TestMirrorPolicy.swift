@@ -8,11 +8,12 @@ public func makeTestSync(root: URL, binding: LocalVaultSyncBinding, transport: a
         mirrorPolicy: makeTestMirrorPolicy(workspaceId: binding.workspaceId, accountId: accountId))
 }
 
-public func makeTestMirrorPolicy(workspaceId: String, accountId: String? = nil) -> LocalVaultMirrorPolicy {
+public func makeTestMirrorPolicy(workspaceId: String, accountId: String? = nil, beforeRequest: (@Sendable (String) async throws -> Void)? = nil) -> LocalVaultMirrorPolicy {
     let context = UUID().uuidString
     return LocalVaultMirrorPolicy(digest: String(repeating: "f", count: 64),
         scope: LocalVaultMirrorScope(accountId: accountId ?? "fixture-account", workspaceId: workspaceId, lifecycle: context)) { script in
-            try await NativePolicyTestHost.shared.evaluate(context: context, script: script)
+            try await beforeRequest?(script)
+            return try await NativePolicyTestHost.shared.evaluate(context: context, script: script)
         }
 }
 

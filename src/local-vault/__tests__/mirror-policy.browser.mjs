@@ -9,6 +9,7 @@ const output=process.env.TEXTTEXT_MIRROR_POLICY_BUNDLE ?? await mkdtemp(path.joi
 await buildLocalVault({output});
 await copyFile('sync/fixtures/mirror-policy.json',path.join(output,'vectors.json'));
 await copyFile('sync/fixtures/mirror-schedule.json',path.join(output,'schedule-vectors.json'));
+await copyFile('sync/fixtures/mirror-lifecycle.json',path.join(output,'lifecycle-vectors.json'));
 // Load the exact packaged script without an editor, transport or credentials.
 await writeFile(path.join(output,'policy-fixture.html'),'<meta charset="utf-8"><p>Isolated native policy host</p><script src="mirror-policy.js"></script>');
 const manifest=JSON.parse(await readFile(path.join(output,'mirror-policy.json'),'utf8'));
@@ -36,6 +37,12 @@ try {
  for(const [i,vector] of schedules.entries()) {
   const request={...binding,scope,requestId:'schedule-'+i,observed:vector.observed};
   const reply=await page.evaluate(request=>window.texttextMirrorPolicy.schedule(request),request);
+  assert.deepEqual(reply,{...request,decision:vector.decision});
+ }
+ const lifecycles=JSON.parse(await readFile(path.join(output,'lifecycle-vectors.json'),'utf8'));
+ for(const [i,vector] of lifecycles.entries()) {
+  const request={...binding,scope,requestId:'lifecycle-'+i,observed:vector.observed};
+  const reply=await page.evaluate(request=>window.texttextMirrorPolicy.lifecycle(request),request);
   assert.deepEqual(reply,{...request,decision:vector.decision});
  }
  await page.context().setOffline(false);await page.reload();

@@ -6,10 +6,10 @@ using TextText.Core;
 static class NativePolicyTestHost
 {
     static readonly Lazy<Host> Shared=new(()=>new Host());
-    public static MirrorPolicy Create(string? account=null) {
+    public static MirrorPolicy Create(string? account=null,Func<string,Task>? beforeRequest=null) {
         var context=Guid.NewGuid().ToString();
         return new MirrorPolicy(new string('f',64),new(account??"fixture-account","fixture-workspace",context),
-            (script,ct)=>Shared.Value.Evaluate(context,script,ct));
+            async(script,ct)=>{if(beforeRequest is not null)await beforeRequest(script);return await Shared.Value.Evaluate(context,script,ct);});
     }
     sealed class Host
     {

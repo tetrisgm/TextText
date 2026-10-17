@@ -358,6 +358,9 @@ public sealed class TextPackStore
     }
     void RecordIntent(FileIntent intent) => AtomicWrite(System.IO.Path.Combine(StateDirectory,"intent-"+intent.ItemId+".json"),JsonSerializer.SerializeToUtf8Bytes(intent));
     public FileIntent? Intent(string id) { var path=System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"); return File.Exists(path)?JsonSerializer.Deserialize<FileIntent>(File.ReadAllBytes(path)):null; }
+    public void ClearIntent(string id, FileIntent expected) {
+        lock(gate) { if(Intent(id)==expected)ClearIntent(id); }
+    }
     public void ClearIntent(string id) => File.Delete(System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"));
     public string GetRecoveryDirectory() {
         var directory=System.IO.Path.Combine(StateDirectory,"recovery");

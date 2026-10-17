@@ -1,0 +1,342 @@
+[
+  {
+    "name": "old pending edit remains recoverable",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "fence-edit"
+    }
+  },
+  {
+    "name": "old rename remains recoverable",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "rename",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "fence-edit"
+    }
+  },
+  {
+    "name": "old delete cannot delete restored lifecycle",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "delete",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "retire-delete"
+    }
+  },
+  {
+    "name": "unchanged lifecycle retains original operation",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "old",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "keep"
+    }
+  },
+  {
+    "name": "matching legacy baseline and operation can adopt restored lifecycle",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": null,
+      "baselineRevision": "new",
+      "pendingKind": "upload",
+      "pendingLifecycle": null,
+      "pendingBaseRevision": "new",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "adopt",
+      "pending": "adopt"
+    }
+  },
+  {
+    "name": "new delete after restore adopts exact matching legacy revision",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": null,
+      "baselineRevision": "new",
+      "pendingKind": "delete",
+      "pendingLifecycle": null,
+      "pendingBaseRevision": "new",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "adopt",
+      "pending": "adopt"
+    }
+  },
+  {
+    "name": "legacy baseline matching cannot bless unrelated old edit",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": null,
+      "baselineRevision": "new",
+      "pendingKind": "upload",
+      "pendingLifecycle": null,
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "adopt",
+      "pending": "fence-edit"
+    }
+  },
+  {
+    "name": "legacy pending matching cannot bless unrelated old baseline",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": null,
+      "pendingBaseRevision": "new",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "adopt"
+    }
+  },
+  {
+    "name": "null lifecycle does not prove old deletion current",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": null,
+      "baselineRevision": "old",
+      "pendingKind": "delete",
+      "pendingLifecycle": null,
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "retire-delete"
+    }
+  },
+  {
+    "name": "already fenced old edit stays fenced",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": true
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "keep-fenced"
+    }
+  },
+  {
+    "name": "editor ownership defers lifecycle authority",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": true,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "defer",
+      "pending": "defer"
+    }
+  },
+  {
+    "name": "missing remote grants no lifecycle authority",
+    "observed": {
+      "remotePresent": false,
+      "remoteDeleted": false,
+      "remoteLifecycle": null,
+      "remoteRevision": null,
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "defer",
+      "pending": "defer"
+    }
+  },
+  {
+    "name": "tombstone handled by separate deletion policy",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "defer",
+      "pending": "defer"
+    }
+  },
+  {
+    "name": "remote without lifecycle grants no adoption",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": null,
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "upload",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "defer",
+      "pending": "defer"
+    }
+  },
+  {
+    "name": "baseline only can adopt exact known revision",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": null,
+      "baselineRevision": "new",
+      "pendingKind": null,
+      "pendingLifecycle": null,
+      "pendingBaseRevision": null,
+      "pendingConflicted": false
+    },
+    "decision": {
+      "baseline": "adopt",
+      "pending": "none"
+    }
+  },
+  {
+    "name": "matching legacy conflicted operation adopts lifecycle without removing its existing fence",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": null,
+      "baselineRevision": "new",
+      "pendingKind": "upload",
+      "pendingLifecycle": null,
+      "pendingBaseRevision": "new",
+      "pendingConflicted": true
+    },
+    "decision": {
+      "baseline": "adopt",
+      "pending": "adopt"
+    }
+  },
+  {
+    "name": "legacy conflict-kind operation remains fenced",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteLifecycle": "restored",
+      "remoteRevision": "new",
+      "editorOwned": false,
+      "baselineLifecycle": "old",
+      "baselineRevision": "old",
+      "pendingKind": "conflict",
+      "pendingLifecycle": "old",
+      "pendingBaseRevision": "old",
+      "pendingConflicted": true
+    },
+    "decision": {
+      "baseline": "keep",
+      "pending": "keep-fenced"
+    }
+  }
+]

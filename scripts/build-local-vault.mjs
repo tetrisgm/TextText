@@ -17,7 +17,7 @@ export async function buildLocalVault({ entry = "src/local-vault/main.tsx", outp
 await mkdir(output, { recursive: true });
 // This policy runs in the already packaged WebView, even on home with no
 // editor. Its manifest and handshake identify the exact policy source inputs.
-const policySources = ["src/sync/engine/mirror-policy.ts", "src/sync/engine/mirror-schedule.ts", "src/local-vault/mirror-policy-host.ts", "src/local-vault/mirror-policy-main.ts"];
+const policySources = ["src/sync/engine/mirror-policy.ts", "src/sync/engine/mirror-schedule.ts", "src/sync/engine/mirror-lifecycle.ts", "src/local-vault/mirror-policy-host.ts", "src/local-vault/mirror-policy-main.ts"];
 const policyHash = createHash("sha256");
 for (const source of policySources) policyHash.update(source).update("\0").update(await readFile(path.join(root, source))).update("\0");
 const policyDigest = policyHash.digest("hex");
