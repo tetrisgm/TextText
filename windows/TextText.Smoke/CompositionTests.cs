@@ -19,7 +19,11 @@ static class CompositionTests
         async Task Until(string expression) {
             using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct); bounded.CancelAfter(TimeSpan.FromSeconds(15));
             try { while (await view.ExecuteScriptAsync(expression) != "true") await Task.Delay(25, bounded.Token); }
-            catch(OperationCanceledException) when(!ct.IsCancellationRequested) { throw new TimeoutException("Composition check: " + expression); }
+            catch(OperationCanceledException) when(!ct.IsCancellationRequested) {
+                Console.WriteLine("Composition diagnostic: " + await view.ExecuteScriptAsync("JSON.stringify({focused:document.hasFocus(),active:document.activeElement?.tagName,text:document.getElementById('control')?.textContent,events:window.inputEvents})"));
+                Console.WriteLine($"Composition window active: {window.IsActive}; keyboard focus: {view.IsKeyboardFocusWithin}");
+                throw new TimeoutException("Composition check: " + expression);
+            }
         }
         try {
             var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(root, "composition-profile"));
@@ -29,6 +33,7 @@ static class CompositionTests
             await Until("Boolean(document.getElementById('control'))");
             window.Activate();view.Focus();
             await view.ExecuteScriptAsync("const control=document.getElementById('control');control.focus();const selection=getSelection(),range=document.createRange();range.selectNodeContents(control);range.collapse(false);selection.removeAllRanges();selection.addRange(range)");
+            await Until("document.hasFocus()&&document.activeElement===document.getElementById('control')");
             await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.imeSetComposition", "{\"text\":\"漢\",\"selectionStart\":1,\"selectionEnd\":1}");
             await Until("document.getElementById('control').textContent==='Original漢'");
             await Task.Delay(200,ct);

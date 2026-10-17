@@ -1,0 +1,240 @@
+[
+  {
+    "name": "idle success clears previous failures",
+    "observed": {
+      "outcome": "success",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": false,
+      "rerun": false
+    },
+    "decision": {
+      "action": "wait-change",
+      "delayMs": null,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "eligible durable work continues",
+    "observed": {
+      "outcome": "success",
+      "consecutiveFailures": 0,
+      "hasEligiblePending": true,
+      "rerun": false
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 400,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "wake received during pass runs once",
+    "observed": {
+      "outcome": "success",
+      "consecutiveFailures": 3,
+      "hasEligiblePending": false,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 400,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "pending work and wake share one debounce",
+    "observed": {
+      "outcome": "success",
+      "consecutiveFailures": 0,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 400,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "transient failure after 0 failures",
+    "observed": {
+      "outcome": "transient",
+      "consecutiveFailures": 0,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 2000,
+      "consecutiveFailures": 1
+    }
+  },
+  {
+    "name": "transient failure after 1 failures",
+    "observed": {
+      "outcome": "transient",
+      "consecutiveFailures": 1,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 4000,
+      "consecutiveFailures": 2
+    }
+  },
+  {
+    "name": "transient failure after 2 failures",
+    "observed": {
+      "outcome": "transient",
+      "consecutiveFailures": 2,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 8000,
+      "consecutiveFailures": 3
+    }
+  },
+  {
+    "name": "transient failure after 3 failures",
+    "observed": {
+      "outcome": "transient",
+      "consecutiveFailures": 3,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 16000,
+      "consecutiveFailures": 4
+    }
+  },
+  {
+    "name": "transient failure after 4 failures",
+    "observed": {
+      "outcome": "transient",
+      "consecutiveFailures": 4,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 32000,
+      "consecutiveFailures": 5
+    }
+  },
+  {
+    "name": "transient failure after 5 failures",
+    "observed": {
+      "outcome": "transient",
+      "consecutiveFailures": 5,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 60000,
+      "consecutiveFailures": 6
+    }
+  },
+  {
+    "name": "transient failure after 6 failures",
+    "observed": {
+      "outcome": "transient",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "run",
+      "delayMs": 60000,
+      "consecutiveFailures": 6
+    }
+  },
+  {
+    "name": "auth-required cannot be bypassed by pending work or wake",
+    "observed": {
+      "outcome": "auth-required",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "wait-credentials",
+      "delayMs": null,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "permission cannot be bypassed by pending work or wake",
+    "observed": {
+      "outcome": "permission",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "wait-change",
+      "delayMs": null,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "conflict cannot be bypassed by pending work or wake",
+    "observed": {
+      "outcome": "conflict",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "wait-change",
+      "delayMs": null,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "storage cannot be bypassed by pending work or wake",
+    "observed": {
+      "outcome": "storage",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "wait-reopen",
+      "delayMs": null,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "policy-unavailable cannot be bypassed by pending work or wake",
+    "observed": {
+      "outcome": "policy-unavailable",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "wait-reopen",
+      "delayMs": null,
+      "consecutiveFailures": 0
+    }
+  },
+  {
+    "name": "stopped cannot be bypassed by pending work or wake",
+    "observed": {
+      "outcome": "stopped",
+      "consecutiveFailures": 6,
+      "hasEligiblePending": true,
+      "rerun": true
+    },
+    "decision": {
+      "action": "stop",
+      "delayMs": null,
+      "consecutiveFailures": 0
+    }
+  }
+]

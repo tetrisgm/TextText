@@ -16,6 +16,7 @@ static class MirrorPolicyTests
         if(string.IsNullOrEmpty(fixture)) { Console.WriteLine("SKIP mirror policy: explicit bundle not supplied"); return; }
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"mirror-policy.json")));
         using var vectors = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"vectors.json")));
+        using var schedules = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"schedule-vectors.json")));
         var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var view = new WebView2();
         var window = new MainWindow { Title="Isolated policy host",Width=700,Height=500,Content=view };
@@ -41,8 +42,16 @@ static class MirrorPolicyTests
                 var result=await policy.DecideAsync(observation,ct);
                 if(result.ToString().ToLowerInvariant()!=vector.GetProperty("disposition").GetString())throw new Exception("Policy vector failed: "+vector.GetProperty("name"));
             }
+            foreach(var vector in schedules.RootElement.EnumerateArray()) {
+                var result=await policy.ScheduleAsync(vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!,ct);
+                if(result!=vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json))throw new Exception("Schedule vector failed: "+vector.GetProperty("name"));
+            }
             var first=vectors.RootElement[0].GetProperty("observed").Deserialize<MirrorObservation>(json)!;
             window.Hide();await policy.DecideAsync(first,ct);
+            foreach(var vector in schedules.RootElement.EnumerateArray()) {
+                var result=await policy.ScheduleAsync(vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!,ct);
+                if(result!=vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json))throw new Exception("Hidden schedule vector failed");
+            }
             foreach(var field in new[]{"scope","requestId","observed","digest","pageId","disposition"}) {
                 var bad=new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-a","workspace","connection-a"),async(script,token)=>{
                     var raw=await view.ExecuteScriptAsync(script).WaitAsync(token);
@@ -79,6 +88,8 @@ static class MirrorPolicyTests
                 if(script.Contains(".evaluate(")){hook.Calls++;var before=hook.Before;hook.Before=null;if(before is not null)await before();}
                 return await view.ExecuteScriptAsync(script).WaitAsync(token);
             }),Navigate,ct);
+            await MirrorScheduleTests.RunAsync(root,()=>new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-a","schedule-workspace",Guid.NewGuid().ToString()),
+                (script,token)=>view.Dispatcher.InvokeAsync(()=>view.ExecuteScriptAsync(script)).Task.Unwrap().WaitAsync(token)),ct);
         } finally {MainWindowCloseTests.ForceClose(window);view.Dispose();}
     }
 }

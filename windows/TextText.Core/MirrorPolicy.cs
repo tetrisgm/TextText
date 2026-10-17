@@ -6,6 +6,28 @@ public sealed record MirrorObservation(string LocalHash, string BaselineHash, st
 public sealed record MirrorScope(string AccountId, string WorkspaceId, string Lifecycle);
 public enum MirrorDisposition { Upload, Pull, Idle }
 
+public sealed class MirrorPolicyUnavailableException(string message,Exception? inner=null) : IOException(message,inner);
+public sealed class MirrorPolicyTimeoutException(Exception inner) : TimeoutException("Mirror policy timed out.",inner);
+public sealed record MirrorScheduleObservation(string Outcome,int ConsecutiveFailures,bool HasEligiblePending,bool Rerun);
+public sealed record MirrorScheduleDecision(string Action,int? DelayMs,int ConsecutiveFailures);
+public static class MirrorFailure
+{
+    // Concrete transport/storage classifications only; never inspect error text.
+    public static string Outcome(Exception error) => error switch {
+        MirrorPolicyUnavailableException => "policy-unavailable",
+        MirrorPolicyTimeoutException => "policy-unavailable",
+        TimeoutException => "transient",
+        SyncConflictException => "conflict",
+        HttpRequestException {StatusCode:System.Net.HttpStatusCode.Unauthorized} => "auth-required",
+        HttpRequestException {StatusCode:System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound} => "permission",
+        HttpRequestException {StatusCode:System.Net.HttpStatusCode.Conflict or System.Net.HttpStatusCode.PreconditionFailed} => "conflict",
+        HttpRequestException e when e.StatusCode is null || (int)e.StatusCode==408 || (int)e.StatusCode==429 || (int)e.StatusCode>=500 => "transient",
+        OperationCanceledException => "transient",
+        FileChangedException => "transient",
+        _ => "storage"
+    };
+}
+
 /// <summary>RPC validation only. All portable decisions run in the packaged page.
 /// A new page requires a new adapter; stale replies never authorize file writes.</summary>
 public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, CancellationToken, Task<string>> evaluate, TimeSpan? timeout = null)
@@ -17,15 +39,17 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
     int retired;
     public void Retire() => Interlocked.Exchange(ref retired, 1);
 
-    public async Task ReadyAsync(CancellationToken ct = default) => await ExecuteAsync(null,ct);
+    public async Task ReadyAsync(CancellationToken ct = default) => await ExecuteAsync(null,null,ct);
     public async Task<MirrorDisposition> DecideAsync(MirrorObservation observed, CancellationToken ct = default) =>
-        await ExecuteAsync(observed,ct) ?? throw new IOException("Missing mirror disposition.");
+        (MirrorDisposition)(await ExecuteAsync(observed,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror disposition."));
+    public async Task<MirrorScheduleDecision> ScheduleAsync(MirrorScheduleObservation observed,CancellationToken ct=default) =>
+        (MirrorScheduleDecision)(await ExecuteAsync(null,observed,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror schedule."));
 
-    private async Task<MirrorDisposition?> ExecuteAsync(MirrorObservation? observed, CancellationToken ct)
+    private async Task<object?> ExecuteAsync(MirrorObservation? observed, MirrorScheduleObservation? schedule, CancellationToken ct)
     {
         await gate.WaitAsync(ct);
         try {
-            void Current() { ct.ThrowIfCancellationRequested(); if(Volatile.Read(ref retired) != 0) throw new IOException("Mirror policy connection retired."); }
+            void Current() { ct.ThrowIfCancellationRequested(); if(Volatile.Read(ref retired) != 0) throw new MirrorPolicyUnavailableException("Mirror policy connection retired."); }
             Current();
             async Task<JsonDocument> Call(string method, object? argument = null) {
                 var script = "window.texttextMirrorPolicy." + method + "(" + (argument is null ? "" : JsonSerializer.Serialize(argument, Json)) + ")";
@@ -36,37 +60,46 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
             void Identity(JsonElement value) {
                 if(value.GetProperty("version").GetInt32() != 1 || value.GetProperty("digest").GetString() != digest ||
                    value.GetProperty("pageId").GetString() != pageId ||
-                   generation is {} bound && value.GetProperty("generation").GetInt64() != bound) throw new IOException("Mirror policy page changed.");
+                   generation is {} bound && value.GetProperty("generation").GetInt64() != bound) throw new MirrorPolicyUnavailableException("Mirror policy page changed.");
             }
             using(var hello = await Call("handshake")) {
                 var next = hello.RootElement.GetProperty("pageId").GetString();
-                if(string.IsNullOrEmpty(next)) throw new IOException("Mirror policy page unavailable.");
+                if(string.IsNullOrEmpty(next)) throw new MirrorPolicyUnavailableException("Mirror policy page unavailable.");
                 // Freeze the first identity before binding; never silently adopt a reload.
                 pageId ??= next;
                 Identity(hello.RootElement);
                 if(generation is null) {
                     using var binding = await Call("bind", new {scope,generation=hello.RootElement.GetProperty("generation").GetInt64()});
                     Identity(binding.RootElement);
-                    if(binding.RootElement.GetProperty("scope").Deserialize<MirrorScope>(Json) != scope) throw new IOException("Mirror policy owner changed.");
+                    if(binding.RootElement.GetProperty("scope").Deserialize<MirrorScope>(Json) != scope) throw new MirrorPolicyUnavailableException("Mirror policy owner changed.");
                     generation=binding.RootElement.GetProperty("generation").GetInt64();
                 }
             }
-            if(observed is null) {
+            if(observed is null && schedule is null) {
                 using var confirmed = await Call("handshake"); Identity(confirmed.RootElement);
                 return null;
             }
             var requestId = Guid.NewGuid().ToString();
-            using var result = await Call("evaluate", new { version = 1, digest, pageId, generation, scope, requestId, observed });
+            using var result = await Call(schedule is null ? "evaluate" : "schedule", new { version = 1, digest, pageId, generation, scope, requestId, observed=(object?)schedule??observed });
             var value = result.RootElement; Identity(value);
             if(value.GetProperty("scope").Deserialize<MirrorScope>(Json) != scope || value.GetProperty("requestId").GetString() != requestId ||
-               value.GetProperty("observed").Deserialize<MirrorObservation>(Json) != observed) throw new IOException("Stale mirror policy reply.");
+               (schedule is null ? value.GetProperty("observed").Deserialize<MirrorObservation>(Json) != observed : value.GetProperty("observed").Deserialize<MirrorScheduleObservation>(Json) != schedule)) throw new MirrorPolicyUnavailableException("Stale mirror policy reply.");
             // Recheck the current page after the decision RPC, before returning authority.
             using var current = await Call("handshake"); Identity(current.RootElement);
+            if(schedule is not null) {
+                var decision=value.GetProperty("decision").Deserialize<MirrorScheduleDecision>(Json)??throw new MirrorPolicyUnavailableException("Missing mirror schedule.");
+                if(decision.Action is not ("run" or "wait-change" or "wait-credentials" or "wait-reopen" or "stop") ||
+                   decision.ConsecutiveFailures is <0 or >6 ||
+                   (decision.Action=="run" ? decision.DelayMs is null or <0 or >60_000 : decision.DelayMs is not null))throw new MirrorPolicyUnavailableException("Invalid mirror schedule.");
+                return decision;
+            }
             return value.GetProperty("disposition").GetString() switch {
                 "upload" => MirrorDisposition.Upload, "pull" => MirrorDisposition.Pull, "idle" => MirrorDisposition.Idle,
-                _ => throw new IOException("Unknown mirror disposition.")
+                _ => throw new MirrorPolicyUnavailableException("Unknown mirror disposition.")
             };
-        } catch(TimeoutException) { Retire(); throw; }
+        } catch(OperationCanceledException) when(ct.IsCancellationRequested) { throw; }
+        catch(TimeoutException error) { Retire(); throw new MirrorPolicyTimeoutException(error); }
+        catch(Exception error) { Retire();throw error is MirrorPolicyUnavailableException ? error : new MirrorPolicyUnavailableException("Mirror policy is unavailable.",error); }
         finally { gate.Release(); }
     }
 }

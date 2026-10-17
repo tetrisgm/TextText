@@ -3,6 +3,8 @@ import { createMirrorPolicyHost } from "./mirror-policy-host";
 import { mirrorDisposition, validateMirrorObservation } from "../sync/engine/mirror-policy";
 import vectors from "../../sync/fixtures/mirror-policy.json";
 
+import schedules from "../../sync/fixtures/mirror-schedule.json";
+
 const digest = "f".repeat(64), pageId = "page-a";
 const scope = { accountId: "account-a", workspaceId: "workspace", lifecycle: "connection-a" };
 const observed = { localHash: "a".repeat(64), baselineHash: "a".repeat(64), remoteRevision: "remote-a", baselineRevision: "remote-a", refresh: false };
@@ -10,6 +12,17 @@ const request = { version: 1, digest, pageId, generation: 1, scope, requestId: "
 describe("portable mirror policy host", () => {
   it("covers all local/remote/refresh combinations, retaining upload CAS on concurrent edits", () => {
     for (const vector of vectors) expect(mirrorDisposition(validateMirrorObservation(vector.observed)), vector.name).toBe(vector.disposition);
+  });
+  it("runs scheduler vectors under the same scope, request and page fences", () => {
+    const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
+    for (const [index, vector] of schedules.entries()) {
+      const input = {...request, requestId: "schedule-" + index, observed: vector.observed};
+      expect(host.schedule(input)).toEqual({...input, decision: vector.decision});
+      expect(() => host.schedule({...input, generation: 0})).toThrow("Stale");
+      expect(() => host.schedule({...input, observed: {...vector.observed, operationId: "existing"}})).toThrow();
+    }
+    host.retire();
+    expect(() => host.schedule({...request, observed: schedules[0].observed})).toThrow("Stale");
   });
   it("requires an exact build, page and bound identity and echoes immutable observations", () => {
     const host = createMirrorPolicyHost(digest, pageId);

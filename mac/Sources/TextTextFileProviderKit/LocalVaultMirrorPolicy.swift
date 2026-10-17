@@ -16,6 +16,37 @@ public struct LocalVaultMirrorScope: Codable, Equatable, Sendable {
 }
 public enum LocalVaultMirrorDisposition: String, Codable, Sendable { case upload, pull, idle }
 
+public enum LocalVaultMirrorScheduleOutcome: String, Codable, Sendable {
+    case success, transient, permission, conflict, storage, stopped
+    case authRequired = "auth-required", policyUnavailable = "policy-unavailable"
+    public static func failure(_ error: Error) -> Self {
+        if error is LocalVaultMirrorPolicy.Failure { return .policyUnavailable }
+        if let failure = error as? LocalVaultSyncFailure {
+            switch failure {
+            case .httpStatus(401): return .authRequired
+            case .httpStatus(403), .httpStatus(404): return .permission
+            case .conflict: return .conflict
+            case .changed, .busy: return .transient
+            case .httpStatus(let status) where status == 408 || status == 429 || status >= 500: return .transient
+            default: return .storage
+            }
+        }
+        if error is URLError || error is CancellationError { return .transient }
+        return .storage
+    }
+}
+public struct LocalVaultMirrorScheduleObservation: Codable, Equatable, Sendable {
+    public let outcome: LocalVaultMirrorScheduleOutcome
+    public let consecutiveFailures: Int, hasEligiblePending: Bool, rerun: Bool
+    public init(outcome: LocalVaultMirrorScheduleOutcome, consecutiveFailures: Int, hasEligiblePending: Bool = false, rerun: Bool = false) {
+        self.outcome = outcome; self.consecutiveFailures = consecutiveFailures
+        self.hasEligiblePending = hasEligiblePending; self.rerun = rerun
+    }
+}
+public struct LocalVaultMirrorScheduleDecision: Codable, Equatable, Sendable {
+    public let action: String, delayMs: Int?, consecutiveFailures: Int
+}
+
 /// Validates the existing page's pure policy RPC. This contains no mirror algorithm.
 public actor LocalVaultMirrorPolicy {
     public typealias Evaluate = @Sendable (String) async throws -> String
@@ -23,6 +54,15 @@ public actor LocalVaultMirrorPolicy {
     private let timeoutNanoseconds: UInt64
     private var pageId: String?, retired = false
     private var generation: Int?
+    private var acquired = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private func acquire() async {
+        if !acquired { acquired = true; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    private func release() {
+        if waiters.isEmpty { acquired = false } else { waiters.removeFirst().resume() }
+    }
     private struct Pending {
         let continuation: CheckedContinuation<String, Error>
         let operation: Task<Void, Never>, timer: Task<Void, Never>
@@ -32,13 +72,17 @@ public actor LocalVaultMirrorPolicy {
     private struct Identity: Decodable { let version: Int, digest: String, pageId: String, generation: Int }
     private struct BindRequest: Encodable { let scope: LocalVaultMirrorScope, generation: Int }
     private struct Binding: Decodable { let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope }
-    private struct Request: Encodable {
+    private struct Request<Observation: Encodable>: Encodable {
         let version = 1
-        let digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String, observed: LocalVaultMirrorObservation
+        let digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String, observed: Observation
     }
     private struct Reply: Decodable {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorObservation, disposition: LocalVaultMirrorDisposition
+    }
+    private struct ScheduleReply: Decodable {
+        let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
+        let observed: LocalVaultMirrorScheduleObservation, decision: LocalVaultMirrorScheduleDecision
     }
     public init(digest: String, scope: LocalVaultMirrorScope, timeoutNanoseconds: UInt64 = 5_000_000_000, evaluate: @escaping Evaluate) {
         self.digest = digest; self.scope = scope; self.evaluate = evaluate; self.timeoutNanoseconds = timeoutNanoseconds
@@ -62,7 +106,7 @@ public actor LocalVaultMirrorPolicy {
             try await withCheckedThrowingContinuation { continuation in
                 let operation = Task {
                     do { let value = try await evaluate(script); finish(id, .success(value)) }
-                    catch { finish(id, .failure(error)) }
+                    catch { finish(id, .failure(error is CancellationError || error is Failure ? error : Failure.stale)) }
                 }
                 let timer = Task {
                     do { try await Task.sleep(nanoseconds: timeoutNanoseconds); expire(id) } catch {}
@@ -71,13 +115,18 @@ public actor LocalVaultMirrorPolicy {
             }
         } onCancel: { Task { await self.finish(id, .failure(CancellationError())) } }
         try Task.checkCancellation(); guard !retired else { throw Failure.stale }
-        return try JSONDecoder().decode(T.self, from: Data(raw.utf8))
+        do { return try JSONDecoder().decode(T.self, from: Data(raw.utf8)) }
+        catch { throw Failure.stale }
     }
     private func check(_ version: Int, _ digest: String, _ page: String, _ generation: Int) throws {
         guard version == 1, digest == self.digest, page == pageId,
             self.generation == nil || generation == self.generation else { throw Failure.stale }
     }
     public func ready() async throws {
+        await acquire(); defer { release() }
+        try await prepare()
+    }
+    private func prepare() async throws {
         let hello = try await call("handshake", as: Identity.self)
         guard !hello.pageId.isEmpty else { throw Failure.stale }
         if pageId == nil { pageId = hello.pageId }
@@ -93,7 +142,8 @@ public actor LocalVaultMirrorPolicy {
         try check(current.version, current.digest, current.pageId, current.generation)
     }
     public func decide(_ observed: LocalVaultMirrorObservation) async throws -> LocalVaultMirrorDisposition {
-        try await ready()
+        await acquire(); defer { release() }
+        try await prepare()
         guard let generation, let pageId else { throw Failure.stale }
         let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
         let reply = try await call("evaluate", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: Reply.self)
@@ -103,4 +153,21 @@ public actor LocalVaultMirrorPolicy {
         try check(current.version, current.digest, current.pageId, current.generation)
         return reply.disposition
     }
+    public func schedule(_ observed: LocalVaultMirrorScheduleObservation) async throws -> LocalVaultMirrorScheduleDecision {
+        await acquire(); defer { release() }
+        try await prepare()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let reply = try await call("schedule", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: ScheduleReply.self)
+        try check(reply.version, reply.digest, reply.pageId, reply.generation)
+        guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed else { throw Failure.stale }
+        let decision = reply.decision
+        guard ["run", "wait-change", "wait-credentials", "wait-reopen", "stop"].contains(decision.action),
+              (0...6).contains(decision.consecutiveFailures),
+              decision.action == "run" ? decision.delayMs.map({ (0...60_000).contains($0) }) == true : decision.delayMs == nil else { throw Failure.stale }
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+        return decision
+    }
+
 }

@@ -118,19 +118,16 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         var failures = 0; var localWake = false; var lastRemotePass = DateTimeOffset.MinValue;
         try {
             while (!lifetime.IsCancellationRequested) {
+                var outcome="success";
                 try {
-                    // File saves from an active shared editor are already sent
-                    // through collaboration. Local wakeups need no cloud read
-                    // unless another file changed; remote discovery still runs
-                    // at least every 30 seconds under continuous local typing.
+                    // Remote discovery remains a separate read cadence. The shared
+                    // policy owns all retry and local-change debounce timing.
                     var localOnly = localWake && failures == 0 && DateTimeOffset.UtcNow - lastRemotePass < TimeSpan.FromSeconds(30);
                     if (!localOnly) lastRemotePass = DateTimeOffset.UtcNow;
                     try { await sync.SyncAsync(lifetime.Token, localChangesOnly: localOnly); }
                     finally {
-                        // A listing served without the gate must be replaced once this pass releases it, whether or not the pass succeeded.
                         if(Interlocked.Exchange(ref permissionsChanged,0)!=0 && !lifetime.IsCancellationRequested) await context.Emit("texttext:vault-changed",new { });
                     }
-                    failures = 0;
                     var status = sync.Status.Error is null ? "ready" : "conflict";
                     var completedVersion = Volatile.Read(ref durabilityVersion);
                     if (lastStatus != status || notifiedDurabilityVersion != completedVersion) {
@@ -139,18 +136,62 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     }
                 } catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { break; }
                 catch (Exception error) {
-                    failures = Math.Min(failures + 1, 6);
-                    // Report meaningful state changes, not every successful poll or retry.
-                    var status = error is SyncConflictException ? "conflict" : "offline";
-                    if (lastStatus != status) { lastStatus = status; await context.Emit("texttext:vault-sync-status", new { connected = true, available = true, onlineReady = false, hasConflicts = status == "conflict" }); }
+                    outcome=MirrorFailure.Outcome(error);
+                    var status=outcome=="conflict" ? "conflict" : outcome=="auth-required" ? "auth-required" : "offline";
+                    if (lastStatus != status) { lastStatus = status; await context.Emit("texttext:vault-sync-status", new { connected = true, available = true, onlineReady = false, hasConflicts = status == "conflict", authenticationRequired=outcome=="auth-required" }); }
                 }
-                using var wake = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-                wake.CancelAfter(TimeSpan.FromSeconds(failures == 0 ? 30 : Math.Min(120, 2 << failures)));
-                try { await changes.Reader.ReadAsync(wake.Token); localWake = true; } catch (OperationCanceledException) when (!lifetime.IsCancellationRequested) { localWake = false; }
-                while (changes.Reader.TryRead(out _)) { }
-                await Task.Delay(failures == 0 ? 400 : Math.Min(30_000, 1000 << failures), lifetime.Token);
+                MirrorScheduleDecision decision;
+                try {
+                    if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("The shared sync policy is unavailable.");
+                    decision=await mirrorPolicy.ScheduleAsync(new(outcome,failures,false,false),lifetime.Token);
+                } catch(OperationCanceledException) when(lifetime.IsCancellationRequested) { break; }
+                catch {
+                    // No executable policy means no background writer or invented
+                    // native retry policy. Reopening creates a new fenced host.
+                    await Task.Delay(Timeout.Infinite,lifetime.Token);break;
+                }
+                failures=decision.ConsecutiveFailures;
+                localWake=false;
+                if(decision.Action is "stop" or "wait-credentials" || decision.Action=="wait-reopen"&&outcome!="storage") {
+                    // Credentials are immutable on this workspace bridge. A valid
+                    // sign-in/reopen retires it and constructs a fresh bridge.
+                    await Task.Delay(Timeout.Infinite,lifetime.Token);break;
+                }
+                if(decision.Action=="run") {
+                    // Filesystem notifications cannot shorten a failed pass's delay.
+                    await Task.Delay(decision.DelayMs!.Value,lifetime.Token);
+                    while(changes.Reader.TryRead(out _)) { }
+                    continue;
+                }
+                if(decision.Action=="wait-reopen") {
+                    // A repaired/changed local file is an explicit recovery wake.
+                    // The original outbox survives; no operation is regenerated.
+                    await changes.Reader.ReadAsync(lifetime.Token);
+                    while(changes.Reader.TryRead(out _)) { }
+                    continue;
+                }
+                if(outcome is "permission" or "conflict") {
+                    // Read the manifest again to observe regrant/resolution. Do not
+                    // treat local typing as permission to retry a denied upload.
+                    await Task.Delay(TimeSpan.FromSeconds(30),lifetime.Token);
+                    while(changes.Reader.TryRead(out _)) { }
+                    continue;
+                }
+                using var wake=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                wake.CancelAfter(TimeSpan.FromSeconds(30));
+                try { await changes.Reader.ReadAsync(wake.Token);localWake=true; }
+                catch(OperationCanceledException) when(!lifetime.IsCancellationRequested) { }
+                while(changes.Reader.TryRead(out _)) { }
+                if(localWake) {
+                    try {
+                        var debounce=await mirrorPolicy!.ScheduleAsync(new("success",0,false,true),lifetime.Token);
+                        if(debounce.Action!="run"||debounce.DelayMs is null)throw new MirrorPolicyUnavailableException("Invalid wake schedule.");
+                        await Task.Delay(debounce.DelayMs.Value,lifetime.Token);
+                    } catch(OperationCanceledException) when(lifetime.IsCancellationRequested) { break; }
+                    catch { await Task.Delay(Timeout.Infinite,lifetime.Token);break; }
+                }
             }
-        } catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        } catch(OperationCanceledException) when(lifetime.IsCancellationRequested) { }
     }
 
     public async Task<object?> InvokeAsync(string method, JsonElement p, CancellationToken ct)

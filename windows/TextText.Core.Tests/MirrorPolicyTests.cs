@@ -25,6 +25,14 @@ static class MirrorPolicyTests
             refused=false;try{await policy.DecideAsync(observation);}catch(IOException){refused=true;}
             check(refused,"retired policy cannot resume: "+altered);
         }
+        foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-schedule.json"))).RootElement.EnumerateArray()) {
+            var policy=NativePolicyTestHost.Create();
+            var scheduleObservation=vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!;
+            check(await policy.ScheduleAsync(scheduleObservation)==vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json),"source schedule vector: "+vector.GetProperty("name"));
+        }
+        check(MirrorFailure.Outcome(new HttpRequestException("ignored",null,System.Net.HttpStatusCode.Unauthorized))=="auth-required","401 classified structurally");
+        check(MirrorFailure.Outcome(new HttpRequestException("401 text is not status"))=="transient","network error text cannot invent authentication failure");
+        check(MirrorFailure.Outcome(new IOException("offline"))=="storage","storage failure is not a generic network retry");
         var delayed=new TaskCompletionSource<string>();
         var stuck=new MirrorPolicy(digest,scope,(_,_)=>delayed.Task,TimeSpan.FromMilliseconds(20));
         var timeout=false;try{await stuck.DecideAsync(observation);}catch(TimeoutException){timeout=true;}
@@ -33,4 +41,10 @@ static class MirrorPolicyTests
         var retired=false;try{await stuck.DecideAsync(observation);}catch(IOException){retired=true;}
         check(retired,"late reply cannot revive timed-out policy lease");
     }
+    static string FindRoot() {
+        var directory=new DirectoryInfo(AppContext.BaseDirectory);
+        while(directory is not null&&!File.Exists(Path.Combine(directory.FullName,"sync","fixtures","mirror-schedule.json")))directory=directory.Parent;
+        return directory?.FullName??throw new IOException("Missing source schedule fixture.");
+    }
+
 }

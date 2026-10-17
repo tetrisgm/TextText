@@ -7,11 +7,79 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
     @MainActor
     private func testConnection(root: URL, workspaceId: String? = nil, session: URLSession = .shared,
         credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil },
-        verifiedCredentials: LocalVaultConnectionController.VerifiedCredentialsProvider? = nil) -> LocalVaultConnectionController {
+        verifiedCredentials: LocalVaultConnectionController.VerifiedCredentialsProvider? = nil,
+        syncPass: (@MainActor (LocalVaultSync) async throws -> LocalVaultSyncReport)? = nil) -> LocalVaultConnectionController {
         LocalVaultConnectionController(root: root, workspaceId: workspaceId, session: session,
             credentials: credentials, verifiedCredentials: verifiedCredentials,
-            mirrorPolicyFactory: { binding, account in makeTestMirrorPolicy(workspaceId: binding.workspaceId, accountId: account.accountId) })
+            mirrorPolicyFactory: { binding, account in makeTestMirrorPolicy(workspaceId: binding.workspaceId, accountId: account.accountId) }, syncPass: syncPass)
     }
+    @MainActor
+    func testCancelledPassCannotClearReplacementAfterTokenRefresh() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CredentialRefreshProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let passes = ControlledSyncPass()
+        defer { passes.releaseAll() }
+        var token = "fixture-before"
+        CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
+        let connection = testConnection(root: root, session: session,
+            verifiedCredentials: { LocalVaultAccountCredential(origin: URL(string: "https://texttext.test")!, token: token, accountId: "account-a") },
+            syncPass: { _ in try await passes.run() })
+        defer { connection.stop() }
+        _ = try await connection.connect(startSync: false)
+        connection.schedule()
+        try await passes.waitFor(1)
+        token = "fixture-after"; CredentialRefreshProtocol.setExpectedToken("Bearer fixture-after")
+        connection.credentialsChanged()
+        try await passes.waitFor(2)
+        passes.release(1, error: LocalVaultSyncFailure.httpStatus(401))
+        try await Task.sleep(nanoseconds: 50_000_000)
+        connection.schedule()
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(passes.count, 2, "Cancelled completion cannot clear the replacement pass handle")
+        XCTAssertEqual(connection.status["authenticationRequired"] as? Bool, false, "Old token failure cannot park current credentials")
+        passes.release(2)
+        await connection.stopAndWait()
+    }
+
+    @MainActor
+    func testUnauthorizedDiscoveryParksUntilDifferentCredentials() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        AuthScheduleProtocol.reset()
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AuthScheduleProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        var token = "expired"
+        let connection = testConnection(root: root, session: session,
+            verifiedCredentials: { LocalVaultAccountCredential(origin: URL(string: "https://schedule.test")!, token: token, accountId: "account-a") })
+        defer { connection.stop() }
+        connection.connectAutomatically()
+        let deadline = Date().addingTimeInterval(3)
+        while connection.status["authenticationRequired"] as? Bool != true && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(connection.status["authenticationRequired"] as? Bool, true)
+        let denied = AuthScheduleProtocol.count
+        connection.credentialsChanged(); connection.schedule(); connection.connectAutomatically()
+        try await Task.sleep(nanoseconds: 2_200_000_000)
+        XCTAssertEqual(AuthScheduleProtocol.count, denied, "Same credentials and file wakes cannot restart401 retries")
+        token = "renewed"; connection.credentialsChanged()
+        let resumed = Date().addingTimeInterval(3)
+        while connection.status["connected"] as? Bool != true && Date() < resumed { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(connection.status["connected"] as? Bool, true)
+        XCTAssertEqual(connection.status["authenticationRequired"] as? Bool, false)
+        AuthScheduleProtocol.rejectWatch()
+        connection.activate()
+        let watchDeadline = Date().addingTimeInterval(3)
+        while connection.status["authenticationRequired"] as? Bool != true && Date() < watchDeadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(connection.status["authenticationRequired"] as? Bool, true, "Watch401 must use the same account fence")
+        let watchDenied = AuthScheduleProtocol.count
+        connection.schedule()
+        try await Task.sleep(nanoseconds: 2_200_000_000)
+        XCTAssertEqual(AuthScheduleProtocol.count, watchDenied, "Watch401 cannot retain a generic retry loop")
+    }
+
     func testAccountReviewRequiresFreshMatchingProfileAndWorkspacePermission() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AdoptionReviewProtocol.self]
         let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
@@ -369,4 +437,48 @@ private final class AdoptionReviewProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body)); client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+}
+
+private final class AuthScheduleProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var requests = 0
+    nonisolated(unsafe) private static var rejectedWatch = false
+    static func reset() { lock.lock(); requests = 0; rejectedWatch = false; lock.unlock() }
+    static func rejectWatch() { lock.lock(); rejectedWatch = true; lock.unlock() }
+    static var count: Int { lock.lock(); defer { lock.unlock() }; return requests }
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "schedule.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); Self.requests += 1; let rejectWatch = Self.rejectedWatch; Self.lock.unlock()
+        let isWatch = request.url?.query?.contains("wait=") == true
+        if isWatch && !rejectWatch {
+            client?.urlProtocol(self, didFailWithError: URLError(.timedOut)); return
+        }
+        let authorized = request.value(forHTTPHeaderField: "Authorization") == "Bearer renewed" && !(isWatch && rejectWatch)
+        let body = request.url?.path == "/api/vault" ? "{\"workspaceId\":\"workspace\"}" : "{\"items\":[]}"
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: authorized ? 200 : 401, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@MainActor
+private final class ControlledSyncPass {
+    private(set) var count = 0
+    private var pending: [Int: CheckedContinuation<LocalVaultSyncReport, Error>] = [:]
+    func run() async throws -> LocalVaultSyncReport {
+        count += 1; let id = count
+        // Deliberately ignores cancellation until released, modeling a late I/O completion.
+        return try await withCheckedThrowingContinuation { pending[id] = $0 }
+    }
+    func release(_ id: Int, error: Error? = nil) {
+        guard let continuation = pending.removeValue(forKey: id) else { return }
+        if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: LocalVaultSyncReport()) }
+    }
+    func releaseAll() { for id in Array(pending.keys) { release(id, error: CancellationError()) } }
+    func waitFor(_ expected: Int) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while count < expected && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        guard count >= expected else { throw LocalVaultSyncFailure.busy }
+    }
 }

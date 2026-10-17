@@ -32,7 +32,15 @@ public struct LocalVaultSyncReport: Sendable {
     public var downloaded = 0
     public var conflicts: [String] = []
     public var errors: [String] = []
+    public var failureOutcomes: [LocalVaultMirrorScheduleOutcome] = []
     public var hasMore = false
+    mutating func failed(_ error: Error, message: String) throws {
+        try Task.checkCancellation()
+        let outcome = LocalVaultMirrorScheduleOutcome.failure(error)
+        if outcome == .authRequired { throw error }
+        if error is CancellationError { throw error }
+        failureOutcomes.append(outcome); errors.append(message)
+    }
     public init() {}
 }
 
@@ -1083,7 +1091,7 @@ public actor LocalVaultSync {
         }
         for folder in folders {
             do { try LocalVaultDocumentStore(root: root).ensureFolders([folder]) }
-            catch { report.errors.append("A workspace folder could not be opened. Other files continue syncing.") }
+            catch { try report.failed(error, message: "A workspace folder could not be opened. Other files continue syncing.") }
         }
         var remoteByID: [String: LocalVaultRemoteItem] = [:]
         var remotePaths = Set<String>()
@@ -1101,7 +1109,7 @@ public actor LocalVaultSync {
                 if try await syncOpenBinary(itemId: pending.itemId, path: pending.path, remote: remote) {
                     report.uploaded += 1; report.hasMore = true
                 }
-            } catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
+            } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
         // A restore is a new lifecycle. Old device deletion intents must not
         // delete it again, and old edits remain recoverable conflicts.
@@ -1143,11 +1151,11 @@ public actor LocalVaultSync {
             do {
                 if let current = try await adoptQueuedUploadPath(pending, remote: remoteByID[pending.itemId], budget: budget, report: &report),
                    await canSend(current) { writablePending.append(current) }
-            } catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
+            } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
         for pending in writablePending.prefix(budget) {
             do { try await send(pending, report: &report) }
-            catch { report.errors.append("\(pending.path): \(error.localizedDescription)") }
+            catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
         if report.uploaded > 0 {
             manifest = try await transport.manifest(); remoteByID.removeAll()
@@ -1168,8 +1176,8 @@ public actor LocalVaultSync {
             do {
                 let document = try store.read(path: path)
                 if let id = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId { identities[path] = id }
-                else { indexComplete = false; report.errors.append("\(path): missing document identity") }
-            } catch { indexComplete = false; report.errors.append("\(path): \(error.localizedDescription)") }
+                else { indexComplete = false; try report.failed(LocalVaultSyncFailure.invalidResponse, message: "\(path): missing document identity") }
+            } catch { indexComplete = false; try report.failed(error, message: "\(path): \(error.localizedDescription)") }
         }
         state.identities = identities
         var localByID: [String: [String]] = [:]
@@ -1415,7 +1423,7 @@ public actor LocalVaultSync {
                 }
                 try await send(pending, report: &report)
             } catch LocalVaultSharedFailure.protected { continue }
-            catch { report.errors.append("\(activePath): \(error.localizedDescription)") }
+            catch { try report.failed(error, message: "\(activePath): \(error.localizedDescription)") }
         }
         if report.downloaded > 0 { manifest = try await transport.manifest() }
         for remote in manifest where !remote.isDeleted {

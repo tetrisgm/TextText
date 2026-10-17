@@ -1,5 +1,7 @@
 import { mirrorDisposition, validateMirrorObservation } from "../sync/engine/mirror-policy";
 
+import { mirrorSchedule, validateMirrorScheduleObservation } from "../sync/engine/mirror-schedule";
+
 export const MIRROR_POLICY_VERSION = 1;
 export interface MirrorScope { accountId: string; workspaceId: string; lifecycle: string }
 
@@ -21,6 +23,14 @@ export function createMirrorPolicyHost(digest: string, pageId: string) {
   let owner: MirrorScope | undefined;
   let generation = 0;
   let retired = false;
+  function validateRequest(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("Invalid mirror request");
+    const v = value as Record<string, unknown>, requestScope = scope(v.scope);
+    if (retired || !owner || !sameScope(owner, requestScope) || v.version !== MIRROR_POLICY_VERSION ||
+        v.digest !== digest || v.pageId !== pageId || v.generation !== generation) throw Error("Stale mirror policy request");
+    if (Object.keys(v).length !== 7 || typeof v.requestId !== "string" || !v.requestId || v.requestId.length > 128) throw Error("Invalid mirror request");
+    return {v, envelope: {version: MIRROR_POLICY_VERSION, digest, pageId, generation, scope: {...owner}, requestId: v.requestId}};
+  }
   return Object.freeze({
     handshake() { return { version: MIRROR_POLICY_VERSION, digest, pageId, generation }; },
     bind(value: unknown) {
@@ -35,14 +45,14 @@ export function createMirrorPolicyHost(digest: string, pageId: string) {
       return { version: MIRROR_POLICY_VERSION, digest, pageId, generation, scope: { ...owner } };
     },
     evaluate(value: unknown) {
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("Invalid mirror request");
-      const v = value as Record<string, unknown>, requestScope = scope(v.scope);
-      if (retired || !owner || !sameScope(owner, requestScope) || v.version !== MIRROR_POLICY_VERSION ||
-          v.digest !== digest || v.pageId !== pageId || v.generation !== generation) throw Error("Stale mirror policy request");
-      if (Object.keys(v).length !== 7 || typeof v.requestId !== "string" || !v.requestId || v.requestId.length > 128) throw Error("Invalid mirror request");
+      const {v, envelope} = validateRequest(value);
       const observed = validateMirrorObservation(v.observed);
-      return { version: MIRROR_POLICY_VERSION, digest, pageId, generation, scope: { ...owner },
-        requestId: v.requestId, observed, disposition: mirrorDisposition(observed) };
+      return { ...envelope, observed, disposition: mirrorDisposition(observed) };
+    },
+    schedule(value: unknown) {
+      const {v, envelope} = validateRequest(value);
+      const observed = validateMirrorScheduleObservation(v.observed);
+      return { ...envelope, observed, decision: mirrorSchedule(observed) };
     },
     retire() { retired = true; },
   });

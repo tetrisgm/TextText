@@ -31,6 +31,24 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), bytes)
     }
 
+    func testUnauthorizedPendingUploadStopsPassAndRetainsExactOperation() async throws {
+        try putLocal(pack("Pending work"))
+        let remote = FakeVaultTransport()
+        await remote.rejectNextUpload(status: 401)
+        let sync = try engine(remote)
+        do { _ = try await sync.sync(); XCTFail("Unauthorized upload must stop the pass") }
+        catch LocalVaultSyncFailure.httpStatus(401) { }
+        let first = await remote.operations()
+        XCTAssertEqual(first.count, 1)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let outbox = try XCTUnwrap(state["outbox"] as? [String: [String: Any]])
+        XCTAssertEqual(outbox[itemId]?["operationId"] as? String, first.first)
+        _ = try await engine(remote).sync()
+        let retried = await remote.operations()
+        XCTAssertEqual(retried, [first[0], first[0]], "Authenticated restart replays the exact durable operation")
+    }
+
     func testAuthoritativeFolderCatalogPrunesOnlyEmptyTrackedTreesAcrossRestart() async throws {
         let transport = FakeVaultTransport()
         await transport.setFolders(["Before", "Before/Empty", "Keep", "Placeholder", "UnknownParent"], authoritative: true)
@@ -1169,6 +1187,8 @@ actor FakeVaultTransport: LocalVaultSyncTransport {
     private var uploadTrace: [(operationId: String, baseRevision: String?)] = []
     func uploads() -> [(operationId: String, baseRevision: String?)] { uploadTrace }
     private var downloads = 0
+    private var uploadRejection: Int?
+    func rejectNextUpload(status: Int) { uploadRejection = status }
     private var failBeforeCommit = false
     func failNextUploadBeforeCommit() { failBeforeCommit = true }
     private var loseReply = false
@@ -1231,6 +1251,7 @@ actor FakeVaultTransport: LocalVaultSyncTransport {
         uploadedOperations.append(operationId)
         nativeOrigins.append(nativeEditor)
         uploadTrace.append((operationId, baseRevision))
+        if let status = uploadRejection { uploadRejection = nil; throw LocalVaultSyncFailure.httpStatus(status) }
         if failBeforeCommit { failBeforeCommit = false; throw URLError(.notConnectedToInternet) }
         if let receipt = receipts[operationId] { return receipt }
         if let merged {

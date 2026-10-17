@@ -137,7 +137,7 @@ public sealed class SyncEngine
             // The existing sync lock also fences foreign active editors. This
             // engine may mirror assets/paths while retaining its own editors.
             using var fileLock=workspaceOwnership.Acquire();
-            if(mirrorPolicy is null)throw new IOException("The shared sync policy is unavailable. Reopen the workspace to retry.");
+            if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("The shared sync policy is unavailable. Reopen the workspace to retry.");
             await mirrorPolicy.ReadyAsync(cancellation);
             state=Load();var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
             Report(true,null,state.Outbox.Count);

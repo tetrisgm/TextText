@@ -25,9 +25,16 @@ final class LocalVaultConnectionController {
     private var transport: HTTPLocalVaultSyncTransport?
     private var watching: Task<Void, Never>?
     private var running: Task<Void, Never>?
+    private var runID: UUID?
+    private var runTasks: [UUID: Task<Void, Never>] = [:]
+    private let syncPass: (@MainActor (LocalVaultSync) async throws -> LocalVaultSyncReport)?
     private var scheduled: DispatchWorkItem?
     private var rerun = false
-    private var retryDelay: TimeInterval = 2
+    private var syncFailures = 0
+    private var scheduleTask: Task<Void, Never>?
+    private var scheduledRetry = false
+    private var schedulingWait: LocalVaultMirrorScheduleOutcome?
+    private var rejectedToken: String?
     private var binding: LocalVaultSyncBinding?
     private var previousBinding: LocalVaultSyncBinding?
     private(set) var message: String?
@@ -40,13 +47,13 @@ final class LocalVaultConnectionController {
     private(set) var capabilities: LocalVaultSyncCapabilities?
     private var onlineReady = false
     private var connectRetry: Task<Void, Never>?
-    private var connectDelay: UInt64 = 2
+    private var connectFailures = 0
     var onChange: (([String: Any], Bool) -> Void)?
 
-    init(root: URL, workspaceId: String? = nil, session: URLSession = .shared, credentials: @escaping CredentialsProvider = { nil }, verifiedCredentials: VerifiedCredentialsProvider? = nil, mirrorPolicyFactory: MirrorPolicyFactory? = nil) {
+    init(root: URL, workspaceId: String? = nil, session: URLSession = .shared, credentials: @escaping CredentialsProvider = { nil }, verifiedCredentials: VerifiedCredentialsProvider? = nil, mirrorPolicyFactory: MirrorPolicyFactory? = nil, syncPass: (@MainActor (LocalVaultSync) async throws -> LocalVaultSyncReport)? = nil) {
         self.requestedWorkspaceId = workspaceId
         self.root = root; self.credentials = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }; self.session = session
-        self.mirrorPolicyFactory = mirrorPolicyFactory
+        self.mirrorPolicyFactory = mirrorPolicyFactory; self.syncPass = syncPass
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
                 previousBinding = existing
@@ -70,13 +77,15 @@ final class LocalVaultConnectionController {
             }
         } catch { capabilities = nil; requiresAccountReview = Self.isAdoptionFailure(error); message = error.localizedDescription }
     }
-    deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel(); connectingTask?.cancel() }
+    deinit { for task in runTasks.values { task.cancel() }; scheduleTask?.cancel(); watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel(); connectingTask?.cancel() }
     func stop() {
         stopped = true
+        for task in runTasks.values { task.cancel() }
+        scheduleTask?.cancel(); scheduleTask = nil
         if let mirrorPolicy { Task { await mirrorPolicy.retire() } }
         connectingTask?.cancel(); connectingTask = nil
         watching?.cancel(); watching = nil
-        running?.cancel(); running = nil
+        cancelRun()
         scheduled?.cancel(); scheduled = nil
         connectRetry?.cancel(); connectRetry = nil
         onChange = nil
@@ -86,7 +95,7 @@ final class LocalVaultConnectionController {
         return false
     }
     func stopAndWait() async {
-        let pending = [connectingTask, watching, running, connectRetry].compactMap { $0 }
+        let pending = [connectingTask, watching, connectRetry, scheduleTask].compactMap { $0 } + Array(runTasks.values)
         stop()
         await mirrorPolicy?.retire(); mirrorPolicy = nil
         for task in pending { await task.value }
@@ -99,7 +108,7 @@ final class LocalVaultConnectionController {
             mirrorPolicy = nil
             connectingTask?.cancel(); connectingTask = nil
             watching?.cancel(); watching = nil
-            running?.cancel(); running = nil
+            cancelRun()
             scheduled?.cancel(); scheduled = nil
             connectRetry?.cancel(); connectRetry = nil
             transport = nil; engine = nil; binding = nil; capabilities = nil
@@ -108,12 +117,18 @@ final class LocalVaultConnectionController {
             onChange?(status, false)
             return
         }
+        if schedulingWait == .authRequired, credentials()?.token == rejectedToken { return }
+        cancelRun()
+        schedulingWait = nil; rejectedToken = nil; syncFailures = 0; connectFailures = 0
+        scheduled?.cancel(); scheduled = nil; scheduledRetry = false
+        connectRetry?.cancel(); connectRetry = nil
         connectAutomatically()
     }
     var status: [String: Any] {
         var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil,
                                     "hasConflicts": hasConflicts, "connecting": connecting,
                                     "onlineReady": onlineReady,
+                                    "authenticationRequired": schedulingWait == .authRequired,
                                     "requiresRebind": previousBinding != nil && binding == nil, "requiresAccountReview": requiresAccountReview]
         if let binding {
             value["workspaceId"] = binding.workspaceId
@@ -126,7 +141,7 @@ final class LocalVaultConnectionController {
     /// Only an old loopback test journal may migrate automatically; another real
     /// server may represent a different account and needs explicit review.
     func connectAutomatically() {
-        guard !stopped, !remoteVerified || connectedCredentialGeneration != credentialGeneration,
+        guard !stopped, schedulingWait != .authRequired, schedulingWait != .policyUnavailable, !remoteVerified || connectedCredentialGeneration != credentialGeneration,
               !connecting, credentials() != nil else { return }
         if let previousBinding, !Self.isLoopback(previousBinding.origin),
            let account = credentials(), previousBinding.origin != account.origin {
@@ -145,16 +160,16 @@ final class LocalVaultConnectionController {
                 self.connectedCredentialGeneration = attemptedGeneration
                 self.connectRetry?.cancel()
                 self.connectRetry = nil
-                self.connectDelay = 2
+                self.connectFailures = 0
             }
             catch {
                 guard !self.stopped else { return }
                 self.requiresAccountReview = Self.isAdoptionFailure(error)
                 if self.requiresAccountReview {
                     self.message = "Choose Review saved work in the File menu to connect this folder to your account."
-                } else {
+                } else if self.credentialGeneration == attemptedGeneration {
                     self.message = "Your workspace is saved on this Mac. Online collaboration is unavailable right now."
-                    self.scheduleConnectRetry()
+                    await self.scheduleConnectRetry(error)
                 }
             }
             self.connecting = false
@@ -166,16 +181,62 @@ final class LocalVaultConnectionController {
     private static func isLoopback(_ origin: URL) -> Bool {
         ["localhost", "127.0.0.1", "::1"].contains(origin.host ?? "")
     }
-    private func scheduleConnectRetry() {
-        guard !stopped else { return }
+    private func park(_ outcome: LocalVaultMirrorScheduleOutcome) {
+        schedulingWait = outcome; onlineReady = false; watchFailureIsCurrent = false
+        scheduled?.cancel(); scheduled = nil; scheduledRetry = false
+        connectRetry?.cancel(); connectRetry = nil
+        if outcome == .authRequired {
+            rejectedToken = credentials()?.token
+            cancelRun()
+            watching?.cancel(); watching = nil
+            message = "Your TextText sign-in has expired. Sign in again to resume syncing."
+        } else if outcome == .policyUnavailable {
+            cancelRun()
+            watching?.cancel(); watching = nil
+            message = "Sync is paused. Restart TextText to reconnect."
+        } else if outcome == .storage {
+            message = "Sync is paused. Repair the local file or reopen this workspace to retry."
+        }
+        onChange?(status, false)
+    }
+    private func schedulingPolicy() throws -> LocalVaultMirrorPolicy {
+        if let mirrorPolicy { return mirrorPolicy }
+        guard let account = credentials(), let factory = mirrorPolicyFactory else { throw LocalVaultMirrorPolicy.Failure.stale }
+        // Discovery can fail before a workspace has been selected. Use the same
+        // existing page with a temporary, fenced discovery scope until configure.
+        let target = try LocalVaultSyncBinding(origin: account.origin, workspaceId: requestedWorkspaceId ?? "discovery")
+        let policy = try factory(target, account); mirrorPolicy = policy
+        return policy
+    }
+    private func decision(_ outcome: LocalVaultMirrorScheduleOutcome, failures: Int,
+                          hasMore: Bool = false, rerun: Bool = false) async -> LocalVaultMirrorScheduleDecision? {
+        guard !stopped, !Task.isCancelled else { return nil }
+        // Stop unauthorized work immediately, including watch/discovery callers
+        // whose own task is cancelled by this account fence.
+        if outcome == .authRequired { park(outcome); return nil }
+        if outcome == .policyUnavailable { park(outcome); return nil }
+        do {
+            let result = try await schedulingPolicy().schedule(.init(outcome: outcome, consecutiveFailures: failures, hasEligiblePending: hasMore, rerun: rerun))
+            guard !stopped, !Task.isCancelled, schedulingWait != .authRequired else { return nil }
+            return result
+        } catch {
+            if !Task.isCancelled { park(.policyUnavailable) }
+            return nil
+        }
+    }
+    private func scheduleConnectRetry(_ error: Error) async {
+        let outcome = LocalVaultMirrorScheduleOutcome.failure(error)
+        guard let next = await decision(outcome, failures: connectFailures) else { return }
+        connectFailures = next.consecutiveFailures
+        if next.action == "wait-reopen" { park(outcome); return }
+        guard next.action == "run" || next.action == "wait-change" else { return }
         connectRetry?.cancel()
-        let delay = connectDelay
-        connectDelay = min(connectDelay * 2, 60)
+        // Permission waits retain a read-only discovery cadence to see regrant.
+        let delay = next.delayMs ?? 30_000
         connectRetry = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
             guard !Task.isCancelled else { return }
-            self?.connectRetry = nil
-            self?.connectAutomatically()
+            self?.connectRetry = nil; self?.connectAutomatically()
         }
     }
     func connect(allowRebind: Bool = false, startSync: Bool = true) async throws -> [String: Any] {
@@ -208,15 +269,7 @@ final class LocalVaultConnectionController {
         guard let http = response as? HTTPURLResponse else {
             throw LocalVaultConnectionError("The web connection did not respond. Your files remain saved on this Mac.")
         }
-        switch http.statusCode {
-        case 200: break
-        case 401, 403:
-            throw LocalVaultConnectionError("Your TextText sign-in has expired. Sign in again to connect this folder.")
-        case 503:
-            throw LocalVaultConnectionError("Web sync is not configured on the TextText server yet. Your files remain saved on this Mac.")
-        default:
-            throw LocalVaultConnectionError("The server could not connect this folder. Your files remain saved on this Mac.")
-        }
+        guard http.statusCode == 200 else { throw LocalVaultSyncFailure.httpStatus(http.statusCode) }
         struct Workspace: Decodable { let workspaceId: String }
         let workspaceId = try selectedId ?? JSONDecoder().decode(Workspace.self, from: data).workspaceId
         guard let latest = credentials(), latest.origin == account.origin, latest.token == account.token else {
@@ -268,7 +321,8 @@ final class LocalVaultConnectionController {
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard !stopped, let current = credentials(), current.origin == account.origin, current.token == account.token else { throw CancellationError() }
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 1_000_000 else { throw LocalVaultSyncFailure.invalidResponse }
+        guard let response = response as? HTTPURLResponse, data.count <= 1_000_000 else { throw LocalVaultSyncFailure.invalidResponse }
+        guard response.statusCode == 200 else { throw LocalVaultSyncFailure.httpStatus(response.statusCode) }
         struct Discovery: Decodable { let workspaces: [AvailableWorkspace] }
         let workspaces = try JSONDecoder().decode(Discovery.self, from: data).workspaces
         guard workspaces.count <= 1000, Set(workspaces.map(\.id)).count == workspaces.count else { throw LocalVaultSyncFailure.invalidResponse }
@@ -314,58 +368,92 @@ final class LocalVaultConnectionController {
         if startSync { activate() }
     }
     func activate() {
-        guard !stopped, let transport else { return }
+        guard !stopped, schedulingWait != .authRequired, schedulingWait != .policyUnavailable, let transport else { return }
         watching?.cancel()
+        let generation = credentialGeneration
         watching = Task { [weak self, transport] in
-            var backoff: UInt64 = 2
+            var failures = 0
             while !Task.isCancelled {
                 do {
                     let changed = try await transport.waitForChange()
                     if Task.isCancelled { break }
                     self?.watchDidSucceed()
                     if changed { self?.schedule() }
-                    backoff = 2
+                    failures = 0
                 } catch {
-                    if Task.isCancelled { break }
-                    self?.watchDidFail()
-                    try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
-                    backoff = min(backoff * 2, 60)
+                    guard !Task.isCancelled, let self, generation == self.credentialGeneration else { break }
+                    self.watchDidFail()
+                    let outcome = LocalVaultMirrorScheduleOutcome.failure(error)
+                    guard let next = await self.decision(outcome, failures: failures) else { break }
+                    failures = next.consecutiveFailures
+                    if next.action == "wait-reopen" { self.park(outcome); break }
+                    guard next.action == "run" || next.action == "wait-change" else { break }
+                    // This is a read-only watch, so a denied grant can be observed
+                    // again without retrying a denied outbox write.
+                    try? await Task.sleep(nanoseconds: UInt64(next.delayMs ?? 30_000) * 1_000_000)
                 }
             }
         }
         schedule()
     }
     func schedule() {
-        guard !stopped, engine != nil else { return }
+        guard !stopped, engine != nil, schedulingWait != .authRequired, schedulingWait != .policyUnavailable else { return }
+        if schedulingWait == .storage { schedulingWait = nil }
         if running != nil { rerun = true; return }
-        scheduled?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.run() }
-        scheduled = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        // A file wake cannot shorten the shared policy's transient retry delay.
+        if scheduledRetry { rerun = true; return }
+        scheduleTask?.cancel()
+        scheduleTask = Task { [weak self] in
+            guard let self, let next = await self.decision(.success, failures: self.syncFailures, rerun: true) else { return }
+            self.install(next, outcome: .success)
+        }
     }
-    private func retry() {
-        guard !stopped else { return }
-        scheduled?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.run() }
+    private func install(_ next: LocalVaultMirrorScheduleDecision, outcome: LocalVaultMirrorScheduleOutcome) {
+        guard !stopped, schedulingWait != .authRequired, schedulingWait != .policyUnavailable else { return }
+        if next.action == "wait-reopen" { park(outcome); return }
+        guard next.action == "run", let delay = next.delayMs else { return }
+        scheduled?.cancel(); scheduledRetry = outcome == .transient
+        let work = DispatchWorkItem { [weak self] in
+            self?.scheduled = nil; self?.scheduledRetry = false; self?.run()
+        }
         scheduled = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay, execute: work)
-        retryDelay = min(retryDelay * 2, 60)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(delay) / 1000, execute: work)
     }
     private func notifyCompletedSync(downloaded: Int, capabilityChanged: Bool) {
         onChange?(status, downloaded > 0 || capabilityChanged)
     }
+    private func cancelRun() {
+        running?.cancel(); running = nil; runID = nil
+    }
     private func run() {
-        guard !stopped, let engine, running == nil else { return }
-        running = Task { [weak self, engine] in
+        guard !stopped, schedulingWait != .authRequired, schedulingWait != .policyUnavailable, let engine, running == nil else { return }
+        let generation = credentialGeneration, id = UUID()
+        runID = id
+        let pass = syncPass
+        let task = Task { [weak self, engine] in
+            defer {
+                if let self {
+                    self.runTasks.removeValue(forKey: id)
+                    if self.runID == id {
+                        self.running = nil; self.runID = nil
+                        // A file event can arrive while the policy RPC is awaiting
+                        // its reply, after this pass captured its earlier rerun flag.
+                        if self.rerun && !self.stopped && self.schedulingWait == nil && !self.scheduledRetry { self.schedule() }
+                    }
+                }
+            }
             do {
-                let report = try await engine.sync()
-                guard let self, !Task.isCancelled, let currentEngine = self.engine, currentEngine === engine,
+                let report: LocalVaultSyncReport
+                if let pass { report = try await pass(engine) } else { report = try await engine.sync() }
+                guard let self, self.runID == id, generation == self.credentialGeneration,
+                      !Task.isCancelled, !self.stopped, let currentEngine = self.engine, currentEngine === engine,
                       let current = self.credentials(), let owner = self.connectedAccount,
                       owner.sameAccount(as: current) else { return }
                 var capabilityChanged = false
                 if let transport = self.transport {
                     var value = await transport.capabilities()
                     value.knownPaths.formUnion(await engine.knownLocalPaths())
+                    guard self.runID == id, generation == self.credentialGeneration, !Task.isCancelled, !self.stopped else { return }
                     capabilityChanged = self.capabilities != value
                     self.capabilities = value
                     if let binding = self.binding { try? LocalVaultCapabilityCache.write(value, root: self.root, binding: binding, accountId: owner.accountId) }
@@ -375,22 +463,29 @@ final class LocalVaultConnectionController {
                 if !report.conflicts.isEmpty { self.recordSyncMessage("Conflicting edits were kept in this folder's recovery copies.") }
                 else { self.recordSyncMessage(report.errors.first) }
                 self.notifyCompletedSync(downloaded: report.downloaded, capabilityChanged: capabilityChanged)
-                self.running = nil
-                if !report.errors.isEmpty { self.retry(); return }
-                self.retryDelay = 2
-                if report.hasMore || self.rerun {
-                    self.rerun = false
-                    // A failed outbox must not cause a tight retry/upload loop.
-                    if report.errors.isEmpty { self.schedule() }
-                }
+                let outcome: LocalVaultMirrorScheduleOutcome = report.failureOutcomes.contains(.storage) ? .storage :
+                    report.failureOutcomes.contains(.policyUnavailable) ? .policyUnavailable :
+                    report.failureOutcomes.contains(.transient) ? .transient :
+                    report.failureOutcomes.first ?? .success
+                let rerun = self.rerun; self.rerun = false
+                guard let next = await self.decision(outcome, failures: self.syncFailures, hasMore: report.hasMore, rerun: rerun) else { return }
+                guard self.runID == id, generation == self.credentialGeneration else { return }
+                self.syncFailures = next.consecutiveFailures
+                self.install(next, outcome: outcome)
             } catch {
-                guard let self else { return }
+                guard let self, self.runID == id, generation == self.credentialGeneration,
+                      !Task.isCancelled, !self.stopped else { return }
                 self.onlineReady = false
                 self.recordSyncMessage(Self.retryMessage)
-                self.onChange?(self.status, false); self.running = nil
-                self.retry()
+                self.onChange?(self.status, false)
+                let outcome = LocalVaultMirrorScheduleOutcome.failure(error)
+                guard let next = await self.decision(outcome, failures: self.syncFailures),
+                      self.runID == id, generation == self.credentialGeneration else { return }
+                self.syncFailures = next.consecutiveFailures
+                self.install(next, outcome: outcome)
             }
         }
+        running = task; runTasks[id] = task
     }
 }
 private struct LocalVaultConnectionError: LocalizedError {
