@@ -71,6 +71,14 @@ Both the tag/paste and rapid-draft regressions now run in the existing required 
 
 The subsequent full broad rerun again hit the earlier intermittent Heading assertion, before reaching the corrected card path. That failure remains under investigation; focused passes do not establish full broad acceptance.
 
+### Accent control contrast
+
+Rendered inspection found white text on the light blue dark-mode accent in seven shared control families: capture, sharing, image capture, new-card Finish, feed updates, feed interests and bookmark quick save. The CSS fixture measured **2.12:1** dark-mode contrast; sharing hover also measured **1.18:1** in light mode because generic hover replaced the accent background.
+
+These existing accent-background selectors now use `--vault-accent-ink`, matching the primary header action. Sharing hover keeps the accent background. No danger/gradient colors, document templates or control geometry changed. [`accent-contrast.browser.mjs`](../../src/local-vault/__tests__/accent-contrast.browser.mjs) checks seven production CSS selector specimens across light/dark normal, hover and focus states, including explicit appearance against the opposite OS preference. All 42 computed contrast checks pass, with minimum **6.12:1 light** and **7.25:1 dark**. Both rendered themes were inspected. These specimens establish styles, not actual sharing/feed/capture workflows.
+
+The fixture now runs in required `npm run test:document-layout:browser`; both layout and contrast scripts pass (`document-layout-required.log`). Red/green contrast logs are `accent-contrast-before.log` and `accent-contrast-after.log`, with their screenshot/JSON directories recorded inside.
+
 ## Still required
 
 Run the installed T19 matrix on current coherent Mac/PC/web candidates. In particular, ordinary file import/export round trips, physical clipboard use, real account changes, concurrent comments, search invalidation after remote changes, and later broad-fixture flows remain open. Per-device List/Cards preference storage remains a documented product choice/gap; this campaign does not introduce cross-device preference synchronization.
