@@ -154,6 +154,42 @@ final class LocalVaultSyncTests: XCTestCase {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
     }
+    func testAccountBoundaryRefusesForeignAndUnboundOutboxBeforeReplay() async throws {
+        let transport = FakeVaultTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        try putLocal(pack("Original account A"))
+        let a = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        _ = try await a.sync()
+        let pending = try pack("Retained account A offline edit")
+        try putLocal(pending)
+        await transport.failNextUploadBeforeCommit()
+        _ = try await a.sync()
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let saved = try Data(contentsOf: stateURL)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        let outbox = try XCTUnwrap(object["outbox"] as? [String: [String: Any]])
+        XCTAssertEqual(object["accountId"] as? String, "account-a")
+        XCTAssertEqual(outbox.count, 1)
+        let operation = try XCTUnwrap(outbox[itemId]?["operationId"] as? String)
+        let requests = await transport.uploads().count
+        XCTAssertThrowsError(try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-b"))
+        XCTAssertEqual(try Data(contentsOf: stateURL), saved)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), pending)
+        let afterRefusal = await transport.uploads().count
+        XCTAssertEqual(afterRefusal, requests)
+        let resumed = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        _ = try await resumed.sync()
+        let uploaded = await transport.uploads()
+        XCTAssertEqual(uploaded.last?.operationId, operation)
+        let remote = try await transport.download(itemId: itemId)
+        XCTAssertEqual(remote.data, pending)
+        var legacy = object; legacy.removeValue(forKey: "accountId")
+        let unbound = try JSONSerialization.data(withJSONObject: legacy)
+        try unbound.write(to: stateURL, options: .atomic)
+        XCTAssertThrowsError(try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-a"))
+        XCTAssertEqual(try Data(contentsOf: stateURL), unbound)
+    }
+
     private func engine(_ transport: FakeVaultTransport) throws -> LocalVaultSync {
         try LocalVaultSync(root: root,
             binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"),

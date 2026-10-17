@@ -27,14 +27,19 @@ public sealed class SyncEngine
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
     public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false,string? PayloadHash=null);
-    public sealed class State { [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
+    public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
-    readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath;
+    readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath; readonly string? accountId;
     public SyncStatus Status {get;private set;}=new(false,null,0);
     public event Action<SyncStatus>? StatusChanged;
     public event Action? DurabilityChanged;
     public event Action? CapabilitiesChanged;
-    public SyncEngine(TextPackStore store,ISyncTransport transport) { this.store=store;this.transport=transport;statePath=Path.Combine(store.StateDirectory,"sync.json"); }
+    public SyncEngine(TextPackStore store,ISyncTransport transport,string? accountId=null) {
+        if(accountId is not null && !System.Text.RegularExpressions.Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid account identity.");
+        this.store=store;this.transport=transport;this.accountId=accountId;statePath=Path.Combine(store.StateDirectory,"sync.json");
+        // Fail before a worker or transport can replay someone else's outbox.
+        if(accountId is not null)_=Load();
+    }
     public async Task<IDisposable> AcquireCollaborationAsync(string itemId,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");
             if(!state.BinaryBaselines.ContainsKey(itemId) && state.Items.TryGetValue(itemId,out var baseline)) {
@@ -93,7 +98,7 @@ public sealed class SyncEngine
     }
     public async Task<string?> BaselineRevisionAsync(string itemId,CancellationToken ct=default) {await gate.WaitAsync(ct);try{return Load().Items.GetValueOrDefault(itemId)?.Revision;}finally{gate.Release();}}
     static bool Blocked(State state,string id)=>state.Outbox.Any(x=>x.ItemId==id);
-    State Load() { if(!File.Exists(statePath)) return new(); var result=JsonSerializer.Deserialize<State>(File.ReadAllBytes(statePath)) ?? throw new InvalidDataException("Invalid sync state."); if(result.Version!=1) throw new InvalidDataException("This workspace was used by a newer app. Update TextText."); return result; }
+    State Load() { if(!File.Exists(statePath)) return new(){AccountId=accountId}; var result=JsonSerializer.Deserialize<State>(File.ReadAllBytes(statePath)) ?? throw new InvalidDataException("Invalid sync state."); if(result.Version!=1) throw new InvalidDataException("This workspace was used by a newer app. Update TextText."); if(result.AccountId!=accountId)throw new SharedAccountMismatchException(); return result; }
     void Save(State state) {
         var bytes=JsonSerializer.SerializeToUtf8Bytes(state);
         if(File.Exists(statePath)&&File.ReadAllBytes(statePath).AsSpan().SequenceEqual(bytes))return;

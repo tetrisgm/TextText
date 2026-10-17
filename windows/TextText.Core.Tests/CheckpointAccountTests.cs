@@ -11,6 +11,32 @@ static class CheckpointAccountTests
         using (var writer = new StreamWriter(zip.CreateEntry("text.md").Open())) writer.Write("---\ntextTextId: \"account-note\"\n---\n" + body);
         return output.ToArray();
     }
+    static async Task QueuedAccount(string temporary, Action<bool,string> assert)
+    {
+        var files = new TextPackStore(Path.Combine(temporary,"account-outbox"),Path.Combine(temporary,"account-outbox-state"));
+        var remote = new Test.Fake();
+        var original = files.Write("Notes/Account.textpack",Pack("Original account A"));
+        var a = new SyncEngine(files,remote,"account-a"); await a.SyncAsync();
+        var pending = Pack("Retained account A offline edit"); files.Write(original.Path,pending,original.Hash);
+        remote.FailBeforeCommit=true;
+        try{await a.SyncAsync();throw new Exception("Expected offline upload refusal");}catch(HttpRequestException){}
+        var statePath=Path.Combine(files.StateDirectory,"sync.json");var saved=File.ReadAllBytes(statePath);
+        var state=JsonSerializer.Deserialize<SyncEngine.State>(saved)!;
+        assert(state.AccountId=="account-a" && state.Outbox.Count==1,"native outbox persists its verified account with the pending operation");
+        var requests=remote.ManifestCount;var uploads=remote.UploadCount;var denied=false;
+        try{_=new SyncEngine(files,remote,"account-b");}catch(SharedAccountMismatchException){denied=true;}
+        assert(denied && File.ReadAllBytes(statePath).SequenceEqual(saved) && files.Read(original.Path).SequenceEqual(pending)
+            && remote.ManifestCount==requests && remote.UploadCount==uploads,"different account cannot open or replay a retained native outbox");
+        await new SyncEngine(files,remote,"account-a").SyncAsync();
+        assert(remote.Data.SequenceEqual(pending) && remote.Operations.Last()==state.Outbox[0].Id
+            && JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(statePath))!.Outbox.Count==0,
+            "original account resumes exact persisted operation identity and bytes");
+        // Legacy state needs explicit adoption even when its queue looks clean.
+        var legacy=JsonSerializer.Deserialize<SyncEngine.State>(saved)!;legacy.AccountId=null;
+        var unbound=JsonSerializer.SerializeToUtf8Bytes(legacy);TextPackStore.AtomicWrite(statePath,unbound);denied=false;
+        try{_=new SyncEngine(files,remote,"account-a");}catch(SharedAccountMismatchException){denied=true;}
+        assert(denied && File.ReadAllBytes(statePath).SequenceEqual(unbound),"verified principal cannot silently adopt an unbound legacy outbox");
+    }
     public static async Task Run(string temporary, Action<bool, string> assert)
     {
         var files = new TextPackStore(Path.Combine(temporary, "checkpoint-account"), Path.Combine(temporary, "checkpoint-account-state"));
@@ -70,5 +96,6 @@ static class CheckpointAccountTests
             assert(denied && File.ReadAllBytes(journal).SequenceEqual(unboundBytes), "verified account cannot silently claim an unbound pending checkpoint");
         }
         assert(remote.UploadCount == 1, "account checkpoint refusal uploads no retained work");
+        await QueuedAccount(temporary, assert);
     }
 }

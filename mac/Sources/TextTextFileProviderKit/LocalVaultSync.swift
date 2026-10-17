@@ -74,6 +74,7 @@ public actor LocalVaultSync {
     }
     private struct State: Codable {
         var binding: LocalVaultSyncBinding
+        var accountId: String? = nil
         var baselines: [String: Baseline] = [:]
         var outbox: [String: Pending] = [:]
         var conflicts: [String: Conflict] = [:]
@@ -89,6 +90,7 @@ public actor LocalVaultSync {
         var binaryRevisions: [String: String]? = nil
         var binaryOutbox: [String: BinaryPending]? = nil
     }
+    private let accountId: String?
     private let root: URL
     private let directory: URL
     private let transport: any LocalVaultSyncTransport
@@ -97,9 +99,11 @@ public actor LocalVaultSync {
     private var running = false
     private struct SharedSession { var token: String; var path: String; var hash: String; var retired = false }
     private var sharedSessions: [String: SharedSession] = [:]
-    private var sharedStore: LocalVaultSharedEditingStore { LocalVaultSharedEditingStore(root: root) }
+    private var sharedStore: LocalVaultSharedEditingStore { LocalVaultSharedEditingStore(root: root, accountId: accountId) }
 
-    public init(root: URL, binding: LocalVaultSyncBinding, transport: any LocalVaultSyncTransport) throws {
+    public init(root: URL, binding: LocalVaultSyncBinding, transport: any LocalVaultSyncTransport, accountId: String? = nil) throws {
+        if let accountId { _ = try LocalVaultAccountIdentity.validate(accountId) }
+        self.accountId = accountId
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
         try LocalVaultDeviceState.migrate(root: canonicalRoot)
         self.root = canonicalRoot
@@ -111,6 +115,7 @@ public actor LocalVaultSync {
         guard stateURL.resolvingSymlinksInPath().path == stateURL.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         if FileManager.default.fileExists(atPath: stateURL.path) {
             state = try JSONDecoder().decode(State.self, from: Data(contentsOf: stateURL))
+            guard state.accountId == accountId else { throw LocalVaultSharedFailure.account }
             guard state.binding == binding else { throw LocalVaultSyncFailure.invalidBinding }
             for pending in state.outbox.values {
                 guard UUID(uuidString: pending.operationId) != nil,
@@ -130,7 +135,7 @@ public actor LocalVaultSync {
                 _ = try LocalVaultDocumentStore(root: self.root).url(for: pending.path)
             }
         } else {
-            state = State(binding: binding)
+            state = State(binding: binding, accountId: accountId)
             try FileManager.default.createDirectory(at: directory.appendingPathComponent("outbox"), withIntermediateDirectories: true)
             try writeVaultSyncJournal(JSONEncoder().encode(state), to: stateURL)
         }
@@ -169,6 +174,7 @@ public actor LocalVaultSync {
     }
     public func beginSharedEditing(itemId: String, path: String, expectedHash: String) throws -> LocalVaultSharedSession {
         guard sharedSessions[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+        try sharedStore.prepareAccount(itemId: itemId, path: path, expectedHash: expectedHash)
         let replayBeforeHash = try sharedStore.pendingIntentBeforeHash(itemId: itemId)
         var checkpoint = try readSharedCheckpoint(itemId: itemId)
         let document = try LocalVaultDocumentStore(root: root).read(path: path)
