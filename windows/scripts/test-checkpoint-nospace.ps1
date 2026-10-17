@@ -1,10 +1,12 @@
 # Explicit manual test. Creates and fills only a new 64 MiB virtual disk.
 # Detaches its own image in finally; retains the image and failure receipts.
+param([ValidateSet('checkpoint','adoption')][string]$Scenario='checkpoint')
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $dotnet=Join-Path $env:LOCALAPPDATA 'TextTextBuild/dotnet/dotnet.exe'
 if(!(Test-Path $dotnet)){throw 'Existing .NET SDK is required'}
-$previousVolume=$env:TEXTTEXT_CHECKPOINT_NOSPACE_VOLUME
+$variable=if($Scenario -eq 'adoption'){'TEXTTEXT_ADOPTION_NOSPACE_VOLUME'}else{'TEXTTEXT_CHECKPOINT_NOSPACE_VOLUME'}
+$previousVolume=[Environment]::GetEnvironmentVariable($variable)
 function Invoke-CoreProcess([string]$arguments,[string]$label) {
  $info=New-Object Diagnostics.ProcessStartInfo
  $info.FileName=$dotnet;$info.Arguments=$arguments;$info.WorkingDirectory=$root
@@ -37,15 +39,16 @@ try {
  if(!$partition.DriveLetter){throw 'New test partition has no drive letter'}
  $volume=([string]$partition.DriveLetter)+':\'
  [IO.File]::WriteAllText((Join-Path $volume '.texttext-checkpoint-test-volume'),"texttext checkpoint ENOSPC fixture v1`n")
- $env:TEXTTEXT_CHECKPOINT_NOSPACE_VOLUME=$volume
+ [Environment]::SetEnvironmentVariable($variable,$volume)
  [pscustomobject]@{Image=$image;DiskNumber=$disk.Number;Volume=$volume;Size=$disk.Size}|ConvertTo-Json|Set-Content (Join-Path $base 'fixture.json')
  $assembly=Join-Path $root 'windows/TextText.Core.Tests/bin/Release/net10.0/TextText.Core.Tests.dll'
  Invoke-CoreProcess ('"'+$assembly+'"') 'core-test'
  $text=[IO.File]::ReadAllText((Join-Path $base 'core-test.log'))
- if(!$text.Contains('PASS real disk-full repair retries and reopens retained pending work')){throw 'Required real disk-full test did not execute'}
+ $expected=if($Scenario -eq 'adoption'){'PASS real disk-full adoption resumes original pending work'}else{'PASS real disk-full repair retries and reopens retained pending work'}
+ if(!$text.Contains($expected)){throw 'Required real disk-full test did not execute'}
  Select-String -SimpleMatch -Pattern 'real disk-full' -Path (Join-Path $base 'core-test.log')
  Write-Output "Isolated image and receipts retained at $base"
 } finally {
- if($null -eq $previousVolume){Remove-Item Env:\TEXTTEXT_CHECKPOINT_NOSPACE_VOLUME -ErrorAction SilentlyContinue}else{$env:TEXTTEXT_CHECKPOINT_NOSPACE_VOLUME=$previousVolume}
+ [Environment]::SetEnvironmentVariable($variable,$previousVolume)
  if(Test-Path $image){$i=Get-DiskImage -ImagePath $image -ErrorAction SilentlyContinue;if($i.Attached){Dismount-DiskImage -ImagePath $image|Out-Null}}
 }

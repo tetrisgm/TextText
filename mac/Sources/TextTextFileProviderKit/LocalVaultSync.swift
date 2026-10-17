@@ -93,6 +93,7 @@ public actor LocalVaultSync {
     }
     public nonisolated let accountId: String?
     private let root: URL
+    private let accountWriterLease: LocalVaultAccountWriterLease
     private let directory: URL
     private let transport: any LocalVaultSyncTransport
     private let editOrigins: LocalVaultEditOriginJournal
@@ -106,6 +107,7 @@ public actor LocalVaultSync {
         if let accountId { _ = try LocalVaultAccountIdentity.validate(accountId) }
         self.accountId = accountId
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        accountWriterLease = try LocalVaultAccountWriterLease(root: canonicalRoot)
         try LocalVaultAccountRootOwnership.requireNoAdoption(root: canonicalRoot)
         try LocalVaultDeviceState.migrate(root: canonicalRoot)
         self.root = canonicalRoot

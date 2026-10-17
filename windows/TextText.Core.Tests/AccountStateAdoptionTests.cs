@@ -55,9 +55,58 @@ static class AccountStateAdoptionTests
         var state=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,"sync.json")))!;
         assert(state.AccountId=="account-a"&&state.Outbox.Single().Id==f.Operation&&f.Store.Read(f.Path).SequenceEqual(f.Pending),"separate-process adoption retains original pending operation and file");
     }
+    static async Task NoSpace(Action<bool,string> assert) {
+        var location=Environment.GetEnvironmentVariable("TEXTTEXT_ADOPTION_NOSPACE_VOLUME");
+        if(string.IsNullOrWhiteSpace(location))return;
+        var volume=Path.GetFullPath(location);var drive=new DriveInfo(Path.GetPathRoot(volume)!);
+        if(File.ReadAllText(Path.Combine(volume,".texttext-checkpoint-test-volume"))!="texttext checkpoint ENOSPC fixture v1\n" ||
+            drive.TotalSize<16*1024*1024 || drive.TotalSize>128*1024*1024 || volume!=drive.RootDirectory.FullName)
+            throw new InvalidOperationException("Refusing to fill anything except the explicitly marked tiny test volume");
+        var temporary=Path.Combine(volume,"adoption-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(temporary);
+        var f=await Create(temporary,"disk-full");var fill=Path.Combine(temporary,"fill");
+        using var stream=new FileStream(fill,FileMode.CreateNew,FileAccess.Write,FileShare.None,4096,FileOptions.WriteThrough);
+        var released=false;
+        try {
+            var refused=false;
+            try {AccountStateAdoption.AdoptAfterExplicitReview(f.Store,new Uri("https://texttext.test"),"workspace","account-a",phase=> {
+                if(phase!="intent")return;
+                foreach(var length in new[]{1024*1024,4096}) {
+                    var block=new byte[length];Array.Fill(block,(byte)0x5a);
+                    while(true){try{stream.Write(block);stream.Flush(true);}catch(IOException error)when((error.HResult&0xffff)is 39 or 112){break;}}
+                }
+            });}catch(IOException error)when((error.HResult&0xffff)is 39 or 112){refused=true;}
+            assert(refused&&File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,"sync.json")).SequenceEqual(f.State)
+                &&File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,f.CheckpointPath)).SequenceEqual(f.Checkpoint)
+                &&f.Store.Read("Notes/Shared.textpack").SequenceEqual(f.Projection),"real disk-full adoption preserves original metadata and projection");
+            assert(File.Exists(Path.Combine(f.Store.StateDirectory,AccountRootOwnership.PendingAdoption)),"real disk-full adoption keeps its recorded intent");
+            var blocked=false;try{_=new SyncEngine(f.Store,f.Remote,"account-a");}catch(LegacyAccountStateException){blocked=true;}
+            assert(blocked,"ordinary sync stays blocked after disk-full adoption");
+            stream.SetLength(0);stream.Flush(true);stream.Dispose();released=true;File.Delete(fill);
+            var deadline=DateTime.UtcNow.AddSeconds(10);
+            while(drive.AvailableFreeSpace<8*1024*1024&&DateTime.UtcNow<deadline)await Task.Delay(100);
+            assert(drive.AvailableFreeSpace>=8*1024*1024,"adoption verifies reclaimed fixture space before retry");
+            var result=AccountStateAdoption.AdoptAfterExplicitReview(f.Store,new Uri("https://texttext.test"),"workspace","account-a");
+            assert(File.ReadAllBytes(Path.Combine(result.RecoveryDirectory!,"before/sync.json")).SequenceEqual(f.State),"disk-full adoption retains exact original backup");
+            f.Remote.Capabilities=new(true,true,[],new(){["adoption-note"]=true,["adoption-shared"]=true});
+            await new SyncEngine(f.Store,f.Remote,"account-a").SyncAsync();
+            assert(f.Remote.Operations.Last()==f.Operation&&f.Store.Read(f.Path).SequenceEqual(f.Pending),"real disk-full adoption resumes original pending work");
+        } finally {if(!released){stream.SetLength(0);stream.Flush(true);}}
+    }
     public static async Task Run(string temporary,Action<bool,string> assert) {
         var origin=new Uri("https://texttext.test");
         await SeparateProcess(temporary,assert);
+        await NoSpace(assert);
+        var live=await Create(temporary,"adoption-live-writer");var liveSync=new SyncEngine(live.Store,live.Remote);
+        using(var lease=await liveSync.AcquireCollaborationAsync("adoption-shared")) {
+            var snapshot=File.ReadAllBytes(Path.Combine(live.Store.StateDirectory,"sync.json"));var refused=false;
+            try{AccountStateAdoption.AdoptAfterExplicitReview(live.Store,origin,"workspace","account-a");}catch(IOException){refused=true;}
+            assert(refused&&File.ReadAllBytes(Path.Combine(live.Store.StateDirectory,"sync.json")).SequenceEqual(snapshot)
+                &&!File.Exists(Path.Combine(live.Store.StateDirectory,AccountRootOwnership.PendingAdoption)),"a live editing lease excludes adoption before publishing an intent");
+        }
+        assert(!AccountStateAdoption.AdoptAfterExplicitReview(live.Store,origin,"workspace","account-a").AlreadyBound,"released editing lease allows explicit adoption");
+        var stale=false;try{await liveSync.SyncAsync();}catch(SharedAccountMismatchException){stale=true;}
+        assert(stale,"a retained legacy sync object cannot write after adoption");
+
         var phases=new[]{"prepared:shared-editing/adoption-shared/checkpoint.json","prepared:sync.json","intent","applied:shared-editing/adoption-shared/checkpoint.json","applied:sync.json","owner"};
         foreach(var phase in phases) {
             var f=await Create(temporary,"adoption-"+Array.IndexOf(phases,phase));var stopped=false;

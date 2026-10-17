@@ -15,4 +15,4 @@ Tests exposed two defects: temporary-directory aliases caused false path rejecti
 
 ## Remaining and recovery
 
-Real disk-full adoption, explicit consent/current authorization UI, browser-profile recovery, cross-process writer exclusion and background callers remain. Existing unbound work stays blocked until review. Retained originals support forward recovery; an older binary must not write adopted state. This source unit does not complete T07 or T17 and must not be installed before the recovery flow is ready.
+Real disk-full adoption now passes on both native platforms; see the [storage and writer-fence receipt](2026-10-17-adoption-storage-fences.md). Remaining: explicit consent/current authorization UI, browser-profile recovery, cross-process writer exclusion and background callers remain. Existing unbound work stays blocked until review. Retained originals support forward recovery; an older binary must not write adopted state. This source unit does not complete T07 or T17 and must not be installed before the recovery flow is ready.

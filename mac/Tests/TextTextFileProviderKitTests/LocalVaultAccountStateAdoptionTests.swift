@@ -55,6 +55,69 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
     private func adopt(_ fixture: Fixture, account: String = "account-a", barrier: ((String) throws -> Void)? = nil) throws -> LocalVaultAccountStateAdoption.Result {
         try LocalVaultAccountStateAdoption.adoptAfterExplicitReview(root: fixture.root, binding: binding, accountId: account, barrier: barrier)
     }
+    func testDiskFullAdoptionRetainsOriginalsAndResumes() async throws {
+        guard let location = ProcessInfo.processInfo.environment["TEXTTEXT_ADOPTION_NOSPACE_VOLUME"] else {
+            throw XCTSkip("Requires an explicitly prepared isolated test volume")
+        }
+        let volume = URL(fileURLWithPath: location).standardizedFileURL.resolvingSymlinksInPath()
+        let marker = try String(contentsOf: volume.appendingPathComponent(".texttext-checkpoint-test-volume"), encoding: .utf8)
+        let size = try XCTUnwrap(try FileManager.default.attributesOfFileSystem(forPath: volume.path)[.systemSize] as? NSNumber).uint64Value
+        guard marker == "texttext checkpoint ENOSPC fixture v1\n", size >= 16 * 1024 * 1024, size <= 64 * 1024 * 1024 else {
+            return XCTFail("Refusing to fill anything except the explicitly marked tiny test volume")
+        }
+        let originalBase = base!
+        addTeardownBlock { try? FileManager.default.removeItem(at: originalBase) }
+        base = volume.appendingPathComponent("texttext-adoption-test-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let f = try await create("disk-full")
+        guard f.directory.path.hasPrefix(volume.path + "/") else { return XCTFail("Adoption state must be on the isolated volume") }
+        let fill = base.appendingPathComponent("fill")
+        XCTAssertTrue(FileManager.default.createFile(atPath: fill.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: fill)
+        defer { try? handle.truncate(atOffset: 0); try? handle.close() }
+        func isNoSpace(_ error: Error) -> Bool {
+            let e = error as NSError
+            return (e.domain == NSCocoaErrorDomain && e.code == NSFileWriteOutOfSpaceError) ||
+                (e.domain == NSPOSIXErrorDomain && e.code == Int(ENOSPC)) ||
+                ((e.userInfo[NSUnderlyingErrorKey] as? NSError).map { isNoSpace($0) } ?? false)
+        }
+        XCTAssertThrowsError(try adopt(f) { phase in
+            guard phase == "intent" else { return }
+            for length in [1024 * 1024, 4096] {
+                let block = Data(repeating: 0x5a, count: length)
+                while true { do { try handle.write(contentsOf: block) } catch { guard isNoSpace(error) else { throw error }; break } }
+            }
+            try? handle.synchronize()
+        }) { XCTAssertTrue(isNoSpace($0), "Adoption must report actual disk full: \($0)") }
+        XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("sync/state.json")), f.state)
+        XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent(f.checkpointPath)), f.checkpoint)
+        XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("Notes/Shared.textpack")), f.projection)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: f.directory.appendingPathComponent(LocalVaultAccountRootOwnership.pendingAdoption).path))
+        XCTAssertThrowsError(try LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a"))
+        try handle.truncate(atOffset: 0); try handle.synchronize(); try handle.close()
+        let result = try adopt(f), recovery = try XCTUnwrap(result.recoveryDirectory)
+        XCTAssertEqual(try Data(contentsOf: recovery.appendingPathComponent("before/sync/state.json")), f.state)
+        _ = try await LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a").sync()
+        let uploads = await f.remote.uploads(); XCTAssertEqual(uploads.last?.operationId, f.operation)
+        XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("Notes/Queued.textpack")), f.pending)
+    }
+    func testLiveWriterExcludesAdoptionUntilItsActorIsReleased() async throws {
+        let f = try await create("writer-fence")
+        var writer: LocalVaultSync? = try LocalVaultSync(root: f.root, binding: binding, transport: f.remote)
+        weak var observed = writer
+        try withExtendedLifetime(writer) {
+            XCTAssertThrowsError(try adopt(f)) { error in
+                guard case LocalVaultSyncFailure.busy = error else { return XCTFail("Expected the live-writer fence") }
+            }
+            XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("sync/state.json")), f.state)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: f.directory.appendingPathComponent(LocalVaultAccountRootOwnership.pendingAdoption).path))
+        }
+        writer = nil
+        XCTAssertNil(observed)
+        XCTAssertFalse(try adopt(f).alreadyBound)
+        XCTAssertThrowsError(try LocalVaultSync(root: f.root, binding: binding, transport: f.remote))
+        _ = try LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a")
+    }
     func testResumeInSeparateProcess() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let path = environment["TEXTTEXT_ADOPTION_FIXTURE_ROOT"], let nonce = environment["TEXTTEXT_ADOPTION_FIXTURE_NONCE"] else {

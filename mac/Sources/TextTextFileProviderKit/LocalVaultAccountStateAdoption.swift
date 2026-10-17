@@ -3,6 +3,22 @@ import CoreFoundation
 import Darwin
 import TextTextWorkspaceCore
 
+/// Live actors hold a shared OS lease. An adoption needs the exclusive lease;
+/// process death closes the descriptor without a stale lock-file reset.
+final class LocalVaultAccountWriterLease: @unchecked Sendable {
+    private let descriptor: Int32
+    init(root: URL) throws {
+        let directory = LocalVaultDeviceState.directory(root: root)
+        guard directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let fd = open(directory.appendingPathComponent("account-adoption.lock").path, O_RDWR | O_CREAT | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        guard flock(fd, LOCK_SH | LOCK_NB) == 0 else { _ = close(fd); throw LocalVaultSyncFailure.busy }
+        descriptor = fd
+    }
+    deinit { _ = flock(descriptor, LOCK_UN); _ = close(descriptor) }
+}
+
 /// Explicit review and retired writers are required. No network credential or
 /// authority is accepted here; ordinary actors stay blocked by the intent.
 public enum LocalVaultAccountStateAdoption {
