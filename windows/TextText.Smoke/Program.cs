@@ -29,6 +29,10 @@ static class Program
   timeout.Token.Register(()=>app.Dispatcher.BeginInvoke(new Action(()=> { Console.Error.WriteLine("Smoke timed out"); app.Shutdown(1); })));
   window.Loaded += async (_,_)=> { try {
    Console.WriteLine("smoke: loaded"); Directory.CreateDirectory(args[1]);
+   if(Environment.GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "composition") {
+    Console.WriteLine("smoke: focused composition diagnostic, not the full desktop suite");
+    await CompositionTests.RunAsync(temp,timeout.Token);result=0;return;
+   }
    var environment = await CoreWebView2Environment.CreateAsync(null,Path.Combine(temp,"webview"));
    Console.WriteLine("smoke: environment ready"); await view.EnsureCoreWebView2Async(environment); Console.WriteLine("smoke: webview ready");
    Directory.CreateDirectory(Path.Combine(temp,"workspace"));

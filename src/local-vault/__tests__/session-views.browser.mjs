@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,readFile,symlink,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,symlink,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {chromium} from 'playwright';
@@ -54,6 +54,10 @@ setVaultTransport(async(method,params,signal)=>{
 const app=createRoot(document.getElementById('root')),noop=()=>{};
 window.render=names=>app.render(<div className="vault-app">{names.map(name=><div key={name} data-view={name}><CollaborativeVaultEditor initial={initial} root="web:views" startEditing config={{namespace:'https://views.test',workspaceId:'workspace',itemId:'item-views',accountId:'account-a',localFiles:${nativeMode}}} registerFlush={noop} onChanged={noop} onRemoved={noop}/></div>)}</div>);
 window.render(['a','b']);
+window.retryOwner=async()=>{
+ const h=acquireVaultDocument({namespace:'https://views.test',workspaceId:'workspace',itemId:'item-views',accountId:'account-a',localFiles:${nativeMode}},projected,'web:views');
+ await h.ready;await h.session.client.retry();await h.release();
+};
 window.peerInsert=async(text='Peer ',at=0)=>{
  const h=acquireVaultDocument({namespace:'https://views.test',workspaceId:'workspace',itemId:'item-views',accountId:'account-a',localFiles:${nativeMode}},projected,'web:views');
  await h.ready;h.session.client.mutate(doc=>documentText(doc,'body').insert(at,text));await h.release();
@@ -71,7 +75,13 @@ window.recoverHidden=async()=>{
  return h.runExclusive(async()=>{await h.session.recoverTo(window.recovered);return h.closeExclusive(()=>h.session.client.clearRetiredAfterRecoveryDurably())});
 };
 `);
- await buildLocalVault({entry:path.join(dir,'entry.tsx'),output:dir});browser=await chromium.launch();const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await buildLocalVault({entry:path.join(dir,'entry.tsx'),output:dir});
+ if(process.env.TEXTTEXT_COMPOSITION_BUNDLE){
+  const output=process.env.TEXTTEXT_COMPOSITION_BUNDLE;await mkdir(output,{recursive:true});
+  for(const name of ['app.js','app.css'])await writeFile(path.join(output,name),await readFile(path.join(dir,name)));
+  await writeFile(path.join(output,'index.html'),'<meta charset="utf-8"><link rel="stylesheet" href="app.css"><div id="root"></div><script src="app.js"></script>');
+ }
+ browser=await chromium.launch();const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.route('https://views.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="root"></div>'}));await page.goto('https://views.test');
  await page.addStyleTag({content:await readFile(path.join(dir,'app.css'),'utf8')});await page.addScriptTag({content:await readFile(path.join(dir,'app.js'),'utf8')});
  await page.locator('[data-view="b"] [aria-label="Document body"]').waitFor();

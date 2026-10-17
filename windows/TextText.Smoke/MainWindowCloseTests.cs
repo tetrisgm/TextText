@@ -62,6 +62,7 @@ static class MainWindowCloseTests
         await AccountRecoveryTests.RunAsync(root,receipts,ct);
         await LegacyDraftsTests.RunAsync(root,receipts,ct);
         await SharedOwnerTests.RunAsync(root,ct);
+        await CompositionTests.RunAsync(root,ct);
         var stalledGuard=new RendererFlushGuard();
         var neverDispatched=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Check(!await stalledGuard.FlushAsync(_=>neverDispatched.Task,TimeSpan.FromMilliseconds(120)),"stalled WebView dispatch is bounded and fails closed",checks);

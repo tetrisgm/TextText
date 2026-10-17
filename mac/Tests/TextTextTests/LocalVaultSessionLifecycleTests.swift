@@ -7,6 +7,50 @@ import TextTextFileProviderKit
 
 final class LocalVaultSessionLifecycleTests: XCTestCase {
     @MainActor
+    func testWKMarkedTextPreservesConcurrentOwnerEdit() async throws {
+        guard let fixture = ProcessInfo.processInfo.environment["TEXTTEXT_COMPOSITION_BUNDLE"] else { throw XCTSkip("Requires the explicit composition fixture") }
+        _ = NSApplication.shared
+        let config = WKWebViewConfiguration(); config.websiteDataStore = .nonPersistent()
+        let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 1000, height: 700), configuration: config)
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.contentView = view; window.makeKeyAndOrderFront(nil); window.makeFirstResponder(view)
+        defer { window.orderOut(nil); view.stopLoading() }
+        let base = URL(fileURLWithPath: fixture)
+        view.loadFileURL(base.appendingPathComponent("index.html"), allowingReadAccessTo: base)
+        func wait(_ expression: String) async throws {
+            let deadline = Date().addingTimeInterval(15)
+            while (try? await view.evaluateJavaScript(expression)) as? Bool != true {
+                if Date() >= deadline {
+                    print("Composition timeout: " + expression)
+                    print("Composition state: " + ((try? await view.evaluateJavaScript("JSON.stringify({ready:document.readyState,setup:typeof window.peerInsert,reads:window.initialReads,opens:window.nativeOpens,online:navigator.onLine,visibility:document.visibilityState,text:document.body.innerText.slice(0,350)})")) as? String ?? "unavailable"))
+                    throw NSError(domain: "CompositionFixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Timed out: " + expression])
+                }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+        }
+        try await wait("typeof window.retryOwner==='function'")
+        // XCTest's WK page can start hidden; exercise the production deliberate
+        // retry boundary, as the shared-owner host fixture does.
+        _ = try await view.evaluateJavaScript("window.retryOwner();true")
+        try await wait("Boolean(document.querySelector('[data-view=\"b\"] [aria-label=\"Document body\"]'))&&window.initialReads>=1")
+        _ = try await view.evaluateJavaScript("window.render(['b']);true")
+        try await wait("!document.querySelector('[data-view=\"a\"]')")
+        _ = try await view.evaluateJavaScript("window.body=document.querySelector('[aria-label=\"Document body\"]');body.dataset.continuity='kept';body.focus();const range=document.createRange();range.selectNodeContents(body);range.collapse(false);getSelection().removeAllRanges();getSelection().addRange(range);true")
+        let input = try XCTUnwrap(window.firstResponder as? NSTextInputClient, "WK content must expose the native marked-text input boundary")
+        input.setMarkedText("漢", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        try await wait("body.textContent.includes('漢')")
+        _ = try await view.evaluateJavaScript("window.peerDone=false;window.peerInsert().then(()=>window.peerDone=true);true")
+        try await wait("window.peerDone")
+        input.insertText("漢字", replacementRange: NSRange(location: NSNotFound, length: 0))
+        try await wait("body.textContent==='Peer Original漢字'")
+        let kept = try await view.evaluateJavaScript("document.querySelector('[aria-label=\"Document body\"]')===body&&body.dataset.continuity==='kept'&&document.activeElement===body") as? Bool
+        XCTAssertEqual(kept, true)
+        _ = try await view.evaluateJavaScript("window.render([]);true")
+        try await wait("window.nativeCloses===window.nativeOpens")
+        _ = try await view.evaluateJavaScript("window.render(['c']);true")
+        try await wait("document.querySelector('[aria-label=\"Document body\"]')?.textContent==='Peer Original漢字'")
+    }
+    @MainActor
     func testSharedOwnerKeepsNativeLeaseUntilWKCheckpointCompletes() async throws {
         guard let fixture = ProcessInfo.processInfo.environment["TEXTTEXT_SESSION_OWNER_BUNDLE"] else { throw XCTSkip("Requires the explicit shared-owner browser fixture") }
         _ = NSApplication.shared
