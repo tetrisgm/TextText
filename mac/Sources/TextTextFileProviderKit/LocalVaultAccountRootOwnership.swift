@@ -55,9 +55,7 @@ public enum LocalVaultAccountRootOwnership {
             guard entries.allSatisfy({ $0.lastPathComponent == ".texttext" }) else { throw Failure.adoption }
             let shared = directory.appendingPathComponent("shared-editing")
             if FileManager.default.fileExists(atPath: shared.path),
-               let enumerator = FileManager.default.enumerator(at: shared, includingPropertiesForKeys: nil) {
-                for case let file as URL in enumerator where file.pathExtension == "json" { throw Failure.adoption }
-            }
+               !(try FileManager.default.contentsOfDirectory(at: shared, includingPropertiesForKeys: nil)).isEmpty { throw Failure.adoption }
         }
         try publish(expected, root: canonical)
     }

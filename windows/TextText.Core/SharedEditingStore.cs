@@ -45,7 +45,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     static T? Read<T>(string path) {if(!File.Exists(path))return default;if(new FileInfo(path).Length>90*1024*1024)throw new InvalidDataException("Shared state exceeds bounds.");return JsonSerializer.Deserialize<T>(File.ReadAllBytes(path))??throw new InvalidDataException("Invalid shared state.");}
     static void Save<T>(string path,T value)=>TextPackStore.AtomicWrite(path,JsonSerializer.SerializeToUtf8Bytes(value));
     static bool ValidHash(string hash)=>Regex.IsMatch(hash,@"^[0-9a-f]{64}$");
-    static void Validate(TextPackStore store,SharedCheckpoint cp) {
+    internal static void Validate(TextPackStore store,SharedCheckpoint cp) {
         if(!Regex.IsMatch(cp.ItemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");_=store.Resolve(cp.Path);
         if(cp.Version!=1 || !ValidHash(cp.ProjectedHash)||!ValidHash(cp.AcknowledgedRevision)||cp.Epoch<1||cp.Seq<0||cp.JournalGeneration<1||cp.Epoch>9007199254740991||cp.Seq>9007199254740991||cp.JournalGeneration>9007199254740991||cp.Journal.Length>4*1024*1024)throw new InvalidDataException("Unsupported shared checkpoint. Retained edits are unchanged.");
         using var doc=JsonDocument.Parse(cp.Journal);var j=doc.RootElement;

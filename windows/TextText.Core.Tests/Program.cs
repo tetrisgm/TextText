@@ -398,6 +398,7 @@ static class Test
  await ExternalCheckpointRaceTests.Run(temp,Assert);
  await CheckpointAccountTests.Run(temp,Assert);
  await AccountRootOwnershipTests.Run(temp,Assert);
+ await AccountStateAdoptionTests.Run(temp,Assert);
  await CheckpointFailureTests.NoSpaceProjection(Assert);
  await CheckpointFailureTests.UnavailableProjection(temp,Assert);
  await CheckpointFailureTests.Run(temp,Assert);

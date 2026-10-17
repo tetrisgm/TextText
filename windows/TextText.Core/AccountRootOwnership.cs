@@ -15,7 +15,7 @@ public static class AccountRootOwnership
         if(origin.Scheme!="https"||origin.UserInfo.Length!=0||origin.AbsolutePath!="/"||origin.Query.Length!=0||origin.Fragment.Length!=0)throw new InvalidDataException("Invalid account server.");
         return origin.GetLeftPart(UriPartial.Authority).ToLowerInvariant();
     }
-    static Owner Expected(TextPackStore store,Uri origin,string workspaceId,string accountId) {
+    internal static Owner Expected(TextPackStore store,Uri origin,string workspaceId,string accountId) {
         if(!Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")||!Regex.IsMatch(workspaceId,@"^[A-Za-z0-9_-]+\z"))throw new InvalidDataException("Invalid account binding.");
         return new(1,Origin(origin),workspaceId,accountId,TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root)));
     }
@@ -37,11 +37,11 @@ public static class AccountRootOwnership
             if(saved.AccountId is null)throw new LegacyAccountStateException();
             if(saved.AccountId!=accountId)throw new SharedAccountMismatchException();
         } else if(Directory.EnumerateFileSystemEntries(store.Root).Any(path=>Path.GetFileName(path)!=".texttext") ||
-            Directory.Exists(Path.Combine(store.StateDirectory,"shared-editing")) && Directory.EnumerateFiles(Path.Combine(store.StateDirectory,"shared-editing"),"*.json",SearchOption.AllDirectories).Any())
+            Directory.Exists(Path.Combine(store.StateDirectory,"shared-editing")) && Directory.EnumerateFileSystemEntries(Path.Combine(store.StateDirectory,"shared-editing")).Any())
             throw new LegacyAccountStateException();
         Publish(store,expected);
     }
-    static void Verify(string path,Owner expected) {
+    internal static void Verify(string path,Owner expected) {
         var actual=JsonSerializer.Deserialize<Owner>(Read(path,4096))??throw new InvalidDataException("Invalid account ownership record.");
         if(actual.Version!=1)throw new InvalidDataException("Update TextText to open this workspace.");
         if(actual!=expected)throw new SharedAccountMismatchException();
