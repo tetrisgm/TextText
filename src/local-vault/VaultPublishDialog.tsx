@@ -7,6 +7,7 @@ import type { VaultFile } from "./bridge";
 import type { StoryDetails } from "./story-details";
 import { readDocument } from "./model";
 import { stripMarkdown } from "@/lib/content";
+import { publicationLink } from "./publication-link";
 import styles from "./VaultPublishDialog.module.css";
 
 type Publication = {
@@ -47,25 +48,13 @@ export function storyPreviewFromFile(file: VaultFile): StoryPreview {
   };
 }
 
-function publicLink(state: Publication, workspaceId: string): string {
-  const expected = `/v/${encodeURIComponent(workspaceId)}/${encodeURIComponent(state.itemId)}`;
-  if (state.publicPath !== expected) return "";
-  if (state.publicURL) {
-    try {
-      const url = new URL(state.publicURL);
-      if (["https:", "http:"].includes(url.protocol) && url.pathname === expected && !url.username && !url.password && !url.search && !url.hash) return url.href;
-    } catch { /* A malformed native response must not become a shared link. */ }
-    return "";
-  }
-  return ["https:", "http:"].includes(window.location.protocol) ? new URL(expected, window.location.origin).href : "";
-}
-
 export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, readStoryFile, onSaveStoryDetails, onClose }: {
   workspaceId: string; itemId: string; label: string; beforeChange: () => Promise<string | false>; readStoryFile?: () => Promise<VaultFile>; onSaveStoryDetails?: (details: StoryDetails) => Promise<string | false>; onClose: () => void;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const linkInput = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<Publication | null>(null);
+  const [workspaceAddress, setWorkspaceAddress] = useState<{ publication: Publication; url: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +68,19 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
   const [coverURL, setCoverURL] = useState("");
   const initialStoryReader = useRef(readStoryFile);
   useDialogFocus(dialog, true);
+  useEffect(() => {
+    // Hosted pages already identify their workspace. Native pages obtain that
+    // address from the active connection, never file:// or texttext.local.
+    if (!state || state.publicURL !== undefined || publicationLink(state, workspaceId, window.location.href)) return;
+    let live = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    void vaultRequest<{ webURL?: string }>("connection", {}, controller.signal)
+      .then(connection => { if (live) setWorkspaceAddress(typeof connection.webURL === "string" ? { publication: state, url: connection.webURL } : null); })
+      .catch(() => { if (live) setWorkspaceAddress(null); })
+      .finally(() => clearTimeout(timer));
+    return () => { live = false; clearTimeout(timer); controller.abort(); };
+  }, [state, workspaceId]);
   const reload = useCallback(async () => {
     const result = await vaultRequest<Publication>("publicationRead", { itemId });
     if (result.itemId !== itemId || !/^[a-f0-9]{64}$/.test(result.revision) || typeof result.published !== "boolean") {
@@ -174,7 +176,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
     catch (cause) { setError(cause instanceof Error ? cause.message : "Story details could not be saved."); }
     finally { setBusy(false); }
   };
-  const link = state?.published ? publicLink(state, workspaceId) : "";
+  const link = state?.published ? publicationLink(state, workspaceId, workspaceAddress?.publication === state ? workspaceAddress.url : window.location.href) : "";
   const copy = async () => {
     if (!link) return;
     try { await navigator.clipboard.writeText(link); setCopied(true); }
@@ -191,6 +193,7 @@ export function VaultPublishDialog({ workspaceId, itemId, label, beforeChange, r
         </div><div className={styles.storyDetails}><h3>Before publishing</h3><p>Review how your story will appear. These details are saved in its TextPack.</p>{onSaveStoryDetails && <div className={styles.storyFields}><label>Preview title<input aria-label="Story preview title" value={title} maxLength={200} disabled={busy} onChange={event => setTitle(event.target.value)} /></label><label>Preview subtitle<input aria-label="Story preview subtitle" value={subtitle} maxLength={300} disabled={busy} onChange={event => setSubtitle(event.target.value)} /></label></div>}{story.images.length > 1 && <fieldset className={styles.imageChoices} disabled={busy || !onSaveStoryDetails}><legend>Preview image</legend>{story.images.map((image, index) => <label key={image.src}><input type="radio" name="story-preview-image" aria-label={`Use image ${index + 1} for story preview`} checked={featuredImage === image.src} onChange={() => setFeaturedImage(image.src)} />{image.data.length <= 400_000 && /* eslint-disable-next-line @next/next/no-img-element */ <img src={`data:${image.contentType};base64,${image.data}`} alt="" />}<span>Image {index + 1}</span></label>)}</fieldset>}<h4>Topics</h4>{topics.length ? <div className={styles.topics}>{topics.map(topic => <span key={topic}>{topic}{onSaveStoryDetails && <button type="button" aria-label={`Remove ${topic} topic`} disabled={busy} onClick={() => setTopics(values => values.filter(value => value !== topic))}>×</button>}</span>)}</div> : <p>No topics yet.</p>}{onSaveStoryDetails && <><form className={styles.topicForm} onSubmit={event => { event.preventDefault(); addTopic(); }}><input aria-label="Add story topic" placeholder={topics.length >= 5 ? "Five topics maximum" : "Add a topic"} value={topicInput} maxLength={41} disabled={busy || topics.length >= 5} onChange={event => setTopicInput(event.target.value)} /><button type="submit" disabled={busy || topics.length >= 5 || !topicInput.trim()}>Add</button></form>{detailsChanged && <button type="button" className={styles.saveTopics} disabled={busy || !title.trim()} onClick={() => void saveStoryDetails()}>{busy ? "Saving…" : "Save story details"}</button>}</>}</div></div>}
         {story && !story.ready && !state.published && <p role="status" className={styles.draftNotice}>Add a title and some story text before publishing. Your draft is saved in Blog.</p>}
         <p className={styles.status}>{state.published ? "This file is public." : "This file is private."}</p>
+        {state.published && !link && <p role="status">The public web address is unavailable. Reconnect to this workspace and reopen Publish to copy its link.</p>}
         <p className="vault-sharing-intro">Anyone with the link can read the current saved file. Changes you save later appear on the same page. Comments and workspace access stay private.</p>
         {state.published && link && <div className={styles.link}>
           <label htmlFor="vault-public-link">Public link</label>

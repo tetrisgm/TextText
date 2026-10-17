@@ -157,7 +157,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
     }
     if (method === "workspacesList" || method === "workspaceOpen") return rpc.request(`native.${method}`, params, signal);
     if (method.startsWith("agent")) return rpc.request(method, params, signal);
-    if (method === "connection") return { ...await rpc.request<Status>("native.status"), ...await rpc.request<Record<string, unknown>>("files.connection"), webURL: `https://texttext.app/vault/${status.workspaceId}` };
+    if (method === "connection") return { ...await rpc.request<Status>("native.status", {}, signal), ...await rpc.request<Record<string, unknown>>("files.connection", {}, signal) };
     if (method === "trashReconcile") return rpc.request("files.restoreReconcile", params, signal);
     if (method === "recovery") return rpc.request("native.recovery", {}, signal);
     if (["settings", "signOut", "openWeb", "openFolder"].includes(method)) return rpc.request(`native.${method}`, params, signal);

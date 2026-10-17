@@ -10,6 +10,18 @@ import { readDocument, writePayload } from "./model";
 import type { VaultFile } from "./bridge";
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 afterEach(() => { vi.unstubAllGlobals(); });
+it("preserves the active native connection origin without guessing a production web address", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const webURL = "https://staging.example:8443/vault/workspace";
+  const view = native(method => {
+    if (method === "native.status") return { available: true, connected: true, workspaceId: "workspace", root: "C:\\Vault", accountId: "person" };
+    if (method === "files.connection") return { webURL, onlineReady: true };
+    throw new Error(`Unexpected ${method}`);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try { expect(await transport.request("connection", {})).toMatchObject({ webURL, workspaceId: "workspace", accountId: "person" }); }
+  finally { transport.destroy(); }
+});
 function native(handler: (method: string, params: Record<string, unknown>) => unknown | Promise<unknown>) {
   const listeners = new Set<(event: MessageEvent) => void>();
   const messages: { id: string; method: string; params: Record<string, unknown> }[] = [];

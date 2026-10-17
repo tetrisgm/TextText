@@ -7,6 +7,8 @@ export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
     'src/local-vault/{workspace-access,workspace-share-link}.test.ts',
+    'src/local-vault/publication-link.test.ts',
+    'src/local-vault/LocalParticipants.test.tsx',
     'src/local-vault/mirror-policy-host.test.ts',
     'src/sync/session-owner.test.ts',
     'src/local-vault/item-location.test.ts',
