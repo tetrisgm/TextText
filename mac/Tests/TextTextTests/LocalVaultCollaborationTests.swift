@@ -48,10 +48,11 @@ final class LocalVaultCollaborationTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [RenewedCollaborationProtocol.self]
         var reads = 0
-        let relay = LocalVaultCollaboration(credentials: {
+        let relay = LocalVaultCollaboration(verifiedCredentials: {
             reads += 1
-            return (self.origin, reads == 1 ? "fixture-old" : "fixture-new")
+            return LocalVaultAccountCredential(origin: self.origin, token: reads == 1 ? "fixture-old" : "fixture-new", accountId: "account-a")
         }, session: URLSession(configuration: config))
+        RenewedCollaborationProtocol.reset()
         let done = expectation(description: "read succeeds after renewal")
         relay.start(id: "renewal", method: "collaborationRead", params: ["itemId": "item"], root: root) { result in
             switch result {
@@ -61,6 +62,34 @@ final class LocalVaultCollaborationTests: XCTestCase {
             done.fulfill()
         }
         await fulfillment(of: [done], timeout: 3)
+        XCTAssertEqual(RenewedCollaborationProtocol.authorizations(), ["Bearer fixture-old", "Bearer fixture-new"])
+    }
+    @MainActor
+    func testUnauthorizedOldRequestNeverRetriesAsAReplacementAccount() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sync = root.appendingPathComponent(".texttext/sync")
+        try FileManager.default.createDirectory(at: sync, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let state: [String: Any] = ["binding": ["origin": origin.absoluteString, "workspaceId": "workspace"],
+            "baselines": [:], "outbox": [:], "conflicts": [:], "cursor": 0]
+        try JSONSerialization.data(withJSONObject: state).write(to: sync.appendingPathComponent("state.json"))
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [RenewedCollaborationProtocol.self]
+        for verified in [true, false] {
+            RenewedCollaborationProtocol.reset()
+            var reads = 0
+            let relay = LocalVaultCollaboration(verifiedCredentials: {
+                reads += 1
+                return LocalVaultAccountCredential(origin: self.origin, token: reads == 1 ? "fixture-old" : "fixture-new",
+                    accountId: verified ? (reads == 1 ? "account-a" : "account-b") : nil)
+            }, session: URLSession(configuration: config))
+            let rejected = expectation(description: "replacement cannot retry old request")
+            relay.start(id: "account-change", method: "collaborationRead", params: ["itemId": "item"], root: root) { result in
+                if case .failure = result {} else { XCTFail("Another account answered the old request") }
+                rejected.fulfill()
+            }
+            await fulfillment(of: [rejected], timeout: 3)
+            XCTAssertEqual(RenewedCollaborationProtocol.authorizations(), ["Bearer fixture-old"], "No request may use the replacement credential")
+        }
     }
     @MainActor
     func testNativeCheckpointReportsExternalFileChangeSeparatelyFromOtherFailures() {
@@ -399,9 +428,14 @@ final class LocalVaultCollaborationTests: XCTestCase {
 }
 
 private final class RenewedCollaborationProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var headers: [String] = []
+    static func reset() { lock.lock(); defer { lock.unlock() }; headers = [] }
+    static func authorizations() -> [String] { lock.lock(); defer { lock.unlock() }; return headers }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        Self.lock.lock(); Self.headers.append(request.value(forHTTPHeaderField: "Authorization") ?? ""); Self.lock.unlock()
         let renewed = request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-new"
         let response = HTTPURLResponse(url: request.url!, statusCode: renewed ? 200 : 401, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

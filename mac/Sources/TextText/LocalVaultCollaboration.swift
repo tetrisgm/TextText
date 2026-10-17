@@ -20,24 +20,36 @@ struct LocalVaultCollaborationError: LocalizedError {
     }
 }
 
+struct LocalVaultAccountCredential: Sendable {
+    let origin: URL
+    let token: String
+    var accountId: String? = nil
+    func sameAccount(as other: Self) -> Bool {
+        guard origin == other.origin else { return false }
+        if let accountId, let otherId = other.accountId { return accountId == otherId }
+        return accountId == nil && other.accountId == nil && token == other.token
+    }
+}
+
 /// Narrow authenticated relay. No URL or credential is accepted from JavaScript.
 @MainActor
 final class LocalVaultCollaboration {
-    private struct Context: Sendable { let binding: LocalVaultSyncBinding; let token: String }
+    private struct Context: Sendable { let binding: LocalVaultSyncBinding; let token: String; let accountId: String? }
     private struct Configuration: Sendable {
         let namespace: String
         let workspaceId: String
         let itemId: String
-        var value: [String: Any] { ["namespace": namespace, "workspaceId": workspaceId, "itemId": itemId, "localFiles": true] }
+        let accountId: String?
+        var value: [String: Any] { var result: [String: Any] = ["namespace": namespace, "workspaceId": workspaceId, "itemId": itemId, "localFiles": true]; if let accountId { result["accountId"] = accountId }; return result }
     }
-    private let credentials: () -> (origin: URL, token: String)?
+    private let credentials: () -> LocalVaultAccountCredential?
     private let session: URLSession
     private let engine: () -> LocalVaultSync?
     private let didRelease: () -> Void
-    private var localSessions: [String: (itemId: String, engine: LocalVaultSync)] = [:]
+    private var localSessions: [String: (itemId: String, engine: LocalVaultSync, account: LocalVaultAccountCredential?)] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
-    init(credentials: @escaping () -> (origin: URL, token: String)?, session: URLSession? = nil, engine: @escaping () -> LocalVaultSync? = { nil }, didRelease: @escaping () -> Void = {}) {
-        self.credentials = credentials
+    init(credentials: @escaping () -> (origin: URL, token: String)? = { nil }, verifiedCredentials: (() -> LocalVaultAccountCredential?)? = nil, session: URLSession? = nil, engine: @escaping () -> LocalVaultSync? = { nil }, didRelease: @escaping () -> Void = {}) {
+        self.credentials = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }
         self.engine = engine
         self.didRelease = didRelease
         self.session = session ?? URLSession(configuration: .ephemeral, delegate: CollaborationNoRedirect(), delegateQueue: nil)
@@ -53,12 +65,13 @@ final class LocalVaultCollaboration {
         }
     }
 
-    nonisolated private static func context(root: URL, account: (origin: URL, token: String)?) throws -> Context? {
+    nonisolated private static func context(root: URL, account: LocalVaultAccountCredential?) throws -> Context? {
         guard let account, let stored = try LocalVaultSync.binding(root: root),
               stored.origin.scheme == account.origin.scheme, stored.origin.host == account.origin.host,
               stored.origin.port == account.origin.port else { return nil }
         let binding = try LocalVaultSyncBinding(origin: stored.origin, workspaceId: stored.workspaceId)
-        return Context(binding: binding, token: account.token)
+        if let id = account.accountId { _ = try LocalVaultAccountIdentity.validate(id) }
+        return Context(binding: binding, token: account.token, accountId: account.accountId)
     }
     nonisolated static func identifier(_ value: String) -> Bool {
         value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil
@@ -434,6 +447,10 @@ final class LocalVaultCollaboration {
         return (data, response.statusCode)
     }
     static let localCapabilities = ["epoch-adoption"]
+    private func owns(_ captured: LocalVaultAccountCredential?, current: LocalVaultAccountCredential?) -> Bool {
+        if let captured, let current { return captured.sameAccount(as: current) }
+        return captured == nil && current == nil
+    }
     private func localOperation(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         guard let itemId = params["itemId"] as? String, Self.identifier(itemId) else {
             throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration item.")
@@ -442,6 +459,8 @@ final class LocalVaultCollaboration {
             guard Set(params.keys) == ["itemId", "path", "hash"],
                   let path = params["path"] as? String, let hash = params["hash"] as? String,
                   let engine = engine() else { throw LocalVaultCollaborationError(code: "409", message: "This folder is not ready for shared editing.") }
+            let owner = credentials()
+            guard engine.accountId == owner?.accountId else { throw LocalVaultCollaborationError(code: "account_changed", message: "Saved edits need their original account or explicit recovery.") }
             let opened: LocalVaultSharedSession
             do { opened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: hash) }
             catch LocalVaultSyncFailure.changed {
@@ -451,7 +470,11 @@ final class LocalVaultCollaboration {
                 try? await engine.endSharedEditing(sessionToken: opened.sessionToken, itemId: itemId)
                 throw CancellationError()
             }
-            localSessions[opened.sessionToken] = (itemId, engine)
+            guard owns(owner, current: credentials()) else {
+                try? await engine.endSharedEditing(sessionToken: opened.sessionToken, itemId: itemId)
+                throw LocalVaultCollaborationError(code: "account_changed", message: "This account changed. Your saved work remains on this device.")
+            }
+            localSessions[opened.sessionToken] = (itemId, engine, owner)
             // The shared client consumes this exact name; only stores that verify
             // and archive authorized epoch adoption may announce it.
             return ["sessionToken": opened.sessionToken, "path": opened.document.path, "hash": opened.document.hash,
@@ -470,7 +493,7 @@ final class LocalVaultCollaboration {
             // Repeating close must not strand a clean editor in recovery.
             guard let active = localSessions[token] else { return [:] }
             guard active.itemId == itemId else { throw LocalVaultCollaborationError(code: "409", message: "This session belongs to another item.") }
-            let reason = (params["retiredReason"] as? String).map { String($0.prefix(1000)) }
+            let reason = owns(active.account, current: credentials()) ? (params["retiredReason"] as? String).map { String($0.prefix(1000)) } : nil
             try await active.engine.endSharedEditing(sessionToken: token, itemId: itemId, retiredReason: reason)
             localSessions.removeValue(forKey: token)
             didRelease()
@@ -478,6 +501,9 @@ final class LocalVaultCollaboration {
         }
         guard let token = params["sessionToken"] as? String, let active = localSessions[token], active.itemId == itemId else {
             throw LocalVaultCollaborationError(code: "session_closed", message: "This shared editing session has closed. Your recovery journal is kept.")
+        }
+        guard owns(active.account, current: credentials()) else {
+            throw LocalVaultCollaborationError(code: "account_changed", message: "Return to the original account to continue these saved edits.")
         }
         if method == "collaborationRecover" {
             guard Set(params.keys) == ["itemId", "sessionToken", "recoveryPath", "recoveryHash"],
@@ -546,13 +572,14 @@ final class LocalVaultCollaboration {
                     if let candidate, let engine = self.engine() {
                         let retained = readyOnly ? nil : try await engine.readSharedCheckpoint(itemId: candidate.0)
                         if candidate.1 || retained != nil {
-                            configuration = Configuration(namespace: context.binding.origin.absoluteString, workspaceId: context.binding.workspaceId, itemId: candidate.0)
+                            configuration = Configuration(namespace: context.binding.origin.absoluteString, workspaceId: context.binding.workspaceId, itemId: candidate.0, accountId: context.accountId)
                         }
                     }
                     try Task.checkCancellation()
                     completion(.success(configuration?.value)); return
                 }
                 var request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)
+                if let accountId = context.accountId { request.setValue(accountId, forHTTPHeaderField: "X-TextText-Account") }
                 if method == "collaborationPush", let itemId = params["itemId"] as? String,
                    let operationId = params["operationId"] as? String, let updates = params["updates"] as? [String],
                    let active = self.localSessions.values.first(where: { $0.itemId == itemId }) {
@@ -568,7 +595,7 @@ final class LocalVaultCollaboration {
                 // idempotent collaboration operations, once, for the same binding.
                 if status == 401, ["collaborationRead", "collaborationPush", "binaryManifest", "binaryRead", "binaryPatch"].contains(method),
                    let renewed = try Self.context(root: root, account: self.credentials()),
-                   renewed.binding == context.binding, renewed.token != context.token {
+                   renewed.binding == context.binding, let accountId = context.accountId, renewed.accountId == accountId, renewed.token != context.token {
                     request.setValue("Bearer \(renewed.token)", forHTTPHeaderField: "Authorization")
                     (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
                     try Task.checkCancellation()
@@ -576,6 +603,10 @@ final class LocalVaultCollaboration {
                 let value = method == "binaryRead" && status == 200
                     ? ["entryPath": params["entryPath"]!, "bytesBase64": data.base64EncodedString()]
                     : (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                guard let current = self.credentials(),
+                      LocalVaultAccountCredential(origin: context.binding.origin, token: context.token, accountId: context.accountId).sameAccount(as: current) else {
+                    throw LocalVaultCollaborationError(code: "account_changed", message: "This account changed. Your saved work remains on this device.")
+                }
                 let succeeded = status == 200 || method == "folderMoveReview" && status == 201
                 guard succeeded, let value else {
                     throw LocalVaultCollaborationError.response(status: status, payload: value)

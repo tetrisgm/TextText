@@ -46,6 +46,37 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         while window.isVisible && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertFalse(window.isVisible, "A durable renderer reply must complete the pending close")
     }
+    @MainActor
+    func testAccountReplacementCannotCheckpointOrRetireCapturedLocalSession() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let itemId = "captured-account-note", path = "Note.textpack"
+        let document = try BuiltinTextPackDocument.create(title: "Note", body: "Original")
+        let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: \"\(itemId)\"\n---\nOriginal",
+            documentJSON: document.documentJSON, templateJSON: document.templateJSON, assets: [], sourceURL: nil, in: root)
+        let pack = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)
+        try FileManager.default.moveItem(at: pack, to: root.appendingPathComponent(path))
+        let original = try LocalVaultDocumentStore(root: root).read(path: path)
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: LifecycleTransport())
+        _ = try await engine.sync()
+        var credential = LocalVaultAccountCredential(origin: binding.origin, token: "fixture-a")
+        let relay = LocalVaultCollaboration(verifiedCredentials: { credential }, engine: { engine })
+        let opened = try await request(relay, "collaborationOpen", ["itemId": itemId, "path": path, "hash": original.hash], root)
+        let token = try XCTUnwrap(opened["sessionToken"] as? String)
+        credential = LocalVaultAccountCredential(origin: binding.origin, token: "fixture-b")
+        do {
+            _ = try await request(relay, "collaborationCheckpoint", ["itemId": itemId, "sessionToken": token], root)
+            XCTFail("Replacement account acquired an old local session")
+        } catch let error as LocalVaultCollaborationError { XCTAssertEqual(error.code, "account_changed") }
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
+        _ = try await request(relay, "collaborationClose", ["itemId": itemId, "sessionToken": token, "retiredReason": "Replacement account supplied this reason"], root)
+        let reopened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        XCTAssertNil(reopened.checkpoint?.retiredReason)
+        try await engine.endSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId)
+    }
+
     func testNativeCloseRequiresTypedDurableResult() {
         let durable: [String: Any] = ["ok": true, "durability": [
             "workspaceId": "workspace", "itemId": "item", "lifecycle": "lifecycle", "generation": 8, "outcome": "durable",

@@ -91,6 +91,7 @@ public extension LocalVaultSyncTransport {
 /// Bearer credentials live only in this transport, never in vault files.
 public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private let endpoint: URL
+    private let accountId: String?
     private var token: String
     private let session: URLSession
     private var manifestETag: String?
@@ -103,9 +104,11 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     public func authoritativeFolders() async -> [String]? { hasFolderCatalog && fullAccess && canCreateContent ? cachedFolders : nil }
     private var cachedManifest: [LocalVaultRemoteItem] = []
 
-    public init(origin: URL, workspaceId: String, token: String, session: URLSession = .shared) throws {
+    public init(origin: URL, workspaceId: String, token: String, session: URLSession = .shared, accountId: String? = nil) throws {
         try LocalVaultSyncBinding.validate(origin: origin, workspaceId: workspaceId)
         self.endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("items")
+        if let accountId { _ = try LocalVaultAccountIdentity.validate(accountId) }
+        self.accountId = accountId
         self.token = token; self.session = session
     }
 
@@ -127,11 +130,15 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         return !existing && canCreate
     }
 
-    public func updateToken(_ token: String) { self.token = token }
+    public func updateToken(_ token: String, accountId: String? = nil) throws {
+        guard self.accountId == accountId else { throw LocalVaultAccountIdentity.Failure.unverified }
+        self.token = token
+    }
 
     private func request(_ url: URL) -> URLRequest {
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let accountId { request.setValue(accountId, forHTTPHeaderField: "X-TextText-Account") }
         request.cachePolicy = .reloadIgnoringLocalCacheData
         return request
     }

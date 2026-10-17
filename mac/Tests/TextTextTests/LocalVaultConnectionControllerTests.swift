@@ -143,8 +143,9 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
         var token = "fixture-before"
+        CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
         let connection = LocalVaultConnectionController(root: root, session: session,
-            credentials: { (URL(string: "https://texttext.test")!, token) })
+            verifiedCredentials: { LocalVaultAccountCredential(origin: URL(string: "https://texttext.test")!, token: token, accountId: "account-a") })
         defer { connection.stop() }
         _ = try await connection.connect()
         let engine = try XCTUnwrap(connection.collaborationEngine)
@@ -162,6 +163,36 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         // token. A successful manifest proves the existing actor was updated.
         let report = try await engine.sync()
         XCTAssertTrue(report.errors.isEmpty, report.errors.joined(separator: ", "))
+    }
+
+    @MainActor
+    func testReplacementAccountCannotRetokenExistingSyncActor() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CredentialRefreshProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
+        var credential = LocalVaultAccountCredential(origin: URL(string: "https://texttext.test")!, token: "fixture-before", accountId: "account-a")
+        let connection = LocalVaultConnectionController(root: root, session: session, verifiedCredentials: { credential })
+        defer { connection.stop() }
+        _ = try await connection.connect(startSync: false)
+        let engine = try XCTUnwrap(connection.collaborationEngine)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let saved = try Data(contentsOf: stateURL)
+        credential = LocalVaultAccountCredential(origin: credential.origin, token: "fixture-other", accountId: "account-b")
+        connection.credentialsChanged()
+        XCTAssertNil(connection.collaborationEngine)
+        XCTAssertNil(connection.capabilities, "Another account cannot inherit cached write permissions")
+        XCTAssertFalse(connection.status["onlineReady"] as? Bool ?? true)
+        do { _ = try await connection.connect(startSync: false); XCTFail("Replacement acquired the retained actor") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("original account")) }
+        XCTAssertEqual(try Data(contentsOf: stateURL), saved)
+        credential = LocalVaultAccountCredential(origin: credential.origin, token: "fixture-before", accountId: "account-a")
+        _ = try await connection.connect(startSync: false)
+        XCTAssertNotNil(connection.collaborationEngine)
+        XCTAssertEqual(connection.collaborationEngine?.accountId, engine.accountId)
     }
 
     @MainActor

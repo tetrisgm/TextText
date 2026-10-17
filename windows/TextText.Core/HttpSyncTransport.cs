@@ -3,22 +3,52 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 namespace TextText.Core;
+public sealed record SyncAccountCredential(string Token,string AccountId);
 public sealed class HttpSyncTransport : ISyncTransport
 {
     readonly bool ownerFallback; readonly HttpClient http; readonly Uri endpoint; readonly Func<Task<string>> token; string? etag; IReadOnlyList<RemoteItem> cached=[];
+    readonly SemaphoreSlim credentialGate=new(1,1);
+    readonly Func<Task<SyncAccountCredential>>? verifiedCredentials;
+    readonly string? accountId;
+    string? pinnedLegacyToken;
     static readonly JsonSerializerOptions Json=new(){PropertyNameCaseInsensitive=true};
     public HttpSyncTransport(HttpClient http,Uri origin,string workspaceId,Func<Task<string>> tokenProvider,bool ownerFallback = true) {
         if(origin.Scheme!="https" || !string.IsNullOrEmpty(origin.UserInfo) || origin.AbsolutePath!="/" || !string.IsNullOrEmpty(origin.Query) || !System.Text.RegularExpressions.Regex.IsMatch(workspaceId,@"^[A-Za-z0-9_-]+$")) throw new ArgumentException("Invalid sync binding.");
         this.ownerFallback=ownerFallback;this.http=http;token=tokenProvider;endpoint=new(origin,"api/vault/"+workspaceId+"/items");
     }
+    public HttpSyncTransport(HttpClient http,Uri origin,string workspaceId,string accountId,Func<Task<SyncAccountCredential>> credentials,bool ownerFallback=true)
+        : this(http,origin,workspaceId,()=>Task.FromResult(""),ownerFallback) {
+        if(!System.Text.RegularExpressions.Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new ArgumentException("Invalid account identity.");
+        this.accountId=accountId;verifiedCredentials=credentials;
+    }
+    async Task<string> Credential(CancellationToken ct) {
+        if(verifiedCredentials is not null) {
+            var credential=await verifiedCredentials();ct.ThrowIfCancellationRequested();
+            if(credential.AccountId!=accountId)throw new SharedAccountMismatchException();
+            return credential.Token;
+        }
+        await credentialGate.WaitAsync(ct);
+        try {
+            var current=await token();ct.ThrowIfCancellationRequested();
+            if(pinnedLegacyToken is null)pinnedLegacyToken=current;
+            else if(current!=pinnedLegacyToken)throw new SharedAccountMismatchException();
+            return current;
+        } finally {credentialGate.Release();}
+    }
     async Task<HttpResponseMessage> Send(Func<HttpRequestMessage> create,CancellationToken ct) {
-        var credential=await token();
+        var credential=await Credential(ct);
         for(var attempt=0;;attempt++) {
             using var request=create();request.Headers.Authorization=new("Bearer",credential);
+            if(accountId is not null)request.Headers.TryAddWithoutValidation("X-TextText-Account",accountId);
             var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct);
-            if(response.StatusCode==HttpStatusCode.Unauthorized && attempt==0) {var fresh=await token();if(fresh!=credential){response.Dispose();credential=fresh;continue;}}
+            if(response.StatusCode==HttpStatusCode.Unauthorized && attempt==0 && verifiedCredentials is not null) {
+                string fresh;
+                try {fresh=await Credential(ct);}catch {response.Dispose();throw;}
+                if(fresh!=credential){response.Dispose();credential=fresh;continue;}
+            }
             if(response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed) {response.Dispose();throw new SyncConflictException();}
             if(!response.IsSuccessStatusCode && response.StatusCode!=HttpStatusCode.NotModified) {var code=response.StatusCode;response.Dispose();throw new HttpRequestException("Sync request failed ("+(int)code+").",null,code);}
+            try { _=await Credential(ct); } catch {response.Dispose();throw;}
             return response;
         }
     }

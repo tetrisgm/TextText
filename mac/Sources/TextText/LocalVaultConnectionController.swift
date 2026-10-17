@@ -7,10 +7,12 @@ import TextTextFileProviderKit
 @MainActor
 final class LocalVaultConnectionController {
     typealias CredentialsProvider = () -> (origin: URL, token: String)?
+    typealias VerifiedCredentialsProvider = () -> LocalVaultAccountCredential?
     private static let retryMessage = "Changes are saved on this Mac. The web connection will retry."
     private let requestedWorkspaceId: String?
     private let root: URL
-    private let credentials: CredentialsProvider
+    private let credentials: VerifiedCredentialsProvider
+    private var connectedAccount: LocalVaultAccountCredential?
     private let session: URLSession
     private var credentialGeneration = 0
     private var connectedCredentialGeneration = 0
@@ -37,13 +39,13 @@ final class LocalVaultConnectionController {
     private var connectDelay: UInt64 = 2
     var onChange: (([String: Any], Bool) -> Void)?
 
-    init(root: URL, workspaceId: String? = nil, session: URLSession = .shared, credentials: @escaping CredentialsProvider) {
+    init(root: URL, workspaceId: String? = nil, session: URLSession = .shared, credentials: @escaping CredentialsProvider = { nil }, verifiedCredentials: VerifiedCredentialsProvider? = nil) {
         self.requestedWorkspaceId = workspaceId
-        self.root = root; self.credentials = credentials; self.session = session
+        self.root = root; self.credentials = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }; self.session = session
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
                 previousBinding = existing
-                if let account = credentials(), account.origin == existing.origin,
+                if let account = self.credentials(), account.origin == existing.origin,
                    requestedWorkspaceId == nil || requestedWorkspaceId == existing.workspaceId {
                     capabilities = try? LocalVaultCapabilityCache.read(root: root, binding: existing)
                     // The saved binding was verified on an earlier connection.
@@ -52,13 +54,13 @@ final class LocalVaultConnectionController {
                     if let portable = try PortableWorkspaceBinding.read(root: root),
                        portable == (try PortableWorkspaceBinding.normalized(existing)) {
                         let transport = try HTTPLocalVaultSyncTransport(origin: existing.origin,
-                            workspaceId: existing.workspaceId, token: account.token, session: session)
-                        let engine = try LocalVaultSync(root: root, binding: existing, transport: transport)
-                        self.binding = existing; self.transport = transport; self.engine = engine
+                            workspaceId: existing.workspaceId, token: account.token, session: session, accountId: account.accountId)
+                        let engine = try LocalVaultSync(root: root, binding: existing, transport: transport, accountId: account.accountId)
+                        self.binding = existing; self.transport = transport; self.engine = engine; self.connectedAccount = account
                     }
                 }
             }
-        } catch { message = error.localizedDescription }
+        } catch { capabilities = nil; message = error.localizedDescription }
     }
     deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel(); connectingTask?.cancel() }
     func stop() {
@@ -72,6 +74,18 @@ final class LocalVaultConnectionController {
     }
     func credentialsChanged() {
         credentialGeneration += 1
+        if let connectedAccount, credentials().map({ connectedAccount.sameAccount(as: $0) }) != true {
+            connectingTask?.cancel(); connectingTask = nil
+            watching?.cancel(); watching = nil
+            running?.cancel(); running = nil
+            scheduled?.cancel(); scheduled = nil
+            connectRetry?.cancel(); connectRetry = nil
+            transport = nil; engine = nil; binding = nil; capabilities = nil
+            onlineReady = false; connecting = false; remoteVerified = false
+            message = "Return to the original account to continue this folder's saved work."
+            onChange?(status, false)
+            return
+        }
         connectAutomatically()
     }
     var status: [String: Any] {
@@ -139,6 +153,10 @@ final class LocalVaultConnectionController {
     }
     func connect(allowRebind: Bool = false, startSync: Bool = true) async throws -> [String: Any] {
         guard let account = credentials() else { throw LocalVaultConnectionError("Sign in to TextText before connecting this folder to the web.") }
+        if let connectedAccount, !connectedAccount.sameAccount(as: account) {
+            throw LocalVaultConnectionError("Return to the original account to continue this folder's saved work.")
+        }
+        if let id = account.accountId { _ = try LocalVaultAccountIdentity.validate(id) }
         // Validate before attaching the token to a URL.
         _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: "discovery")
         let selectedId = requestedWorkspaceId ?? previousBinding.flatMap { $0.origin == account.origin ? $0.workspaceId : nil }
@@ -150,11 +168,12 @@ final class LocalVaultConnectionController {
            let selectedId, existing.workspaceId == selectedId,
            try PortableWorkspaceBinding.normalized(existing) == PortableWorkspaceBinding.normalized(
                LocalVaultSyncBinding(origin: account.origin, workspaceId: selectedId)) {
-            try await configure(existing, token: account.token, startSync: false)
+            try await configure(existing, account: account, startSync: false)
         }
         let endpoint = selectedId.map { "api/vault/\($0)/items" } ?? "api/vault"
         var request = URLRequest(url: account.origin.appendingPathComponent(endpoint), timeoutInterval: 30)
         request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
+        if let id = account.accountId { request.setValue(id, forHTTPHeaderField: "X-TextText-Account") }
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
@@ -187,7 +206,7 @@ final class LocalVaultConnectionController {
             try LocalVaultSync.archiveAndRebind(root: root, to: binding)
         }
         try PortableWorkspaceBinding.bindVerified(root: root, binding: binding)
-        try await configure(binding, token: account.token, startSync: false)
+        try await configure(binding, account: account, startSync: false)
         if let transport, let engine {
             _ = try await transport.manifest()
             var value = await transport.capabilities()
@@ -217,6 +236,7 @@ final class LocalVaultConnectionController {
         _ = try LocalVaultSyncBinding(origin: account.origin, workspaceId: "discovery")
         var request = URLRequest(url: account.origin.appendingPathComponent("api/vault/workspaces"), timeoutInterval: 30)
         request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
+        if let id = account.accountId { request.setValue(id, forHTTPHeaderField: "X-TextText-Account") }
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
@@ -248,15 +268,19 @@ final class LocalVaultConnectionController {
         watchFailureIsCurrent = false
         message = value
     }
-    private func configure(_ binding: LocalVaultSyncBinding, token: String, startSync: Bool) async throws {
+    private func configure(_ binding: LocalVaultSyncBinding, account: LocalVaultAccountCredential, startSync: Bool) async throws {
+        if let connectedAccount, !connectedAccount.sameAccount(as: account) {
+            throw LocalVaultConnectionError("Return to the original account to continue this folder's saved work.")
+        }
+        let token = account.token
         if self.binding == binding, let transport, engine != nil {
             // Keep the actor that owns live file sessions and checkpoints.
-            await transport.updateToken(token)
+            try await transport.updateToken(token, accountId: account.accountId)
             return
         }
-        let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token, session: session)
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
-        self.binding = binding; self.transport = transport; self.engine = engine
+        let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token, session: session, accountId: account.accountId)
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: account.accountId)
+        self.binding = binding; self.transport = transport; self.engine = engine; self.connectedAccount = account
         if startSync { activate() }
     }
     func activate() {
@@ -305,7 +329,9 @@ final class LocalVaultConnectionController {
         running = Task { [weak self, engine] in
             do {
                 let report = try await engine.sync()
-                guard let self else { return }
+                guard let self, !Task.isCancelled, let currentEngine = self.engine, currentEngine === engine,
+                      let current = self.credentials(), let owner = self.connectedAccount,
+                      owner.sameAccount(as: current) else { return }
                 var capabilityChanged = false
                 if let transport = self.transport {
                     var value = await transport.capabilities()

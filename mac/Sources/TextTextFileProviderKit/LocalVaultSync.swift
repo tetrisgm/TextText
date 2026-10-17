@@ -90,7 +90,7 @@ public actor LocalVaultSync {
         var binaryRevisions: [String: String]? = nil
         var binaryOutbox: [String: BinaryPending]? = nil
     }
-    private let accountId: String?
+    public nonisolated let accountId: String?
     private let root: URL
     private let directory: URL
     private let transport: any LocalVaultSyncTransport
