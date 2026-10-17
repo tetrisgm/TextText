@@ -1635,7 +1635,7 @@ try {
   assert.equal(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.fields.texttextPreviewSubtitle, "A short introduction");
   assert.equal(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.fields.texttextFeaturedImage, "assets/second.png");
   assert.equal(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.fields.cover, undefined);
-  assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["Design"]);
+  assert.deepEqual(JSON.parse(files.get("Blog/Story.textpack").documentJSON).content.tags, ["design"]);
   await storyReader.getByRole("button", { name: "Edit story" }).click();
   await page.getByRole("textbox", { name: "Subtitle" }).waitFor();
   await page.getByRole("button", { name: "Back to Blog" }).click();

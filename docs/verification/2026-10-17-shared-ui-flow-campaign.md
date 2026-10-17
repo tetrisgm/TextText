@@ -61,6 +61,16 @@ The authoring audit found that `applyVaultCollaboration` captured the Yjs checkp
 
 The broad rerun corrected its obsolete story tag expectation from `Design` to canonical `design`. It passed the previously failing guarded image insertion and advanced to rapid new-card typing, where `Rapid thought` became `apid thoughtR`. The full broad fixture remains unaccepted while that separate caret defect is investigated. Its isolated bundle SHA-256 is `433c4f073988e78c51b1bb4110d6c3317ab20ddd31545b6dd8588c0a601d3c4d`; metadata/logs are `canonical-metadata.json` and `canonical-browser.log` in the campaign directory.
 
+### Rapid new-card typing correction
+
+The production keyboard shortcut buffers the first typed characters before the title textarea mounts. Its initial focus left the caret at position zero, so subsequent browser input preceded that buffered prefix. A fresh actual-`VaultApp` regression reproduced ` thoughtRapid` when typing `Rapid thought` (`rapid-draft-before.log`). [`VaultDocumentGrid`](../../src/local-vault/VaultDocumentGrid.tsx) now puts the caret after that prefix during the initial pending focus only; it does not schedule a later focus or change existing-draft selection.
+
+[`note-rapid-draft.browser.mjs`](../../src/local-vault/__tests__/note-rapid-draft.browser.mjs) passes after the correction: real browser keyboard input keeps the exact title, subsequent body typing retains focus, and the saved pack has the exact title/body. Light/dark draft screenshots were inspected (`rapid-draft-after.log` records their temporary directory).
+
+Both the tag/paste and rapid-draft regressions now run in the existing required `npm run test:note-template:browser` command. Its six scripts all passed (`note-template-required-rerun.log`): open-item move, rename/caret continuity and revocation, note templates, parent references, tag/paste, and rapid draft. The open-item move and note-template mocks needed the current `workspaceAccess` owner response; a temporary diagnostic showed the old transport stuck at “Loading workspace permissions…” with only `list` and `workspaceAccess` requests. Those are fixture-contract corrections; product permission checks remain unchanged.
+
+The subsequent full broad rerun again hit the earlier intermittent Heading assertion, before reaching the corrected card path. That failure remains under investigation; focused passes do not establish full broad acceptance.
+
 ## Still required
 
 Run the installed T19 matrix on current coherent Mac/PC/web candidates. In particular, ordinary file import/export round trips, physical clipboard use, real account changes, concurrent comments, search invalidation after remote changes, and later broad-fixture flows remain open. Per-device List/Cards preference storage remains a documented product choice/gap; this campaign does not introduce cross-device preference synchronization.

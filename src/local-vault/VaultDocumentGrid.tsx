@@ -235,7 +235,12 @@ export function VaultDocumentGrid({ listing, folder, busy, onOpen, onEditNote, o
     if (!cardDraft || !draftTitleFocusPending.current) return;
     draftTitleFocusPending.current = false;
     const title = draftTitleRef.current;
-    if (title && draftFocusAllowed(title, null)) title.focus();
+    if (title && draftFocusAllowed(title, null)) {
+      title.focus();
+      // Shortcut keys received before mount already form the title prefix.
+      // Continue after that prefix when browser typing takes over.
+      title.setSelectionRange(title.value.length, title.value.length);
+    }
   }, [cardDraft]);
   const draftIconRef = useRef("");
   const [draftColorOpen, setDraftColorOpen] = useState(false);
