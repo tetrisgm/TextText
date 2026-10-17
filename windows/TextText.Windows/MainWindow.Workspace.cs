@@ -14,7 +14,17 @@ public sealed partial class MainWindow
         var menu = new Menu(); var file = new MenuItem { Header = "_File" };
         var open = new MenuItem { Header = "Open workspace folder", InputGestureText = "Ctrl+Shift+O", IsEnabled = account is not null };
         open.Click += async (_, _) => await ChooseWorkspaceFolder();
-        file.Items.Add(open); menu.Items.Add(file); DockPanel.SetDock(menu, Dock.Top);
+        file.Items.Add(open);
+        var older = new MenuItem { Header = "Recover older drafts", IsEnabled = account is not null };
+        older.Click += (_, _) => {
+            if(!Guid.TryParse(ActiveWorkspaceId,out _))return;
+            if(legacyDraftsWindow is null) {
+                legacyDraftsWindow=new LegacyDraftsWindow(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",ActiveWorkspaceId)){Owner=this};
+                legacyDraftsWindow.Closed+=(_,_)=>legacyDraftsWindow=null;
+            }
+            legacyDraftsWindow.Show();legacyDraftsWindow.Activate();
+        };
+        file.Items.Add(older); menu.Items.Add(file); DockPanel.SetDock(menu, Dock.Top);
         layout.Children.Add(menu); layout.Children.Add(content); Content = layout;
     }
     private void ShowWorkspaceUnavailable()

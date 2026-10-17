@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 import { realpathSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -42,6 +42,8 @@ await build({
 });
 await writeFile(path.join(output, "index.html"), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https:; media-src 'self' blob: data:; connect-src 'none'; frame-src 'none'"><title>TextText</title><link rel="stylesheet" href="app.css"></head><body style="margin:0"><div id="root"></div><script src="app.js"></script></body></html>`);
+await build({ absWorkingDir: root, entryPoints: ["src/local-vault/legacy-recovery-main.ts"], outfile: path.join(output, "legacy-recovery.js"), bundle: true, platform: "browser", format: "iife", target: ["safari17"], minify: true });
+await copyFile(path.join(root, "src/local-vault/legacy-recovery.html"), path.join(output, "legacy-recovery.html"));
 console.log(`Local vault UI bundled at ${output}`);
 
 }

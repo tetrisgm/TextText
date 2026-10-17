@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private string ActiveWorkspaceId => selectedWorkspace?.Id ?? account?.WorkspaceId ?? "";
     private string ActiveWorkspaceName => selectedWorkspace?.Name ?? account?.Name ?? "Workspace";
     private WebView2? web;
+    private LegacyDraftsWindow? legacyDraftsWindow;
     private INativeWorkspaceBridge? bridge;
     private string root = "";
     private bool closing, transitioning;
@@ -291,6 +292,7 @@ public sealed partial class MainWindow : Window
                 try {
                     if(!await FlushEditor()) { ShowSaveFailure(); return null; }
                     foreach(var pending in requests.Values) pending.Cancel();
+                    legacyDraftsWindow?.Close(); legacyDraftsWindow=null;
                     CredentialStore.Clear(); bridge?.Dispose(); bridge = null; account = null; workspaceAccount = null; selectedWorkspace = null;
                     _ = Dispatcher.BeginInvoke(() => { web?.Dispose(); web = null; ShowLogin(); });
                 } finally { transitioning = false; if(web is not null) web.IsEnabled = true; }

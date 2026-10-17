@@ -2964,6 +2964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     @objc private func showMainWindowAction() { showMainWindow() }
+    @objc private func recoverOlderDraftsAction() { localVaultWindow?.recoverOlderDrafts() }
     @objc private func reviewSavedWorkAction() { localVaultWindow?.reviewSavedWork() }
 
     @objc private func toggleMainWindowAction() {
@@ -3408,6 +3409,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         if localVaultWindow != nil {
             let review = file.addItem(withTitle: "Review saved work…", action: #selector(reviewSavedWorkAction), keyEquivalent: "")
             review.target = self
+            let older = file.addItem(withTitle: "Recover older drafts…", action: #selector(recoverOlderDraftsAction), keyEquivalent: "")
+            older.target = self
             let newNote = file.addItem(withTitle: "New note", action: #selector(newNoteAction), keyEquivalent: "n")
             newNote.target = self
         } else {

@@ -53,6 +53,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private let profileAccount: LocalVaultAccountCredential?
     private let accountReviewSession: URLSession?
     private var accountFence: (() -> Void)?
+    private var legacyDraftsWindow: LegacyDraftsWindowController?
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
 #if TEXTTEXT_STRESS_ACTOR
@@ -192,6 +193,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     }
     func windowWillClose(_ notification: Notification) { agent?.stop(); agent = nil }
     func shutdown() {
+        legacyDraftsWindow?.close(); legacyDraftsWindow = nil
         nativeSaveBarrier.cancel()
         collaboration?.cancelAll(); collaboration = nil
         agent?.stop(); agent = nil
@@ -213,6 +215,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         let current = credentials()
         let same = profileAccount.flatMap { owner in current.map { owner.sameAccount(as: $0) } } ?? (current == nil)
         if !same {
+            legacyDraftsWindow?.close(); legacyDraftsWindow = nil
             if accountFence == nil { accountFence = fenceNativeInput() }
             collaboration?.cancelAll()
             connection?.credentialsChanged()
@@ -230,6 +233,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
         emit("texttext:vault-sync-status", value: connection?.status ?? [:])
         connection?.connectAutomatically()
+    }
+    func recoverOlderDrafts() {
+        if legacyDraftsWindow == nil {
+            legacyDraftsWindow = LegacyDraftsWindowController(entry: entry.deletingLastPathComponent().appendingPathComponent("legacy-recovery.html"))
+        }
+        legacyDraftsWindow?.present()
     }
     @discardableResult
     func reviewSavedWork() -> Task<Void, Never>? {

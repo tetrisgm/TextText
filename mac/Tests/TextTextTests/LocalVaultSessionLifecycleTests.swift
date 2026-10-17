@@ -70,6 +70,46 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         }
     }
     @MainActor
+    func testOlderProfileViewerReadsOriginalWKStorageWithoutReplayingIt() async throws {
+        guard let bundle = ProcessInfo.processInfo.environment["TEXTTEXT_LEGACY_VIEWER_BUNDLE"] else { throw XCTSkip("Requires the explicit bundled recovery viewer fixture") }
+        _ = NSApplication.shared
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-older-profile-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        for file in ["legacy-recovery.html", "legacy-recovery.js"] { try FileManager.default.copyItem(at: URL(fileURLWithPath: bundle).appendingPathComponent(file), to: base.appendingPathComponent(file)) }
+        let entry = base.appendingPathComponent("index.html")
+        try "<html><p>Isolated previous profile</p></html>".write(to: entry, atomically: true, encoding: .utf8)
+        let store = WKWebsiteDataStore(forIdentifier: UUID()), config = WKWebViewConfiguration(); config.websiteDataStore = store
+        let seed = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        let seedWindow = NSWindow(contentRect: seed.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false); seedWindow.contentView = seed; seedWindow.orderFront(nil)
+        defer { seedWindow.orderOut(nil); seed.stopLoading() }
+        seed.loadFileURL(entry, allowingReadAccessTo: base)
+        let deadline = Date().addingTimeInterval(15)
+        while (try? await seed.evaluateJavaScript("document.readyState==='complete' && location.pathname.endsWith('/index.html')")) as? Bool != true {
+            if Date() >= deadline { XCTFail("Older profile fixture did not load"); return }; try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let raw = "{\"draft\":{\"title\":\"Native older draft\",\"body\":\"Retained WK writing\"}}"
+        let key = "texttext:workspace-draft:v1:workspace:item"
+        _ = try await seed.callAsyncJavaScript("localStorage.setItem(key,raw);const r=indexedDB.open('texttext-workspace-pool',2);await new Promise((resolve,reject)=>{r.onupgradeneeded=()=>r.result.createObjectStore('drafts');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,t=db.transaction('drafts','readwrite');t.objectStore('drafts').put(JSON.parse(raw),'workspace:item');t.oncomplete=()=>{db.close();resolve()}}});", arguments: ["key": key, "raw": raw], in: nil, contentWorld: .page)
+        seedWindow.orderOut(nil)
+        let viewer = LegacyDraftsWindowController(entry: base.appendingPathComponent("legacy-recovery.html"), dataStore: store)
+        defer { viewer.close() }; viewer.present()
+        while (try? await viewer.webView.evaluateJavaScript("document.querySelector('#status')?.textContent.includes('2 saved records')")) as? Bool != true {
+            if Date() >= deadline { XCTFail("Native recovery viewer did not find the old profile: \((try? await viewer.webView.evaluateJavaScript("document.body.innerText")) ?? "unavailable")"); return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let retained = try await viewer.webView.evaluateJavaScript("localStorage.getItem('texttext:workspace-draft:v1:workspace:item')") as? String
+        let count = try await viewer.webView.evaluateJavaScript("document.querySelectorAll('#records section').length") as? Int
+        let bridge = try await viewer.webView.evaluateJavaScript("typeof window.webkit?.messageHandlers?.localVault") as? String
+        XCTAssertEqual(retained, raw); XCTAssertEqual(count, 2); XCTAssertEqual(bridge, "undefined")
+        let offline = try await viewer.webView.callAsyncJavaScript("try{await fetch('https://unexpected.test/write');return false}catch{return true}", arguments: [:], in: nil, contentWorld: .page)
+        XCTAssertEqual(offline as? Bool, true)
+        if let output = ProcessInfo.processInfo.environment["TEXTTEXT_LEGACY_SCREENSHOT"] {
+            let snapshot = try await viewer.webView.takeSnapshot(configuration: nil)
+            if let tiff = snapshot.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) { try bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: output)) }
+        }
+    }
+    @MainActor
     func testProductionWindowCloseWaitsForItsRendererCheckpoint() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
