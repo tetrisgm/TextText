@@ -37,6 +37,117 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testUnsupportedAndMalformedCheckpointBytesRemainUntouchedUntilRepair() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let first = try changes(original, body: "Durable before unreadable checkpoint")
+        let saved = try store.materialize(checkpoint: checkpoint(original), expectedHash: original.hash,
+            markdown: first.0, documentJSON: first.1)
+        let file = sharedDirectory().appendingPathComponent("checkpoint.json"), prior = try Data(contentsOf: file)
+        var unsupported = saved.checkpoint
+        var journal = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(unsupported.journal.utf8)) as? [String: Any])
+        journal["version"] = 999
+        unsupported.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        var malformed = saved.checkpoint; malformed.journal = "{"
+        let next = try changes(original, body: "Pending edit after checkpoint repair")
+        for bad in [try JSONEncoder().encode(unsupported), try JSONEncoder().encode(malformed), Data("{".utf8)] {
+            try bad.write(to: file, options: .atomic)
+            XCTAssertThrowsError(try LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+            XCTAssertThrowsError(try store.materialize(checkpoint: checkpoint(original, generation: 2), expectedHash: saved.document.hash,
+                markdown: next.0, documentJSON: next.1))
+            XCTAssertEqual(try Data(contentsOf: file), bad)
+            XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, saved.document.hash)
+        }
+        try prior.write(to: file, options: .atomic)
+        let repaired = try store.materialize(checkpoint: checkpoint(original, generation: 2), expectedHash: saved.document.hash,
+            markdown: next.0, documentJSON: next.1)
+        XCTAssertEqual(try XCTUnwrap(LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId)).journalGeneration, 2)
+        XCTAssertTrue(repaired.document.contents.markdown.contains("Pending edit after checkpoint repair"))
+    }
+    func testCheckpointNoSpacePreservesPriorGenerationAndRecovers() throws {
+        guard let location = ProcessInfo.processInfo.environment["TEXTTEXT_CHECKPOINT_NOSPACE_VOLUME"] else {
+            throw XCTSkip("Requires an explicitly prepared isolated test volume")
+        }
+        let volume = URL(fileURLWithPath: location).standardizedFileURL.resolvingSymlinksInPath()
+        let marker = try String(contentsOf: volume.appendingPathComponent(".texttext-checkpoint-test-volume"), encoding: .utf8)
+        let size = try XCTUnwrap(try FileManager.default.attributesOfFileSystem(forPath: volume.path)[.systemSize] as? NSNumber).uint64Value
+        guard marker == "texttext checkpoint ENOSPC fixture v1\n", size >= 16 * 1024 * 1024, size <= 64 * 1024 * 1024 else {
+            return XCTFail("Refusing to fill anything except the explicitly marked tiny test volume")
+        }
+        let originalRoot = root!
+        addTeardownBlock { try? FileManager.default.removeItem(at: originalRoot) }
+        root = volume.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let first = try changes(original, body: "Durable before disk full")
+        let saved = try store.materialize(checkpoint: checkpoint(original), expectedHash: original.hash,
+            markdown: first.0, documentJSON: first.1)
+        let journalURL = sharedDirectory().appendingPathComponent("checkpoint.json")
+        guard journalURL.path.hasPrefix(volume.path + "/") else { return XCTFail("Checkpoint state must be on the isolated volume") }
+        let prior = try Data(contentsOf: journalURL), priorProjection = try Data(contentsOf: root.appendingPathComponent(path))
+        let fill = volume.appendingPathComponent("checkpoint-fill-" + UUID().uuidString)
+        XCTAssertTrue(FileManager.default.createFile(atPath: fill.path, contents: nil))
+        defer { try? FileManager.default.removeItem(at: fill) }
+        let handle = try FileHandle(forWritingTo: fill)
+        defer { try? handle.close() }
+        for length in [1024 * 1024, 4096] {
+            let block = Data(repeating: 0x5a, count: length)
+            while true {
+                do { try handle.write(contentsOf: block) }
+                catch { break }
+            }
+        }
+        try? handle.synchronize()
+        let next = try changes(original, body: "Retained edit after real disk-full refusal")
+        XCTAssertThrowsError(try store.materialize(checkpoint: checkpoint(original, generation: 2), expectedHash: saved.document.hash,
+            markdown: next.0, documentJSON: next.1)) { error in
+            let failure = error as NSError
+            let underlying = failure.userInfo[NSUnderlyingErrorKey] as? NSError
+            XCTAssertTrue(failure.code == NSFileWriteOutOfSpaceError ||
+                (failure.domain == NSPOSIXErrorDomain && failure.code == 28) ||
+                (underlying?.domain == NSPOSIXErrorDomain && underlying?.code == 28), "\(failure)")
+        }
+        XCTAssertEqual(try Data(contentsOf: journalURL), prior)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), priorProjection)
+        try handle.close()
+        try FileManager.default.removeItem(at: fill)
+        let recovered = try LocalVaultSharedEditingStore(root: root).materialize(checkpoint: checkpoint(original, generation: 2), expectedHash: saved.document.hash,
+            markdown: next.0, documentJSON: next.1)
+        let reopened = try XCTUnwrap(LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(reopened.journalGeneration, 2)
+        XCTAssertEqual(reopened.projectedHash, recovered.document.hash)
+        XCTAssertTrue(reopened.pending)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains("Retained edit after real disk-full refusal"))
+    }
+    func testSharedUnavailableProjectionFixturePreservesCheckpointAndRetries() throws {
+        struct Scenario: Decodable { let firstBody: String; let pendingBody: String; let firstGeneration: UInt64; let nextGeneration: UInt64; let path: String }
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let scenario = try JSONDecoder().decode(Scenario.self, from: Data(contentsOf: repository.appendingPathComponent("sync/fixtures/checkpoint-unavailable.json")))
+        XCTAssertEqual(scenario.path, path)
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let first = try changes(original, body: scenario.firstBody)
+        let saved = try store.materialize(checkpoint: checkpoint(original, generation: scenario.firstGeneration), expectedHash: original.hash,
+            markdown: first.0, documentJSON: first.1)
+        let journalURL = sharedDirectory().appendingPathComponent("checkpoint.json")
+        let previous = try Data(contentsOf: journalURL)
+        let projected = root.appendingPathComponent(path), held = root.appendingPathComponent("unavailable-projection.textpack")
+        try FileManager.default.moveItem(at: projected, to: held)
+        defer { if FileManager.default.fileExists(atPath: held.path) { try? FileManager.default.moveItem(at: held, to: projected) } }
+        let next = try changes(original, body: scenario.pendingBody)
+        XCTAssertThrowsError(try store.materialize(checkpoint: checkpoint(original, generation: scenario.nextGeneration), expectedHash: saved.document.hash,
+            markdown: next.0, documentJSON: next.1))
+        XCTAssertEqual(try Data(contentsOf: journalURL), previous)
+        XCTAssertEqual(try Data(contentsOf: held), try Data(contentsOf: sharedDirectory().appendingPathComponent("projection.textpack")))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projected.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sharedDirectory().appendingPathComponent("intent.json").path))
+        try FileManager.default.moveItem(at: held, to: projected)
+        let retried = try LocalVaultSharedEditingStore(root: root).materialize(checkpoint: checkpoint(original, generation: scenario.nextGeneration), expectedHash: saved.document.hash,
+            markdown: next.0, documentJSON: next.1)
+        let reopened = try XCTUnwrap(LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(reopened.journalGeneration, scenario.nextGeneration)
+        XCTAssertEqual(reopened.projectedHash, retried.document.hash)
+        XCTAssertTrue(reopened.pending)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains(scenario.pendingBody))
+    }
     func testCheckpointPermissionFailurePreservesPriorGenerationAndRetriesAfterRepair() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
         let first = try changes(original, body: "First durable edit")

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "firstBody": "First durable checkpoint",
+  "pendingBody": "Accepted edit retained while the projection is unavailable",
+  "firstGeneration": 1,
+  "nextGeneration": 2,
+  "path": "Notes/Note.textpack"
+}

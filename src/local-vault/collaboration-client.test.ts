@@ -1,3 +1,4 @@
+import unavailableProjection from "../../sync/fixtures/checkpoint-unavailable.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
 import { openPack, encodePack } from "./pack";
@@ -1148,6 +1149,41 @@ describe("durable file collaboration client", () => {
     expect(clean.journal.batch).toBeNull(); expect(clean.journal.pending).toEqual([]);
     expect(clean.journal.revision).toBe(server.state.revision); expect(clean.journal.seq).toBe(server.state.seq);
     expect(clean.document.content.body).toBe("Hello disk first");
+  });
+
+  it("retains the shared unavailable-projection scenario and replays it after repair", async () => {
+    const server = new Server(), journal = new Journal();
+    let unavailable = false, nativeGeneration = -1, nativeBody = "";
+    const checkpoint = async (value: FileCollaborationCheckpoint) => {
+      if (unavailable) throw new Error("Projection unavailable");
+      nativeGeneration = value.journal.journalGeneration ?? 0;
+      nativeBody = value.document.content.body;
+    };
+    const open = () => {
+      const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request: server.request, checkpoint });
+      clients.push(editor); return editor;
+    };
+    const editor = open(); await editor.start(); editor.setActive(false);
+    editor.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, unavailableProjection.firstBody); });
+    expect(await editor.flushLocal()).toBe(true);
+    const acknowledged = nativeGeneration;
+    unavailable = true;
+    editor.mutate(doc => { const body = documentText(doc, "body"); body.delete(0, body.length); body.insert(0, unavailableProjection.pendingBody); });
+    const refused = await editor.flushLocalResult();
+    expect(refused.outcome).not.toBe("durable");
+    expect(nativeGeneration).toBe(acknowledged); expect(nativeBody).toBe(unavailableProjection.firstBody);
+    expect(editor.hasPendingChanges).toBe(true); expect(server.pushes).toHaveLength(0);
+    const retained = journal.load(editor.journalKey);
+    expect(retained).not.toBeNull();
+    editor.destroy(); unavailable = false;
+    const restarted = open(); await restarted.start();
+    expect(await restarted.flushLocal()).toBe(true);
+    expect(documentSnapshotFromYDoc(restarted.doc).content.body).toBe(unavailableProjection.pendingBody);
+    expect(nativeBody).toBe(unavailableProjection.pendingBody); expect(nativeGeneration).toBeGreaterThan(acknowledged);
+    expect(await restarted.flush()).toBe(true);
+    expect(server.pushes.length).toBeGreaterThan(0);
+    const observer = client(server); await observer.start();
+    expect(documentSnapshotFromYDoc(observer.doc).content.body).toBe(unavailableProjection.pendingBody);
   });
 
   it("freezes before remote upload if the native checkpoint fails", async () => {

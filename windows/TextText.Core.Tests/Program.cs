@@ -396,6 +396,8 @@ static class Test
  }
  await MirroredRetirementTests.Run(temp,Assert);
  await ExternalCheckpointRaceTests.Run(temp,Assert);
+ await CheckpointFailureTests.NoSpaceProjection(Assert);
+ await CheckpointFailureTests.UnavailableProjection(temp,Assert);
  await CheckpointFailureTests.Run(temp,Assert);
  var isolated=new TextPackStore(Path.Combine(temp,"isolated"),Path.Combine(temp,"isolated-device"));var many=new Many();var isolatedSync=new SyncEngine(isolated,many);
  var one=isolated.Write("Notes/One.textpack",Pack("one","one"));var two=isolated.Write("Notes/Two.textpack",Pack("two","two"));await isolatedSync.SyncAsync();
