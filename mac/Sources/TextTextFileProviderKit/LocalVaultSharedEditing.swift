@@ -3,6 +3,7 @@ import ZIPFoundation
 import TextTextWorkspaceCore
 
 public struct LocalVaultSharedCheckpoint: Codable, Sendable {
+    public var version: Int? = 1
     public var itemId: String
     public var path: String
     public var projectedHash: String
@@ -84,6 +85,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         try FileManager.default.removeItem(at: file)
     }
     private struct MoveIntent: Codable {
+        var version: Int? = 1
         var sourcePath: String
         var checkpoint: LocalVaultSharedCheckpoint
         /// The destination was renamed and edited outside TextText; the retained
@@ -91,12 +93,14 @@ struct LocalVaultSharedEditingStore: Sendable {
         var adoptsExternalChange: Bool?
     }
     private struct Intent: Codable {
+        var version: Int? = 1
         var beforeHash: String
         var checkpoint: LocalVaultSharedCheckpoint
         var markdown: String
         var documentJSON: String
     }
     private struct BinaryIntent: Codable {
+        var version: Int? = 1
         var itemId: String
         var path: String
         var beforeHash: String
@@ -139,6 +143,7 @@ struct LocalVaultSharedEditingStore: Sendable {
     private func validHash(_ value: String) -> Bool { value.count == 64 && value.allSatisfy({ $0.isHexDigit }) }
     private func validate(_ checkpoint: LocalVaultSharedCheckpoint) throws {
         _ = try LocalVaultDocumentStore(root: root).url(for: checkpoint.path)
+        guard checkpoint.version == nil || checkpoint.version == 1 else { throw LocalVaultSharedFailure.invalid }
         guard validHash(checkpoint.projectedHash), validHash(checkpoint.acknowledgedRevision),
               checkpoint.epoch >= 1, checkpoint.epoch <= 9_007_199_254_740_991,
               checkpoint.seq >= 0, checkpoint.seq <= 9_007_199_254_740_991,
@@ -336,6 +341,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         return prefix
     }
     private func finishBinary(_ intent: BinaryIntent, directory: URL, interruptAfterWrite: Bool = false) throws -> LocalVaultDocumentStore.Document {
+        guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
         guard validHash(intent.beforeHash), validHash(intent.afterHash),
               intent.entryPath.hasPrefix("assets/"), intent.entryPath.utf8.count <= 512,
               !intent.entryPath.contains("\\"),
@@ -447,6 +453,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         return try finishMove(intent, directory: directory, interruptAfterMove: interruptAfterMove)
     }
     private func finishMove(_ intent: MoveIntent, directory: URL, interruptAfterMove: Bool = false) throws -> LocalVaultSharedCheckpoint {
+        guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
         try validate(intent.checkpoint)
         let store = LocalVaultDocumentStore(root: root)
         let source = try store.url(for: intent.sourcePath)
@@ -467,6 +474,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         return target
     }
     private func finish(_ intent: Intent, directory: URL, interruptAfterWrite: Bool = false) throws -> LocalVaultSharedMaterialization {
+        guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
         try validate(intent.checkpoint)
         let store = LocalVaultDocumentStore(root: root)
         guard let original = try read(directory.appendingPathComponent("before.textpack"), limit: 64 * 1024 * 1024),

@@ -108,9 +108,10 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         var journal = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(unsupported.journal.utf8)) as? [String: Any])
         journal["version"] = 999
         unsupported.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        var futureOuter = saved.checkpoint; futureOuter.version = 999
         var malformed = saved.checkpoint; malformed.journal = "{"
         let next = try changes(original, body: "Pending edit after checkpoint repair")
-        for bad in [try JSONEncoder().encode(unsupported), try JSONEncoder().encode(malformed), Data("{".utf8)] {
+        for bad in [try JSONEncoder().encode(unsupported), try JSONEncoder().encode(futureOuter), try JSONEncoder().encode(malformed), Data("{".utf8)] {
             try bad.write(to: file, options: .atomic)
             XCTAssertThrowsError(try LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
             XCTAssertThrowsError(try store.materialize(checkpoint: checkpoint(original, generation: 2), expectedHash: saved.document.hash,
@@ -123,6 +124,26 @@ final class LocalVaultSharedEditingTests: XCTestCase {
             markdown: next.0, documentJSON: next.1)
         XCTAssertEqual(try XCTUnwrap(LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId)).journalGeneration, 2)
         XCTAssertTrue(repaired.document.contents.markdown.contains("Pending edit after checkpoint repair"))
+    }
+    func testFutureMaterializationIntentIsNotReplayedAndLegacyIntentStillRecovers() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let pending = try changes(original, body: "Retained future intent edit")
+        XCTAssertThrowsError(try store.materialize(checkpoint: checkpoint(original, generation: 1), expectedHash: original.hash,
+            markdown: pending.0, documentJSON: pending.1, interruptAfterIntent: true))
+        let target = sharedDirectory().appendingPathComponent("intent.json")
+        let legacySource = try Data(contentsOf: target)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: legacySource) as? [String: Any])
+        object["version"] = 999
+        let future = try JSONSerialization.data(withJSONObject: object)
+        try future.write(to: target, options: .atomic)
+        XCTAssertThrowsError(try LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(try Data(contentsOf: target), future)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
+        object.removeValue(forKey: "version")
+        try JSONSerialization.data(withJSONObject: object).write(to: target, options: .atomic)
+        let restored = try XCTUnwrap(LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(restored.journalGeneration, 1)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains("Retained future intent edit"))
     }
     func testCheckpointNoSpacePreservesPriorGenerationAndRecovers() throws {
         guard let location = ProcessInfo.processInfo.environment["TEXTTEXT_CHECKPOINT_NOSPACE_VOLUME"] else {

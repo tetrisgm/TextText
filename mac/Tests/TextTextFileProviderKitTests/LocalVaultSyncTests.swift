@@ -190,6 +190,23 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: stateURL), unbound)
     }
 
+    func testFutureSyncStateIsRefusedUnchangedAndUnversionedStateRemainsReadable() async throws {
+        let transport = FakeVaultTransport()
+        _ = try engine(transport)
+        let target = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: target)) as? [String: Any])
+        object["version"] = 999
+        let future = try JSONSerialization.data(withJSONObject: object)
+        try future.write(to: target, options: .atomic)
+        XCTAssertThrowsError(try engine(transport))
+        XCTAssertEqual(try Data(contentsOf: target), future)
+        object.removeValue(forKey: "version")
+        try JSONSerialization.data(withJSONObject: object).write(to: target, options: .atomic)
+        let reopened = try engine(transport)
+        let report = try await reopened.sync()
+        XCTAssertTrue(report.errors.isEmpty)
+    }
+
     private func engine(_ transport: FakeVaultTransport) throws -> LocalVaultSync {
         try LocalVaultSync(root: root,
             binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"),

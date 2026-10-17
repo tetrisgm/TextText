@@ -73,6 +73,7 @@ public actor LocalVaultSync {
         var conflicted: Bool = false
     }
     private struct State: Codable {
+        var version: Int? = 1
         var binding: LocalVaultSyncBinding
         var accountId: String? = nil
         var baselines: [String: Baseline] = [:]
@@ -115,6 +116,7 @@ public actor LocalVaultSync {
         guard stateURL.resolvingSymlinksInPath().path == stateURL.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         if FileManager.default.fileExists(atPath: stateURL.path) {
             state = try JSONDecoder().decode(State.self, from: Data(contentsOf: stateURL))
+            guard state.version == nil || state.version == 1 else { throw LocalVaultSyncFailure.invalidResponse }
             guard state.accountId == accountId else { throw LocalVaultSharedFailure.account }
             guard state.binding == binding else { throw LocalVaultSyncFailure.invalidBinding }
             for pending in state.outbox.values {
