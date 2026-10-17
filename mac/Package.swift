@@ -141,6 +141,11 @@ let package = Package(
             dependencies: ["TextTextCapabilitySpec"],
             path: "Tools/CapabilityGenerator"
         ),
+        .target(
+            name: "TextTextSyncTestSupport",
+            dependencies: ["TextTextFileProviderKit"],
+            path: "Tests/TextTextSyncTestSupport"
+        ),
         .testTarget(
             name: "TextTextCLICoreTests",
             dependencies: ["TextTextCLICore", "TextTextFileProviderKit", "TextTextWorkspaceCore"],
@@ -174,6 +179,7 @@ let package = Package(
         .testTarget(
             name: "TextTextTests",
             dependencies: [
+                "TextTextSyncTestSupport",
                 "TextTextApp",
                 "TextTextWorkspaceCore",
                 "TextTextFileProviderExtensionCore",
@@ -186,7 +192,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TextTextFileProviderKitTests",
-            dependencies: ["TextTextFileProviderKit"],
+            dependencies: ["TextTextFileProviderKit", "TextTextSyncTestSupport"],
             path: "Tests/TextTextFileProviderKitTests"
         ),
         .testTarget(

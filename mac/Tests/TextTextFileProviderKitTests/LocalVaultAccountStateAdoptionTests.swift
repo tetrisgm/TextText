@@ -1,3 +1,4 @@
+import TextTextSyncTestSupport
 import XCTest
 import Darwin
 import TextTextWorkspaceCore
@@ -31,7 +32,7 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
         let root = base.appendingPathComponent(name), note = root.appendingPathComponent("Notes/Queued.textpack")
         try FileManager.default.createDirectory(at: note.deletingLastPathComponent(), withIntermediateDirectories: true)
         try pack("adoption-note", "Original").write(to: note)
-        let remote = FakeVaultTransport(), sync = try LocalVaultSync(root: root, binding: binding, transport: remote)
+        let remote = FakeVaultTransport(), sync = try makeTestSync(root: root, binding: binding, transport: remote)
         _ = try await sync.sync()
         let pending = try pack("adoption-note", "Retained offline edit"); try pending.write(to: note, options: .atomic)
         await remote.failNextUploadBeforeCommit(); let failed = try await sync.sync(); XCTAssertFalse(failed.errors.isEmpty)
@@ -93,17 +94,17 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent(f.checkpointPath)), f.checkpoint)
         XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("Notes/Shared.textpack")), f.projection)
         XCTAssertTrue(FileManager.default.fileExists(atPath: f.directory.appendingPathComponent(LocalVaultAccountRootOwnership.pendingAdoption).path))
-        XCTAssertThrowsError(try LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a"))
+        XCTAssertThrowsError(try makeTestSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a"))
         try handle.truncate(atOffset: 0); try handle.synchronize(); try handle.close()
         let result = try adopt(f), recovery = try XCTUnwrap(result.recoveryDirectory)
         XCTAssertEqual(try Data(contentsOf: recovery.appendingPathComponent("before/sync/state.json")), f.state)
-        _ = try await LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a").sync()
+        _ = try await makeTestSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a").sync()
         let uploads = await f.remote.uploads(); XCTAssertEqual(uploads.last?.operationId, f.operation)
         XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("Notes/Queued.textpack")), f.pending)
     }
     func testLiveWriterExcludesAdoptionUntilItsActorIsReleased() async throws {
         let f = try await create("writer-fence")
-        var writer: LocalVaultSync? = try LocalVaultSync(root: f.root, binding: binding, transport: f.remote)
+        var writer: LocalVaultSync? = try makeTestSync(root: f.root, binding: binding, transport: f.remote)
         weak var observed = writer
         try withExtendedLifetime(writer) {
             XCTAssertThrowsError(try adopt(f)) { error in
@@ -115,8 +116,8 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
         writer = nil
         XCTAssertNil(observed)
         XCTAssertFalse(try adopt(f).alreadyBound)
-        XCTAssertThrowsError(try LocalVaultSync(root: f.root, binding: binding, transport: f.remote))
-        _ = try LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a")
+        XCTAssertThrowsError(try makeTestSync(root: f.root, binding: binding, transport: f.remote))
+        _ = try makeTestSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a")
     }
     func testResumeInSeparateProcess() throws {
         let environment = ProcessInfo.processInfo.environment
@@ -175,7 +176,7 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
                 XCTAssertThrowsError(try adopt(f, account: "account-b"))
                 XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("sync/state.json")), state)
                 XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent(f.checkpointPath)), checkpoint)
-                XCTAssertThrowsError(try LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a"))
+                XCTAssertThrowsError(try makeTestSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a"))
             }
             let result = try adopt(f), recovery = try XCTUnwrap(result.recoveryDirectory)
             XCTAssertFalse(result.alreadyBound); XCTAssertFalse(FileManager.default.fileExists(atPath: pending.path))
@@ -189,11 +190,11 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
             let archives = try FileManager.default.contentsOfDirectory(atPath: f.directory.path).filter { $0.hasPrefix(".account-adoption-") }
             XCTAssertTrue(try adopt(f).alreadyBound)
             XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: f.directory.path).filter { $0.hasPrefix(".account-adoption-") }.count, archives.count)
-            let resumed = try LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a")
+            let resumed = try makeTestSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a")
             _ = try await resumed.sync()
             let uploaded = await f.remote.uploads(); XCTAssertEqual(uploaded.last?.operationId, f.operation)
             let remote = try await f.remote.download(itemId: "adoption-note"); XCTAssertEqual(remote.data, f.pending)
-            _ = try await LocalVaultSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a").sync()
+            _ = try await makeTestSync(root: f.root, binding: binding, transport: f.remote, accountId: "account-a").sync()
             let unchanged = await f.remote.uploads(); XCTAssertEqual(unchanged.count, uploaded.count)
         }
     }

@@ -1,3 +1,4 @@
+import TextTextSyncTestSupport
 import XCTest
 import ZIPFoundation
 import TextTextWorkspaceCore
@@ -41,9 +42,9 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testIndependentActorsCannotOwnTheSameDocument() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let first = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let first = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await first.sync()
-        let second = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let second = try makeTestSync(root: root, binding: binding, transport: transport)
         let active = try await first.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         do {
             _ = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
@@ -68,9 +69,9 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testBackgroundPassRetainsWorkspaceOwnershipAcrossNetworkAwait() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let first = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let first = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await first.sync()
-        let second = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let second = try makeTestSync(root: root, binding: binding, transport: transport)
         await transport.holdNextManifest()
         let syncing = Task { try await first.sync() }
         for _ in 0..<200 { if await transport.manifestIsHeld() { break }; try await Task.sleep(nanoseconds: 10_000_000) }
@@ -90,7 +91,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         guard UUID(uuidString: fixtureRoot.lastPathComponent) != nil,
               try String(contentsOf: fixtureRoot.appendingPathComponent(".document-owner-fixture"), encoding: .utf8) == nonce else { throw LocalVaultSharedFailure.invalid }
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: fixtureRoot, binding: binding, transport: SharedTransport())
+        let engine = try makeTestSync(root: fixtureRoot, binding: binding, transport: SharedTransport())
         let original = try LocalVaultDocumentStore(root: fixtureRoot).read(path: self.path)
         let session = try await engine.beginSharedEditing(itemId: itemId, path: self.path, expectedHash: original.hash)
         XCTAssertTrue(session.checkpoint?.pending == true)
@@ -101,7 +102,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testKilledNativeOwnerReleasesLeaseAndPreservesPendingJournal() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let active = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let target = try checkpoint(original), change = try changes(original, body: "Pending before process termination")
@@ -422,7 +423,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testPendingJournalAndExternalFileRemainReopenableAfterRestart() async throws {
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -433,7 +434,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let text = try changes(saved.document, body: "Pending human\nCLI while closed")
         let external = try store.write(path: path, expectedHash: saved.document.hash, markdown: text.0,
             documentJSON: text.1, templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         let result = try await restarted.sync()
         XCTAssertEqual(result.uploaded, 0)
         XCTAssertTrue(try LocalVaultSync.collaborationReady(root: root, path: path, itemId: itemId, localHash: external.hash))
@@ -445,7 +446,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testExternalWriteCollisionKeepsActiveLeaseForMergedCheckpoint() async throws {
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -570,7 +571,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testMoveBeforeFirstCheckpointDefersThenReconcilesWithoutRetiringSession() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let moved = "Archive/Early/Note.textpack"
@@ -597,7 +598,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // follow the file, keep checkpointing, and upload the rename.
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let renamed = "Notes/Six-client acceptance.textpack"
@@ -636,7 +637,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // Same rename, but a sync cycle runs before the editor's first checkpoint.
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let renamed = "Notes/Renamed while open.textpack"
@@ -662,7 +663,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // lands at the new path, after which the rename is uploaded.
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -717,7 +718,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // checkpoint. Protection must follow the file instead of retiring it.
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -756,7 +757,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // the pending journal stays retained for recovery and both files survive.
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -801,7 +802,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let otherId = "e2222222-2222-4222-8222-222222222222", other = "Notes/Other.textpack"
         _ = try otherFixture(itemId: otherId, path: other)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let indexedOther = await transport.remotePath(otherId)
         XCTAssertEqual(indexedOther, other)
@@ -870,7 +871,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let otherId = "e2222222-2222-4222-8222-222222222222", other = "Notes/Other.textpack"
         _ = try otherFixture(itemId: otherId, path: other)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -910,7 +911,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // for the open session; content, journal and session are untouched.
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -941,7 +942,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testConcurrentLocalAndRemoteRenameToSamePathConvergesWithoutUpload() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -972,7 +973,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // announcement happens once access returns.
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let renamed = "Notes/Renamed offline.textpack"
@@ -1003,7 +1004,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // written as a conflict copy and checkpoints keep succeeding.
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let target = try checkpoint(original), change = try changes(original, body: "Pending human")
@@ -1041,7 +1042,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // checkpoints continue at the new path. No recovery is needed.
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -1051,7 +1052,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
         let renamed = "Notes/Renamed while closed.textpack"
         try FileManager.default.moveItem(at: root.appendingPathComponent(path), to: root.appendingPathComponent(renamed))
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         XCTAssertTrue(try LocalVaultSync.collaborationReady(root: root, path: renamed, itemId: itemId, localHash: saved.document.hash))
         // Reopen before any sync cycle has noticed the rename.
         let reopened = try await restarted.beginSharedEditing(itemId: itemId, path: renamed, expectedHash: saved.document.hash)
@@ -1087,7 +1088,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // the rename is announced only then.
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -1100,7 +1101,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let externalText = try changes(saved.document, body: "Pending human\nExternal CLI")
         let external = try store.write(path: renamed, expectedHash: saved.document.hash, markdown: externalText.0,
             documentJSON: externalText.1, templateJSON: original.contents.templateJSON, templateAuthoringSourceJSON: nil)
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         let protected = try await restarted.sync()
         XCTAssertTrue(protected.errors.isEmpty, "\(protected.errors)")
         XCTAssertEqual(protected.uploaded, 0)
@@ -1137,7 +1138,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         // reopen nor the sync cycle may guess; the journal is retained for recovery.
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let first = try changes(original, body: "Pending human"), cp = try checkpoint(original)
@@ -1148,7 +1149,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let one = "Notes/Copy one.textpack", two = "Notes/Copy two.textpack"
         try FileManager.default.copyItem(at: root.appendingPathComponent(path), to: root.appendingPathComponent(one))
         try FileManager.default.moveItem(at: root.appendingPathComponent(path), to: root.appendingPathComponent(two))
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         do {
             _ = try await restarted.beginSharedEditing(itemId: itemId, path: two, expectedHash: saved.document.hash)
             XCTFail("Reopen adopted one of two same-identity files")
@@ -1168,7 +1169,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testRemoteFolderMovePreservesActiveSessionAndPendingEdits() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let change = try changes(original, body: "Shared edit during folder move"), target = try checkpoint(original)
@@ -1191,7 +1192,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         XCTAssertEqual(saved.document.path, moved)
         XCTAssertTrue(saved.checkpoint.pending)
         try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         let reopened = try await restarted.beginSharedEditing(itemId: itemId, path: moved, expectedHash: saved.document.hash)
         XCTAssertEqual(reopened.checkpoint?.journalGeneration, 2)
         XCTAssertTrue(reopened.checkpoint?.pending == true)
@@ -1201,7 +1202,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testActorSuppressesSnapshotUploadAndDownloadForPendingAcrossRestart() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let change = try changes(original, body: "Offline projection"), target = try checkpoint(original)
@@ -1209,7 +1210,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
             epoch: 1, seq: 0, acknowledgedRevision: original.hash, journalGeneration: 1, journal: target.journal, pending: true, markdown: change.0, documentJSON: change.1)
         _ = try await engine.sync()
         try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await restarted.sync()
         let counts = await transport.counts()
         XCTAssertEqual(counts.0, 1); XCTAssertEqual(counts.1, 0)
@@ -1225,7 +1226,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testOnlyPersistedActiveSharedBatchCanClaimNativeEditorOrigin() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let change = try changes(original, body: "Human shared edit")
@@ -1247,7 +1248,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
         let closed = try await engine.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 1, updates: ["AQ=="])
         XCTAssertFalse(closed)
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await restarted.beginSharedEditing(itemId: itemId, path: path, expectedHash: materialized.document.hash)
         let resumed = try await restarted.isNativeSharedPush(itemId: itemId, operationId: "human-push", epoch: 1, updates: ["AQ=="])
         XCTAssertTrue(resumed)
@@ -1262,7 +1263,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testRecoveredPendingPrimaryIsNeverUploadedWhenRemoteRevisionIsUnchanged() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let change = try changes(original, body: "Abandoned pending shared text"), target = try checkpoint(original)
@@ -1272,7 +1273,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         try await engine.finishSharedRecovery(sessionToken: session.sessionToken, itemId: itemId, recoveryPath: recovered.path, recoveryHash: recovered.hash)
         XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
         XCTAssertNotEqual(written.document.hash, original.hash)
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await restarted.sync()
         XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
         let uploaded = await transport.uploadedBodies()
@@ -1285,7 +1286,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testCleanCheckpointRetainedUntilRemoteFileChanges() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let target = try checkpoint(original, pending: false)
@@ -1313,7 +1314,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testCleanSharedCheckpointBecomesBaselineForAgentEditWhileSessionIsOpen() async throws {
         let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
 
@@ -1355,7 +1356,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testExternalChangeKeepsRecoveryTokenBeforeFirstCheckpoint() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let change = try changes(original, body: "External agent edit")
@@ -1370,7 +1371,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testRecoveryDownloadsNewRemoteEpochWithoutUploadingAbandonedPrimary() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let change = try changes(original, body: "Abandoned pending text"), target = try checkpoint(original)
@@ -1395,7 +1396,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testRetiredPendingProjectionRemainsProtectedUntilRecovered() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         var target = try checkpoint(original)
@@ -1417,7 +1418,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testCleanRetirementArchivesAndRefreshesEvenUnchangedRemoteRevision() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         var target = try checkpoint(original, pending: false)
@@ -1623,7 +1624,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     func testEpochAdoptionRequiresLiveSessionUnretiredJournalAndPresentFile() async throws {
         let original = try fixture(), transport = SharedTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
         _ = try await engine.sync()
         let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         let change = try changes(original, body: "Pending")
@@ -1639,7 +1640,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         do { try await adopt(engine, token: "revoked"); XCTFail("A revoked session adopted an epoch") } catch LocalVaultSharedFailure.staleSession { }
         XCTAssertEqual(try retainedCheckpoint().epoch, 1)
         // A session that lost its lease after a restart cannot adopt either.
-        let restarted = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport)
         do { try await adopt(restarted, token: session.sessionToken); XCTFail("A stale token adopted after restart") } catch LocalVaultSharedFailure.staleSession { }
         // A retired journal keeps its old epoch even for a matching intent.
         try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId, retiredReason: "Editing access was removed.")

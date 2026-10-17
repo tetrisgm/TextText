@@ -1,10 +1,12 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Reflection;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using TextText.Core;
+using TextText.Windows;
 
 static class MirrorPolicyTests
 {
@@ -16,7 +18,10 @@ static class MirrorPolicyTests
         using var vectors = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"vectors.json")));
         var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var view = new WebView2();
-        var window = new Window { Title="Isolated policy host",Width=700,Height=500,Content=view }; window.Show();
+        var window = new MainWindow { Title="Isolated policy host",Width=700,Height=500,Content=view };
+        MainWindowCloseTests.RemoveProductionLoaded(window);
+        typeof(MainWindow).GetField("web",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(window,view);
+        window.Show();
         try {
             var environment = await CoreWebView2Environment.CreateAsync(null,Path.Combine(root,"mirror-policy-profile"));
             await view.EnsureCoreWebView2Async(environment);
@@ -56,6 +61,24 @@ static class MirrorPolicyTests
             refused=false;try{await next.DecideAsync(first,ct);}catch(IOException){refused=true;}
             if(!refused)throw new Exception("Old policy adapter adopted a reloaded page");
             Console.WriteLine("PASS actual WebView2 packaged policy: all shared vectors without editor, hidden window, reload fenced");
-        } finally {window.Close();view.Dispose();}
+            // Invoke the production factory without loading credentials or a
+            // real workspace. The native gate must await the page's readiness.
+            var ready=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var make=typeof(MainWindow).GetMethod("CreateMirrorPolicy",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            var production=(MirrorPolicy)make.Invoke(window,[view,new Account("isolated-not-a-token",Guid.NewGuid().ToString(),"Fixture","account-a"),ready.Task])!;
+            var waiting=production.ReadyAsync(ct);await Task.Delay(30,ct);
+            if(waiting.IsCompleted)throw new Exception("Production policy skipped page readiness");
+            ready.SetResult();await waiting;
+            foreach(var vector in vectors.RootElement.EnumerateArray()) {
+                var result=await production.DecideAsync(vector.GetProperty("observed").Deserialize<MirrorObservation>(json)!,ct);
+                if(result.ToString().ToLowerInvariant()!=vector.GetProperty("disposition").GetString())throw new Exception("Production policy factory returned wrong action");
+            }
+            production.Retire();
+            Console.WriteLine("PASS production MainWindow policy factory waits for readiness and executes packaged decisions");
+            await MirrorEngineTests.RunAsync(root,hook=>new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-a","workspace",Guid.NewGuid().ToString()),async(script,token)=>{
+                if(script.Contains(".evaluate(")){hook.Calls++;var before=hook.Before;hook.Before=null;if(before is not null)await before();}
+                return await view.ExecuteScriptAsync(script).WaitAsync(token);
+            }),Navigate,ct);
+        } finally {MainWindowCloseTests.ForceClose(window);view.Dispose();}
     }
 }

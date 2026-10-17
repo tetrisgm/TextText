@@ -1,3 +1,4 @@
+import TextTextSyncTestSupport
 import AppKit
 import WebKit
 import XCTest
@@ -248,7 +249,7 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         try FileManager.default.moveItem(at: pack, to: root.appendingPathComponent(path))
         let original = try LocalVaultDocumentStore(root: root).read(path: path)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: LifecycleTransport())
+        let engine = try makeTestSync(root: root, binding: binding, transport: LifecycleTransport())
         _ = try await engine.sync()
         var credential = LocalVaultAccountCredential(origin: binding.origin, token: "fixture-a")
         let relay = LocalVaultCollaboration(verifiedCredentials: { credential }, expectedLifetime: .captured(credential), engine: { engine })
@@ -336,7 +337,7 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         try FileManager.default.moveItem(at: pack, to: root.appendingPathComponent(path))
         let original = try LocalVaultDocumentStore(root: root).read(path: path)
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: LifecycleTransport())
+        let engine = try makeTestSync(root: root, binding: binding, transport: LifecycleTransport())
         _ = try await engine.sync()
         let relay = LocalVaultCollaboration(credentials: { nil }, engine: { engine })
         let entry = root.appendingPathComponent("index.html")

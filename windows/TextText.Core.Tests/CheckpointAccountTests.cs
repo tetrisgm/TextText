@@ -16,7 +16,7 @@ static class CheckpointAccountTests
         var files = new TextPackStore(Path.Combine(temporary,"account-outbox"),Path.Combine(temporary,"account-outbox-state"));
         var remote = new Test.Fake();
         var original = files.Write("Notes/Account.textpack",Pack("Original account A"));
-        var a = new SyncEngine(files,remote,"account-a"); await a.SyncAsync();
+        var a = Test.NewSync(files,remote,"account-a"); await a.SyncAsync();
         var pending = Pack("Retained account A offline edit"); files.Write(original.Path,pending,original.Hash);
         remote.FailBeforeCommit=true;
         try{await a.SyncAsync();throw new Exception("Expected offline upload refusal");}catch(HttpRequestException){}
@@ -24,24 +24,24 @@ static class CheckpointAccountTests
         var state=JsonSerializer.Deserialize<SyncEngine.State>(saved)!;
         assert(state.AccountId=="account-a" && state.Outbox.Count==1,"native outbox persists its verified account with the pending operation");
         var requests=remote.ManifestCount;var uploads=remote.UploadCount;var denied=false;
-        try{_=new SyncEngine(files,remote,"account-b");}catch(SharedAccountMismatchException){denied=true;}
+        try{_=Test.NewSync(files,remote,"account-b");}catch(SharedAccountMismatchException){denied=true;}
         assert(denied && File.ReadAllBytes(statePath).SequenceEqual(saved) && files.Read(original.Path).SequenceEqual(pending)
             && remote.ManifestCount==requests && remote.UploadCount==uploads,"different account cannot open or replay a retained native outbox");
-        await new SyncEngine(files,remote,"account-a").SyncAsync();
+        await Test.NewSync(files,remote,"account-a").SyncAsync();
         assert(remote.Data.SequenceEqual(pending) && remote.Operations.Last()==state.Outbox[0].Id
             && JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(statePath))!.Outbox.Count==0,
             "original account resumes exact persisted operation identity and bytes");
         // Legacy state needs explicit adoption even when its queue looks clean.
         var legacy=JsonSerializer.Deserialize<SyncEngine.State>(saved)!;legacy.AccountId=null;
         var unbound=JsonSerializer.SerializeToUtf8Bytes(legacy);TextPackStore.AtomicWrite(statePath,unbound);denied=false;
-        try{_=new SyncEngine(files,remote,"account-a");}catch(SharedAccountMismatchException){denied=true;}
+        try{_=Test.NewSync(files,remote,"account-a");}catch(SharedAccountMismatchException){denied=true;}
         assert(denied && File.ReadAllBytes(statePath).SequenceEqual(unbound),"verified principal cannot silently adopt an unbound legacy outbox");
     }
     public static async Task Run(string temporary, Action<bool, string> assert)
     {
         var files = new TextPackStore(Path.Combine(temporary, "checkpoint-account"), Path.Combine(temporary, "checkpoint-account-state"));
         var original = files.Write("Notes/Account.textpack", Pack("Original")); var remote = new Test.Fake();
-        var sync = new SyncEngine(files, remote); await sync.SyncAsync();
+        var sync = Test.NewSync(files, remote); await sync.SyncAsync();
         var bytes = Pack("Private pending A edit");
         SharedCheckpoint Checkpoint(string? account, bool pending, long generation = 1) => new("account-note", original.Path, TextPackStore.Hash(bytes), original.Hash, 1, 0, generation,
             JsonSerializer.Serialize(new { version = 1, accountId = account, epoch = 1, seq = 0, journalGeneration = generation, revision = original.Hash,
@@ -52,14 +52,14 @@ static class CheckpointAccountTests
         }
         var journal = Path.Combine(files.StateDirectory, "shared-editing", "account-note", "checkpoint.json");
         var retained = File.ReadAllBytes(journal); var projected = files.Read(original.Path);
-        using (var b = new SharedEditingStore(files, new SyncEngine(files, remote), "account-b")) {
+        using (var b = new SharedEditingStore(files, Test.NewSync(files, remote), "account-b")) {
             var denied = false;
             try { await b.OpenAsync("account-note", original.Path, TextPackStore.Hash(projected)); }
             catch (SharedAccountMismatchException) { denied = true; }
             assert(denied && File.ReadAllBytes(journal).SequenceEqual(retained) && files.Read(original.Path).SequenceEqual(projected),
                 "new account cannot acquire or rewrite another account's pending checkpoint");
         }
-        using (var a = new SharedEditingStore(files, new SyncEngine(files, remote), "account-a")) {
+        using (var a = new SharedEditingStore(files, Test.NewSync(files, remote), "account-a")) {
             var resumed = await a.OpenAsync("account-note", original.Path, TextPackStore.Hash(projected));
             assert(resumed.Checkpoint?.Journal == JsonSerializer.Deserialize<SharedCheckpoint>(retained)!.Journal, "original account resumes its exact retained checkpoint");
             var forged = false;
@@ -70,7 +70,7 @@ static class CheckpointAccountTests
         }
         var cleanFiles = new TextPackStore(Path.Combine(temporary, "clean-account"), Path.Combine(temporary, "clean-account-state"));
         var cleanBytes = Pack("Canonical acknowledged content"); var cleanRemote = new Test.Fake();
-        var cleanFile = cleanFiles.Write(original.Path, cleanBytes); var cleanSync = new SyncEngine(cleanFiles, cleanRemote); await cleanSync.SyncAsync();
+        var cleanFile = cleanFiles.Write(original.Path, cleanBytes); var cleanSync = Test.NewSync(cleanFiles, cleanRemote); await cleanSync.SyncAsync();
         var cleanJournal = JsonSerializer.Serialize(new { version = 1, accountId = "account-a", epoch = 1, seq = 0, journalGeneration = 5,
             revision = cleanFile.Hash, relativePath = cleanFile.Path, update = "AAA=", pending = Array.Empty<string>() });
         using (var a = new SharedEditingStore(cleanFiles, cleanSync, "account-a")) {
@@ -78,7 +78,7 @@ static class CheckpointAccountTests
             await a.CheckpointAsync(opened.SessionToken, cleanFile.Hash, cleanBytes,
                 new("account-note", cleanFile.Path, cleanFile.Hash, cleanFile.Hash, 1, 0, 5, cleanJournal, false)); a.Close(opened.SessionToken);
         }
-        using (var b = new SharedEditingStore(cleanFiles, new SyncEngine(cleanFiles, cleanRemote), "account-b")) {
+        using (var b = new SharedEditingStore(cleanFiles, Test.NewSync(cleanFiles, cleanRemote), "account-b")) {
             var opened = await b.OpenAsync("account-note", cleanFile.Path, cleanFile.Hash);
             var archives = Directory.GetFiles(Path.Combine(cleanFiles.StateDirectory, "shared-editing", "account-note"), "archived-account-*.json");
             assert(opened.Checkpoint == null && archives.Length == 1 && JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllBytes(archives[0]))?.Journal == cleanJournal,
@@ -89,7 +89,7 @@ static class CheckpointAccountTests
         var bound = JsonSerializer.Deserialize<SharedCheckpoint>(retained)!;
         var unbound = bound with { Journal = bound.Journal.Replace("\"accountId\":\"account-a\",", "") };
         TextPackStore.AtomicWrite(journal, JsonSerializer.SerializeToUtf8Bytes(unbound)); var unboundBytes = File.ReadAllBytes(journal);
-        using (var verified = new SharedEditingStore(files, new SyncEngine(files, remote), "account-a")) {
+        using (var verified = new SharedEditingStore(files, Test.NewSync(files, remote), "account-a")) {
             var denied = false;
             try { await verified.OpenAsync("account-note", original.Path, TextPackStore.Hash(projected)); }
             catch (SharedAccountMismatchException) { denied = true; }

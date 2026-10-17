@@ -30,14 +30,15 @@ public sealed class SyncEngine
     public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly WorkspaceWriterOwnership workspaceOwnership;
+    readonly MirrorPolicy? mirrorPolicy;
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath; readonly string? accountId;
     public SyncStatus Status {get;private set;}=new(false,null,0);
     public event Action<SyncStatus>? StatusChanged;
     public event Action? DurabilityChanged;
     public event Action? CapabilitiesChanged;
-    public SyncEngine(TextPackStore store,ISyncTransport transport,string? accountId=null) {
+    public SyncEngine(TextPackStore store,ISyncTransport transport,string? accountId=null,MirrorPolicy? mirrorPolicy=null) {
         if(accountId is not null && !System.Text.RegularExpressions.Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid account identity.");
-        this.store=store;this.transport=transport;this.accountId=accountId;statePath=Path.Combine(store.StateDirectory,"sync.json");
+        this.store=store;this.transport=transport;this.accountId=accountId;this.mirrorPolicy=mirrorPolicy;statePath=Path.Combine(store.StateDirectory,"sync.json");
         workspaceOwnership=new(store.StateDirectory);
         // Fail before a worker or transport can replay someone else's outbox.
         if(accountId is not null)_=Load();
@@ -136,6 +137,8 @@ public sealed class SyncEngine
             // The existing sync lock also fences foreign active editors. This
             // engine may mirror assets/paths while retaining its own editors.
             using var fileLock=workspaceOwnership.Acquire();
+            if(mirrorPolicy is null)throw new IOException("The shared sync policy is unavailable. Reopen the workspace to retry.");
+            await mirrorPolicy.ReadyAsync(cancellation);
             state=Load();var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
             Report(true,null,state.Outbox.Count);
             var local=store.Scan().ToDictionary(x=>x.ItemId);
@@ -228,8 +231,11 @@ public sealed class SyncEngine
                     local[id]=file;
                     baseline=state.Items[id];
                 }
-                if(file.Hash!=baseline.Hash) { QueueUpload(state,file,baseline.Revision);await Drain(state,cancellation); }
-                else if(baseline.Refresh || server.Revision!=baseline.Revision || server.RelativePath!=file.Path) await Pull(state,id,file,cancellation,server.Lifecycle,server.Revision);
+                // The writer lease survives the page RPC. QueueUpload and
+                // Pull retain the captured hash as their file CAS boundary.
+                var action=await mirrorPolicy.DecideAsync(new(file.Hash,baseline.Hash,server.Revision,baseline.Revision,baseline.Refresh || server.RelativePath!=file.Path),cancellation);
+                if(action==MirrorDisposition.Upload){QueueUpload(state,file,baseline.Revision);await Drain(state,cancellation);}
+                else if(action==MirrorDisposition.Pull)await Pull(state,id,file,cancellation,server.Lifecycle,server.Revision);
             }
             foreach(var file in local.Values.Where(x=>!state.Items.ContainsKey(x.ItemId))) {
                 if(IsEditing(file.ItemId)||Blocked(state,file.ItemId))continue;

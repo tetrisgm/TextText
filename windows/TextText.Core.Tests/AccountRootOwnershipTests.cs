@@ -17,7 +17,7 @@ static class AccountRootOwnershipTests
         refused=false;try{AccountRootOwnership.Open(legacy,origin,"workspace","account-a");}catch(LegacyAccountStateException){refused=true;}
         assert(refused&&!File.Exists(Path.Combine(legacy.StateDirectory,AccountRootOwnership.FileName))&&File.ReadAllText(Path.Combine(legacy.Root,"pending.txt"))=="Retained original work","unbound nonempty root requires explicit adoption before ownership is written");
         var known=new TextPackStore(Path.Combine(temporary,"known-root"),Path.Combine(temporary,"known-root-state"));
-        await new SyncEngine(known,new Test.Fake(),"account-a").SyncAsync();
+        await Test.NewSync(known,new Test.Fake(),"account-a").SyncAsync();
         AccountRootOwnership.Open(known,origin,"workspace","account-a");
         assert(File.Exists(Path.Combine(known.StateDirectory,AccountRootOwnership.FileName)),"existing verified sync state can attest its unchanged root account");
         File.WriteAllText(Path.Combine(known.StateDirectory,AccountRootOwnership.PendingAdoption),"retained pending adoption");

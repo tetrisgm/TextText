@@ -15,6 +15,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     readonly WorkspaceContext context;
     readonly TextPackStore files;
     readonly SyncEngine sync;
+    readonly MirrorPolicy? mirrorPolicy;
     readonly SharedEditingStore editing;
     readonly WindowsAgent agent;
     readonly ConcurrentDictionary<string, TaskCompletionSource<string>> agentTools = new();
@@ -52,12 +53,13 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     public WindowsBridge(WorkspaceContext context, ISyncTransport? transport, string? stateDirectory)
     {
         this.context = context;
+        mirrorPolicy = context.MirrorPolicyFactory?.Invoke();
         files = OpenStore(context.Root,context.Origin,context.WorkspaceId,stateDirectory);
         if(context.AccountId is { } owner)AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,owner);
         var remote = transport ?? (context.AccountId is { } actor
             ? new HttpSyncTransport(http, context.Origin, context.WorkspaceId, actor, async () => new SyncAccountCredential(await context.TokenProvider(), actor), context.Access == "owner")
             : new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));
-        sync = new(files, remote, context.AccountId);
+        sync = new(files, remote, context.AccountId, mirrorPolicy);
         editing = new(files, sync, context.AccountId);
         agent = new(context.Root, context.WorkspaceId, context.Emit, ExecuteAgentTool);
         notification = new(_ => { if (!lifetime.IsCancellationRequested) _ = context.Emit("texttext:vault-changed", new { }); }, null, Timeout.Infinite, Timeout.Infinite);
@@ -306,6 +308,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     }
     private async Task RetireCoreAsync()
     {
+        mirrorPolicy?.Retire();
         lifetime.Cancel(); agent.Dispose(); watcher.Dispose(); notification.Dispose(); files.Changed -= Changed; sync.DurabilityChanged -= SyncStateChanged; sync.CapabilitiesChanged -= PermissionStateChanged;
         // Await the worker and every entered bridge operation before releasing
         // editing leases. Recovery can then prove that this writer has retired.

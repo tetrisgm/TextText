@@ -1,6 +1,6 @@
 # Portable mirror policy host
 
-T11 foundation, based on `29f18341`. No file-sync branch is switched yet; installed artifacts are unchanged.
+T11 foundation and first engine slice, following `5d2da4b6`. The known-item disposition now runs through the packaged policy in both native engines. Installed artifacts are unchanged.
 
 ## Contract
 
@@ -24,6 +24,25 @@ The first final Mac run passed the policy tests but failed an older immediate `d
 
 The existing verification fingerprint now includes Windows desktop smoke sources, so changing those checks invalidates prior receipts. Mac `Package.resolved` was preserved byte-for-byte. These are private fixture/source receipts, not installed-product or physical account-switch acceptance.
 
+## First production engine slice
+
+Both application factories now construct a policy adapter for the existing WKWebView/WebView2 page, scoped to the verified account, workspace and connection lifetime. Startup waits for page readiness before discovery or queued mutations. Retirement rejects late replies. A missing host fails closed; neither engine retains the old known-item disposition fallback.
+
+For an existing visible item, the native workspace writer lease remains held across the JavaScript decision. Existing native upload/install transactions still compare the captured file hash before writing. Missing items, tombstones, active editors, binary work and durable operation identity remain their existing separate paths.
+
+Portable native unit tests inject the authoritative TypeScript host through an ephemeral **test-only** Node/tsx process. The Swift test support target and C# test helper never enter application products; the boundary suite checks this. Production uses only its existing WebView. Worker I/O is bounded and failed workers cannot lend a late response to a later request.
+
+Passing source checks:
+
+- `/private/tmp/texttext-t11-testhost-targeted.log`: 58 focused Swift tests and all portable C# regressions; missing-policy tests prove zero remote discovery/mutation, unchanged file bytes and unchanged journal.
+- `/private/tmp/texttext-t11-no-fallback-native.log`: complete Mac/native portable gate; real WK production factory, closed-window execution, upload/pull, lease exclusion during RPC, changed-file CAS refusal and page-replacement recovery pass. The old-profile viewer was explicitly skipped because this invocation used the wrong environment-variable name; its separate corrected invocation passed before the unrelated visual fixture was interrupted, recorded in `/private/tmp/texttext-visual-wk.log`.
+- `/private/tmp/texttext-parity-mirror-client.log`: 448 client checks, TypeScript and existing verification checks passed. This workspace also included four tests for a not-yet-integrated retry-policy draft; no runtime scheduling migration is claimed.
+- Actual PC Release build and complete desktop smoke passed: `/private/tmp/texttext-t11-production-pc-build-1233.log`, `/private/tmp/texttext-t11-production-pc-smoke-retry.log`, full UTF-8 `/private/tmp/texttext-t11-production-pc-desktop-retry.log`. The production MainWindow factory waits for readiness and executes all vectors. Real WebView2 engine cases cover upload/pull, retained writer lease, external-write CAS refusal, failed page replacement and restart from retained state. Remote receipt: `windows/build/mirror-production-smoke-20261017-retry` in the private mutable test checkout, not an installable sealed candidate.
+
+The first PC attempt stopped safely before the policy fixture opened: Windows' system theme registers an additional Loaded handler. The fixture now removes only the named application credential-loading handler and retains framework handlers. No credential or personal workspace was opened by this fixture. Failure: `/private/tmp/texttext-t11-production-pc-smoke.log`.
+
+The separate actual PC core run also passed with the source policy test worker: `/private/tmp/texttext-t11-nofallback-pc-core.log`; full remote log `C:\Users\Shokunin\dev\texttext-t11-nofallback-core.log`.
+
 ## Next boundary
 
-Connect the existing-item disposition branch in both engines while holding their existing writer leases across policy evaluation and CAS. Gate mutation on readiness, retain queues when the page fails, and prove production home/no-editor/offline behavior before removing the old branch. Retry/outbox and lifecycle consolidation remain T11 work. This foundation is not a claim of completed native policy consolidation or installed acceptance.
+Retry/outbox and lifecycle consolidation remain T11 work. The pure retry draft is not yet wired to controllers; authentication wakeups, discovery retry loops and queue ordering/budget differences must be resolved before replacement. This first slice is not completed native policy consolidation or installed acceptance.

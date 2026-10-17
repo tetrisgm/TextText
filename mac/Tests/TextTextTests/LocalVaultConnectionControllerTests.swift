@@ -1,8 +1,17 @@
+import TextTextSyncTestSupport
 import XCTest
 @testable import TextTextApp
 import TextTextFileProviderKit
 
 final class LocalVaultConnectionControllerTests: XCTestCase {
+    @MainActor
+    private func testConnection(root: URL, workspaceId: String? = nil, session: URLSession = .shared,
+        credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil },
+        verifiedCredentials: LocalVaultConnectionController.VerifiedCredentialsProvider? = nil) -> LocalVaultConnectionController {
+        LocalVaultConnectionController(root: root, workspaceId: workspaceId, session: session,
+            credentials: credentials, verifiedCredentials: verifiedCredentials,
+            mirrorPolicyFactory: { binding, account in makeTestMirrorPolicy(workspaceId: binding.workspaceId, accountId: account.accountId) })
+    }
     func testAccountReviewRequiresFreshMatchingProfileAndWorkspacePermission() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AdoptionReviewProtocol.self]
         let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
@@ -24,7 +33,7 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CredentialRefreshProtocol.self]
         let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
-        let connection = LocalVaultConnectionController(root: root, session: session, credentials: { (URL(string: "https://texttext.test")!, "fixture-before") })
+        let connection = testConnection(root: root, session: session, credentials: { (URL(string: "https://texttext.test")!, "fixture-before") })
         _ = try await connection.connect(startSync: false)
         weak var engine = connection.collaborationEngine
         XCTAssertNotNil(engine)
@@ -64,7 +73,7 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         config.protocolClasses = [NotificationProtocol.self]
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
-        let connection = LocalVaultConnectionController(root: root, workspaceId: "shared", session: session,
+        let connection = testConnection(root: root, workspaceId: "shared", session: session,
             credentials: { (URL(string: "https://notification.test")!, "fixture") })
         defer { connection.stop() }
         _ = try await connection.connect(startSync: false)
@@ -87,7 +96,7 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         config.protocolClasses = [CapabilityProtocol.self]
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
-        let connection = LocalVaultConnectionController(root: root, workspaceId: "shared", session: session,
+        let connection = testConnection(root: root, workspaceId: "shared", session: session,
             credentials: { (URL(string: "https://capability.test")!, "fixture") })
         defer { connection.stop() }
         _ = try await connection.connect(startSync: false)
@@ -106,7 +115,7 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         onlineConfig.protocolClasses = [CapabilityProtocol.self]
         let onlineSession = URLSession(configuration: onlineConfig)
         defer { onlineSession.invalidateAndCancel() }
-        let online = LocalVaultConnectionController(root: root, workspaceId: "shared", session: onlineSession,
+        let online = testConnection(root: root, workspaceId: "shared", session: onlineSession,
             credentials: { (URL(string: "https://capability.test")!, "fixture") })
         _ = try await online.connect(startSync: false)
         online.stop()
@@ -115,11 +124,11 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         offlineConfig.protocolClasses = [OfflineDiscoveryProtocol.self]
         let offlineSession = URLSession(configuration: offlineConfig)
         defer { offlineSession.invalidateAndCancel() }
-        let reopened = LocalVaultConnectionController(root: root, workspaceId: "shared", session: offlineSession,
+        let reopened = testConnection(root: root, workspaceId: "shared", session: offlineSession,
             credentials: { (URL(string: "https://capability.test")!, "fixture") })
         defer { reopened.stop() }
         XCTAssertNotNil(reopened.collaborationEngine, "The verified local journal must be ready before any network request")
-        let anotherWorkspace = LocalVaultConnectionController(root: root, workspaceId: "another", session: offlineSession,
+        let anotherWorkspace = testConnection(root: root, workspaceId: "another", session: offlineSession,
             credentials: { (URL(string: "https://capability.test")!, "fixture") })
         defer { anotherWorkspace.stop() }
         XCTAssertNil(anotherWorkspace.collaborationEngine, "A different requested workspace must not inherit this journal")
@@ -194,7 +203,7 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         defer { session.invalidateAndCancel() }
         var token = "fixture-before"
         CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
-        let connection = LocalVaultConnectionController(root: root, session: session,
+        let connection = testConnection(root: root, session: session,
             verifiedCredentials: { LocalVaultAccountCredential(origin: URL(string: "https://texttext.test")!, token: token, accountId: "account-a") })
         defer { connection.stop() }
         _ = try await connection.connect()
@@ -225,7 +234,7 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         defer { session.invalidateAndCancel() }
         CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
         var credential = LocalVaultAccountCredential(origin: URL(string: "https://texttext.test")!, token: "fixture-before", accountId: "account-a")
-        let connection = LocalVaultConnectionController(root: root, session: session, verifiedCredentials: { credential })
+        let connection = testConnection(root: root, session: session, verifiedCredentials: { credential })
         defer { connection.stop() }
         _ = try await connection.connect(startSync: false)
         let engine = try XCTUnwrap(connection.collaborationEngine)
@@ -250,7 +259,7 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let connection = LocalVaultConnectionController(root: root, credentials: { nil })
+        let connection = testConnection(root: root, credentials: { nil })
         let retry = "Changes are saved on this Mac. The web connection will retry."
         var notices: [String?] = []
         connection.onChange = { status, changed in

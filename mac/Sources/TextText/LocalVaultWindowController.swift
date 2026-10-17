@@ -226,7 +226,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         accountFence?(); accountFence = nil
         if let connection { connection.credentialsChanged(); return }
         guard let root else { return }
-        connection = LocalVaultConnectionController(root: root, verifiedCredentials: self.credentials)
+        connection = LocalVaultConnectionController(root: root, verifiedCredentials: self.credentials, mirrorPolicyFactory: policyFactory)
         connection?.onChange = { [weak self] state, changed in
             self?.emit("texttext:vault-sync-status", value: state)
             if changed { self?.emit("texttext:vault-changed", value: [:]) }
@@ -386,6 +386,34 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         if let pendingPath { emit("texttext:vault-open", value: ["path": pendingPath]); self.pendingPath = nil }
     }
 
+    var policyFactory: LocalVaultConnectionController.MirrorPolicyFactory {
+        { [weak self] binding, account in
+            guard let self else { throw CancellationError() }
+            struct Manifest: Decodable { let version: Int, digest: String }
+            let data = try Data(contentsOf: self.entry.deletingLastPathComponent().appendingPathComponent("mirror-policy.json"))
+            guard data.count < 4096 else { throw VaultBridgeError("Reopen TextText to reconnect this folder.") }
+            let manifest = try JSONDecoder().decode(Manifest.self, from: data)
+            guard manifest.version == 1, manifest.digest.count == 64, manifest.digest.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else {
+                throw VaultBridgeError("Reopen TextText to reconnect this folder.")
+            }
+            return LocalVaultMirrorPolicy(digest: manifest.digest,
+                scope: LocalVaultMirrorScope(accountId: account.accountId ?? "legacy", workspaceId: binding.workspaceId, lifecycle: UUID().uuidString)) { [weak self] script in
+                    guard let self else { throw CancellationError() }
+                    return try await self.evaluateMirrorPolicy(script)
+                }
+        }
+    }
+    private func evaluateMirrorPolicy(_ script: String) async throws -> String {
+        // Startup waits on the existing page, with the policy adapter's bounded
+        // timeout. A mirror pass waits for this handshake before discovery.
+        while !loaded { try Task.checkCancellation(); try await Task.sleep(nanoseconds: 20_000_000) }
+        guard webView.url?.standardizedFileURL == entry.standardizedFileURL else { throw CancellationError() }
+        guard let value = try await webView.callAsyncJavaScript("return JSON.stringify(" + script + ");", arguments: [:], in: nil, contentWorld: .page) as? String else {
+            throw VaultBridgeError("Reopen TextText to reconnect this folder.")
+        }
+        return value
+    }
+
     private func selectRoot(_ url: URL, preparedConnection: LocalVaultConnectionController? = nil, persist: (() throws -> Void)? = nil) throws {
         if connection != nil, root?.standardizedFileURL.resolvingSymlinksInPath() == url.standardizedFileURL.resolvingSymlinksInPath() { return }
         let nextScoped = url.startAccessingSecurityScopedResource()
@@ -413,7 +441,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             self?.emit("texttext:vault-changed", value: [:])
             self?.connection?.schedule()
         }
-        connection = preparedConnection ?? LocalVaultConnectionController(root: url, verifiedCredentials: self.credentials)
+        connection = preparedConnection ?? LocalVaultConnectionController(root: url, verifiedCredentials: self.credentials, mirrorPolicyFactory: policyFactory)
         connection?.onChange = { [weak self] state, filesChanged in
             self?.emit("texttext:vault-sync-status", value: state)
             if filesChanged { self?.emit("texttext:vault-changed", value: [:]) }
@@ -433,7 +461,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         try LocalVaultWorkspaceSelection.prepareFolder(selected, binding: binding)
         let access = selected.startAccessingSecurityScopedResource()
         defer { if access { selected.stopAccessingSecurityScopedResource() } }
-        let candidate = LocalVaultConnectionController(root: selected, workspaceId: workspaceId, verifiedCredentials: self.credentials)
+        let candidate = LocalVaultConnectionController(root: selected, workspaceId: workspaceId, verifiedCredentials: self.credentials, mirrorPolicyFactory: policyFactory)
         var activated = false
         defer { if !activated { candidate.stop() } }
         _ = try await candidate.connect(startSync: false)

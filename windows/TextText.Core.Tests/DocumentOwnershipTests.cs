@@ -7,9 +7,9 @@ static class DocumentOwnershipTests
     static byte[] Pack() { using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)) {using var writer=new StreamWriter(zip.CreateEntry("text.md").Open());writer.Write("---\ntextTextId: test-1\n---\nOwned baseline");}return output.ToArray(); }
     public static async Task Run(string temporary,Action<bool,string> assert) {
         var store=new TextPackStore(Path.Combine(temporary,"document-owner"),Path.Combine(temporary,"document-owner-state"));
-        var original=store.Write("Owned.textpack",Pack());var remote=new Test.Fake();var first=new SyncEngine(store,remote);await first.SyncAsync();
+        var original=store.Write("Owned.textpack",Pack());var remote=new Test.Fake();var first=Test.NewSync(store,remote);await first.SyncAsync();
         using var a=new SharedEditingStore(store,first);
-        var second=new SyncEngine(store,remote);
+        var second=Test.NewSync(store,remote);
         using var b=new SharedEditingStore(new TextPackStore(store.Root,store.StateDirectory),second);
         var active=await a.OpenAsync(original.ItemId,original.Path,original.Hash);var refused=false;
         var duplicateRefused=false;try{await a.OpenAsync(original.ItemId,original.Path,original.Hash);}catch(IOException){duplicateRefused=true;}
@@ -36,7 +36,7 @@ static class DocumentOwnershipTests
         root=Path.GetFullPath(root);var nonce=Environment.GetEnvironmentVariable("TEXTTEXT_DOCUMENT_FIXTURE_NONCE");
         if(Path.GetFileName(root)!="document-owner"||!Path.GetFileName(Path.GetDirectoryName(root)!).StartsWith("texttext-core-test-",StringComparison.Ordinal)||nonce is null||File.ReadAllText(Path.Combine(root,".document-owner-fixture"))!=nonce)throw new InvalidOperationException("Not an owned document fixture.");
         var store=new TextPackStore(root,root+"-state");var original=store.Describe("Owned.textpack");
-        using var editing=new SharedEditingStore(store,new SyncEngine(store,new Test.Fake()));
+        using var editing=new SharedEditingStore(store,Test.NewSync(store,new Test.Fake()));
         var session=await editing.OpenAsync(original.ItemId,original.Path,original.Hash);
         if(session.Checkpoint is not {Pending:true})throw new Exception("Pending journal was not restored.");
         File.WriteAllText(Path.Combine(root,".document-owner-ready"),session.SessionToken);
@@ -45,7 +45,7 @@ static class DocumentOwnershipTests
     static async Task KilledOwner(TextPackStore store,PackFile original,Test.Fake remote,Action<bool,string> assert) {
         var bytes=store.Read(original.Path);var journal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=original.Hash,relativePath=original.Path,update="AAA=",pending=new[]{"AAA="},batch=new{operationId="retained-process-operation",updates=new[]{"AAA="}}});
         var checkpoint=new SharedCheckpoint(original.ItemId,original.Path,original.Hash,original.Hash,1,0,1,journal,true);
-        using(var preparing=new SharedEditingStore(store,new SyncEngine(store,remote))) {
+        using(var preparing=new SharedEditingStore(store,Test.NewSync(store,remote))) {
             var h=await preparing.OpenAsync(original.ItemId,original.Path,original.Hash);
             await preparing.CheckpointAsync(h.SessionToken,original.Hash,bytes,checkpoint);preparing.Close(h.SessionToken);
         }
@@ -62,7 +62,7 @@ static class DocumentOwnershipTests
             while(!File.Exists(ready)&&!child.HasExited&&DateTime.UtcNow<deadline)await Task.Delay(20);
             assert(File.Exists(ready)&&!child.HasExited,"child owns the restored pending document before termination");
             var stale=File.ReadAllText(ready);
-            var replacementSync=new SyncEngine(store,remote);
+            var replacementSync=Test.NewSync(store,remote);
             using var replacement=new SharedEditingStore(store,replacementSync);var refused=false;
             try{await replacement.OpenAsync(original.ItemId,original.Path,original.Hash);}catch(IOException){refused=true;}
             assert(refused,"separate live native process cannot be displaced");

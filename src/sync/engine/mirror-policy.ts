@@ -21,7 +21,7 @@ export function validateMirrorObservation(value: unknown): MirrorObservation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("Invalid mirror observation");
   const v = value as Record<string, unknown>;
   if (Object.keys(v).length !== 5 ||
-      ![v.localHash, v.baselineHash].every(x => typeof x === "string" && /^[a-f0-9]{64}$/.test(x)) ||
+      ![v.localHash, v.baselineHash].every(x => typeof x === "string" && x.length === 64 && /^[a-f0-9]{64}$/.test(x)) ||
       ![v.remoteRevision, v.baselineRevision].every(x => typeof x === "string" && x.length > 0 && x.length <= 512 && !/[\x00-\x1f]/.test(x)) ||
       typeof v.refresh !== "boolean") throw Error("Invalid mirror observation");
   return { localHash: v.localHash as string, baselineHash: v.baselineHash as string,

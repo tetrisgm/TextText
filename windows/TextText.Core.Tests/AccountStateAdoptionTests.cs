@@ -17,7 +17,7 @@ static class AccountStateAdoptionTests
         return output.ToArray();
     }
     static async Task<Fixture> Create(string temporary,string name) {
-        var store=new TextPackStore(Path.Combine(temporary,name),Path.Combine(temporary,name+"-state"));var remote=new Test.Fake();var sync=new SyncEngine(store,remote);
+        var store=new TextPackStore(Path.Combine(temporary,name),Path.Combine(temporary,name+"-state"));var remote=new Test.Fake();var sync=Test.NewSync(store,remote);
         var file=store.Write("Notes/Queued.textpack",Pack("adoption-note","Original"));await sync.SyncAsync();
         var pending=Pack("adoption-note","Retained offline edit");store.Write(file.Path,pending,file.Hash);remote.FailBeforeCommit=true;
         try{await sync.SyncAsync();throw new Exception("Expected offline refusal");}catch(HttpRequestException){}
@@ -79,7 +79,7 @@ static class AccountStateAdoptionTests
                 &&File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,f.CheckpointPath)).SequenceEqual(f.Checkpoint)
                 &&f.Store.Read("Notes/Shared.textpack").SequenceEqual(f.Projection),"real disk-full adoption preserves original metadata and projection");
             assert(File.Exists(Path.Combine(f.Store.StateDirectory,AccountRootOwnership.PendingAdoption)),"real disk-full adoption keeps its recorded intent");
-            var blocked=false;try{_=new SyncEngine(f.Store,f.Remote,"account-a");}catch(LegacyAccountStateException){blocked=true;}
+            var blocked=false;try{_=Test.NewSync(f.Store,f.Remote,"account-a");}catch(LegacyAccountStateException){blocked=true;}
             assert(blocked,"ordinary sync stays blocked after disk-full adoption");
             stream.SetLength(0);stream.Flush(true);stream.Dispose();released=true;File.Delete(fill);
             var deadline=DateTime.UtcNow.AddSeconds(10);
@@ -88,7 +88,7 @@ static class AccountStateAdoptionTests
             var result=AccountStateAdoption.AdoptAfterExplicitReview(f.Store,new Uri("https://texttext.test"),"workspace","account-a");
             assert(File.ReadAllBytes(Path.Combine(result.RecoveryDirectory!,"before/sync.json")).SequenceEqual(f.State),"disk-full adoption retains exact original backup");
             f.Remote.Capabilities=new(true,true,[],new(){["adoption-note"]=true,["adoption-shared"]=true});
-            await new SyncEngine(f.Store,f.Remote,"account-a").SyncAsync();
+            await Test.NewSync(f.Store,f.Remote,"account-a").SyncAsync();
             assert(f.Remote.Operations.Last()==f.Operation&&f.Store.Read(f.Path).SequenceEqual(f.Pending),"real disk-full adoption resumes original pending work");
         } finally {if(!released){stream.SetLength(0);stream.Flush(true);}}
     }
@@ -96,7 +96,7 @@ static class AccountStateAdoptionTests
         var origin=new Uri("https://texttext.test");
         await SeparateProcess(temporary,assert);
         await NoSpace(assert);
-        var live=await Create(temporary,"adoption-live-writer");var liveSync=new SyncEngine(live.Store,live.Remote);
+        var live=await Create(temporary,"adoption-live-writer");var liveSync=Test.NewSync(live.Store,live.Remote);
         using(var lease=await liveSync.AcquireCollaborationAsync("adoption-shared")) {
             var snapshot=File.ReadAllBytes(Path.Combine(live.Store.StateDirectory,"sync.json"));var refused=false;
             try{AccountStateAdoption.AdoptAfterExplicitReview(live.Store,origin,"workspace","account-a");}catch(IOException){refused=true;}
@@ -121,7 +121,7 @@ static class AccountStateAdoptionTests
                 try{AccountStateAdoption.AdoptAfterExplicitReview(f.Store,origin,"workspace","account-b");}catch(Exception error)when(error is SharedAccountMismatchException or InvalidDataException){denied=true;}
                 assert(denied&&File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,"sync.json")).SequenceEqual(state)
                     &&File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,f.CheckpointPath)).SequenceEqual(checkpoint),"another account cannot resume or rewrite an interrupted adoption");
-                denied=false;try{_=new SyncEngine(f.Store,f.Remote,"account-a");}catch(LegacyAccountStateException){denied=true;}
+                denied=false;try{_=Test.NewSync(f.Store,f.Remote,"account-a");}catch(LegacyAccountStateException){denied=true;}
                 assert(denied,"ordinary sync cannot replay a partly adopted queue");
             }
             var result=AccountStateAdoption.AdoptAfterExplicitReview(f.Store,origin,"workspace","account-a");
@@ -138,9 +138,9 @@ static class AccountStateAdoptionTests
             assert(AccountStateAdoption.AdoptAfterExplicitReview(f.Store,origin,"workspace","account-a").AlreadyBound
                 &&Directory.GetDirectories(f.Store.StateDirectory,".account-adoption-*").Length==count,"completed adoption retry does not create another archive");
             f.Remote.Capabilities=new(true,true,[],new(){["adoption-note"]=true,["adoption-shared"]=true});
-            await new SyncEngine(f.Store,f.Remote,"account-a").SyncAsync();
+            await Test.NewSync(f.Store,f.Remote,"account-a").SyncAsync();
             assert(f.Remote.Data.SequenceEqual(f.Pending)&&f.Remote.Operations.Last()==f.Operation&&f.Remote.UploadCount==2,"adopted queue resumes original operation and payload exactly once");
-            await new SyncEngine(f.Store,f.Remote,"account-a").SyncAsync();
+            await Test.NewSync(f.Store,f.Remote,"account-a").SyncAsync();
             assert(f.Remote.UploadCount==2,"reopened adopted state does not duplicate an acknowledged upload");
         }
         var divergent=await Create(temporary,"adoption-divergent");

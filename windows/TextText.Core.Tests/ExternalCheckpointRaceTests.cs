@@ -17,7 +17,7 @@ static class ExternalCheckpointRaceTests
     {
         var files = new TextPackStore(Path.Combine(temp, "external-checkpoint-race"), Path.Combine(temp, "external-checkpoint-race-state"));
         var initial = files.Write("Notes/Race.textpack", Pack("Existing fixture text."));
-        var sync = new SyncEngine(files, new Test.Fake());
+        var sync = Test.NewSync(files, new Test.Fake());
         await sync.SyncAsync();
         using var editing = new SharedEditingStore(files, sync);
         var session = await editing.OpenAsync("external-race", initial.Path, initial.Hash);

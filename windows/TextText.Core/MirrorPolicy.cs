@@ -17,7 +17,11 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
     int retired;
     public void Retire() => Interlocked.Exchange(ref retired, 1);
 
-    public async Task<MirrorDisposition> DecideAsync(MirrorObservation observed, CancellationToken ct = default)
+    public async Task ReadyAsync(CancellationToken ct = default) => await ExecuteAsync(null,ct);
+    public async Task<MirrorDisposition> DecideAsync(MirrorObservation observed, CancellationToken ct = default) =>
+        await ExecuteAsync(observed,ct) ?? throw new IOException("Missing mirror disposition.");
+
+    private async Task<MirrorDisposition?> ExecuteAsync(MirrorObservation? observed, CancellationToken ct)
     {
         await gate.WaitAsync(ct);
         try {
@@ -46,6 +50,10 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
                     if(binding.RootElement.GetProperty("scope").Deserialize<MirrorScope>(Json) != scope) throw new IOException("Mirror policy owner changed.");
                     generation=binding.RootElement.GetProperty("generation").GetInt64();
                 }
+            }
+            if(observed is null) {
+                using var confirmed = await Call("handshake"); Identity(confirmed.RootElement);
+                return null;
             }
             var requestId = Guid.NewGuid().ToString();
             using var result = await Call("evaluate", new { version = 1, digest, pageId, generation, scope, requestId, observed });

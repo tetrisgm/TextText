@@ -1,3 +1,4 @@
+import TextTextSyncTestSupport
 import XCTest
 @testable import TextTextFileProviderKit
 
@@ -75,8 +76,8 @@ final class LocalVaultHTTPContractTests: XCTestCase {
         let binding = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId)
         let firstTransport = try HTTPLocalVaultSyncTransport(origin: origin, workspaceId: workspaceId, token: token)
         let secondTransport = try HTTPLocalVaultSyncTransport(origin: origin, workspaceId: workspaceId, token: token)
-        let first = try LocalVaultSync(root: firstRoot, binding: binding, transport: firstTransport)
-        let second = try LocalVaultSync(root: secondRoot, binding: binding, transport: secondTransport)
+        let first = try makeTestSync(root: firstRoot, binding: binding, transport: firstTransport)
+        let second = try makeTestSync(root: secondRoot, binding: binding, transport: secondTransport)
         let itemId = "11111111-1111-4111-8111-111111111111"
         let path = "Notes/Shared.textpack"
         let original = try pack(in: temporary, itemId: itemId, body: "first\nmiddle\nlast")

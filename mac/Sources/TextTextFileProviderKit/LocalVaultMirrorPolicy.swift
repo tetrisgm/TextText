@@ -77,7 +77,7 @@ public actor LocalVaultMirrorPolicy {
         guard version == 1, digest == self.digest, page == pageId,
             self.generation == nil || generation == self.generation else { throw Failure.stale }
     }
-    public func decide(_ observed: LocalVaultMirrorObservation) async throws -> LocalVaultMirrorDisposition {
+    public func ready() async throws {
         let hello = try await call("handshake", as: Identity.self)
         guard !hello.pageId.isEmpty else { throw Failure.stale }
         if pageId == nil { pageId = hello.pageId }
@@ -89,8 +89,13 @@ public actor LocalVaultMirrorPolicy {
             guard binding.scope == scope else { throw Failure.stale }
             generation = binding.generation
         }
-        guard let generation else { throw Failure.stale }
-        let request = Request(digest: digest, pageId: hello.pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+    }
+    public func decide(_ observed: LocalVaultMirrorObservation) async throws -> LocalVaultMirrorDisposition {
+        try await ready()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
         let reply = try await call("evaluate", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: Reply.self)
         try check(reply.version, reply.digest, reply.pageId, reply.generation)
         guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed else { throw Failure.stale }

@@ -4,12 +4,21 @@ using System.Text;
 using System.Text.Json;
 static class Test
 {
+ public static SyncEngine NewSync(TextPackStore store,ISyncTransport transport,string? accountId=null) => new(store,transport,accountId,NativePolicyTestHost.Create(accountId));
  static void Assert(bool condition,string label){if(!condition)throw new Exception(label);Console.WriteLine("PASS "+label);}
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
  if(args.Length>0){if(args.Length!=2)throw new InvalidOperationException("Unknown test mode.");if(args[0]=="--resume-account-adoption-fixture")AccountStateAdoptionTests.ResumeFixture(args[1]);else if(args[0]=="--hold-document-owner-fixture")await DocumentOwnershipTests.Hold(args[1]);else throw new InvalidOperationException("Unknown test mode.");return;}
  var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
+ var unavailableStore=new TextPackStore(Path.Combine(temp,"policy-unavailable"),Path.Combine(temp,"policy-unavailable-state"));
+ var unavailableFile=unavailableStore.Write("Note.textpack",Pack());var unavailableRemote=new Fake();
+ var unavailableEngine=new SyncEngine(unavailableStore,unavailableRemote);
+ var unavailablePath=Path.Combine(unavailableStore.StateDirectory,"sync.json");
+ byte[]? beforeUnavailable=File.Exists(unavailablePath)?File.ReadAllBytes(unavailablePath):null;
+ var policyRefused=false;try{await unavailableEngine.SyncAsync();}catch(IOException){policyRefused=true;}
+ Assert(policyRefused&&unavailableRemote.ManifestCount==0&&unavailableRemote.UploadCount==0,"missing policy refuses before remote discovery or mutation");
+ Assert(unavailableStore.Describe(unavailableFile.Path).Hash==unavailableFile.Hash && (beforeUnavailable is null?!File.Exists(unavailablePath):File.ReadAllBytes(unavailablePath).SequenceEqual(beforeUnavailable)),"missing policy preserves file and durable sync journal");
  await DocumentOwnershipTests.Run(temp,Assert);
  await MirrorPolicyTests.Run(Assert);
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
@@ -28,22 +37,22 @@ static class Test
      localBytes=TextPackStore.WithDocument(localBytes,TextPackStore.Markdown(localBytes)+" later CLI edit","{\"schemaVersion\":1,\"content\":{\"body\":\"same body later CLI edit\"}}");
      metadataStore.Write(metadataFile.Path,localBytes,metadataFile.Hash);
  }
- var metadataSync=new SyncEngine(metadataStore,metadataRemote);
+ var metadataSync=Test.NewSync(metadataStore,metadataRemote);
  try{await metadataSync.SyncAsync();}catch(HttpRequestException)when(failure!="none"){}
  if(failure=="server-changed") {
      var competing=TextPackStore.WithDocument(remoteBytes,TextPackStore.Markdown(remoteBytes)+" remote writer","{\"schemaVersion\":1,\"content\":{\"body\":\"same body remote writer\"}}");
      metadataRemote.Data=competing;metadataRemote.Item=metadataRemote.Item! with{Revision=TextPackStore.Hash(competing)};
-     var metadataResumed=new SyncEngine(metadataStore,metadataRemote);await metadataResumed.SyncAsync();
+     var metadataResumed=Test.NewSync(metadataStore,metadataRemote);await metadataResumed.SyncAsync();
      Assert(metadataRemote.UploadCount==0&&metadataRemote.Data.SequenceEqual(competing)&&metadataStore.Read(metadataFile.Path).SequenceEqual(localBytes),"metadata adoption cannot overwrite a concurrent server writer");
      Assert(!await metadataResumed.IsReadyAsync("metadata-id")&&Directory.GetFiles(metadataStore.GetRecoveryDirectory()).Length==2,"competing metadata adoption retains both versions and does not grant false readiness");
      continue;
  }
- await new SyncEngine(metadataStore,metadataRemote).SyncAsync();
+ await Test.NewSync(metadataStore,metadataRemote).SyncAsync();
  if(failure is "legacy-missing-proof" or "legacy-corrupt-proof") {
      Assert(metadataRemote.UploadCount==0&&metadataRemote.Data.SequenceEqual(remoteBytes)&&metadataStore.Read(metadataFile.Path).SequenceEqual(localBytes)&&!await metadataSync.IsReadyAsync("metadata-id"),"unattested legacy conflict remains protected");continue;
  }
  Assert(metadataRemote.UploadCount==1&&metadataRemote.Data.SequenceEqual(localBytes)&&metadataStore.Read(metadataFile.Path).SequenceEqual(localBytes),"additive metadata preserved exactly across "+failure);
- Assert(await new SyncEngine(metadataStore,metadataRemote).IsReadyAsync("metadata-id"),"metadata adoption joins collaboration after "+failure);
+ Assert(await Test.NewSync(metadataStore,metadataRemote).IsReadyAsync("metadata-id"),"metadata adoption joins collaboration after "+failure);
  Assert(!TextPackStore.ExtendsMetadata(remoteBytes,localBytes),"metadata adoption cannot erase extra server fields");
  Assert(!TextPackStore.ExtendsMetadata(TextPackStore.WithDocument(localBytes,TextPackStore.Markdown(localBytes)+" edited","{\"schemaVersion\":1,\"content\":{\"body\":\"same body\"}}"),remoteBytes),"metadata adoption cannot overwrite different Markdown content");
  }
@@ -123,25 +132,25 @@ static class Test
  Directory.CreateDirectory(Path.Combine(folderStore.Root,".private","Hidden"));
  Assert(!folderStore.ScanInventory().Folders.Any(path=>path.StartsWith(".private")),"private folders stay out of inventory");
  var folderRemote=new Fake{Folders=["Feeds","Research/Empty"]};
- await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ await Test.NewSync(folderStore,folderRemote).SyncAsync();
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"Research","Empty")),"sync materializes empty remote folders");
- folderRemote.Folders=[];await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ folderRemote.Folders=[];await Test.NewSync(folderStore,folderRemote).SyncAsync();
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"Feeds")),"omitted remote folder remains local");
  folderRemote.AuthoritativeFolders=["Feeds","Research","Research/Empty","Keep","UnknownParent","Placeholder"];
- folderRemote.Folders=folderRemote.AuthoritativeFolders;await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ folderRemote.Folders=folderRemote.AuthoritativeFolders;await Test.NewSync(folderStore,folderRemote).SyncAsync();
  File.WriteAllText(Path.Combine(folderStore.Root,"Keep","readme.txt"),"local content");
  Directory.CreateDirectory(Path.Combine(folderStore.Root,"UnknownParent","Local child"));
  File.WriteAllText(Path.Combine(folderStore.Root,".Placeholder.icloud"),"");
- folderRemote.AuthoritativeFolders=null;folderRemote.Folders=[];await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ folderRemote.AuthoritativeFolders=null;folderRemote.Folders=[];await Test.NewSync(folderStore,folderRemote).SyncAsync();
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"Research","Empty")),"missing authoritative catalog preserves tracked folders");
  folderRemote.AuthoritativeFolders=["After","After/Empty"];folderRemote.Folders=folderRemote.AuthoritativeFolders;
- await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ await Test.NewSync(folderStore,folderRemote).SyncAsync();
  Assert(!Directory.Exists(Path.Combine(folderStore.Root,"Research"))&&!Directory.Exists(Path.Combine(folderStore.Root,"Feeds")),"authoritative removed folder tree prunes empty directories after restart");
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"After","Empty")),"new empty folder tree materializes");
  Assert(File.ReadAllText(Path.Combine(folderStore.Root,"Keep","readme.txt"))=="local content"&&Directory.Exists(Path.Combine(folderStore.Root,"UnknownParent","Local child")),"untracked content and empty descendants survive folder removal");
  Assert(Directory.Exists(Path.Combine(folderStore.Root,"Placeholder")),"provider placeholder prevents folder removal");
  File.Delete(Path.Combine(folderStore.Root,"Keep","readme.txt"));File.Delete(Path.Combine(folderStore.Root,".Placeholder.icloud"));
- await new SyncEngine(folderStore,folderRemote).SyncAsync();
+ await Test.NewSync(folderStore,folderRemote).SyncAsync();
  Assert(!Directory.Exists(Path.Combine(folderStore.Root,"Keep"))&&!Directory.Exists(Path.Combine(folderStore.Root,"Placeholder")),"retained catalog removals retry durably after content and provider blockage clear");
  Directory.CreateDirectory(Path.Combine(folderStore.Root,"Feeds"));
  foreach(var unsafePath in new[]{"../escape",".texttext/cache","Notes//bad","Fake.textpack/child"})Throws<IOException>(()=>folderStore.EnsureFolders([unsafePath]),"remote folder rejects "+unsafePath);
@@ -150,13 +159,13 @@ static class Test
  Assert(!folderStore.ScanInventory().Folders.Contains("Linked")&&folderStore.LastScanErrors.Any(error=>error.Path=="Linked"),"unsafe linked folder is excluded and preserved");
  File.WriteAllText(Path.Combine(folderStore.Root,".Pending.icloud"),"");Throws<IOException>(()=>folderStore.EnsureFolders(["Pending"]),"remote folder respects placeholder");
  folderRemote.Folders=["Occupied/child","Another empty"];folderRemote.Data=Pack("remote","folder-proof");folderRemote.Item=new("folder-proof","Notes/Folder-proof.textpack",TextPackStore.Hash(folderRemote.Data));
- var collisionSync=new SyncEngine(folderStore,folderRemote);await collisionSync.SyncAsync();Assert(File.Exists(folderStore.Resolve("Notes/Folder-proof.textpack"))&&Directory.Exists(Path.Combine(folderStore.Root,"Another empty"))&&collisionSync.Status.Error!=null,"folder collision does not block unrelated document convergence");
+ var collisionSync=Test.NewSync(folderStore,folderRemote);await collisionSync.SyncAsync();Assert(File.Exists(folderStore.Resolve("Notes/Folder-proof.textpack"))&&Directory.Exists(Path.Combine(folderStore.Root,"Another empty"))&&collisionSync.Status.Error!=null,"folder collision does not block unrelated document convergence");
  folderStore.Delete("Notes/Folder-proof.textpack",TextPackStore.Hash(folderRemote.Data));
  var first=store.Write("Notes/Test.textpack",Pack());Assert(first.ItemId=="test-1","identity extraction");
  {
  var transientStore=new TextPackStore(Path.Combine(temp,"transient-pack"),Path.Combine(temp,"transient-device"));
  var original=transientStore.Write("Notes/Transient.textpack",Pack("before","transient-id"));
- var transientRemote=new Fake();var transientSync=new SyncEngine(transientStore,transientRemote);
+ var transientRemote=new Fake();var transientSync=Test.NewSync(transientStore,transientRemote);
  await transientSync.SyncAsync();
  var originalRemote=transientRemote.Data.ToArray();var originalUploads=transientRemote.UploadCount;
  File.WriteAllText(transientStore.Resolve(original.Path),"incomplete zip from another file editor");
@@ -212,16 +221,16 @@ static class Test
      using var zipRead=new ZipArchive(new MemoryStream(edited));using var reader=new StreamReader(zipRead.GetEntry(receiptEntry)!.Open());
      Assert(reader.ReadToEnd()=="{\"fingerprint\":\"retained\"}","Windows document edits preserve mutation receipts");
  }
- var transport=new Fake();var engine=new SyncEngine(store,transport);await engine.SyncAsync();Assert(transport.UploadCount==1,"initial upload");await engine.SyncAsync();Assert(transport.UploadCount==1,"idle pass has no uploads");
+ var transport=new Fake();var engine=Test.NewSync(store,transport);await engine.SyncAsync();Assert(transport.UploadCount==1,"initial upload");await engine.SyncAsync();Assert(transport.UploadCount==1,"idle pass has no uploads");
  var current=store.Describe(first.Path);store.UpdateMarkdown(first.Path,TextPackStore.Markdown(store.Read(first.Path))+"\nexternal",current.Hash);
  transport.FailAfterCommit=true;try{await engine.SyncAsync();throw new Exception("expected lost ACK");}catch(HttpRequestException){}
- var operations=transport.Operations.ToArray();await new SyncEngine(store,transport).SyncAsync(localChangesOnly:true);Assert(transport.Operations.Last()==operations.Last(),"lost ACK replays same durable operation ID");Assert(transport.UploadCount==2,"replay applies exactly once");
- current=store.Describe(first.Path);store.Rename(first.Path,"Notes/Renamed.textpack",current.Hash);await new SyncEngine(store,transport).SyncAsync();Assert(transport.Item!.RelativePath=="Notes/Renamed.textpack","rename sync survives engine restart");
+ var operations=transport.Operations.ToArray();await Test.NewSync(store,transport).SyncAsync(localChangesOnly:true);Assert(transport.Operations.Last()==operations.Last(),"lost ACK replays same durable operation ID");Assert(transport.UploadCount==2,"replay applies exactly once");
+ current=store.Describe(first.Path);store.Rename(first.Path,"Notes/Renamed.textpack",current.Hash);await Test.NewSync(store,transport).SyncAsync();Assert(transport.Item!.RelativePath=="Notes/Renamed.textpack","rename sync survives engine restart");
  File.Move(store.Resolve("Notes/Renamed.textpack"),Path.Combine(temp,"evicted.textpack"));await engine.SyncAsync();Assert(transport.DeleteCount==0,"missing provider file is not deletion");File.Move(Path.Combine(temp,"evicted.textpack"),store.Resolve("Notes/Renamed.textpack"));
- current=store.Describe("Notes/Renamed.textpack");store.Delete(current.Path,current.Hash);await new SyncEngine(store,transport).SyncAsync();Assert(transport.DeleteCount==1,"explicit delete survives restart");Assert(Directory.GetFiles(Path.Combine(store.StateDirectory,"recovery"),"trash-*").Length==1,"delete preserves recoverable bytes");
+ current=store.Describe("Notes/Renamed.textpack");store.Delete(current.Path,current.Hash);await Test.NewSync(store,transport).SyncAsync();Assert(transport.DeleteCount==1,"explicit delete survives restart");Assert(Directory.GetFiles(Path.Combine(store.StateDirectory,"recovery"),"trash-*").Length==1,"delete preserves recoverable bytes");
  File.WriteAllText(Path.Combine(store.StateDirectory,"sync.json"),"{\"Version\":999}");try{await engine.SyncAsync();throw new Exception("future state accepted");}catch(InvalidDataException){}Assert(File.ReadAllText(Path.Combine(store.StateDirectory,"sync.json")).Contains("999"),"future state fails closed without rewriting");
 
- var other=new TextPackStore(Path.Combine(temp,"second"),Path.Combine(temp,"second-device"));var otherTransport=new Fake();var otherEngine=new SyncEngine(other,otherTransport);
+ var other=new TextPackStore(Path.Combine(temp,"second"),Path.Combine(temp,"second-device"));var otherTransport=new Fake();var otherEngine=Test.NewSync(other,otherTransport);
  var seed=other.Write("Notes/Concurrent.textpack",Pack());await otherEngine.SyncAsync();
  other.UpdateMarkdown(seed.Path,TextPackStore.Markdown(other.Read(seed.Path))+" local",other.Describe(seed.Path).Hash);
  otherTransport.Data=Pack("remote");otherTransport.Item=otherTransport.Item! with{Revision=TextPackStore.Hash(otherTransport.Data)};
@@ -229,29 +238,29 @@ static class Test
  Assert(TextPackStore.Markdown(other.Read(seed.Path)).EndsWith(" local"),"conflict preserves current local document");
  Assert(Directory.GetFiles(Path.Combine(other.StateDirectory,"recovery"),"remote-conflict-*").Length==1,"conflict preserves remote document");
  var fencedOperations=otherTransport.Operations.Count;var fencedPayloadHash=other.Describe(seed.Path).Hash;
- await new SyncEngine(other,otherTransport).SyncAsync();
+ await Test.NewSync(other,otherTransport).SyncAsync();
  Assert(otherTransport.Operations.Count==fencedOperations,"fenced upload is not retried without a new local save");
  other.UpdateMarkdown(seed.Path,TextPackStore.Markdown(other.Read(seed.Path))+" again",fencedPayloadHash);var supersededHash=other.Describe(seed.Path).Hash;
- await new SyncEngine(other,otherTransport).SyncAsync();
+ await Test.NewSync(other,otherTransport).SyncAsync();
  var fencedState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(other.StateDirectory,"sync.json")))!;
  Assert(otherTransport.Operations.Count==fencedOperations+1&&otherTransport.Operations.Last()!=otherTransport.Operations[fencedOperations-1],"new coherent save retries the fenced upload as a new command");
  Assert(fencedState.Outbox.Single().Conflicted&&fencedState.Outbox.Single().Hash==supersededHash&&fencedState.Outbox.Single().Revision==fencedState.Items[seed.ItemId].Revision&&otherTransport.UploadCount==1,"still-competing retry stays fenced against the attested base without overwriting the server");
- Assert(File.Exists(Path.Combine(other.StateDirectory,"recovery","conflict-"+fencedPayloadHash+".textpack"))&&TextPackStore.Markdown(other.Read(seed.Path)).EndsWith(" local again")&&!await new SyncEngine(other,otherTransport).IsReadyAsync(seed.ItemId),"superseded payload is preserved, the current file is kept and readiness stays denied");
+ Assert(File.Exists(Path.Combine(other.StateDirectory,"recovery","conflict-"+fencedPayloadHash+".textpack"))&&TextPackStore.Markdown(other.Read(seed.Path)).EndsWith(" local again")&&!await Test.NewSync(other,otherTransport).IsReadyAsync(seed.ItemId),"superseded payload is preserved, the current file is kept and readiness stays denied");
  otherTransport.Item=otherTransport.Item! with{Lifecycle="restored"};
  other.UpdateMarkdown(seed.Path,TextPackStore.Markdown(other.Read(seed.Path))+" more",supersededHash);
- await new SyncEngine(other,otherTransport).SyncAsync();
+ await Test.NewSync(other,otherTransport).SyncAsync();
  Assert(otherTransport.Operations.Count==fencedOperations+1,"a fenced upload from another lifecycle is never retried");
  otherTransport.Item=otherTransport.Item with{Lifecycle=null,Revision=fencedState.Items[seed.ItemId].Revision};otherTransport.Data=Pack();
- await new SyncEngine(other,otherTransport).SyncAsync();
+ await Test.NewSync(other,otherTransport).SyncAsync();
  Assert(otherTransport.Operations.Count==fencedOperations+2&&otherTransport.UploadCount==2&&otherTransport.Data.SequenceEqual(other.Read(seed.Path)),"retry succeeds when the server accepts the attested base");
  fencedState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(other.StateDirectory,"sync.json")))!;
- Assert(fencedState.Outbox.Count==0&&fencedState.Items[seed.ItemId].Hash==other.Describe(seed.Path).Hash&&await new SyncEngine(other,otherTransport).IsReadyAsync(seed.ItemId),"accepted retry clears the fence and restores readiness");
+ Assert(fencedState.Outbox.Count==0&&fencedState.Items[seed.ItemId].Hash==other.Describe(seed.Path).Hash&&await Test.NewSync(other,otherTransport).IsReadyAsync(seed.ItemId),"accepted retry clears the fence and restores readiness");
  var resumed=new TextPackStore(Path.Combine(temp,"incoming"),Path.Combine(temp,"incoming-device"));var payload=Pack("downloaded");resumed.Write("Notes/Moved.textpack",payload);
  var state=new SyncEngine.State{PendingPull=new("test-1","Notes/Moved.textpack","Notes/Old.textpack","oldhash",TextPackStore.Hash(payload),Convert.ToBase64String(payload))};
  TextPackStore.AtomicWrite(Path.Combine(resumed.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(state));
- var resumedTransport=new Fake{Item=new("test-1","Notes/Moved.textpack",TextPackStore.Hash(payload)),Data=payload};await new SyncEngine(resumed,resumedTransport).SyncAsync(localChangesOnly:true);
+ var resumedTransport=new Fake{Item=new("test-1","Notes/Moved.textpack",TextPackStore.Hash(payload)),Data=payload};await Test.NewSync(resumed,resumedTransport).SyncAsync(localChangesOnly:true);
  Assert(resumedTransport.UploadCount==0,"interrupted incoming apply resumes without reupload");
- var fenced=new TextPackStore(Path.Combine(temp,"fenced"),Path.Combine(temp,"fenced-device"));var ft=new Fake();var fe=new SyncEngine(fenced,ft);var ff=fenced.Write("Notes/Edit.textpack",Pack());await fe.SyncAsync();
+ var fenced=new TextPackStore(Path.Combine(temp,"fenced"),Path.Combine(temp,"fenced-device"));var ft=new Fake();var fe=Test.NewSync(fenced,ft);var ff=fenced.Write("Notes/Edit.textpack",Pack());await fe.SyncAsync();
  using(var lease=await fe.AcquireCollaborationAsync("test-1")){var updated=fenced.UpdateMarkdown(ff.Path,TextPackStore.Markdown(fenced.Read(ff.Path))+" collaborative",fenced.Describe(ff.Path).Hash);await fe.SyncAsync();Assert(ft.UploadCount==1,"active collaboration fences file upload");ft.Data=fenced.Read(ff.Path);ft.Item=ft.Item! with{Revision=updated.Hash};await fe.AcknowledgeCheckpointAsync("test-1",ff.Path,updated.Hash,updated.Hash);}
  await fe.SyncAsync();Assert(ft.UploadCount==1,"acknowledged checkpoint avoids duplicate upload");
  var encoded=Pack();using(var ms=new MemoryStream()) {using(var z=new ZipArchive(ms,ZipArchiveMode.Create,true))using(var original=new ZipArchive(new MemoryStream(encoded)))foreach(var e in original.Entries.Reverse()){var copy=z.CreateEntry(e.FullName,CompressionLevel.NoCompression);using var dst=copy.Open();using var src=e.Open();src.CopyTo(dst);}Assert(TextPackStore.Equivalent(encoded,ms.ToArray()),"ZIP encoding changes preserve logical equality");}
@@ -276,7 +285,7 @@ static class Test
    var target=crashAfterMove?"Archive/Again/Moving.textpack":"Archive/Moving.textpack";
    var sourcePath=JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(movingDirectory,"checkpoint.json")))!.Path;
    try{SharedEditingStore.RebaseProjection(movingStore,"test-1",target,interruptAfterIntent:!crashAfterMove,interruptAfterMove:crashAfterMove);throw new Exception("move interruption missing");}catch(IOException){}
-   using var openingMoved=new SharedEditingStore(movingStore,new SyncEngine(movingStore,new Fake()));
+   using var openingMoved=new SharedEditingStore(movingStore,Test.NewSync(movingStore,new Fake()));
    var reopenedMove=await openingMoved.OpenAsync("test-1",sourcePath,movingFile.Hash);
    Assert(reopenedMove.Document.Path==target&&reopenedMove.Document.Hash==movingFile.Hash,"session reopen follows interrupted durable move");
    var recovered=reopenedMove.Checkpoint!;
@@ -289,7 +298,7 @@ static class Test
  try{SharedEditingStore.RebaseProjection(movingStore,"test-1",occupied.Path);throw new Exception("occupied destination accepted");}catch(FileChangedException){}
  Assert(movingStore.Describe(occupied.Path).Hash==occupied.Hash,"shared move cannot overwrite destination");
  var earlyMoveStore=new TextPackStore(Path.Combine(temp,"early-shared-move"),Path.Combine(temp,"early-shared-move-device"));
- var earlyMoveFile=earlyMoveStore.Write("Notes/Early.textpack",Pack());var earlyMoveRemote=new Fake();var earlyMoveEngine=new SyncEngine(earlyMoveStore,earlyMoveRemote);await earlyMoveEngine.SyncAsync();
+ var earlyMoveFile=earlyMoveStore.Write("Notes/Early.textpack",Pack());var earlyMoveRemote=new Fake();var earlyMoveEngine=Test.NewSync(earlyMoveStore,earlyMoveRemote);await earlyMoveEngine.SyncAsync();
  using(var earlyEditing=new SharedEditingStore(earlyMoveStore,earlyMoveEngine)) {
    var session=await earlyEditing.OpenAsync("test-1",earlyMoveFile.Path,earlyMoveFile.Hash);
    earlyMoveRemote.Item=earlyMoveRemote.Item! with{RelativePath="Archive/Early.textpack"};
@@ -300,7 +309,7 @@ static class Test
    await earlyMoveEngine.SyncAsync();Assert(earlyMoveEngine.Status.Error==null&&earlyMoveStore.Describe("Archive/Early.textpack").Hash==TextPackStore.Hash(bytes)&&!File.Exists(earlyMoveStore.Resolve(earlyMoveFile.Path)),"first durable checkpoint releases path relocation without losing pending edit");
  }
  var sessionRebaseStore=new TextPackStore(Path.Combine(temp,"active-shared-move"),Path.Combine(temp,"active-shared-move-device"));
- var sessionRebaseFile=sessionRebaseStore.Write("Notes/Active.textpack",Pack());var sessionRebaseRemote=new Fake();var sessionRebaseEngine=new SyncEngine(sessionRebaseStore,sessionRebaseRemote);await sessionRebaseEngine.SyncAsync();
+ var sessionRebaseFile=sessionRebaseStore.Write("Notes/Active.textpack",Pack());var sessionRebaseRemote=new Fake();var sessionRebaseEngine=Test.NewSync(sessionRebaseStore,sessionRebaseRemote);await sessionRebaseEngine.SyncAsync();
  using(var editingMove=new SharedEditingStore(sessionRebaseStore,sessionRebaseEngine)) {
    var session=await editingMove.OpenAsync("test-1",sessionRebaseFile.Path,sessionRebaseFile.Hash);
    var pendingBytes=Pack("Pending across move");var pendingHash=TextPackStore.Hash(pendingBytes);
@@ -314,13 +323,13 @@ static class Test
    Assert(next.Path=="Archive/Active.textpack"&&next.Hash==TextPackStore.Hash(nextBytes),"same session saves pending edits after path rebase");
    Assert(sessionRebaseRemote.UploadCount==1,"pending active journal never becomes a snapshot upload");
  }
- using(var reopenedMove=new SharedEditingStore(sessionRebaseStore,new SyncEngine(sessionRebaseStore,sessionRebaseRemote))) {
+ using(var reopenedMove=new SharedEditingStore(sessionRebaseStore,Test.NewSync(sessionRebaseStore,sessionRebaseRemote))) {
    var movedProjection=sessionRebaseStore.Describe("Archive/Active.textpack");
    var reopened=await reopenedMove.OpenAsync("test-1",movedProjection.Path,movedProjection.Hash);
    Assert(reopened.Checkpoint?.Pending==true&&reopened.Checkpoint.JournalGeneration==2,"pending session move survives restart at its new path");
    Assert(TextPackStore.Markdown(sessionRebaseStore.Read(movedProjection.Path)).Contains("Saved again after move"),"reopened moved projection retains subsequent writing");
  }
- var sharedTransport=new Fake();var sharedFiles=new TextPackStore(Path.Combine(temp,"shared"),Path.Combine(temp,"shared-device"));var initial=sharedFiles.Write("Notes/Shared.textpack",Pack());var sharedSync=new SyncEngine(sharedFiles,sharedTransport);await sharedSync.SyncAsync();
+ var sharedTransport=new Fake();var sharedFiles=new TextPackStore(Path.Combine(temp,"shared"),Path.Combine(temp,"shared-device"));var initial=sharedFiles.Write("Notes/Shared.textpack",Pack());var sharedSync=Test.NewSync(sharedFiles,sharedTransport);await sharedSync.SyncAsync();
  using(var shared=new SharedEditingStore(sharedFiles,sharedSync)) {
  var firstSession=await shared.OpenAsync("test-1",initial.Path,sharedFiles.Describe(initial.Path).Hash);
  var content=Pack("shared-pending");var cp=new SharedCheckpoint("test-1",initial.Path,TextPackStore.Hash(content),sharedTransport.Item!.Revision,1,0,1,JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=sharedTransport.Item.Revision,relativePath=initial.Path,update="AAA=",pending=new[]{"AAA="}}),true);
@@ -339,7 +348,7 @@ static class Test
    var inboundStore=new TextPackStore(Path.Combine(temp,"binary-inbound-"+crashAt),Path.Combine(temp,"binary-inbound-device-"+crashAt));
    var original=BinaryEntryPacks.Patch(Pack("original"),"assets/data.bin",null,new byte[]{1,2});
    var inboundFile=inboundStore.Write("Notes/Binary.textpack",original);
-   var binaryTransport=new Fake();var binarySync=new SyncEngine(inboundStore,binaryTransport);await binarySync.SyncAsync();
+   var binaryTransport=new Fake();var binarySync=Test.NewSync(inboundStore,binaryTransport);await binarySync.SyncAsync();
    var editing=new SharedEditingStore(inboundStore,binarySync);
    var session=await editing.OpenAsync("test-1",inboundFile.Path,inboundFile.Hash);
    var pendingPack=BinaryEntryPacks.Patch(Pack("unsent text"),"assets/data.bin",null,new byte[]{1,2});
@@ -350,7 +359,7 @@ static class Test
    var projected=inboundStore.Describe(inboundFile.Path);
    try{SharedEditingStore.ApplyRemoteBinary(inboundStore,"test-1",inboundFile.Path,projected.Hash,"assets/data.bin",TextPackStore.Hash(new byte[]{1,2}),new byte[]{3,4},
      interruptAfterIntent:crashAt=="intent",interruptAfterWrite:crashAt=="file");throw new Exception("binary interruption missing");}catch(IOException){}
-   using var restarted=new SharedEditingStore(inboundStore,new SyncEngine(inboundStore,binaryTransport));
+   using var restarted=new SharedEditingStore(inboundStore,Test.NewSync(inboundStore,binaryTransport));
    var reopened=await restarted.OpenAsync("test-1",inboundFile.Path,inboundStore.Describe(inboundFile.Path).Hash);
    Assert(reopened.Checkpoint?.Pending==true&&reopened.Checkpoint.Journal==journal&&reopened.Checkpoint.ProjectedHash==reopened.Document.Hash,
      "binary "+crashAt+" recovery retains pending editor journal and updates projection hash");
@@ -362,7 +371,7 @@ static class Test
    var inboundStore=new TextPackStore(Path.Combine(temp,"binary-inbound-live"),Path.Combine(temp,"binary-inbound-live-device"));
    var original=BinaryEntryPacks.Patch(Pack("original"),"assets/data.bin",null,new byte[]{1,2});
    var file=inboundStore.Write("Notes/Binary.textpack",original);
-   var remote=new Fake();var inboundEngine=new SyncEngine(inboundStore,remote);await inboundEngine.SyncAsync();
+   var remote=new Fake();var inboundEngine=Test.NewSync(inboundStore,remote);await inboundEngine.SyncAsync();
    using var editing=new SharedEditingStore(inboundStore,inboundEngine);
    var session=await editing.OpenAsync("test-1",file.Path,file.Hash);
    var pendingPack=BinaryEntryPacks.Patch(Pack("unsent text"),"assets/data.bin",null,new byte[]{1,2});
@@ -386,7 +395,7 @@ static class Test
    var conflictStore=new TextPackStore(Path.Combine(temp,"binary-inbound-conflict"),Path.Combine(temp,"binary-inbound-conflict-device"));
    var initialPack=BinaryEntryPacks.Patch(Pack("original"),"assets/data.bin",null,new byte[]{1,2});
    var file=conflictStore.Write("Notes/Conflict.textpack",initialPack);
-   var remote=new Fake();var conflictEngine=new SyncEngine(conflictStore,remote);await conflictEngine.SyncAsync();
+   var remote=new Fake();var conflictEngine=Test.NewSync(conflictStore,remote);await conflictEngine.SyncAsync();
    using var editing=new SharedEditingStore(conflictStore,conflictEngine);
    var session=await editing.OpenAsync("test-1",file.Path,file.Hash);
    var localPack=BinaryEntryPacks.Patch(initialPack,"assets/data.bin",TextPackStore.Hash(new byte[]{1,2}),new byte[]{4,4});
@@ -409,7 +418,7 @@ static class Test
  await CheckpointFailureTests.NoSpaceProjection(Assert);
  await CheckpointFailureTests.UnavailableProjection(temp,Assert);
  await CheckpointFailureTests.Run(temp,Assert);
- var isolated=new TextPackStore(Path.Combine(temp,"isolated"),Path.Combine(temp,"isolated-device"));var many=new Many();var isolatedSync=new SyncEngine(isolated,many);
+ var isolated=new TextPackStore(Path.Combine(temp,"isolated"),Path.Combine(temp,"isolated-device"));var many=new Many();var isolatedSync=Test.NewSync(isolated,many);
  var one=isolated.Write("Notes/One.textpack",Pack("one","one"));var two=isolated.Write("Notes/Two.textpack",Pack("two","two"));await isolatedSync.SyncAsync();
  isolated.UpdateMarkdown(one.Path,TextPackStore.Markdown(isolated.Read(one.Path))+" local",isolated.Describe(one.Path).Hash);isolated.UpdateMarkdown(two.Path,TextPackStore.Markdown(isolated.Read(two.Path))+" local",isolated.Describe(two.Path).Hash);
  many.Items["one"].Data=Pack("remote","one");many.Items["one"].Item=many.Items["one"].Item! with{Revision=TextPackStore.Hash(many.Items["one"].Data)};
@@ -421,15 +430,15 @@ static class Test
  using(var crashRecovery=new SharedEditingStore(sharedFiles,sharedSync)){var opened=await crashRecovery.OpenAsync("test-1",initial.Path,beforeCrash.Hash);Assert(opened.Document.Hash==TextPackStore.Hash(crashBytes)&&opened.Checkpoint?.Pending==true,"journal-first interrupted materialization resumes after restart");}
  var initialEquivalent=new TextPackStore(Path.Combine(temp,"equivalent"),Path.Combine(temp,"equivalent-device"));var eqBytes=Pack();var eqLocal=initialEquivalent.Write("Notes/Equal.textpack",eqBytes);byte[] differentlyEncoded;
  using(var stream=new MemoryStream()){using(var zip=new ZipArchive(stream,ZipArchiveMode.Create,true))using(var original=new ZipArchive(new MemoryStream(eqBytes)))foreach(var entry in original.Entries.Reverse()){using var to=zip.CreateEntry(entry.FullName,CompressionLevel.NoCompression).Open();using var from=entry.Open();from.CopyTo(to);}differentlyEncoded=stream.ToArray();}
- var eqTransport=new Fake{Data=differentlyEncoded,Item=new("test-1",eqLocal.Path,TextPackStore.Hash(differentlyEncoded))};var eqEngine=new SyncEngine(initialEquivalent,eqTransport);await eqEngine.SyncAsync();Assert(eqTransport.UploadCount==0&&await eqEngine.IsReadyAsync("test-1"),"equivalent initial archive adopts baseline without upload and is ready");Assert(await eqEngine.BaselineRevisionAsync("test-1")==TextPackStore.Hash(differentlyEncoded)&&initialEquivalent.Describe(eqLocal.Path).Hash==eqLocal.Hash,"equivalent archive tracks separate server revision and local hash");
+ var eqTransport=new Fake{Data=differentlyEncoded,Item=new("test-1",eqLocal.Path,TextPackStore.Hash(differentlyEncoded))};var eqEngine=Test.NewSync(initialEquivalent,eqTransport);await eqEngine.SyncAsync();Assert(eqTransport.UploadCount==0&&await eqEngine.IsReadyAsync("test-1"),"equivalent initial archive adopts baseline without upload and is ready");Assert(await eqEngine.BaselineRevisionAsync("test-1")==TextPackStore.Hash(differentlyEncoded)&&initialEquivalent.Describe(eqLocal.Path).Hash==eqLocal.Hash,"equivalent archive tracks separate server revision and local hash");
  using(var replay=new SharedEditingStore(sharedFiles,sharedSync)){var opened=await replay.OpenAsync("test-1",initial.Path,sharedFiles.Describe(initial.Path).Hash);var checkpoint=opened.Checkpoint!;var result=await replay.CheckpointAsync(opened.SessionToken,opened.Document.Hash,sharedFiles.Read(initial.Path),checkpoint);Assert(result.Hash==opened.Document.Hash,"same generation checkpoint replay is idempotent");var formattedJournal=System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal)!.ToJsonString(new JsonSerializerOptions{WriteIndented=true});var reformatted=await replay.CheckpointAsync(opened.SessionToken,result.Hash,sharedFiles.Read(initial.Path),checkpoint with{Journal=formattedJournal});Assert(reformatted.Hash==result.Hash,"same generation serialization-only replay is idempotent");var oldJournal=System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal)!;oldJournal["journalGeneration"]=checkpoint.JournalGeneration-1;try{await replay.CheckpointAsync(opened.SessionToken,result.Hash,sharedFiles.Read(initial.Path),checkpoint with{JournalGeneration=checkpoint.JournalGeneration-1,Journal=oldJournal.ToJsonString()});throw new Exception("old generation accepted");}catch(InvalidOperationException){}Assert(sharedFiles.Describe(initial.Path).Hash==result.Hash,"stale generation cannot rewrite shared projection");}
  var externalCurrent=sharedFiles.Describe(initial.Path);sharedFiles.UpdateMarkdown(initial.Path,TextPackStore.Markdown(sharedFiles.Read(initial.Path))+" external-agent",externalCurrent.Hash);
  using(var externalReopen=new SharedEditingStore(sharedFiles,sharedSync)){var opened=await externalReopen.OpenAsync("test-1",initial.Path,sharedFiles.Describe(initial.Path).Hash);Assert(opened.Checkpoint?.RetiredReason==null&&opened.Checkpoint?.Pending==true,"external edit retains pending journal for in-place reconciliation");Assert(TextPackStore.Markdown(sharedFiles.Read(initial.Path)).EndsWith(" external-agent"),"external content remains intact before journal reconciliation");}
  var interrupted=new TextPackStore(Path.Combine(temp,"interrupted-external"),Path.Combine(temp,"interrupted-external-device"));var interruptedInitial=interrupted.Write("Notes/Changed.textpack",Pack("before"));var remoteIncoming=Pack("remote-after");interrupted.UpdateMarkdown(interruptedInitial.Path,TextPackStore.Markdown(interrupted.Read(interruptedInitial.Path))+" external",interruptedInitial.Hash);
- interrupted.Write("Notes/Other.textpack",Pack("other","other"));var incomingState=new SyncEngine.State{PendingPull=new("test-1",interruptedInitial.Path,interruptedInitial.Path,interruptedInitial.Hash,TextPackStore.Hash(remoteIncoming),Convert.ToBase64String(remoteIncoming))};TextPackStore.AtomicWrite(Path.Combine(interrupted.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(incomingState));var incomingTransport=new Many();incomingTransport.Items["test-1"]=new Fake{Data=remoteIncoming,Item=new("test-1",interruptedInitial.Path,TextPackStore.Hash(remoteIncoming))};var incomingEngine=new SyncEngine(interrupted,incomingTransport);await incomingEngine.SyncAsync();Assert(TextPackStore.Markdown(interrupted.Read(interruptedInitial.Path)).EndsWith(" external")&&incomingTransport.Items["other"].UploadCount==1,"external edit during interrupted pull preserves both versions and unrelated sync proceeds");
- var acknowledgedStore=new TextPackStore(Path.Combine(temp,"acknowledged-external"),Path.Combine(temp,"acknowledged-device"));var acknowledgedFile=acknowledgedStore.Write("Notes/Ack.textpack",Pack());var acknowledgedTransport=new Fake();var acknowledgedEngine=new SyncEngine(acknowledgedStore,acknowledgedTransport);await acknowledgedEngine.SyncAsync();
+ interrupted.Write("Notes/Other.textpack",Pack("other","other"));var incomingState=new SyncEngine.State{PendingPull=new("test-1",interruptedInitial.Path,interruptedInitial.Path,interruptedInitial.Hash,TextPackStore.Hash(remoteIncoming),Convert.ToBase64String(remoteIncoming))};TextPackStore.AtomicWrite(Path.Combine(interrupted.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(incomingState));var incomingTransport=new Many();incomingTransport.Items["test-1"]=new Fake{Data=remoteIncoming,Item=new("test-1",interruptedInitial.Path,TextPackStore.Hash(remoteIncoming))};var incomingEngine=Test.NewSync(interrupted,incomingTransport);await incomingEngine.SyncAsync();Assert(TextPackStore.Markdown(interrupted.Read(interruptedInitial.Path)).EndsWith(" external")&&incomingTransport.Items["other"].UploadCount==1,"external edit during interrupted pull preserves both versions and unrelated sync proceeds");
+ var acknowledgedStore=new TextPackStore(Path.Combine(temp,"acknowledged-external"),Path.Combine(temp,"acknowledged-device"));var acknowledgedFile=acknowledgedStore.Write("Notes/Ack.textpack",Pack());var acknowledgedTransport=new Fake();var acknowledgedEngine=Test.NewSync(acknowledgedStore,acknowledgedTransport);await acknowledgedEngine.SyncAsync();
  using(var acknowledgedEditing=new SharedEditingStore(acknowledgedStore,acknowledgedEngine)){var opened=await acknowledgedEditing.OpenAsync("test-1",acknowledgedFile.Path,acknowledgedStore.Describe(acknowledgedFile.Path).Hash);var acknowledgedBytes=Pack("acknowledged");var revision=TextPackStore.Hash(acknowledgedBytes);var cp=new SharedCheckpoint("test-1",acknowledgedFile.Path,revision,revision,1,1,1,JsonSerializer.Serialize(new{version=1,epoch=1,seq=1,journalGeneration=1,revision,relativePath=acknowledgedFile.Path,update="AAA=",pending=Array.Empty<string>()}),false);acknowledgedTransport.Data=acknowledgedBytes;acknowledgedTransport.Item=acknowledgedTransport.Item! with{Revision=revision};await acknowledgedEditing.CheckpointAsync(opened.SessionToken,opened.Document.Hash,acknowledgedBytes,cp);}
- var gatedStore=new TextPackStore(Path.Combine(temp,"gated-checkpoint"),Path.Combine(temp,"gated-checkpoint-state"));var gatedFile=gatedStore.Write("Notes/Gated.textpack",Pack());var gatedTransport=new Fake();var gatedSync=new SyncEngine(gatedStore,gatedTransport);await gatedSync.SyncAsync();
+ var gatedStore=new TextPackStore(Path.Combine(temp,"gated-checkpoint"),Path.Combine(temp,"gated-checkpoint-state"));var gatedFile=gatedStore.Write("Notes/Gated.textpack",Pack());var gatedTransport=new Fake();var gatedSync=Test.NewSync(gatedStore,gatedTransport);await gatedSync.SyncAsync();
  using(var gatedEditing=new SharedEditingStore(gatedStore,gatedSync)){
   var opened=await gatedEditing.OpenAsync("test-1",gatedFile.Path,gatedFile.Hash);var saved=Pack("saved while cloud read waits");var revision=TextPackStore.Hash(saved);
   var cp=new SharedCheckpoint("test-1",gatedFile.Path,revision,revision,1,1,1,JsonSerializer.Serialize(new{version=1,epoch=1,seq=1,journalGeneration=1,revision,relativePath=gatedFile.Path,update="AAA=",pending=Array.Empty<string>()}),false);
@@ -443,45 +452,45 @@ static class Test
   Assert(!File.Exists(Path.Combine(gatedStore.StateDirectory,"shared-editing","test-1","acknowledge.json"))&&await gatedSync.BaselineRevisionAsync("test-1")==revision,"deferred checkpoint acknowledgment replays after cloud gate releases");
  }
  acknowledgedStore.UpdateMarkdown(acknowledgedFile.Path,TextPackStore.Markdown(acknowledgedStore.Read(acknowledgedFile.Path))+" agent",acknowledgedStore.Describe(acknowledgedFile.Path).Hash);await acknowledgedEngine.SyncAsync();using(var reopenedAck=new SharedEditingStore(acknowledgedStore,acknowledgedEngine)){var opened=await reopenedAck.OpenAsync("test-1",acknowledgedFile.Path,acknowledgedStore.Describe(acknowledgedFile.Path).Hash);Assert(opened.Checkpoint==null,"acknowledged stale journal archived after external edit without spurious recovery");}
- var tombstoneStore=new TextPackStore(Path.Combine(temp,"tombstone-conflict"),Path.Combine(temp,"tombstone-conflict-device"));var tombstoneTransport=new Many();var tombstoneEngine=new SyncEngine(tombstoneStore,tombstoneTransport);var doomed=tombstoneStore.Write("Notes/Doomed.textpack",Pack("doomed","doomed"));await tombstoneEngine.SyncAsync();tombstoneStore.UpdateMarkdown(doomed.Path,TextPackStore.Markdown(tombstoneStore.Read(doomed.Path))+" edited",tombstoneStore.Describe(doomed.Path).Hash);tombstoneTransport.Items["doomed"].Item=tombstoneTransport.Items["doomed"].Item! with{Revision="remote-changed"};tombstoneTransport.Items["doomed"].DownloadFailure=System.Net.HttpStatusCode.NotFound;tombstoneStore.Write("Notes/Survivor.textpack",Pack("survivor","survivor"));await tombstoneEngine.SyncAsync();Assert(tombstoneEngine.Status.Error!=null&&tombstoneTransport.Items["survivor"].UploadCount==1,"conflict with missing remote bytes fences only the affected item");
- var notifyStore=new TextPackStore(Path.Combine(temp,"ack-notify"),Path.Combine(temp,"ack-notify-state"));var notifyPack=notifyStore.Write("Notes/Notify.textpack",Pack("before","notify"));var notifyRemote=new Fake();var notifyEngine=new SyncEngine(notifyStore,notifyRemote);await notifyEngine.SyncAsync();var durableEvents=0;notifyEngine.DurabilityChanged+=()=>durableEvents++;
+ var tombstoneStore=new TextPackStore(Path.Combine(temp,"tombstone-conflict"),Path.Combine(temp,"tombstone-conflict-device"));var tombstoneTransport=new Many();var tombstoneEngine=Test.NewSync(tombstoneStore,tombstoneTransport);var doomed=tombstoneStore.Write("Notes/Doomed.textpack",Pack("doomed","doomed"));await tombstoneEngine.SyncAsync();tombstoneStore.UpdateMarkdown(doomed.Path,TextPackStore.Markdown(tombstoneStore.Read(doomed.Path))+" edited",tombstoneStore.Describe(doomed.Path).Hash);tombstoneTransport.Items["doomed"].Item=tombstoneTransport.Items["doomed"].Item! with{Revision="remote-changed"};tombstoneTransport.Items["doomed"].DownloadFailure=System.Net.HttpStatusCode.NotFound;tombstoneStore.Write("Notes/Survivor.textpack",Pack("survivor","survivor"));await tombstoneEngine.SyncAsync();Assert(tombstoneEngine.Status.Error!=null&&tombstoneTransport.Items["survivor"].UploadCount==1,"conflict with missing remote bytes fences only the affected item");
+ var notifyStore=new TextPackStore(Path.Combine(temp,"ack-notify"),Path.Combine(temp,"ack-notify-state"));var notifyPack=notifyStore.Write("Notes/Notify.textpack",Pack("before","notify"));var notifyRemote=new Fake();var notifyEngine=Test.NewSync(notifyStore,notifyRemote);await notifyEngine.SyncAsync();var durableEvents=0;notifyEngine.DurabilityChanged+=()=>durableEvents++;
  notifyStore.UpdateMarkdown(notifyPack.Path,TextPackStore.Markdown(notifyStore.Read(notifyPack.Path))+" changed",notifyStore.Describe(notifyPack.Path).Hash);Assert(!await notifyEngine.IsReadyAsync("notify"),"changed file waits for upload acknowledgement");var fileEvents=0;notifyStore.Changed+=()=>fileEvents++;await notifyEngine.SyncAsync();Assert(await notifyEngine.IsReadyAsync("notify")&&durableEvents>0&&fileEvents==0,"own upload ACK emits durable readiness event without rewriting file");durableEvents=0;await notifyEngine.SyncAsync();Assert(durableEvents==0,"idle sync emits no durable change notification");
- var cadenceStore=new TextPackStore(Path.Combine(temp,"cadence"),Path.Combine(temp,"cadence-state"));var cadenceFile=cadenceStore.Write("Notes/Cadence.textpack",Pack("initial","cadence"));var cadenceRemote=new Fake();var cadenceEngine=new SyncEngine(cadenceStore,cadenceRemote);await cadenceEngine.SyncAsync(localChangesOnly:true);var initialManifests=cadenceRemote.ManifestCount;
+ var cadenceStore=new TextPackStore(Path.Combine(temp,"cadence"),Path.Combine(temp,"cadence-state"));var cadenceFile=cadenceStore.Write("Notes/Cadence.textpack",Pack("initial","cadence"));var cadenceRemote=new Fake();var cadenceEngine=Test.NewSync(cadenceStore,cadenceRemote);await cadenceEngine.SyncAsync(localChangesOnly:true);var initialManifests=cadenceRemote.ManifestCount;
  using(var fence=await cadenceEngine.AcquireCollaborationAsync("cadence")){for(var n=0;n<4;n++){cadenceStore.UpdateMarkdown(cadenceFile.Path,TextPackStore.Markdown(cadenceStore.Read(cadenceFile.Path))+" typed",cadenceStore.Describe(cadenceFile.Path).Hash);await cadenceEngine.SyncAsync(localChangesOnly:true);}Assert(cadenceRemote.ManifestCount==initialManifests,"protected typing wakeups make no cloud manifest requests");await cadenceEngine.SyncAsync();Assert(cadenceRemote.ManifestCount==initialManifests+1,"scheduled full pass still discovers remote changes during typing");}
  await cadenceEngine.SyncAsync(localChangesOnly:true);Assert(cadenceRemote.UploadCount==2&&cadenceRemote.ManifestCount==initialManifests+2,"unprotected dirty file still synchronizes on local wake");var afterDirty=cadenceRemote.ManifestCount;await cadenceEngine.SyncAsync(localChangesOnly:true);Assert(cadenceRemote.ManifestCount==afterDirty,"unchanged local wake does not poll cloud");
  cadenceStore.Rename(cadenceFile.Path,"Notes/CadenceRenamed.textpack",cadenceStore.Describe(cadenceFile.Path).Hash);await cadenceEngine.SyncAsync(localChangesOnly:true);Assert(cadenceRemote.Item!.RelativePath=="Notes/CadenceRenamed.textpack","local wake still uploads explicit rename");cadenceStore.Delete("Notes/CadenceRenamed.textpack",cadenceStore.Describe("Notes/CadenceRenamed.textpack").Hash);await cadenceEngine.SyncAsync(localChangesOnly:true);Assert(cadenceRemote.DeleteCount==1,"local wake still uploads explicit delete");
  var movedStore=new TextPackStore(Path.Combine(temp,"remote-folder-move"),Path.Combine(temp,"remote-folder-move-state"));
- var movedFile=movedStore.Write("Projects/One/Note.textpack",Pack("baseline","remote-folder-move"));var movedRemote=new Fake();var movedEngine=new SyncEngine(movedStore,movedRemote);await movedEngine.SyncAsync();
+ var movedFile=movedStore.Write("Projects/One/Note.textpack",Pack("baseline","remote-folder-move"));var movedRemote=new Fake();var movedEngine=Test.NewSync(movedStore,movedRemote);await movedEngine.SyncAsync();
  var movedPath="Archive/One/Note.textpack";movedRemote.Item=movedRemote.Item! with{RelativePath=movedPath};
  movedStore.UpdateMarkdown(movedFile.Path,TextPackStore.Markdown(movedStore.Read(movedFile.Path))+"\nOffline agent edit",movedStore.Describe(movedFile.Path).Hash);
  await movedEngine.SyncAsync();
  Assert(movedEngine.Status.Error==null&&movedRemote.Item!.RelativePath==movedPath&&TextPackStore.Markdown(movedRemote.Data).Contains("Offline agent edit")&&!File.Exists(movedStore.Resolve(movedFile.Path))&&TextPackStore.Markdown(movedStore.Read(movedPath)).Contains("Offline agent edit"),"remote folder move carries concurrent local edits without reverting paths");
- var movedUploads=movedRemote.UploadCount;await new SyncEngine(movedStore,movedRemote).SyncAsync();Assert(movedRemote.UploadCount==movedUploads,"remote folder move remains converged after engine restart");
- var queuedStore=new TextPackStore(Path.Combine(temp,"queued-remote-move"),Path.Combine(temp,"queued-remote-move-state"));var queuedFile=queuedStore.Write("Before/Queued.textpack",Pack("baseline","queued-move"));var queuedRemote=new Fake{Folders=["Before","Before/Empty"],AuthoritativeFolders=["Before","Before/Empty"]};await new SyncEngine(queuedStore,queuedRemote).SyncAsync();
+ var movedUploads=movedRemote.UploadCount;await Test.NewSync(movedStore,movedRemote).SyncAsync();Assert(movedRemote.UploadCount==movedUploads,"remote folder move remains converged after engine restart");
+ var queuedStore=new TextPackStore(Path.Combine(temp,"queued-remote-move"),Path.Combine(temp,"queued-remote-move-state"));var queuedFile=queuedStore.Write("Before/Queued.textpack",Pack("baseline","queued-move"));var queuedRemote=new Fake{Folders=["Before","Before/Empty"],AuthoritativeFolders=["Before","Before/Empty"]};await Test.NewSync(queuedStore,queuedRemote).SyncAsync();
  queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+"\nQueued offline edit",queuedStore.Describe(queuedFile.Path).Hash);queuedRemote.FailBeforeCommit=true;
- try{await new SyncEngine(queuedStore,queuedRemote).SyncAsync();throw new Exception("expected offline upload");}catch(HttpRequestException){}
+ try{await Test.NewSync(queuedStore,queuedRemote).SyncAsync();throw new Exception("expected offline upload");}catch(HttpRequestException){}
  var queuedOperation=queuedRemote.Operations.Last();queuedRemote.Item=queuedRemote.Item! with{RelativePath="After/Queued.textpack"};queuedRemote.Folders=["After","After/Empty"];queuedRemote.AuthoritativeFolders=queuedRemote.Folders;
  queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+" plus later edit",queuedStore.Describe(queuedFile.Path).Hash);
- var queuedEngine=new SyncEngine(queuedStore,queuedRemote);await queuedEngine.SyncAsync();
+ var queuedEngine=Test.NewSync(queuedStore,queuedRemote);await queuedEngine.SyncAsync();
  Assert(queuedEngine.Status.Error==null&&queuedEngine.Status.Pending==0&&queuedRemote.Item!.RelativePath=="After/Queued.textpack"&&TextPackStore.Markdown(queuedRemote.Data).Contains("Queued offline edit plus later edit")&&!File.Exists(queuedStore.Resolve(queuedFile.Path)),"persisted upload follows remote folder move and preserves later local edits");
  Assert(!Directory.Exists(Path.Combine(queuedStore.Root,"Before"))&&Directory.Exists(Path.Combine(queuedStore.Root,"After","Empty")),"queued upload folder move prunes old tree only after preserving and uploading edits");
  Assert(queuedRemote.Operations.Last()!=queuedOperation,"retargeted upload uses a new payload-bound operation identity");
- var queuedUploads=queuedRemote.UploadCount;await new SyncEngine(queuedStore,queuedRemote).SyncAsync();Assert(queuedRemote.UploadCount==queuedUploads,"retargeted queued upload remains converged after restart");
+ var queuedUploads=queuedRemote.UploadCount;await Test.NewSync(queuedStore,queuedRemote).SyncAsync();Assert(queuedRemote.UploadCount==queuedUploads,"retargeted queued upload remains converged after restart");
  foreach(var ordering in new[]{"adoption-interrupted","remote-content-changed","permission-revoked","lost-ack"}) {
-  var qStore=new TextPackStore(Path.Combine(temp,"queued-"+ordering),Path.Combine(temp,"queued-state-"+ordering));var qFile=qStore.Write("Before/Note.textpack",Pack("baseline","q-"+ordering));var qRemote=new Fake();await new SyncEngine(qStore,qRemote).SyncAsync();
+  var qStore=new TextPackStore(Path.Combine(temp,"queued-"+ordering),Path.Combine(temp,"queued-state-"+ordering));var qFile=qStore.Write("Before/Note.textpack",Pack("baseline","q-"+ordering));var qRemote=new Fake();await Test.NewSync(qStore,qRemote).SyncAsync();
   qStore.UpdateMarkdown(qFile.Path,TextPackStore.Markdown(qStore.Read(qFile.Path))+"\nQueued edit",qStore.Describe(qFile.Path).Hash);
   if(ordering=="lost-ack")qRemote.FailAfterCommit=true;else qRemote.FailBeforeCommit=true;
-  try{await new SyncEngine(qStore,qRemote).SyncAsync();throw new Exception("expected interrupted upload");}catch(HttpRequestException){}
+  try{await Test.NewSync(qStore,qRemote).SyncAsync();throw new Exception("expected interrupted upload");}catch(HttpRequestException){}
   qRemote.Item=qRemote.Item! with{RelativePath="After/Note.textpack"};
   if(ordering=="adoption-interrupted")qStore.Rename(qFile.Path,"After/Note.textpack",qStore.Describe(qFile.Path).Hash);
   if(ordering=="remote-content-changed"){qRemote.Data=Pack("different remote content","q-"+ordering);qRemote.Item=qRemote.Item with{Revision=TextPackStore.Hash(qRemote.Data)};}
   if(ordering=="permission-revoked")qRemote.Capabilities=new(false,false,[],new(){[qFile.ItemId]=false});
-  var qEngine=new SyncEngine(qStore,qRemote);await qEngine.SyncAsync();
+  var qEngine=Test.NewSync(qStore,qRemote);await qEngine.SyncAsync();
   if(ordering=="remote-content-changed")Assert(qEngine.Status.Pending==1&&qEngine.Status.Error!=null&&File.Exists(qStore.Resolve(qFile.Path))&&TextPackStore.Markdown(qRemote.Data).Contains("different remote content"),"queued move never rebases over changed remote content");
   else if(ordering=="permission-revoked")Assert(qEngine.Status.Pending==1&&File.Exists(qStore.Resolve(qFile.Path))&&qRemote.UploadCount==1,"queued move waits when fresh permissions deny the upload");
   else Assert(qEngine.Status.Pending==0&&qEngine.Status.Error==null&&File.Exists(qStore.Resolve("After/Note.textpack"))&&!File.Exists(qStore.Resolve(qFile.Path))&&TextPackStore.Markdown(qRemote.Data).Contains("Queued edit"),"queued move converges after "+ordering);
  }
- var activeMoveStore=new TextPackStore(Path.Combine(temp,"active-remote-move"),Path.Combine(temp,"active-remote-move-state"));var activeFile=activeMoveStore.Write("Before/Active.textpack",Pack("baseline","active-move"));var activeRemote=new Fake();var activeEngine=new SyncEngine(activeMoveStore,activeRemote);await activeEngine.SyncAsync();
+ var activeMoveStore=new TextPackStore(Path.Combine(temp,"active-remote-move"),Path.Combine(temp,"active-remote-move-state"));var activeFile=activeMoveStore.Write("Before/Active.textpack",Pack("baseline","active-move"));var activeRemote=new Fake();var activeEngine=Test.NewSync(activeMoveStore,activeRemote);await activeEngine.SyncAsync();
  using(var lease=await activeEngine.AcquireCollaborationAsync(activeFile.ItemId)) {
   activeRemote.Item=activeRemote.Item! with{RelativePath="After/Active.textpack"};
   var projected=activeMoveStore.UpdateMarkdown(activeFile.Path,TextPackStore.Markdown(activeMoveStore.Read(activeFile.Path))+"\nShared edit",activeMoveStore.Describe(activeFile.Path).Hash);
@@ -489,32 +498,32 @@ static class Test
   activeRemote.Data=activeMoveStore.Read(activeFile.Path);activeRemote.Item=activeRemote.Item with{Revision=projected.Hash};await activeEngine.AcknowledgeCheckpointAsync(activeFile.ItemId,activeFile.Path,projected.Hash,projected.Hash);
  }
  await activeEngine.SyncAsync();Assert(activeRemote.UploadCount==1&&File.Exists(activeMoveStore.Resolve("After/Active.textpack"))&&TextPackStore.Markdown(activeMoveStore.Read("After/Active.textpack")).Contains("Shared edit")&&!File.Exists(activeMoveStore.Resolve(activeFile.Path)),"acknowledged shared edit adopts moved path after editor release without duplicate upload");
- await new SyncEngine(activeMoveStore,activeRemote).SyncAsync();Assert(activeRemote.UploadCount==1,"released shared editor move stays converged across restart");
- var crashMoveStore=new TextPackStore(Path.Combine(temp,"remote-move-crash"),Path.Combine(temp,"remote-move-crash-state"));var crashMoveFile=crashMoveStore.Write("Before/Note.textpack",Pack("baseline","move-crash"));var crashMoveRemote=new Fake();await new SyncEngine(crashMoveStore,crashMoveRemote).SyncAsync();
+ await Test.NewSync(activeMoveStore,activeRemote).SyncAsync();Assert(activeRemote.UploadCount==1,"released shared editor move stays converged across restart");
+ var crashMoveStore=new TextPackStore(Path.Combine(temp,"remote-move-crash"),Path.Combine(temp,"remote-move-crash-state"));var crashMoveFile=crashMoveStore.Write("Before/Note.textpack",Pack("baseline","move-crash"));var crashMoveRemote=new Fake();await Test.NewSync(crashMoveStore,crashMoveRemote).SyncAsync();
  crashMoveRemote.Item=crashMoveRemote.Item! with{RelativePath="After/Note.textpack"};crashMoveStore.UpdateMarkdown(crashMoveFile.Path,TextPackStore.Markdown(crashMoveStore.Read(crashMoveFile.Path))+"\nDurable edit",crashMoveStore.Describe(crashMoveFile.Path).Hash);
  crashMoveStore.Rename(crashMoveFile.Path,"After/Note.textpack",crashMoveStore.Describe(crashMoveFile.Path).Hash);
- var crashMoveEngine=new SyncEngine(crashMoveStore,crashMoveRemote);await crashMoveEngine.SyncAsync();Assert(crashMoveEngine.Status.Error==null&&TextPackStore.Markdown(crashMoveRemote.Data).Contains("Durable edit"),"restart between remote path adoption and baseline save preserves local edits");
+ var crashMoveEngine=Test.NewSync(crashMoveStore,crashMoveRemote);await crashMoveEngine.SyncAsync();Assert(crashMoveEngine.Status.Error==null&&TextPackStore.Markdown(crashMoveRemote.Data).Contains("Durable edit"),"restart between remote path adoption and baseline save preserves local edits");
  await ReadinessTests.Run(temp);
  PackLayoutTests.Run(temp);
  await TransportTests.Run();
  await WorkspaceDirectoryTests.Run();
- var scopedStore=new TextPackStore(Path.Combine(temp,"scoped"),Path.Combine(temp,"scoped-state"));var scopedFile=scopedStore.Write("Notes/Scoped.textpack",Pack("before","scoped"));var scopedRemote=new Fake();var scopedEngine=new SyncEngine(scopedStore,scopedRemote);await scopedEngine.SyncAsync();
+ var scopedStore=new TextPackStore(Path.Combine(temp,"scoped"),Path.Combine(temp,"scoped-state"));var scopedFile=scopedStore.Write("Notes/Scoped.textpack",Pack("before","scoped"));var scopedRemote=new Fake();var scopedEngine=Test.NewSync(scopedStore,scopedRemote);await scopedEngine.SyncAsync();
  scopedStore.Delete(scopedFile.Path,scopedFile.Hash);var visibleScoped=scopedRemote.Item;scopedRemote.Item=null;await scopedEngine.SyncAsync();
  Assert(scopedStore.Intent("scoped")?.Kind=="delete","scoped manifest absence retains pending local deletion intent");
  scopedRemote.Item=visibleScoped;scopedRemote.Capabilities=new(false,false,[],new(){{"scoped",false}});await scopedEngine.SyncAsync();await scopedEngine.SyncAsync();
  Assert(scopedRemote.DeleteCount==0&&scopedEngine.Status.Pending==1,$"role downgrade retains queued deletion without sending or spinning {scopedRemote.DeleteCount}/{scopedEngine.Status.Pending}");
- var persistedCapabilities=await new SyncEngine(scopedStore,scopedRemote).CapabilitiesAsync();Assert(persistedCapabilities?.Items["scoped"]==false,"permission snapshot survives restart offline");
+ var persistedCapabilities=await Test.NewSync(scopedStore,scopedRemote).CapabilitiesAsync();Assert(persistedCapabilities?.Items["scoped"]==false,"permission snapshot survives restart offline");
  scopedRemote.Capabilities=new(true,true,[],new(){{"scoped",true}});await scopedEngine.SyncAsync();Assert(scopedRemote.DeleteCount==1,"restored permission resumes original durable deletion");
- var permissionStore=new TextPackStore(Path.Combine(temp,"permissions"),Path.Combine(temp,"permissions-state"));var knownPermission=permissionStore.Write("Notes/Known.textpack",Pack("known","known-permission"));var permissionRemote=new Fake();var permissionSync=new SyncEngine(permissionStore,permissionRemote);await permissionSync.SyncAsync();
+ var permissionStore=new TextPackStore(Path.Combine(temp,"permissions"),Path.Combine(temp,"permissions-state"));var knownPermission=permissionStore.Write("Notes/Known.textpack",Pack("known","known-permission"));var permissionRemote=new Fake();var permissionSync=Test.NewSync(permissionStore,permissionRemote);await permissionSync.SyncAsync();
  var capabilityNotifications=0;permissionSync.CapabilitiesChanged+=()=>capabilityNotifications++;
  permissionRemote.Item=null;permissionRemote.Capabilities=new(false,false,["Notes"],new());await permissionSync.SyncAsync();
  await permissionSync.SyncAsync();Assert(capabilityNotifications==1,"permission-only change notifies once and unchanged manifest remains quiet");
  var offlineNote=permissionStore.Write("Notes/Offline.textpack",Pack("draft","offline-new"));var outsideNote=permissionStore.Write("Other/Offline.textpack",Pack("draft","offline-outside"));
- var offlinePermissions=await new SyncEngine(permissionStore,permissionRemote).FilePermissionsAsync(permissionStore.Scan());
+ var offlinePermissions=await Test.NewSync(permissionStore,permissionRemote).FilePermissionsAsync(permissionStore.Scan());
  Assert(offlinePermissions[offlineNote.ItemId]&&!offlinePermissions[knownPermission.ItemId]&&!offlinePermissions[outsideNote.ItemId],"offline new folder note editable while omitted known item and outside folder remain readonly");
  permissionRemote.Capabilities=new(true,true,[],new());await permissionSync.SyncAsync();var ownerDraft=permissionStore.Write("Notes/Owner.textpack",Pack("draft","owner-new"));
  Assert((await permissionSync.FilePermissionsAsync([ownerDraft]))[ownerDraft.ItemId],"owner can edit new offline note before first upload");
- var restoredStore=new TextPackStore(Path.Combine(temp,"restore-passive"),Path.Combine(temp,"restore-device"));var restoredFake=new Fake{Data=Pack("before"),Item=new("test-1","Notes/Restore.textpack","before")};var restoredEngine=new SyncEngine(restoredStore,restoredFake);await restoredEngine.SyncAsync();var beforeRestore=restoredStore.Describe("Notes/Restore.textpack");restoredStore.Delete(beforeRestore.Path,beforeRestore.Hash);
+ var restoredStore=new TextPackStore(Path.Combine(temp,"restore-passive"),Path.Combine(temp,"restore-device"));var restoredFake=new Fake{Data=Pack("before"),Item=new("test-1","Notes/Restore.textpack","before")};var restoredEngine=Test.NewSync(restoredStore,restoredFake);await restoredEngine.SyncAsync();var beforeRestore=restoredStore.Describe("Notes/Restore.textpack");restoredStore.Delete(beforeRestore.Path,beforeRestore.Hash);
  var restoreStatePath=Path.Combine(restoredStore.StateDirectory,"sync.json");var staleDeleteState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(restoreStatePath))!;staleDeleteState.Outbox.Add(new("old-delete","delete","test-1",beforeRestore.Path,null,"before",beforeRestore.Hash,null));TextPackStore.AtomicWrite(restoreStatePath,JsonSerializer.SerializeToUtf8Bytes(staleDeleteState));
  var restoredBytes=Pack("restored");restoredFake.Data=restoredBytes;restoredFake.Item=new("test-1",beforeRestore.Path,TextPackStore.Hash(restoredBytes),Lifecycle:"restore-one");await restoredEngine.SyncAsync();Assert(TextPackStore.Markdown(restoredStore.Read(beforeRestore.Path)).Contains("restored")&&restoredFake.DeleteCount==0,"passive restore retires old local deletion and pulls same ID");
  await restoredEngine.ReconcileRestoredAsync("test-1",beforeRestore.Path,"restore-one");var wrongRestoreRejected=false;try{await restoredEngine.ReconcileRestoredAsync("test-1",beforeRestore.Path,"wrong");}catch(FileChangedException){wrongRestoreRejected=true;}Assert(wrongRestoreRejected,"native restore acknowledgment requires exact restored lifecycle");
@@ -523,16 +532,16 @@ static class Test
  byte[] LifecyclePack(string generation){using var output=new MemoryStream();output.Write(Pack("generation-"+generation));using(var zip=new ZipArchive(output,ZipArchiveMode.Update,true)){using var writer=new StreamWriter(zip.CreateEntry("texttext-lifecycle.json").Open());writer.Write(JsonSerializer.Serialize(new{version=1,generation}));}return output.ToArray();}
  foreach(var existing in new[]{false,true}) {
   var raced=new TextPackStore(Path.Combine(temp,"race-"+existing),Path.Combine(temp,"race-device-"+existing));var raceBytes=LifecyclePack("second");if(existing)raced.Write("Notes/Race.textpack",raceBytes);
-  var raceFake=new Fake{Data=Pack("first"),Item=new("test-1","Notes/Race.textpack","old",Lifecycle:"first")};raceFake.BeforeDownload=()=>{raceFake.Data=raceBytes;raceFake.Item=new("test-1","Notes/Race.textpack",TextPackStore.Hash(raceBytes),Lifecycle:"second");};await new SyncEngine(raced,raceFake).SyncAsync();
+  var raceFake=new Fake{Data=Pack("first"),Item=new("test-1","Notes/Race.textpack","old",Lifecycle:"first")};raceFake.BeforeDownload=()=>{raceFake.Data=raceBytes;raceFake.Item=new("test-1","Notes/Race.textpack",TextPackStore.Hash(raceBytes),Lifecycle:"second");};await Test.NewSync(raced,raceFake).SyncAsync();
   var raceState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(raced.StateDirectory,"sync.json")))!;Assert(raceState.Items["test-1"].Lifecycle=="second","download race binds installed generation (existing="+existing+")");
  }
  var editRestore=new TextPackStore(Path.Combine(temp,"restore-edit"),Path.Combine(temp,"restore-edit-device"));var editFile=editRestore.Write("Notes/Edit.textpack",Pack("local pending"));editRestore.Write("Notes/Unrelated.textpack",Pack("unrelated","unrelated"));var editState=new SyncEngine.State();editState.Items["test-1"]=new(editFile.Path,editFile.Hash,"old");editState.Outbox.Add(new("old-edit","upload","test-1",editFile.Path,null,"old",editFile.Hash,Convert.ToBase64String(editRestore.Read(editFile.Path))));TextPackStore.AtomicWrite(Path.Combine(editRestore.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(editState));
- var editsRemote=new Many();editsRemote.Items["test-1"]=new Fake{Data=LifecyclePack("restored"),Item=new("test-1",editFile.Path,"new",Lifecycle:"restored")};await new SyncEngine(editRestore,editsRemote).SyncAsync();Assert(TextPackStore.Markdown(editRestore.Read(editFile.Path)).Contains("local pending")&&editsRemote.Items["unrelated"].UploadCount==1,"old-generation pending edit preserved while unrelated queue converges");
+ var editsRemote=new Many();editsRemote.Items["test-1"]=new Fake{Data=LifecyclePack("restored"),Item=new("test-1",editFile.Path,"new",Lifecycle:"restored")};await Test.NewSync(editRestore,editsRemote).SyncAsync();Assert(TextPackStore.Markdown(editRestore.Read(editFile.Path)).Contains("local pending")&&editsRemote.Items["unrelated"].UploadCount==1,"old-generation pending edit preserved while unrelated queue converges");
  var binaryStore=new TextPackStore(Path.Combine(temp,"binary-live"),Path.Combine(temp,"binary-live-device"));
  var binaryBase=BinaryEntryPacks.Patch(Pack("live text","binary-live"),"assets/data.bin",null,[1,2,3]);
  var binaryFile=binaryStore.Write("Notes/Binary.textpack",binaryBase);
  var binaryRemote=new Fake{Data=binaryBase,Item=new("binary-live",binaryFile.Path,binaryFile.Hash)};
- var binaryEngine=new SyncEngine(binaryStore,binaryRemote);await binaryEngine.SyncAsync();
+ var binaryEngine=Test.NewSync(binaryStore,binaryRemote);await binaryEngine.SyncAsync();
  SyncEngine.State pending;
  using(var lease=await binaryEngine.AcquireCollaborationAsync("binary-live")) {
   var binaryChanged=BinaryEntryPacks.Patch(binaryStore.Read(binaryFile.Path),"assets/data.bin",TextPackStore.Hash([1,2,3]),[8,7,6]);
@@ -544,7 +553,7 @@ static class Test
     File.ReadAllBytes(Path.Combine(binaryStore.StateDirectory,"binary-outbox",pending.BinaryOutbox[0].Id+".asset")).SequenceEqual(new byte[]{8,7,6}),
     "binary bytes and operation survive lost response outside sync state");
  }
- binaryEngine=new SyncEngine(binaryStore,binaryRemote);
+ binaryEngine=Test.NewSync(binaryStore,binaryRemote);
  await binaryEngine.SyncAsync(localChangesOnly:true);
  using(var lease=await binaryEngine.AcquireCollaborationAsync("binary-live")) {
   Assert(binaryRemote.BinaryPatchCount==1&&binaryRemote.Operations[^1]==pending.BinaryOutbox[0].Id&&BinaryEntryPacks.Assets(binaryRemote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{8,7,6}),"binary receipt replay converges without duplicate mutation");
@@ -568,7 +577,7 @@ static class Test
  var racedBinaryBase=BinaryEntryPacks.Patch(Pack("Racing text","binary-patch-race"),"assets/data.bin",null,[1,2,3]);
  var racedBinaryFile=racedBinaryStore.Write("Notes/Racing.textpack",racedBinaryBase);
  var racedBinaryRemote=new Fake{Data=racedBinaryBase,Item=new("binary-patch-race",racedBinaryFile.Path,racedBinaryFile.Hash)};
- var racedBinaryEngine=new SyncEngine(racedBinaryStore,racedBinaryRemote);await racedBinaryEngine.SyncAsync();
+ var racedBinaryEngine=Test.NewSync(racedBinaryStore,racedBinaryRemote);await racedBinaryEngine.SyncAsync();
  using(var lease=await racedBinaryEngine.AcquireCollaborationAsync("binary-patch-race")) {
   var localPack=BinaryEntryPacks.Patch(racedBinaryStore.Read(racedBinaryFile.Path),"assets/data.bin",TextPackStore.Hash([1,2,3]),[4,4,4]);
   racedBinaryStore.Write(racedBinaryFile.Path,localPack,racedBinaryStore.Describe(racedBinaryFile.Path).Hash);
@@ -588,7 +597,7 @@ static class Test
  var restoredBase=BinaryEntryPacks.Patch(Pack("Restored text","binary-restored"),"assets/data.bin",null,[1,2,3]);
  var restoredFile=restoredBinaryStore.Write("Notes/Restored.textpack",restoredBase);
  var restoredRemote=new Fake{Data=restoredBase,Item=new("binary-restored",restoredFile.Path,restoredFile.Hash)};
- var restoredBinaryEngine=new SyncEngine(restoredBinaryStore,restoredRemote);await restoredBinaryEngine.SyncAsync();
+ var restoredBinaryEngine=Test.NewSync(restoredBinaryStore,restoredRemote);await restoredBinaryEngine.SyncAsync();
  using(var lease=await restoredBinaryEngine.AcquireCollaborationAsync("binary-restored")) {
   var localPack=BinaryEntryPacks.Patch(restoredBinaryStore.Read(restoredFile.Path),"assets/data.bin",TextPackStore.Hash([1,2,3]),[4,4,4]);
   restoredBinaryStore.Write(restoredFile.Path,localPack,restoredBinaryStore.Describe(restoredFile.Path).Hash);
@@ -610,7 +619,7 @@ static class Test
  var crossedInitial=BinaryEntryPacks.Patch(Pack("shared text","binary-checkpoint-race"),"assets/data.bin",null,[1,2,3]);
  var crossedFile=crossedStore.Write("Notes/Checkpoint.textpack",crossedInitial);
  var crossedRemote=new Fake{Data=crossedInitial,Item=new("binary-checkpoint-race",crossedFile.Path,crossedFile.Hash)};
- var crossedEngine=new SyncEngine(crossedStore,crossedRemote);await crossedEngine.SyncAsync();
+ var crossedEngine=Test.NewSync(crossedStore,crossedRemote);await crossedEngine.SyncAsync();
  using(var lease=await crossedEngine.AcquireCollaborationAsync("binary-checkpoint-race")) {
   await crossedRemote.BinaryPatchAsync("binary-checkpoint-race",Guid.NewGuid().ToString(),"assets/data.bin",TextPackStore.Hash([1,2,3]),null,[9,8,7]);
   var revision=crossedRemote.Item!.Revision;
@@ -626,7 +635,7 @@ static class Test
  var closedInitial=BinaryEntryPacks.Patch(Pack("shared text","binary-closed-checkpoint"),"assets/data.bin",null,[1,2,3]);
  var closedFile=closedStore.Write("Notes/Closed.textpack",closedInitial);
  var closedRemote=new Fake{Data=closedInitial,Item=new("binary-closed-checkpoint",closedFile.Path,closedFile.Hash)};
- var closedEngine=new SyncEngine(closedStore,closedRemote);await closedEngine.SyncAsync();
+ var closedEngine=Test.NewSync(closedStore,closedRemote);await closedEngine.SyncAsync();
  using(var lease=await closedEngine.AcquireCollaborationAsync("binary-closed-checkpoint")) { }
  await closedRemote.BinaryPatchAsync("binary-closed-checkpoint",Guid.NewGuid().ToString(),"assets/data.bin",TextPackStore.Hash([1,2,3]),null,[6,5,4]);
  var closedStateFile=Path.Combine(closedStore.StateDirectory,"sync.json");

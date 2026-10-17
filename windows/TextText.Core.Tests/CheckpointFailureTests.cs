@@ -25,7 +25,7 @@ static class CheckpointFailureTests
         var temporary = Path.Combine(volume, "checkpoint-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(temporary);
         var files = new TextPackStore(Path.Combine(temporary, "workspace"), Path.Combine(temporary, "state"));
         var initial = files.Write("Notes/NoSpace.textpack", Pack("Original")); var remote = new Test.Fake();
-        var sync = new SyncEngine(files, remote); await sync.SyncAsync();
+        var sync = Test.NewSync(files, remote); await sync.SyncAsync();
         using var editing = new SharedEditingStore(files, sync);
         var session = await editing.OpenAsync("test-1", initial.Path, initial.Hash);
         SharedCheckpoint Checkpoint(byte[] bytes, long generation) => new("test-1", initial.Path, TextPackStore.Hash(bytes), initial.Hash, 1, 0, generation,
@@ -55,10 +55,10 @@ static class CheckpointFailureTests
             assert(drive.AvailableFreeSpace >= 8 * 1024 * 1024, "disk-full fixture verifies reclaimed space before retry");
             Console.WriteLine("Disk-full fixture free bytes after repair: " + drive.AvailableFreeSpace);
             editing.Close(session.SessionToken);
-            using var recovered = new SharedEditingStore(files, new SyncEngine(files, remote));
+            using var recovered = new SharedEditingStore(files, Test.NewSync(files, remote));
             var opened = await recovered.OpenAsync("test-1", initial.Path, saved.Hash);
             var retried = await recovered.CheckpointAsync(opened.SessionToken, saved.Hash, next, Checkpoint(next, 2)); recovered.Close(opened.SessionToken);
-            using var fresh = new SharedEditingStore(files, new SyncEngine(files, remote));
+            using var fresh = new SharedEditingStore(files, Test.NewSync(files, remote));
             var verified = await fresh.OpenAsync("test-1", initial.Path, retried.Hash);
             assert(verified.Checkpoint is { JournalGeneration: 2, Pending: true } &&
                 TextPackStore.Markdown(files.Read(initial.Path)).Contains("Retained edit after real disk-full refusal"), "real disk-full repair retries and reopens retained pending work");
@@ -72,7 +72,7 @@ static class CheckpointFailureTests
         var files = new TextPackStore(Path.Combine(temp, "unavailable-projection"), Path.Combine(temp, "unavailable-projection-state"));
         var initial = files.Write(spec.GetProperty("path").GetString()!, Pack("Original"));
         var remote = new Test.Fake();
-        var sync = new SyncEngine(files, remote); await sync.SyncAsync();
+        var sync = Test.NewSync(files, remote); await sync.SyncAsync();
         using var editing = new SharedEditingStore(files, sync);
         var session = await editing.OpenAsync("test-1", initial.Path, initial.Hash);
         SharedCheckpoint Checkpoint(byte[] bytes, long generation) => new("test-1", initial.Path, TextPackStore.Hash(bytes), initial.Hash, 1, 0, generation,
@@ -92,11 +92,11 @@ static class CheckpointFailureTests
         assert(!File.Exists(projected) && File.ReadAllBytes(held).SequenceEqual(first), "unavailable projection is not recreated or overwritten");
         assert(!File.Exists(Path.Combine(directory, "intent.json")) && remote.UploadCount == 1, "unavailable projection publishes no intent or remote mutation");
         File.Move(held, projected); editing.Close(session.SessionToken);
-        using var reopened = new SharedEditingStore(files, new SyncEngine(files, remote));
+        using var reopened = new SharedEditingStore(files, Test.NewSync(files, remote));
         var restored = await reopened.OpenAsync("test-1", initial.Path, saved.Hash);
         var recovered = await reopened.CheckpointAsync(restored.SessionToken, saved.Hash, next, Checkpoint(next, generation));
         reopened.Close(restored.SessionToken);
-        using var fresh = new SharedEditingStore(files, new SyncEngine(files, remote));
+        using var fresh = new SharedEditingStore(files, Test.NewSync(files, remote));
         var verified = await fresh.OpenAsync("test-1", initial.Path, recovered.Hash);
         assert(verified.Checkpoint is { Pending: true } cp && cp.JournalGeneration == generation &&
             TextPackStore.Markdown(files.Read(initial.Path)).Contains(spec.GetProperty("pendingBody").GetString()!), "restored projection retries and reopens with all pending work");
@@ -107,7 +107,7 @@ static class CheckpointFailureTests
         var files = new TextPackStore(Path.Combine(temp, "checkpoint-io"), Path.Combine(temp, "checkpoint-io-state"));
         var initial = files.Write("Notes/Checkpoint.textpack", Pack("Original"));
         var remote = new Test.Fake();
-        var sync = new SyncEngine(files, remote);
+        var sync = Test.NewSync(files, remote);
         await sync.SyncAsync();
         using var editing = new SharedEditingStore(files, sync);
         var session = await editing.OpenAsync("test-1", initial.Path, initial.Hash);
@@ -145,7 +145,7 @@ static class CheckpointFailureTests
                 "failed checkpoint retains replayable intent without snapshot upload");
         }
         editing.Close(session.SessionToken);
-        using var reopened = new SharedEditingStore(files, new SyncEngine(files, remote));
+        using var reopened = new SharedEditingStore(files, Test.NewSync(files, remote));
         var recovered = await reopened.OpenAsync("test-1", initial.Path, files.Describe(initial.Path).Hash);
         assert(recovered.Checkpoint is { JournalGeneration: 2, Pending: true } &&
             TextPackStore.Markdown(files.Read(initial.Path)).Contains("Pending during checkpoint failure"),

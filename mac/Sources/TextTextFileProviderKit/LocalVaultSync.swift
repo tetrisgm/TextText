@@ -96,6 +96,7 @@ public actor LocalVaultSync {
     private let accountWriterLease: LocalVaultAccountWriterLease
     private let directory: URL
     private let transport: any LocalVaultSyncTransport
+    private let mirrorPolicy: LocalVaultMirrorPolicy?
     private let editOrigins: LocalVaultEditOriginJournal
     private var state: State
     private var running = false
@@ -104,7 +105,7 @@ public actor LocalVaultSync {
     private var sharedSessions: [String: SharedSession] = [:]
     private var sharedStore: LocalVaultSharedEditingStore { LocalVaultSharedEditingStore(root: root, accountId: accountId) }
 
-    public init(root: URL, binding: LocalVaultSyncBinding, transport: any LocalVaultSyncTransport, accountId: String? = nil) throws {
+    public init(root: URL, binding: LocalVaultSyncBinding, transport: any LocalVaultSyncTransport, accountId: String? = nil, mirrorPolicy: LocalVaultMirrorPolicy? = nil) throws {
         if let accountId { _ = try LocalVaultAccountIdentity.validate(accountId) }
         self.accountId = accountId
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -114,6 +115,7 @@ public actor LocalVaultSync {
         self.root = canonicalRoot
         self.directory = LocalVaultDeviceState.directory(root: canonicalRoot).appendingPathComponent("sync", isDirectory: true)
         self.transport = transport
+        self.mirrorPolicy = mirrorPolicy
         self.editOrigins = LocalVaultEditOriginJournal(root: self.root)
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         let stateURL = directory.appendingPathComponent("state.json")
@@ -1066,6 +1068,8 @@ public actor LocalVaultSync {
         let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
         running = true
         defer { running = false }
+        guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
+        try await mirrorPolicy.ready()
         var report = LocalVaultSyncReport()
         let budget = max(1, min(maxItems, 512))
         var manifest = try await transport.manifest()
@@ -1380,12 +1384,25 @@ public actor LocalVaultSync {
                     state.conflicts.removeValue(forKey: id)
                     try persist(); continue
                 }
-                if let baseline, baseline.localHash == current.hash {
-                    guard let remote, remote.revision != baseline.revision else { continue }
-                    let pack = try await transport.download(itemId: id)
-                    try install(pack, itemId: id, path: path, expectedLocal: current.hash)
-                    state.baselines[id] = Baseline(path: path, revision: pack.revision, localHash: pack.revision)
-                    try persist(); report.downloaded += 1
+                if let baseline, let remote {
+                    // Keep workspace ownership across the page RPC. Both the
+                    // upload stage and install CAS the captured current hash.
+                    let action = try await mirrorPolicy.decide(LocalVaultMirrorObservation(
+                        localHash: current.hash, baselineHash: baseline.localHash,
+                        remoteRevision: remote.revision, baselineRevision: baseline.revision, refresh: false))
+                    switch action {
+                    case .idle: continue
+                    case .pull:
+                        let pack = try await transport.download(itemId: id)
+                        try install(pack, itemId: id, path: path, expectedLocal: current.hash)
+                        state.baselines[id] = Baseline(path: path, revision: pack.revision, localHash: pack.revision)
+                        try persist(); report.downloaded += 1
+                        continue
+                    case .upload: break // The existing permission/staging transaction below owns this write.
+                    }
+                } else if let baseline, baseline.localHash == current.hash {
+                    // Missing remote visibility has no known-item disposition.
+                    // Preserve an unchanged local file until visibility returns.
                     continue
                 }
                 guard await transport.canWrite(itemId: id, path: path, existing: baseline != nil) else { continue }

@@ -1,3 +1,4 @@
+import TextTextSyncTestSupport
 import XCTest
 import ZIPFoundation
 @testable import TextTextFileProviderKit
@@ -11,6 +12,24 @@ final class LocalVaultSyncTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+
+    func testMissingPolicyPreservesJournalAndSkipsDiscovery() async throws {
+        let bytes = try pack("Keep local work")
+        try putLocal(bytes)
+        let transport = FakeVaultTransport()
+        let sync = try LocalVaultSync(root: root,
+            binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"), transport: transport)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let before = try? Data(contentsOf: stateURL)
+        do { _ = try await sync.sync(); XCTFail("Missing policy must refuse sync") }
+        catch LocalVaultMirrorPolicy.Failure.stale { }
+        let discoveries = await transport.manifestCalls
+        XCTAssertEqual(discoveries, 0)
+        let operations = await transport.operations()
+        XCTAssertTrue(operations.isEmpty)
+        XCTAssertEqual(try? Data(contentsOf: stateURL), before)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), bytes)
+    }
 
     func testAuthoritativeFolderCatalogPrunesOnlyEmptyTrackedTreesAcrossRestart() async throws {
         let transport = FakeVaultTransport()
@@ -158,7 +177,7 @@ final class LocalVaultSyncTests: XCTestCase {
         let transport = FakeVaultTransport()
         let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
         try putLocal(pack("Original account A"))
-        let a = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        let a = try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-a")
         _ = try await a.sync()
         let pending = try pack("Retained account A offline edit")
         try putLocal(pending)
@@ -172,12 +191,12 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(outbox.count, 1)
         let operation = try XCTUnwrap(outbox[itemId]?["operationId"] as? String)
         let requests = await transport.uploads().count
-        XCTAssertThrowsError(try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-b"))
+        XCTAssertThrowsError(try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-b"))
         XCTAssertEqual(try Data(contentsOf: stateURL), saved)
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), pending)
         let afterRefusal = await transport.uploads().count
         XCTAssertEqual(afterRefusal, requests)
-        let resumed = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        let resumed = try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-a")
         _ = try await resumed.sync()
         let uploaded = await transport.uploads()
         XCTAssertEqual(uploaded.last?.operationId, operation)
@@ -186,7 +205,7 @@ final class LocalVaultSyncTests: XCTestCase {
         var legacy = object; legacy.removeValue(forKey: "accountId")
         let unbound = try JSONSerialization.data(withJSONObject: legacy)
         try unbound.write(to: stateURL, options: .atomic)
-        XCTAssertThrowsError(try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: "account-a"))
+        XCTAssertThrowsError(try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-a"))
         XCTAssertEqual(try Data(contentsOf: stateURL), unbound)
     }
 
@@ -208,7 +227,7 @@ final class LocalVaultSyncTests: XCTestCase {
     }
 
     private func engine(_ transport: FakeVaultTransport) throws -> LocalVaultSync {
-        try LocalVaultSync(root: root,
+        try makeTestSync(root: root,
             binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"),
             transport: transport)
     }
@@ -1121,7 +1140,7 @@ final class LocalVaultSyncTests: XCTestCase {
 
     func testBindingCannotSilentlyChangeWorkspace() async throws {
         _ = try engine(FakeVaultTransport())
-        XCTAssertThrowsError(try LocalVaultSync(root: root,
+        XCTAssertThrowsError(try makeTestSync(root: root,
             binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "other"),
             transport: FakeVaultTransport()))
     }
@@ -1197,8 +1216,10 @@ actor FakeVaultTransport: LocalVaultSyncTransport {
     func operations() -> [String] { uploadedOperations }
     func uploadOrigins() -> [Bool] { nativeOrigins }
     func counts() -> (upload: Int, download: Int) { (uploadedOperations.count, downloads) }
+    private(set) var manifestCalls = 0
     func manifest() -> [LocalVaultRemoteItem] {
-        items.map { .init(itemId: $0.key, relativePath: $0.value.relativePath, revision: $0.value.revision, lifecycle: lifecycles[$0.key]) } + Array(tombstones.values)
+        manifestCalls += 1
+        return items.map { .init(itemId: $0.key, relativePath: $0.value.relativePath, revision: $0.value.revision, lifecycle: lifecycles[$0.key]) } + Array(tombstones.values)
     }
     func download(itemId: String) throws -> LocalVaultRemotePack {
         if let raced = racedDownload, let current = items[itemId] { racedDownload = nil; restore(itemId: itemId, path: current.relativePath, data: raced.0, lifecycle: raced.1) }

@@ -20,14 +20,19 @@ static class MainWindowCloseTests
     static void Check(bool condition,string label,List<string> checks){if(!condition)throw new Exception(label);checks.Add(label);Console.WriteLine("PASS "+label);}
     internal static void RemoveProductionLoaded(MainWindow window)
     {
-        // Constructor subscribes an anonymous Loaded callback that reads real
-        // credentials. Remove exactly that callback before showing this fixture.
+        // Remove the credential-loading callback before showing this fixture.
+        // Theme dictionaries may register their own Loaded handlers; retain them.
         var property=typeof(UIElement).GetProperty("EventHandlersStore",PrivateInstance)??throw new Exception("Cannot isolate Loaded handler.");
         var store=property.GetValue(window)??throw new Exception("Missing Loaded event store.");
         var method=store.GetType().GetMethod("GetRoutedEventHandlers",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic)??throw new Exception("Cannot inspect Loaded handlers.");
         var handlers=method.Invoke(store,[FrameworkElement.LoadedEvent]) as IEnumerable??throw new Exception("Missing production Loaded handler.");
         var count=0;
-        foreach(var handler in handlers){var callback=(Delegate)(handler!.GetType().GetProperty("Handler")?.GetValue(handler)??throw new Exception("Cannot isolate Loaded callback."));window.RemoveHandler(FrameworkElement.LoadedEvent,callback);count++;}
+        foreach(var handler in handlers){
+            var callback=(Delegate)(handler!.GetType().GetProperty("Handler")?.GetValue(handler)??throw new Exception("Cannot isolate Loaded callback."));
+            if(callback.Method.DeclaringType!=typeof(MainWindow))continue;
+            if(callback.Method.Name!="OnLoaded"||!ReferenceEquals(callback.Target,window))throw new Exception("Unexpected application Loaded handler; do not show fixture.");
+            window.RemoveHandler(FrameworkElement.LoadedEvent,callback);count++;
+        }
         if(count!=1)throw new Exception("Unexpected production Loaded handlers; stop rather than touch credentials.");
     }
     sealed record Fixture(MainWindow Window,WebView2 View);
@@ -48,7 +53,7 @@ static class MainWindowCloseTests
             return new(window,view);
         }catch{ForceClose(window);throw;}
     }
-    static void ForceClose(MainWindow window){Field("closing").SetValue(window,true);window.Close();}
+    internal static void ForceClose(MainWindow window){Field("closing").SetValue(window,true);window.Close();}
     static async Task Until(Func<Task<bool>> condition,CancellationToken ct){using var bounded=CancellationTokenSource.CreateLinkedTokenSource(ct);bounded.CancelAfter(TimeSpan.FromSeconds(8));while(!await condition()){await Task.Delay(40,bounded.Token);}}
     sealed class ActivationBridge : INativeWorkspaceBridge
     {

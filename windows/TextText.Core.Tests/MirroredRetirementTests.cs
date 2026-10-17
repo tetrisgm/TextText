@@ -16,7 +16,7 @@ static class MirroredRetirementTests
     }
     public static async Task Run(string temp,Action<bool,string> Assert) {
         var files=new TextPackStore(Path.Combine(temp,"mirrored"),Path.Combine(temp,"mirrored-device"));
-        var initial=files.Write("Notes/Mirror.textpack",Pack("start"));var transport=new Test.Fake();var sync=new SyncEngine(files,transport);await sync.SyncAsync();
+        var initial=files.Write("Notes/Mirror.textpack",Pack("start"));var transport=new Test.Fake();var sync=Test.NewSync(files,transport);await sync.SyncAsync();
         var revision=transport.Item!.Revision;var checkpointPath=Path.Combine(files.StateDirectory,"shared-editing","test-1","checkpoint.json");
         SharedCheckpoint Retained()=>JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(checkpointPath))!;
         var pendingBytes=Pack("Pending human");

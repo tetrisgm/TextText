@@ -38,17 +38,19 @@ public sealed partial class MainWindow : Window
     {
         this.webViewProfile = webViewProfile;
         Title = "TextText"; Width = 1200; Height = 850; MinWidth = 720; MinHeight = 480;
-        Loaded += async (_,_) => {
-            try { account = CredentialStore.Load(); if(account is not null) { try { await VerifyAccountIdentity(lifetime.Token); } catch { ShowAccountVerificationRequired(); return; } selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
-            catch (LegacyAccountStateException) { ShowRetainedWorkReview(); }
-            catch { if (account is not null) ShowWorkspaceUnavailable(); else ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
-        };
+        Loaded += OnLoaded;
         Closing += (_,e) => {
             if(closing) return;
             if(web?.CoreWebView2 is not null) { e.Cancel = true; _ = RequestClose(); }
             else closing = true;
         };
         Closed += (_,_) => { lifetime.Cancel(); foreach(var request in requests.Values) request.Cancel(); bridge?.Dispose(); web?.Dispose(); http.Dispose(); };
+    }
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        try { account = CredentialStore.Load(); if(account is not null) { try { await VerifyAccountIdentity(lifetime.Token); } catch { ShowAccountVerificationRequired(); return; } selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
+        catch (LegacyAccountStateException) { ShowRetainedWorkReview(); }
+        catch { if (account is not null) ShowWorkspaceUnavailable(); else ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
     }
     private Task<bool> FlushEditor() => FlushEditorWithTimeout(null);
     private async Task<bool> FlushEditorWithTimeout(TimeSpan? timeout)
@@ -182,6 +184,11 @@ public sealed partial class MainWindow : Window
         var environment = await CoreWebView2Environment.CreateAsync(null,profile);
         await nextWeb.EnsureCoreWebView2Async(environment);
         var core = nextWeb.CoreWebView2;
+        var policyPageReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        core.NavigationCompleted += (_,e) => {
+            if(e.IsSuccess && IsLocal(core.Source))policyPageReady.TrySetResult();
+            else policyPageReady.TrySetException(new IOException("The workspace page did not load."));
+        };
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.AreHostObjectsAllowed = false;
         core.Settings.IsPasswordAutosaveEnabled = false;
@@ -206,7 +213,8 @@ public sealed partial class MainWindow : Window
         if(!ReferenceEquals(account,identity))throw new SharedAccountMismatchException();
         INativeWorkspaceBridge? CreateBridge() => WorkspaceFactory?.Invoke(new(nextRoot, active.WorkspaceId, Origin,
             () => Task.FromResult(active.Token),
-            (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner", active.AccountId));
+            (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner", active.AccountId,
+            () => CreateMirrorPolicy(nextWeb, active, policyPageReady.Task)));
         try { nextBridge = CreateBridge(); }
         catch(LegacyAccountStateException) {
             if(!await ReviewRetainedWork(nextRoot,active,identity))throw;

@@ -17,7 +17,7 @@ const sameScope = (a: MirrorScope, b: MirrorScope) => a.accountId === b.accountI
  * generation so workspace changes need no page reload. Native adapters freeze
  * their acquired generation and reject replies from a replaced connection. */
 export function createMirrorPolicyHost(digest: string, pageId: string) {
-  if (!/^[a-f0-9]{64}$/.test(digest) || !pageId) throw Error("Invalid mirror policy identity");
+  if (digest.length !== 64 || !/^[a-f0-9]{64}$/.test(digest) || !pageId) throw Error("Invalid mirror policy identity");
   let owner: MirrorScope | undefined;
   let generation = 0;
   let retired = false;

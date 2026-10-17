@@ -42,8 +42,9 @@ describe("portable mirror policy host", () => {
     expect(() => replacement.evaluate(request)).toThrow();
   });
   it("rejects malformed observations and unknown fields rather than guessing", () => {
+    expect(() => createMirrorPolicyHost(digest + "\n", pageId)).toThrow();
     for (const invalid of [null, [], {}, { ...observed, localHash: "bad" }, { ...observed, refresh: 0 },
-      { ...observed, remoteRevision: "" }, { ...observed, baselineRevision: "x\n" }, { ...observed, path: "/private/file" }]) {
+      { ...observed, remoteRevision: "" }, { ...observed, baselineRevision: "x\n" }, { ...observed, localHash: observed.localHash + "\n" }, { ...observed, path: "/private/file" }]) {
       expect(() => validateMirrorObservation(invalid)).toThrow();
     }
     const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});

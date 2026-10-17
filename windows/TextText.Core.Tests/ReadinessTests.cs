@@ -9,7 +9,7 @@ static class ReadinessTests
     {
         var store=new TextPackStore(Path.Combine(root,"readiness"),Path.Combine(root,"readiness-state"));var original=store.Write("Notes/Ready.textpack",Pack("baseline"));
         var state=new SyncEngine.State();state.Items[original.ItemId]=new(original.Path,original.Hash,original.Hash);var statePath=Path.Combine(store.StateDirectory,"sync.json");TextPackStore.AtomicWrite(statePath,JsonSerializer.SerializeToUtf8Bytes(state));
-        using var http=new HttpClient();var engine=new SyncEngine(store,new HttpSyncTransport(http,new("https://invalid.example"),"workspace",()=>Task.FromResult("unused")));
+        using var http=new HttpClient();var engine=Test.NewSync(store,new HttpSyncTransport(http,new("https://invalid.example"),"workspace",()=>Task.FromResult("unused")));
         using var active=await engine.AcquireCollaborationAsync(original.ItemId);
         var current=store.Write(original.Path,Pack("durable collaborative projection"),original.Hash);var directory=Path.Combine(store.StateDirectory,"shared-editing",original.ItemId);Directory.CreateDirectory(directory);var cpPath=Path.Combine(directory,"checkpoint.json");
         SharedCheckpoint Checkpoint(bool pending)=>new(original.ItemId,original.Path,current.Hash,current.Hash,7,3,9,JsonSerializer.Serialize(new{version=1,epoch=7,seq=3,journalGeneration=9,revision=current.Hash,relativePath=original.Path,update="AAA=",pending=pending?new[]{"AAA="}:Array.Empty<string>()}),pending);

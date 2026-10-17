@@ -78,3 +78,21 @@ it('Windows native sync stays independent of desktop UI and credential storage',
     expect(source, file).not.toMatch(/\b(?:System\.Windows|Microsoft\.Web\.WebView2|TextText\.Windows|CredentialStore|ProtectedData)\b/);
   }
 });
+
+it('portable policy test workers are absent from application sources and projects', () => {
+  function inspect(directory: string) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (['bin', 'obj', 'Assets', 'Runtime'].includes(entry.name)) continue;
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) inspect(file);
+      else if (/\.(swift|cs|csproj)$/.test(entry.name)) {
+        expect(readFileSync(file, 'utf8'), file).not.toMatch(/NativePolicyTestHost|TextTextSyncTestSupport|native-policy-test-host\.mjs|makeTestSync/);
+      }
+    }
+  }
+  inspect('mac/Sources');
+  inspect('windows/TextText.Core');
+  inspect('windows/TextText.Windows');
+  const manifest = readFileSync('mac/Package.swift', 'utf8');
+  expect(manifest).toContain('path: "Tests/TextTextSyncTestSupport"');
+});

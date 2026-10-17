@@ -8,10 +8,13 @@ import TextTextFileProviderKit
 final class LocalVaultConnectionController {
     typealias CredentialsProvider = () -> (origin: URL, token: String)?
     typealias VerifiedCredentialsProvider = () -> LocalVaultAccountCredential?
+    typealias MirrorPolicyFactory = (LocalVaultSyncBinding, LocalVaultAccountCredential) throws -> LocalVaultMirrorPolicy
     private static let retryMessage = "Changes are saved on this Mac. The web connection will retry."
     private let requestedWorkspaceId: String?
     private let root: URL
     private let credentials: VerifiedCredentialsProvider
+    private let mirrorPolicyFactory: MirrorPolicyFactory?
+    private var mirrorPolicy: LocalVaultMirrorPolicy?
     private var connectedAccount: LocalVaultAccountCredential?
     private let session: URLSession
     private var credentialGeneration = 0
@@ -40,9 +43,10 @@ final class LocalVaultConnectionController {
     private var connectDelay: UInt64 = 2
     var onChange: (([String: Any], Bool) -> Void)?
 
-    init(root: URL, workspaceId: String? = nil, session: URLSession = .shared, credentials: @escaping CredentialsProvider = { nil }, verifiedCredentials: VerifiedCredentialsProvider? = nil) {
+    init(root: URL, workspaceId: String? = nil, session: URLSession = .shared, credentials: @escaping CredentialsProvider = { nil }, verifiedCredentials: VerifiedCredentialsProvider? = nil, mirrorPolicyFactory: MirrorPolicyFactory? = nil) {
         self.requestedWorkspaceId = workspaceId
         self.root = root; self.credentials = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }; self.session = session
+        self.mirrorPolicyFactory = mirrorPolicyFactory
         do {
             if let existing = try LocalVaultSync.binding(root: root) {
                 previousBinding = existing
@@ -57,7 +61,9 @@ final class LocalVaultConnectionController {
                         let transport = try HTTPLocalVaultSyncTransport(origin: existing.origin,
                             workspaceId: existing.workspaceId, token: account.token, session: session, accountId: account.accountId)
                         if let id = account.accountId { try LocalVaultAccountRootOwnership.open(root: root, binding: existing, accountId: id) }
-                        let engine = try LocalVaultSync(root: root, binding: existing, transport: transport, accountId: account.accountId)
+                        let policy = try mirrorPolicyFactory?(existing, account)
+                        let engine = try LocalVaultSync(root: root, binding: existing, transport: transport, accountId: account.accountId, mirrorPolicy: policy)
+                        self.mirrorPolicy = policy
                         self.binding = existing; self.transport = transport; self.engine = engine; self.connectedAccount = account
                     }
                 }
@@ -67,6 +73,7 @@ final class LocalVaultConnectionController {
     deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel(); connectingTask?.cancel() }
     func stop() {
         stopped = true
+        if let mirrorPolicy { Task { await mirrorPolicy.retire() } }
         connectingTask?.cancel(); connectingTask = nil
         watching?.cancel(); watching = nil
         running?.cancel(); running = nil
@@ -81,12 +88,15 @@ final class LocalVaultConnectionController {
     func stopAndWait() async {
         let pending = [connectingTask, watching, running, connectRetry].compactMap { $0 }
         stop()
+        await mirrorPolicy?.retire(); mirrorPolicy = nil
         for task in pending { await task.value }
         engine = nil; transport = nil; binding = nil; capabilities = nil
     }
     func credentialsChanged() {
         credentialGeneration += 1
         if let connectedAccount, credentials().map({ connectedAccount.sameAccount(as: $0) }) != true {
+            if let mirrorPolicy { Task { await mirrorPolicy.retire() } }
+            mirrorPolicy = nil
             connectingTask?.cancel(); connectingTask = nil
             watching?.cancel(); watching = nil
             running?.cancel(); running = nil
@@ -297,7 +307,9 @@ final class LocalVaultConnectionController {
         }
         let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token, session: session, accountId: account.accountId)
         if let id = account.accountId { try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: id) }
-        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: account.accountId)
+        let policy = try mirrorPolicyFactory?(binding, account)
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: account.accountId, mirrorPolicy: policy)
+        await mirrorPolicy?.retire(); mirrorPolicy = policy
         self.binding = binding; self.transport = transport; self.engine = engine; self.connectedAccount = account; requiresAccountReview = false
         if startSync { activate() }
     }

@@ -20,7 +20,7 @@ static class EpochAdoptionTests
     }
     public static async Task Run(string temp,Action<bool,string> Assert) {
         var files=new TextPackStore(Path.Combine(temp,"adoption"),Path.Combine(temp,"adoption-device"));
-        var initial=files.Write("Notes/Adopt.textpack",Pack("start"));var transport=new Test.Fake();var sync=new SyncEngine(files,transport);await sync.SyncAsync();
+        var initial=files.Write("Notes/Adopt.textpack",Pack("start"));var transport=new Test.Fake();var sync=Test.NewSync(files,transport);await sync.SyncAsync();
         var revision=transport.Item!.Revision;var directory=Path.Combine(files.StateDirectory,"shared-editing","test-1");
         string Retained()=>JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(directory,"checkpoint.json")))!.Journal;
         long RetainedEpoch()=>JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllText(Path.Combine(directory,"checkpoint.json")))!.Epoch;
