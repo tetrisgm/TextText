@@ -6,6 +6,46 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultSessionLifecycleTests: XCTestCase {
+    @MainActor
+    func testProductionWindowCloseWaitsForItsRendererCheckpoint() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let entry = root.appendingPathComponent("index.html")
+        try """
+        <!doctype html><title>Isolated close fixture</title><script>
+        window.texttextFlushForNativeClose=()=>new Promise(resolve=>{
+          window.finishFlush=()=>resolve({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:1,outcome:'durable'}});
+        });
+        </script><p>Isolated native window close</p><input aria-label="Fixture input" value="before">
+        """.write(to: entry, atomically: true, encoding: .utf8)
+        let controller = LocalVaultWindowController(entry: entry, root: root, websiteDataStore: .nonPersistent())
+        let window = try XCTUnwrap(controller.window)
+        let view = try XCTUnwrap(window.contentView as? WKWebView)
+        defer { window.orderOut(nil); controller.shutdown() }
+        controller.showWindow(nil)
+        let deadline = Date().addingTimeInterval(12)
+        while (try? await view.evaluateJavaScript("typeof window.texttextFlushForNativeClose==='function'")) as? Bool != true {
+            if Date() >= deadline { XCTFail("Isolated renderer did not load"); return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        window.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(window.makeFirstResponder(view))
+        _ = try await view.evaluateJavaScript("document.querySelector('input').focus()")
+        let previousResponder = window.firstResponder
+        window.performClose(nil)
+        guard window.isVisible else { XCTFail("Production close released the window before its durable renderer reply"); return }
+        XCTAssertTrue(window.ignoresMouseEvents, "Pending close must prevent pointer input from refocusing the editor")
+        if let previousResponder { XCTAssertFalse(window.firstResponder === previousResponder, "Pending close must relinquish editor keyboard focus") }
+        while (try? await view.evaluateJavaScript("typeof window.finishFlush==='function'")) as? Bool != true {
+            if Date() >= deadline { XCTFail("Production close never requested renderer durability"); return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        _ = try await view.evaluateJavaScript("window.finishFlush()")
+        while window.isVisible && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertFalse(window.isVisible, "A durable renderer reply must complete the pending close")
+    }
     func testNativeCloseRequiresTypedDurableResult() {
         let durable: [String: Any] = ["ok": true, "durability": [
             "workspaceId": "workspace", "itemId": "item", "lifecycle": "lifecycle", "generation": 8, "outcome": "durable",

@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private var statusWindow: StatusWindowController?
     private var primaryWebWindow: WebAppWindowController?
     private var localVaultWindow: LocalVaultWindowController?
+    private var terminationPending = false
     private var accountGateWindow: AccountGateWindowController?
     private var additionalWebWindows: [WebAppWindowController] = []
     private var webWindow: WebAppWindowController? {
@@ -544,6 +545,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
         openTextTextItem(id: id)
         return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let localVaultWindow else { return .terminateNow }
+        if terminationPending { return .terminateLater }
+        terminationPending = true
+        Task { @MainActor [weak self, weak localVaultWindow] in
+            guard let self, let localVaultWindow else {
+                sender.reply(toApplicationShouldTerminate: false)
+                return
+            }
+            localVaultWindow.flushForTermination { [weak self, weak localVaultWindow] saved in
+                self?.terminationPending = false
+                sender.reply(toApplicationShouldTerminate: saved)
+                if !saved { localVaultWindow?.presentSaveFailure() }
+            }
+        }
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }

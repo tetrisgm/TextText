@@ -43,6 +43,12 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private(set) var lastFlushDurability: [String: Any]?
     private var switchingWorkspace = false
     private var loaded = false
+    private let nativeSaveBarrier = NativeSaveBarrier()
+    private var windowClosePending = false
+    private var windowCloseApproved = false
+    private var inputFences = Set<UUID>()
+    private weak var previousResponder: NSResponder?
+    private var previousMousePolicy = false
     private let credentials: LocalVaultConnectionController.CredentialsProvider
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
@@ -104,11 +110,64 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     }
     deinit { watcher?.stop(); if scoped { root?.stopAccessingSecurityScopedResource() } }
 
-    // AppDelegate retains this window and its WebView after Command-W. Its
-    // editor may still drain a local checkpoint and is reused on reopening.
-    // Closing a window must not invalidate that editor's native session token.
+    // AppDelegate retains the editor after Command-W. Confirm local durability
+    // before hiding the window, while preserving its native session for reopen.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if windowCloseApproved { return true }
+        if windowClosePending { return false }
+        guard let releaseInput = fenceNativeInput() else { presentSaveFailure(); return false }
+        windowClosePending = true
+        Task { @MainActor [weak self, weak sender] in
+            guard let self, let sender else { releaseInput(); return }
+            self.flushForSignOut { [weak self, weak sender] saved in
+                guard let self, let sender else { releaseInput(); return }
+                self.windowClosePending = false
+                if saved {
+                    self.windowCloseApproved = true
+                    sender.performClose(nil)
+                    self.windowCloseApproved = false
+                }
+                releaseInput()
+                if !saved && sender.isVisible { self.presentSaveFailure() }
+            }
+        }
+        return false
+    }
+    private func fenceNativeInput() -> (() -> Void)? {
+        guard let window else { return {} }
+        let id = UUID()
+        if inputFences.isEmpty {
+            previousResponder = window.firstResponder
+            guard window.makeFirstResponder(nil) else { previousResponder = nil; return nil }
+            previousMousePolicy = window.ignoresMouseEvents
+            window.ignoresMouseEvents = true
+        }
+        inputFences.insert(id)
+        return { [weak self, weak window] in
+            guard let self, let window, self.inputFences.remove(id) != nil, self.inputFences.isEmpty else { return }
+            window.ignoresMouseEvents = self.previousMousePolicy
+            if let responder = self.previousResponder { _ = window.makeFirstResponder(responder) }
+            self.previousResponder = nil
+        }
+    }
+    func flushForTermination(_ completion: @escaping (Bool) -> Void) {
+        guard let releaseInput = fenceNativeInput() else { completion(false); return }
+        flushForSignOut { saved in
+            if !saved { releaseInput() }
+            completion(saved)
+        }
+    }
+    func presentSaveFailure() {
+        present()
+        guard let window, window.attachedSheet == nil else { return }
+        let alert = NSAlert()
+        alert.messageText = "Keep editing"
+        alert.informativeText = "Your latest edits have not finished saving. TextText will stay open so you can resolve the save in the editor."
+        alert.beginSheetModal(for: window)
+    }
     func windowWillClose(_ notification: Notification) { agent?.stop(); agent = nil }
     func shutdown() {
+        nativeSaveBarrier.cancel()
         collaboration?.cancelAll(); collaboration = nil
         agent?.stop(); agent = nil
         watcher?.stop(); watcher = nil
@@ -137,20 +196,22 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         connection?.connectAutomatically()
     }
     func flushForSignOut(_ completion: @escaping (Bool) -> Void) {
-        guard loaded else { completion(true); return }
-        Task { @MainActor in
-            do {
-                let value = try await webView.callAsyncJavaScript(
-                    "return await window.texttextFlushForNativeClose?.() ?? {ok:false,durability:{outcome:'pending'}}",
-                    arguments: [:], in: nil, contentWorld: .page
-                )
-                let decision = Self.nativeFlushDecision(value)
-                self.lastFlushDurability = decision.durability
-                completion(decision.acknowledged)
-            } catch {
-                completion(false)
+        // A loading page still needs an explicit idle/durable receipt. Missing
+        // renderer readiness cannot acknowledge accepted edits as saved.
+        lastFlushDurability = nil
+        nativeSaveBarrier.request(operation: { [weak self] finish in
+            Task { @MainActor [weak self] in
+                guard let self else { _ = finish(false); return }
+                do {
+                    let value = try await self.webView.callAsyncJavaScript(
+                        "return await window.texttextFlushForNativeClose?.() ?? {ok:false,durability:{outcome:'pending'}}",
+                        arguments: [:], in: nil, contentWorld: .page
+                    )
+                    let decision = Self.nativeFlushDecision(value)
+                    if finish(decision.acknowledged) { self.lastFlushDurability = decision.durability }
+                } catch { _ = finish(false) }
             }
-        }
+        }, completion: completion)
     }
     func editHistory(_ direction: String) {
         emit(direction == "redo" ? "texttext:document-redo" : "texttext:document-undo", value: [:])

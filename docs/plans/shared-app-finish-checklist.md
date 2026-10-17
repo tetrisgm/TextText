@@ -377,7 +377,7 @@ Initial states reflect repository evidence on October 17; no new implementation/
 | T03–T04 | Native delivery/reopen verified; web blocked | Both installed apps pass new-note edit/quit/reopen; Oracle backup floor requires approved archive cleanup; offline and remaining cases open |
 | T05 | Controlled orders verified; historical gap retained | Fresh smoke covers completed repeat and navigation-away activation; original run174 refusal receipt is unavailable |
 | T06 | Native failure regressions added | Mac permission denial and Windows cancellation/replacement recovery pass; [matrix](../verification/adapter-conformance-matrix.md) retains remaining common-fixture/ENOSPC/crash gaps |
-| T07 | Barrier defects fixed in source | [Receipt](../verification/2026-10-17-captured-local-barrier.md); native final-release fence and account transition races remain |
+| T07 | Barrier defects fixed in source | [Receipt](../verification/2026-10-17-captured-local-barrier.md); production Mac close/quit guard and fence pass native checks; new install, Windows fence and account transitions remain |
 | T08–T09 | Open | Shared ownership, fencing and continuity after contract work |
 | T10 | Partial inventory | Complete per-flow ownership and host feasibility |
 | T11–T15 | Open | Policy slices, external files, identities/conflicts/providers |
