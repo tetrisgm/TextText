@@ -4,6 +4,7 @@
     <UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>TextText</AssemblyName><RootNamespace>TextText.Windows</RootNamespace>
+    <ApplicationIcon>TextText.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\TextText.Core\TextText.Core.csproj" />

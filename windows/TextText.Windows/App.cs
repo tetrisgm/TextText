@@ -2,6 +2,16 @@ using System.Windows;
 namespace TextText.Windows;
 public static class App
 {
+    public static void ConfigureAppearance(Application application)
+    {
+        // The platform dictionary follows app light/dark and contrast settings.
+        // Keep the native frame; the shared renderer owns workspace styling.
+        AppContext.SetSwitch("Switch.System.Windows.Appearance.DisableFluentThemeWindowBackdrop", true);
+        application.Resources.MergedDictionaries.Add(new ResourceDictionary {
+            Source = new Uri("pack://application:,,,/PresentationFramework.Fluent;component/Themes/Fluent.xaml", UriKind.Absolute)
+        });
+    }
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -9,6 +19,7 @@ public static class App
         if (!created) { if (!DesktopActivation.Forward(args).GetAwaiter().GetResult()) MessageBox.Show("TextText is still opening. Please try opening the file again.", "TextText"); return; }
         MainWindow.WorkspaceFactory = context => new WindowsBridge(context);
         var application = new Application();
+        ConfigureAppearance(application);
         var window = new MainWindow();
         window.InputBindings.Add(new System.Windows.Input.KeyBinding(new OpenFolderCommand(window), System.Windows.Input.Key.O, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift));
         using var activation = new DesktopActivation(paths => application.Dispatcher.BeginInvoke(() => window.ActivateFiles(paths)));

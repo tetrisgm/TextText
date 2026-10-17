@@ -384,7 +384,7 @@ Initial states reflect repository evidence on October 17; no new implementation/
 | T11 | First known-item engine slice verified; migration open | [Versioned shared policy and native RPC checks](../verification/2026-10-17-mirror-policy-host.md); actual production WKWebView/PC WebView2 factories, held writer lease, CAS refusal and retained-state restart pass; missing-policy fails closed without fallback; retry/outbox and lifecycle remain native |
 | T12–T15 | Open | External files, identities/conflicts/providers |
 | T16–T18 | Partial existing tests | Native adoption, disk-full recovery, process restart and consent fixtures pass; native older-profile recovery checks pass; hosted-origin recovery, mixed-version/background compatibility and the wider crash/upgrade matrix and seeded scheduling remain |
-| T19–T20 | Open acceptance | Product parity and real template/agent workflows |
+| T19–T20 | Shared visual baseline verified; wider acceptance open | [Rendered Chromium/WKWebView/WebView2 light/dark comparison](../verification/2026-10-17-visual-parity.md) passes in source; native share-link/permission consistency, full product parity and real template/agent workflows remain |
 | T21–T22 | Partial historical evidence | Current physical actors and full scenario matrix |
 | T23 | Real viewer/edit/revoke/regrant passed | Offline pending work retained and not uploaded while revoked; current-source, account-switch and agent identity checks remain |
 | T24–T25 | Open | Endurance and measured performance |

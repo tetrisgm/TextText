@@ -21,7 +21,10 @@ static class Program
  [MethodImpl(MethodImplOptions.NoInlining)]
  private static int RunWpf(string[] args) {
   Console.WriteLine("smoke: WPF entry");
-  var app = new Application(); Console.WriteLine("smoke: application created"); var result = 1;
+  var app = new Application();
+  TextText.Windows.App.ConfigureAppearance(app);
+  AppearanceTests.Run(app);
+  Console.WriteLine("smoke: application created with production appearance"); var result = 1;
   var temp = Path.Combine(Path.GetTempPath(),"texttext-desktop-smoke-"+Guid.NewGuid()); Directory.CreateDirectory(temp);
   Console.WriteLine("smoke: creating view"); var view = new WebView2(); var window = new Window { Title="TextText isolated desktop smoke",Width=1100,Height=800,Content=view };
   WindowsBridge? bridge=null;
@@ -32,6 +35,10 @@ static class Program
    if(Environment.GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "composition") {
     Console.WriteLine("smoke: focused composition diagnostic, not the full desktop suite");
     await CompositionTests.RunAsync(temp,timeout.Token);result=0;return;
+   }
+   if(Environment.GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "visual") {
+    Console.WriteLine("smoke: focused visual comparison, not the full desktop suite");
+    await VisualParityTests.RunAsync(temp,args[1],timeout.Token);result=0;return;
    }
    var environment = await CoreWebView2Environment.CreateAsync(null,Path.Combine(temp,"webview"));
    Console.WriteLine("smoke: environment ready"); await view.EnsureCoreWebView2Async(environment); Console.WriteLine("smoke: webview ready");

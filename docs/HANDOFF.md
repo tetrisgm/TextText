@@ -14,6 +14,8 @@ Identities, commands, hashes, rollback paths, failed harness attempts and passin
 
 ## Next work and dependencies
 
+The owner requested Mac/Windows/web look-and-feel work in parallel. The [shared visual baseline](verification/2026-10-17-visual-parity.md) now passes rendered Chromium, actual WKWebView and actual PC WebView2 light/dark comparisons. Windows system-theme loading and brand icon checks pass. These source changes are not installed/deployed; sharing-link and native permission-control consistency are being completed before delivery.
+
 T02 WebView2 workaround passed the recorded reboot/overnight checks, but October 17 events prove a new **standalone Edge** account lockout. SSH recovered without a config change; current PC core checks passed. The existing WebView2 policy remains present. Standalone Edge launch-site coordination is pending; [evidence and next action](verification/2026-10-11-windows-account-lockout.md).
 
 T05 controlled activation cases now pass, including repeat after completion, navigation away and close during activation. The original run174 refusal receipt was never recorded; its exact reason remains a bounded historical gap. T06 adapter conformance is verified: shared absent-file scenario, schema refusal, permission/replace/cancel behavior and real Mac/Windows disk-full repair/reopen pass. The [receipt](verification/2026-10-17-adapter-conformance.md) distinguishes these tests from later physical/provider/crash campaigns.
