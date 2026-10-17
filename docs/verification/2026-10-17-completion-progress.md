@@ -100,3 +100,11 @@ These checks ran against the still-active October 11 hosted bundle, not the bloc
 ### T07 source fix
 
 Two deterministic failures are now fixed and protected: close chasing later remote checkpoints, and a retired lifecycle returning durable after delayed persistence. New local input during the wait still extends the barrier. Focused tests 101/101, client gate 410/410 with TypeScript, and real browser epoch-adoption/persistence check passed. See [captured barrier receipt](2026-10-17-captured-local-barrier.md). This new source change has not been delivered to any installed/hosted artifact.
+
+### Latest candidate preparation and archive fixture correction
+
+Preparing Mac 0.204 build 1262 from product source `4759137e`, which includes the captured barrier and production Mac close/quit guards. One initial command ran the check stage from the working checkout; its six owned processes were stopped before packaging and the build restarted from the pristine archive. Unrelated Package.resolved content remains `ecef5ee26c5bc34cddc75ad2aa80b7394857c591`.
+
+The pristine candidate's required native gate then exposed `LocalVaultSyncTests.testOpenEditorPreservesBothAssetsWhenSameEntryChangedOnTwoDevices`: expected and actual archives were both 1,983 bytes but differed. The test manufactured a fresh remote ZIP separately for transport, conflict response and expected comparison. `withAsset` creates a new source file each time, so ZIP entry metadata can differ. The fixture now captures the actual supplied remote archive once and compares retained bytes against that exact input. Asset-byte and queue/conflict-state assertions remain unchanged; no production conflict handling was weakened.
+
+`node scripts/with-local-database.mjs node sync/verify.mjs --native-only` passed after the correction, including all required native suites and portable Windows core checks. This verification used the main checkout's native sources; unrelated JS edits are not native compilation inputs, and the gate preserved Package.resolved. Its working-checkout fingerprint receipt will not be reused as candidate attestation. Log `/private/tmp/texttext-native-fixture-fixed.log`. The failed candidate log `/private/tmp/texttext-finish-mac-1262-pristine.log` remains preserved; build 1262 is not installed yet.

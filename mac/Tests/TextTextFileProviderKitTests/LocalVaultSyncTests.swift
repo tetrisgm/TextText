@@ -926,8 +926,9 @@ final class LocalVaultSyncTests: XCTestCase {
         let initial = try LocalVaultDocumentStore(root: root).read(path: path)
         let session = try await sync.beginSharedEditing(itemId: itemId, path: path, expectedHash: initial.hash)
         try putLocal(try withAsset(original, bytes: local))
-        await transport.set(itemId: itemId, path: path, data: try withAsset(original, bytes: remote))
-        await transport.conflictNextBinaryPatch(with: try withAsset(original, bytes: remote))
+        let remotePack = try withAsset(original, bytes: remote)
+        await transport.set(itemId: itemId, path: path, data: remotePack)
+        await transport.conflictNextBinaryPatch(with: remotePack)
         let result = try await sync.sync()
         XCTAssertTrue(result.errors.isEmpty, "\(result.errors)")
         let requests = await transport.binaryRequests()
@@ -944,7 +945,7 @@ final class LocalVaultSyncTests: XCTestCase {
         let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: conflictRoot,
             includingPropertiesForKeys: nil).first)
         XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("local-asset.bin")), local)
-        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("remote.textpack")), try withAsset(original, bytes: remote))
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("remote.textpack")), remotePack)
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
 
