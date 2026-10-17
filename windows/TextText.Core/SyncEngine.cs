@@ -44,8 +44,10 @@ public sealed class SyncEngine
         // Keep adoption excluded for the entire editing lease, including writes
         // after the sync semaphore is released and acknowledgements during close.
         var adoptionFence=new FileStream(Path.Combine(store.StateDirectory,"account-adoption.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.ReadWrite);
+        DocumentLease? documentLease=null;
         var retained=false;
         try {
+        documentLease=new DocumentLease(store.StateDirectory,itemId);
         await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");
             if(!state.BinaryBaselines.ContainsKey(itemId) && state.Items.TryGetValue(itemId,out var baseline)) {
                 try {
@@ -58,11 +60,11 @@ public sealed class SyncEngine
                 } catch(IOException) { /* An evicted or invalid file is handled by the existing open path. */ }
                   catch(UnauthorizedAccessException) { /* Keep the previous state; do not infer deletion. */ }
             }
-            lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");retained=true;return new Fence(this,itemId,adoptionFence);
+            lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");retained=true;return new Fence(this,itemId,adoptionFence,documentLease);
         }finally{gate.Release();}
-        }finally{if(!retained)adoptionFence.Dispose();}
+        }finally{if(!retained){documentLease?.Dispose();adoptionFence.Dispose();}}
     }
-    sealed class Fence(SyncEngine owner,string id,IDisposable adoptionFence):IDisposable {bool disposed;public void Dispose(){lock(owner.collaborating){if(!disposed){owner.collaborating.Remove(id);adoptionFence.Dispose();disposed=true;}}}}
+    sealed class Fence(SyncEngine owner,string id,IDisposable adoptionFence,IDisposable documentLease):IDisposable {bool disposed;public void Dispose(){lock(owner.collaborating){if(!disposed){owner.collaborating.Remove(id);documentLease.Dispose();adoptionFence.Dispose();disposed=true;}}}}
     bool IsEditing(string id){lock(collaborating)return collaborating.Contains(id)||SharedEditingStore.HasProtectedState(store.StateDirectory,id);}
     public async Task AcknowledgeCheckpointAsync(string itemId,string path,string hash,string revision,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try { AcknowledgeCheckpointState(itemId,path,hash,revision); }

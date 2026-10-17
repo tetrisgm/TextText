@@ -38,6 +38,72 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testIndependentActorsCannotOwnTheSameDocument() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let first = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await first.sync()
+        let second = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        let active = try await first.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        do {
+            _ = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+            XCTFail("Another native actor acquired the live document")
+        } catch LocalVaultSyncFailure.busy { }
+        try await first.endSharedEditing(sessionToken: active.sessionToken, itemId: itemId)
+        let next = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        XCTAssertNotEqual(next.sessionToken, active.sessionToken)
+        try await second.endSharedEditing(sessionToken: next.sessionToken, itemId: itemId)
+    }
+    func testHoldDocumentInOwnedChild() async throws {
+        guard let path = ProcessInfo.processInfo.environment["TEXTTEXT_DOCUMENT_FIXTURE_ROOT"], let nonce = ProcessInfo.processInfo.environment["TEXTTEXT_DOCUMENT_FIXTURE_NONCE"] else { throw XCTSkip("Owned process-termination helper") }
+        let fixtureRoot = URL(fileURLWithPath: path).standardizedFileURL
+        guard UUID(uuidString: fixtureRoot.lastPathComponent) != nil,
+              try String(contentsOf: fixtureRoot.appendingPathComponent(".document-owner-fixture"), encoding: .utf8) == nonce else { throw LocalVaultSharedFailure.invalid }
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: fixtureRoot, binding: binding, transport: SharedTransport())
+        let original = try LocalVaultDocumentStore(root: fixtureRoot).read(path: self.path)
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: self.path, expectedHash: original.hash)
+        XCTAssertTrue(session.checkpoint?.pending == true)
+        try session.sessionToken.write(to: fixtureRoot.appendingPathComponent(".document-owner-ready"), atomically: true, encoding: .utf8)
+        try await Task.sleep(nanoseconds: 30_000_000_000)
+        _ = await engine.knownLocalPaths() // retain the actor/descriptor until killed
+    }
+    func testKilledNativeOwnerReleasesLeaseAndPreservesPendingJournal() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let active = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let target = try checkpoint(original), change = try changes(original, body: "Pending before process termination")
+        let saved = try await engine.materializeSharedEditing(sessionToken: active.sessionToken, itemId: itemId, expectedHash: original.hash,
+            epoch: 1, seq: 0, acknowledgedRevision: original.hash, journalGeneration: 1, journal: target.journal, pending: true, markdown: change.0, documentJSON: change.1)
+        try await engine.endSharedEditing(sessionToken: active.sessionToken, itemId: itemId)
+        let nonce = UUID().uuidString
+        try nonce.write(to: root.appendingPathComponent(".document-owner-fixture"), atomically: true, encoding: .utf8)
+        let child = Process(), output = Pipe(), errors = Pipe()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        child.arguments = ["xctest", "-XCTest", "TextTextFileProviderKitTests.LocalVaultSharedEditingTests/testHoldDocumentInOwnedChild", Bundle(for: Self.self).bundleURL.path]
+        var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "TEXTTEXT_STORE": "1", "TEXTTEXT_DOCUMENT_FIXTURE_ROOT": root.path, "TEXTTEXT_DOCUMENT_FIXTURE_NONCE": nonce]
+        for key in ["DEVELOPER_DIR", "DYLD_FRAMEWORK_PATH", "DYLD_LIBRARY_PATH", "SDKROOT"] { if let value = ProcessInfo.processInfo.environment[key] { environment[key] = value } }
+        child.environment = environment; child.standardOutput = output; child.standardError = errors
+        try child.run()
+        defer { if child.isRunning { _ = kill(child.processIdentifier, SIGKILL); child.waitUntilExit() } }
+        let ready = root.appendingPathComponent(".document-owner-ready"), deadline = Date().addingTimeInterval(15)
+        while !FileManager.default.fileExists(atPath: ready.path), child.isRunning, Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+        guard child.isRunning, FileManager.default.fileExists(atPath: ready.path) else { XCTFail("Owned child did not acquire document"); return }
+        let stale = try String(contentsOf: ready, encoding: .utf8)
+        do { _ = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: saved.document.hash); XCTFail("Displaced a live process") } catch LocalVaultSyncFailure.busy { }
+        _ = kill(child.processIdentifier, SIGKILL); child.waitUntilExit()
+        let resumed = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: saved.document.hash)
+        XCTAssertNotEqual(resumed.sessionToken, stale); XCTAssertEqual(resumed.checkpoint?.journal, saved.checkpoint.journal)
+        XCTAssertEqual(resumed.document.contents.markdown, change.0)
+        do { _ = try await engine.materializeSharedEditing(sessionToken: stale, itemId: itemId, expectedHash: saved.document.hash,
+            epoch: 1, seq: 0, acknowledgedRevision: original.hash, journalGeneration: 1, journal: target.journal, pending: true, markdown: change.0, documentJSON: change.1)
+            XCTFail("Terminated owner checkpoint was accepted") } catch LocalVaultSharedFailure.staleSession { }
+        try await engine.endSharedEditing(sessionToken: resumed.sessionToken, itemId: itemId)
+        XCTAssertLessThan(output.fileHandleForReading.readDataToEndOfFile().count, 8192)
+        XCTAssertLessThan(errors.fileHandleForReading.readDataToEndOfFile().count, 8192)
+    }
     func testAccountBoundaryDoesNotReplayAnotherAccountsInterruptedIntent() throws {
         let original = try fixture(), a = LocalVaultSharedEditingStore(root: root, accountId: "account-a")
         let first = try changes(original, body: "Prior A projection")

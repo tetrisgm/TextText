@@ -99,7 +99,7 @@ public actor LocalVaultSync {
     private let editOrigins: LocalVaultEditOriginJournal
     private var state: State
     private var running = false
-    private struct SharedSession { var token: String; var path: String; var hash: String; var retired = false }
+    private struct SharedSession { var token: String; var path: String; var hash: String; let lease: LocalVaultDocumentLease; var retired = false }
     private var sharedSessions: [String: SharedSession] = [:]
     private var sharedStore: LocalVaultSharedEditingStore { LocalVaultSharedEditingStore(root: root, accountId: accountId) }
 
@@ -189,6 +189,7 @@ public actor LocalVaultSync {
     }
     public func beginSharedEditing(itemId: String, path: String, expectedHash: String) throws -> LocalVaultSharedSession {
         guard sharedSessions[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+        let lease = try LocalVaultDocumentLease(root: root, itemId: itemId)
         try sharedStore.prepareAccount(itemId: itemId, path: path, expectedHash: expectedHash)
         let replayBeforeHash = try sharedStore.pendingIntentBeforeHash(itemId: itemId)
         var checkpoint = try readSharedCheckpoint(itemId: itemId)
@@ -222,7 +223,7 @@ public actor LocalVaultSync {
         if checkpoint?.retiredReason == nil {
             guard canCheckpointText(itemId: itemId, path: path) else { throw LocalVaultSyncFailure.busy }
         }
-        let session = SharedSession(token: UUID().uuidString, path: path, hash: document.hash)
+        let session = SharedSession(token: UUID().uuidString, path: path, hash: document.hash, lease: lease)
         if state.binaryBaselines?[itemId] == nil,
            state.baselines[itemId]?.path == path,
            state.baselines[itemId]?.localHash == document.hash {
