@@ -110,8 +110,15 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         unsupported.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
         var futureOuter = saved.checkpoint; futureOuter.version = 999
         var malformed = saved.checkpoint; malformed.journal = "{"
+        var booleanJournals: [Data] = []
+        for (field, value) in [("version", true), ("epoch", true), ("seq", false), ("journalGeneration", true)] {
+            var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(saved.checkpoint.journal.utf8)) as? [String: Any])
+            fields[field] = value
+            var invalid = saved.checkpoint; invalid.journal = String(decoding: try JSONSerialization.data(withJSONObject: fields), as: UTF8.self)
+            booleanJournals.append(try JSONEncoder().encode(invalid))
+        }
         let next = try changes(original, body: "Pending edit after checkpoint repair")
-        for bad in [try JSONEncoder().encode(unsupported), try JSONEncoder().encode(futureOuter), try JSONEncoder().encode(malformed), Data("{".utf8)] {
+        for bad in [try JSONEncoder().encode(unsupported), try JSONEncoder().encode(futureOuter), try JSONEncoder().encode(malformed), Data("{".utf8)] + booleanJournals {
             try bad.write(to: file, options: .atomic)
             XCTAssertThrowsError(try LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
             XCTAssertThrowsError(try store.materialize(checkpoint: checkpoint(original, generation: 2), expectedHash: saved.document.hash,

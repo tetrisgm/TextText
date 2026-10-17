@@ -1101,7 +1101,7 @@ final class LocalVaultSyncTests: XCTestCase {
     }
 }
 
-private actor FakeVaultTransport: LocalVaultSyncTransport {
+actor FakeVaultTransport: LocalVaultSyncTransport {
     private var writable = true
     func setWritable(_ value: Bool) { writable = value }
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool { writable }

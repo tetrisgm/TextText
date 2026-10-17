@@ -116,32 +116,42 @@ public actor LocalVaultSync {
         let stateURL = directory.appendingPathComponent("state.json")
         guard stateURL.resolvingSymlinksInPath().path == stateURL.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         if FileManager.default.fileExists(atPath: stateURL.path) {
-            state = try JSONDecoder().decode(State.self, from: Data(contentsOf: stateURL))
-            guard state.version == nil || state.version == 1 else { throw LocalVaultSyncFailure.invalidResponse }
+            state = try Self.decodeState(Data(contentsOf: stateURL), root: self.root, binding: binding)
             guard state.accountId == accountId else { throw LocalVaultSharedFailure.account }
-            guard state.binding == binding else { throw LocalVaultSyncFailure.invalidBinding }
-            for pending in state.outbox.values {
-                guard UUID(uuidString: pending.operationId) != nil,
-                      pending.hash.count == 64, pending.hash.allSatisfy({ $0.isHexDigit }) else {
-                    throw LocalVaultSyncFailure.invalidResponse
-                }
-                _ = try LocalVaultDocumentStore(root: self.root).url(for: pending.path)
-                if let newPath = pending.newPath { _ = try LocalVaultDocumentStore(root: self.root).url(for: newPath) }
-            }
-            for pending in state.binaryOutbox?.values ?? Dictionary<String, BinaryPending>().values {
-                guard UUID(uuidString: pending.operationId) != nil,
-                      pending.entryPath.hasPrefix("assets/"),
-                      pending.entryPath.utf8.count <= 512,
-                      pending.payloadHash == nil || pending.payloadHash!.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else {
-                    throw LocalVaultSyncFailure.invalidResponse
-                }
-                _ = try LocalVaultDocumentStore(root: self.root).url(for: pending.path)
-            }
         } else {
             state = State(binding: binding, accountId: accountId)
             try FileManager.default.createDirectory(at: directory.appendingPathComponent("outbox"), withIntermediateDirectories: true)
             try writeVaultSyncJournal(JSONEncoder().encode(state), to: stateURL)
         }
+    }
+
+    private static func decodeState(_ data: Data, root: URL, binding: LocalVaultSyncBinding) throws -> State {
+        let state = try JSONDecoder().decode(State.self, from: data)
+        guard state.version == nil || state.version == 1 else { throw LocalVaultSyncFailure.invalidResponse }
+        guard state.binding == binding else { throw LocalVaultSyncFailure.invalidBinding }
+        for pending in state.outbox.values {
+            guard UUID(uuidString: pending.operationId) != nil,
+                  pending.hash.count == 64, pending.hash.allSatisfy({ $0.isHexDigit }) else {
+                throw LocalVaultSyncFailure.invalidResponse
+            }
+            _ = try LocalVaultDocumentStore(root: root).url(for: pending.path)
+            if let newPath = pending.newPath { _ = try LocalVaultDocumentStore(root: root).url(for: newPath) }
+        }
+        for pending in state.binaryOutbox?.values ?? Dictionary<String, BinaryPending>().values {
+            guard UUID(uuidString: pending.operationId) != nil,
+                  pending.entryPath.hasPrefix("assets/"),
+                  pending.entryPath.utf8.count <= 512,
+                  pending.payloadHash == nil || pending.payloadHash!.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else {
+                throw LocalVaultSyncFailure.invalidResponse
+            }
+            _ = try LocalVaultDocumentStore(root: root).url(for: pending.path)
+        }
+        return state
+    }
+    static func validateStateForAdoption(_ data: Data, root: URL, binding: LocalVaultSyncBinding) throws {
+        let saved = try JSONDecoder().decode(State.self, from: data)
+        guard try PortableWorkspaceBinding.normalized(saved.binding) == PortableWorkspaceBinding.normalized(binding) else { throw LocalVaultSyncFailure.invalidBinding }
+        _ = try decodeState(data, root: root, binding: saved.binding)
     }
 
     public func readSharedCheckpoint(itemId: String) throws -> LocalVaultSharedCheckpoint? {

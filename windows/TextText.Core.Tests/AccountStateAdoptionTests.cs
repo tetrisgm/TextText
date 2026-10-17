@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using TextText.Core;
@@ -29,8 +30,34 @@ static class AccountStateAdoptionTests
         var state=File.ReadAllBytes(Path.Combine(store.StateDirectory,"sync.json"));var cpPath="shared-editing/adoption-shared/checkpoint.json";
         return new(store,remote,file.Path,pending,JsonSerializer.Deserialize<SyncEngine.State>(state)!.Outbox.Single().Id,cpPath,state,File.ReadAllBytes(Path.Combine(store.StateDirectory,cpPath)),projection);
     }
+    public static void ResumeFixture(string root) {
+        var canonical=Path.GetFullPath(root);var parent=Path.GetFileName(Path.GetDirectoryName(canonical));
+        if(!Path.GetFileName(canonical).StartsWith("adoption-process-",StringComparison.Ordinal)||parent is null||!parent.StartsWith("texttext-core-test-",StringComparison.Ordinal))throw new InvalidOperationException("Not an owned adoption fixture.");
+        var nonce=Environment.GetEnvironmentVariable("TEXTTEXT_ADOPTION_FIXTURE_NONCE");
+        if(nonce is null||File.ReadAllText(Path.Combine(canonical,".adoption-fixture"))!=nonce)throw new InvalidOperationException("Fixture ownership did not match.");
+        var store=new TextPackStore(canonical,canonical+"-state");
+        var result=AccountStateAdoption.AdoptAfterExplicitReview(store,new Uri("https://texttext.test"),"workspace","account-a");
+        if(result.AlreadyBound||result.RecoveryDirectory is null)throw new InvalidOperationException("Interrupted adoption did not resume.");
+        Console.WriteLine("PASS separate process resumes the recorded adoption");
+    }
+    static async Task SeparateProcess(string temporary,Action<bool,string> assert) {
+        var f=await Create(temporary,"adoption-process-restart");var nonce=Guid.NewGuid().ToString("N");File.WriteAllText(Path.Combine(f.Store.Root,".adoption-fixture"),nonce);
+        try{AccountStateAdoption.AdoptAfterExplicitReview(f.Store,new Uri("https://texttext.test"),"workspace","account-a",step=>{if(step=="applied:"+f.CheckpointPath)throw new Interrupted();});}catch(Interrupted){}
+        var start=new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true};
+        if(Path.GetFileNameWithoutExtension(start.FileName).Equals("dotnet",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(typeof(AccountStateAdoptionTests).Assembly.Location);
+        start.ArgumentList.Add("--resume-account-adoption-fixture");start.ArgumentList.Add(f.Store.Root);start.Environment["TEXTTEXT_ADOPTION_FIXTURE_NONCE"]=nonce;
+        using var child=Process.Start(start)??throw new Exception("Could not start owned adoption child.");
+        var output=child.StandardOutput.ReadToEndAsync();var errors=child.StandardError.ReadToEndAsync();
+        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        try{await child.WaitForExitAsync(deadline.Token);}catch(OperationCanceledException){child.Kill(entireProcessTree:true);await child.WaitForExitAsync();throw new TimeoutException("Owned adoption child exceeded its deadline.");}
+        var stdout=await output;var stderr=await errors;
+        assert(child.ExitCode==0&&stdout.Contains("PASS separate process resumes the recorded adoption")&&stdout.Length<8192&&stderr.Length<8192,"a separate native process resumes frozen adoption bytes and hashes");
+        var state=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,"sync.json")))!;
+        assert(state.AccountId=="account-a"&&state.Outbox.Single().Id==f.Operation&&f.Store.Read(f.Path).SequenceEqual(f.Pending),"separate-process adoption retains original pending operation and file");
+    }
     public static async Task Run(string temporary,Action<bool,string> assert) {
         var origin=new Uri("https://texttext.test");
+        await SeparateProcess(temporary,assert);
         var phases=new[]{"prepared:shared-editing/adoption-shared/checkpoint.json","prepared:sync.json","intent","applied:shared-editing/adoption-shared/checkpoint.json","applied:sync.json","owner"};
         foreach(var phase in phases) {
             var f=await Create(temporary,"adoption-"+Array.IndexOf(phases,phase));var stopped=false;

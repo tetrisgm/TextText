@@ -19,4 +19,4 @@ Private directory traversal is bounded to the known active layout and refuses li
 
 ## Remaining
 
-Mac transaction, separate-process adoption restart, real storage-refusal campaign, UI consent/current authorization capture, old browser-profile recovery, cross-process exclusion and background callers. Ordinary opening deliberately remains blocked for unbound work. A valid native queue migration does not prove browser drafts or the complete T17 compatibility matrix.
+Mac transaction and separate-process restart are now covered by the [follow-up receipt](2026-10-17-mac-account-adoption.md). Remaining: real storage-refusal campaign, UI consent/current authorization capture, old browser-profile recovery, cross-process exclusion and background callers. Ordinary opening deliberately remains blocked for unbound work. A valid native queue migration does not prove browser drafts or the complete T17 compatibility matrix.

@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import ZIPFoundation
 import TextTextWorkspaceCore
 
@@ -142,7 +143,12 @@ struct LocalVaultSharedEditingStore: Sendable {
         try handle.synchronize(); try handle.close()
     }
     private func validHash(_ value: String) -> Bool { value.count == 64 && value.allSatisfy({ $0.isHexDigit }) }
-    private func validate(_ checkpoint: LocalVaultSharedCheckpoint) throws {
+    private func journalInteger(_ value: Any?, equals expected: UInt64) -> Bool {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              number.doubleValue.isFinite, number.doubleValue.rounded() == number.doubleValue else { return false }
+        return number.doubleValue == Double(expected)
+    }
+    func validate(_ checkpoint: LocalVaultSharedCheckpoint) throws {
         _ = try LocalVaultDocumentStore(root: root).url(for: checkpoint.path)
         guard checkpoint.version == nil || checkpoint.version == 1 else { throw LocalVaultSharedFailure.invalid }
         guard validHash(checkpoint.projectedHash), validHash(checkpoint.acknowledgedRevision),
@@ -152,8 +158,8 @@ struct LocalVaultSharedEditingStore: Sendable {
               checkpoint.journal.utf8.count <= 4 * 1024 * 1024,
               (checkpoint.retiredReason?.utf8.count ?? 0) <= 2000,
               let journal = try JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8)) as? [String: Any],
-              journal["version"] as? Int == 1, journal["epoch"] as? Int == checkpoint.epoch,
-              journal["seq"] as? Int == checkpoint.seq, journal["journalGeneration"] as? UInt64 == checkpoint.journalGeneration, journal["revision"] as? String == checkpoint.acknowledgedRevision,
+              journalInteger(journal["version"], equals: 1), journalInteger(journal["epoch"], equals: UInt64(checkpoint.epoch)),
+              journalInteger(journal["seq"], equals: UInt64(checkpoint.seq)), journalInteger(journal["journalGeneration"], equals: checkpoint.journalGeneration), journal["revision"] as? String == checkpoint.acknowledgedRevision,
               journal["relativePath"] as? String == checkpoint.path,
               let update = journal["update"] as? String, !update.isEmpty, Data(base64Encoded: update) != nil,
               let pending = journal["pending"] as? [String], pending.count <= 1024,

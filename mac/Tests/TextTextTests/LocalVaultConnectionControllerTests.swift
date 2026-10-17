@@ -145,6 +145,11 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
         XCTAssertNil(try LocalVaultCapabilityCache.read(root: root, binding: binding))
         try LocalVaultCapabilityCache.write(permissions, root: root, binding: binding)
         XCTAssertNil(try LocalVaultCapabilityCache.read(root: root, binding: binding, accountId: "account-a"))
+        let target = LocalVaultDeviceState.directory(root: root).appendingPathComponent("workspace-capabilities.json")
+        var future = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: target)) as? [String: Any]); future["version"] = 999
+        let retained = try JSONSerialization.data(withJSONObject: future); try retained.write(to: target, options: .atomic)
+        XCTAssertThrowsError(try LocalVaultCapabilityCache.read(root: root, binding: binding))
+        XCTAssertEqual(try Data(contentsOf: target), retained)
     }
 
     @MainActor

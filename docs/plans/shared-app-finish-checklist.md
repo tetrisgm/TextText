@@ -381,7 +381,7 @@ Initial states reflect repository evidence on October 17; no new implementation/
 | T08–T09 | Open | Shared ownership, fencing and continuity after contract work |
 | T10 | Partial inventory | Complete per-flow ownership and host feasibility |
 | T11–T15 | Open | Policy slices, external files, identities/conflicts/providers |
-| T16–T18 | Partial existing tests | Complete crash/upgrade matrix and seeded scheduling |
+| T16–T18 | Partial existing tests | Native adoption transactions and separate-process recovery pass; real storage refusal, consent/profile recovery and the wider crash/upgrade matrix and seeded scheduling remain |
 | T19–T20 | Open acceptance | Product parity and real template/agent workflows |
 | T21–T22 | Partial historical evidence | Current physical actors and full scenario matrix |
 | T23 | Real viewer/edit/revoke/regrant passed | Offline pending work retained and not uploaded while revoked; current-source, account-switch and agent identity checks remain |

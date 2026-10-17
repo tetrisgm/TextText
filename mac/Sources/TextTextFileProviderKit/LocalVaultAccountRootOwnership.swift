@@ -59,7 +59,7 @@ public enum LocalVaultAccountRootOwnership {
         }
         try publish(expected, root: canonical)
     }
-    private static func verify(_ target: URL, expected: Owner) throws {
+    static func verify(_ target: URL, expected: Owner) throws {
         let actual = try JSONDecoder().decode(Owner.self, from: read(target, limit: 4096))
         guard actual.version == 1 else { throw Failure.future }
         guard actual == expected else { throw Failure.account }

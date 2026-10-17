@@ -7,7 +7,9 @@ static class Test
  static void Assert(bool condition,string label){if(!condition)throw new Exception(label);Console.WriteLine("PASS "+label);}
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
- static async Task Main(){var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
+ static async Task Main(string[] args){
+ if(args.Length>0){if(args.Length!=2||args[0]!="--resume-account-adoption-fixture")throw new InvalidOperationException("Unknown test mode.");AccountStateAdoptionTests.ResumeFixture(args[1]);return;}
+ var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed","legacy-conflict","legacy-missing-proof","legacy-corrupt-proof"}) {
  var metadataStore=new TextPackStore(Path.Combine(temp,"metadata-"+failure),Path.Combine(temp,"metadata-state-"+failure));
