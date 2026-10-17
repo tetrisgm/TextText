@@ -63,7 +63,26 @@ if(process.env.TEXTTEXT_SESSION_OWNER_BUNDLE){
 const browser=await chromium.launch();
 try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.route('https://native-owner.test/**',r=>r.fulfill({contentType:'text/html',body:'<p>Isolated native adapter ownership</p>'}));await page.goto('https://native-owner.test');await page.addScriptTag({content:app.outputFiles[0].text});
+ await page.route('https://native-owner.test/**',r=>r.fulfill({contentType:'text/html',body:'<p>Isolated native adapter ownership</p>'}));await page.goto('https://native-owner.test');
+ await page.evaluate(()=>{
+  const listeners=[],intervals=new Set();
+  const add=EventTarget.prototype.addEventListener,remove=EventTarget.prototype.removeEventListener;
+  const capture=options=>typeof options==='boolean'?options:!!options?.capture;
+  EventTarget.prototype.addEventListener=function(type,fn,options){
+   if((this===window||this===document)&&!listeners.some(x=>x.target===this&&x.type===type&&x.fn===fn&&x.capture===capture(options)))listeners.push({target:this,type,fn,capture:capture(options)});
+   return add.call(this,type,fn,options);
+  };
+  EventTarget.prototype.removeEventListener=function(type,fn,options){
+   const i=listeners.findIndex(x=>x.target===this&&x.type===type&&x.fn===fn&&x.capture===capture(options));if(i>=0)listeners.splice(i,1);
+   return remove.call(this,type,fn,options);
+  };
+  const start=window.setInterval.bind(window),stop=window.clearInterval.bind(window);
+  window.setInterval=(...args)=>{const id=start(...args);intervals.add(id);return id;};
+  window.clearInterval=id=>{intervals.delete(id);stop(id);};
+  window.resources=()=>({listeners:listeners.length,intervals:intervals.size});
+ });
+ await page.addScriptTag({content:app.outputFiles[0].text});
+ const baselineResources=await page.evaluate(()=>window.resources());
  await page.evaluate(()=>window.open('a'));await page.evaluate(()=>window.pause('a'));
  await page.evaluate(()=>{window.hold=true;window.edit('a',' delayed native save')});await page.waitForFunction(()=>window.waiting);
  await page.evaluate(()=>{window.done=null;window.release('a').then(result=>window.done=result)});
@@ -78,20 +97,29 @@ try{
  assert.equal(await page.evaluate(()=>window.closes),1);
  await page.evaluate(()=>{window.openHeld=false;window.finishOpen()});await page.waitForFunction(()=>window.cancelledDone);
  assert.equal(await page.evaluate(()=>window.closes),2);
+ for(let cycle=0;cycle<25;cycle++){
+  await page.evaluate(async()=>{
+   await window.open('cycle-a');await window.open('cycle-b');window.pause('cycle-a');
+   if(!window.same('cycle-a','cycle-b'))throw Error('Duplicate owner');
+   if(!await window.release('cycle-a')||!await window.release('cycle-b'))throw Error('Failed release');
+   if(window.phase('cycle-b')!=='closed')throw Error('Owner remained live');
+  });
+  assert.deepEqual(await page.evaluate(()=>window.resources()),baselineResources,'Global listeners and intervals return to baseline after cycle '+cycle);
+ }
  await page.evaluate(()=>window.open('d'));await page.evaluate(()=>window.pause('d'));
  await page.evaluate(()=>{window.fail=true;window.edit('d',' retained on rejection')});
  assert.equal(await page.evaluate(()=>window.release('d')),false);assert.equal(await page.evaluate(()=>window.phase('d')),'retained-error');
- assert.equal(await page.evaluate(()=>window.closes),2);
+ assert.equal(await page.evaluate(()=>window.closes),27);
  assert.equal(await page.evaluate(()=>window.flushAll()),false,'A detached unsaved owner must block application shutdown');
  await page.evaluate(()=>window.open('e'));assert.equal(await page.evaluate(()=>window.same('d','e')),true);
  assert.ok((await page.evaluate(()=>window.text('e'))).endsWith('retained on rejection'));
- assert.equal(await page.evaluate(()=>window.opens),3);
+ assert.equal(await page.evaluate(()=>window.opens),28);
  await page.evaluate(()=>window.rejectRecovery=true);
  assert.equal(await page.evaluate(()=>window.recover('e').then(()=>false,()=>true)),true);
- assert.equal(await page.evaluate(()=>window.recoveries),0);assert.equal(await page.evaluate(()=>window.closes),2);
+ assert.equal(await page.evaluate(()=>window.recoveries),0);assert.equal(await page.evaluate(()=>window.closes),27);
  await page.evaluate(()=>window.rejectRecovery=false);
  assert.equal(await page.evaluate(()=>window.recover('e')),true);
- assert.equal(await page.evaluate(()=>window.recoveries),1);assert.equal(await page.evaluate(()=>window.closes),2);
+ assert.equal(await page.evaluate(()=>window.recoveries),1);assert.equal(await page.evaluate(()=>window.closes),27);
  assert.equal(await page.evaluate(()=>window.flushAll()),true,'Confirmed durable recovery permits application shutdown');
  assert.deepEqual(errors,[]);
  console.log('PASS production native owner with controlled adapter: last release waits for native checkpoint; reacquire keeps lease; cancelled open closes only after completion; checkpoint rejection retains the exact document and lease for recovery.');

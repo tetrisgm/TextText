@@ -1156,7 +1156,10 @@ export class FileCollaborationClient {
           (remote.unchanged !== undefined && remote.unchanged !== true)) throw new Error("Invalid collaboration response.");
       if (remote.unchanged && (!requested || remote.epoch !== requested.epoch || remote.seq !== requested.seq)) throw new Error("Invalid unchanged collaboration cursor.");
       if (remote.epoch !== this.current.epoch) {
-        if (remote.canEditContent === true && this.canRecover()) this.beginRecovery();
+        // A live editor can have uncommitted IME text even when its durable
+        // queue is clean. Adopt through the same proven epoch transaction;
+        // repeatedly checkpointing the old epoch cannot refresh that editor.
+        if (remote.canEditContent === true && this.canRecover(Boolean(this.options.onDocumentReplaced))) this.beginRecovery();
         else this.notifyExternalFileChange();
         return;
       }
@@ -1300,10 +1303,10 @@ export class FileCollaborationClient {
     try { this.storage.remove(this.journalKey); this.saved = null; this.pending = []; this.batch = null; this.unqueuedDirty = false; this.initialRetirement = null; }
     catch (error) { this.fatal(new Error(`Recovery journal could not be removed. ${String(error)}`)); throw error; }
   }
-  /** Pending edits exist, no retirement fences them, and nothing else owns the journal. */
-  private canRecover(): boolean {
+  /** No retirement fences this writer. A proved epoch change may also rebind a clean live view. */
+  private canRecover(allowClean = false): boolean {
     return this.supportsEpochRecovery && this.initialized && this.canEdit && this.active && !this.dead && !this.frozen && !this.recovering &&
-      !this.unreadableJournal && !this.initialRetirement && !this.saved?.retired && !this.unqueuedDirty && this.hasPendingChanges;
+      !this.unreadableJournal && !this.initialRetirement && !this.saved?.retired && !this.unqueuedDirty && (allowClean || this.hasPendingChanges);
   }
   private beginRecovery(): void {
     if (this.recovering || this.dead || this.frozen) return;

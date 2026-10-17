@@ -125,6 +125,35 @@ await waitState('ready');
 for(let i=0;i<100&&JSON.parse(native.journal).pending.length;i+=1)await new Promise(r=>setTimeout(r,100));
 const finalJournal=JSON.parse(native.journal);assert.equal(finalJournal.epoch,epochBefore+1);assert.deepEqual(finalJournal.pending,[]);assert.equal(finalJournal.batch,null);
 s=await state();assert.equal(s.marked,'mounted','the editor never remounted');
+if(process.argv.includes('--ime')||process.argv.includes('--ime-clean')){
+ const clean=process.argv.includes('--ime-clean');
+ const ime=await page.context().newCDPSession(page);
+ await page.keyboard.press('End');
+ if(!clean){
+  holdNormalPush=new Promise(r=>{releaseNormal=r;});
+  await page.keyboard.type(' pending');
+ }
+ await ime.send('Input.imeSetComposition',{text:'漢',selectionStart:1,selectionEnd:1});
+ const before=await readVaultTextpack(location);
+ await writeVaultTextpack({...location,relativePath,operationId:'outside-ime',baseRevision:before.revision,bytes:pack('Hello remote local typed outside',{'opaque.bin':new Uint8Array([3])})});
+ if(!clean){releaseNormal();holdNormalPush=null;}
+ for(let i=0;i<150&&JSON.parse(native.journal).epoch!==epochBefore+2;i++)await new Promise(r=>setTimeout(r,100));
+ if(JSON.parse(native.journal).epoch!==epochBefore+2)await dump();
+ assert.equal(JSON.parse(native.journal).epoch,epochBefore+2,'Adoption completed while composition was active');
+ await ime.send('Input.insertText',{text:'漢字'});
+ await page.waitForFunction(()=>{
+  const text=document.querySelector('[aria-label="Document body"]')?.textContent;
+  return text?.includes('漢字')&&text?.includes('outside');
+ });
+ s=await state();assert.equal(s.marked,'mounted');assert.equal(s.focused,true);
+ assert.equal(s.text,'Hello remote local typed outside'+(clean?'':' pending')+'漢字');
+ for(let i=0;i<100&&await serverBody()!==s.text;i++)await new Promise(r=>setTimeout(r,100));
+ assert.equal(await serverBody(),s.text,'Committed composition survives epoch adoption and upload');
+ await page.keyboard.press(undo);await page.waitForTimeout(100);
+ assert.equal((await state()).text,'Hello remote local typed outside'+(clean?'':' pending'),'Undo preserves the replacement epoch');
+ assert.deepEqual(errors,[]);
+ console.log('PASS actual Chromium composition spans real-client/store epoch adoption, preserves peer text, stays mounted and undoes only the composition.');
+}else{
 // A second replacement whose adoption checkpoint fails natively: fail closed, intent retained, nothing lost.
 holdNormalPush=new Promise(r=>{releaseNormal=r;});
 await page.keyboard.press('End');await page.keyboard.type(' more');
@@ -152,4 +181,5 @@ await page.waitForFunction(async()=>{
 },null,{timeout:10000});
 assert.deepEqual(errors,[]);
 console.log('PASS live epoch adoption and IndexedDB persistence: pending and late edits recovered into the replaced epoch through the real client and store; body element, focus and mapped caret kept; awareness rejoined; undo crossed the adoption without discarding the remote edit; dropped recovery push replayed with the same intent; browser journal transaction committed; a failed native adoption checkpoint fails closed with the intent retained.');
+}
 }finally{await browser?.close();await rm(dir,{recursive:true,force:true});await rm(vault,{recursive:true,force:true});}
