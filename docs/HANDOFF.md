@@ -22,7 +22,7 @@ T07 now fixes captured-barrier waiting on later remote checkpoints and stale lif
 
 Continue T06/T07 conformance and lifecycle work. The native Windows input-fence regression failed before and passed after the minimal production fix; see [receipt](verification/2026-10-17-windows-close-input.md). T04 installed offline/reconnect and wider scenarios remain open. T08 onward, full physical six-client matrix, 100 seeded rounds, 60-minute soak, performance and final coherent delivery are unfinished. One passing round does not complete acceptance.
 
-The owner authorized creating a dedicated second TextText account. It is now authenticated through normal MXroute email sign-in in a private isolated browser profile; T23 viewer/edit/revoke-with-offline-work/viewer-regrant checks passed against the existing deployed bundle. Account-switch, agent identity and current-source physical gates remain open. No developer-login bypass is authorized.
+The owner authorized creating a dedicated second TextText account. It is now authenticated through normal MXroute email sign-in in a private isolated browser profile; T23 viewer/edit/revoke-with-offline-work/viewer-regrant checks passed; scoped viewer read/write-denial and pending-work retention were repeated against the new current deployment. Account-switch, agent identity and current-source physical gates remain open. No developer-login bypass is authorized.
 
 Keep unrelated dirty files untouched: `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, `scripts/.probe-editor.ts`. No public Mac release was published.
 
