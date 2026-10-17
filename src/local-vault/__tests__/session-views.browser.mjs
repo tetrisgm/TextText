@@ -54,6 +54,10 @@ setVaultTransport(async(method,params,signal)=>{
 const app=createRoot(document.getElementById('root')),noop=()=>{};
 window.render=names=>app.render(<div className="vault-app">{names.map(name=><div key={name} data-view={name}><CollaborativeVaultEditor initial={initial} root="web:views" startEditing config={{namespace:'https://views.test',workspaceId:'workspace',itemId:'item-views',accountId:'account-a',localFiles:${nativeMode}}} registerFlush={noop} onChanged={noop} onRemoved={noop}/></div>)}</div>);
 window.render(['a','b']);
+window.peerInsert=async(text='Peer ',at=0)=>{
+ const h=acquireVaultDocument({namespace:'https://views.test',workspaceId:'workspace',itemId:'item-views',accountId:'account-a',localFiles:${nativeMode}},projected,'web:views');
+ await h.ready;h.session.client.mutate(doc=>documentText(doc,'body').insert(at,text));await h.release();
+};
 window.home=()=>app.render(<VaultApp/>);
 window.hiddenDraft=async()=>{
  const h=acquireVaultDocument({namespace:'https://views.test',workspaceId:'workspace',itemId:'item-views',accountId:'account-a',localFiles:true},projected,'web:views');
@@ -85,6 +89,44 @@ window.recoverHidden=async()=>{
  await page.evaluate(()=>window.render(['b']));await page.waitForFunction(()=>!document.querySelector('[data-view="a"]'));
  assert.equal(await body('b').getAttribute('data-continuity'),'kept');if(nativeMode)assert.equal(await page.evaluate(()=>window.nativeCloses),0);
  await body('b').click();await page.keyboard.press('End');await page.keyboard.type(' second view');
+ const ime=await page.context().newCDPSession(page);
+ await ime.send('Input.imeSetComposition',{text:'漢',selectionStart:1,selectionEnd:1});
+ await page.evaluate(()=>window.peerInsert());
+ await ime.send('Input.insertText',{text:'漢字'});
+ await page.waitForFunction(()=>document.querySelector('[data-view="b"] [aria-label="Document body"]').textContent.includes('漢字'));
+ assert.ok((await body('b').innerText()).startsWith('Peer '),'Composition must preserve an edit received while composing');
+ assert.equal(await body('b').getAttribute('data-continuity'),'kept');
+ assert.equal(await body('b').evaluate(el=>{
+  const selection=getSelection(),range=document.createRange();range.selectNodeContents(el);
+  range.setEnd(selection.focusNode,selection.focusOffset);return range.toString().length;
+ }), (await body('b').innerText()).length,'Composition caret follows the committed text and peer prefix');
+ const composed=await body('b').innerText();
+ await page.keyboard.press(process.platform==='darwin'?'Meta+z':'Control+z');
+ await page.waitForFunction(()=>!document.querySelector('[data-view="b"] [aria-label="Document body"]').textContent.includes('漢字'));
+ assert.ok((await body('b').innerText()).startsWith('Peer '),'Undo preserves the peer edit');
+ assert.ok((await body('b').innerText()).includes('first view second view'),'Composition is one separate undo step');
+ await page.keyboard.press(process.platform==='darwin'?'Meta+Shift+z':'Control+y');
+ await page.waitForFunction(expected=>document.querySelector('[data-view="b"] [aria-label="Document body"]').textContent===expected,composed);
+ await page.keyboard.press('End');
+ await ime.send('Input.imeSetComposition',{text:'未',selectionStart:1,selectionEnd:1});
+ await page.evaluate(()=>window.peerInsert('Cancel peer '));
+ await ime.send('Input.imeSetComposition',{text:'',selectionStart:0,selectionEnd:0});
+ await page.waitForFunction(expected=>document.querySelector('[data-view="b"] [aria-label="Document body"]').textContent===expected,'Cancel peer '+composed);
+ // Replace baseline characters while a peer inserts inside that same range.
+ await body('b').evaluate(el=>{
+  const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let node;
+  while(node=walker.nextNode()){
+   const start=node.textContent.indexOf('Original');if(start<0)continue;
+   const range=document.createRange();range.setStart(node,start);range.setEnd(node,start+8);
+   getSelection().removeAllRanges();getSelection().addRange(range);break;
+  }
+ });
+ await ime.send('Input.imeSetComposition',{text:'置',selectionStart:1,selectionEnd:1});
+ await page.evaluate(()=>window.peerInsert('REMOTE', 'Cancel peer Peer '.length+4));
+ await ime.send('Input.insertText',{text:'置換'});
+ await page.waitForFunction(()=>document.querySelector('[data-view="b"] [aria-label="Document body"]').textContent.includes('置換REMOTE'));
+ assert.ok(!(await body('b').innerText()).includes('Original'));
+ assert.equal(await body('b').getAttribute('data-continuity'),'kept');
  const expected=await body('b').innerText();assert.ok(expected.includes('first view second view'));
  await page.evaluate(()=>window.render([]));await page.waitForFunction(()=>!document.querySelector('[data-view]'));
  // Reacquire immediately, including while the old IDB drain may still run.

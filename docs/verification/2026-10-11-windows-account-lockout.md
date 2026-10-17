@@ -35,3 +35,13 @@ Receipts under `C:\Users\Shokunin\dev\texttext-packet-b-84feed8d\windows\build`:
 The first run was part of a full passing Windows build. Candidate `candidate-dcaff9307bab48ac87f67791ec698b16` has source fingerprint `b9b0903ea5568104fb3f9d52bbdeeaae37edf3e6d46c5de6d91cc3aa3ee59884`, independently matched to a pristine archive of commit `01745e4e`. Installation verified the seal and preserved rollback at `C:\Users\Shokunin\AppData\Local\Programs\TextText-previous-20261011T221834-cbf27e3e`.
 
 This is a verified persistent workaround, not a vendor fix or a guarantee against unrelated SSH faults. A whole-PC reboot and overnight soak were not performed. Before removing the policy after a runtime update, repeat fresh-environment launches and audit 4625/4740. Do not weaken lockout policy or clear Security logs to hide failures.
+
+## October 17 recurrence: standalone Edge
+
+SSH reset before authentication around 11:32 PDT, then recovered without an SSH or account change. Fresh Security XML establishes a Shokunin lockout (4740) at **11:26:28**, with ten preceding/simultaneous bad-password events from **standalone `msedge.exe`** between 11:03:43 and 11:26:28. Each successive failure was less than ten minutes apart. Another Edge bad-password event occurred at 11:39:31. The current Edge executable is 155.0.4283.45; that version inspection alone does not prove the version of every earlier process.
+
+The WebView2 machine policy still contains `--disable-features=AutofillAiWalletPrivatePasses`, and running WebView2 processes were observed receiving it. That policy does not cover standalone Edge. This recurrence does not establish that the WebView2 policy was removed or ineffective. The SSH `ga_init`/`get_user_token` errors fall within the locked interval. The existing qualified username and key worked after recovery.
+
+Private evidence: `/private/tmp/texttext-t09-pc-restored-events.log`, structured account/process extraction `/private/tmp/texttext-t09-pc-edge-audit.log`, and SSH diagnostic `/private/tmp/texttext-t09-ssh-diagnostic.log`. No logs cleared, identity/profile added, account protection weakened, browser killed, or machine config changed. Process-creation events did not establish the parent chain for the failed Edge PIDs. Another active PC chat is running browser checks; coordination was requested before touching its launch sites. Its responsibility for individual failure events is not proven.
+
+Next: inspect and fix the relevant standalone Edge launch sites, preserving existing disabled-feature arguments and other active work; audit actual fresh launches, then observe later normal use. Standalone Edge prevention is still open. The earlier reboot/overnight WebView2 receipt remains bounded to its recorded window.

@@ -24,8 +24,8 @@ Added/extended cases prove:
 
 The first full gate exposed two incorrect test assumptions. A pending projection does not advance the acknowledged baseline. An old simulated restart also left the previous editor actor alive; it now deallocates that actor and checks the weak reference before starting the replacement. Exact lost-ack operation and payload assertions remain. The actual process-kill cases are separate.
 
-## Physical PC verification dependency
+## Physical PC verification
 
-The preceding document-only lease version passed the full core suite on the PC. Transfer of this newer workspace-writer version failed before copying the first file. Direct SSH completed key exchange and then reset at `SSH2_MSG_SERVICE_ACCEPT`, before key authentication. The existing tunnel attempt timed out. The qualified local username, fleet identity and route are unchanged; the PC is reachable. Private client diagnostic: `/private/tmp/texttext-t09-ssh-diagnostic.log`.
+After SSH recovered, copied the five current core/test files (workspace ownership plus duplicate-open refusal) into the private test staging checkout and ran the full Release core suite on the actual PC. Exit 0; all native file and durable sync regression tests passed. Remote receipt: `C:\Users\Shokunin\dev\texttext-t09-workspace-writer-core.log`; Mac capture: `/private/tmp/texttext-t09-pc-workspace-core.log`. The installed candidate was not changed.
 
-Current Windows event logs were requested while local work continued. Do not label this recurrence as an established account lockout without those logs, or count the older PC receipt as verification of this newer source. No SSH/service/policy change was made. Next physical command after access returns: copy the three changed Windows core/test files and run the full Release core suite, with receipt `C:\Users\Shokunin\dev\texttext-t09-workspace-writer-core.log`.
+The access interruption was a fresh Windows account lockout caused by standalone Edge bad-password attempts, not an offline PC. See the [updated lockout evidence](2026-10-11-windows-account-lockout.md). No SSH, service or lockout-policy change was made.

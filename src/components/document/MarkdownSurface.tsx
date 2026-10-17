@@ -385,6 +385,8 @@ export function MarkdownSurface({
   label,
   selections,
   onChange,
+  onCompositionStart,
+  onCompositionCommit,
   onSelection,
   surfaceRef,
   resolveSelection,
@@ -412,6 +414,8 @@ export function MarkdownSurface({
   label: string;
   selections: SurfaceSelection[];
   onChange: (value: string) => void;
+  onCompositionStart?: () => void;
+  onCompositionCommit?: (value: string, caret: number | null) => { value: string; caret: number | null };
   onSelection: (anchor: number, head: number) => void;
   surfaceRef?: React.RefObject<HTMLDivElement | null>;
   resolveSelection?: () => { anchor: number; head: number } | null;
@@ -605,7 +609,7 @@ export function MarkdownSurface({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onSelection, ref]);
 
-  const publish = () => {
+  const publish = (composition = false) => {
     const root = ref.current;
     if (!root || composingRef.current) return;
     const at = selectionOffsets();
@@ -616,11 +620,16 @@ export function MarkdownSurface({
     // characters, and contentEditable="plaintext-only" admits no markup. In
     // whole-document mode prefix and suffix are empty.
     const windowText = root.textContent ?? "";
-    const text = prefixRef.current + windowText + suffixRef.current;
+    let text = prefixRef.current + windowText + suffixRef.current;
+    if (composition && onCompositionCommit) {
+      const committed = onCompositionCommit(text, at?.head ?? null);
+      if (committed.value !== text) pendingCaretRef.current = committed.caret;
+      text = committed.value;
+    }
     // Only the window's text can have changed natively; splice its lines into
     // the model instead of re-splitting the whole (possibly multi-megabyte)
     // value in reconcile.
-    if (windowedRef.current && structureMatchesWrappers()) {
+    if (text === prefixRef.current + windowText + suffixRef.current && windowedRef.current && structureMatchesWrappers()) {
       const previous = linesRef.current;
       const win = winRef.current;
       const split = windowText.length === 0 ? [""] : windowText.split("\n");
@@ -1692,7 +1701,7 @@ export function MarkdownSurface({
       aria-busy={disabled || undefined}
       suppressContentEditableWarning
       spellCheck={value.length < SPELLCHECK_LIMIT}
-      onInput={publish}
+      onInput={() => publish()}
       onCopy={(event) => {
         copySelection(event);
       }}
@@ -1791,10 +1800,11 @@ export function MarkdownSurface({
       }}
       onCompositionStart={() => {
         composingRef.current = true;
+        onCompositionStart?.();
       }}
       onCompositionEnd={() => {
         composingRef.current = false;
-        publish();
+        publish(true);
       }}
       onPointerDown={() => {
         draggingRef.current = true;

@@ -48,7 +48,7 @@ import { Awareness } from "y-protocols/awareness";
 import { EpochUndoHistory, captureUndoHistory, caretAfterBodyChange, mapSelection, type CapturedHistory, type HistoryStep } from "@/lib/collab/epoch-adoption";
 import { formatArticleDate } from "@/lib/content";
 import type { Blog, Post } from "@/lib/content";
-import { capturePreReadyDocumentBaseline, applyPreReadyMetadata, applyPreReadyTextOperations, preReadyTextOperations } from "@/lib/collab/pre-ready";
+import { capturePreReadyDocumentBaseline, capturePreReadyTextBaseline, type PreReadyTextBaseline, applyPreReadyMetadata, applyPreReadyTextOperations, preReadyTextOperations } from "@/lib/collab/pre-ready";
 import { acknowledgeRetiredOutboxes, readDocumentRecoveries, CollabProvider, type PresencePeer } from "@/lib/collab/provider";
 import {
   keepMaterializationRecovery,
@@ -732,6 +732,7 @@ export function UnifiedDocumentEditor({
   }, [currentLocalDocument, onPasteImages]);
   /** Body-text mirror for replaceYText; see YTextMirror. */
   const bodyMirrorRef = useRef<YTextMirror>({ applying: false });
+  const compositionBaselineRef = useRef<PreReadyTextBaseline | null>(null);
   // Undo, from the CRDT rather than the browser. The editable surface is
   // rendered by React from the source string, so the browser's own undo would
   // mutate DOM that React immediately rewrites - it cannot work here. Yjs
@@ -2047,6 +2048,37 @@ export function UnifiedDocumentEditor({
               value={document.content.body}
               selections={remoteSelections.body}
               onChange={(value) => updateText("body", value)}
+              onCompositionStart={() => {
+                compositionBaselineRef.current = ready
+                  ? capturePreReadyTextBaseline(documentText(doc, "body")) : null;
+                undoManagerRef.current?.stopCapturing();
+              }}
+              onCompositionCommit={(value, caret) => {
+                const baseline = compositionBaselineRef.current;
+                compositionBaselineRef.current = null;
+                if (!baseline || recoveryBlockedRef.current) return { value, caret };
+                try {
+                  const target = documentText(doc, "body");
+                  // The DOM stayed at the composition's starting history while
+                  // peers continued editing. Delete only those starting IDs.
+                  const operations = preReadyTextOperations(baseline.text, value,
+                    target.toString(), { baseline, target });
+                  const merged = operations.reduce((text, operation) =>
+                    text.slice(0, operation.start) + operation.insert + text.slice(operation.end),
+                  target.toString());
+                  requireDocumentSnapshot({ ...documentRef.current,
+                    content: { ...documentRef.current.content, body: merged } });
+                  applyPreReadyTextOperations(target, operations, userEditOrigin.current);
+                  undoManagerRef.current?.stopCapturing();
+                  return { value: merged, caret: caret === null ? null
+                    : mapSelection(value, merged, { anchor: caret, head: caret }).head };
+                } catch {
+                  preReadyLocalRef.current = { ...documentRef.current,
+                    content: { ...documentRef.current.content, body: value } };
+                  preserveRecovery(providerRef.current?.learnedEpoch ?? 0, "local-recovery");
+                  return { value, caret };
+                }
+              }}
               onSelection={(anchor, head) =>
                 updateSelection("body", anchor, head)
               }
