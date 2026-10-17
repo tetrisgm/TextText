@@ -3,7 +3,7 @@ import {build} from 'esbuild';
 import {chromium} from 'playwright';
 const result=await build({stdin:{resolveDir:process.cwd(),contents:`
 import * as Y from 'yjs';
-import {acquireWebDocument} from './src/local-vault/web-document-session';
+import {acquireVaultDocument} from './src/local-vault/document-session';
 import {setVaultTransport} from './src/local-vault/bridge';
 import {emptyDocumentSnapshot} from './src/lib/documents/model';
 import {applyDocumentSnapshot,documentText,documentSnapshotFromYDoc} from './src/lib/collab/document';
@@ -24,7 +24,7 @@ const transport=account=>async(method,params,signal)=>{
 };
 setVaultTransport(transport('account-a'));
 window.useB=()=>setVaultTransport(transport('account-b'));
-window.open=async(name,accountId='account-a')=>{const h=acquireWebDocument({...identity,accountId},file);window.handles[name]=h;await h.ready;return h.lifecycle};
+window.open=async(name,accountId='account-a')=>{const h=acquireVaultDocument({...identity,accountId},file);window.handles[name]=h;await h.ready;return h.lifecycle};
 window.same=(a,b)=>window.handles[a].session===window.handles[b].session;
 window.text=name=>documentSnapshotFromYDoc(window.handles[name].session.client.doc).content.body;
 window.edit=(name,text)=>window.handles[name].session.client.mutate(doc=>documentText(doc,'body').insert(documentText(doc,'body').length,text));

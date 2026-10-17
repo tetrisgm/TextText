@@ -7,6 +7,48 @@ import TextTextFileProviderKit
 
 final class LocalVaultSessionLifecycleTests: XCTestCase {
     @MainActor
+    func testSharedOwnerKeepsNativeLeaseUntilWKCheckpointCompletes() async throws {
+        guard let fixture = ProcessInfo.processInfo.environment["TEXTTEXT_SESSION_OWNER_BUNDLE"] else { throw XCTSkip("Requires the explicit shared-owner browser fixture") }
+        _ = NSApplication.shared
+        let config = WKWebViewConfiguration(); config.websiteDataStore = .nonPersistent()
+        let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.contentView = view; window.makeKeyAndOrderFront(nil); window.makeFirstResponder(view)
+        defer { window.orderOut(nil); view.stopLoading() }
+        let base = URL(fileURLWithPath: fixture)
+        view.loadFileURL(base.appendingPathComponent("index.html"), allowingReadAccessTo: base)
+        let deadline = Date().addingTimeInterval(20)
+        func wait(_ expression: String) async throws {
+            while (try? await view.evaluateJavaScript(expression)) as? Bool != true {
+                if Date() >= deadline { throw NSError(domain: "SharedOwnerFixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Timed out: " + expression]) }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+        }
+        try await wait("typeof window.edit==='function'")
+        _ = try await view.evaluateJavaScript("window.testError='';window.open('a').then(async()=>{window.initialStatus=JSON.stringify({visibility:document.visibilityState,focused:document.hasFocus(),online:navigator.onLine,status:window.handles.a.session.status});await window.handles.a.session.client.retry();window.pause('a');window.hold=true;window.edit('a',' WK retained')}).catch(error=>window.testError=String(error));true")
+        try await wait("window.waiting || Boolean(window.testError)")
+        let openingError = try await view.evaluateJavaScript("window.testError") as? String
+        guard openingError == "" else { XCTFail("Fixture open failed: " + (openingError ?? "unknown")); return }
+        let activity = try await view.evaluateJavaScript("window.initialStatus") as? String
+        print("WK owner initial activity: " + (activity ?? "unavailable"))
+        _ = try await view.evaluateJavaScript("window.done=null;window.release('a').then(value=>window.done=value);true")
+        let early = try await view.evaluateJavaScript("window.closes") as? Int
+        XCTAssertEqual(early, 0)
+        _ = try await view.evaluateJavaScript("window.reattached=false;window.open('b').then(()=>window.reattached=true).catch(error=>window.testError=String(error));true")
+        try await wait("window.reattached")
+        let same = try await view.evaluateJavaScript("window.same('a','b')") as? Bool
+        XCTAssertEqual(same, true)
+        _ = try await view.evaluateJavaScript("window.hold=false;window.resume();true")
+        try await wait("window.done!==null")
+        _ = try await view.evaluateJavaScript("window.finalSaved=null;window.pause('b');window.release('b').then(value=>window.finalSaved=value).catch(error=>window.testError=String(error));true")
+        try await wait("window.finalSaved!==null")
+        let saved = try await view.evaluateJavaScript("window.finalSaved") as? Bool
+        XCTAssertEqual(saved, true)
+        let text = try await view.evaluateJavaScript("window.saved()") as? String
+        let closes = try await view.evaluateJavaScript("window.closes") as? Int
+        XCTAssertEqual(text, "Original WK retained"); XCTAssertEqual(closes, 1)
+    }
+    @MainActor
     func testProductionAccountReviewHonorsChoiceIdentityAndFreshPermission() async throws {
         _ = NSApplication.shared
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap { descendants($0) } }

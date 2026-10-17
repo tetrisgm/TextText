@@ -5,6 +5,41 @@ function session(): OwnedSession {
   return { connected: true, start: vi.fn(async () => {}), setAttached: vi.fn(), save: vi.fn(async () => true), close: vi.fn() };
 }
 describe("page session ownership", () => {
+  it("includes failed detached owners in application shutdown until storage recovers", async () => {
+    const owner = new SessionOwner(), value = session(); value.save = vi.fn(async () => false);
+    const a = owner.acquire("hidden", () => value); await a.ready;
+    expect(await a.release()).toBe(false);
+    expect(await owner.flushAll()).toBe(false); expect(owner.size).toBe(1);
+    value.save = vi.fn(async () => true);
+    expect(await owner.flushAll()).toBe(true);
+    const b = owner.acquire("hidden", () => { throw Error("must retain"); }); await b.release();
+  });
+  it("refuses shutdown during file mutation and when a save throws", async () => {
+    const owner = new SessionOwner(), value = session(), barrier = gate<void>();
+    const a = owner.acquire("a", () => value); await a.ready;
+    const operation = a.runExclusive(() => barrier.promise);
+    expect(await owner.flushAll()).toBe(false);
+    barrier.resolve(); await operation;
+    value.save = vi.fn(async () => { throw Error("disk unavailable"); });
+    expect(await owner.flushAll()).toBe(false);
+    value.save = vi.fn(async () => true); await a.release();
+  });
+  it("refuses shutdown when another document opens during a captured flush", async () => {
+    const owner = new SessionOwner(), value = session(), commit = gate<boolean>(); value.save = () => commit.promise;
+    const a = owner.acquire("a", () => value); await a.ready;
+    const flushing = owner.flushAll();
+    const b = owner.acquire("b", session); await b.ready;
+    commit.resolve(true); expect(await flushing).toBe(false);
+    expect(await owner.flushAll()).toBe(true); await a.release(); await b.release();
+  });
+  it("rechecks an earlier owner when a view attaches while a later owner saves", async () => {
+    const owner = new SessionOwner(), later = session(), commit = gate<boolean>(); later.save = () => commit.promise;
+    const a = owner.acquire("a", session), b = owner.acquire("b", () => later); await Promise.all([a.ready,b.ready]);
+    const flushing = owner.flushAll(); await Promise.resolve(); await Promise.resolve();
+    const again = owner.acquire("a", session);
+    commit.resolve(true); expect(await flushing).toBe(false);
+    await again.release(); await a.release(); await b.release();
+  });
   it("shares a lifecycle between views and closes once after the last idempotent release", async () => {
     const owner = new SessionOwner(), value = session(), create = vi.fn(() => value);
     const a = owner.acquire("account/workspace/item", create), b = owner.acquire("account/workspace/item", create);
@@ -67,5 +102,19 @@ describe("page session ownership", () => {
     const release = a.release(); expect(() => owner.acquire("a", session)).toThrow("finishing a save");
     retired.resolve(); expect(await reset).toBe(true); expect(await release).toBe(true);
     expect(events).toEqual(["saved", "retiring", "closed"]); expect(owner.size).toBe(0);
+  });
+  it("keeps a file mutation exclusive through unmount and its explicit reopen", async () => {
+    const owner = new SessionOwner(), value = session(), barrier = gate<void>();
+    const a = owner.acquire("a", () => value); await a.ready;
+    const mutation = a.runExclusive(async () => { await barrier.promise; return a.closeExclusive(); });
+    expect(() => owner.acquire("a", session)).toThrow("finishing a save");
+    const release = a.release(); expect(value.close).not.toHaveBeenCalled();
+    barrier.resolve(); expect(await mutation).toBe(true); expect(await release).toBe(true);
+    expect(value.close).toHaveBeenCalledOnce(); expect(owner.size).toBe(0);
+  });
+  it("refuses file mutations shared with another view before invoking them", async () => {
+    const owner = new SessionOwner(), a = owner.acquire("a", session), b = owner.acquire("a", session), mutation = vi.fn(async () => {});
+    await expect(a.runExclusive(mutation)).rejects.toThrow("other view"); expect(mutation).not.toHaveBeenCalled();
+    await a.release(); await b.release();
   });
 });

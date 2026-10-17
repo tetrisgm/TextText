@@ -6,17 +6,17 @@ Status: chosen for the current architecture; implementation remains in Packet C/
 
 Keep active document coordination in the shared TypeScript application runtime already hosted by the browser, WKWebView and WebView2. Do not add a Node, daemon, or second embedded runtime for Yjs coordination. Native code remains an adapter for filesystem coordination, credentials, durable checkpoints, window lifecycle and platform sign-in.
 
-When no document editor is open, there is no per-document Yjs actor to keep alive. Browser-only workspaces need no local file mirror in that state. Mac and Windows continue their existing native file-sync services so ordinary TextPack changes can materialize while the editor is closed. Opening a document reacquires ownership, reads its materialized baseline and durable journal, and reconciles before accepting new writes. This keeps inactive collaboration traffic and document memory bounded without disabling the native file-sync path.
+When the last editor closes, its document owner drains accepted work before releasing resources. Failed persistence retains that owner for recovery even with no editor open; application shutdown includes these retained owners. After a successful drain, no per-document Yjs actor remains. Browser-only workspaces need no local file mirror in that state. Mac and Windows continue their existing native file-sync services so ordinary TextPack changes can materialize while the editor is closed. Opening a document reacquires ownership, reads its materialized baseline and durable journal, and reconciles before accepting new writes. This keeps inactive collaboration traffic and document memory bounded without disabling the native file-sync path.
 
 ## Runtime boundaries
 
 | Surface | Active document owner | Durable local boundary | No-editor behavior |
 | --- | --- | --- | --- |
-| Web | Shared page runtime; browser lock fences competing tabs | IndexedDB transaction; persistent-storage request where available | No document client; server remains authoritative |
+| Web | Shared page runtime; browser lock fences competing tabs | IndexedDB transaction; persistent-storage request where available | Draining/failed owners retained; after safe release server remains authoritative |
 | Mac | Shared page runtime in WKWebView | Native checkpoint and coordinated TextPack write; browser journal is an additional recovery copy | Native `LocalVaultSync` continues file materialization |
 | Windows | Shared page runtime in WebView2 | Native checkpoint and atomic TextPack write; browser journal is an additional recovery copy | Native `SyncEngine` continues file materialization |
 
-The editor is a view, not the durability owner. Packet C must move the client/session lifetime out of React view effects while keeping the runtime in the same shared page. The coordinator must fence releases with workspace, item and lifecycle identity; flush the accepted generation before native close; preserve journals on genuine storage failure; and stop presence/transport work after release. Multiple browser tabs and native windows remain separate processes and require explicit existing lock/session fencing, not an assumed module singleton.
+The editor is a view, not the durability owner. Packet C has moved the client/session lifetime out of React view effects while keeping the runtime in the same shared page. The coordinator must fence releases with workspace, item and lifecycle identity; flush the accepted generation before native close; preserve journals on genuine storage failure; and stop presence/transport work after release. Multiple browser tabs and native windows remain separate processes and require explicit existing lock/session fencing, not an assumed module singleton.
 
 ## Tradeoffs and constraints
 
@@ -34,7 +34,7 @@ The page coordinator keys an owner by origin, stable account (or its existing le
 
 `opening` becomes `ready` or `reconnecting` through the existing client. Last release pauses transport and enters `draining`; the owner and native lease survive until the captured local save completes. A failed save enters `retained-error`, with the same recoverable document available to a later acquire. Successful drain closes and removes the owner. Reacquisition during drain invalidates its pending close. An explicit restart requires the sole handle; it cannot destroy another view's session. Account/workspace separation is part of the key, not a mutable transport option. Existing cross-process leases remain required and are covered separately by T09.
 
-Migrate the browser editor first, preserving the current native path until its checkpoint and file-mutation callbacks move into the same owner. This is one implementation slice, not completion of native ownership, presence or cross-process acceptance.
+The browser and native checkpoint, file-mutation and presence paths now use the same owner; see the [source and host receipt](2026-10-17-shared-session-ownership.md). Cross-process and installed acceptance remain separate gates.
 
 1. Deterministic tests prove open/release, duplicate opens, stale callback fencing, crash takeover and offline reopen for the coordinator.
 2. Native and browser adapters conform to the typed persistence and lifecycle contract.

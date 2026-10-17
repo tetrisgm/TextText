@@ -45,6 +45,7 @@ import { CaptureDialog, captureInput } from "./CaptureDialog";
 import { FeedSubscribeDialog, FeedSubscriptionReader } from "./VaultFeeds";
 import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
+import { flushDocumentSessions } from "./document-session";
 import { fileCollaborationJournalKey, hasPendingFileCollaborationJournal } from "@/sync/engine/client";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 import { packIdentity } from "./pack";
@@ -690,15 +691,20 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       texttextFlushForSignOut?: () => Promise<boolean>;
       texttextFlushForNativeClose?: () => Promise<{ ok: boolean; idle: boolean; durability: import("@/sync/engine/client").FileCollaborationDurabilityResult | { outcome: "durable" | "pending" } | { outcome: "local-file-durable"; workspaceId: string; itemId: string; lifecycle: string; fileHash: string } | null }>;
     };
-    nativeWindow.texttextFlushForSignOut = () => flushRef.current(true);
+    const flushApplication = async () => {
+      const ok = await flushRef.current(true) && await flushDocumentSessions();
+      if (!ok) setError("Some edits have not finished saving. Reopen the document to retry saving or keep a recovery copy.");
+      return ok;
+    };
+    nativeWindow.texttextFlushForSignOut = flushApplication;
     nativeWindow.texttextFlushForNativeClose = async () => {
-      const ok = await flushRef.current(true);
+      const ok = await flushApplication();
       const durability = await durabilityResultRef.current();
       const selectedFile = selectedRef.current;
       const currentFile = currentFileRef.current?.();
       const localFile = ok && localFileModeRef.current && durability === null && selectedFile && currentFile?.path === selectedFile.path ? currentFile : null;
       return { ok, idle: ok && selectedRef.current === null && durability === null,
-        durability: durability ?? (localFile ? { outcome: "local-file-durable", workspaceId: listingRef.current?.root ?? "",
+        durability: !ok ? { outcome: "pending" } : durability ?? (localFile ? { outcome: "local-file-durable", workspaceId: listingRef.current?.root ?? "",
           itemId: packIdentity(localFile.markdown), lifecycle: `local-file:${localFile.path}`, fileHash: localFile.hash }
           : { outcome: ok ? "durable" : "pending" }) };
     };

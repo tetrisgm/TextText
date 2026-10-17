@@ -18,6 +18,14 @@ export class DetachedFileSaveProof {
     client.discardCleanJournal();
     this.saved = { path: file.path, hash: file.hash };
   }
+  async retireDurably(client: CleanJournalOwner & { discardCleanJournalDurably(): Promise<void> }, file: FileIdentity) {
+    this.clear();
+    if (client.hasPendingChanges || client.hasUnreadableJournal || !file.path || !file.hash) {
+      throw new Error("Pending collaboration history must be saved before leaving this file.");
+    }
+    await client.discardCleanJournalDurably();
+    this.saved = { path: file.path, hash: file.hash };
+  }
   matches(file: FileIdentity) {
     return this.saved !== null && this.saved.path === file.path && this.saved.hash === file.hash;
   }
