@@ -110,6 +110,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         var assetHash: String?
     }
     private func itemDirectory(_ itemId: String, create: Bool = false) throws -> URL {
+        try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
         guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) == itemId.startIndex..<itemId.endIndex else { throw LocalVaultSharedFailure.invalid }
         let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
         var directory = LocalVaultDeviceState.directory(root: canonical)

@@ -502,7 +502,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 return
             }
             if collaboration == nil {
-                collaboration = LocalVaultCollaboration(verifiedCredentials: self.credentials,
+                collaboration = LocalVaultCollaboration(verifiedCredentials: self.credentials, expectedLifetime: .captured(self.profileAccount),
                     engine: { [weak self] in self?.connection?.collaborationEngine },
                     didRelease: { [weak self] in self?.connection?.schedule() })
             }

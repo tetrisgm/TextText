@@ -106,6 +106,7 @@ public actor LocalVaultSync {
         if let accountId { _ = try LocalVaultAccountIdentity.validate(accountId) }
         self.accountId = accountId
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        try LocalVaultAccountRootOwnership.requireNoAdoption(root: canonicalRoot)
         try LocalVaultDeviceState.migrate(root: canonicalRoot)
         self.root = canonicalRoot
         self.directory = LocalVaultDeviceState.directory(root: canonicalRoot).appendingPathComponent("sync", isDirectory: true)
@@ -1025,6 +1026,7 @@ public actor LocalVaultSync {
     }
 
     public func sync(maxItems: Int = 128) async throws -> LocalVaultSyncReport {
+        try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
         guard !running else { throw LocalVaultSyncFailure.busy }
         running = true
         defer { running = false }

@@ -55,6 +55,7 @@ final class LocalVaultConnectionController {
                        portable == (try PortableWorkspaceBinding.normalized(existing)) {
                         let transport = try HTTPLocalVaultSyncTransport(origin: existing.origin,
                             workspaceId: existing.workspaceId, token: account.token, session: session, accountId: account.accountId)
+                        if let id = account.accountId { try LocalVaultAccountRootOwnership.open(root: root, binding: existing, accountId: id) }
                         let engine = try LocalVaultSync(root: root, binding: existing, transport: transport, accountId: account.accountId)
                         self.binding = existing; self.transport = transport; self.engine = engine; self.connectedAccount = account
                     }
@@ -279,6 +280,7 @@ final class LocalVaultConnectionController {
             return
         }
         let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token, session: session, accountId: account.accountId)
+        if let id = account.accountId { try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: id) }
         let engine = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: account.accountId)
         self.binding = binding; self.transport = transport; self.engine = engine; self.connectedAccount = account
         if startSync { activate() }

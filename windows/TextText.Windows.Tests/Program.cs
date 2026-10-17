@@ -25,6 +25,7 @@ var temp = Path.Combine(temporaryRoot, "texttext-windows-bridge-" + Guid.NewGuid
 var root = Path.Combine(temp, "workspace"); var state = Path.Combine(temp, "state");
 Directory.CreateDirectory(root); Directory.CreateDirectory(state);
 try {
+    await AccountBridgeTests.Run(temp,Assert);
     var local = new TextPackStore(root, state).Write("Notes/Startup.textpack", Pack("startup", "startup-1"));
     var transport = new StalledTransport();
     var events = new ConcurrentQueue<string>();

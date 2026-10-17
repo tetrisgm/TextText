@@ -48,6 +48,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         this.context = context;
         var binding = TextPackStore.Hash(Encoding.UTF8.GetBytes(context.Origin.AbsoluteUri + "\n" + context.WorkspaceId + "\n" + context.Root));
         files = new(context.Root, stateDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TextText", "Sync", binding));
+        if(context.AccountId is { } owner)AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,owner);
         var remote = transport ?? (context.AccountId is { } actor
             ? new HttpSyncTransport(http, context.Origin, context.WorkspaceId, actor, async () => new SyncAccountCredential(await context.TokenProvider(), actor), context.Access == "owner")
             : new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));

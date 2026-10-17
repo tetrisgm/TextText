@@ -38,6 +38,11 @@ struct LocalVaultAccountCredential: Sendable {
     }
 }
 
+enum LocalVaultCredentialLifetime {
+    case uncaptured
+    case captured(LocalVaultAccountCredential?)
+}
+
 /// Narrow authenticated relay. No URL or credential is accepted from JavaScript.
 @MainActor
 final class LocalVaultCollaboration {
@@ -50,13 +55,15 @@ final class LocalVaultCollaboration {
         var value: [String: Any] { var result: [String: Any] = ["namespace": namespace, "workspaceId": workspaceId, "itemId": itemId, "localFiles": true]; if let accountId { result["accountId"] = accountId }; return result }
     }
     private let credentials: () -> LocalVaultAccountCredential?
+    private let expectedLifetime: LocalVaultCredentialLifetime
     private let session: URLSession
     private let engine: () -> LocalVaultSync?
     private let didRelease: () -> Void
     private var localSessions: [String: (itemId: String, engine: LocalVaultSync, account: LocalVaultAccountCredential?)] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
-    init(credentials: @escaping () -> (origin: URL, token: String)? = { nil }, verifiedCredentials: (() -> LocalVaultAccountCredential?)? = nil, session: URLSession? = nil, engine: @escaping () -> LocalVaultSync? = { nil }, didRelease: @escaping () -> Void = {}) {
+    init(credentials: @escaping () -> (origin: URL, token: String)? = { nil }, verifiedCredentials: (() -> LocalVaultAccountCredential?)? = nil, expectedLifetime: LocalVaultCredentialLifetime = .uncaptured, session: URLSession? = nil, engine: @escaping () -> LocalVaultSync? = { nil }, didRelease: @escaping () -> Void = {}) {
         self.credentials = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }
+        self.expectedLifetime = expectedLifetime
         self.engine = engine
         self.didRelease = didRelease
         self.session = session ?? URLSession(configuration: .ephemeral, delegate: CollaborationNoRedirect(), delegateQueue: nil)
@@ -454,6 +461,12 @@ final class LocalVaultCollaboration {
         return (data, response.statusCode)
     }
     static let localCapabilities = ["epoch-adoption"]
+    private func matchesLifetime(_ current: LocalVaultAccountCredential?) -> Bool {
+        switch expectedLifetime {
+        case .uncaptured: return true
+        case .captured(let expected): return owns(expected, current: current)
+        }
+    }
     private func owns(_ captured: LocalVaultAccountCredential?, current: LocalVaultAccountCredential?) -> Bool {
         if let captured, let current { return captured.sameAccount(as: current) }
         return captured == nil && current == nil
@@ -461,6 +474,9 @@ final class LocalVaultCollaboration {
     private func localOperation(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         guard let itemId = params["itemId"] as? String, Self.identifier(itemId) else {
             throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration item.")
+        }
+        if method != "collaborationClose", !matchesLifetime(credentials()) {
+            throw LocalVaultCollaborationError(code: "account_changed", message: "Return to the original account to continue this window's saved work.")
         }
         if method == "collaborationOpen" {
             guard Set(params.keys) == ["itemId", "path", "hash"],
@@ -558,6 +574,7 @@ final class LocalVaultCollaboration {
                 if ["collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover"].contains(method) {
                     completion(.success(try await self.localOperation(method, params: params))); return
                 }
+                guard matchesLifetime(self.credentials()) else { throw LocalVaultCollaborationError(code: "account_changed", message: "This account changed. Your saved work remains on this device.") }
                 let context = try await Task.detached(priority: .utility) { try Self.context(root: root, account: account) }.value
                 try Task.checkCancellation()
                 guard let context else {
@@ -583,6 +600,8 @@ final class LocalVaultCollaboration {
                         }
                     }
                     try Task.checkCancellation()
+                    guard matchesLifetime(self.credentials()), let current = self.credentials(), let account,
+                          account.sameAccount(as: current) else { throw LocalVaultCollaborationError(code: "account_changed", message: "This account changed. Your saved work remains on this device.") }
                     completion(.success(configuration?.value)); return
                 }
                 var request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)

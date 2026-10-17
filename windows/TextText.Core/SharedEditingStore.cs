@@ -41,7 +41,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     readonly Dictionary<string,Active> sessions=[];readonly SemaphoreSlim gate=new(1,1);bool disposed;
     /// Announced by collaboration.open. "epoch-adoption": a pending journal may move to a newer epoch through an authorized, archived recovery intent.
     public static readonly string[] Capabilities=["epoch-adoption"];
-    string DirectoryFor(string id) {if(!Regex.IsMatch(id,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");var path=System.IO.Path.Combine(store.StateDirectory,"shared-editing",id);Directory.CreateDirectory(path);return path;}
+    string DirectoryFor(string id) {AccountRootOwnership.RequireNoAdoption(store.StateDirectory);if(!Regex.IsMatch(id,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");var path=System.IO.Path.Combine(store.StateDirectory,"shared-editing",id);Directory.CreateDirectory(path);return path;}
     static T? Read<T>(string path) {if(!File.Exists(path))return default;if(new FileInfo(path).Length>90*1024*1024)throw new InvalidDataException("Shared state exceeds bounds.");return JsonSerializer.Deserialize<T>(File.ReadAllBytes(path))??throw new InvalidDataException("Invalid shared state.");}
     static void Save<T>(string path,T value)=>TextPackStore.AtomicWrite(path,JsonSerializer.SerializeToUtf8Bytes(value));
     static bool ValidHash(string hash)=>Regex.IsMatch(hash,@"^[0-9a-f]{64}$");

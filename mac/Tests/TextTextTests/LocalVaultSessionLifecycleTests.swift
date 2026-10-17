@@ -62,7 +62,7 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         let engine = try LocalVaultSync(root: root, binding: binding, transport: LifecycleTransport())
         _ = try await engine.sync()
         var credential = LocalVaultAccountCredential(origin: binding.origin, token: "fixture-a")
-        let relay = LocalVaultCollaboration(verifiedCredentials: { credential }, engine: { engine })
+        let relay = LocalVaultCollaboration(verifiedCredentials: { credential }, expectedLifetime: .captured(credential), engine: { engine })
         let opened = try await request(relay, "collaborationOpen", ["itemId": itemId, "path": path, "hash": original.hash], root)
         let token = try XCTUnwrap(opened["sessionToken"] as? String)
         credential = LocalVaultAccountCredential(origin: binding.origin, token: "fixture-b")
@@ -72,6 +72,10 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         } catch let error as LocalVaultCollaborationError { XCTAssertEqual(error.code, "account_changed") }
         XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
         _ = try await request(relay, "collaborationClose", ["itemId": itemId, "sessionToken": token, "retiredReason": "Replacement account supplied this reason"], root)
+        do {
+            _ = try await request(relay, "collaborationOpen", ["itemId": itemId, "path": path, "hash": original.hash], root)
+            XCTFail("Replacement account opened a new session in the old legacy realm")
+        } catch let error as LocalVaultCollaborationError { XCTAssertEqual(error.code, "account_changed") }
         let reopened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
         XCTAssertNil(reopened.checkpoint?.retiredReason)
         try await engine.endSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId)
