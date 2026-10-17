@@ -16,6 +16,10 @@ Windows projection reads now reject files above 64 MiB before allocating and hol
 
 ## Remaining boundary
 
+### Same-path rename follow-up
+
+The Mac no-op rename path now checks the caller's expected hash before returning success. Its new regression first failed because stale input returned a newer document without refusal (`/private/tmp/texttext-same-path-rename-before.log`, exit 1). With the correction, all 9 `StableFileSnapshotTests` pass, including preservation of the external bytes and successful same-path rename using the current hash. The combined run `/private/tmp/texttext-lifecycle-samepath-swift-final.log` separately failed one new lifecycle fixture; that wider gate is not claimed here.
+
 An uncooperative writer can still change the destination between the final hash check and OS replacement. These checks do not provide a filesystem-wide atomic hash comparison. Full T12 remains open: preserving an atomically displaced destination needs a separate journaled replacement primitive, capability checks and crash recovery, including cross-volume behavior. Do not describe these tests as power-loss proof or as physical watcher/provider acceptance.
 
 Mac create/rename/import paths that return a fresh read after moving a file require separate operation-result tests. Completed idempotent retries intentionally returning the current unique identity are a different contract and must continue preserving later work.

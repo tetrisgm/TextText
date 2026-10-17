@@ -338,7 +338,11 @@ public struct LocalVaultDocumentStore: Sendable {
 
     public func rename(path: String, expectedHash: String, newPath: String) throws -> Document {
         let source = try url(for: path), destination = try url(for: newPath)
-        if source == destination { return try read(path: path) }
+        if source == destination {
+            let current = try read(path: path)
+            guard current.hash == expectedHash else { throw Failure.changed }
+            return current
+        }
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: source, options: .forMoving,

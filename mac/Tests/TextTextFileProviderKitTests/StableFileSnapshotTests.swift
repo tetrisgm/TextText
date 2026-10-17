@@ -84,6 +84,24 @@ final class StableFileSnapshotTests: XCTestCase {
         return (try Data(contentsOf: zipped), markdown, document.documentJSON)
     }
 
+    func testSamePathRenameStillChecksExpectedVersion() throws {
+        let path = "Stable.textpack", store = LocalVaultDocumentStore(root: root)
+        let original = try pack("original"), changed = try pack("external edit")
+        let target = root.appendingPathComponent(path)
+        try original.0.write(to: target)
+        let baseline = try store.read(path: path)
+        try changed.0.write(to: target, options: .atomic)
+        XCTAssertThrowsError(try store.rename(path: path, expectedHash: baseline.hash, newPath: path)) { error in
+            guard case LocalVaultDocumentStore.Failure.changed = error else { return XCTFail("Unexpected failure: \(error)") }
+        }
+        XCTAssertEqual(try Data(contentsOf: target), changed.0)
+        let current = try store.read(path: path)
+        let result = try store.rename(path: path, expectedHash: current.hash, newPath: path)
+        XCTAssertEqual(result.hash, current.hash)
+        XCTAssertEqual(result.path, path)
+        XCTAssertEqual(try Data(contentsOf: target), changed.0)
+    }
+
     func testPreparedWriteRejectsInPlaceAndRenameOverChanges() throws {
         for exact in [false, true] {
             for atomic in [false, true] {
