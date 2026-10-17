@@ -354,7 +354,15 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
                 // Command-W closes the window but AppDelegate retains its controller
                 // and WKWebView. The same editor sends the next checkpoint.
                 controller.close()
-                let visibility = try await view.evaluateJavaScript("document.visibilityState") as? String
+                XCTAssertFalse(controller.window?.isVisible ?? true, "The native window must actually close")
+                // Visibility crosses into WebKit asynchronously after AppKit
+                // closes. Await that notification instead of racing one read.
+                let visibilityDeadline = Date().addingTimeInterval(2)
+                var visibility = try await view.evaluateJavaScript("document.visibilityState") as? String
+                while visibility != "hidden" && Date() < visibilityDeadline {
+                    try await Task.sleep(nanoseconds: 20_000_000)
+                    visibility = try await view.evaluateJavaScript("document.visibilityState") as? String
+                }
                 XCTAssertEqual(visibility, "hidden", "Hidden windows must suspend the editor's network polling")
             }
             if generation == 3 { controller.present() }

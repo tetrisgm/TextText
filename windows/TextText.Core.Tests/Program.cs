@@ -11,6 +11,7 @@ static class Test
  if(args.Length>0){if(args.Length!=2)throw new InvalidOperationException("Unknown test mode.");if(args[0]=="--resume-account-adoption-fixture")AccountStateAdoptionTests.ResumeFixture(args[1]);else if(args[0]=="--hold-document-owner-fixture")await DocumentOwnershipTests.Hold(args[1]);else throw new InvalidOperationException("Unknown test mode.");return;}
  var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  await DocumentOwnershipTests.Run(temp,Assert);
+ await MirrorPolicyTests.Run(Assert);
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed","legacy-conflict","legacy-missing-proof","legacy-corrupt-proof"}) {
  var metadataStore=new TextPackStore(Path.Combine(temp,"metadata-"+failure),Path.Combine(temp,"metadata-state-"+failure));

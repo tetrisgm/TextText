@@ -1,0 +1,90 @@
+[
+  {
+    "name": "local-false-remote-false-refresh-false",
+    "observed": {
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-a",
+      "baselineRevision": "remote-a",
+      "refresh": false
+    },
+    "disposition": "idle"
+  },
+  {
+    "name": "local-false-remote-false-refresh-true",
+    "observed": {
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-a",
+      "baselineRevision": "remote-a",
+      "refresh": true
+    },
+    "disposition": "pull"
+  },
+  {
+    "name": "local-false-remote-true-refresh-false",
+    "observed": {
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-b",
+      "baselineRevision": "remote-a",
+      "refresh": false
+    },
+    "disposition": "pull"
+  },
+  {
+    "name": "local-false-remote-true-refresh-true",
+    "observed": {
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-b",
+      "baselineRevision": "remote-a",
+      "refresh": true
+    },
+    "disposition": "pull"
+  },
+  {
+    "name": "local-true-remote-false-refresh-false",
+    "observed": {
+      "localHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-a",
+      "baselineRevision": "remote-a",
+      "refresh": false
+    },
+    "disposition": "upload"
+  },
+  {
+    "name": "local-true-remote-false-refresh-true",
+    "observed": {
+      "localHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-a",
+      "baselineRevision": "remote-a",
+      "refresh": true
+    },
+    "disposition": "upload"
+  },
+  {
+    "name": "local-true-remote-true-refresh-false",
+    "observed": {
+      "localHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-b",
+      "baselineRevision": "remote-a",
+      "refresh": false
+    },
+    "disposition": "upload"
+  },
+  {
+    "name": "local-true-remote-true-refresh-true",
+    "observed": {
+      "localHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remoteRevision": "remote-b",
+      "baselineRevision": "remote-a",
+      "refresh": true
+    },
+    "disposition": "upload"
+  }
+]

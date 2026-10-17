@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { buildLocalVault } from '../../../scripts/build-local-vault.mjs';
+import { chromium } from 'playwright';
+import { readFile, writeFile, mkdtemp, copyFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+const output=process.env.TEXTTEXT_MIRROR_POLICY_BUNDLE ?? await mkdtemp(path.join(tmpdir(),'texttext-mirror-policy-'));
+await buildLocalVault({output});
+await copyFile('sync/fixtures/mirror-policy.json',path.join(output,'vectors.json'));
+// Load the exact packaged script without an editor, transport or credentials.
+await writeFile(path.join(output,'policy-fixture.html'),'<meta charset="utf-8"><p>Isolated native policy host</p><script src="mirror-policy.js"></script>');
+const manifest=JSON.parse(await readFile(path.join(output,'mirror-policy.json'),'utf8'));
+const vectors=JSON.parse(await readFile(path.join(output,'vectors.json'),'utf8'));
+const browser=await chromium.launch();
+try {
+ const page=await browser.newPage();
+ await page.route('https://policy.test/**',async route=>{
+  const name=new URL(route.request().url()).pathname.slice(1)||'policy-fixture.html';
+  assert(['policy-fixture.html','mirror-policy.js'].includes(name));
+  await route.fulfill({body:await readFile(path.join(output,name)),contentType:name.endsWith('.js')?'text/javascript':'text/html'});
+ });
+ await page.goto('https://policy.test');
+ const first=await page.evaluate(()=>window.texttextMirrorPolicy.handshake());
+ assert.equal(first.digest,manifest.digest);assert.equal(first.version,manifest.version);
+ const scope={accountId:'account-a',workspaceId:'workspace',lifecycle:'connection-a'};
+ const binding=await page.evaluate(scope=>window.texttextMirrorPolicy.bind({scope,generation:0}),scope);
+ await page.context().setOffline(true);
+ for(const [i,vector] of vectors.entries()) {
+  const request={...binding,scope,requestId:String(i),observed:vector.observed};
+  const reply=await page.evaluate(request=>window.texttextMirrorPolicy.evaluate(request),request);
+  assert.deepEqual(reply,{...request,disposition:vector.disposition});
+ }
+ await page.context().setOffline(false);await page.reload();
+ const second=await page.evaluate(()=>window.texttextMirrorPolicy.handshake());
+ assert.notEqual(first.pageId,second.pageId);
+ await page.evaluate(scope=>window.texttextMirrorPolicy.bind({scope,generation:0}),scope);
+ await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.evaluate(request),{...binding,scope,requestId:'old',observed:vectors[0].observed}),/Stale/);
+ console.log('PASS packaged mirror policy: shared vectors without an editor, offline evaluation, exact digest, reload fences old page');
+} finally {await browser.close();}
