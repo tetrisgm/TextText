@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window
     private readonly ConcurrentDictionary<string,CancellationTokenSource> requests = new();
     private readonly CancellationTokenSource lifetime = new();
     private Account? account;
+    private Account? workspaceAccount;
     private AvailableWorkspace? selectedWorkspace;
     private string ActiveWorkspaceId => selectedWorkspace?.Id ?? account?.WorkspaceId ?? "";
     private string ActiveWorkspaceName => selectedWorkspace?.Name ?? account?.Name ?? "Workspace";
@@ -175,7 +176,7 @@ public sealed partial class MainWindow : Window
         INativeWorkspaceBridge? nextBridge = null;
         try
         {
-        var profile = webViewProfile ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",active.WorkspaceId);
+        var profile = webViewProfile ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",active.AccountId ?? "legacy",active.WorkspaceId);
         var environment = await CoreWebView2Environment.CreateAsync(null,profile);
         await nextWeb.EnsureCoreWebView2Async(environment);
         var core = nextWeb.CoreWebView2;
@@ -202,12 +203,12 @@ public sealed partial class MainWindow : Window
         if (prepareCommit is not null) await prepareCommit();
         nextBridge = WorkspaceFactory?.Invoke(new(nextRoot, active.WorkspaceId, Origin,
             () => Task.FromResult(active.Token),
-            (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner"));
+            (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner", active.AccountId));
         beforeCommit?.Invoke();
         var oldWeb = web; var oldBridge = bridge;
         if (oldWeb?.CoreWebView2 is { } oldCore) oldCore.WebMessageReceived -= Receive;
         foreach (var request in requests.Values) request.Cancel();
-        root = nextRoot; web = nextWeb; bridge = nextBridge;
+        root = nextRoot; web = nextWeb; bridge = nextBridge; workspaceAccount = active;
         if (replacement is not null) selectedWorkspace = replacement;
         staging.Children.Remove(nextWeb);
         nextWeb.Width = double.NaN; nextWeb.Height = double.NaN; nextWeb.IsHitTestVisible = true;
@@ -248,6 +249,7 @@ public sealed partial class MainWindow : Window
             finally { requests.TryRemove(id,out _); }
         }
         catch(OperationCanceledException) { ReplyForSource(sender, new { id,error = new { message = "Request cancelled",code = "CANCELLED" } }); }
+        catch(SharedAccountMismatchException) { ReplyForSource(sender, new { id,error = new { message = "Return to the original account to continue these saved edits.",code = "account_changed" } }); }
         catch(FileChangedException) { ReplyForSource(sender, new { id,error = new { message = "This file changed. Its current contents have been preserved.",code = method?.StartsWith("collaboration.") == true ? "local_changed" : "conflict" } }); }
         catch(SharedSessionClosedException) { ReplyForSource(sender, new { id,error = new { message = "This editing session has closed.",code = "session_closed" } }); }
         catch(FileNotFoundException) { ReplyForSource(sender, new { id,error = new { message = "This file is not available on this device yet.",code = "not_found" } }); }
@@ -258,7 +260,7 @@ public sealed partial class MainWindow : Window
     {
         switch(method)
         {
-            case "native.status": return new { workspaceId = ActiveWorkspaceId,root,name = ActiveWorkspaceName,connected = account is not null,available = true };
+            case "native.status": return new { accountId = workspaceAccount?.AccountId, workspaceId = ActiveWorkspaceId,root,name = ActiveWorkspaceName,connected = account is not null,available = true };
             case "native.cancel": if(p.TryGetProperty("requestId",out var request) && requests.TryGetValue(request.GetString() ?? "",out var cancellation)) cancellation.Cancel(); return null;
             case "native.http": return await Http(p,ct);
             case "native.openWeb": OpenExternal(new Uri(Origin,"/vault/" + ActiveWorkspaceId).AbsoluteUri); return null;
@@ -281,7 +283,7 @@ public sealed partial class MainWindow : Window
                 try {
                     if(!await FlushEditor()) { ShowSaveFailure(); return null; }
                     foreach(var pending in requests.Values) pending.Cancel();
-                    CredentialStore.Clear(); bridge?.Dispose(); bridge = null; account = null; selectedWorkspace = null;
+                    CredentialStore.Clear(); bridge?.Dispose(); bridge = null; account = null; workspaceAccount = null; selectedWorkspace = null;
                     _ = Dispatcher.BeginInvoke(() => { web?.Dispose(); web = null; ShowLogin(); });
                 } finally { transitioning = false; if(web is not null) web.IsEnabled = true; }
                 return null;
@@ -290,7 +292,8 @@ public sealed partial class MainWindow : Window
     }
     private async Task<object> Http(JsonElement p,CancellationToken ct)
     {
-        var active = account ?? throw new InvalidOperationException("Sign in required");
+        var active = workspaceAccount ?? account ?? throw new InvalidOperationException("Sign in required");
+        if(account is null || !AccountIdentity.SameAccount(active,account)) throw new SharedAccountMismatchException();
         var path = p.TryGetProperty("path",out var pathElement) ? pathElement.GetString() : p.GetProperty("url").GetString();
         if(path is null || !path.StartsWith('/') || path.StartsWith("//") || path.Contains('\\')) throw new InvalidOperationException("Invalid API path");
         var uri = new Uri(Origin,path);
@@ -304,6 +307,8 @@ public sealed partial class MainWindow : Window
             if(header.Name.Equals("Content-Type",StringComparison.OrdinalIgnoreCase)) request.Content?.Headers.TryAddWithoutValidation(header.Name,header.Value.GetString());
             else if(header.Name.Equals("If-Match",StringComparison.OrdinalIgnoreCase) || header.Name.Equals("If-None-Match",StringComparison.OrdinalIgnoreCase) || header.Name.Equals("Accept",StringComparison.OrdinalIgnoreCase) || header.Name.StartsWith("X-TextText-",StringComparison.OrdinalIgnoreCase)) request.Headers.TryAddWithoutValidation(header.Name,header.Value.GetString());
         }
+        if (request.Headers.TryGetValues("X-TextText-Account", out var expected) && (active.AccountId is null || expected.Single() != active.AccountId)) throw new SharedAccountMismatchException();
+        if (active.AccountId is not null) { request.Headers.Remove("X-TextText-Account"); request.Headers.TryAddWithoutValidation("X-TextText-Account", active.AccountId); }
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer",active.Token);
         using var response = await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct);
         const int limit = 64 * 1024 * 1024;

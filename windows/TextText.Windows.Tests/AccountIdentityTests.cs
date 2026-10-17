@@ -13,6 +13,8 @@ static class AccountIdentityTests
         assert(old.AccountId is null && old.Token=="fixture" && old.Name=="Saved","legacy credential remains readable without inventing an account identity");
         var verified=old with {AccountId="account-a"};
         assert(System.Text.Json.JsonSerializer.Deserialize<Account>(System.Text.Json.JsonSerializer.Serialize(verified))==verified,"verified credential round trip preserves its stable account identity");
+        assert(AccountIdentity.SameAccount(verified,verified with {Token="renewed"}) && !AccountIdentity.SameAccount(verified,verified with {AccountId="account-b"}),"native window identity allows verified renewal and refuses account replacement");
+        assert(!AccountIdentity.SameAccount(old,old with {Token="other"}),"unbound legacy credentials cannot infer account identity from a replacement token");
         var calls=0;var authenticated=true;var origin=new Uri("https://texttext.test");
         using var current=new HttpClient(new Handler(request=>{calls++;authenticated&=request.Headers.Authorization?.Scheme=="Bearer"&&request.Headers.Authorization.Parameter=="fixture";return Json(new{accountId="account-a"});}));
         assert(await AccountIdentity.ResolveAsync(current,origin,"fixture",null)=="account-a"&&calls==1&&authenticated,"native identity uses authenticated stable actor discovery");

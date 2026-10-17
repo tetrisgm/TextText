@@ -77,6 +77,23 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         try await engine.endSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId)
     }
 
+    func testCacheHydrationDoesNotRelabelAnOpenLegacyWindow() {
+        let origin = URL(string: "https://texttext.test")!
+        let initial = LocalVaultAccountCredential(origin: origin, token: "fixture-a")
+        let verified = LocalVaultAccountCredential(origin: origin, token: "fixture-a", accountId: "account-a")
+        XCTAssertNil(LocalVaultAccountCredential.forWindow(initial: initial, current: verified)?.accountId)
+        XCTAssertEqual(LocalVaultAccountCredential.forWindow(initial: initial, current: LocalVaultAccountCredential(origin: origin, token: "fixture-b", accountId: "account-b"))?.accountId, "account-b")
+        XCTAssertNil(LocalVaultAccountCredential.forWindow(initial: initial, current: nil))
+    }
+
+    func testNativeWebProfilesSeparateAccountsAndRemainStableAcrossOriginSpelling() throws {
+        let a = try LocalVaultWindowController.accountProfileIdentifier(origin: URL(string: "https://texttext.test")!, accountId: "account-a")
+        XCTAssertEqual(a, try LocalVaultWindowController.accountProfileIdentifier(origin: URL(string: "https://texttext.test/")!, accountId: "account-a"))
+        XCTAssertNotEqual(a, try LocalVaultWindowController.accountProfileIdentifier(origin: URL(string: "https://texttext.test")!, accountId: "account-b"))
+        XCTAssertNotEqual(a, try LocalVaultWindowController.accountProfileIdentifier(origin: URL(string: "https://other.test")!, accountId: "account-a"))
+        XCTAssertThrowsError(try LocalVaultWindowController.accountProfileIdentifier(origin: URL(string: "https://texttext.test")!, accountId: "../unverified"))
+    }
+
     func testNativeCloseRequiresTypedDurableResult() {
         let durable: [String: Any] = ["ok": true, "durability": [
             "workspaceId": "workspace", "itemId": "item", "lifecycle": "lifecycle", "generation": 8, "outcome": "durable",

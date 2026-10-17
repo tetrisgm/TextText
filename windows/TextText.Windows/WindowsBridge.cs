@@ -48,8 +48,11 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         this.context = context;
         var binding = TextPackStore.Hash(Encoding.UTF8.GetBytes(context.Origin.AbsoluteUri + "\n" + context.WorkspaceId + "\n" + context.Root));
         files = new(context.Root, stateDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TextText", "Sync", binding));
-        sync = new(files, transport ?? new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));
-        editing = new(files, sync);
+        var remote = transport ?? (context.AccountId is { } actor
+            ? new HttpSyncTransport(http, context.Origin, context.WorkspaceId, actor, async () => new SyncAccountCredential(await context.TokenProvider(), actor), context.Access == "owner")
+            : new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));
+        sync = new(files, remote, context.AccountId);
+        editing = new(files, sync, context.AccountId);
         agent = new(context.Root, context.WorkspaceId, context.Emit, ExecuteAgentTool);
         notification = new(_ => { if (!lifetime.IsCancellationRequested) _ = context.Emit("texttext:vault-changed", new { }); }, null, Timeout.Infinite, Timeout.Infinite);
         files.Changed += Changed;

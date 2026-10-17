@@ -49,7 +49,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private var inputFences = Set<UUID>()
     private weak var previousResponder: NSResponder?
     private var previousMousePolicy = false
-    private let credentials: LocalVaultConnectionController.CredentialsProvider
+    private let credentials: LocalVaultConnectionController.VerifiedCredentialsProvider
+    private let profileAccount: LocalVaultAccountCredential?
+    private var accountFence: (() -> Void)?
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
 #if TEXTTEXT_STRESS_ACTOR
@@ -65,13 +67,24 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     var onSettings: (() -> Void)?
 
     init(entry: URL, root initialRoot: URL? = nil,
-         websiteDataStore: WKWebsiteDataStore = .default(),
+         websiteDataStore: WKWebsiteDataStore? = nil,
          collaboration: LocalVaultCollaboration? = nil,
-         credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil }) {
+         credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil },
+         verifiedCredentials: LocalVaultConnectionController.VerifiedCredentialsProvider? = nil) {
         self.entry = entry
-        self.credentials = credentials
+        let source = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }
+        let initialAccount = source()
+        // A legacy window keeps its unbound journals for this exact credential
+        // lifetime. Cache hydration alone must not relabel accepted saved work.
+        let provider = { LocalVaultAccountCredential.forWindow(initial: initialAccount, current: source()) }
+        self.credentials = provider
+        self.profileAccount = initialAccount
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = websiteDataStore
+        if let websiteDataStore { configuration.websiteDataStore = websiteDataStore }
+        else if let account = profileAccount, let accountId = account.accountId,
+                let identifier = try? Self.accountProfileIdentifier(origin: account.origin, accountId: accountId) {
+            configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: identifier)
+        } else { configuration.websiteDataStore = .default() }
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: configuration)
         let window = NSWindow(contentRect: webView.frame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -133,6 +146,15 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
         return false
     }
+    static func accountProfileIdentifier(origin: URL, accountId: String) throws -> UUID {
+        _ = try LocalVaultAccountIdentity.resolve(origin: origin, cachedAccountId: accountId) { _ in Data() }
+        var components = URLComponents(url: origin, resolvingAgainstBaseURL: false)!
+        components.host = components.host?.lowercased(); components.path = ""
+        let digest = TextTextStableDigest.sha256Hex(try JSONSerialization.data(withJSONObject: [components.string!, accountId]))
+        let hex = Array(digest.prefix(32))
+        let uuid = String(hex[0..<8]) + "-" + String(hex[8..<12]) + "-" + String(hex[12..<16]) + "-" + String(hex[16..<20]) + "-" + String(hex[20..<32])
+        return UUID(uuidString: uuid)!
+    }
     private func fenceNativeInput() -> (() -> Void)? {
         guard let window else { return {} }
         let id = UUID()
@@ -185,9 +207,20 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         present(); return true
     }
     func credentialsChanged() {
+        let current = credentials()
+        let same = profileAccount.flatMap { owner in current.map { owner.sameAccount(as: $0) } } ?? (current == nil)
+        if !same {
+            if accountFence == nil { accountFence = fenceNativeInput() }
+            collaboration?.cancelAll()
+            connection?.credentialsChanged()
+            emit("texttext:vault-sync-status", value: ["connected": false, "available": current != nil,
+                "onlineReady": false, "message": "Return to the original account to continue this window's saved work."])
+            return
+        }
+        accountFence?(); accountFence = nil
         if let connection { connection.credentialsChanged(); return }
         guard let root else { return }
-        connection = LocalVaultConnectionController(root: root, credentials: credentials)
+        connection = LocalVaultConnectionController(root: root, verifiedCredentials: self.credentials)
         connection?.onChange = { [weak self] state, changed in
             self?.emit("texttext:vault-sync-status", value: state)
             if changed { self?.emit("texttext:vault-changed", value: [:]) }
@@ -320,7 +353,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             self?.emit("texttext:vault-changed", value: [:])
             self?.connection?.schedule()
         }
-        connection = preparedConnection ?? LocalVaultConnectionController(root: url, credentials: credentials)
+        connection = preparedConnection ?? LocalVaultConnectionController(root: url, verifiedCredentials: self.credentials)
         connection?.onChange = { [weak self] state, filesChanged in
             self?.emit("texttext:vault-sync-status", value: state)
             if filesChanged { self?.emit("texttext:vault-changed", value: [:]) }
@@ -340,7 +373,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         try LocalVaultWorkspaceSelection.prepareFolder(selected, binding: binding)
         let access = selected.startAccessingSecurityScopedResource()
         defer { if access { selected.stopAccessingSecurityScopedResource() } }
-        let candidate = LocalVaultConnectionController(root: selected, workspaceId: workspaceId, credentials: credentials)
+        let candidate = LocalVaultConnectionController(root: selected, workspaceId: workspaceId, verifiedCredentials: self.credentials)
         var activated = false
         defer { if !activated { candidate.stop() } }
         _ = try await candidate.connect(startSync: false)
@@ -469,7 +502,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 return
             }
             if collaboration == nil {
-                collaboration = LocalVaultCollaboration(credentials: credentials,
+                collaboration = LocalVaultCollaboration(verifiedCredentials: self.credentials,
                     engine: { [weak self] in self?.connection?.collaborationEngine },
                     didRelease: { [weak self] in self?.connection?.schedule() })
             }

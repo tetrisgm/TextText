@@ -24,6 +24,13 @@ struct LocalVaultAccountCredential: Sendable {
     let origin: URL
     let token: String
     var accountId: String? = nil
+    static func forWindow(initial: Self?, current: Self?) -> Self? {
+        guard let initial, let current else { return current }
+        if initial.accountId == nil, initial.origin == current.origin, initial.token == current.token {
+            return Self(origin: current.origin, token: current.token)
+        }
+        return current
+    }
     func sameAccount(as other: Self) -> Bool {
         guard origin == other.origin else { return false }
         if let accountId, let otherId = other.accountId { return accountId == otherId }

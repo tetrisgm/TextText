@@ -11,7 +11,7 @@ Windows HTTP sync supports an immutable expected account plus an atomic verified
 ## Verification
 
 - Focused Mac relay/connection/window lifecycle tests: 34 passed. `/private/tmp/texttext-t07-captured-native-connection.log`.
-- Full required native gate passed, including 104 required Mac tests (one separately covered no-space skip), 40 agent tests and portable Windows core: `/private/tmp/texttext-t07-captured-account-final-gate.log`.
+- Full required native gate passed, including 34 app tests, 101 File Provider kit tests (one separately covered no-space skip), 40 agent tests and portable Windows core: `/private/tmp/texttext-t07-captured-account-final-gate.log`.
 - Exact-source Windows core passed on the PC: `C:\Users\Shokunin\dev\texttext-t07-captured-account-core.log`.
 - Regressions assert one HTTP request on account replacement, two on verified same-account renewal, unchanged local bytes, rejected old-lease writes, no foreign retirement, retained queue identity and cleared foreign capabilities.
 - Initial Mac relay compilation failed due to a misplaced new configuration argument; corrected before these passing runs. `/private/tmp/texttext-t07-captured-native-relay.log` preserves that failure.

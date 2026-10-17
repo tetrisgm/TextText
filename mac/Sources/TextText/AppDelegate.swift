@@ -1885,6 +1885,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 self.workspaceMetadataAppliedGeneration = generation
                 if current.accountId == nil, let verifiedAccountId {
                     guard self.store.cacheVerifiedAccountId(verifiedAccountId, for: credentials) else { return }
+                    self.localVaultWindow?.credentialsChanged()
                 }
                 guard self.store.cacheWorkspace(data, for: credentials) else { return }
                 // Refresh the extension handoff, including workspace name and
@@ -1915,6 +1916,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// domain - this also makes "Sync Now"/wake a recovery lever.
     private func seedCachedWorkspaceIfNeeded(attempt: Int = 0) {
         guard let credentials = store.loadCredentials() else { return }
+        if credentials.accountId == nil { refreshWorkspaceMetadataAfterRemoteChange(); return }
         guard store.cachedWorkspace() == nil else {
             syncFileProviderDomain()
             return
@@ -1926,7 +1928,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 token: credentials.token)
             switch client.workspace() {
             case .success(let (_, data)):
-                self.store.cacheWorkspace(data)
+                guard self.store.cacheWorkspace(data, for: credentials) else { return }
                 DispatchQueue.main.async { [weak self] in
                     self?.syncFileProviderDomain()
                 }
@@ -2893,9 +2895,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             alert.informativeText = "Rebuild TextText with its bundled workspace resources."
             alert.runModal(); return
         }
-        let controller = localVaultWindow ?? LocalVaultWindowController(entry: entry, credentials: { [weak self] in
+        let controller = localVaultWindow ?? LocalVaultWindowController(entry: entry, verifiedCredentials: { [weak self] in
             guard let account = self?.store.loadCredentials() else { return nil }
-            return (resolveServerOrigin(credentials: account), account.token)
+            return LocalVaultAccountCredential(origin: resolveServerOrigin(credentials: account), token: account.token, accountId: account.accountId)
         })
         controller.onSignIn = { [weak self] in self?.signIn() }
         controller.onSignOut = { [weak self] in self?.signOut() }
@@ -3176,9 +3178,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                 accountGateWindow = controller
                 return
             }
-            localVaultWindow = LocalVaultWindowController(entry: entry, credentials: { [weak self] in
+            localVaultWindow = LocalVaultWindowController(entry: entry, verifiedCredentials: { [weak self] in
             guard let account = self?.store.loadCredentials() else { return nil }
-            return (resolveServerOrigin(credentials: account), account.token)
+            return LocalVaultAccountCredential(origin: resolveServerOrigin(credentials: account), token: account.token, accountId: account.accountId)
         })
             localVaultWindow?.onSignIn = { [weak self] in self?.signIn() }
             localVaultWindow?.onSignOut = { [weak self] in self?.signOut() }

@@ -47,7 +47,7 @@ final class LocalVaultConnectionController {
                 previousBinding = existing
                 if let account = self.credentials(), account.origin == existing.origin,
                    requestedWorkspaceId == nil || requestedWorkspaceId == existing.workspaceId {
-                    capabilities = try? LocalVaultCapabilityCache.read(root: root, binding: existing)
+                    capabilities = try? LocalVaultCapabilityCache.read(root: root, binding: existing, accountId: self.credentials()?.accountId)
                     // The saved binding was verified on an earlier connection.
                     // Restore its local journal synchronously so a reopened
                     // editor never races server discovery after a crash.
@@ -213,7 +213,7 @@ final class LocalVaultConnectionController {
             value.knownPaths.formUnion(await engine.knownLocalPaths())
             let changed = capabilities != value
             capabilities = value
-            try? LocalVaultCapabilityCache.write(value, root: root, binding: binding)
+            try? LocalVaultCapabilityCache.write(value, root: root, binding: binding, accountId: account.accountId)
             if changed { onChange?(status, true) }
         }
         if startSync { activate() }
@@ -338,7 +338,7 @@ final class LocalVaultConnectionController {
                     value.knownPaths.formUnion(await engine.knownLocalPaths())
                     capabilityChanged = self.capabilities != value
                     self.capabilities = value
-                    if let binding = self.binding { try? LocalVaultCapabilityCache.write(value, root: self.root, binding: binding) }
+                    if let binding = self.binding { try? LocalVaultCapabilityCache.write(value, root: self.root, binding: binding, accountId: owner.accountId) }
                 }
                 self.hasConflicts = !report.conflicts.isEmpty
                 self.onlineReady = report.errors.isEmpty && report.conflicts.isEmpty

@@ -133,6 +133,20 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
 
     }
 
+    func testCapabilityCacheCannotPassWritePermissionsToAnotherAccount() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let permissions = try JSONDecoder().decode(LocalVaultSyncCapabilities.self, from: Data(#"{"fullAccess":true,"canCreateContent":true,"writableFolders":[],"writableItems":[],"knownPaths":[],"writablePaths":[]}"#.utf8))
+        try LocalVaultCapabilityCache.write(permissions, root: root, binding: binding, accountId: "account-a")
+        XCTAssertEqual(try LocalVaultCapabilityCache.read(root: root, binding: binding, accountId: "account-a"), permissions)
+        XCTAssertNil(try LocalVaultCapabilityCache.read(root: root, binding: binding, accountId: "account-b"))
+        XCTAssertNil(try LocalVaultCapabilityCache.read(root: root, binding: binding))
+        try LocalVaultCapabilityCache.write(permissions, root: root, binding: binding)
+        XCTAssertNil(try LocalVaultCapabilityCache.read(root: root, binding: binding, accountId: "account-a"))
+    }
+
     @MainActor
     func testCredentialRefreshKeepsSyncActorAndUsesNewToken() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

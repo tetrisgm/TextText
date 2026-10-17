@@ -9,6 +9,9 @@ namespace TextText.Windows;
 /// The caller owns credential replacement and uses a client with redirects disabled.</summary>
 public static class AccountIdentity
 {
+    public static bool SameAccount(Account captured, Account current) =>
+        captured.AccountId is not null && current.AccountId is not null
+            ? captured.AccountId == current.AccountId : captured.AccountId == current.AccountId && captured.Token == current.Token;
     static string Valid(string? value) => value is not null && Regex.IsMatch(value,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")
         ? value : throw new InvalidDataException("Reconnect to verify this account. Saved work is unchanged.");
     public static async Task<string> ResolveAsync(HttpClient http,Uri origin,string token,string? cachedAccountId,CancellationToken ct=default)

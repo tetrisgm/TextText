@@ -6,7 +6,7 @@ import { readDocument } from "./model";
 import { executeWindowsAgentTool, executeWindowsFolderAgentTool } from "./windows-agent-tools";
 
 type NativeView = { postMessage(value: unknown): void; addEventListener(type: "message", listener: (event: MessageEvent) => void): void; removeEventListener(type: "message", listener: (event: MessageEvent) => void): void };
-type Status = { root: string; workspaceId: string; name: string; connected: boolean; available: boolean };
+type Status = { accountId?: string; root: string; workspaceId: string; name: string; connected: boolean; available: boolean };
 type Entry = { itemId: string; relativePath: string; revision: string; canEditContent?: boolean };
 type Manifest = { fullAccess?: boolean; canCreateContent?: boolean; writableFolders?: string[]; root: string; name: string; items: Entry[]; folders?: string[]; revision: string };
 type Read = { path: string; hash: string; data: string };
@@ -147,7 +147,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
       creationIntent: params.creationIntent, creationScope: params.creationScope,
     }, signal);
     return (await read(saved.itemId, signal)).file;
-  });
+  }, status.accountId);
   const transport: VaultTransport = async (method, params, signal) => {
     if (method === "creationResume") {
       const saved = await rpc.request<{ itemId: string } | null>("files.creationResume", params, signal);

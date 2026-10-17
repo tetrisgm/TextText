@@ -23,7 +23,7 @@ function native(handler: (method: string, params: Record<string, unknown>) => un
     },
   };
 }
-async function fixture() {
+async function fixture(accountId?: string) {
   vi.stubGlobal("window", new EventTarget());
   const itemId = "0bd05f92-c562-4a78-8c0d-b5e41ca3215d", path = "Notes/Original.textpack";
   const doc = emptyDocumentSnapshot({ id: "texttext.note", version: 1 }); doc.content.title = "Original"; doc.content.body = "first needle";
@@ -36,7 +36,7 @@ async function fixture() {
   const committedOperations = new Set<string>();
   const creations = new Map<string, {intent: string; itemId: string}>();
   const view = native((method, p) => {
-    if (method === "native.status") return { root: "C:\\Users\\Person\\TextText\\workspace", workspaceId: "workspace", name: "Workspace", available: true, connected: true };
+    if (method === "native.status") return { accountId, root: "C:\\Users\\Person\\TextText\\workspace", workspaceId: "workspace", name: "Workspace", available: true, connected: true };
     if (method === "native.recovery") return null;
     if (method === "files.connection") return { onlineReady: ready };
     if (method === "files.ready") return { ready };
@@ -237,6 +237,11 @@ describe("Windows shared transport", () => {
       expect(await f.transport.request("search", { query: "needle" })).toMatchObject({ items: [] });
       expect(await f.transport.request("search", { query: "haystack" })).toMatchObject({ items: [{ path: f.path }] });
     } finally { f.transport.destroy(); }
+  });
+  it("captures the native account in shared collaboration configuration", async () => {
+    const f = await fixture("account-a");
+    try { expect(await f.transport.request("collaborationConfig", { path: f.path })).toMatchObject({ accountId: "account-a", localFiles: true, itemId: f.itemId }); }
+    finally { f.transport.destroy(); }
   });
   it("gates collaboration until native sync has a published baseline", async () => {
     const f = await fixture();
