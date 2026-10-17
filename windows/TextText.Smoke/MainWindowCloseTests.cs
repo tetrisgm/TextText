@@ -200,6 +200,17 @@ static class MainWindowCloseTests
             Check(await activation.View.ExecuteScriptAsync("window.opened[0]")=="\"Example.textpack\"","busy file activation retries and routes native acknowledgement",checks);
             Check(activation.Window.IsVisible&&activation.View.IsEnabled,"file activation leaves existing host usable",checks);
             await Until(()=>Task.FromResult(!(bool)Field("activatingFile").GetValue(activation.Window)!),ct);
+            activation.Window.ActivateFiles([target]);
+            await Until(async()=>await activation.View.ExecuteScriptAsync("window.opened.length")=="2",ct);
+            await Until(()=>Task.FromResult(!(bool)Field("activatingFile").GetValue(activation.Window)!),ct);
+            Check(((Queue<string>)Field("activationFiles").GetValue(activation.Window)!).Count==0,
+                "same file can be activated again after its prior request completes",checks);
+            await activation.View.ExecuteScriptAsync("window.currentFile='Elsewhere.textpack';window.texttextOpenFile=async path=>{window.currentFile=path;window.opened.push(path);return 'opened'};");
+            activation.Window.ActivateFiles([target]);
+            await Until(async()=>await activation.View.ExecuteScriptAsync("window.opened.length")=="3",ct);
+            await Until(()=>Task.FromResult(!(bool)Field("activatingFile").GetValue(activation.Window)!),ct);
+            Check(await activation.View.ExecuteScriptAsync("window.currentFile")=="\"Example.textpack\"",
+                "activation after navigating away opens the requested file again",checks);
             var activationClosed=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             activation.Window.Closed+=(_,_)=>activationClosed.TrySetResult();
             await activation.View.ExecuteScriptAsync("window.texttextFlushForNativeClose=()=>new Promise(resolve=>{window.finishCloseDuringActivation=()=>{window.texttextFlushForNativeClose=async()=>({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}});resolve({ok:true,durability:{workspaceId:'fixture',itemId:'item',lifecycle:'life',generation:3,outcome:'durable'}})}});");

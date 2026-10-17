@@ -373,10 +373,10 @@ Initial states reflect repository evidence on October 17; no new implementation/
 | Tasks | State | Next action / dependency |
 | --- | --- | --- |
 | T01 | Baseline recorded | [October 17 receipt](../verification/2026-10-17-completion-progress.md); current browsers/actors will be attested during their runs |
-| T02 | Reboot/overnight observed | October 13 boot, policy retained, zero 4625/4740 since October 12; fresh-environment replay pending |
-| T03–T04 | Ready after T01/access | Deliver `e61d2622`, verify new-item installed close/reopen |
-| T05 | Partial | Preserve bounded historical gap; controlled ordering and refusal diagnostics |
-| T06 | Coverage inventoried | [Adapter matrix](../verification/adapter-conformance-matrix.md); fill native disk/permission/cancellation and cross-adapter fixture gaps |
+| T02 | Verified workaround | October 13 reboot, multi-night window, three fresh desktop smoke runs and zero matching Security failures; [receipt](../verification/2026-10-17-completion-progress.md) |
+| T03–T04 | Native delivery/reopen verified; web blocked | Both installed apps pass new-note edit/quit/reopen; Oracle backup floor requires approved archive cleanup; offline and remaining cases open |
+| T05 | Controlled orders verified; historical gap retained | Fresh smoke covers completed repeat and navigation-away activation; original run174 refusal receipt is unavailable |
+| T06 | Native failure regressions added | Mac permission denial and Windows cancellation/replacement recovery pass; [matrix](../verification/adapter-conformance-matrix.md) retains remaining common-fixture/ENOSPC/crash gaps |
 | T07 | Open | Close-input and account transition races |
 | T08–T09 | Open | Shared ownership, fencing and continuity after contract work |
 | T10 | Partial inventory | Complete per-flow ownership and host feasibility |
@@ -384,6 +384,6 @@ Initial states reflect repository evidence on October 17; no new implementation/
 | T16–T18 | Partial existing tests | Complete crash/upgrade matrix and seeded scheduling |
 | T19–T20 | Open acceptance | Product parity and real template/agent workflows |
 | T21–T22 | Partial historical evidence | Current physical actors and full scenario matrix |
-| T23 | Account creation authorized | Owner explicitly authorized a dedicated second test account on October 17; use normal sign-in and disposable fixtures |
+| T23 | Real account authenticated | Normal production email sign-in through MXroute; two-account grant/read/edit/revoke checks in progress |
 | T24–T25 | Open | Endurance and measured performance |
 | T26–T27 | Waiting | Final coherent delivery and evidence closure |

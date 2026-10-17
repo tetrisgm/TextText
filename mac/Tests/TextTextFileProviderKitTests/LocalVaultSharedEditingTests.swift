@@ -37,6 +37,37 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
     }
+    func testCheckpointPermissionFailurePreservesPriorGenerationAndRetriesAfterRepair() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let first = try changes(original, body: "First durable edit")
+        let saved = try store.materialize(checkpoint: checkpoint(original), expectedHash: original.hash,
+            markdown: first.0, documentJSON: first.1)
+        let directory = LocalVaultDeviceState.directory(root: root)
+            .appendingPathComponent("shared-editing").appendingPathComponent(itemId)
+        let journalURL = directory.appendingPathComponent("checkpoint.json")
+        let priorBytes = try Data(contentsOf: journalURL)
+        let second = try changes(original, body: "Edit retained while storage is denied")
+        let next = try checkpoint(original, generation: 2)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        XCTAssertThrowsError(try store.materialize(checkpoint: next, expectedHash: saved.document.hash,
+            markdown: second.0, documentJSON: second.1)) { error in
+            let failure = error as NSError
+            XCTAssertTrue(failure.code == NSFileWriteNoPermissionError ||
+                (failure.domain == NSPOSIXErrorDomain && failure.code == 13), "\(failure)")
+        }
+        XCTAssertEqual(try Data(contentsOf: journalURL), priorBytes)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, saved.document.hash)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("intent.json").path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let retried = try store.materialize(checkpoint: next, expectedHash: saved.document.hash,
+            markdown: second.0, documentJSON: second.1)
+        let reopened = try XCTUnwrap(LocalVaultSharedEditingStore(root: root).checkpoint(itemId: itemId))
+        XCTAssertEqual(reopened.journalGeneration, 2)
+        XCTAssertEqual(reopened.projectedHash, retried.document.hash)
+        XCTAssertTrue(reopened.pending)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains("Edit retained while storage is denied"))
+    }
     func testIncomingBinaryReplaysAfterBothCrashWindowsWithoutLosingPendingText() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
         let edited = try changes(original, body: "Unsent human text"), pending = try checkpoint(original)

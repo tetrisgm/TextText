@@ -33,7 +33,7 @@ The native close guard's decision remains Boolean, while its reply also retains 
 ## Remaining P0 work
 
 1. The isolated native test now forces close during unresolved activation; the window waits and closes after the flush succeeds. Continue instrumenting activation/close origin and checkpoint identity in a physical failure.
-2. Verify a second activation after the first completed and after the user navigated away. The queue's in-progress dedupe does not cover all repeated Finder opens.
+2. Completed October 17: fresh isolated production-window smoke verifies a second activation after completion and an activation after navigation away. See the [completion receipt](2026-10-17-completion-progress.md). The original checkpoint refusal remains a separate diagnostic gap.
 3. Identify the exact checkpoint refusal on a genuine failure, including native storage result. A clean local journal in the renderer does not by itself prove the native checkpoint advanced.
 4. Compare installed Mac/Windows binaries and browser bundle identities with the acceptance actors. Test the candidate in an installed Windows app before a normal-use claim.
 5. Finish the full ownership map for multiple windows/tabs, Mac close, browser storage, server ACK and external-file materialization. Distinguish confirmed behavior from hypotheses in follow-up revisions.
