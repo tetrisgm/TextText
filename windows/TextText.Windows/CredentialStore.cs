@@ -2,7 +2,6 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
 namespace TextText.Windows;
-public sealed record Account(string Token, string WorkspaceId, string Name);
 internal static class CredentialStore
 {
     private static readonly string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TextText");

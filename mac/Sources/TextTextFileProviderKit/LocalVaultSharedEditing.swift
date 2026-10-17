@@ -50,7 +50,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         guard let owner = value as? String, Self.identifier(owner) else { throw LocalVaultSharedFailure.invalid }
         return owner
     }
-    private static func identifier(_ value: String) -> Bool { value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil }
+    private static func identifier(_ value: String) -> Bool { value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) != nil }
     private func requireAccount(_ checkpoint: LocalVaultSharedCheckpoint) throws {
         if let accountId, !Self.identifier(accountId) { throw LocalVaultSharedFailure.invalid }
         guard try journalAccount(checkpoint) == accountId else { throw LocalVaultSharedFailure.account }
@@ -106,7 +106,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         var assetHash: String?
     }
     private func itemDirectory(_ itemId: String, create: Bool = false) throws -> URL {
-        guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) == itemId.startIndex..<itemId.endIndex else { throw LocalVaultSharedFailure.invalid }
+        guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) == itemId.startIndex..<itemId.endIndex else { throw LocalVaultSharedFailure.invalid }
         let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
         var directory = LocalVaultDeviceState.directory(root: canonical)
         for component in ["shared-editing", itemId] {
@@ -170,7 +170,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         guard let fields = raw as? [String: Any],
               Set(fields.keys).isSubset(of: ["operationId", "epoch", "update", "adopted"]),
               let operationId = fields["operationId"] as? String,
-              operationId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) == operationId.startIndex..<operationId.endIndex,
+              operationId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) == operationId.startIndex..<operationId.endIndex,
               let epochNumber = fields["epoch"] as? NSNumber, CFGetTypeID(epochNumber) != CFBooleanGetTypeID(),
               let epoch = fields["epoch"] as? Int, epoch >= 1, epoch <= 9_007_199_254_740_991,
               let update = fields["update"] as? String, !update.isEmpty, update.utf8.count <= 6 * 1024 * 1024, Data(base64Encoded: update) != nil else { return nil }

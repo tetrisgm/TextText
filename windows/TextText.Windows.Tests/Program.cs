@@ -11,6 +11,7 @@ using TextText.Windows;
 
 var failures = 0;
 void Assert(bool condition, string name) { Console.WriteLine((condition ? "ok   " : "FAIL ") + name); if (!condition) failures++; }
+await AccountIdentityTests.Run(Assert);
 static byte[] Pack(string body, string id) {
     using var output = new MemoryStream();
     using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true)) using (var writer = new StreamWriter(zip.CreateEntry("text.md").Open())) writer.Write("---\ntextTextId: \"" + id + "\"\n---\n" + body);

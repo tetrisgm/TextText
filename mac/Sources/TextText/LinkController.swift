@@ -123,18 +123,28 @@ final class LinkController {
                         finish(gen, .failed("The server approved the link but sent no token"))
                         return
                     }
+                    let authed = ServerClient(origin: serverOrigin, token: token)
+                    let accountId: String
+                    do { accountId = try authed.accountIdentity() }
+                    catch {
+                        finish(gen, .failed("Reconnect to verify this account. Saved work is unchanged."))
+                        return
+                    }
                     let credentials = Credentials(
                         token: token,
                         serverOrigin: serverOrigin.absoluteString,
                         tokenName: reply.tokenName ?? "TextText",
-                        linkedAt: Date()
+                        linkedAt: Date(),
+                        accountId: accountId
                     )
+                    generationLock.lock()
+                    guard gen == generation else { generationLock.unlock(); return }
                     store.saveCredentials(credentials)
+                    generationLock.unlock()
                     // Warm the offline cache so the UI can name the blog
                     // immediately (and later, without a network).
-                    let authed = ServerClient(origin: serverOrigin, token: token)
                     if case .success(let (_, data)) = authed.workspace() {
-                        store.cacheWorkspace(data)
+                        _ = store.cacheWorkspace(data, for: credentials)
                     }
                     DispatchQueue.main.async {
                         guard !self.isStale(gen) else { return }

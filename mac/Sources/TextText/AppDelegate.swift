@@ -1874,6 +1874,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             let client = ServerClient(
                 origin: resolveServerOrigin(credentials: credentials),
                 token: credentials.token)
+            let verifiedAccountId = try? client.accountIdentity(cachedAccountId: credentials.accountId)
             guard case .success(let (_, data)) = client.workspace() else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self,
@@ -1882,7 +1883,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
                       current.token == credentials.token,
                       current.serverOrigin == credentials.serverOrigin else { return }
                 self.workspaceMetadataAppliedGeneration = generation
-                self.store.cacheWorkspace(data)
+                if current.accountId == nil, let verifiedAccountId {
+                    guard self.store.cacheVerifiedAccountId(verifiedAccountId, for: credentials) else { return }
+                }
+                guard self.store.cacheWorkspace(data, for: credentials) else { return }
                 // Refresh the extension handoff, including workspace name and
                 // folder-aware signals, then rebuild Spotlight from live metadata.
                 self.syncFileProviderDomain(signalExistingDomain: true)

@@ -37,7 +37,7 @@ public sealed partial class MainWindow : Window
         this.webViewProfile = webViewProfile;
         Title = "TextText"; Width = 1200; Height = 850; MinWidth = 720; MinHeight = 480;
         Loaded += async (_,_) => {
-            try { account = CredentialStore.Load(); if(account is not null) { selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
+            try { account = CredentialStore.Load(); if(account is not null) { try { await VerifyAccountIdentity(lifetime.Token); } catch { ShowAccountVerificationRequired(); return; } selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
             catch { if (account is not null) ShowWorkspaceUnavailable(); else ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
         };
         Closing += (_,e) => {
@@ -124,9 +124,36 @@ public sealed partial class MainWindow : Window
             using var data = JsonDocument.Parse(await workspace.Content.ReadAsStringAsync(timeout.Token));
             var id = data.RootElement.GetProperty("workspaceId").GetString()!;
             if(!Guid.TryParse(id,out _)) throw new InvalidOperationException("Invalid workspace");
-            account = new Account(token,id,data.RootElement.GetProperty("name").GetString() ?? "Workspace");
+            var accountId = await AccountIdentity.ResolveAsync(http, Origin, token, null, timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            account = new Account(token,id,data.RootElement.GetProperty("name").GetString() ?? "Workspace", accountId);
             CredentialStore.Save(account); return;
         }
+    }
+    private void ShowAccountVerificationRequired()
+    {
+        var panel = new StackPanel { Width = 380, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var status = new TextBlock { Text = "Reconnect to verify this account. Your saved work remains on this device.", TextWrapping = TextWrapping.Wrap };
+        panel.Children.Add(status);
+        var retry = new Button { Content = "Try again", Margin = new Thickness(0,16,0,0) };
+        retry.Click += async (_, _) => {
+            retry.IsEnabled = false;
+            try { await VerifyAccountIdentity(lifetime.Token); selectedWorkspace = WorkspaceSelection.Load(account!.WorkspaceId); await OpenWorkspace(); }
+            catch { status.Text = "Could not open this account. Reconnect and try again. Your saved work is unchanged."; }
+            finally { retry.IsEnabled = true; }
+        };
+        panel.Children.Add(retry); SetWorkspaceContent(panel);
+    }
+    private async Task VerifyAccountIdentity(CancellationToken ct)
+    {
+        var captured = account ?? throw new InvalidOperationException("Sign in required");
+        var accountId = await AccountIdentity.ResolveAsync(http, Origin, captured.Token, captured.AccountId, ct);
+        ct.ThrowIfCancellationRequested();
+        if (!ReferenceEquals(account, captured)) throw new InvalidOperationException("Account changed. Saved work is unchanged.");
+        if (captured.AccountId is not null) return;
+        var verified = captured with { AccountId = accountId };
+        CredentialStore.Save(verified);
+        account = verified;
     }
     private async Task OpenWorkspace(string? selectedRoot = null, Action? beforeCommit = null, AvailableWorkspace? replacement = null, Func<Task>? prepareCommit = null)
     {

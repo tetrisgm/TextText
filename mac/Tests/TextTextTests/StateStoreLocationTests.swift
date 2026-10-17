@@ -17,6 +17,42 @@ final class StateStoreLocationTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
+    func testCredentialIdentityUpgradePreservesLegacySignInAndRoundTrips() throws {
+        let encoder = JSONEncoder(), decoder = JSONDecoder()
+        let legacy = Credentials(token: "fixture", serverOrigin: "https://texttext.test", tokenName: "Saved", linkedAt: Date(timeIntervalSince1970: 42))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(legacy)) as? [String: Any])
+        object.removeValue(forKey: "accountId")
+        var upgraded = try decoder.decode(Credentials.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(upgraded.accountId)
+        XCTAssertEqual(upgraded.token, legacy.token)
+        XCTAssertEqual(upgraded.linkedAt, legacy.linkedAt)
+        upgraded.accountId = "account-a"
+        let restored = try decoder.decode(Credentials.self, from: encoder.encode(upgraded))
+        XCTAssertEqual(restored.accountId, "account-a")
+        XCTAssertEqual(restored.token, legacy.token)
+        XCTAssertEqual(restored.serverOrigin, legacy.serverOrigin)
+        XCTAssertEqual(restored.tokenName, legacy.tokenName)
+    }
+
+    func testLateIdentityAndWorkspaceResponsesCannotReplaceANewerSignIn() throws {
+        let store = StateStore(groupContainer: try makeContainer(), cliCredentialsURL: nil)
+        let a = Credentials(token: "fixture-a", serverOrigin: "https://texttext.test", tokenName: "A", linkedAt: Date(timeIntervalSince1970: 42))
+        let b = Credentials(token: "fixture-b", serverOrigin: "https://texttext.test", tokenName: "B", linkedAt: Date(timeIntervalSince1970: 43))
+        store.saveCredentials(a)
+        XCTAssertTrue(store.cacheVerifiedAccountId("account-a", for: a))
+        XCTAssertEqual(store.loadCredentials()?.accountId, "account-a")
+        XCTAssertFalse(store.cacheVerifiedAccountId("account-b", for: a))
+        store.saveCredentials(b)
+        XCTAssertFalse(store.cacheVerifiedAccountId("account-a", for: a))
+        XCTAssertFalse(store.cacheWorkspace(Data("old workspace".utf8), for: a))
+        XCTAssertEqual(store.loadCredentials()?.token, "fixture-b")
+        XCTAssertNil(store.loadCredentials()?.accountId)
+        store.deleteCredentials()
+        XCTAssertFalse(store.cacheVerifiedAccountId("account-b", for: b))
+        XCTAssertFalse(store.cacheWorkspace(Data("late workspace".utf8), for: b))
+        XCTAssertNil(store.loadCredentials())
+    }
+
     private func makeContainer() throws -> URL {
         let container = root.appendingPathComponent("Group Containers/52WM463HR2.group.app.texttext",
                                                     isDirectory: true)

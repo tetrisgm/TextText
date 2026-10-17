@@ -1,4 +1,5 @@
 import Foundation
+import TextTextFileProviderKit
 
 /// All on-disk app state, partyparty-faithful:
 ///   <app group container>/TextText/           (0700)
@@ -14,6 +15,7 @@ import Foundation
 /// its state before the two editions were made to agree.
 /// TEXTTEXT_STATE_DIR overrides the base dir (headless/CI isolation).
 final class StateStore {
+    private static let credentialLock = NSRecursiveLock()
     let baseDir: URL
     private let cliCredentialsURL: URL?
     private let localOrigin: URL?
@@ -175,6 +177,7 @@ final class StateStore {
     // MARK: Credentials
 
     func loadCredentials() -> Credentials? {
+        Self.credentialLock.lock(); defer { Self.credentialLock.unlock() }
         guard let data = try? Data(contentsOf: credentialsURL),
               let credentials = try? decoder.decode(Credentials.self, from: data) else {
             return nil
@@ -190,6 +193,7 @@ final class StateStore {
     }
 
     func saveCredentials(_ credentials: Credentials) {
+        Self.credentialLock.lock(); defer { Self.credentialLock.unlock() }
         if let localOrigin,
            Self.loopbackOrigin(URL(string: credentials.serverOrigin)) != localOrigin { return }
         guard let data = try? encoder.encode(credentials) else { return }
@@ -199,9 +203,33 @@ final class StateStore {
         mirrorCredentialsForCLI(data)
     }
 
+    /// Upgrade only the credential that produced this verified response. A
+    /// late account refresh must not replace a newer sign-in or undo sign-out.
+    @discardableResult
+    func cacheVerifiedAccountId(_ accountId: String, for expected: Credentials) -> Bool {
+        Self.credentialLock.lock(); defer { Self.credentialLock.unlock() }
+        guard (try? LocalVaultAccountIdentity.validate(accountId)) != nil,
+              var current = loadCredentials(), current.token == expected.token,
+              current.serverOrigin == expected.serverOrigin,
+              current.accountId == nil || current.accountId == accountId else { return false }
+        current.accountId = accountId
+        saveCredentials(current)
+        return loadCredentials()?.accountId == accountId
+    }
+
+    @discardableResult
+    func cacheWorkspace(_ data: Data, for expected: Credentials) -> Bool {
+        Self.credentialLock.lock(); defer { Self.credentialLock.unlock() }
+        guard let current = loadCredentials(), current.token == expected.token,
+              current.serverOrigin == expected.serverOrigin else { return false }
+        cacheWorkspace(data)
+        return true
+    }
+
     /// Sign out: the credential goes; the local folder and its files stay.
     /// (Server-side revoke is best effort and may not exist yet.)
     func deleteCredentials() {
+        Self.credentialLock.lock(); defer { Self.credentialLock.unlock() }
         try? FileManager.default.removeItem(at: credentialsURL)
         if let cliCredentialsURL,
            cliCredentialsURL.standardizedFileURL != credentialsURL.standardizedFileURL {

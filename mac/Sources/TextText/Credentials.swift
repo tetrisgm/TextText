@@ -10,4 +10,5 @@ struct Credentials: Codable {
     let serverOrigin: String
     let tokenName: String
     let linkedAt: Date
+    var accountId: String? = nil
 }

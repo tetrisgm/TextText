@@ -152,6 +152,22 @@ final class ServerClient: SyncClient {
         requestJSON("POST", "/api/link/poll", json: ["pollToken": pollToken])
     }
 
+    func accountIdentity(cachedAccountId: String? = nil) throws -> String {
+        try LocalVaultAccountIdentity.resolve(origin: origin, cachedAccountId: cachedAccountId) { path in
+            switch send("GET", path) {
+            case .failure(let error): throw error
+            case .success(let reply):
+                guard reply.status == 200 else { throw httpFailure(reply) }
+                guard let responseURL = reply.response.url,
+                      responseURL.scheme == origin.scheme,
+                      responseURL.host?.lowercased() == origin.host?.lowercased(),
+                      responseURL.port == origin.port,
+                      responseURL.path == path else { throw LocalVaultAccountIdentity.Failure.unverified }
+                return reply.data
+            }
+        }
+    }
+
     // MARK: Sync v1
 
     func workspace() -> Result<(Workspace, Data), ClientFailure> {

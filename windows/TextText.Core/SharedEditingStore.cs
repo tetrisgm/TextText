@@ -7,12 +7,12 @@ public sealed class SharedSessionClosedException() : InvalidOperationException("
 public sealed class SharedAccountMismatchException() : InvalidOperationException("Saved edits need their original account or explicit recovery. They remain on this device.");
 public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,string? accountId=null) : IDisposable
 {
-    readonly string? principalAccountId = accountId is null || Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+    readonly string? principalAccountId = accountId is null || Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")
         ? accountId : throw new InvalidDataException("Invalid account identity.");
     static string? JournalAccount(SharedCheckpoint checkpoint) {
         using var document=JsonDocument.Parse(checkpoint.Journal);
         if(!document.RootElement.TryGetProperty("accountId",out var owner)||owner.ValueKind==JsonValueKind.Null)return null;
-        if(owner.ValueKind!=JsonValueKind.String||!Regex.IsMatch(owner.GetString()!,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid journal account identity.");
+        if(owner.ValueKind!=JsonValueKind.String||!Regex.IsMatch(owner.GetString()!,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid journal account identity.");
         return owner.GetString();
     }
     void RequireAccount(SharedCheckpoint checkpoint) { if(JournalAccount(checkpoint)!=principalAccountId)throw new SharedAccountMismatchException(); }
@@ -41,12 +41,12 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     readonly Dictionary<string,Active> sessions=[];readonly SemaphoreSlim gate=new(1,1);bool disposed;
     /// Announced by collaboration.open. "epoch-adoption": a pending journal may move to a newer epoch through an authorized, archived recovery intent.
     public static readonly string[] Capabilities=["epoch-adoption"];
-    string DirectoryFor(string id) {if(!Regex.IsMatch(id,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");var path=System.IO.Path.Combine(store.StateDirectory,"shared-editing",id);Directory.CreateDirectory(path);return path;}
+    string DirectoryFor(string id) {if(!Regex.IsMatch(id,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");var path=System.IO.Path.Combine(store.StateDirectory,"shared-editing",id);Directory.CreateDirectory(path);return path;}
     static T? Read<T>(string path) {if(!File.Exists(path))return default;if(new FileInfo(path).Length>90*1024*1024)throw new InvalidDataException("Shared state exceeds bounds.");return JsonSerializer.Deserialize<T>(File.ReadAllBytes(path))??throw new InvalidDataException("Invalid shared state.");}
     static void Save<T>(string path,T value)=>TextPackStore.AtomicWrite(path,JsonSerializer.SerializeToUtf8Bytes(value));
     static bool ValidHash(string hash)=>Regex.IsMatch(hash,@"^[0-9a-f]{64}$");
     static void Validate(TextPackStore store,SharedCheckpoint cp) {
-        if(!Regex.IsMatch(cp.ItemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");_=store.Resolve(cp.Path);
+        if(!Regex.IsMatch(cp.ItemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");_=store.Resolve(cp.Path);
         if(cp.Version!=1 || !ValidHash(cp.ProjectedHash)||!ValidHash(cp.AcknowledgedRevision)||cp.Epoch<1||cp.Seq<0||cp.JournalGeneration<1||cp.Epoch>9007199254740991||cp.Seq>9007199254740991||cp.JournalGeneration>9007199254740991||cp.Journal.Length>4*1024*1024)throw new InvalidDataException("Unsupported shared checkpoint. Retained edits are unchanged.");
         using var doc=JsonDocument.Parse(cp.Journal);var j=doc.RootElement;
         if(j.GetProperty("version").GetInt32()!=1||j.GetProperty("epoch").GetInt64()!=cp.Epoch||j.GetProperty("seq").GetInt64()!=cp.Seq||j.GetProperty("journalGeneration").GetInt64()!=cp.JournalGeneration||j.GetProperty("revision").GetString()!=cp.AcknowledgedRevision||j.GetProperty("relativePath").GetString()!=cp.Path)throw new InvalidDataException("Journal metadata mismatch.");
@@ -61,7 +61,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         public static RecoveryIntent? Parse(JsonElement raw) {
             if(raw.ValueKind!=JsonValueKind.Object)return null;
             foreach(var property in raw.EnumerateObject())if(property.Name is not ("operationId" or "epoch" or "update" or "adopted"))return null;
-            if(!raw.TryGetProperty("operationId",out var id)||id.ValueKind!=JsonValueKind.String||!Regex.IsMatch(id.GetString()!,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))return null;
+            if(!raw.TryGetProperty("operationId",out var id)||id.ValueKind!=JsonValueKind.String||!Regex.IsMatch(id.GetString()!,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))return null;
             if(!raw.TryGetProperty("epoch",out var epoch)||epoch.ValueKind!=JsonValueKind.Number||!epoch.TryGetInt64(out var epochValue)||epochValue<1||epochValue>9007199254740991)return null;
             if(!raw.TryGetProperty("update",out var update)||update.ValueKind!=JsonValueKind.String||update.GetString()!.Length==0||update.GetString()!.Length>6*1024*1024)return null;
             try{if(Convert.FromBase64String(update.GetString()!).Length==0)return null;}catch(FormatException){return null;}
@@ -95,14 +95,14 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         return adopted;
     }
     public static bool HasProtectedState(string stateDirectory,string itemId) {
-        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid remote identity.");
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid remote identity.");
         var directory=System.IO.Path.Combine(stateDirectory,"shared-editing",itemId);
         if(File.Exists(System.IO.Path.Combine(directory,"move-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"binary-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"acknowledge.json")))return true;
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
         return cp!=null&&(cp.Version!=1||cp.Pending||cp.RetiredReason!=null);
     }
     internal static bool HasReadyCheckpoint(TextPackStore store,string itemId) {
-        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))return false;
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))return false;
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
         if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json"))||File.Exists(System.IO.Path.Combine(directory,"binary-intent.json")))return false;
         try {
@@ -124,7 +124,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     }
     public static SharedCheckpoint RebaseProjection(TextPackStore store,string itemId,string newPath,
         bool interruptAfterIntent=false,bool interruptAfterMove=false) => store.WithExclusiveMutation(() => {
-        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
         RecoverMove(store,directory,itemId);
         if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"binary-intent.json")))throw new IOException("A shared checkpoint is still being recovered.");
@@ -175,7 +175,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         if(intent!=null){if(intent.Version!=1||intent.ItemId!=itemId)throw new InvalidDataException("Invalid binary projection intent.");FinishBinary(store,directory,intent);}
     }
     public static void RecoverPendingBinaryProjection(TextPackStore store,string itemId) => store.WithExclusiveMutation(() => {
-        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid identity.");
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
         if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json")))return true;
         RecoverBinary(store,directory,itemId);
@@ -204,7 +204,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     public static PackFile ApplyRemoteBinary(TextPackStore store,string itemId,string path,string beforeHash,
         string entryPath,string? expectedEntryHash,byte[]? replacement,
         bool interruptAfterIntent=false,bool interruptAfterWrite=false) => store.WithExclusiveMutation(() => {
-        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")||!ValidHash(beforeHash))throw new InvalidDataException("Invalid binary projection identity.");
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")||!ValidHash(beforeHash))throw new InvalidDataException("Invalid binary projection identity.");
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);Directory.CreateDirectory(directory);
         RecoverBinary(store,directory,itemId);
         if(File.Exists(System.IO.Path.Combine(directory,"intent.json"))||File.Exists(System.IO.Path.Combine(directory,"move-intent.json")))throw new IOException("A shared checkpoint is still being recovered.");
