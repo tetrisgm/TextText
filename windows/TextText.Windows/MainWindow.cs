@@ -51,8 +51,6 @@ public sealed partial class MainWindow : Window
     private async Task<bool> FlushEditorWithTimeout(TimeSpan? timeout)
     {
         if(web?.CoreWebView2 is not { } core) return true;
-        // The renderer must be able to execute its flush hook before the
-        // native view is disabled. Closing is already fenced by transitioning.
         return await flushGuard.FlushAsync(async script => { await core.ExecuteScriptAsync(script); }, timeout);
     }
     private async Task<bool> FlushEditorForClose()
@@ -74,6 +72,10 @@ public sealed partial class MainWindow : Window
         if(closing) return;
         if(transitioning) { if(activatingFile) closeAfterActivation = true; return; }
         transitioning = true;
+        // Stop accepting keyboard/pointer input before the renderer captures its
+        // final local barrier. Disabling native input leaves script/bridge
+        // dispatch alive; failure restores the existing editor in finally.
+        if(web is not null) web.IsEnabled = false;
         try {
             if(!await FlushEditorForClose()) { ShowSaveFailure(); return; }
             closing = true; Close();

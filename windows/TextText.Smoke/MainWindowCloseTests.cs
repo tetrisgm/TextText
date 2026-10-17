@@ -109,6 +109,7 @@ static class MainWindowCloseTests
             success.Window.Close();
             await Until(async()=>await success.View.ExecuteScriptAsync("window.flushStarted") == "true",ct);
             Check(success.Window.IsVisible&&!closed.Task.IsCompleted,"actual MainWindow waits for pending editor flush",checks);
+            Check(!success.View.IsEnabled,"native close fences editor input before awaiting durability",checks);
             await Task.Delay(120,ct);Check(!closed.Task.IsCompleted,"MainWindow does not treat ExecuteScript completion as durable ACK",checks);
             try {await success.View.ExecuteScriptAsync("window.finishFlush()");}catch(Exception)when(closed.Task.IsCompleted){ /* Closing disposes WebView before its script callback can return. */ }
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(8),ct);
