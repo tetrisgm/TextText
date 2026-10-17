@@ -396,6 +396,7 @@ static class Test
  }
  await MirroredRetirementTests.Run(temp,Assert);
  await ExternalCheckpointRaceTests.Run(temp,Assert);
+ await CheckpointAccountTests.Run(temp,Assert);
  await CheckpointFailureTests.NoSpaceProjection(Assert);
  await CheckpointFailureTests.UnavailableProjection(temp,Assert);
  await CheckpointFailureTests.Run(temp,Assert);

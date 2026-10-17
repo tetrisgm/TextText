@@ -4,8 +4,36 @@ namespace TextText.Core;
 public sealed record SharedCheckpoint(string ItemId,string Path,string ProjectedHash,string AcknowledgedRevision,long Epoch,long Seq,long JournalGeneration,string Journal,bool Pending,int Version=1,string? RetiredReason=null);
 public sealed record SharedSession(string SessionToken,PackFile Document,SharedCheckpoint? Checkpoint);
 public sealed class SharedSessionClosedException() : InvalidOperationException("This editing session is no longer active.");
-public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : IDisposable
+public sealed class SharedAccountMismatchException() : InvalidOperationException("Saved edits need their original account or explicit recovery. They remain on this device.");
+public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,string? accountId=null) : IDisposable
 {
+    readonly string? principalAccountId = accountId is null || Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+        ? accountId : throw new InvalidDataException("Invalid account identity.");
+    static string? JournalAccount(SharedCheckpoint checkpoint) {
+        using var document=JsonDocument.Parse(checkpoint.Journal);
+        if(!document.RootElement.TryGetProperty("accountId",out var owner)||owner.ValueKind==JsonValueKind.Null)return null;
+        if(owner.ValueKind!=JsonValueKind.String||!Regex.IsMatch(owner.GetString()!,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"))throw new InvalidDataException("Invalid journal account identity.");
+        return owner.GetString();
+    }
+    void RequireAccount(SharedCheckpoint checkpoint) { if(JournalAccount(checkpoint)!=principalAccountId)throw new SharedAccountMismatchException(); }
+    void PrepareAccount(string itemId,string path,string expectedHash) {
+        var directory=DirectoryFor(itemId);
+        var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));if(intent!=null)RequireAccount(intent.Checkpoint);
+        var move=Read<MoveIntent>(System.IO.Path.Combine(directory,"move-intent.json"));if(move!=null)RequireAccount(move.Checkpoint);
+        var acknowledgement=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"acknowledge.json"));if(acknowledgement!=null)RequireAccount(acknowledgement);
+        var file=System.IO.Path.Combine(directory,"checkpoint.json");var checkpoint=Read<SharedCheckpoint>(file);if(checkpoint==null)return;
+        Validate(store,checkpoint);if(JournalAccount(checkpoint)==principalAccountId)return;
+        using var journal=JsonDocument.Parse(checkpoint.Journal);
+        if(principalAccountId==null||checkpoint.Pending||checkpoint.RetiredReason!=null||
+            journal.RootElement.TryGetProperty("retired",out var retired)&&retired.ValueKind!=JsonValueKind.Null||
+            journal.RootElement.TryGetProperty("recovery",out var recovery)&&recovery.ValueKind!=JsonValueKind.Null||
+            File.Exists(System.IO.Path.Combine(directory,"binary-intent.json")))throw new SharedAccountMismatchException();
+        // Only a clean acknowledged baseline may change account. Keep its bytes
+        // before opening a fresh generation stream for the verified principal.
+        var current=store.Describe(path);if(current.ItemId!=itemId||(current.Hash!=expectedHash&&current.Hash!=checkpoint.ProjectedHash))throw new FileChangedException();
+        TextPackStore.AtomicWrite(System.IO.Path.Combine(directory,"archived-account-"+Guid.NewGuid().ToString("N")+".json"),File.ReadAllBytes(file));
+        File.Delete(file);
+    }
     sealed record MoveIntent(int Version,string SourcePath,SharedCheckpoint Checkpoint);
     sealed record Intent(int Version,string BeforeHash,string Payload,SharedCheckpoint Checkpoint);
     sealed record BinaryIntent(int Version,string ItemId,string Path,string BeforeHash,string AfterHash);
@@ -127,10 +155,13 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);File.Delete(System.IO.Path.Combine(directory,"move-intent.json"));return cp;
     }
     SharedCheckpoint? Recover(string itemId) => store.WithExclusiveMutation(() => {
-        var directory=DirectoryFor(itemId);RecoverMove(store,directory,itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
-        if(intent!=null) {if(intent.Version!=1)throw new InvalidDataException("Unsupported shared intent.");Finish(intent,directory);}
+        var directory=DirectoryFor(itemId);
+        var move=Read<MoveIntent>(System.IO.Path.Combine(directory,"move-intent.json"));if(move!=null)RequireAccount(move.Checkpoint);
+        RecoverMove(store,directory,itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
+        if(intent!=null) {RequireAccount(intent.Checkpoint);if(intent.Version!=1)throw new InvalidDataException("Unsupported shared intent.");Finish(intent,directory);}
+        var prior=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(prior!=null){Validate(store,prior);RequireAccount(prior);}
         RecoverBinary(store,directory,itemId);
-        var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
+        var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(store,cp);RequireAccount(cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
     });
     PackFile Finish(Intent intent,string directory) {
         Validate(store,intent.Checkpoint);var bytes=Convert.FromBase64String(intent.Payload);if(TextPackStore.Identity(bytes)!=intent.Checkpoint.ItemId||TextPackStore.Hash(bytes)!=intent.Checkpoint.ProjectedHash)throw new InvalidDataException("Invalid shared projection.");
@@ -196,6 +227,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
             try {return store.WithExclusiveMutation(() => {
                 // Only a retained move intent can attest the requested old path.
                 // Never substitute another checkpoint merely because a file is missing.
+                PrepareAccount(itemId,path,expectedHash);
                 var move=Read<MoveIntent>(System.IO.Path.Combine(DirectoryFor(itemId),"move-intent.json"));
                 var cp=Recover(itemId);
                 if(move!=null&&move.SourcePath==path&&move.Checkpoint.ItemId==itemId&&cp?.Path==move.Checkpoint.Path&&expectedHash==move.Checkpoint.ProjectedHash)path=cp.Path;
@@ -223,7 +255,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync) : ID
                     var journal=System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal)!;journal["relativePath"]=session.Path;
                     checkpoint=checkpoint with{Path=session.Path,Journal=journal.ToJsonString()};
                 }
-                Validate(store,checkpoint);if(checkpoint.ItemId!=session.ItemId||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
+                Validate(store,checkpoint);RequireAccount(checkpoint);if(checkpoint.ItemId!=session.ItemId||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
                 var current=store.Describe(session.Path);
                 if(prior!=null) {
                     if((prior.RetiredReason!=null&&!LiftsMirroredRetirement(prior,checkpoint))||checkpoint.JournalGeneration<prior.JournalGeneration)throw new InvalidOperationException("Newer or protected shared edits are retained.");

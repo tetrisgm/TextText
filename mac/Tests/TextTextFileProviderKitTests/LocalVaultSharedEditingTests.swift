@@ -31,11 +31,72 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         let markdown = "---\ntextTextId: \"\(itemId)\"\ntitle: Note\n---\n\n\(body)"
         return (markdown, String(decoding: try JSONSerialization.data(withJSONObject: json), as: UTF8.self))
     }
-    private func checkpoint(_ original: LocalVaultDocumentStore.Document, pending: Bool = true, generation: UInt64 = 1) throws -> LocalVaultSharedCheckpoint {
-        let journal: [String: Any] = ["version": 1, "journalGeneration": generation, "epoch": 1, "seq": 0, "revision": original.hash, "relativePath": path,
+    private func checkpoint(_ original: LocalVaultDocumentStore.Document, pending: Bool = true, generation: UInt64 = 1, accountId: String? = nil) throws -> LocalVaultSharedCheckpoint {
+        var journal: [String: Any] = ["version": 1, "journalGeneration": generation, "epoch": 1, "seq": 0, "revision": original.hash, "relativePath": path,
             "update": "AQ==", "pending": pending ? ["AQ=="] : [], "batch": NSNull()]
+        if let accountId { journal["accountId"] = accountId }
         return LocalVaultSharedCheckpoint(itemId: itemId, path: path, projectedHash: original.hash, acknowledgedRevision: original.hash,
             epoch: 1, seq: 0, journalGeneration: generation, journal: String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self), pending: pending, retiredReason: nil)
+    }
+    func testAccountBoundaryDoesNotReplayAnotherAccountsInterruptedIntent() throws {
+        let original = try fixture(), a = LocalVaultSharedEditingStore(root: root, accountId: "account-a")
+        let first = try changes(original, body: "Prior A projection")
+        let saved = try a.materialize(checkpoint: checkpoint(original, accountId: "account-a"), expectedHash: original.hash,
+            markdown: first.0, documentJSON: first.1)
+        let pending = try changes(original, body: "Interrupted A intent")
+        XCTAssertThrowsError(try a.materialize(checkpoint: checkpoint(original, generation: 2, accountId: "account-a"), expectedHash: saved.document.hash,
+            markdown: pending.0, documentJSON: pending.1, interruptAfterIntent: true))
+        let intent = sharedDirectory().appendingPathComponent("intent.json"), retained = try Data(contentsOf: sharedDirectory().appendingPathComponent("intent.json"))
+        let checkpointURL = sharedDirectory().appendingPathComponent("checkpoint.json"), prior = try Data(contentsOf: sharedDirectory().appendingPathComponent("checkpoint.json"))
+        let b = LocalVaultSharedEditingStore(root: root, accountId: "account-b")
+        XCTAssertThrowsError(try b.prepareAccount(itemId: itemId, path: path, expectedHash: saved.document.hash))
+        XCTAssertThrowsError(try b.materialize(checkpoint: checkpoint(original, generation: 3, accountId: "account-b"), expectedHash: saved.document.hash,
+            markdown: pending.0, documentJSON: pending.1))
+        XCTAssertEqual(try Data(contentsOf: intent), retained)
+        XCTAssertEqual(try Data(contentsOf: checkpointURL), prior)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, saved.document.hash)
+        try a.prepareAccount(itemId: itemId, path: path, expectedHash: saved.document.hash)
+        XCTAssertEqual(try XCTUnwrap(a.checkpoint(itemId: itemId)).journalGeneration, 2)
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).read(path: path).contents.markdown.contains("Interrupted A intent"))
+    }
+    func testAccountBoundaryArchivesCleanBaselineButDoesNotClaimUnboundPendingWork() throws {
+        let original = try fixture(), a = LocalVaultSharedEditingStore(root: root, accountId: "account-a")
+        let canonical = try changes(original, body: "Original")
+        let saved = try a.materialize(checkpoint: checkpoint(original, pending: false, generation: 7, accountId: "account-a"), expectedHash: original.hash,
+            markdown: canonical.0, documentJSON: canonical.1)
+        let file = sharedDirectory().appendingPathComponent("checkpoint.json"), prior = try Data(contentsOf: sharedDirectory().appendingPathComponent("checkpoint.json"))
+        let b = LocalVaultSharedEditingStore(root: root, accountId: "account-b")
+        try b.prepareAccount(itemId: itemId, path: path, expectedHash: saved.document.hash)
+        XCTAssertNil(try b.checkpoint(itemId: itemId))
+        let archives = try FileManager.default.contentsOfDirectory(at: sharedDirectory(), includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("archived-account-") }
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(archives.first)), prior)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, saved.document.hash)
+        let legacy = try checkpoint(original, generation: 8)
+        let pending = try LocalVaultSharedEditingStore(root: root).materialize(checkpoint: legacy, expectedHash: saved.document.hash,
+            markdown: canonical.0, documentJSON: canonical.1)
+        let unbound = try Data(contentsOf: file)
+        XCTAssertThrowsError(try a.prepareAccount(itemId: itemId, path: path, expectedHash: pending.document.hash))
+        XCTAssertEqual(try Data(contentsOf: file), unbound)
+    }
+    func testAccountBoundaryPreservesPendingCheckpointUntilItsOwnerReopens() throws {
+        let original = try fixture(), a = LocalVaultSharedEditingStore(root: root, accountId: "account-a")
+        func owned(_ owner: String, generation: UInt64) throws -> LocalVaultSharedCheckpoint { try checkpoint(original, generation: generation, accountId: owner) }
+        let first = try changes(original, body: "Private pending A edit")
+        let saved = try a.materialize(checkpoint: owned("account-a", generation: 1), expectedHash: original.hash,
+            markdown: first.0, documentJSON: first.1)
+        let journalURL = sharedDirectory().appendingPathComponent("checkpoint.json"), retained = try Data(contentsOf: sharedDirectory().appendingPathComponent("checkpoint.json"))
+        let b = LocalVaultSharedEditingStore(root: root, accountId: "account-b")
+        XCTAssertThrowsError(try b.prepareAccount(itemId: itemId, path: path, expectedHash: saved.document.hash))
+        XCTAssertThrowsError(try b.materialize(checkpoint: owned("account-b", generation: 2), expectedHash: saved.document.hash,
+            markdown: first.0, documentJSON: first.1))
+        XCTAssertEqual(try Data(contentsOf: journalURL), retained)
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, saved.document.hash)
+        try a.prepareAccount(itemId: itemId, path: path, expectedHash: saved.document.hash)
+        XCTAssertEqual(try XCTUnwrap(a.checkpoint(itemId: itemId)).journal, saved.checkpoint.journal)
+        XCTAssertThrowsError(try a.materialize(checkpoint: owned("account-b", generation: 2), expectedHash: saved.document.hash,
+            markdown: first.0, documentJSON: first.1))
+        XCTAssertEqual(try Data(contentsOf: journalURL), retained)
     }
     func testUnsupportedAndMalformedCheckpointBytesRemainUntouchedUntilRepair() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)

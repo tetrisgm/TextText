@@ -26,7 +26,7 @@ public struct LocalVaultSharedMaterialization: Sendable {
 }
 
 enum LocalVaultSharedFailure: Error, LocalizedError {
-    case invalid, staleSession, generation, protected, interrupted
+    case invalid, staleSession, generation, protected, interrupted, account
     var errorDescription: String? {
         switch self {
         case .invalid: return "Invalid shared editing checkpoint. Your retained journal has not been removed."
@@ -34,6 +34,7 @@ enum LocalVaultSharedFailure: Error, LocalizedError {
         case .generation: return "A newer shared editing checkpoint is already saved."
         case .protected: return "This document has protected shared edits."
         case .interrupted: return "Shared editing materialization was interrupted."
+        case .account: return "Saved edits need their original account or explicit recovery. They remain on this device."
         }
     }
 }
@@ -41,6 +42,47 @@ enum LocalVaultSharedFailure: Error, LocalizedError {
 /// Used exclusively by the workspace's LocalVaultSync actor. No independent file writer or worker.
 struct LocalVaultSharedEditingStore: Sendable {
     let root: URL
+    let accountId: String?
+    init(root: URL, accountId: String? = nil) { self.root = root; self.accountId = accountId }
+    private func journalAccount(_ checkpoint: LocalVaultSharedCheckpoint) throws -> String? {
+        guard let journal = try JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8)) as? [String: Any] else { throw LocalVaultSharedFailure.invalid }
+        guard let value = journal["accountId"], !(value is NSNull) else { return nil }
+        guard let owner = value as? String, Self.identifier(owner) else { throw LocalVaultSharedFailure.invalid }
+        return owner
+    }
+    private static func identifier(_ value: String) -> Bool { value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil }
+    private func requireAccount(_ checkpoint: LocalVaultSharedCheckpoint) throws {
+        if let accountId, !Self.identifier(accountId) { throw LocalVaultSharedFailure.invalid }
+        guard try journalAccount(checkpoint) == accountId else { throw LocalVaultSharedFailure.account }
+    }
+    private func verifyAccountIntents(_ directory: URL) throws {
+        if let data = try read(directory.appendingPathComponent("intent.json"), limit: 9 * 1024 * 1024) {
+            try requireAccount(JSONDecoder().decode(Intent.self, from: data).checkpoint)
+        }
+        if let data = try read(directory.appendingPathComponent("move-intent.json"), limit: 5 * 1024 * 1024) {
+            try requireAccount(JSONDecoder().decode(MoveIntent.self, from: data).checkpoint)
+        }
+    }
+    func prepareAccount(itemId: String, path: String, expectedHash: String) throws {
+        if let accountId, !Self.identifier(accountId) { throw LocalVaultSharedFailure.invalid }
+        let directory = try itemDirectory(itemId)
+        try verifyAccountIntents(directory)
+        let file = directory.appendingPathComponent("checkpoint.json")
+        guard let data = try read(file, limit: 5 * 1024 * 1024) else { return }
+        let checkpoint = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: data)
+        try validate(checkpoint)
+        if try journalAccount(checkpoint) == accountId { return }
+        let journal = try JSONSerialization.jsonObject(with: Data(checkpoint.journal.utf8)) as? [String: Any]
+        guard accountId != nil, !checkpoint.pending, checkpoint.retiredReason == nil,
+              journal?["retired"] == nil || journal?["retired"] is NSNull,
+              journal?["recovery"] == nil || journal?["recovery"] is NSNull,
+              !FileManager.default.fileExists(atPath: directory.appendingPathComponent("binary-intent.json").path) else { throw LocalVaultSharedFailure.account }
+        let current = try LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        guard MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId,
+              current.hash == expectedHash || current.hash == checkpoint.projectedHash else { throw LocalVaultSyncFailure.changed }
+        try write(data, to: directory.appendingPathComponent("archived-account-" + UUID().uuidString + ".json"))
+        try FileManager.default.removeItem(at: file)
+    }
     private struct MoveIntent: Codable {
         var sourcePath: String
         var checkpoint: LocalVaultSharedCheckpoint
@@ -469,7 +511,10 @@ struct LocalVaultSharedEditingStore: Sendable {
               let snapshot = try JSONSerialization.jsonObject(with: Data(documentJSON.utf8)) as? [String: Any],
               snapshot["schemaVersion"] as? Int == 1, snapshot["content"] is [String: Any] else { throw LocalVaultSharedFailure.invalid }
         let directory = try itemDirectory(checkpoint.itemId, create: true)
+        try requireAccount(checkpoint)
+        try verifyAccountIntents(directory)
         let prior = try self.checkpoint(itemId: checkpoint.itemId)
+        if let prior { try requireAccount(prior) }
         let store = LocalVaultDocumentStore(root: root), current = try store.read(path: checkpoint.path)
         let intent = Intent(beforeHash: expectedHash, checkpoint: checkpoint, markdown: markdown, documentJSON: documentJSON)
         if let prior {
