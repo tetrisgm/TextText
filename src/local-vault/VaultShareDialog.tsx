@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
 import { vaultRequest } from "./bridge";
-import { sharedFileHref, sharedFolderHref } from "./shared-vaults";
+import { workspaceShareLink } from "./workspace-share-link";
 
 export type VaultShareScope = {
   workspaceId: string;
@@ -23,7 +23,7 @@ async function requestGrants(scope: VaultShareScope, method: "GET" | "POST" | "P
   return payload.grants;
 }
 
-export function VaultShareDialog({ scope, onClose }: { scope: VaultShareScope; onClose: () => void }) {
+export function VaultShareDialog({ scope, workspaceURL, onClose }: { scope: VaultShareScope; workspaceURL: string | null; onClose: () => void }) {
   const dialog = useRef<HTMLElement>(null);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [email, setEmail] = useState("");
@@ -59,11 +59,13 @@ export function VaultShareDialog({ scope, onClose }: { scope: VaultShareScope; o
     void mutate("POST", { email: email.trim(), role }).then((saved) => { if (saved) setEmail(""); });
   };
   const copyLink = async () => {
-    const relative = scope.scopeType === "item"
-      ? sharedFileHref(scope.workspaceId, scope.scopeKey)
-      : sharedFolderHref(scope.workspaceId, scope.scopeKey);
+    const link = workspaceShareLink(scope, workspaceURL);
+    if (!link) {
+      setError("The workspace web address is unavailable. Reconnect to your workspace and try again.");
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(new URL(relative, window.location.origin).href);
+      await navigator.clipboard.writeText(link);
       setCopied(true);
       setError("");
     } catch {

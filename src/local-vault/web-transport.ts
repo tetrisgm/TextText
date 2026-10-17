@@ -218,6 +218,12 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       const value = await response.json();
       return { currentId: workspaceId, workspaces: value.workspaces };
     }
+    if (method === "workspaceAccess") {
+      if (Object.keys(params).length) throw new Error("Invalid workspace access request.");
+      const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/access`, { credentials: "same-origin", cache: "no-store", signal });
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }
     if (method === "accountRead") {
       if (Object.keys(params).length) throw new Error("Invalid account request.");
       const response = await request(`/api/vault/${encodeURIComponent(workspaceId)}/account`, { credentials: "same-origin", cache: "no-store", signal });

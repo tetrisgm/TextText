@@ -25,6 +25,17 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertEqual(try JSONSerialization.jsonObject(with: request.httpBody!) as? [String: String], params)
         XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "trashList", params: ["url": "https://other.test"]))
     }
+    func testWorkspaceAccessIsPinnedAndRejectsRendererRouting() throws {
+        let request = try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "workspaceAccess", params: [:])
+        XCTAssertEqual(request.url?.absoluteString, "https://texttext.app/api/vault/workspace/access")
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertNil(request.httpBody)
+        XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture")
+        for key in ["url", "token", "workspaceId", "accountId", "role"] {
+            XCTAssertThrowsError(try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "workspaceAccess", params: [key: "other"]))
+        }
+    }
     func testAccountReadIsPinnedAndRejectsRendererRouting() throws {
         let request = try LocalVaultCollaboration.request(origin: URL(string: "https://texttext.app")!, workspaceId: "workspace", token: "fixture", method: "accountRead", params: [:])
         XCTAssertEqual(request.url?.absoluteString, "https://texttext.app/api/vault/workspace/account")

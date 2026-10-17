@@ -12,17 +12,17 @@ it("a captured web requester stays with its original account transport", async (
   await expect(captured("collaborationPush", {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
   expect(a).toHaveBeenCalledTimes(1); releaseB();
 });
-it("cancels a native collaboration request and ignores its late reply", async () => {
+it.each(["collaborationRead", "workspaceAccess"])("cancels a native %s request and ignores its late reply", async method => {
   vi.resetModules(); vi.useFakeTimers();
   const sent: { id: string; method: string; params: Record<string, unknown> }[] = [];
   const surface = Object.assign(new EventTarget(), { webkit: { messageHandlers: { localVault: { postMessage: (body: typeof sent[number]) => sent.push(body) } } } });
   vi.stubGlobal("window", surface);
   const { vaultRequest } = await import("./bridge");
   const abort = new AbortController();
-  const pending = vaultRequest("collaborationRead", { itemId: "item-1", waitMs: 25000 }, abort.signal);
+  const pending = vaultRequest(method, method === "workspaceAccess" ? {} : { itemId: "item-1", waitMs: 25000 }, abort.signal);
   const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
   abort.abort(); await rejected;
-  expect(sent.map(value => value.method)).toEqual(["collaborationRead", "collaborationCancel"]);
+  expect(sent.map(value => value.method)).toEqual([method, "collaborationCancel"]);
   expect(sent[1].params.requestId).toBe(sent[0].id);
   surface.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail: { id: sent[0].id, result: { update: "late" } } }));
   expect(vi.getTimerCount()).toBe(0);

@@ -100,6 +100,7 @@ try {
       });
       result = { hashes: entries.map(entry => entry.hash), entries };
     }
+    else if (request.method === "workspaceAccess") result = { fullAccess: true, isOwner: true, canEditContent: true, canComment: true, canManageShares: true, grants: [] };
     else if (request.method === "accountRead") result = { accountId: "fixture-owner", email: "writer@example.test", name: "Test writer", identities: ["apple", "google"], workspaceName: "My notes" };
     else if (request.method === "collaborationConfig") result = null;
     else if (request.method === "connection" || request.method === "sync") {

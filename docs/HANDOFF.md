@@ -14,7 +14,7 @@ Identities, commands, hashes, rollback paths, failed harness attempts and passin
 
 ## Next work and dependencies
 
-The owner requested Mac/Windows/web look-and-feel work in parallel. The [shared visual baseline](verification/2026-10-17-visual-parity.md) now passes rendered Chromium, actual WKWebView and actual PC WebView2 light/dark comparisons. Windows system-theme loading and brand icon checks pass. These source changes are not installed/deployed; sharing-link and native permission-control consistency are being completed before delivery.
+The owner requested Mac/Windows/web look-and-feel work in parallel. The [shared visual baseline](verification/2026-10-17-visual-parity.md) now passes rendered Chromium, actual WKWebView and actual PC WebView2 light/dark comparisons. Windows system-theme loading and brand icon checks pass. [Shared links and permission controls](verification/2026-10-17-sharing-permission-parity.md) now pass focused transport, production-component browser and Mac relay checks, including reconnect draft retention. These source changes are not installed/deployed; full interaction and physical account matrices remain open.
 
 T02 WebView2 workaround passed the recorded reboot/overnight checks, but October 17 events prove a new **standalone Edge** account lockout. SSH recovered without a config change; current PC core checks passed. The existing WebView2 policy remains present. Standalone Edge launch-site coordination is pending; [evidence and next action](verification/2026-10-11-windows-account-lockout.md).
 

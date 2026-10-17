@@ -570,7 +570,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             }
             return
         }
-        if ["folderMoveReview", "trashList", "trashRestore", "accountRead", "collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel", "collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover", "binaryManifest", "binaryRead", "binaryPatch", "presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave", "shareList", "shareInvite", "shareRole", "shareRevoke", "commentsRead", "commentsAdd", "commentsResolve", "publicationRead", "publicationSet", "feedDiscover", "feedRead", "feedEntry"].contains(method) {
+        if ["folderMoveReview", "trashList", "trashRestore", "accountRead", "workspaceAccess", "collaborationConfig", "collaborationRead", "collaborationPush", "collaborationCancel", "collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover", "binaryManifest", "binaryRead", "binaryPatch", "presenceRead", "presenceJoin", "presenceUpdate", "presenceLeave", "shareList", "shareInvite", "shareRole", "shareRevoke", "commentsRead", "commentsAdd", "commentsResolve", "publicationRead", "publicationSet", "feedDiscover", "feedRead", "feedEntry"].contains(method) {
 #if TEXTTEXT_STRESS_ACTOR
             // Read/push are the hosted collaboration transport. Checkpoint/open
             // are local durability operations and must remain available offline.

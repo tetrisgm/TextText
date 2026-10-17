@@ -321,3 +321,20 @@ it("forwards epoch recovery through native HTTP and preserves terminal recovery 
     expect(view.messages.some(message => message.method.startsWith("files."))).toBe(false);
   } finally { transport.destroy(); }
 });
+
+it("relays shared workspace access through the account-bound native HTTP adapter", async () => {
+  vi.stubGlobal("window",new EventTarget());
+  const view=native((method,params)=>{
+    if(method==="native.status")return{accountId:"account-a",root:"C:\\Notes",workspaceId:"workspace",name:"Notes",available:true,connected:true};
+    if(method==="native.http")return{status:200,headers:{"content-type":"application/json"},body:Buffer.from(JSON.stringify({canManageShares:false})).toString("base64")};
+    throw Error("Unexpected method "+method);
+  });
+  const transport=await createWindowsVaultTransport(view);
+  expect(await transport.request("workspaceAccess",{})).toEqual({canManageShares:false});
+  const relayed=view.messages.find(message=>message.method==="native.http");
+  expect(relayed?.params).toMatchObject({path:"/api/vault/workspace/access",method:"GET"});
+  expect(new Headers(relayed?.params.headers as Record<string,string>).get("X-TextText-Account")).toBe("account-a");
+  await expect(transport.request("workspaceAccess",{workspaceId:"other"})).rejects.toThrow("Invalid workspace access request");
+  expect(view.messages.filter(message=>message.method==="native.http")).toHaveLength(1);
+  transport.destroy();
+});

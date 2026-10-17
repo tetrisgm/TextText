@@ -692,3 +692,25 @@ it("relays binary manifests, exact entry bytes, and a scoped CAS patch", async (
   expect(calls[2].body).toEqual({ operationId: "op-1", entryPath: "assets/data.bin", expectedHash: "c".repeat(64), expectedLifecycle: null, bytesBase64: "BAUG" });
   transport.destroy();
 });
+
+describe("workspace capability transport", () => {
+  it("reads only its captured workspace with account fencing, no cache and cancellation", async () => {
+    const calls: [string, RequestInit | undefined][] = [];
+    const request: typeof fetch = async (url, init) => { calls.push([String(url), init]); return Response.json({canManageShares:false}); };
+    const transport = createWebVaultTransport("bound-workspace", "My notes", request, undefined, "account-a");
+    const controller = new AbortController();
+    expect(await transport.request("workspaceAccess", {}, controller.signal)).toEqual({canManageShares:false});
+    expect(calls[0][0]).toBe("/api/vault/bound-workspace/access");
+    expect(calls[0][1]).toMatchObject({credentials:"same-origin",cache:"no-store",signal:controller.signal});
+    expect(new Headers(calls[0][1]?.headers).get("X-TextText-Account")).toBe("account-a");
+    for (const key of ["workspaceId","url","token","accountId"]) await expect(transport.request("workspaceAccess", {[key]:"other"})).rejects.toThrow("Invalid workspace access request");
+    expect(calls).toHaveLength(1);
+    transport.destroy();
+    await expect(transport.request("workspaceAccess", {})).rejects.toThrow();
+  });
+  it("surfaces revoked access rather than inventing connected-owner permissions", async () => {
+    const transport=createWebVaultTransport("workspace","Workspace",async()=>Response.json({error:"Access revoked"},{status:403}));
+    await expect(transport.request("workspaceAccess",{})).rejects.toMatchObject({status:403,message:"Access revoked"});
+    transport.destroy();
+  });
+});

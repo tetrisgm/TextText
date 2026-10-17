@@ -6,6 +6,7 @@ import base from '../vitest.config';
 export default defineConfig({ ...base, test: { ...base.test,
   maxWorkers: 2,
   include: [
+    'src/local-vault/{workspace-access,workspace-share-link}.test.ts',
     'src/local-vault/mirror-policy-host.test.ts',
     'src/sync/session-owner.test.ts',
     'src/local-vault/item-location.test.ts',

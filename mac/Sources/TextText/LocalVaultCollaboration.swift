@@ -142,6 +142,15 @@ final class LocalVaultCollaboration {
             request.httpBody = try JSONSerialization.data(withJSONObject: params)
             return request
         }
+        if method == "workspaceAccess" {
+            guard identifier(workspaceId), params.isEmpty else {
+                throw LocalVaultCollaborationError(code: "400", message: "Invalid workspace access request.")
+            }
+            var request = URLRequest(url: origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("access"), timeoutInterval: 15)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            return request
+        }
         if method == "accountRead" {
             guard identifier(workspaceId), params.isEmpty else {
                 throw LocalVaultCollaborationError(code: "400", message: "Invalid account request.")
@@ -629,7 +638,7 @@ final class LocalVaultCollaboration {
                         request.setValue("native-editor", forHTTPHeaderField: "X-TextText-Edit-Origin")
                     }
                 }
-                let maxBytes = method == "binaryRead" ? 16 * 1024 * 1024 : method == "folderMoveReview" ? 2_100_000 : method == "accountRead" ? 64 * 1024 : method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
+                let maxBytes = method == "binaryRead" ? 16 * 1024 * 1024 : (method == "folderMoveReview" || method == "workspaceAccess") ? 2_100_000 : method == "accountRead" ? 64 * 1024 : method.hasPrefix("publication") ? 64 * 1024 : method.hasPrefix("share") ? 256 * 1024 : method.hasPrefix("comments") || method.hasPrefix("feed") ? 2_100_000 : 16 * 1024 * 1024
                 var (data, status) = try await Self.responseData(session: self.session, request: request, maxBytes: maxBytes)
                 try Task.checkCancellation()
                 // A response can arrive after credential renewal. Retry only

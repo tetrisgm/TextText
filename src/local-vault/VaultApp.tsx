@@ -57,7 +57,8 @@ import { VaultShareDialog, type VaultShareScope } from "./VaultShareDialog";
 import { VaultPublishDialog } from "./VaultPublishDialog";
 import { VaultComments } from "./VaultComments";
 import { vaultCommentCapabilities } from "./vault-comments";
-import { parseVaultAccess, sharedVaultLinkTarget, type VaultAccess } from "./shared-vaults";
+import { watchWorkspaceAccess } from "./workspace-access";
+import { sharedVaultLinkTarget, type VaultAccess } from "./shared-vaults";
 import { prepareImagePack, encodeBase64, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "./image-import";
 import { prepareEditorImagePaste } from "./editor-image-paste";
 import { readVaultLocation, resolveVaultLocation, writeVaultLocation } from "./vault-location";
@@ -615,13 +616,19 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const importing = useRef(false);
   const [importStatus, setImportStatus] = useState("");
   useEffect(() => { queueMicrotask(() => setImportStatus("")); }, [listing?.root, selected?.path, destinationFolder]);
-  const [webAccess, setWebAccess] = useState<{ workspaceId: string; value: VaultAccess } | null>(null);
-  const [nativeConnection, setNativeConnection] = useState<{ root: string; workspaceId: string } | null>(null);
+  const [nativeConnection, setNativeConnection] = useState<{ root: string; workspaceId: string; webURL?: string; accountId?: string } | null>(null);
   const [nativePublishAccess, setNativePublishAccess] = useState<{ workspaceId: string; itemId: string; canPublish: boolean } | null>(null);
   const [nativePublishRefresh, setNativePublishRefresh] = useState(0);
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
   const webWorkspaceId = !allowFolderPicker && listing?.root.startsWith("vault:") ? listing.root.slice("vault:".length) : null;
-  const access = webWorkspaceId === webAccess?.workspaceId ? webAccess.value : null;
+  const nativeWorkspaceId = allowFolderPicker && nativeConnection?.root === listing?.root ? nativeConnection?.workspaceId ?? null : null;
+  const sharingWorkspaceId = webWorkspaceId ?? nativeWorkspaceId;
+  const accessScope = useMemo(() => sharingWorkspaceId && listing?.root
+    ? { root: listing.root, workspaceId: sharingWorkspaceId, connection: allowFolderPicker ? nativeConnection : null } : null,
+    [sharingWorkspaceId, listing?.root, allowFolderPicker, nativeConnection]);
+  const [workspaceAccess, setWorkspaceAccess] = useState<{ scope: NonNullable<typeof accessScope>; value: VaultAccess } | null>(null);
+  const access = accessScope && workspaceAccess?.scope === accessScope ? workspaceAccess.value : null;
+  useEffect(() => { queueMicrotask(() => setSharing(null)); }, [accessScope]);
   const visibleListing = useMemo(() => {
     if (!listing || !access || access.fullAccess) return listing;
     const folders = access.grants.filter(grant => grant.scopeType === "folder").map(grant => grant.scopeKey);
@@ -728,11 +735,9 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   }, [templateIntent, listing, canCreate]);
   const canManageFiles = capabilities.manageFiles;
   const canOpenRecovery = canManageFiles && (allowFolderPicker || Boolean(access?.isOwner));
-  const nativeWorkspaceId = allowFolderPicker && nativeConnection?.root === listing?.root ? nativeConnection?.workspaceId ?? null : null;
   const canReadFeeds = Boolean(capabilities.fullAccess && (webWorkspaceId || nativeWorkspaceId));
   const canSubscribeFeed = canCreate && canReadFeeds && capabilities.create(destinationFolder.trim());
-  const sharingWorkspaceId = webWorkspaceId ?? nativeWorkspaceId;
-  const canShare = Boolean(webWorkspaceId ? access?.canManageShares : nativeWorkspaceId);
+  const canShare = Boolean(access?.canManageShares);
   const selectedItemId = useMemo(() => selected ? selectedIdentity(selected) : null, [selected]);
   const documentReferences = useMemo(() => createVaultDocumentReferences(selectedItemId ?? undefined, selected?.path), [selectedItemId, listing?.root, selected?.path]);
   const selectedFeed = useMemo(() => {
@@ -756,14 +761,10 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   }, [selected, selectedFeed]);
   const canPublish = Boolean(webWorkspaceId ? access?.canManageShares : nativeWorkspaceId && selectedItemId &&
     nativePublishAccess?.workspaceId === nativeWorkspaceId && nativePublishAccess.itemId === selectedItemId && nativePublishAccess.canPublish);
-  const canOpenComments = Boolean(selected && selectedItemId && sharingWorkspaceId && (allowFolderPicker || access));
-  const commentCapabilities = allowFolderPicker
-    ? { canComment: Boolean(nativeWorkspaceId), canResolve: Boolean(nativeWorkspaceId) }
-    : vaultCommentCapabilities(access, selectedItemId ?? "", selected?.path ?? "");
+  const canOpenComments = Boolean(selected && selectedItemId && sharingWorkspaceId && (access || commentsOpen));
+  const commentCapabilities = vaultCommentCapabilities(access, selectedItemId ?? "", selected?.path ?? "");
   const galleryCommentsAccess = sharingWorkspaceId
-    ? (itemId: string, path: string) => allowFolderPicker
-      ? { canComment: Boolean(nativeWorkspaceId), canResolve: Boolean(nativeWorkspaceId) }
-      : vaultCommentCapabilities(access, itemId, path)
+    ? (itemId: string, path: string) => vaultCommentCapabilities(access, itemId, path)
     : undefined;
   const listingRequest = useRef(0);
   const refresh = useCallback(() => {
@@ -793,29 +794,34 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);
   useEffect(() => {
-    if (!webWorkspaceId) return;
-    const controller = new AbortController();
-    void fetch(`/api/vault/${encodeURIComponent(webWorkspaceId)}/access`, { credentials: "same-origin", cache: "no-store", signal: controller.signal })
-      .then(async response => {
-        if (!response.ok) throw new Error("Workspace permissions could not be loaded.");
-        return parseVaultAccess(await response.json());
-      })
-      .then(value => { if (!controller.signal.aborted) setWebAccess({ workspaceId: webWorkspaceId, value }); })
-      .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Workspace permissions could not be loaded."); });
-    return () => controller.abort();
-  }, [webWorkspaceId]);
+    if (!accessScope) return;
+    return watchWorkspaceAccess({ events: window,
+      read: signal => vaultRequest("workspaceAccess", {}, signal),
+      changed: value => setWorkspaceAccess(value ? { scope: accessScope, value } : null),
+      failed: reason => setError(reason instanceof Error ? reason.message : "Workspace permissions could not be loaded."),
+    });
+  }, [accessScope]);
   useEffect(() => {
     if (!allowFolderPicker || !listing?.root) return;
     const root = listing.root;
     let active = true;
-    const accept = (value: { connected?: unknown; workspaceId?: unknown } | null | undefined) => {
+    const accept = (value: { connected?: unknown; workspaceId?: unknown; webURL?: unknown; accountId?: unknown } | null | undefined) => {
       const workspaceId = value?.workspaceId;
       if (!active) return;
-      setNativeConnection(value?.connected === true && typeof workspaceId === "string" &&
+      const next = value?.connected === true && typeof workspaceId === "string" &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)
-        ? { root, workspaceId } : null);
+        ? { root, workspaceId, webURL: typeof value?.webURL === "string" ? value.webURL : undefined,
+          accountId: typeof value?.accountId === "string" ? value.accountId : undefined } : null;
+      setNativeConnection(previous => previous?.root === next?.root && previous?.workspaceId === next?.workspaceId &&
+        previous?.webURL === next?.webURL && previous?.accountId === next?.accountId ? previous : next);
     };
-    const status = () => { void vaultRequest<{ connected?: boolean; workspaceId?: string }>("connection").then(accept).catch(() => accept(null)); };
+    let statusGeneration = 0;
+    const status = () => {
+      const generation = ++statusGeneration;
+      void vaultRequest<{ connected?: boolean; workspaceId?: string; webURL?: string; accountId?: string }>("connection")
+        .then(value => { if (generation === statusGeneration) accept(value); })
+        .catch(() => { if (generation === statusGeneration) accept(null); });
+    };
     window.addEventListener("texttext:vault-sync-status", status);
     status();
     return () => { active = false; window.removeEventListener("texttext:vault-sync-status", status); };
@@ -1429,7 +1435,9 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         const restored = await vaultRequest<VaultFile>("importPack", { title, data: file.data, folder });
         closeRemoved(); setSelected(restored); setDestinationFolder(folderForItem(restored.path)); refresh();
       }} />}
-      {sharing && canShare && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} onClose={() => setSharing(null)} />}
+      {sharing && canShare && sharing.workspaceId === sharingWorkspaceId && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} workspaceURL={allowFolderPicker
+        ? nativeConnection?.root === listing?.root && nativeConnection?.workspaceId === sharing.workspaceId ? nativeConnection.webURL ?? null : null
+        : window.location.href} onClose={() => setSharing(null)} />}
       {publishing && canPublish && selectedItemId === publishing.itemId && <VaultPublishDialog
         key={`${publishing.workspaceId}:${publishing.itemId}`} {...publishing}
         beforeChange={() => publishFlushRef.current()}
