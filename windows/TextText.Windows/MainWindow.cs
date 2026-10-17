@@ -39,6 +39,7 @@ public sealed partial class MainWindow : Window
         Title = "TextText"; Width = 1200; Height = 850; MinWidth = 720; MinHeight = 480;
         Loaded += async (_,_) => {
             try { account = CredentialStore.Load(); if(account is not null) { try { await VerifyAccountIdentity(lifetime.Token); } catch { ShowAccountVerificationRequired(); return; } selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
+            catch (LegacyAccountStateException) { ShowRetainedWorkReview(); }
             catch { if (account is not null) ShowWorkspaceUnavailable(); else ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
         };
         Closing += (_,e) => {
@@ -201,9 +202,16 @@ public sealed partial class MainWindow : Window
         core.WindowCloseRequested += (_,_) => { _ = RequestClose(); };
         core.WebMessageReceived += Receive;
         if (prepareCommit is not null) await prepareCommit();
-        nextBridge = WorkspaceFactory?.Invoke(new(nextRoot, active.WorkspaceId, Origin,
+        if(!ReferenceEquals(account,identity))throw new SharedAccountMismatchException();
+        INativeWorkspaceBridge? CreateBridge() => WorkspaceFactory?.Invoke(new(nextRoot, active.WorkspaceId, Origin,
             () => Task.FromResult(active.Token),
             (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner", active.AccountId));
+        try { nextBridge = CreateBridge(); }
+        catch(LegacyAccountStateException) {
+            if(!await ReviewRetainedWork(nextRoot,active,identity))throw;
+            if(!ReferenceEquals(account,identity))throw new SharedAccountMismatchException();
+            nextBridge = CreateBridge();
+        }
         beforeCommit?.Invoke();
         var oldWeb = web; var oldBridge = bridge;
         if (oldWeb?.CoreWebView2 is { } oldCore) oldCore.WebMessageReceived -= Receive;

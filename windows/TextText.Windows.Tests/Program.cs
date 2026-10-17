@@ -97,7 +97,21 @@ try {
         await Task.Delay(350, deadline.Token);
         var deleted = Json(await bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
         Assert(!deleted.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("itemId").GetString() == "startup-1"), "actual deletion removes the item from the listing");
-    } finally { bridge.Dispose(); await Task.Delay(200); }
+    } finally { await bridge.RetireAsync(); }
+    var retiringRoot=Path.Combine(temp,"retiring");var retiringState=Path.Combine(temp,"retiring-state");
+    var retiringFile=new TextPackStore(retiringRoot,retiringState).Write("Notes/Retained.textpack",Pack("retained","retiring-1"));
+    var waiting=new StalledTransport();
+    var retiring=new WindowsBridge(context with {Root=retiringRoot},waiting,retiringState);
+    await waiting.ManifestStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    var pendingOpen=retiring.InvokeAsync("collaboration.open",Json(new{itemId="retiring-1",path=retiringFile.Path,hash=retiringFile.Hash}),CancellationToken.None);
+    var retirement=retiring.RetireAsync();await retirement.WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(ReferenceEquals(retirement,retiring.RetireAsync()),"native retirement is idempotent and awaitable");
+    var cancelledOpen=false;try{await pendingOpen;}catch(OperationCanceledException){cancelledOpen=true;}
+    Assert(cancelledOpen,"native retirement cancels and drains a waiting editor operation");
+    using(var available=new FileStream(Path.Combine(retiringState,"sync.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None))
+        Assert(available.CanWrite,"native retirement releases the cross-process sync lock");
+    var refusedAfter=false;try{await retiring.InvokeAsync("files.list",Json(new{}),CancellationToken.None);}catch(Exception error)when(error is ObjectDisposedException or OperationCanceledException){refusedAfter=true;}
+    Assert(refusedAfter,"a retired bridge rejects later calls");
 } finally { try { Directory.Delete(temp, true); } catch { /* best effort */ } }
 Console.WriteLine(failures == 0 ? "All Windows bridge startup tests passed." : failures + " failure(s).");
 return failures == 0 ? 0 : 1;

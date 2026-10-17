@@ -28,6 +28,7 @@ final class LocalVaultConnectionController {
     private var binding: LocalVaultSyncBinding?
     private var previousBinding: LocalVaultSyncBinding?
     private(set) var message: String?
+    private(set) var requiresAccountReview = false
     private var watchFailureIsCurrent = false
     private var hasConflicts = false
     private var connecting = false
@@ -61,7 +62,7 @@ final class LocalVaultConnectionController {
                     }
                 }
             }
-        } catch { capabilities = nil; message = error.localizedDescription }
+        } catch { capabilities = nil; requiresAccountReview = Self.isAdoptionFailure(error); message = error.localizedDescription }
     }
     deinit { watching?.cancel(); running?.cancel(); scheduled?.cancel(); connectRetry?.cancel(); connectingTask?.cancel() }
     func stop() {
@@ -72,6 +73,16 @@ final class LocalVaultConnectionController {
         scheduled?.cancel(); scheduled = nil
         connectRetry?.cancel(); connectRetry = nil
         onChange = nil
+    }
+    static func isAdoptionFailure(_ error: Error) -> Bool {
+        if case LocalVaultAccountRootOwnership.Failure.adoption = error { return true }
+        return false
+    }
+    func stopAndWait() async {
+        let pending = [connectingTask, watching, running, connectRetry].compactMap { $0 }
+        stop()
+        for task in pending { await task.value }
+        engine = nil; transport = nil; binding = nil; capabilities = nil
     }
     func credentialsChanged() {
         credentialGeneration += 1
@@ -93,7 +104,7 @@ final class LocalVaultConnectionController {
         var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil,
                                     "hasConflicts": hasConflicts, "connecting": connecting,
                                     "onlineReady": onlineReady,
-                                    "requiresRebind": previousBinding != nil && binding == nil]
+                                    "requiresRebind": previousBinding != nil && binding == nil, "requiresAccountReview": requiresAccountReview]
         if let binding {
             value["workspaceId"] = binding.workspaceId
             value["webURL"] = binding.origin.appendingPathComponent("vault/\(binding.workspaceId)").absoluteString
@@ -128,8 +139,13 @@ final class LocalVaultConnectionController {
             }
             catch {
                 guard !self.stopped else { return }
-                self.message = "Your workspace is saved on this Mac. Online collaboration is unavailable right now."
-                self.scheduleConnectRetry()
+                self.requiresAccountReview = Self.isAdoptionFailure(error)
+                if self.requiresAccountReview {
+                    self.message = "Choose Review saved work in the File menu to connect this folder to your account."
+                } else {
+                    self.message = "Your workspace is saved on this Mac. Online collaboration is unavailable right now."
+                    self.scheduleConnectRetry()
+                }
             }
             self.connecting = false
             self.connectingTask = nil
@@ -282,7 +298,7 @@ final class LocalVaultConnectionController {
         let transport = try HTTPLocalVaultSyncTransport(origin: binding.origin, workspaceId: binding.workspaceId, token: token, session: session, accountId: account.accountId)
         if let id = account.accountId { try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: id) }
         let engine = try LocalVaultSync(root: root, binding: binding, transport: transport, accountId: account.accountId)
-        self.binding = binding; self.transport = transport; self.engine = engine; self.connectedAccount = account
+        self.binding = binding; self.transport = transport; self.engine = engine; self.connectedAccount = account; requiresAccountReview = false
         if startSync { activate() }
     }
     func activate() {

@@ -18,7 +18,7 @@ static class MainWindowCloseTests
     const BindingFlags PrivateInstance=BindingFlags.Instance|BindingFlags.NonPublic;
     static FieldInfo Field(string name)=>typeof(MainWindow).GetField(name,PrivateInstance)??throw new Exception("Missing window field: "+name);
     static void Check(bool condition,string label,List<string> checks){if(!condition)throw new Exception(label);checks.Add(label);Console.WriteLine("PASS "+label);}
-    static void RemoveProductionLoaded(MainWindow window)
+    internal static void RemoveProductionLoaded(MainWindow window)
     {
         // Constructor subscribes an anonymous Loaded callback that reads real
         // credentials. Remove exactly that callback before showing this fixture.
@@ -59,6 +59,7 @@ static class MainWindowCloseTests
     public static async Task RunAsync(string root,string receipts,CancellationToken ct)
     {
         var checks=new List<string>();
+        await AccountRecoveryTests.RunAsync(root,receipts,ct);
         var stalledGuard=new RendererFlushGuard();
         var neverDispatched=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Check(!await stalledGuard.FlushAsync(_=>neverDispatched.Task,TimeSpan.FromMilliseconds(120)),"stalled WebView dispatch is bounded and fails closed",checks);

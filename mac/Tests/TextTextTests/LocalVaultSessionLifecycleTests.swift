@@ -7,6 +7,69 @@ import TextTextFileProviderKit
 
 final class LocalVaultSessionLifecycleTests: XCTestCase {
     @MainActor
+    func testProductionAccountReviewHonorsChoiceIdentityAndFreshPermission() async throws {
+        _ = NSApplication.shared
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap { descendants($0) } }
+        for scenario in ["cancel", "changed", "revoked", "keep"] {
+            let base = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-review-" + UUID().uuidString)
+            let root = base.appendingPathComponent("workspace")
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: base) }
+            let workspace = scenario + "-" + UUID().uuidString
+            let binding = try LocalVaultSyncBinding(origin: URL(string: "https://native-review.test")!, workspaceId: workspace)
+            try PortableWorkspaceBinding.bindVerified(root: root, binding: binding)
+            let directory = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let original = try JSONSerialization.data(withJSONObject: ["version": 1, "binding": try JSONSerialization.jsonObject(with: JSONEncoder().encode(binding)), "baselines": [:], "outbox": [:], "conflicts": [:], "cursor": 0])
+            let state = directory.appendingPathComponent("state.json"); try original.write(to: state)
+            let entry = base.appendingPathComponent("index.html")
+            try "<html><script>window.texttextFlushForNativeClose=async()=>({ok:true,idle:true,durability:{outcome:'durable'}});</script><p>Isolated native review fixture</p></html>".write(to: entry, atomically: true, encoding: .utf8)
+            var credential = LocalVaultAccountCredential(origin: binding.origin, token: "fixture", accountId: "account-a")
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [NativeReviewProtocol.self]
+            let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+            let controller = LocalVaultWindowController(entry: entry, root: root, websiteDataStore: .nonPersistent(), verifiedCredentials: { credential }, accountReviewSession: session)
+            let window = try XCTUnwrap(controller.window), view = try XCTUnwrap(window.contentView as? WKWebView)
+            defer { window.orderOut(nil); controller.shutdown() }
+            controller.showWindow(nil)
+            let deadline = Date().addingTimeInterval(15)
+            while (try? await view.evaluateJavaScript("typeof window.texttextFlushForNativeClose==='function'")) as? Bool != true {
+                if Date() >= deadline { XCTFail("Review fixture did not load"); return }; try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let review = try XCTUnwrap(controller.reviewSavedWork())
+            while window.attachedSheet == nil && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+            let sheet = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(sheet.contentView)
+            let texts = descendants(content).compactMap { ($0 as? NSTextField)?.stringValue }
+            XCTAssertTrue(texts.contains { $0.contains("fixture@example.test") })
+            XCTAssertTrue(texts.contains { $0.contains(root.path) })
+            if scenario == "cancel", let output = ProcessInfo.processInfo.environment["TEXTTEXT_REVIEW_SCREENSHOT"] {
+                try await Task.sleep(nanoseconds: 200_000_000)
+                let capture = Process(); capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                capture.arguments = ["-x", "-l", String(sheet.windowNumber), output]
+                try capture.run(); capture.waitUntilExit()
+                XCTAssertEqual(capture.terminationStatus, 0, "Capture only the isolated review sheet")
+            }
+            if scenario == "changed" { credential = LocalVaultAccountCredential(origin: binding.origin, token: "fixture-b", accountId: "account-b") }
+            let button = try XCTUnwrap(descendants(content).compactMap { $0 as? NSButton }.first { $0.title == (scenario == "cancel" ? "Cancel" : "Keep saved work") })
+            button.performClick(nil)
+            var finished = false
+            Task { await review.value; finished = true }
+            while !finished && Date() < deadline {
+                if let failure = window.attachedSheet, failure !== sheet, let content = failure.contentView {
+                    if scenario == "keep" { XCTFail("Keep failed: " + descendants(content).compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: " | ")) }
+                    descendants(content).compactMap { $0 as? NSButton }.first { $0.title == "OK" }?.performClick(nil)
+                }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTAssertTrue(finished, "Native review must settle after its choice")
+            if !finished { review.cancel(); return }
+            if scenario == "keep" {
+                let adopted = try JSONSerialization.jsonObject(with: Data(contentsOf: state)) as? [String: Any]
+                XCTAssertEqual(adopted?["accountId"] as? String, "account-a")
+            } else { XCTAssertEqual(try Data(contentsOf: state), original, "\(scenario) must preserve unbound originals") }
+            controller.shutdown()
+        }
+    }
+    @MainActor
     func testProductionWindowCloseWaitsForItsRendererCheckpoint() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -213,4 +276,24 @@ private actor LifecycleTransport: LocalVaultSyncTransport {
     func download(itemId: String) async throws -> LocalVaultRemotePack { throw LocalVaultSyncFailure.invalidResponse }
     func rename(itemId: String, from: String, to: String, baseRevision: String, operationId: String) async throws -> String { throw LocalVaultSyncFailure.invalidResponse }
     func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws { throw LocalVaultSyncFailure.invalidResponse }
+}
+
+private final class NativeReviewProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var profiles: [String: Int] = [:]
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "native-review.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url!.path, workspace = request.url!.deletingLastPathComponent().path
+        Self.lock.lock()
+        if path.hasSuffix("/account") { Self.profiles[workspace, default: 0] += 1 }
+        let count = Self.profiles[workspace, default: 0]
+        Self.lock.unlock()
+        let authorized = request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture" && request.value(forHTTPHeaderField: "X-TextText-Account") == "account-a"
+        let status = !authorized || (path.contains("/revoked-") && count >= 2 && path.hasSuffix("/items")) ? 403 : 200
+        let body: [String: Any] = path.hasSuffix("/account") ? ["accountId": "account-a", "email": "fixture@example.test"] : ["items": []]
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body)); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

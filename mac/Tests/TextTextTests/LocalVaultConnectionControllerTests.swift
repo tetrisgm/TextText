@@ -3,6 +3,37 @@ import XCTest
 import TextTextFileProviderKit
 
 final class LocalVaultConnectionControllerTests: XCTestCase {
+    func testAccountReviewRequiresFreshMatchingProfileAndWorkspacePermission() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AdoptionReviewProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let account = LocalVaultAccountCredential(origin: URL(string: "https://review.test")!, token: "fixture", accountId: "account-a")
+        let accepted = try await LocalVaultAccountReview.load(account: account, binding: LocalVaultSyncBinding(origin: account.origin, workspaceId: "accepted"), session: session)
+        XCTAssertEqual(accepted.email, "fixture@example.test")
+        for workspace in ["foreign", "denied", "bademail", "malformed"] {
+            do {
+                _ = try await LocalVaultAccountReview.load(account: account, binding: LocalVaultSyncBinding(origin: account.origin, workspaceId: workspace), session: session)
+                XCTFail("Review should refuse \(workspace)")
+            } catch { }
+        }
+    }
+    @MainActor
+    func testRetirementReleasesTheCachedNativeWriter() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CredentialRefreshProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let connection = LocalVaultConnectionController(root: root, session: session, credentials: { (URL(string: "https://texttext.test")!, "fixture-before") })
+        _ = try await connection.connect(startSync: false)
+        weak var engine = connection.collaborationEngine
+        XCTAssertNotNil(engine)
+        await connection.stopAndWait()
+        XCTAssertNil(connection.collaborationEngine); XCTAssertNil(engine)
+        let binding = try XCTUnwrap(LocalVaultSync.binding(root: root))
+        XCTAssertFalse(try LocalVaultAccountStateAdoption.adoptAfterExplicitReview(root: root, binding: binding, accountId: "account-a").alreadyBound)
+        await connection.stopAndWait()
+    }
     func testWorkspacePreparationRejectsForeignAndUnboundContent() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -311,6 +342,22 @@ private final class NotificationProtocol: URLProtocol, @unchecked Sendable {
         let body = "{\"items\":[],\"fullAccess\":true,\"canCreateContent\":\(writable ? "true" : "false"),\"writableFolders\":[]}"
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private final class AdoptionReviewProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "review.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url!.path
+        let authorized = request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture" && request.value(forHTTPHeaderField: "X-TextText-Account") == "account-a"
+        let status = !authorized || (path.contains("/denied/") && path.hasSuffix("/items")) ? 403 : 200
+        let body: [String: Any]
+        if path.hasSuffix("/account") { body = ["accountId": path.contains("/foreign/") ? "account-b" : "account-a", "email": path.contains("/bademail/") ? "bad\nemail" : "fixture@example.test"] }
+        else { body = path.contains("/malformed/") ? ["unexpected": []] : ["items": []] }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body)); client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
 }

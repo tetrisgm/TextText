@@ -25,6 +25,8 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     readonly Task worker;
     readonly System.Threading.Timer notification;
     readonly SemaphoreSlim requests = new(1, 1);
+    readonly object retirementGate = new();
+    Task? retirement;
     WorkspaceInventory? inventory;
     // Keep the last valid identity while a file is briefly unreadable during an
     // external atomic replacement. A real deletion has no scan error and is not
@@ -41,13 +43,16 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     /// <summary>Longest a read-only listing or readiness query waits for the sync gate. The renderer gives up on bootstrap reads after 8 seconds and lists twice.</summary>
     public static readonly TimeSpan GateWait = TimeSpan.FromSeconds(2);
 
+    public static TextPackStore OpenStore(string root,Uri origin,string workspaceId,string? stateDirectory=null) {
+        var binding=TextPackStore.Hash(Encoding.UTF8.GetBytes(origin.AbsoluteUri+"\n"+workspaceId+"\n"+root));
+        return new(root,stateDirectory??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","Sync",binding));
+    }
     public WindowsBridge(WorkspaceContext context) : this(context, null, null) { }
     /// <summary>Tests supply the sync transport and state directory; the application always uses the HTTP transport and the per-binding state directory.</summary>
     public WindowsBridge(WorkspaceContext context, ISyncTransport? transport, string? stateDirectory)
     {
         this.context = context;
-        var binding = TextPackStore.Hash(Encoding.UTF8.GetBytes(context.Origin.AbsoluteUri + "\n" + context.WorkspaceId + "\n" + context.Root));
-        files = new(context.Root, stateDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TextText", "Sync", binding));
+        files = OpenStore(context.Root,context.Origin,context.WorkspaceId,stateDirectory);
         if(context.AccountId is { } owner)AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,owner);
         var remote = transport ?? (context.AccountId is { } actor
             ? new HttpSyncTransport(http, context.Origin, context.WorkspaceId, actor, async () => new SyncAccountCredential(await context.TokenProvider(), actor), context.Access == "owner")
@@ -148,6 +153,8 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
 
     public async Task<object?> InvokeAsync(string method, JsonElement p, CancellationToken ct)
     {
+        using var requestLifetime=CancellationTokenSource.CreateLinkedTokenSource(ct,lifetime.Token);
+        ct=requestLifetime.Token;ct.ThrowIfCancellationRequested();
         if (method == "agentToolResult") {
             if (agentTools.TryGetValue(Required(p, "requestId"), out var tool)) {
                 var error = Optional(p, "error");
@@ -293,13 +300,20 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         }
     }
 
-    public void Dispose()
+    public void Dispose() => _ = RetireAsync();
+    public Task RetireAsync() {
+        lock(retirementGate)return retirement??=RetireCoreAsync();
+    }
+    private async Task RetireCoreAsync()
     {
         lifetime.Cancel(); agent.Dispose(); watcher.Dispose(); notification.Dispose(); files.Changed -= Changed; sync.DurabilityChanged -= SyncStateChanged; sync.CapabilitiesChanged -= PermissionStateChanged;
-        // Do not race an in-flight durable write. Teardown completes after that write and the sync worker.
-        _ = Task.Run(async () => {
-            try { await worker; await requests.WaitAsync(); editing.Dispose(); http.Dispose(); }
+        // Await the worker and every entered bridge operation before releasing
+        // editing leases. Recovery can then prove that this writer has retired.
+        try { await worker; }
+        finally {
+            await requests.WaitAsync();
+            try { editing.Dispose(); http.Dispose(); }
             finally { requests.Release(); lifetime.Dispose(); }
-        });
+        }
     }
 }

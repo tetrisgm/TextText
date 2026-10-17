@@ -61,6 +61,7 @@ final class LocalVaultCollaboration {
     private let didRelease: () -> Void
     private var localSessions: [String: (itemId: String, engine: LocalVaultSync, account: LocalVaultAccountCredential?)] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var retired = false
     init(credentials: @escaping () -> (origin: URL, token: String)? = { nil }, verifiedCredentials: (() -> LocalVaultAccountCredential?)? = nil, expectedLifetime: LocalVaultCredentialLifetime = .uncaptured, session: URLSession? = nil, engine: @escaping () -> LocalVaultSync? = { nil }, didRelease: @escaping () -> Void = {}) {
         self.credentials = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }
         self.expectedLifetime = expectedLifetime
@@ -76,6 +77,19 @@ final class LocalVaultCollaboration {
         let released = didRelease
         for (token, active) in closing {
             Task { try? await active.engine.endSharedEditing(sessionToken: token, itemId: active.itemId); released() }
+        }
+    }
+
+    func retireAndWait() async {
+        retired = true
+        let pending = Array(tasks.values)
+        for task in pending { task.cancel() }
+        for task in pending { await task.value }
+        tasks.removeAll()
+        let closing = localSessions; localSessions.removeAll()
+        for (token, active) in closing {
+            try? await active.engine.endSharedEditing(sessionToken: token, itemId: active.itemId)
+            didRelease()
         }
     }
 
@@ -565,6 +579,7 @@ final class LocalVaultCollaboration {
         }
     }
     func start(id: String, method: String, params: [String: Any], root: URL, completion: @escaping (Result<[String: Any]?, Error>) -> Void) {
+        guard !retired else { completion(.failure(LocalVaultCollaborationError(code: "session_closed", message: "This editing session has closed."))); return }
         guard tasks[id] == nil, tasks.count < 8 else { completion(.failure(LocalVaultCollaborationError(code: "429", message: "Too many collaboration requests."))); return }
         let account = credentials()
         tasks[id] = Task { [weak self] in

@@ -35,6 +35,16 @@ static class AccountIdentityTests
         refused=false;
         try{await AccountIdentity.ResolveAsync(offline,origin,"fixture","account-a\n");}catch(InvalidDataException){refused=true;}
         assert(refused,"cached identity rejects a trailing line break");
+        var reviewAccount=verified with {WorkspaceId=workspace.ToString()};calls=0;
+        using var review=new HttpClient(new Handler(request=>{calls++;return Json(new{accountId="account-a",email="fixture@example.test"});}));
+        var reviewed=await AccountIdentity.ReviewAsync(review,origin,reviewAccount);
+        assert(calls==1&&reviewed.AccountId=="account-a"&&reviewed.Email=="fixture@example.test","review checks a fresh actor profile even with cached identity");
+        using var foreignReview=new HttpClient(new Handler(_=>Json(new{accountId="account-b",email="other@example.test"})));refused=false;
+        try{await AccountIdentity.ReviewAsync(foreignReview,origin,reviewAccount);}catch(InvalidDataException){refused=true;}
+        assert(refused,"review refuses a profile from another actor without relabeling saved work");
+        using var invalidReview=new HttpClient(new Handler(_=>Json(new{accountId="account-a",email="fixture@example.test\n"})));refused=false;
+        try{await AccountIdentity.ReviewAsync(invalidReview,origin,reviewAccount);}catch(InvalidDataException){refused=true;}
+        assert(refused,"review refuses misleading account display text");
         using var denied=new HttpClient(new Handler(_=>new(HttpStatusCode.Unauthorized)));refused=false;
         try{await AccountIdentity.ResolveAsync(denied,origin,"fixture",null);}catch(HttpRequestException){refused=true;}
         assert(refused,"unverified credentials do not acquire an account identity");

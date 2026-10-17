@@ -51,6 +51,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private var previousMousePolicy = false
     private let credentials: LocalVaultConnectionController.VerifiedCredentialsProvider
     private let profileAccount: LocalVaultAccountCredential?
+    private let accountReviewSession: URLSession?
     private var accountFence: (() -> Void)?
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
@@ -70,8 +71,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
          websiteDataStore: WKWebsiteDataStore? = nil,
          collaboration: LocalVaultCollaboration? = nil,
          credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil },
-         verifiedCredentials: LocalVaultConnectionController.VerifiedCredentialsProvider? = nil) {
+         verifiedCredentials: LocalVaultConnectionController.VerifiedCredentialsProvider? = nil,
+         accountReviewSession: URLSession? = nil) {
         self.entry = entry
+        self.accountReviewSession = accountReviewSession
         let source = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }
         let initialAccount = source()
         // A legacy window keeps its unbound journals for this exact credential
@@ -227,6 +230,54 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
         emit("texttext:vault-sync-status", value: connection?.status ?? [:])
         connection?.connectAutomatically()
+    }
+    @discardableResult
+    func reviewSavedWork() -> Task<Void, Never>? {
+        guard !switchingWorkspace, let root, let window, let account = credentials(), let accountId = account.accountId else { return nil }
+        switchingWorkspace = true
+        return Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.switchingWorkspace = false }
+            func stillCurrent() -> Bool {
+                guard self.root == root, let current = self.credentials() else { return false }
+                return current.origin == account.origin && current.token == account.token && current.accountId == accountId
+            }
+            do {
+                guard self.connection?.requiresAccountReview == true,
+                      let binding = try PortableWorkspaceBinding.read(root: root) else {
+                    throw VaultBridgeError("This folder has no saved account migration to review.")
+                }
+                let review = try await LocalVaultAccountReview.load(account: account, binding: binding, session: self.accountReviewSession)
+                guard stillCurrent() else { throw CancellationError() }
+                let alert = NSAlert()
+                alert.messageText = "Keep this saved work with \(review.email)?"
+                alert.informativeText = "Folder: \(root.path)\n\nThis folder contains work saved before account ownership was recorded. Continue only if it belongs to this account. Pending edits will sync when this account has permission. TextText will keep the original recovery records."
+                alert.addButton(withTitle: "Keep saved work")
+                alert.addButton(withTitle: "Open folder")
+                alert.addButton(withTitle: "Cancel")
+                let answer = await alert.beginSheetModal(for: window)
+                if answer == .alertSecondButtonReturn { NSWorkspace.shared.open(root); return }
+                guard answer == .alertFirstButtonReturn, stillCurrent(), let release = self.fenceNativeInput() else { return }
+                defer { release() }
+                _ = try await LocalVaultAccountReview.load(account: account, binding: binding, session: self.accountReviewSession)
+                guard stillCurrent() else { throw CancellationError() }
+                let saved = await withCheckedContinuation { continuation in self.flushForSignOut { continuation.resume(returning: $0) } }
+                guard saved else { self.presentSaveFailure(); return }
+                guard stillCurrent() else { throw CancellationError() }
+                await self.collaboration?.retireAndWait(); self.collaboration = nil
+                await self.connection?.stopAndWait(); self.connection = nil
+                defer { if stillCurrent() { self.credentialsChanged() } }
+                guard stillCurrent() else { throw CancellationError() }
+                _ = try LocalVaultAccountStateAdoption.adoptAfterExplicitReview(root: root, binding: binding, accountId: accountId)
+                self.webView.reload()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Saved work is still on this Mac"
+                alert.informativeText = "\(error.localizedDescription)\n\nReconnect and close other TextText windows using this folder before trying again. You can open the folder to view your files."
+                alert.addButton(withTitle: "OK"); alert.addButton(withTitle: "Open folder")
+                if await alert.beginSheetModal(for: window) == .alertSecondButtonReturn { NSWorkspace.shared.open(root) }
+            }
+        }
     }
     func flushForSignOut(_ completion: @escaping (Bool) -> Void) {
         // A loading page still needs an explicit idle/durable receipt. Missing

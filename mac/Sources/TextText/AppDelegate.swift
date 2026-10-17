@@ -2964,6 +2964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     }
 
     @objc private func showMainWindowAction() { showMainWindow() }
+    @objc private func reviewSavedWorkAction() { localVaultWindow?.reviewSavedWork() }
 
     @objc private func toggleMainWindowAction() {
         if let localVaultWindow {
@@ -3405,6 +3406,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         openVault.keyEquivalentModifierMask = [.command, .shift]
         openVault.target = self
         if localVaultWindow != nil {
+            let review = file.addItem(withTitle: "Review saved work…", action: #selector(reviewSavedWorkAction), keyEquivalent: "")
+            review.target = self
             let newNote = file.addItem(withTitle: "New note", action: #selector(newNoteAction), keyEquivalent: "n")
             newNote.target = self
         } else {

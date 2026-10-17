@@ -20,7 +20,30 @@ public static class AccountIdentity
         if(origin.Scheme!="https"||!string.IsNullOrEmpty(origin.UserInfo)||origin.Query.Length>0||origin.Fragment.Length>0||origin.AbsolutePath!="/")
             throw new InvalidDataException("Invalid account server origin.");
         if(cachedAccountId is not null)return Valid(cachedAccountId);
-        async Task<JsonDocument> Read(string path)
+        using var home=await Read(http,origin,token,"/api/vault",ct);
+        if(home.RootElement.TryGetProperty("accountId",out var direct))return Valid(direct.GetString());
+        if(!home.RootElement.TryGetProperty("workspaceId",out var workspace)||!Guid.TryParse(workspace.GetString(),out var id))
+            throw new InvalidDataException("Account workspace could not be verified.");
+        // The existing profile endpoint supports devices upgrading from a server
+        // whose home discovery response did not yet include the actor ID.
+        using var profile=await Read(http,origin,token,"/api/vault/"+id+"/account",ct);
+        return Valid(profile.RootElement.GetProperty("accountId").GetString());
+    }
+    public sealed record ReviewedAccount(string AccountId,string Email);
+    public static async Task<ReviewedAccount> ReviewAsync(HttpClient http,Uri origin,Account captured,CancellationToken ct=default)
+    {
+        // Review always uses a fresh authenticated response, including when an
+        // offline identity is already cached. Workspace names are not people.
+        var expected=await ResolveAsync(http,origin,captured.Token,captured.AccountId,ct);
+        if(!Guid.TryParseExact(captured.WorkspaceId,"D",out _))throw new InvalidDataException("Invalid account workspace.");
+        using var profile=await Read(http,origin,captured.Token,"/api/vault/"+captured.WorkspaceId+"/account",ct);
+        var actual=Valid(profile.RootElement.GetProperty("accountId").GetString());
+        if(actual!=expected)throw new InvalidDataException("Account changed. Saved work is unchanged.");
+        var email=profile.RootElement.GetProperty("email").GetString();
+        if(string.IsNullOrWhiteSpace(email)||email.Length>320||email.Any(char.IsControl))throw new InvalidDataException("Account could not be identified for review.");
+        return new(actual,email);
+    }
+    static async Task<JsonDocument> Read(HttpClient http,Uri origin,string token,string path,CancellationToken ct)
         {
             using var request=new HttpRequestMessage(HttpMethod.Get,new Uri(origin,path));
             request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
@@ -33,13 +56,4 @@ public static class AccountIdentity
             while((count=await input.ReadAsync(buffer,ct))>0){if(output.Length+count>65536)throw new InvalidDataException("Account response exceeds its limit.");output.Write(buffer,0,count);}
             return JsonDocument.Parse(output.ToArray());
         }
-        using var home=await Read("/api/vault");
-        if(home.RootElement.TryGetProperty("accountId",out var direct))return Valid(direct.GetString());
-        if(!home.RootElement.TryGetProperty("workspaceId",out var workspace)||!Guid.TryParse(workspace.GetString(),out var id))
-            throw new InvalidDataException("Account workspace could not be verified.");
-        // The existing profile endpoint supports devices upgrading from a server
-        // whose home discovery response did not yet include the actor ID.
-        using var profile=await Read("/api/vault/"+id+"/account");
-        return Valid(profile.RootElement.GetProperty("accountId").GetString());
-    }
 }
