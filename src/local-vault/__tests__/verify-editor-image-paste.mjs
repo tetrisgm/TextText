@@ -35,7 +35,8 @@ try {
   }, { png: png.toString("base64"), gif: gif.toString("base64") });
   await page.waitForFunction(() => Boolean(window.__editorImagePasteResult));
   const result = await page.evaluate(() => window.__editorImagePasteResult);
-  assert.equal(result.body, "Before after\n\n![Pasted](assets/Pasted.png)\n\n![Animated](assets/Animated.gif)");
+  // Pasting at the end leaves a blank paragraph for continued prose.
+  assert.equal(result.body, "Before after\n\n![Pasted](assets/Pasted.png)\n\n![Animated](assets/Animated.gif)\n\n");
   assert.deepEqual(result.assets, [
     ["assets/Pasted.png", "image/png"],
     ["assets/Animated.gif", "image/gif"],

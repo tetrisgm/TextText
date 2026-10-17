@@ -8,6 +8,7 @@ import type { Blog, ItemKind, Post } from "@/lib/content";
 import type { VaultFile } from "./bridge";
 import { reconcileDocumentSnapshots } from "@/lib/vault/reconcile";
 import { parseProjectionBaseline, projectionItemId, resolveProjection, sha256Hex, stampProjectionBaseline } from "@/lib/documents/projection-baseline";
+import { normalizeTags } from "@/lib/tags";
 export const localBlog: Blog = { handle: "local", name: "Workspace", author: "", homeLayout: "list" };
 export class VaultRepresentationConflict extends Error {
   constructor() { super("text.md and document.json contain competing edits. Both representations are preserved in the file."); }
@@ -83,6 +84,9 @@ export function asPost(document: DocumentSnapshot, path: string): Post {
 }
 export type VaultTemplateSelection = { template: TemplateDefinition; sourceJSON?: string | null };
 export function writePayload(file: VaultFile, document: DocumentSnapshot, look?: VaultTemplateSelection | null) {
+  // Markdown uses canonical workspace tags. Serialize the same values in the
+  // authored JSON so our own save remains a coherent pair with fresh provenance.
+  document = { ...document, content: { ...document.content, tags: normalizeTags(document.content.tags) } };
   const template = look?.template ?? readTemplate(file, document);
   if (template.id !== document.presentation.template.id || template.version !== document.presentation.template.version) throw new Error("The selected template does not match this document.");
   const originalKind = parsePostMarkdownFile(file.markdown).fields.type;

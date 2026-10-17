@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { externalFileReconciliationBase, readDocument, writePayload } from "./model";
 import type { VaultFile } from "./bridge";
+import { coherentProjection, parseProjectionBaseline } from "@/lib/documents/projection-baseline";
 const file: VaultFile = { path: "Notes/Test.textpack", hash: "before", markdown: '---\ntextTextId: "d6090b67-e3bb-46a3-9d34-76061bcb1dbb"\ntitle: "Test"\n---\n\nold' };
 function snapshot() {
   const document = emptyDocumentSnapshot({ id: "texttext.note", version: 1 });
@@ -10,6 +11,26 @@ function snapshot() {
   return document;
 }
 describe("local vault document projection", () => {
+  it.each(["texttext.note", "texttext.gallery", "texttext.article"])("writes canonical tags and a fresh coherent projection for %s", templateId => {
+    const original = snapshot();
+    original.presentation.template.id = templateId;
+    const previous = { ...file, ...writePayload(file, original) };
+    const edited = structuredClone(original);
+    edited.content.body = "Updated checklist\n- [ ] Next step\n";
+    edited.content.tags = ["Ideas", "ideas", "#Field  Notes", "FIELD NOTES"];
+    edited.content.fields.rating = 3;
+    edited.content.assets = [{ id: "image-1", kind: "image", src: "assets/kept.png", tags: ["Asset Label"] }];
+    const before = structuredClone(edited);
+    const payload = writePayload(previous, edited);
+    const expected = { ...edited, content: { ...edited.content, tags: ["ideas", "field notes"] } };
+    expect(edited).toEqual(before);
+    expect(JSON.parse(payload.documentJSON)).toEqual(expected);
+    expect(coherentProjection(payload.markdown, payload.documentJSON)).toEqual(expected);
+    expect(payload.projectionJSON).toBeTruthy();
+    expect(payload.projectionJSON).not.toBe(previous.projectionJSON);
+    expect(parseProjectionBaseline(payload.projectionJSON!, "d6090b67-e3bb-46a3-9d34-76061bcb1dbb")?.document).toEqual(expected);
+    expect(readDocument(payload)).toEqual(expected);
+  });
   it("reads an agent's raw markdown edit over stale structured text", () => {
     const document = snapshot();
     document.content.fields.rating = 4;
