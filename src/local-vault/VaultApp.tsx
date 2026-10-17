@@ -45,7 +45,7 @@ import { CaptureDialog, captureInput } from "./CaptureDialog";
 import { FeedSubscribeDialog, FeedSubscriptionReader } from "./VaultFeeds";
 import { RecoveryDialog } from "./RecoveryDialog";
 import { CollaborativeVaultEditor, type VaultCollaborationConfig, type VaultEditorProps } from "./CollaborativeVaultEditor";
-import { hasPendingFileCollaborationJournal } from "@/sync/engine/client";
+import { fileCollaborationJournalKey, hasPendingFileCollaborationJournal } from "@/sync/engine/client";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 import { packIdentity } from "./pack";
 import { locateVaultItemOrResolve } from "./item-location";
@@ -426,7 +426,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
       const stored = localStorage.getItem(cacheKey);
       if (stored) {
         const previous = JSON.parse(stored) as VaultCollaborationConfig;
-        const key = `texttext:file-collaboration:v1:${JSON.stringify([previous.namespace.replace(/\/$/, ""), previous.workspaceId, previous.itemId])}`;
+        const key = fileCollaborationJournalKey({ server: previous.namespace, workspaceId: previous.workspaceId, itemId: previous.itemId, accountId: previous.accountId });
         try { if (await hasPendingFileCollaborationJournal(key)) { setMode(previous); return; } }
         catch {
           // Let the shared client expose an intact or unreadable IndexedDB
@@ -506,7 +506,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
 function selectedIdentity(file: VaultFile): string | null {
   try { return packIdentity(file.markdown); } catch { return null; }
 }
-export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null, webAssistant = false }: { allowFolderPicker?: boolean; webAssistant?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
+export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent = null, webAssistant = false, inputDisabled = false }: { inputDisabled?: boolean; allowFolderPicker?: boolean; webAssistant?: boolean; accountMenu?: ReactNode; templateIntent?: { query: string } | null }) {
   const shortcut = useShortcutLabel();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
@@ -1218,6 +1218,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   }, []);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      if (inputDisabled) return;
       if (event.defaultPrevented || event.isComposing || event.repeat) return;
       const dialogOpen = Boolean(document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]'));
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -1278,7 +1279,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     try { label = readDocument(selected).content.title || label; } catch { /* The file label remains usable. */ }
     setPublishing({ workspaceId: sharingWorkspaceId, itemId: selectedItemId, label });
   }
-  return <div className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${selectedStory ? " has-story" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
+  return <div inert={inputDisabled} className={`vault-app${assistantOpen ? " has-assistant" : ""}${commentsOpen && canOpenComments ? " has-comments" : ""}${selectedStory ? " has-story" : ""}${sidebarOpen ? "" : " sidebar-collapsed"}${sidebarReady ? " sidebar-ready" : ""}`}
     onDragOver={(event) => { if (!selected && (event.dataTransfer.types.includes("Files") || currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list"))) event.preventDefault(); }}
     onDrop={(event) => { if (selected) return; if (event.dataTransfer.files.length) { event.preventDefault(); if (canCreate) void importImages(Array.from(event.dataTransfer.files)); } else if (currentFolder === "Bookmarks" && event.dataTransfer.types.includes("text/uri-list")) { event.preventDefault(); if (canCreate) saveDroppedBookmark(event.dataTransfer.getData("text/uri-list").split("\n").find(line => line.trim() && !line.startsWith("#")) || ""); } }}
     onPaste={(event) => {

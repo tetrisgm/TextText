@@ -44,11 +44,13 @@ type Cursor = { epoch: number; seq: number; revision: string; relativePath: stri
  * or restarts, so the server receipt stays idempotent. `adopted` marks that the
  * authoritative replacement epoch was persisted but native adoption is unproven. */
 export type FileCollaborationRecovery = { operationId: string; epoch: number; update: string; adopted?: boolean };
-export type FileCollaborationJournal = Cursor & { version: 1; presentation?: FileCollaborationPresentation; journalGeneration?: number; canEditContent?: boolean; canComment?: boolean; update: string; pending: string[]; batch: Batch | null; unqueuedDirty?: boolean; retired?: string; recovery?: FileCollaborationRecovery };
+export type FileCollaborationJournal = Cursor & { version: 1; accountId?: string; presentation?: FileCollaborationPresentation; journalGeneration?: number; canEditContent?: boolean; canComment?: boolean; update: string; pending: string[]; batch: Batch | null; unqueuedDirty?: boolean; retired?: string; recovery?: FileCollaborationRecovery };
 export type FileCollaborationCheckpoint = { journal: FileCollaborationJournal; document: DocumentSnapshot };
 type StateResponse = Cursor & { presentation?: FileCollaborationPresentation; update: string; canEditContent: boolean; canComment: boolean };
 export type FileCollaborationOptions = {
   server: string; workspaceId: string; itemId: string; request: FileCollaborationRequest;
+  /** Stable server-resolved user ID, never a bearer or token fingerprint. */
+  accountId?: string;
   journal?: FileCollaborationJournalStore; active?: boolean; inactiveReason?: "paused" | "offline";
   ownership?: FileCollaborationOwnership;
   retainedJournal?: string | null;
@@ -84,6 +86,12 @@ export type FileCollaborationOptions = {
    * retires pending edits for manual recovery as before. */
   supportsEpochRecovery?: boolean;
 };
+export function fileCollaborationJournalKey(identity: Pick<FileCollaborationOptions, "server" | "workspaceId" | "itemId" | "accountId">): string {
+  const { accountId, workspaceId, itemId } = identity, origin = identity.server.replace(/\/$/, "");
+  if (accountId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(accountId)) throw new Error("Invalid account identity.");
+  return accountId ? `texttext:file-collaboration:v2:${JSON.stringify([origin, accountId, workspaceId, itemId])}`
+    : `texttext:file-collaboration:v1:${JSON.stringify([origin, workspaceId, itemId])}`;
+}
 /** Retirements written by a known older fatal path over a valid pending journal.
  * Every edit in such a journal is replayable: unsent updates go as new batches,
  * an acknowledged batch replays its receipt, and a replaced epoch goes through
@@ -121,6 +129,7 @@ function parseJournal(raw: string): FileCollaborationJournal {
   const parsed = JSON.parse(raw) as FileCollaborationJournal;
   cursor(parsed);
   presentation(parsed.presentation);
+  if (parsed.accountId !== undefined && (typeof parsed.accountId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(parsed.accountId))) throw new Error("Invalid saved account identity.");
   const generation = parsed.journalGeneration ?? 0;
   if (!Number.isSafeInteger(generation) || generation < 0) throw new Error("Invalid saved journal generation.");
   if (parsed.version !== 1 || !Array.isArray(parsed.pending) || parsed.pending.length > 1024 || (parsed.retired !== undefined && typeof parsed.retired !== "string")) throw new Error("Invalid saved collaboration journal. It has been preserved.");
@@ -459,6 +468,7 @@ export class FileCollaborationClient {
   status: FileCollaborationStatus = "reconnecting";
   private readonly storage: FileCollaborationJournalStore;
   private readonly options: FileCollaborationOptions;
+  private readonly legacyJournalKey: string | null;
   private active: boolean;
   private inactiveReason: "paused" | "offline";
   private dead = false;
@@ -506,7 +516,8 @@ export class FileCollaborationClient {
     this.options = options; this.storage = options.journal ?? localJournal; this.active = options.active ?? true; this.inactiveReason = options.inactiveReason ?? "paused";
     this.supportsEpochRecovery = options.supportsEpochRecovery ?? !options.checkpoint;
     this.initialFileReconciled = !options.initialFileChange;
-    this.ownedJournalKey = `texttext:file-collaboration:v1:${JSON.stringify([options.server.replace(/\/$/, ""), options.workspaceId, options.itemId])}`;
+    this.legacyJournalKey = options.accountId ? fileCollaborationJournalKey({ ...options, accountId: undefined }) : null;
+    this.ownedJournalKey = fileCollaborationJournalKey(options);
     this.doc.on("update", this.changed);
   }
   get recoveryJournal(): FileCollaborationJournal | null { return this.saved; }
@@ -546,7 +557,7 @@ export class FileCollaborationClient {
   private persist(retired?: string): void {
     if (!this.current) return;
     if (!Number.isSafeInteger(this.journalGeneration) || this.journalGeneration >= Number.MAX_SAFE_INTEGER) throw new Error("Collaboration journal generation limit reached.");
-    const saved: FileCollaborationJournal = { version: 1, ...(this.presentation ? { presentation: this.presentation } : {}), journalGeneration: ++this.journalGeneration, ...this.current, canEditContent: this.canEdit, canComment: this.canComment, unqueuedDirty: this.unqueuedDirty, update: encode(Y.encodeStateAsUpdate(this.doc)), pending: [...this.pending], batch: this.batch ? { ...this.batch, updates: [...this.batch.updates] } : null,
+    const saved: FileCollaborationJournal = { version: 1, ...(this.options.accountId ? { accountId: this.options.accountId } : {}), ...(this.presentation ? { presentation: this.presentation } : {}), journalGeneration: ++this.journalGeneration, ...this.current, canEditContent: this.canEdit, canComment: this.canComment, unqueuedDirty: this.unqueuedDirty, update: encode(Y.encodeStateAsUpdate(this.doc)), pending: [...this.pending], batch: this.batch ? { ...this.batch, updates: [...this.batch.updates] } : null,
       ...(retired || this.saved?.retired ? { retired: retired ?? this.saved?.retired } : {}),
       ...(this.recovery ? { recovery: { ...this.recovery } } : {}) };
     this.saved = saved; // Keep recoverable in memory even when browser storage fails.
@@ -751,6 +762,38 @@ export class FileCollaborationClient {
     });
     return !this.frozen;
   }
+  private async verifyLegacyAccountHistory(): Promise<void> {
+    const legacy = this.legacyJournalKey;
+    if (!legacy) return;
+    const keys = new Set([legacy]);
+    const include = (key: string) => {
+      if (key === legacy || key.startsWith(legacy + ":owner:")) keys.add(key);
+      if (keys.size > 256) throw new Error("Too many unbound recovery journals. Existing records are preserved.");
+    };
+    try {
+      if (!this.options.journal && typeof localStorage !== "undefined") {
+        if (localStorage.length > 10_000) throw new Error("Collaboration storage contains too many entries to inspect safely.");
+        for (let index = 0; index < localStorage.length; index++) { const key = localStorage.key(index); if (key) include(key); }
+      }
+      if (this.storage.listCommitted) for (const key of await this.storage.listCommitted()) include(key);
+      for (const key of keys) {
+        const copies = this.storage.loadCopies ? await this.storage.loadCopies(key) : { committed: null, fallback: this.storage.load(key) };
+        this.rawRecoveryJournal = JSON.stringify({ legacyKey: key, ...copies });
+        const raw = selectFileCollaborationJournal(copies.committed, copies.fallback);
+        if (raw === null) continue;
+        const value = parseJournal(raw);
+        if (value.pending.length || value.batch || value.unqueuedDirty || value.retired || value.recovery) {
+          throw new Error("Saved edits from before account verification are preserved. Recover them explicitly before opening this note.");
+        }
+      }
+      this.rawRecoveryJournal = null;
+    } catch (error) { this.unreadableJournal = true; throw error; }
+  }
+  private verifyJournalAccount(value: FileCollaborationJournal): void {
+    if (this.options.accountId && value.accountId !== this.options.accountId) {
+      throw new Error("These saved edits belong to another or unverified account. They are preserved for recovery.");
+    }
+  }
   private load(): FileCollaborationJournal | null | Promise<FileCollaborationJournal | null> {
     if (this.storage.loadCopies) return this.loadJournal().catch(error => {
       this.unreadableJournal = true;
@@ -764,7 +807,7 @@ export class FileCollaborationClient {
         ? JSON.stringify({ browser: raw, native: this.options.retainedJournal }) : raw;
       raw = selectFileCollaborationJournal(raw, this.options.retainedJournal ?? null, this.options.retainedJournalPath);
       if (raw === null) { this.rawRecoveryJournal = null; return null; }
-      const parsed = parseJournal(raw);
+      const parsed = parseJournal(raw); this.verifyJournalAccount(parsed);
       if (browserJournal !== null) this.storageSavedGeneration = parseJournal(browserJournal).journalGeneration ?? 0;
       this.rawRecoveryJournal = null;
       return parsed;
@@ -807,7 +850,7 @@ export class FileCollaborationClient {
     }
     raw = selectFileCollaborationJournal(raw, this.options.retainedJournal ?? null, this.options.retainedJournalPath);
     if (raw === null) { this.rawRecoveryJournal = null; return null; }
-    const parsed = parseJournal(raw);
+    const parsed = parseJournal(raw); this.verifyJournalAccount(parsed);
     if (browserJournal !== null) this.storageSavedGeneration = parseJournal(browserJournal).journalGeneration ?? 0;
     this.rawRecoveryJournal = null;
     return parsed;
@@ -868,6 +911,10 @@ export class FileCollaborationClient {
         const lease = await (this.options.ownership ?? browserOwnership()).acquire(this.journalKey);
         if (this.dead) { lease.release(); return; }
         this.lease = lease; this.ownedJournalKey = lease.key;
+      }
+      if (this.legacyJournalKey) {
+        await this.verifyLegacyAccountHistory();
+        if (this.dead) return;
       }
       const loaded = this.load();
       let retained = loaded instanceof Promise ? await loaded : loaded;

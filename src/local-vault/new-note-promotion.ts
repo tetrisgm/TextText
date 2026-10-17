@@ -18,7 +18,7 @@ export async function prepareSharedNote({ path, candidate, flush, hasDraft, read
   if (file.path !== path || packIdentity(file.markdown) !== candidate.itemId) return null;
   const ready = await config();
   if (!ready || ready.itemId !== candidate.itemId || ready.workspaceId !== candidate.workspaceId ||
-      ready.namespace !== candidate.namespace || ready.localFiles !== candidate.localFiles) return null;
+      ready.namespace !== candidate.namespace || ready.accountId !== candidate.accountId || ready.localFiles !== candidate.localFiles) return null;
   // An agent or Finder can still change the file between the readiness check
   // and the shared editor mount. Begin the shared session with this exact hash.
   const confirmed = await read();

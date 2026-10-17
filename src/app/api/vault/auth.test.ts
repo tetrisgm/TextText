@@ -17,6 +17,13 @@ describe("vault authorization", () => {
     mocks.owned.mockResolvedValue({ handle: "owner" });
     mocks.access.mockResolvedValue({ isOwner: true, blogId: "workspace-1", userId: "user-1" });
   });
+  it("rejects a captured account mismatch after cookies change", async () => {
+    const result = await authorizeVault(new Request("https://texttext.test", { method: "PUT", headers: { Origin: "https://texttext.test", "X-TextText-Account": "user-old" } }), "workspace-1");
+    expect(result).toBeInstanceOf(Response); expect((result as Response).status).toBe(403);
+    expect(await (result as Response).json()).toMatchObject({ code: "account_changed" });
+    const same = await authorizeVault(new Request("https://texttext.test", { headers: { "X-TextText-Account": "user-1" } }), "workspace-1");
+    expect(same).toMatchObject({ actorUserId: "user-1" });
+  });
   it("rejects a different workspace even for a valid token", async () => {
     const result = await authorizeVault(new Request("https://texttext.test", { headers: { Authorization: "Bearer token" } }), "workspace-2");
     expect(result).toBeInstanceOf(Response);

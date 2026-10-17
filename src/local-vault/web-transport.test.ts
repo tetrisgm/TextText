@@ -327,6 +327,20 @@ describe("web file vault transport", () => {
     transport.destroy();
   });
 
+  it("captures the authenticated account for config and every server request", async () => {
+    const calls: RequestInit[] = [];
+    const transport = createWebVaultTransport("workspace", "Workspace", async (_url, init) => {
+      calls.push(init!);
+      return Response.json({ items: [{ itemId: "stable-id", relativePath: "Note.textpack", revision: "a".repeat(64) }], revision: "manifest" });
+    }, undefined, "account-a");
+    expect(await transport.request("collaborationConfig", { path: "Note.textpack" })).toMatchObject({ accountId: "account-a" });
+    expect((await transport.request("list", {} ) as { root: string }).root).toBe('vault:["account-a","workspace"]');
+    await transport.request("collaborationPush", { itemId: "stable-id", operationId: "op", epoch: 1, updates: ["AAA="] });
+    expect(calls.length).toBeGreaterThan(1);
+    for (const init of calls) expect(new Headers(init.headers).get("X-TextText-Account")).toBe("account-a");
+    transport.destroy();
+  });
+
   it("forwards only collaboration fields with cancellation and stable item identity", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const transport = createWebVaultTransport("workspace", "Workspace", async (url, init) => {

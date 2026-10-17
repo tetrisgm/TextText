@@ -1,3 +1,4 @@
+import { VAULT_ACCOUNT_HEADER } from "@/lib/vault/account-fence";
 import { boundedBootstrapRead } from "./bootstrap-retry";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
@@ -47,8 +48,17 @@ function addedAssets(value: unknown): PackAssetAddition[] {
 }
 
 export function createWebVaultTransport(workspaceId: string, name = "Workspace", request: typeof fetch = fetch,
-  nativeCreation?: (path: string, bytes: Uint8Array, params: Record<string, unknown>, signal?: AbortSignal) => Promise<VaultFile>): { request: VaultTransport; refresh: () => Promise<boolean>; wait: (signal: AbortSignal) => Promise<boolean>; destroy: () => void } {
+  nativeCreation?: (path: string, bytes: Uint8Array, params: Record<string, unknown>, signal?: AbortSignal) => Promise<VaultFile>, accountId?: string): { request: VaultTransport; refresh: () => Promise<boolean>; wait: (signal: AbortSignal) => Promise<boolean>; destroy: () => void } {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(workspaceId)) throw new Error("Invalid workspace identifier.");
+  if (accountId !== undefined) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(accountId)) throw new Error("Invalid account identity.");
+    const capturedRequest = request;
+    request = (input, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set(VAULT_ACCOUNT_HEADER, accountId);
+      return capturedRequest(input, { ...init, headers });
+    };
+  }
   const base = `/api/vault/${encodeURIComponent(workspaceId)}/items`;
   let manifest: Manifest | null = null;
   let listingRequest: Promise<VaultListing> | null = null;
@@ -91,7 +101,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       // A late timed-out response must never replace a newer manifest.
       if (next) manifest = next;
       if (!manifest) throw new Error("The workspace listing was empty.");
-      return { root: `vault:${workspaceId}`, name, fullAccess: manifest.fullAccess, canCreateContent: manifest.canCreateContent, writableFolders: manifest.writableFolders, folders: manifest.folders ?? [], items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId, canEditContent: item.canEditContent })) };
+      return { root: accountId ? `vault:${JSON.stringify([accountId, workspaceId])}` : `vault:${workspaceId}`, name, fullAccess: manifest.fullAccess, canCreateContent: manifest.canCreateContent, writableFolders: manifest.writableFolders, folders: manifest.folders ?? [], items: manifest.items.map((item) => ({ path: item.relativePath, itemId: item.itemId, canEditContent: item.canEditContent })) };
     })().finally(() => { listingRequest = null; });
     return listingRequest;
   };
@@ -251,7 +261,7 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (!manifest) await listing();
       const item = manifest!.items.find(entry => entry.relativePath === params.path);
       if (!item) throw new VaultError("This file no longer exists.", "not_found");
-      return { namespace: typeof location === "undefined" ? "web" : location.origin, workspaceId, itemId: item.itemId };
+      return { namespace: typeof location === "undefined" ? "web" : location.origin, workspaceId, itemId: item.itemId, ...(accountId ? { accountId } : {}) };
     }
     if (["binaryManifest", "binaryRead", "binaryPatch"].includes(method)) {
       const itemId = String(params.itemId ?? "");

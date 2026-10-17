@@ -1,3 +1,4 @@
+import { vaultAccountFence } from "@/lib/vault/account-fence";
 import { requestPublicOrigin } from "@/lib/request-origin";
 import path from "node:path";
 import { getCurrentUser } from "@/lib/session";
@@ -45,6 +46,8 @@ export async function authorizeVaultWorkspaceOrScoped(request: Request, workspac
   const access = await resolveWorkspaceAccess({ handle: workspace.handle, user: identity.user, fresh: true,
     workspaceSnapshot: { id: workspace.id, ownerId: workspace.ownerId } });
   if (access.blogId !== workspaceId || !access.userId) return deny(404, "Workspace not found");
+  const changedAccount = vaultAccountFence(request, access.userId);
+  if (changedAccount) return changedAccount;
   const root = process.env.TEXTTEXT_VAULT_ROOT;
   if (!root) return deny(503, "File vault storage is not configured");
   const fullAccess = access.isOwner || access.canView;

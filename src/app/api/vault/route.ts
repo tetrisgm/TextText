@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const authorized = await authorizeVault(request);
   if (authorized instanceof Response) return authorized;
-  return Response.json({ workspaceId: authorized.workspaceId, name: authorized.name }, {
+  return Response.json({ workspaceId: authorized.workspaceId, name: authorized.name, accountId: authorized.actorUserId }, {
     headers: { "Cache-Control": "no-store" },
   });
 }

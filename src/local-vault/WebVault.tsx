@@ -11,21 +11,21 @@ import { watchWebWorkspace } from "./web-watch";
 import { consumeTemplateIntent } from "./template-intent";
 import { claimWebSession, renameWebSession } from "./web-session";
 
-export function WebVault({ workspaceId, name, accountEmail, accountName, requestedTemplate, assistantHandle }: { workspaceId: string; name: string; accountEmail: string | null; accountName: string | null; requestedTemplate?: string; assistantHandle?: string }) {
-  const [initial] = useState({ workspaceId, name });
-  const [session, setSession] = useState<{ workspaceId: string; name: string; remounted?: boolean } | null>(null);
+export function WebVault({ workspaceId, name, accountId, accountEmail, accountName, requestedTemplate, assistantHandle }: { workspaceId: string; name: string; accountId: string; accountEmail: string | null; accountName: string | null; requestedTemplate?: string; assistantHandle?: string }) {
+  const [initial] = useState({ workspaceId, name, accountId });
+  const [session, setSession] = useState<{ workspaceId: string; name: string; accountId?: string; remounted?: boolean } | null>(null);
   const [templateIntent, setTemplateIntent] = useState<{ query: string } | null>(null);
   const [switchError, setSwitchError] = useState("");
   useEffect(() => {
-    const owned = claimWebSession(initial.workspaceId, initial.name);
-    if (owned.workspaceId !== initial.workspaceId) {
+    const owned = claimWebSession(initial.workspaceId, initial.name, initial.accountId);
+    if (owned.workspaceId !== initial.workspaceId || owned.accountId !== initial.accountId) {
       // The previous editor is already gone. Do not mistake a fresh editor's
       // empty flush guard for acknowledgement of that editor's pending work.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSession({ ...owned, remounted: true });
       return;
     }
-    const transport = createWebVaultTransport(owned.workspaceId, owned.name);
+    const transport = createWebVaultTransport(owned.workspaceId, owned.name, fetch, undefined, initial.accountId);
     const assistant = assistantHandle ? createWebAssistant(assistantHandle, transport.request, fetch, undefined, true) : null;
     const lifetime = new AbortController();
     let switching = false;
@@ -76,11 +76,11 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
     }
   }, [session, workspaceId, requestedTemplate]);
   useEffect(() => {
-    if (!session || session.remounted || !renameWebSession(workspaceId, name)) return;
+    if (!session || session.remounted || session.accountId !== accountId || !renameWebSession(workspaceId, name)) return;
     window.dispatchEvent(new Event("texttext:vault-changed"));
-  }, [session, workspaceId, name]);
+  }, [session, workspaceId, name, accountId]);
   useEffect(() => {
-    if (!session || session.remounted || session.workspaceId === workspaceId) return;
+    if (!session || session.remounted || session.accountId !== accountId || session.workspaceId === workspaceId) return;
     let active = true;
     void (async () => {
       const flush = (window as Window & { texttextFlushForSignOut?: () => Promise<boolean> }).texttextFlushForSignOut;
@@ -97,7 +97,7 @@ export function WebVault({ workspaceId, name, accountEmail, accountName, request
       }
     })();
     return () => { active = false; };
-  }, [session, workspaceId]);
+  }, [session, workspaceId, accountId]);
   if (session?.remounted) return <section><p>Open this workspace in a new page.</p><a href={`/vault/${encodeURIComponent(workspaceId)}`}>Open workspace</a><p><a href={`/vault/${encodeURIComponent(session.workspaceId)}`}>Return to previous workspace</a></p></section>;
-  return session ? <>{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp webAssistant={Boolean(assistantHandle)} templateIntent={templateIntent} allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} assistantHandle={assistantHandle} />} /></> : <p>Opening workspace…</p>;
+  return session ? <>{session.accountId !== accountId && <p role="status">Your account changed. Reopen this workspace to continue. Your saved edits are preserved.</p>}{switchError && workspaceId !== session.workspaceId && <p role="status">{switchError}</p>}<VaultApp inputDisabled={session.accountId !== accountId} webAssistant={Boolean(assistantHandle)} templateIntent={templateIntent} allowFolderPicker={false} accountMenu={<WebAccount email={accountEmail} name={accountName} assistantHandle={assistantHandle} />} /></> : <p>Opening workspace…</p>;
 }

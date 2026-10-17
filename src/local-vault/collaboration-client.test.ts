@@ -14,6 +14,7 @@ import { outboxIndexedDB } from "@/lib/__tests__/helpers/outbox-indexeddb";
 
 class Journal implements FileCollaborationJournalStore {
   values = new Map<string, string>(); fail = false;
+  async listCommitted() { return [...this.values.keys()]; }
   load(key: string) { return this.values.get(key) ?? null; }
   save(key: string, value: string) { if (this.fail) throw new Error("disk full"); this.values.set(key, value); }
   remove(key: string) { this.values.delete(key); }
@@ -58,6 +59,77 @@ function client(server: Server, journal = new Journal(), request = server.reques
   const result = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request });
   clients.push(result); return result;
 }
+describe("account-bound journals", () => {
+  it("never replays A's offline edit under B and lets A resume its own exact journal", async () => {
+    const server = new Server(), journal = new Journal();
+    const open = (accountId: string, pushes: string[]) => {
+      const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", accountId, journal,
+        request: async (method, params, signal) => { if (method === "push") pushes.push(String(params.operationId)); return server.request(method, params, signal); } });
+      clients.push(editor); return editor;
+    };
+    const aPushes: string[] = [], bPushes: string[] = [];
+    const a = open("account-a", aPushes); await a.start(); a.setActive(false);
+    a.mutate(doc => documentText(doc, "body").insert(5, " private A edit"));
+    expect(await a.flushLocal()).toBe(true);
+    const aKey = a.journalKey, retained = journal.load(aKey); a.destroy();
+    const b = open("account-b", bPushes); await b.start();
+    expect(documentSnapshotFromYDoc(b.doc).content.body).toBe("Hello");
+    expect(b.journalKey).not.toBe(aKey); expect(bPushes).toEqual([]);
+    expect(journal.load(aKey)).toBe(retained); b.destroy();
+    const resumed = open("account-a", aPushes); await resumed.start();
+    expect(await resumed.flush()).toBe(true);
+    expect(documentSnapshotFromYDoc(resumed.doc).content.body).toBe("Hello private A edit");
+    expect(aPushes).toHaveLength(1); expect(bPushes).toEqual([]);
+  });
+
+  it("starts from a fresh authorized baseline while preserving a clean legacy record", async () => {
+    const server = new Server(), journal = new Journal(), legacy = client(server, journal);
+    await legacy.start(); expect(await legacy.flushLocal()).toBe(true);
+    const key = legacy.journalKey, retained = journal.load(key); legacy.destroy();
+    server.bytes = pack("New authorized baseline"); server.state = seedVaultCollaboration(server.bytes, "item-1", 1);
+    const next = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", accountId: "account-b", journal, request: server.request });
+    clients.push(next); await next.start();
+    expect(documentSnapshotFromYDoc(next.doc).content.body).toBe("New authorized baseline");
+    expect(journal.load(key)).toBe(retained); expect(server.pushes).toEqual([]);
+  });
+
+  it("rejects a mislabelled scoped journal without rewriting it", async () => {
+    const server = new Server(), journal = new Journal();
+    const options = { server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", accountId: "account-a", journal, request: server.request };
+    const first = new FileCollaborationClient(options); clients.push(first); await first.start();
+    const key = first.journalKey; first.destroy();
+    const wrong = JSON.stringify({ ...JSON.parse(journal.load(key)!), accountId: "account-b" }); journal.save(key, wrong);
+    const next = new FileCollaborationClient(options); clients.push(next); await next.start();
+    expect(next.canEdit).toBe(false); expect(next.hasUnreadableJournal).toBe(true);
+    expect(journal.load(key)).toBe(wrong); expect(server.pushes).toEqual([]);
+  });
+
+  it("does not open or write after release during account-history discovery", async () => {
+    const server = new Server(), journal = new Journal();
+    let finish!: (keys: string[]) => void;
+    journal.listCommitted = () => new Promise<string[]>(resolve => { finish = resolve; });
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", accountId: "account-a", journal, request: server.request });
+    clients.push(editor); const starting = editor.start(); editor.destroy(); finish([]); await starting;
+    expect(server.reads).toBe(0); expect(journal.values.size).toBe(0);
+  });
+
+  it("preserves an ambiguous legacy pending journal without assigning it to the new account", async () => {
+    const server = new Server(), journal = new Journal(), legacy = client(server, journal);
+    await legacy.start(); legacy.setActive(false);
+    legacy.mutate(doc => documentText(doc, "body").insert(5, " unbound edit"));
+    expect(await legacy.flushLocal()).toBe(true);
+    const key = legacy.journalKey, retained = journal.load(key); legacy.destroy();
+    // Browser orphan records have this owner suffix; the unbound base may be absent.
+    journal.remove(key); journal.save(key + ":owner:orphan", retained!);
+    const next = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", accountId: "account-b", journal,
+      ownership: { acquire: async namespace => ({ key: namespace, release() {} }) }, request: server.request });
+    clients.push(next); await next.start();
+    expect(next.canEdit).toBe(false); expect(next.hasUnreadableJournal).toBe(true);
+    expect(next.hasPendingChanges).toBe(true); expect(next.recoveryRawJournal).not.toBeNull();
+    expect(journal.load(key + ":owner:orphan")).toBe(retained); expect(server.pushes).toEqual([]);
+  });
+});
+
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { for (const entry of clients.splice(0)) entry.destroy(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 

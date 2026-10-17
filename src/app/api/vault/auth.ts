@@ -1,3 +1,4 @@
+import { vaultAccountFence } from "@/lib/vault/account-fence";
 import { requestPublicOrigin } from "@/lib/request-origin";
 import { resolveSyncWorkspace } from "@/app/api/sync/v1/auth";
 import { getCurrentUser } from "@/lib/session";
@@ -33,6 +34,8 @@ export async function authorizeVault(request: Request, workspaceId?: string) {
   if (!access.isOwner || !access.blogId || (workspaceId !== undefined && access.blogId !== workspaceId) || !access.userId) {
     return Response.json({ error: "Workspace not found" }, { status: 404 });
   }
+  const changedAccount = vaultAccountFence(request, access.userId);
+  if (changedAccount) return changedAccount;
   const root = process.env.TEXTTEXT_VAULT_ROOT;
   if (!root) return Response.json({ error: "File vault storage is not configured" }, { status: 503 });
   return { root, workspaceId: access.blogId, name, actorUserId: access.userId, actorType };

@@ -31,7 +31,7 @@ import { openLocalSharedSession, type NativeSharedSession } from "./shared-open"
 import { currentVaultWindowActive } from "./window-activity";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 
-export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; localFiles?: boolean };
+export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; accountId?: string; localFiles?: boolean };
 /** The native bridge adopts a recovered epoch only when it advertises this; web relays need no native checkpoint. */
 const EPOCH_ADOPTION = "epoch-adoption";
 export type VaultEditorProps = {
@@ -176,7 +176,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
           file.current = restored; setOpened(restored);
         }
       }
-      shared = new FileCollaborationClient({ server: config.namespace, workspaceId: config.workspaceId, itemId: config.itemId,
+      shared = new FileCollaborationClient({ server: config.namespace, workspaceId: config.workspaceId, itemId: config.itemId, accountId: config.accountId,
       active: currentVaultWindowActive(),
       inactiveReason: navigator.onLine ? "paused" : "offline",
       supportsEpochRecovery: native ? Boolean(native.capabilities?.includes(EPOCH_ADOPTION)) : true,
@@ -266,7 +266,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       document.removeEventListener("visibilitychange", visibility); window.removeEventListener("online", visibility); window.removeEventListener("offline", visibility);
       window.removeEventListener("focus", visibility); window.removeEventListener("blur", visibility);
     };
-  }, [config.namespace, config.workspaceId, config.itemId, config.localFiles, generation, onTitleChange, bind]);
+  }, [config.namespace, config.workspaceId, config.itemId, config.accountId, config.localFiles, generation, onTitleChange, bind]);
   useEffect(() => {
     if (!config.localFiles) return;
     let stopped = false, reading = false, queued = false;
@@ -457,7 +457,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       void (async () => {
         const path = file.current.path;
         const candidate = await vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path, readyOnly: true });
-        if (!candidate || candidate.itemId !== config.itemId || candidate.workspaceId !== config.workspaceId || candidate.namespace !== config.namespace) return;
+        if (!candidate || candidate.itemId !== config.itemId || candidate.workspaceId !== config.workspaceId || candidate.namespace !== config.namespace || candidate.accountId !== config.accountId) return;
         const fresh = await vaultRequest<VaultFile>("read", { path });
         const confirmed = await vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path, readyOnly: true });
         if (stopped || fresh.path !== path || !confirmed || confirmed.itemId !== candidate.itemId || confirmed.workspaceId !== candidate.workspaceId || confirmed.namespace !== candidate.namespace) return;
@@ -471,7 +471,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     window.addEventListener("texttext:vault-sync-status", onSync);
     check();
     return () => { stopped = true; window.removeEventListener("texttext:vault-sync-status", onSync); };
-  }, [waitingForExternalSync, config.localFiles, config.itemId, config.workspaceId, config.namespace]);
+  }, [waitingForExternalSync, config.localFiles, config.itemId, config.workspaceId, config.namespace, config.accountId]);
   const downloadRecovery = () => {
     const journal = clientRef.current?.recoveryJournal;
     const rawJournal = clientRef.current?.recoveryRawJournal;

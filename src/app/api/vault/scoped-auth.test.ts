@@ -29,6 +29,14 @@ describe("file-vault item authorization", () => {
     mocks.itemPath.mockResolvedValue("Private/One.textpack");
   });
 
+  it("fences an old tab even when the replacement account can edit the same item", async () => {
+    vi.stubEnv("AUTH_URL", "https://texttext.test");
+    const result = await authorizeVaultItem(request("POST", { Origin: "https://texttext.test", "X-TextText-Account": "previous-account" }), workspaceId, itemId, "edit");
+    expect(status(result)).toBe(403);
+    expect(await (result as Response).json()).toMatchObject({ code: "account_changed" });
+    expect(mocks.item).not.toHaveBeenCalled(); expect(mocks.grants).not.toHaveBeenCalled();
+    expect(status(await authorizeVaultItem(request("POST", { Origin: "https://texttext.test", "X-TextText-Account": access.userId }), workspaceId, itemId, "edit"))).toBe(200);
+  });
   it("uses workspace-qualified item identity and does not expose siblings", async () => {
     const allowed = await authorizeVaultItem(request(), workspaceId, itemId, "edit");
     expect(allowed).toMatchObject({ itemId, relativePath: "Private/One.textpack", canEditContent: true, fullAccess: false });

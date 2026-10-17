@@ -33,5 +33,6 @@ describe("new note promotion", () => {
     let reads = 0;
     expect(await prepareSharedNote({ ...base, read: async () => ({ ...initial, hash: String(++reads) }) })).toBeNull();
     expect(await prepareSharedNote({ ...base, config: async () => ({ ...shared, workspaceId: "other" }) })).toBeNull();
+    expect(await prepareSharedNote({ ...base, candidate: { ...shared, accountId: "account-a" }, config: async () => ({ ...shared, accountId: "account-b" }) })).toBeNull();
   });
 });
