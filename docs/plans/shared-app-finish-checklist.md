@@ -372,8 +372,8 @@ Initial states reflect repository evidence on October 17; no new implementation/
 
 | Tasks | State | Next action / dependency |
 | --- | --- | --- |
-| T01 | Ready | Refresh actual identities and ownership |
-| T02 | Partial historical evidence | Read current policy/events; fresh environments; coordinated reboot and later observation |
+| T01 | Baseline recorded | [October 17 receipt](../verification/2026-10-17-completion-progress.md); current browsers/actors will be attested during their runs |
+| T02 | Reboot/overnight observed | October 13 boot, policy retained, zero 4625/4740 since October 12; fresh-environment replay pending |
 | T03–T04 | Ready after T01/access | Deliver `e61d2622`, verify new-item installed close/reopen |
 | T05 | Partial | Preserve bounded historical gap; controlled ordering and refusal diagnostics |
 | T06 | Partial | Inventory coverage and fill adapter conformance gaps |
@@ -384,6 +384,6 @@ Initial states reflect repository evidence on October 17; no new implementation/
 | T16–T18 | Partial existing tests | Complete crash/upgrade matrix and seeded scheduling |
 | T19–T20 | Open acceptance | Product parity and real template/agent workflows |
 | T21–T22 | Partial historical evidence | Current physical actors and full scenario matrix |
-| T23 | Missing input | Second existing authorized account/session |
+| T23 | Account creation authorized | Owner explicitly authorized a dedicated second test account on October 17; use normal sign-in and disposable fixtures |
 | T24–T25 | Open | Endurance and measured performance |
 | T26–T27 | Waiting | Final coherent delivery and evidence closure |
