@@ -39,3 +39,9 @@ The native close guard's decision remains Boolean, while its reply also retains 
 5. Finish the full ownership map for multiple windows/tabs, Mac close, browser storage, server ACK and external-file materialization. Distinguish confirmed behavior from hypotheses in follow-up revisions.
 
 Do not count the one-round pass as a fix for general sync durability. The remaining acceptance categories are tracked in the plan and [six-client matrix](six-client-sync-acceptance.md).
+
+## Account boundary to resolve before T08
+
+The current browser journal key uses origin, workspace and item; FileCollaborationOptions and VaultCollaborationConfig have no authenticated account identifier. Native shared checkpoints are stored by device workspace root and item. Existing native credential records contain an opaque bearer and connection/workspace metadata, not a stable user ID. The October 17 two-account checks used separate profiles and therefore do not establish safe account switching within one journal store.
+
+Before coordinator extraction, add the same-store regression: account A retains an offline edit, releases its session, then account B opens the same edit-authorized item. B must not replay A's operation. Bind both browser and native retained state to a nonsecret server-issued actor ID; scoping browser keys alone leaves the native retainedJournal path unprotected. The browser page already resolves `access.userId`; native account profile responses expose `accountId`, but their scoped-access and offline identity caching require review. Never use raw bearer credentials as a JavaScript account ID or automatically assign an unknown legacy pending journal to whichever account is currently signed in. Preserve ambiguous legacy bytes and define an explicit recovery/migration path. These are audit findings and next regression requirements, not a completed isolation fix.

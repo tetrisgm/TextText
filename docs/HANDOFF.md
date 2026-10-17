@@ -6,7 +6,7 @@ Goal: finish the [27-task completion checklist](plans/shared-app-finish-checklis
 
 ## Installed and hosted state
 
-- Mac `/Applications/TextText.app`: 0.204 build 1261, from pristine product source `175a9fb6` including save fix `e61d2622`. Actual installed new-note edit, normal quit and reopen passed. Local Store build lacks release attestation; overall runtime health remains unverified.
+- Mac `/Applications/TextText.app`: 0.204 build 1262, from pristine source `0a5bbd15`, including the captured local barrier and production native close/quit guard. Confirmed-input immediate quit, independent read and visible reopen passed. Local Store build lacks release attestation; overall runtime health remains unverified.
 - Windows: sealed `candidate-f4394b42d0014eb9b9b54f191fe2dd1d`, same product source, installed in the usual Programs/TextText directory. Actual installed new-note edit, normal close and fresh file activation/reopen passed; independent file and Mac CLI reads verified content. Rollback retained.
 - Oracle remains `texttext-oracle-20261011T180600Z-136bc176`. New archive for `0884bd4f` passed required source checks and built, but backup preflight refused free space before migration/current switch. Owner approval is pending to remove only 11 redundant October 8 incoming upload archives (3.26 GiB); every backup and unpacked release is retained. Do not lower the storage floor or delete files while approval is pending.
 
@@ -14,13 +14,13 @@ Identities, commands, hashes, rollback paths, failed harness attempts and passin
 
 ## Next work and dependencies
 
-T02 SSH workaround persistence is verified through an intervening October 13 reboot, multiple nights and three fresh desktop smoke runs with zero matching Security failures. It remains a runtime workaround. No machine configuration changed.
+T02 SSH workaround persistence is verified through an intervening October 13 reboot, multiple nights and three fresh desktop smoke runs with zero matching Security failures. It remains a runtime workaround. No Windows SSH or WebView policy was changed.
 
 T05 controlled activation cases now pass, including repeat after completion, navigation away and close during activation. The original run174 refusal receipt was never recorded; its exact reason remains a bounded historical gap. T06 now covers Mac permission denial and Windows cancellation/blocked checkpoint replacement with restart recovery. The [adapter matrix](verification/adapter-conformance-matrix.md) lists remaining common-fixture, ENOSPC and crash-boundary gaps.
 
-T07 now fixes captured-barrier waiting on later remote checkpoints and stale lifecycle replies; [source verification](verification/2026-10-17-captured-local-barrier.md) passes 101 focused tests, 410 client checks, TypeScript and the real browser epoch test. This newer source fix is not installed or deployed. Production Mac window close/quit are now wired to a bounded renderer guard with input fencing; [native receipt](verification/2026-10-17-mac-production-close.md) and full Mac suite pass. These native changes also await a new local build. Windows final-release input and account boundaries remain open.
+T07 now fixes captured-barrier waiting on later remote checkpoints and stale lifecycle replies; [source verification](verification/2026-10-17-captured-local-barrier.md) passes 101 focused tests, 410 client checks, TypeScript and the real browser epoch test. This newer source fix is installed on Mac; Windows delivery is running and Oracle deployment remains blocked. Production Mac window close/quit are now wired to a bounded renderer guard with input fencing; [native receipt](verification/2026-10-17-mac-production-close.md) and full Mac suite pass. These native changes are installed in Mac build 1262. Windows final-release input and account boundaries remain open.
 
-Continue independent T06/T07 work while Oracle cleanup approval is pending; then reuse the already verified web archive through the documented web-only workflow. T04 installed offline/reconnect and wider scenarios remain open. T08 onward, full physical six-client matrix, 100 seeded rounds, 60-minute soak, performance and final coherent delivery are unfinished. One passing round does not complete acceptance.
+Continue independent T06/T07 work while Oracle cleanup approval is pending; then prepare and verify a current-source web archive through the documented web-only workflow; the older prepared archive lacks the captured-barrier change. T04 installed offline/reconnect and wider scenarios remain open. T08 onward, full physical six-client matrix, 100 seeded rounds, 60-minute soak, performance and final coherent delivery are unfinished. One passing round does not complete acceptance.
 
 The owner authorized creating a dedicated second TextText account. It is now authenticated through normal MXroute email sign-in in a private isolated browser profile; T23 viewer/edit/revoke-with-offline-work/viewer-regrant checks passed against the existing deployed bundle. Account-switch, agent identity and current-source physical gates remain open. No developer-login bypass is authorized.
 
