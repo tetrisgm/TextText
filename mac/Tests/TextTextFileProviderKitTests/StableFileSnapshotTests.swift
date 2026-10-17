@@ -128,6 +128,36 @@ final class StableFileSnapshotTests: XCTestCase {
         }
     }
 
+    func testRenameCloneAndImportReturnTheirOwnPublishedProjection() throws {
+        for operation in ["renamed", "cloned", "imported"] {
+            let sourcePath = operation + "-source.textpack", targetPath = operation + "-target.textpack"
+            let original = try pack("operation original"), external = try pack("later external replacement")
+            let source = root.appendingPathComponent(sourcePath), target = root.appendingPathComponent(targetPath)
+            try original.0.write(to: source)
+            var store = LocalVaultDocumentStore(root: root)
+            let observed = try store.read(path: sourcePath)
+            store.writeObservationForTesting = { stage in
+                if stage == operation { try external.0.write(to: target, options: .atomic) }
+            }
+            let result: LocalVaultDocumentStore.Document
+            switch operation {
+            case "renamed": result = try store.rename(path: sourcePath, expectedHash: observed.hash, newPath: targetPath)
+            case "cloned": result = try store.clone(path: sourcePath, newPath: targetPath)
+            default: result = try store.importFile(from: source, newPath: targetPath)
+            }
+            XCTAssertEqual(result.path, targetPath)
+            XCTAssertTrue(result.contents.markdown.contains("operation original"), operation)
+            XCTAssertNotEqual(result.hash, TextTextStableDigest.sha256Hex(external.0), operation)
+            XCTAssertEqual(try Data(contentsOf: target), external.0)
+            if operation != "renamed" {
+                XCTAssertEqual(try Data(contentsOf: source), original.0)
+                XCTAssertNotEqual(MarkdownIdentityCodec.extract(from: result.contents.markdown)?.itemId,
+                                  MarkdownIdentityCodec.extract(from: external.1)?.itemId)
+            }
+            XCTAssertTrue(try store.read(path: targetPath).contents.markdown.contains("later external replacement"))
+        }
+    }
+
     func testPostCommitExternalWriteIsNotReturnedAsTheCallersProjection() throws {
         for exact in [false, true] {
             let file = root.appendingPathComponent("PostCommit.textpack")

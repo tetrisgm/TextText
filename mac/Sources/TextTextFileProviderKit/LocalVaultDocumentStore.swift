@@ -353,7 +353,8 @@ public struct LocalVaultDocumentStore: Sendable {
                 try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
                 // moveItem refuses an occupied destination, including a race.
                 try FileManager.default.moveItem(at: from, to: to)
-                return try readUncoordinated(path: newPath, url: to)
+                try writeObservationForTesting?("renamed")
+                return Document(path: newPath, hash: current.hash, contents: current.contents, publishedAt: current.publishedAt)
             }
         }
         if let coordinationError { throw coordinationError }
@@ -469,6 +470,7 @@ public struct LocalVaultDocumentStore: Sendable {
         }
         let handle = try FileHandle(forWritingTo: packed)
         try handle.synchronize(); try handle.close()
+        let prepared = try readUncoordinated(path: newPath, url: packed)
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: destination, options: [], error: &coordinationError) { target in
@@ -476,7 +478,8 @@ public struct LocalVaultDocumentStore: Sendable {
                 // The final rename refuses existing targets, including races.
                 // The new identity is already present before the file appears.
                 try FileManager.default.moveItem(at: packed, to: target)
-                return try readUncoordinated(path: newPath, url: target)
+                try writeObservationForTesting?("cloned")
+                return prepared
             }
         }
         if let coordinationError { throw coordinationError }

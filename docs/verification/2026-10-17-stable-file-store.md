@@ -20,6 +20,15 @@ Windows projection reads now reject files above 64 MiB before allocating and hol
 
 The Mac no-op rename path now checks the caller's expected hash before returning success. Its new regression first failed because stale input returned a newer document without refusal (`/private/tmp/texttext-same-path-rename-before.log`, exit 1). With the correction, all 9 `StableFileSnapshotTests` pass, including preservation of the external bytes and successful same-path rename using the current hash. The combined run `/private/tmp/texttext-lifecycle-samepath-swift-final.log` separately failed one new lifecycle fixture; that wider gate is not claimed here.
 
+### Rename, clone and import results
+
+The three publication paths now return their captured/prepared document instead of rereading a destination that another writer may already have changed. A post-publication test hook replaces that destination with different bytes; each operation still returns its own original content/hash, clone/import retain their fresh identities, a fresh read sees the later external content, and source bytes survive clone/import unchanged.
+
+- Before correction: all three variants failed their returned-content/hash assertions, `/private/tmp/texttext-publish-result-before.log`. The same run's 52 sync tests passed after correcting the lifecycle test's invalid non-UUID fixture ID.
+- After correction: all 10 stable-file tests and both actual WKWebView policy-host tests pass, exit 0, `/private/tmp/texttext-lifecycle-publish-wk-final.log`. Command: `TEXTTEXT_STORE=1 TEXTTEXT_MIRROR_POLICY_BUNDLE=/private/tmp/texttext-t11-lifecycle-policy-fixture swift test --package-path mac --jobs 2 --filter 'LocalVaultMirrorPolicyHostTests|StableFileSnapshotTests'`. The unrelated package lock bytes were restored exactly.
+
+This does not close the final-check-to-replacement race described below. Idempotent replay APIs keep their existing current-identity semantics.
+
 An uncooperative writer can still change the destination between the final hash check and OS replacement. These checks do not provide a filesystem-wide atomic hash comparison. Full T12 remains open: preserving an atomically displaced destination needs a separate journaled replacement primitive, capability checks and crash recovery, including cross-volume behavior. Do not describe these tests as power-loss proof or as physical watcher/provider acceptance.
 
-Mac create/rename/import paths that return a fresh read after moving a file require separate operation-result tests. Completed idempotent retries intentionally returning the current unique identity are a different contract and must continue preserving later work.
+Other creation paths and physical provider behavior still require their own acceptance. Completed idempotent retries intentionally returning the current unique identity are a different contract and must continue preserving later work.

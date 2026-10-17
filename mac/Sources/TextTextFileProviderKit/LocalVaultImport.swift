@@ -56,6 +56,7 @@ extension LocalVaultDocumentStore {
         try Self.ensureImportSnapshot(at: staged, filename: source.deletingPathExtension().lastPathComponent, temporary: temporary)
         _ = try stagingStore.clone(path: "Source.textpack", newPath: "Imported.textpack")
         let ready = temporary.appendingPathComponent("Imported.textpack")
+        let prepared = try parseDocument(path: newPath, bytes: StableFileSnapshot.read(ready), preserveHistory: true)
         var installed: Result<Void, Error>?
         NSFileCoordinator().coordinate(writingItemAt: destination, options: [], error: &coordinationError) { target in
             installed = Result {
@@ -68,12 +69,13 @@ extension LocalVaultDocumentStore {
                 let handle = try FileHandle(forWritingTo: sibling)
                 try handle.synchronize(); try handle.close()
                 try FileManager.default.moveItem(at: sibling, to: target)
+                try writeObservationForTesting?("imported")
             }
         }
         if let coordinationError { throw coordinationError }
         guard let installed else { throw CocoaError(.fileWriteUnknown) }
         try installed.get()
-        return try read(path: newPath)
+        return prepared
     }
 
     private static func ensureImportSnapshot(at pack: URL, filename: String, temporary: URL) throws {
