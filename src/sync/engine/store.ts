@@ -2042,6 +2042,24 @@ export async function readVaultRecovery(input: VaultLocation & { id: string }) {
   return { bytes, relativePath: retained.relativePath, revision: token.hash };
 }
 
+/** Called only under the writer lock on a read fallback. A missing indexed
+ * path may be a raw move with ambiguous copies, not a deleted lifecycle. The
+ * ordinary stable direct-ID read never needs workspace discovery. */
+async function indexedItemForRead(layout: Layout, itemId: string): Promise<IndexedItem | null> {
+  const metadataPath = path.join(layout.items, `${itemId}.json`);
+  const raw = await maybeRead(metadataPath);
+  if (!raw) return null;
+  const item = JSON.parse(raw.toString()) as IndexedItem;
+  if (item.deleted) return null;
+  if (await fingerprint(await targetPath(layout, item.relativePath))) return item;
+  const { ambiguousIds } = await discoverFiles(layout, []);
+  if (ambiguousIds.has(itemId)) return null;
+  const refreshed = await maybeRead(metadataPath);
+  if (!refreshed) return null;
+  const current = JSON.parse(refreshed.toString()) as IndexedItem;
+  return current.deleted ? null : current;
+}
+
 export async function readVaultTextpack(input: VaultLocation & { itemId: string }): Promise<{
   itemId: string; relativePath: string; revision: string; bytes: Uint8Array;
 } | null> {
@@ -2058,10 +2076,8 @@ export async function readVaultTextpack(input: VaultLocation & { itemId: string 
   }
   return locked(layout, async () => {
     await recover(layout);
-    const raw = await maybeRead(path.join(layout.items, `${input.itemId}.json`));
-    if (!raw) return null;
-    const item = JSON.parse(raw.toString()) as { relativePath: string; deleted?: boolean };
-    if (item.deleted) return null;
+    const item = await indexedItemForRead(layout, input.itemId);
+    if (!item) return null;
     const bytes = await maybeRead(await targetPath(layout, item.relativePath));
     await observeCollaborationRevision(layout, input.itemId, bytes ? hash(bytes) : null, true);
     return bytes ? { itemId: input.itemId, relativePath: item.relativePath, revision: hash(bytes), bytes } : null;
@@ -2078,10 +2094,8 @@ export async function readVaultTextpackPath(input: VaultLocation & { itemId: str
   if (stable.status === "present") return stable.item.relativePath;
   return locked(layout, async () => {
     await recover(layout);
-    const raw = await maybeRead(path.join(layout.items, `${input.itemId}.json`));
-    if (!raw) return null;
-    const item = JSON.parse(raw.toString()) as { relativePath: string; deleted?: boolean };
-    if (item.deleted) return null;
+    const item = await indexedItemForRead(layout, input.itemId);
+    if (!item) return null;
     if (await fingerprint(await targetPath(layout, item.relativePath))) return item.relativePath;
     await observeCollaborationRevision(layout, input.itemId, null);
     return null;
@@ -2105,12 +2119,8 @@ export async function readVaultTextpackIdentity(input: VaultLocation & { itemId:
   return locked(layout, async () => {
     await recover(layout);
     const metadataPath = path.join(layout.items, `${input.itemId}.json`);
-    const raw = await maybeRead(metadataPath);
-    if (!raw) return null;
-    const item = JSON.parse(raw.toString()) as {
-      itemId?: string; relativePath: string; revision?: string; fingerprint?: string; deleted?: boolean;
-    };
-    if (item.deleted) return null;
+    const item = await indexedItemForRead(layout, input.itemId);
+    if (!item) return null;
     const target = await targetPath(layout, item.relativePath);
     const signature = await fingerprint(target);
     if (!signature) {
@@ -2326,7 +2336,7 @@ export async function listVaultTextpacks(input: VaultLocation): Promise<{
 }
 async function manifestSnapshot(layout: Layout) {
     const folders: string[] = [];
-    const problems = await discoverFiles(layout, folders);
+    const { problems, ambiguousIds } = await discoverFiles(layout, folders);
     folders.sort();
     const items: { itemId: string; relativePath: string; revision: string; lifecycle?: string; restoreFromRevision?: string }[] = [];
     const tombstones: { itemId: string; relativePath: string; revision: string; deleted: true; lifecycle?: string; restoreFromRevision?: string }[] = [];
@@ -2335,6 +2345,8 @@ async function manifestSnapshot(layout: Layout) {
       if (!raw) continue;
       const item = JSON.parse(raw.toString()) as { itemId: string; relativePath: string; revision?: string; fingerprint?: string; deleted?: boolean };
       segment(item.itemId);
+      // Ambiguous external replacements are neither a selected move nor a deletion.
+      if (ambiguousIds.has(item.itemId)) continue;
       const lifecycleRaw = await maybeRead(path.join(layout.control, "lifecycles", `${item.itemId}.json`));
       let generation: { lifecycle?: string; restoreFromRevision?: string } = {};
       if (lifecycleRaw) {
@@ -2377,7 +2389,9 @@ async function manifestSnapshot(layout: Layout) {
 
 }
 
-async function discoverFiles(layout: Layout, folders: string[]): Promise<{ relativePath: string; reason: string }[]> {
+async function discoverFiles(layout: Layout, folders: string[]): Promise<{
+  problems: { relativePath: string; reason: string }[]; ambiguousIds: Set<string>;
+}> {
   type Item = { itemId: string; relativePath: string; revision?: string; deleted?: boolean };
   const byId = new Map<string, Item>();
   const paths = new Set<string>();
@@ -2389,6 +2403,8 @@ async function discoverFiles(layout: Layout, folders: string[]): Promise<{ relat
     if (!item.deleted) paths.add(item.relativePath);
   }
   const problems: { relativePath: string; reason: string }[] = [];
+  const candidates = new Map<string, string[]>();
+  const ambiguousIds = new Set<string>();
   let visited = 0;
   async function walk(relativeDirectory: string): Promise<void> {
     for (const entry of await fs.readdir(path.join(layout.workspace, relativeDirectory), { withFileTypes: true })) {
@@ -2414,29 +2430,55 @@ async function discoverFiles(layout: Layout, folders: string[]): Promise<{ relat
         problems.push({ relativePath, reason: "Invalid TextPack or missing identity" });
         continue;
       }
-      const previous = byId.get(itemId);
-      if (previous?.deleted) {
-        problems.push({ relativePath, reason: "This file conflicts with a deleted item" });
-        continue;
-      }
-      if (previous && await fingerprint(await targetPath(layout, previous.relativePath))) {
-        problems.push({ relativePath, reason: "Another file has the same item identity" });
-        continue;
-      }
-      // A new file, or an externally renamed file whose old path is absent.
-      // This is a disposable index; the newly observed pack remains untouched.
-      const revision = hash(bytes);
-      await observeCollaborationRevision(layout, itemId, revision);
-      const item = { itemId, relativePath, revision };
-      const history = await directory(layout.history, itemId);
-      await atomicWrite(path.join(history, `${revision}.textpack`), bytes);
-      await atomicWrite(path.join(layout.items, `${itemId}.json`), json(item));
-      byId.set(itemId, item);
-      paths.add(relativePath);
+      const matches = candidates.get(itemId) ?? [];
+      matches.push(relativePath);
+      candidates.set(itemId, matches);
     }
   }
   await walk("");
-  return problems.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  // Classify every observed candidate before publishing any new identity. In
+  // particular, directory enumeration cannot choose between two fresh copies
+  // or two replacements for a missing indexed path. Retain paths, not all pack
+  // bytes, so discovery memory remains bounded by the directory entry limit.
+  for (const [itemId, matches] of candidates) {
+    const previous = byId.get(itemId);
+    if (previous?.deleted) {
+      for (const relativePath of matches) problems.push({ relativePath, reason: "This file conflicts with a deleted item" });
+      continue;
+    }
+    // Preserve the established indexed original while its exact path exists.
+    // A later raw copy is diagnosed, never allowed to steal that identity.
+    if (previous && await fingerprint(await targetPath(layout, previous.relativePath))) {
+      for (const relativePath of matches) problems.push({ relativePath, reason: "Another file has the same item identity" });
+      continue;
+    }
+    if (matches.length !== 1) {
+      ambiguousIds.add(itemId);
+      for (const relativePath of matches) problems.push({ relativePath, reason: "Another file has the same item identity" });
+      continue;
+    }
+    const relativePath = matches[0];
+    // The scan may span external writes. Revalidate the chosen unique file
+    // instead of retaining every candidate's bytes until traversal completes.
+    let bytes: Buffer | null;
+    try {
+      bytes = await maybeRead(await targetPath(layout, relativePath));
+      if (!bytes) continue;
+      validatePack(bytes, itemId);
+    } catch {
+      problems.push({ relativePath, reason: "Invalid TextPack or missing identity" });
+      continue;
+    }
+    // A new file, or an externally renamed file whose old path is absent.
+    // This is a disposable index; the newly observed pack remains untouched.
+    const revision = hash(bytes);
+    await observeCollaborationRevision(layout, itemId, revision);
+    const item = { itemId, relativePath, revision };
+    const history = await directory(layout.history, itemId);
+    await atomicWrite(path.join(history, `${revision}.textpack`), bytes);
+    await atomicWrite(path.join(layout.items, `${itemId}.json`), json(item));
+  }
+  return { problems: problems.sort((a, b) => a.relativePath.localeCompare(b.relativePath)), ambiguousIds };
 }
 
 /** Request-scoped change wait. No permanent watcher and no file polling. */

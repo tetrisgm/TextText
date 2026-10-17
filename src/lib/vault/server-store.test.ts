@@ -470,6 +470,78 @@ describe("directory TextPack store", () => {
     expect(deleted.tombstones[0]).toMatchObject({ itemId, relativePath: "Agent/Renamed.textpack", deleted: true });
   });
 
+  it.each([false, true])("refuses two fresh duplicate identities before indexing either (reverse creation: %s)", async (reverse) => {
+    await listVaultTextpacks({ root, workspaceId });
+    const copies = [
+      { relativePath: "A.textpack", bytes: pack("first candidate") },
+      { relativePath: "Z.textpack", bytes: pack("second candidate") },
+    ];
+    for (const copy of reverse ? [...copies].reverse() : copies) {
+      await fs.writeFile(path.join(root, workspaceId, copy.relativePath), copy.bytes);
+    }
+    const manifest = await listVaultTextpacks({ root, workspaceId });
+    expect(manifest.items).toEqual([]);
+    expect(manifest.tombstones).toEqual([]);
+    expect(manifest.problems).toEqual(copies.map(({ relativePath }) => ({ relativePath, reason: "Another file has the same item identity" })));
+    expect(await fs.readdir(path.join(root, workspaceId, ".texttext/items"))).toEqual([]);
+    expect(await readVaultTextpack({ root, workspaceId, itemId })).toBeNull();
+    expect(await listVaultTextpacks({ root, workspaceId })).toEqual(manifest);
+    for (const copy of copies) expect(await fs.readFile(path.join(root, workspaceId, copy.relativePath))).toEqual(Buffer.from(copy.bytes));
+    // Resolving ambiguity makes the remaining unique pack discoverable on the
+    // next request, with no previous traversal winner or deletion to revive.
+    await fs.unlink(path.join(root, workspaceId, copies[0].relativePath));
+    const resolved = await listVaultTextpacks({ root, workspaceId });
+    expect(resolved.problems).toEqual([]);
+    expect(resolved.tombstones).toEqual([]);
+    expect(resolved.items).toEqual([{ itemId, relativePath: copies[1].relativePath, revision: hash(copies[1].bytes) }]);
+    expect((await readVaultTextpack({ root, workspaceId, itemId }))?.bytes).toEqual(Buffer.from(copies[1].bytes));
+  });
+
+  it.each([false, true])("retains the indexed lifecycle when its missing path has two replacements (reverse creation: %s)", async (reverse) => {
+    const original = pack("known shared baseline");
+    await writeVaultTextpack(input(root, "initial", original));
+    const collaboration = (await readVaultCollaboration({ root, workspaceId, itemId }))!;
+    const control = path.join(root, workspaceId, ".texttext");
+    const indexPath = path.join(control, "items", `${itemId}.json`);
+    const collaborationPath = path.join(control, "collaboration", `${itemId}.json`);
+    const retainedIndex = await fs.readFile(indexPath);
+    const retainedCollaboration = await fs.readFile(collaborationPath);
+    const retainedHistory = (await fs.readdir(path.join(control, "history", itemId))).sort();
+    const copies = [
+      { relativePath: "A.textpack", bytes: original },
+      { relativePath: "Z.textpack", bytes: pack("ambiguous outside edit") },
+    ];
+    await fs.unlink(path.join(root, workspaceId, relativePath));
+    for (const copy of reverse ? [...copies].reverse() : copies) {
+      await fs.writeFile(path.join(root, workspaceId, copy.relativePath), copy.bytes);
+    }
+    const manifest = await listVaultTextpacks({ root, workspaceId });
+    expect(manifest.items).toEqual([]);
+    expect(manifest.tombstones).toEqual([]);
+    expect(manifest.problems).toEqual(copies.map(({ relativePath }) => ({ relativePath, reason: "Another file has the same item identity" })));
+    expect(await listVaultTextpacks({ root, workspaceId })).toEqual(manifest);
+    const location = { root, workspaceId, itemId };
+    expect(await readVaultTextpack(location)).toBeNull();
+    expect(await readVaultTextpackPath(location)).toBeNull();
+    expect(await readVaultTextpackIdentity(location)).toBeNull();
+    expect(await readVaultCollaboration(location)).toBeNull();
+    expect(await fs.readFile(indexPath)).toEqual(retainedIndex);
+    expect(await fs.readFile(collaborationPath)).toEqual(retainedCollaboration);
+    expect((await fs.readdir(path.join(control, "history", itemId))).sort()).toEqual(retainedHistory);
+    for (const copy of copies) expect(await fs.readFile(path.join(root, workspaceId, copy.relativePath))).toEqual(Buffer.from(copy.bytes));
+    await fs.unlink(path.join(root, workspaceId, copies[1].relativePath));
+    // A direct-ID read can discover the unique raw relocation without waiting
+    // for a listing, while retaining the unchanged baseline's epoch.
+    expect(await readVaultTextpackIdentity(location)).toEqual({ itemId, relativePath: copies[0].relativePath, revision: hash(original) });
+    expect(await readVaultTextpackPath(location)).toBe(copies[0].relativePath);
+    const resolved = await listVaultTextpacks({ root, workspaceId });
+    expect(resolved.problems).toEqual([]);
+    expect(resolved.tombstones).toEqual([]);
+    expect(resolved.items).toEqual([{ itemId, relativePath: copies[0].relativePath, revision: hash(original) }]);
+    expect((await readVaultCollaboration({ root, workspaceId, itemId }))?.epoch).toBe(collaboration.epoch);
+    expect((await readVaultTextpack({ root, workspaceId, itemId }))?.bytes).toEqual(Buffer.from(original));
+  });
+
   it("reports duplicate external identities without overwriting either file", async () => {
     const bytes = pack("first");
     await writeVaultTextpack(input(root, "op-1", bytes));
