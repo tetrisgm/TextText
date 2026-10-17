@@ -22,6 +22,7 @@ export interface FileCollaborationJournalStore {
   loadCommitted?(key: string): Promise<string | null>;
   migrate?(key: string, value: string): Promise<void>;
   commit?(key: string, generation: number): Promise<void>;
+  commitRemoval?(key: string): Promise<void>;
 }
 export type FileCollaborationDurabilityOutcome = "durable" | "pending" | "storage-unavailable" | "invalid-journal" | "stale-lifecycle";
 export type FileCollaborationDurabilityResult = {
@@ -355,6 +356,13 @@ class BrowserJournalStore implements FileCollaborationJournalStore {
     });
     this.writes = next;
     void next.catch(() => {});
+  }
+  async commitRemoval(key: string): Promise<void> {
+    await this.writes;
+    const stored = await readStoredJournal(key);
+    if (!stored || stored.schemaVersion !== 1 || stored.key !== key || stored.raw !== null) {
+      throw new Error("The recovered journal could not be retired. Its saved copies are preserved.");
+    }
   }
 }
 const localJournal: FileCollaborationJournalStore = new BrowserJournalStore();
@@ -1269,6 +1277,20 @@ export class FileCollaborationClient {
   discardCleanJournal(): void {
     if (this.dead || this.hasPendingChanges || ((this.options.ownership || (!this.options.journal && !this.options.checkpoint)) && !this.lease)) throw new Error("Pending or unowned collaboration history cannot be removed.");
     this.storage.remove(this.journalKey);
+  }
+  /** Keep the writer lease until a reset's removal is committed, so a new
+   * owner cannot restore the original record while its tombstone is queued. */
+  async discardCleanJournalDurably(): Promise<void> {
+    this.discardCleanJournal();
+    await this.storage.commitRemoval?.(this.journalKey);
+  }
+  async clearRetiredAfterRecoveryDurably(): Promise<void> {
+    if (this.dead || this.unreadableJournal || !this.frozen || (!this.saved?.retired && !this.initialRetirement)) {
+      throw new Error("The retained journal cannot be cleared. Keep its recovery copy and reopen the document.");
+    }
+    this.storage.remove(this.journalKey);
+    await this.storage.commitRemoval?.(this.journalKey);
+    this.saved = null; this.pending = []; this.batch = null; this.unqueuedDirty = false; this.initialRetirement = null;
   }
   /** Call only after the caller has durably saved the recovered document copy. */
   clearRetiredAfterRecovery(): void {

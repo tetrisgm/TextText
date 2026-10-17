@@ -64,6 +64,15 @@ export function setVaultTransport(transport: VaultTransport) {
   fallbackTransport = transport;
   return () => { if (fallbackTransport === transport) fallbackTransport = null; };
 }
+/** A page-owned web session must never pick up a replacement account transport. */
+export function captureVaultRequest(): typeof vaultRequest {
+  const captured = fallbackTransport;
+  if (!captured) throw new Error("The workspace connection is unavailable. Reopen the workspace.");
+  return <T>(method: string, params: Record<string, unknown> = {}, signal?: AbortSignal) => {
+    if (signal?.aborted) return Promise.reject(new DOMException("Request canceled", "AbortError"));
+    return captured(method, params, signal) as Promise<T>;
+  };
+}
 export function vaultRequest<T>(method: string, params: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException("Request canceled", "AbortError")); return; }

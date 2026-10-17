@@ -1,5 +1,17 @@
 import { afterEach, expect, it, vi } from "vitest";
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("a captured web requester stays with its original account transport", async () => {
+  vi.resetModules(); vi.stubGlobal("window", new EventTarget());
+  const { captureVaultRequest, setVaultTransport } = await import("./bridge");
+  const a = vi.fn(async () => "account-a"), b = vi.fn(async () => "account-b");
+  const releaseA = setVaultTransport(a), captured = captureVaultRequest();
+  const releaseB = setVaultTransport(b); releaseA();
+  expect(await captured("collaborationPush", { operationId: "a-op" })).toBe("account-a");
+  expect(b).not.toHaveBeenCalled();
+  const abort = new AbortController(); abort.abort();
+  await expect(captured("collaborationPush", {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
+  expect(a).toHaveBeenCalledTimes(1); releaseB();
+});
 it("cancels a native collaboration request and ignores its late reply", async () => {
   vi.resetModules(); vi.useFakeTimers();
   const sent: { id: string; method: string; params: Record<string, unknown> }[] = [];

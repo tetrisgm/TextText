@@ -28,6 +28,14 @@ The editor is a view, not the durability owner. Packet C must move the client/se
 
 ## Acceptance required before implementation is complete
 
+### Session transitions (T08 implementation)
+
+The page coordinator keys an owner by origin, stable account (or its existing legacy realm), workspace and item. Each owner has a fresh in-memory lifecycle identity; an epoch replacement stays inside that owner and rebinds attached views before retiring the old Y.Doc. A view receives an idempotent acquire/release handle. Two handles share one owner, and releasing one cannot stop the other.
+
+`opening` becomes `ready` or `reconnecting` through the existing client. Last release pauses transport and enters `draining`; the owner and native lease survive until the captured local save completes. A failed save enters `retained-error`, with the same recoverable document available to a later acquire. Successful drain closes and removes the owner. Reacquisition during drain invalidates its pending close. An explicit restart requires the sole handle; it cannot destroy another view's session. Account/workspace separation is part of the key, not a mutable transport option. Existing cross-process leases remain required and are covered separately by T09.
+
+Migrate the browser editor first, preserving the current native path until its checkpoint and file-mutation callbacks move into the same owner. This is one implementation slice, not completion of native ownership, presence or cross-process acceptance.
+
 1. Deterministic tests prove open/release, duplicate opens, stale callback fencing, crash takeover and offline reopen for the coordinator.
 2. Native and browser adapters conform to the typed persistence and lifecycle contract.
 3. Mac and Windows background file sync continues while no editor is open and yields to an active collaboration lease.

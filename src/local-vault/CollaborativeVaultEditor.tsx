@@ -29,6 +29,7 @@ import { packIdentity } from "./pack";
 import { refreshBinaryOnlyFile } from "./binary-refresh";
 import { openLocalSharedSession, type NativeSharedSession } from "./shared-open";
 import { currentVaultWindowActive } from "./window-activity";
+import { acquireWebDocument, type WebDocumentHandle } from "./web-document-session";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
 
 export type VaultCollaborationConfig = { namespace: string; workspaceId: string; itemId: string; accountId?: string; localFiles?: boolean };
@@ -77,10 +78,11 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const [presencePeers, setPresencePeers] = useState<PresencePeer[]>([]);
   const clientRef = useRef<FileCollaborationClient | null>(null);
   const nativeSessionRef = useRef<NativeSharedSession | null>(null);
-  const assetRefreshGeneration = useRef(0);
+  const webSessionRef = useRef<WebDocumentHandle | null>(null);
   useEffect(() => {
     if (packIdentity(initial.markdown) === config.itemId && packIdentity(file.current.markdown) === config.itemId) {
       file.current = { ...file.current, path: initial.path };
+      webSessionRef.current?.session.replaceFile(file.current);
     }
   }, [initial.path, initial.markdown, config.itemId]);
   const [status, setStatus] = useState<FileCollaborationStatus>("reconnecting");
@@ -135,26 +137,40 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   useEffect(() => () => assets.urls.forEach(url => URL.revokeObjectURL(url)), [assets]);
   const resolveAssets = useCallback((document: DocumentSnapshot) => substitute(document, assets.mapping), [assets]);
   useEffect(() => {
+    if (!config.localFiles) {
+      let stopped = false;
+      let handle: WebDocumentHandle;
+      try { handle = acquireWebDocument(config, file.current); }
+      catch (error) { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); return; }
+      webSessionRef.current = handle;
+      const unsubscribe = handle.session.subscribe({
+        changed: session => {
+          if (stopped) return;
+          file.current = session.file; setOpened(session.file);
+          latestSnapshot.current = session.snapshot; setSnapshot(session.snapshot);
+          clientRef.current = session.client; setClient(session.client);
+          setStatus(session.status); setDetail(session.detail); setCanEdit(session.client.canEdit);
+          bind(session.client.doc); onTitleChange?.(session.file.path, session.snapshot.content.title);
+        },
+        replaced: async (next, previous) => {
+          if (stopped) return;
+          if (boundRef.current?.doc !== previous) throw new Error("The editor is no longer bound to the previous document.");
+          const awareness = new Awareness(next);
+          try { await rebindRef.current?.(next, awareness); }
+          finally { if (!stopped) bind(next, awareness); else awareness.destroy(); }
+        },
+      });
+      void handle.ready.catch(error => { if (!stopped) { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); } });
+      return () => {
+        stopped = true; unsubscribe();
+        if (webSessionRef.current === handle) webSessionRef.current = null;
+        if (clientRef.current === handle.session.client) clientRef.current = null;
+        void handle.release();
+      };
+    }
     let stopped = false;
     let shared: FileCollaborationClient | null = null;
     let native: NativeSharedSession | null = null;
-    let assetRetry: ReturnType<typeof setTimeout> | null = null;
-    const refreshRemoteAssets = (attempt = 0) => {
-      if (config.localFiles) return; // Native file-change events carry the materialized pack.
-      if (assetRetry) { clearTimeout(assetRetry); assetRetry = null; }
-      const request = ++assetRefreshGeneration.current;
-      const path = file.current.path;
-      void vaultRequest<VaultFile>("read", { path }).then(fresh => {
-        if (stopped || request !== assetRefreshGeneration.current || fresh.path !== file.current.path ||
-            packIdentity(fresh.markdown) !== config.itemId) return;
-        const refreshed = refreshBinaryOnlyFile(file.current, fresh, config.itemId, false);
-        if (refreshed) { file.current = refreshed; setOpened(refreshed); }
-      }).catch(() => {
-        if (!stopped && request === assetRefreshGeneration.current && attempt < 5) {
-          assetRetry = setTimeout(() => refreshRemoteAssets(attempt + 1), Math.min(1000 * 2 ** attempt, 8000));
-        }
-      });
-    };
     const closeNative = async () => {
       if (native) {
         const closing = native; native = null;
@@ -223,8 +239,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
           throw error;
         }
       },
-      onChange: (next, presentation) => { if (!stopped) { if (presentation) { file.current = { ...file.current, ...presentation }; setOpened(file.current); } if (JSON.stringify(latestSnapshot.current.content.assets) !== JSON.stringify(next.content.assets)) refreshRemoteAssets(); latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
-      onRemoteNonTextRevision: () => refreshRemoteAssets(),
+      onChange: (next, presentation) => { if (!stopped) { if (presentation) { file.current = { ...file.current, ...presentation }; setOpened(file.current); } latestSnapshot.current = next; setSnapshot(next); onTitleChange?.(file.current.path, next.content.title); } },
       onStatus: (next, message) => {
         if (stopped || !shared) return;
         setStatus(next); setDetail(message ?? ""); setCanEdit(shared.canEdit); setClient(shared);
@@ -259,7 +274,6 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     });
     return () => {
       stopped = true;
-      if (assetRetry) clearTimeout(assetRetry);
       const saved = shared?.flushLocal() ?? Promise.resolve(true);
       shared?.destroy(); clientRef.current = null;
       void saved.finally(closeNative);
@@ -314,6 +328,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     try {
       const next = await vaultRequest<VaultFile>("read", { path: shared.relativePath ?? file.current.path });
       file.current = next; setOpened(next);
+      webSessionRef.current?.session.replaceFile(next);
     } catch { /* The journal is durable; a temporarily unavailable file replica must not lose edits. */ }
     onChanged(); return true;
   }, [config.localFiles, waitingForExternalSync, onChanged]);
@@ -363,10 +378,16 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       const fresh = await vaultRequest<VaultFile>("read", { path: shared?.relativePath ?? file.current.path });
       const freshSnapshot = readDocument(fresh);
       if (shared) {
-        if (recovered) shared.clearRetiredAfterRecovery();
-        else if (waitForSync && config.localFiles) detachedSaveRef.current.retire(shared, fresh);
-        else shared.discardCleanJournal();
-        shared.destroy();
+        const prepare = () => {
+          if (recovered) shared.clearRetiredAfterRecovery();
+          else if (waitForSync && config.localFiles) detachedSaveRef.current.retire(shared, fresh);
+          else shared.discardCleanJournal();
+        };
+        const web = webSessionRef.current;
+        if (web) {
+          if (!await web.closeExclusive(() => recovered ? shared.clearRetiredAfterRecoveryDurably() : shared.discardCleanJournalDurably())) throw new Error("Save or recover the pending edits before reopening.");
+          if (webSessionRef.current === web) webSessionRef.current = null;
+        } else { prepare(); shared.destroy(); }
         if (clientRef.current === shared) clientRef.current = null;
       }
       file.current = fresh; setOpened(fresh); setSnapshot(freshSnapshot);

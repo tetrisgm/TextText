@@ -1945,3 +1945,26 @@ describe("local durability barriers", () => {
   });
 
 });
+
+describe("durable journal retirement", () => {
+  it("does not finish a clean reset before its tombstone commits", async () => {
+    const server = new Server(), journal = new Journal();
+    let finish!: () => void;
+    const committed = new Promise<void>(resolve => { finish = resolve; });
+    Object.assign(journal, { commitRemoval: vi.fn(() => committed) });
+    const editor = client(server, journal); await editor.start();
+    let settled = false; const clearing = editor.discardCleanJournalDurably().then(() => { settled = true; });
+    await Promise.resolve(); expect(settled).toBe(false); expect(editor.hasBaseline).toBe(true);
+    finish(); await clearing; expect(settled).toBe(true);
+  });
+  it("keeps pending retired edits in memory when transactional removal fails", async () => {
+    const server = new Server(), journal = new Journal(), editor = client(server, journal);
+    await editor.start(); editor.setActive(false); editor.mutate(doc => documentText(doc, "body").insert(5, " retained"));
+    server.canEdit = false; await editor.retry(); await vi.advanceTimersByTimeAsync(0);
+    expect(editor.status).toBe("recovery");
+    const before = documentSnapshotFromYDoc(editor.doc);
+    Object.assign(journal, { commitRemoval: vi.fn(async () => { throw Error("tombstone failed"); }) });
+    await expect(editor.clearRetiredAfterRecoveryDurably()).rejects.toThrow("tombstone failed");
+    expect(editor.hasPendingChanges).toBe(true); expect(documentSnapshotFromYDoc(editor.doc)).toEqual(before);
+  });
+});
