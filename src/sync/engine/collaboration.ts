@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
-import { applyDocumentSnapshot, encodeDocumentBaseline, documentSnapshotFromYDoc } from "@/lib/collab/document";
+import { applyDocumentSnapshot, encodeDocumentBaseline, documentSnapshotFromYDoc, documentTags } from "@/lib/collab/document";
 import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
 import { documentAssetSchema, validateDocumentSnapshot } from "@/lib/documents/model";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
@@ -9,6 +9,7 @@ import { openPack, encodePack } from "@/local-vault/pack";
 import { PROJECTION_BASELINE_ENTRY } from "@/lib/documents/projection-baseline";
 import { readDocument, readTemplate, writePayload } from "@/local-vault/model";
 import { reconcileDocumentSnapshots } from "./reconcile";
+import { normalizeTags } from "@/lib/tags";
 
 export type VaultCollaborationState = { epoch: number; seq: number; revision: string; update: string };
 export const MAX_VAULT_COLLABORATION_BYTES = 4 * 1024 * 1024;
@@ -159,7 +160,19 @@ export function applyVaultCollaboration(state: VaultCollaborationState, currentP
     Y.applyUpdate(doc, baseline);
     if (canonicalDocument(checkedSnapshot(doc)) !== canonicalDocument(before)) fail();
     for (const update of decoded) Y.applyUpdate(doc, update);
-    const snapshot = checkedSnapshot(doc);
+    let snapshot = checkedSnapshot(doc);
+    // An authored pack and its acknowledged Yjs state must share the canonical
+    // tags written by writePayload. Record normalization in this same epoch so
+    // clients receive it causally; never rewrite an unchanged baseline on read.
+    const tags = normalizeTags(snapshot.content.tags);
+    if (canonicalDocument(before) !== canonicalDocument(snapshot) && JSON.stringify(tags) !== JSON.stringify(snapshot.content.tags)) {
+      doc.transact(() => {
+        const values = documentTags(doc);
+        if (values.length) values.delete(0, values.length);
+        if (tags.length) values.insert(0, tags);
+      }, "canonical-authored-tags");
+      snapshot = checkedSnapshot(doc);
+    }
     const update = boundedState(doc);
     const changedReference = JSON.stringify(before.presentation.template) !== JSON.stringify(snapshot.presentation.template);
     if (changedReference) {

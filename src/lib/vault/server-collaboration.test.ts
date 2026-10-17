@@ -12,7 +12,7 @@ import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { authoringSourceFor } from "@/lib/presentation/authoring-source";
 import { normalizeItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
-import { documentText } from "@/lib/collab/document";
+import { documentText, documentTags } from "@/lib/collab/document";
 import { applyVaultCollaboration, type VaultCollaborationState } from "./collaboration";
 import { readVaultCollaboration, waitVaultCollaboration, listVaultTextpacks, pushVaultCollaboration, readVaultTextpack, writeVaultTextpack, writeVaultBinaryEntry, moveVaultTextpack, deleteVaultTextpack, restoreVaultTextpack, mutateVaultDocument, VaultBinaryEntryConflictError, VaultCollaborationEpochError, VaultCollaborationRecoveryError } from "./server-store";
 const hash = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
@@ -46,6 +46,27 @@ describe("durable file collaboration", () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
   const push = (operationId: string, state: VaultCollaborationState, update: string) => pushVaultCollaboration({ ...location(), operationId, epoch: state.epoch, updates: [update], audit });
+
+  it("persists canonical agent tags with a readable checkpoint and exactly-once retry", async () => {
+    const initial = (await readVaultCollaboration(location()))!;
+    const command = { ...location(), operationId: "agent-tags", expectedRevision: initial.revision,
+      mutation: { tags: ["Ideas", "ideas", "#Field  Notes", "FIELD NOTES"] },
+      audit: { actorUserId: "agent-1", actorType: "external_agent" as const } };
+    const result = await mutateVaultDocument(command);
+    expect(await mutateVaultDocument(command)).toEqual(result);
+    const state = (await readVaultCollaboration(location()))!;
+    expect(state.epoch).toBe(initial.epoch);
+    expect(state.seq).toBe(initial.seq + 1);
+    const doc = new Y.Doc();
+    try {
+      Y.applyUpdate(doc, Buffer.from(state.update, "base64"));
+      expect(documentTags(doc).toArray()).toEqual(["ideas", "field notes"]);
+    } finally { doc.destroy(); }
+    await push("after-agent-tags", state, edit(state, " after tags"));
+    const final = (await readVaultTextpack(location()))!;
+    expect(body((await readVaultCollaboration(location()))!)).toBe("Hello after tags");
+    expect(JSON.parse(strFromU8(unzipSync(final.bytes)["Note.textbundle/document.json"])).content.tags).toEqual(["ideas", "field notes"]);
+  });
 
   it("atomically joins a binary entry change to a live epoch without replacing concurrent text", async () => {
     const initial = (await readVaultCollaboration(location()))!;

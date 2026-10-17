@@ -4,7 +4,7 @@ import { unzipSync, zipSync, strToU8 } from "fflate";
 import { buildTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { getBuiltinTemplate } from "@/lib/presentation/templates";
-import { documentText, documentFields, documentTheme, documentPresentation } from "@/lib/collab/document";
+import { documentText, documentFields, documentTheme, documentPresentation, documentTags, documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { openPack } from "@/local-vault/pack";
 import { readDocument } from "@/local-vault/model";
 import { seedVaultCollaboration, applyVaultCollaboration, projectVaultFileEdit, reconcileVaultCollaborationEpoch, MAX_VAULT_COLLABORATION_BYTES } from "./collaboration";
@@ -28,6 +28,31 @@ function mutation(doc: Y.Doc, change: () => void) {
 }
 
 describe("file pack full-document collaboration", () => {
+  it("keeps authored canonical tags in both Yjs and the pack through later edits and replay", () => {
+    const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1);
+    const writer = client(initial.update), concurrent = client(initial.update);
+    try {
+      const tags = mutation(writer, () => documentTags(writer).insert(0, ["Ideas", "ideas", "#Field  Notes", "FIELD NOTES"]));
+      const later = mutation(writer, () => documentText(writer, "body").insert(5, " later"));
+      const independent = mutation(concurrent, () => documentText(concurrent, "body").insert(0, "Together "));
+      const first = applyVaultCollaboration(initial, bytes, [tags]);
+      const next = applyVaultCollaboration(first.state, first.bytes, [later, independent]);
+      const pack = readDocument(openPack(next.bytes, "Note.textpack", next.state.revision).file);
+      expect(pack.content.tags).toEqual(["ideas", "field notes"]);
+      expect(pack.content.body).toBe("Together Hello later");
+      Y.applyUpdate(writer, Buffer.from(next.state.update, "base64"));
+      Y.applyUpdate(concurrent, Buffer.from(next.state.update, "base64"));
+      expect(documentSnapshotFromYDoc(writer)).toEqual(pack);
+      expect(documentSnapshotFromYDoc(concurrent)).toEqual(pack);
+      const replay = applyVaultCollaboration(next.state, next.bytes, [tags, later, independent]);
+      expect(replay.bytes).toEqual(next.bytes);
+      expect(replay.state.epoch).toBe(initial.epoch);
+      for (const name of ["assets/picture.bin", "opaque.dat", "info.json", "template.json"]) {
+        expect(unzipSync(next.bytes)[`Shared.textbundle/${name}`]).toEqual(unzipSync(bytes)[`Shared.textbundle/${name}`]);
+      }
+    } finally { writer.destroy(); concurrent.destroy(); }
+  });
+
   it("recovers an old epoch without duplicating lost ACKs or dropping unseen accepted edits", () => {
     const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1);
     const writer = client(initial.update);

@@ -49,7 +49,17 @@ A temporary instrumented bundle logged request/hash/error metadata around the sa
 - Focused unit run: **41 passed, 1 skipped** across model, tag, paste and pack-projection tests. The skip is the existing optional historical client-1236 fixture, absent locally. Existing conflict tests still pass.
 - Logs: `note-save-trace.log`, `tag-projection-before.log`, `tag-projection-after.log`, `tag-projection-focused.log`, `note-tag-paste-before.log`, and `note-tag-paste.log` in the campaign directory.
 
-The full broad fixture has not been accepted after this correction. Server/agent writers that do not use `writePayload` need a separate canonical-tag audit; this receipt makes no claim about those paths.
+### Collaboration writer follow-up
+
+The authoring audit found that `applyVaultCollaboration` captured the Yjs checkpoint before `writePayload` canonicalized pack tags. A mixed-case tag update produced a lowercase pack but an uppercase checkpoint, so the next causal edit failed the existing strict baseline comparison. A new regression reproduced that error before the correction (`collaboration-tag-before.log`).
+
+[`collaboration.ts`](../../src/sync/engine/collaboration.ts) now records tag normalization as a Yjs transaction after validating an actual authored change, before capturing the resulting snapshot and checkpoint. It keeps the same epoch and sends the normalization in the acknowledged state. Baseline reads/no-op updates are unchanged; raw validation, conflict checks and external file reconciliation are unchanged.
+
+- **39 tests passed** across [`collaboration.test.ts`](../../src/lib/vault/collaboration.test.ts) and [`server-collaboration.test.ts`](../../src/lib/vault/server-collaboration.test.ts), in 18.82 seconds (`collaboration-tag-final.log`).
+- The focused merge regression proves a later causal text edit, an unseen concurrent edit, client convergence to the exact pack, duplicate replay, stable epoch and preservation of opaque entries.
+- The durable agent-command regression proves canonical tags in the persisted checkpoint, exactly-once receipt retry and a subsequent editor update. Windows agent and shared web/new-item writers use `writePayload`; legacy hosted tag mutation entrypoints already call `normalizeTags`. This is a bounded source audit, not installed CLI acceptance.
+
+The broad rerun corrected its obsolete story tag expectation from `Design` to canonical `design`. It passed the previously failing guarded image insertion and advanced to rapid new-card typing, where `Rapid thought` became `apid thoughtR`. The full broad fixture remains unaccepted while that separate caret defect is investigated. Its isolated bundle SHA-256 is `433c4f073988e78c51b1bb4110d6c3317ab20ddd31545b6dd8588c0a601d3c4d`; metadata/logs are `canonical-metadata.json` and `canonical-browser.log` in the campaign directory.
 
 ## Still required
 
