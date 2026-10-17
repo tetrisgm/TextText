@@ -283,8 +283,11 @@ struct LocalVaultSharedEditingStore: Sendable {
         guard intent.checkpoint.itemId == itemId, validHash(intent.beforeHash) else { throw LocalVaultSharedFailure.invalid }
         return intent.beforeHash
     }
-    func checkpoint(itemId: String) throws -> LocalVaultSharedCheckpoint? {
+    func checkpoint(itemId: String, recoverIntents: Bool = true) throws -> LocalVaultSharedCheckpoint? {
         let directory = try itemDirectory(itemId)
+        // Readiness is an observation, not another writer. An owned actor must
+        // recover interrupted transactions before this can advertise readiness.
+        if !recoverIntents, ["move-intent.json", "intent.json", "binary-intent.json"].contains(where: { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }) { return nil }
         if let data = try read(directory.appendingPathComponent("move-intent.json"), limit: 5 * 1024 * 1024) {
             let intent = try JSONDecoder().decode(MoveIntent.self, from: data)
             guard intent.checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }

@@ -29,6 +29,7 @@ public sealed class SyncEngine
     public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false,string? PayloadHash=null);
     public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
+    readonly WorkspaceWriterOwnership workspaceOwnership;
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath; readonly string? accountId;
     public SyncStatus Status {get;private set;}=new(false,null,0);
     public event Action<SyncStatus>? StatusChanged;
@@ -37,6 +38,7 @@ public sealed class SyncEngine
     public SyncEngine(TextPackStore store,ISyncTransport transport,string? accountId=null) {
         if(accountId is not null && !System.Text.RegularExpressions.Regex.IsMatch(accountId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid account identity.");
         this.store=store;this.transport=transport;this.accountId=accountId;statePath=Path.Combine(store.StateDirectory,"sync.json");
+        workspaceOwnership=new(store.StateDirectory);
         // Fail before a worker or transport can replay someone else's outbox.
         if(accountId is not null)_=Load();
     }
@@ -45,10 +47,11 @@ public sealed class SyncEngine
         // after the sync semaphore is released and acknowledgements during close.
         var adoptionFence=new FileStream(Path.Combine(store.StateDirectory,"account-adoption.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.ReadWrite);
         DocumentLease? documentLease=null;
+        IDisposable? workspaceLease=null;
         var retained=false;
         try {
         documentLease=new DocumentLease(store.StateDirectory,itemId);
-        await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");
+        await gate.WaitAsync(ct);try {workspaceLease=workspaceOwnership.Acquire();var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");
             if(!state.BinaryBaselines.ContainsKey(itemId) && state.Items.TryGetValue(itemId,out var baseline)) {
                 try {
                     var file=store.Describe(baseline.Path);
@@ -60,11 +63,11 @@ public sealed class SyncEngine
                 } catch(IOException) { /* An evicted or invalid file is handled by the existing open path. */ }
                   catch(UnauthorizedAccessException) { /* Keep the previous state; do not infer deletion. */ }
             }
-            lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");retained=true;return new Fence(this,itemId,adoptionFence,documentLease);
+            lock(collaborating)if(!collaborating.Add(itemId))throw new InvalidOperationException("An editor already owns this document.");retained=true;return new Fence(this,itemId,adoptionFence,documentLease,workspaceLease);
         }finally{gate.Release();}
-        }finally{if(!retained){documentLease?.Dispose();adoptionFence.Dispose();}}
+        }finally{if(!retained){workspaceLease?.Dispose();documentLease?.Dispose();adoptionFence.Dispose();}}
     }
-    sealed class Fence(SyncEngine owner,string id,IDisposable adoptionFence,IDisposable documentLease):IDisposable {bool disposed;public void Dispose(){lock(owner.collaborating){if(!disposed){owner.collaborating.Remove(id);documentLease.Dispose();adoptionFence.Dispose();disposed=true;}}}}
+    sealed class Fence(SyncEngine owner,string id,IDisposable adoptionFence,IDisposable documentLease,IDisposable workspaceLease):IDisposable {bool disposed;public void Dispose(){lock(owner.collaborating){if(!disposed){owner.collaborating.Remove(id);documentLease.Dispose();workspaceLease.Dispose();adoptionFence.Dispose();disposed=true;}}}}
     bool IsEditing(string id){lock(collaborating)return collaborating.Contains(id)||SharedEditingStore.HasProtectedState(store.StateDirectory,id);}
     public async Task AcknowledgeCheckpointAsync(string itemId,string path,string hash,string revision,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try { AcknowledgeCheckpointState(itemId,path,hash,revision); }
@@ -130,8 +133,9 @@ public sealed class SyncEngine
         if(!await gate.WaitAsync(0,cancellation)) return;
         State? state=null;
         try {
-            // FileShare.None is the cross-process fence; it is released after crashes.
-            using var fileLock=new FileStream(Path.Combine(store.StateDirectory,"sync.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+            // The existing sync lock also fences foreign active editors. This
+            // engine may mirror assets/paths while retaining its own editors.
+            using var fileLock=workspaceOwnership.Acquire();
             state=Load();var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
             Report(true,null,state.Outbox.Count);
             var local=store.Scan().ToDictionary(x=>x.ItemId);

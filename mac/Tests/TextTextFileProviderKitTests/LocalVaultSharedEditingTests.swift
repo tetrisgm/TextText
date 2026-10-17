@@ -49,10 +49,40 @@ final class LocalVaultSharedEditingTests: XCTestCase {
             _ = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
             XCTFail("Another native actor acquired the live document")
         } catch LocalVaultSyncFailure.busy { }
+        do { _ = try await second.sync(); XCTFail("A competing background mirror ran during active editing") } catch LocalVaultSyncFailure.busy { }
+        let target = try checkpoint(original), change = try changes(original, body: "First actor's durable pending projection")
+        let saved = try await first.materializeSharedEditing(sessionToken: active.sessionToken, itemId: itemId, expectedHash: original.hash,
+            epoch: 1, seq: 0, acknowledgedRevision: original.hash, journalGeneration: 1, journal: target.journal, pending: true, markdown: change.0, documentJSON: change.1)
+        _ = try await first.sync() // the owning actor's mirror remains usable
         try await first.endSharedEditing(sessionToken: active.sessionToken, itemId: itemId)
-        let next = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        _ = try await second.sync()
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let baselines = try XCTUnwrap(state["baselines"] as? [String: [String: Any]])
+        XCTAssertEqual(baselines[itemId]?["localHash"] as? String, original.hash, "Pending shared projection must not advance the acknowledged file baseline")
+        let counts = await transport.counts(); XCTAssertEqual(counts.0, 1)
+        let next = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: saved.document.hash)
         XCTAssertNotEqual(next.sessionToken, active.sessionToken)
         try await second.endSharedEditing(sessionToken: next.sessionToken, itemId: itemId)
+    }
+    func testBackgroundPassRetainsWorkspaceOwnershipAcrossNetworkAwait() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let first = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        _ = try await first.sync()
+        let second = try LocalVaultSync(root: root, binding: binding, transport: transport)
+        await transport.holdNextManifest()
+        let syncing = Task { try await first.sync() }
+        for _ in 0..<200 { if await transport.manifestIsHeld() { break }; try await Task.sleep(nanoseconds: 10_000_000) }
+        let entered = await transport.manifestIsHeld()
+        if entered {
+            do { _ = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash); XCTFail("Another actor entered during a background pass") }
+            catch LocalVaultSyncFailure.busy { }
+            catch { await transport.releaseManifest(); _ = try? await syncing.value; throw error }
+        } else { XCTFail("Background pass did not reach the held manifest") }
+        await transport.releaseManifest(); _ = try await syncing.value
+        let opened = try await second.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        try await second.endSharedEditing(sessionToken: opened.sessionToken, itemId: itemId)
     }
     func testHoldDocumentInOwnedChild() async throws {
         guard let path = ProcessInfo.processInfo.environment["TEXTTEXT_DOCUMENT_FIXTURE_ROOT"], let nonce = ProcessInfo.processInfo.environment["TEXTTEXT_DOCUMENT_FIXTURE_NONCE"] else { throw XCTSkip("Owned process-termination helper") }
@@ -93,6 +123,7 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         guard child.isRunning, FileManager.default.fileExists(atPath: ready.path) else { XCTFail("Owned child did not acquire document"); return }
         let stale = try String(contentsOf: ready, encoding: .utf8)
         do { _ = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: saved.document.hash); XCTFail("Displaced a live process") } catch LocalVaultSyncFailure.busy { }
+        do { _ = try await engine.sync(); XCTFail("Background mirror entered the child process workspace") } catch LocalVaultSyncFailure.busy { }
         _ = kill(child.processIdentifier, SIGKILL); child.waitUntilExit()
         let resumed = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: saved.document.hash)
         XCTAssertNotEqual(resumed.sessionToken, stale); XCTAssertEqual(resumed.checkpoint?.journal, saved.checkpoint.journal)
@@ -1625,12 +1656,20 @@ final class LocalVaultSharedEditingTests: XCTestCase {
     }
 }
 private actor SharedTransport: LocalVaultSyncTransport {
+    private var holdManifest = false
+    private var manifestContinuation: CheckedContinuation<Void, Never>?
+    func holdNextManifest() { holdManifest = true }
+    func manifestIsHeld() -> Bool { manifestContinuation != nil }
+    func releaseManifest() { holdManifest = false; manifestContinuation?.resume(); manifestContinuation = nil }
     var items: [String: LocalVaultRemoteItem] = [:], bytes: [String: Data] = [:], uploads = 0, downloads = 0
     var bodies: [(String, String)] = []
     func uploadedBodies() -> [(String, String)] { bodies }
     func set(itemId: String, path: String, data: Data) { bytes[itemId] = data; items[itemId] = LocalVaultRemoteItem(itemId: itemId, relativePath: path, revision: TextTextStableDigest.sha256Hex(data)) }
     func counts() -> (Int, Int) { (uploads, downloads) }
-    func manifest() async throws -> [LocalVaultRemoteItem] { Array(items.values) }
+    func manifest() async throws -> [LocalVaultRemoteItem] {
+        if holdManifest { await withCheckedContinuation { manifestContinuation = $0 } }
+        return Array(items.values)
+    }
     func binaryManifest(itemId: String) async throws -> LocalVaultBinaryManifest {
         guard let item = items[itemId], let pack = bytes[itemId] else { throw LocalVaultSyncFailure.invalidResponse }
         let archive = try Archive(data: pack, accessMode: .read)

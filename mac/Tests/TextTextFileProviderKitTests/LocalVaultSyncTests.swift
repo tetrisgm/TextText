@@ -129,13 +129,13 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertThrowsError(try store.ensureFolders(["Pending"]))
     }
 
-    private func pack(_ body: String) throws -> Data {
+    private func pack(_ body: String, id: String? = nil) throws -> Data {
         let temporary = root.appendingPathComponent(".fixture-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporary) }
         let document = try BuiltinTextPackDocument.create(title: "Note", body: body)
         let package = try TextTextTextBundlePackage.materialize(
-            canonicalMarkdown: "---\ntextTextId: \"\(itemId)\"\ntitle: \"Note\"\n---\n\n\(body)",
+            canonicalMarkdown: "---\ntextTextId: \"\(id ?? itemId)\"\ntitle: \"Note\"\n---\n\n\(body)",
             documentJSON: document.documentJSON, templateJSON: document.templateJSON,
             assets: [], sourceURL: nil, in: temporary)
         return try Data(contentsOf: TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: temporary))
@@ -783,19 +783,25 @@ final class LocalVaultSyncTests: XCTestCase {
         let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
         try putLocal(original)
         let transport = FakeVaultTransport()
-        let sync = try engine(transport)
-        _ = try await sync.sync()
-        let session = try await sync.beginSharedEditing(itemId: itemId, path: path,
+        var sync: LocalVaultSync? = try engine(transport)
+        _ = try await sync!.sync()
+        _ = try await sync!.beginSharedEditing(itemId: itemId, path: path,
             expectedHash: TextTextStableDigest.sha256Hex(original))
         try putLocal(withAsset(original, bytes: Data("second".utf8)))
         await transport.loseNextBinaryReply()
-        let interrupted = try await sync.sync()
+        let interrupted = try await sync!.sync()
         XCTAssertEqual(interrupted.errors.count, 1)
         let firstRequests = await transport.binaryRequests()
         XCTAssertEqual(firstRequests.count, 1)
         let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
         let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
         XCTAssertNotNil((state["binaryOutbox"] as? [String: Any])?[itemId])
+        // A restart must release the old actor, not leave its editor running
+        // beside a second background writer. Separate process death is tested
+        // by LocalVaultSharedEditingTests' controlled child process.
+        weak var previous = sync
+        sync = nil
+        XCTAssertNil(previous)
         let restarted = try engine(transport)
         let replay = try await restarted.sync()
         XCTAssertTrue(replay.errors.isEmpty, "\(replay.errors)")
@@ -806,7 +812,27 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(first.operationId, second.operationId)
         XCTAssertEqual(first.bytes, Data("second".utf8))
         XCTAssertEqual(first.expectedHash, TextTextStableDigest.sha256Hex(Data("first".utf8)))
-        try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
+
+    func testIdleActorReloadsNewBaselinesBeforeItsBoundedPass() async throws {
+        try putLocal(pack("First"))
+        let transport = FakeVaultTransport(), first = try engine(transport)
+        _ = try await first.sync()
+        let idle = try engine(transport)
+        let secondId = "zz-new-baseline", secondPath = "Notes/Second.textpack"
+        let second = try pack("Created after idle actor", id: secondId)
+        try second.write(to: root.appendingPathComponent(secondPath))
+        _ = try await first.sync()
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let before = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let beforeBaselines = try XCTUnwrap(before["baselines"] as? [String: [String: String]])
+        XCTAssertNotNil(beforeBaselines[secondId])
+        // The second item is outside this pass's budget. A stale cached state
+        // would silently remove its baseline when the first item is persisted.
+        _ = try await idle.sync(maxItems: 1)
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let afterBaselines = try XCTUnwrap(after["baselines"] as? [String: [String: String]])
+        XCTAssertEqual(afterBaselines[secondId], beforeBaselines[secondId])
     }
 
     func testOpenEditorDefersCombinedExternalTextAndAssetEdit() async throws {

@@ -18,6 +18,8 @@ When the last editor closes, its document owner drains accepted work before rele
 
 The editor is a view, not the durability owner. Packet C has moved the client/session lifetime out of React view effects while keeping the runtime in the same shared page. The coordinator must fence releases with workspace, item and lifecycle identity; flush the accepted generation before native close; preserve journals on genuine storage failure; and stop presence/transport work after release. Multiple browser tabs and native windows remain separate processes and require explicit existing lock/session fencing, not an assumed module singleton.
 
+Native editors and background sync now share one workspace writer lease per actor. A competing actor/process must acquire that OS lease before writing; an idle Mac actor reloads the persisted cursor when it gains ownership. The existing actor can still mirror assets/paths alongside its own open editors. This is exclusion around the current policy, not completion of native policy consolidation. See the [workspace writer receipt](2026-10-17-native-workspace-writer.md).
+
 ## Tradeoffs and constraints
 
 - This uses the existing offline-capable UI bundle and adds no runtime package, daemon, startup service, or new credential boundary.

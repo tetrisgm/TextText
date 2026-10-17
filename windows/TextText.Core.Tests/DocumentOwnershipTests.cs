@@ -9,13 +9,25 @@ static class DocumentOwnershipTests
         var store=new TextPackStore(Path.Combine(temporary,"document-owner"),Path.Combine(temporary,"document-owner-state"));
         var original=store.Write("Owned.textpack",Pack());var remote=new Test.Fake();var first=new SyncEngine(store,remote);await first.SyncAsync();
         using var a=new SharedEditingStore(store,first);
-        using var b=new SharedEditingStore(new TextPackStore(store.Root,store.StateDirectory),new SyncEngine(store,remote));
+        var second=new SyncEngine(store,remote);
+        using var b=new SharedEditingStore(new TextPackStore(store.Root,store.StateDirectory),second);
         var active=await a.OpenAsync(original.ItemId,original.Path,original.Hash);var refused=false;
         try {await b.OpenAsync(original.ItemId,original.Path,original.Hash);}catch(IOException){refused=true;}
         assert(refused,"another native actor cannot acquire the live document");
-        a.Close(active.SessionToken);var next=await b.OpenAsync(original.ItemId,original.Path,original.Hash);
+        await first.SyncAsync();
+        var mirrorRefused=false;try{await second.SyncAsync();}catch(IOException){mirrorRefused=true;}
+        assert(mirrorRefused,"a competing background mirror cannot run during active editing");
+        a.Close(active.SessionToken);await second.SyncAsync();var next=await b.OpenAsync(original.ItemId,original.Path,original.Hash);
         assert(next.SessionToken!=active.SessionToken,"released document receives a new native owner token");
         b.Close(next.SessionToken);
+        remote.ManifestEntered=new(TaskCreationOptions.RunContinuationsAsynchronously);remote.HoldManifest=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var syncing=first.SyncAsync();
+        try {
+            await remote.ManifestEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));var openingRefused=false;
+            try{await b.OpenAsync(original.ItemId,original.Path,original.Hash);}catch(IOException){openingRefused=true;}
+            assert(openingRefused,"background pass retains workspace ownership across a network await");
+        } finally {remote.HoldManifest.TrySetResult();await syncing;remote.HoldManifest=null;remote.ManifestEntered=null;}
+        var afterSync=await b.OpenAsync(original.ItemId,original.Path,original.Hash);b.Close(afterSync.SessionToken);
         await KilledOwner(store,original,remote,assert);
     }
     public static async Task Hold(string root) {
@@ -48,9 +60,12 @@ static class DocumentOwnershipTests
             while(!File.Exists(ready)&&!child.HasExited&&DateTime.UtcNow<deadline)await Task.Delay(20);
             assert(File.Exists(ready)&&!child.HasExited,"child owns the restored pending document before termination");
             var stale=File.ReadAllText(ready);
-            using var replacement=new SharedEditingStore(store,new SyncEngine(store,remote));var refused=false;
+            var replacementSync=new SyncEngine(store,remote);
+            using var replacement=new SharedEditingStore(store,replacementSync);var refused=false;
             try{await replacement.OpenAsync(original.ItemId,original.Path,original.Hash);}catch(IOException){refused=true;}
             assert(refused,"separate live native process cannot be displaced");
+            var mirrorRefused=false;try{await replacementSync.SyncAsync();}catch(IOException){mirrorRefused=true;}
+            assert(mirrorRefused,"foreign background mirror is fenced by the live child process");
             child.Kill(entireProcessTree:true);await child.WaitForExitAsync();
             var resumed=await replacement.OpenAsync(original.ItemId,original.Path,original.Hash);
             assert(resumed.SessionToken!=stale&&resumed.Checkpoint?.Journal==journal&&store.Read(original.Path).SequenceEqual(bytes),"killed owner takeover preserves exact pending journal, operation and file");

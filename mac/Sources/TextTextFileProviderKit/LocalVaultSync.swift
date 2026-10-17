@@ -99,7 +99,8 @@ public actor LocalVaultSync {
     private let editOrigins: LocalVaultEditOriginJournal
     private var state: State
     private var running = false
-    private struct SharedSession { var token: String; var path: String; var hash: String; let lease: LocalVaultDocumentLease; var retired = false }
+    private weak var workspaceWriter: LocalVaultDocumentLease?
+    private struct SharedSession { var token: String; var path: String; var hash: String; let lease: LocalVaultDocumentLease; let workspaceLease: LocalVaultDocumentLease; var retired = false }
     private var sharedSessions: [String: SharedSession] = [:]
     private var sharedStore: LocalVaultSharedEditingStore { LocalVaultSharedEditingStore(root: root, accountId: accountId) }
 
@@ -121,9 +122,15 @@ public actor LocalVaultSync {
             state = try Self.decodeState(Data(contentsOf: stateURL), root: self.root, binding: binding)
             guard state.accountId == accountId else { throw LocalVaultSharedFailure.account }
         } else {
-            state = State(binding: binding, accountId: accountId)
-            try FileManager.default.createDirectory(at: directory.appendingPathComponent("outbox"), withIntermediateDirectories: true)
-            try writeVaultSyncJournal(JSONEncoder().encode(state), to: stateURL)
+            let lease = try LocalVaultDocumentLease.workspace(root: canonicalRoot); defer { withExtendedLifetime(lease) {} }
+            if FileManager.default.fileExists(atPath: stateURL.path) {
+                state = try Self.decodeState(Data(contentsOf: stateURL), root: self.root, binding: binding)
+                guard state.accountId == accountId else { throw LocalVaultSharedFailure.account }
+            } else {
+                state = State(binding: binding, accountId: accountId)
+                try FileManager.default.createDirectory(at: directory.appendingPathComponent("outbox"), withIntermediateDirectories: true)
+                try writeVaultSyncJournal(JSONEncoder().encode(state), to: stateURL)
+            }
         }
     }
 
@@ -156,7 +163,18 @@ public actor LocalVaultSync {
         _ = try decodeState(data, root: root, binding: saved.binding)
     }
 
+    private func workspaceOwnership() throws -> LocalVaultDocumentLease {
+        if let workspaceWriter { return workspaceWriter }
+        let lease = try LocalVaultDocumentLease.workspace(root: root)
+        // Another actor may have advanced the shared cursor while this actor
+        // was idle. Reload only after taking ownership and before any mutation.
+        let fresh = try Self.decodeState(Data(contentsOf: directory.appendingPathComponent("state.json")), root: root, binding: state.binding)
+        guard fresh.accountId == accountId else { throw LocalVaultSharedFailure.account }
+        state = fresh; workspaceWriter = lease
+        return lease
+    }
     public func readSharedCheckpoint(itemId: String) throws -> LocalVaultSharedCheckpoint? {
+        let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
         do { return try sharedStore.checkpoint(itemId: itemId) }
         catch LocalVaultSyncFailure.changed { return try sharedStore.checkpoint(itemId: itemId) }
     }
@@ -189,6 +207,7 @@ public actor LocalVaultSync {
     }
     public func beginSharedEditing(itemId: String, path: String, expectedHash: String) throws -> LocalVaultSharedSession {
         guard sharedSessions[itemId] == nil else { throw LocalVaultSyncFailure.busy }
+        let workspaceLease = try workspaceOwnership()
         let lease = try LocalVaultDocumentLease(root: root, itemId: itemId)
         try sharedStore.prepareAccount(itemId: itemId, path: path, expectedHash: expectedHash)
         let replayBeforeHash = try sharedStore.pendingIntentBeforeHash(itemId: itemId)
@@ -223,7 +242,7 @@ public actor LocalVaultSync {
         if checkpoint?.retiredReason == nil {
             guard canCheckpointText(itemId: itemId, path: path) else { throw LocalVaultSyncFailure.busy }
         }
-        let session = SharedSession(token: UUID().uuidString, path: path, hash: document.hash, lease: lease)
+        let session = SharedSession(token: UUID().uuidString, path: path, hash: document.hash, lease: lease, workspaceLease: workspaceLease)
         if state.binaryBaselines?[itemId] == nil,
            state.baselines[itemId]?.path == path,
            state.baselines[itemId]?.localHash == document.hash {
@@ -276,12 +295,14 @@ public actor LocalVaultSync {
     }
     public func endSharedEditing(sessionToken: String, itemId: String, retiredReason: String? = nil) throws {
         guard sharedSessions[itemId]?.token == sessionToken else { throw LocalVaultSharedFailure.staleSession }
+        let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
         if let retiredReason { _ = try sharedStore.retire(itemId: itemId, reason: retiredReason) }
         sharedSessions.removeValue(forKey: itemId)
         _ = try sharedProtection(itemId: itemId)
     }
     public func finishSharedRecovery(sessionToken: String, itemId: String, recoveryPath: String, recoveryHash: String) throws {
         guard let session = sharedSessions[itemId], session.token == sessionToken, recoveryPath != session.path else { throw LocalVaultSharedFailure.staleSession }
+        let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
         let store = LocalVaultDocumentStore(root: root), recovered = try store.read(path: recoveryPath)
         guard recovered.hash == recoveryHash, let identity = MarkdownIdentityCodec.extract(from: recovered.contents.markdown)?.itemId,
               identity != itemId else { throw LocalVaultSyncFailure.changed }
@@ -463,6 +484,7 @@ public actor LocalVaultSync {
     /// cursor; localhost revisions and queued operations cannot be sent to a
     /// different server. TextPack files in the selected folder are untouched.
     public static func archiveAndRebind(root: URL, to binding: LocalVaultSyncBinding) throws {
+        let lease = try LocalVaultDocumentLease.workspace(root: root); defer { withExtendedLifetime(lease) {} }
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
         try LocalVaultDeviceState.migrate(root: canonicalRoot)
         let device = LocalVaultDeviceState.directory(root: canonicalRoot)
@@ -492,7 +514,7 @@ public actor LocalVaultSync {
         guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16 * 1024 * 1024 else { throw LocalVaultDocumentStore.Failure.tooLarge }
         let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: url))
         if state.outbox[itemId] == nil, state.conflicts[itemId] == nil,
-           let checkpoint = try LocalVaultSharedEditingStore(root: canonicalRoot).checkpoint(itemId: itemId),
+           let checkpoint = try LocalVaultSharedEditingStore(root: canonicalRoot).checkpoint(itemId: itemId, recoverIntents: false),
            checkpoint.pending, checkpoint.retiredReason == nil {
             let store = LocalVaultDocumentStore(root: canonicalRoot)
             // A pending journal also reopens a file renamed while the app was
@@ -1041,6 +1063,7 @@ public actor LocalVaultSync {
     public func sync(maxItems: Int = 128) async throws -> LocalVaultSyncReport {
         try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
         guard !running else { throw LocalVaultSyncFailure.busy }
+        let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
         running = true
         defer { running = false }
         var report = LocalVaultSyncReport()
