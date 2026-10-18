@@ -49,7 +49,7 @@ public static class RetainedFileReplacement
     {
         if (!OperatingSystem.IsWindows()) return null;
         CheckPath(path);
-        using var handle = CreateFileW(NativePath(path), 0, 7, IntPtr.Zero, 3, 0x00200000, IntPtr.Zero);
+        using var handle = CreateFileW(NativePath(path), 0, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
         if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var info) ||
             !GetFileInformationByHandleEx(handle, 0, out var basic, (uint)Marshal.SizeOf<BasicInfo>())) return null;
         return new(((long)info.SizeHigh << 32) | info.SizeLow, basic.Creation, basic.Write, basic.Change,

@@ -16,6 +16,41 @@ static class RetainedReplacementTests
     public static void Run(string temp, Action<bool, string> assert)
     {
         byte[] before = Pack("before"), prepared = Pack("accepted candidate"), external = Pack("external displaced bytes");
+        {
+            var root=Path.Combine(temp,"registry-index-scale");var state=Path.Combine(temp,"registry-index-scale-state");Directory.CreateDirectory(root);
+            var registry=new ReplacementRecoveryRegistry(root,state);var directory=Path.Combine(state,"replacement-index");Directory.CreateDirectory(directory);
+            var hash=TextPackStore.Hash(before);var rootHash=TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(root));
+            ReplacementRecoveryRegistry.Entry? selected=null;string? selectedPath=null;
+            for(var number=0;number<4100;number++) {
+                var entry=new ReplacementRecoveryRegistry.Entry(1,Guid.NewGuid(),rootHash,null,"indexed-"+number,"Note.textpack",hash,hash);
+                var path=Path.Combine(directory,entry.Operation.ToString("D")+".json");File.WriteAllBytes(path,JsonSerializer.SerializeToUtf8Bytes(entry));
+                if(number==4099){selected=entry;selectedPath=path;}
+            }
+            assert(registry.Entries().Count==4100,"retained registry has no lifetime record-count refusal");
+            assert(registry.Entries("indexed-4099").Count==1&&registry.Entries("absent").Count==0,"per-item registry index selects only the requested stable identity");
+            File.WriteAllBytes(selectedPath!,JsonSerializer.SerializeToUtf8Bytes(selected! with{Version=2}));
+            assert(Refuses(()=>registry.Entries("indexed-4099")),"warm index revalidates selected record after in-place future-schema edit");
+            File.WriteAllBytes(selectedPath!,JsonSerializer.SerializeToUtf8Bytes(selected));
+            var added=selected! with{Operation=Guid.NewGuid(),ItemId="new-identity"};
+            RetainedFileReplacement.SaveJson(Path.Combine(directory,added.Operation.ToString("D")+".json"),added,creating:true);
+            assert(new ReplacementRecoveryRegistry(root,state).Entries("new-identity").Count==1,"atomic private publication invalidates identity membership across registry instances");
+            RetainedFileReplacement.Create(Path.Combine(directory,Guid.NewGuid().ToString("D")+".json"),System.Text.Encoding.UTF8.GetBytes("{}"));
+            assert(Refuses(()=>registry.Entries("absent")),"unidentified newly published registry record blocks unrelated reads");
+        }
+
+        {
+            var root=Path.Combine(temp,"registry-operation-alias");var state=Path.Combine(temp,"registry-operation-alias-state");Directory.CreateDirectory(root);
+            var registry=new ReplacementRecoveryRegistry(root,state);var operation=Guid.NewGuid();var target=Path.Combine(root,"Note.textpack");
+            var stage=Path.Combine(root,".texttext","retained-replacements",TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes("Note.textpack")));
+            var recovery=RetainedFileReplacement.OperationDirectory(target,operation,stage);
+            registry.Register(operation,"retained-id","Note.textpack",TextPackStore.Hash(before),TextPackStore.Hash(prepared),recovery);
+            var first=registry.Entries().Single();var alias=first with{Operation=Guid.NewGuid()};var indexDirectory=Path.Combine(state,"replacement-index");
+            RetainedFileReplacement.SaveJson(Path.Combine(indexDirectory,alias.Operation.ToString("D")+".json"),alias,creating:true);
+            var names=Directory.GetFileSystemEntries(indexDirectory);var leading=JsonSerializer.Deserialize<ReplacementRecoveryRegistry.Entry>(File.ReadAllBytes(names[0]))!;
+            var shared=Path.GetRelativePath(root,RetainedFileReplacement.OperationDirectory(target,leading.Operation,stage)).Replace('\\','/');
+            foreach(var name in names){var entry=JsonSerializer.Deserialize<ReplacementRecoveryRegistry.Entry>(File.ReadAllBytes(name))!;File.WriteAllBytes(name,JsonSerializer.SerializeToUtf8Bytes(entry with{RecoveryPath=shared}));}
+            assert(Refuses(()=>registry.Entries()),"a second operation cannot reuse another registry operation's recovery path");
+        }
         foreach (var shape in new[] { "before-primitive", "complete", "unexpected-displaced", "missing-target", "missing-backup", "corrupt-prepared", "future-manifest" }) {
             var root = Path.Combine(temp, "replacement-" + shape); Directory.CreateDirectory(root);
             var state = Path.Combine(temp, "replacement-state-" + shape); Directory.CreateDirectory(state);

@@ -18,6 +18,13 @@ public sealed class ReplacementRecoveryRegistry
         public string PreparedHash => TextPackStore.Hash(Prepared);
         public string DisplacedHash => TextPackStore.Hash(Displaced);
     }
+    // Private records use atomic publication. The directory generation indexes
+    // identity membership; selected records still verify actual file stamps,
+    // schema, root and principal. Arbitrary external in-place reassignment of an
+    // unrelated private record is outside this contract. Portable runs do not cache.
+    static readonly object cacheGate = new();
+    static readonly Dictionary<string,(RetainedFileReplacement.Stamp Stamp,Dictionary<string,List<string>> Items)> indexes = new(StringComparer.Ordinal);
+    static readonly Dictionary<string,(RetainedFileReplacement.Stamp Stamp,Entry Entry)> records = new(StringComparer.Ordinal);
     readonly string root, stateDirectory, directory, rootHash;
     public ReplacementRecoveryRegistry(string root, string stateDirectory)
     {
@@ -52,14 +59,13 @@ public sealed class ReplacementRecoveryRegistry
         if (!target.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Replacement leaves workspace.");
         RetainedFileReplacement.CheckPath(target); return target;
     }
-    void Validate(Entry entry,bool verifyOwner=true)
+    void Validate(Entry entry,bool verifyOwner=true,bool validatePaths=true)
     {
         if (entry.Version != 1 || entry.Operation == Guid.Empty || entry.RootHash != rootHash || verifyOwner&&entry.OwnerHash != OwnerHash() ||
-            !Regex.IsMatch(entry.ItemId, @"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z") ||
+            !ValidItemId(entry.ItemId) ||
             !RetainedFileReplacement.ValidHash(entry.ExpectedHash) || !RetainedFileReplacement.ValidHash(entry.PreparedHash))
             throw new InvalidDataException("Replacement registry scope cannot be verified.");
-        _ = Target(entry);
-        if(entry.RecoveryPath is not null)_=RecoveryLocation(entry);
+        if(validatePaths){_ = Target(entry);if(entry.RecoveryPath is not null)_=RecoveryLocation(entry);}
         if (entry.Resolution is { } resolution && (!RetainedFileReplacement.ValidHash(resolution.CurrentHash) ||
             !RetainedFileReplacement.ValidHash(resolution.PreparedHash) || !RetainedFileReplacement.ValidHash(resolution.DisplacedHash)))
             throw new InvalidDataException("Invalid replacement resolution.");
@@ -87,25 +93,53 @@ public sealed class ReplacementRecoveryRegistry
         if(recovery.Record.ExpectedHash!=entry.ExpectedHash||recovery.Record.PreparedHash!=entry.PreparedHash)throw new InvalidDataException("Retained replacement manifest differs from its registry.");
         return entry.OwnerHash==principal?(bytes,false):(JsonSerializer.SerializeToUtf8Bytes(entry with{OwnerHash=principal}),true);
     }
-    public IReadOnlyList<Entry> Entries()
+    static string[] RecordPaths(string directory) => Directory.GetFileSystemEntries(directory).Where(name=>!Path.GetFileName(name).StartsWith('.')).ToArray();
+    string[] IndexedPaths(string? itemId)
+    {
+        if(itemId is null || !OperatingSystem.IsWindows())return RecordPaths(directory);
+        for(var attempt=0;attempt<3;attempt++) {
+            var generation=RetainedFileReplacement.Fingerprint(directory)??throw new IOException("Cannot verify replacement registry directory.");
+            lock(cacheGate)if(indexes.TryGetValue(directory,out var cached)&&cached.Stamp==generation)
+                return cached.Items.TryGetValue(itemId,out var selected)?selected.ToArray():[];
+            var paths=RecordPaths(directory);var items=new Dictionary<string,List<string>>(StringComparer.Ordinal);
+            foreach(var path in paths) {
+                var bytes=RetainedFileReplacement.Read(path,16384);
+                using var parsed=JsonDocument.Parse(bytes);
+                if(parsed.RootElement.ValueKind!=JsonValueKind.Object||!parsed.RootElement.TryGetProperty("ItemId",out var field)||field.ValueKind!=JsonValueKind.String||field.GetString() is not {} identity||!ValidItemId(identity))
+                    throw new InvalidDataException("Replacement registry identity cannot be indexed.");
+                if(!items.TryGetValue(identity,out var values))items[identity]=values=[];
+                values.Add(path);
+            }
+            if(generation!=RetainedFileReplacement.Fingerprint(directory))continue;
+            lock(cacheGate) {
+                if(indexes.Count>=32)indexes.Clear();
+                indexes[directory]=(generation,items);
+            }
+            return items.TryGetValue(itemId,out var result)?result.ToArray():[];
+        }
+        throw new FileChangedException();
+    }
+    static bool ValidItemId(string value) => value.Length is >0 and <=128 && char.IsAsciiLetterOrDigit(value[0]) && value.All(character=>char.IsAsciiLetterOrDigit(character)||character is '_' or '-');
+    public IReadOnlyList<Entry> Entries(string? itemId=null)
     {
         RetainedFileReplacement.CheckPath(directory);
-        if (!Directory.Exists(directory)) {
-            if(RetainedReplacementProfile.Exists(stateDirectory))_=OwnerHash();
-            return [];
-        }
         var ownerHash=OwnerHash();
-        var names = Directory.GetFileSystemEntries(directory);
-        if (names.Length > 4096) throw new InvalidDataException("Too many retained replacements.");
+        if (!Directory.Exists(directory)) return [];
         var result = new List<Entry>();
-        foreach (var name in names.Where(name => !Path.GetFileName(name).StartsWith('.'))) {
-            var bytes=RetainedFileReplacement.Read(name,16384);
-            CheckFields(bytes);
-            var entry = JsonSerializer.Deserialize<Entry>(bytes) ?? throw new InvalidDataException("Invalid replacement registry.");
-            if (Path.GetFileName(name) != entry.Operation.ToString("D") + ".json") throw new InvalidDataException("Replacement registry name mismatch.");
-            Validate(entry,verifyOwner:false);
+        var validatedTargets=new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in IndexedPaths(itemId)) {
+            var stamp=RetainedFileReplacement.Fingerprint(name);Entry entry;
+            lock(cacheGate)entry=stamp is not null&&records.TryGetValue(name,out var cached)&&cached.Stamp==stamp?cached.Entry:null!;
+            if(entry is null) {
+                var bytes=RetainedFileReplacement.Read(name,16384);CheckFields(bytes);
+                entry=JsonSerializer.Deserialize<Entry>(bytes)??throw new InvalidDataException("Invalid replacement registry.");
+                if(stamp!=RetainedFileReplacement.Fingerprint(name))throw new FileChangedException();
+                if(stamp is not null)lock(cacheGate){if(records.Count>=4096)records.Clear();records[name]=(stamp,entry);}
+            }
+            if (Path.GetFileName(name) != entry.Operation.ToString("D") + ".json" || OperatingSystem.IsWindows()&&itemId is not null&&entry.ItemId!=itemId) throw new InvalidDataException("Replacement registry name or identity mismatch.");
+            Validate(entry,verifyOwner:false,validatePaths:validatedTargets.Add(entry.Path+"\0"+entry.RecoveryPath+(entry.RecoveryPath is null?"":"\0"+entry.Operation.ToString("D"))));
             if(entry.OwnerHash!=ownerHash)throw new InvalidDataException("Replacement registry owner changed.");
-            result.Add(entry);
+            if(itemId is null||entry.ItemId==itemId)result.Add(entry);
         }
         return result;
     }
@@ -116,12 +150,15 @@ public sealed class ReplacementRecoveryRegistry
         if(parsed.RootElement.TryGetProperty("Resolution",out var resolution)&&resolution.ValueKind!=JsonValueKind.Null)
             RetainedFileReplacement.JsonFields(System.Text.Encoding.UTF8.GetBytes(resolution.GetRawText()),["CurrentHash","PreparedHash","DisplacedHash","PreparedStamp","DisplacedStamp"],["CurrentHash","PreparedHash","DisplacedHash"]);
     }
+    void Invalidate() { lock(cacheGate)indexes.Remove(directory); }
     public void Register(Guid operation, string itemId, string path, string expectedHash, string preparedHash,string? recoveryDirectory=null)
     {
         var entry = new Entry(1, operation, rootHash, OwnerHash(), itemId, path, expectedHash, preparedHash,
             RecoveryPath:recoveryDirectory is null?null:Path.GetRelativePath(root,recoveryDirectory).Replace('\\','/'));
         Validate(entry); Directory.CreateDirectory(directory); RetainedFileReplacement.CheckPath(directory);
+        Invalidate();
         RetainedFileReplacement.SaveJson(Path.Combine(directory, operation.ToString("D") + ".json"), entry, creating: true);
+        Invalidate();
     }
     public Inspection Inspect(Entry entry)
     {
@@ -162,11 +199,15 @@ public sealed class ReplacementRecoveryRegistry
     }
     public void AssertReadable(string? itemId)
     {
-        foreach(var entry in Entries().Where(entry=>itemId is null||entry.ItemId==itemId))AssertEntryReadable(entry);
+        foreach(var entry in Entries(itemId))AssertEntryReadableCore(entry,true);
     }
     public void AssertEntryReadable(Entry entry,bool persist=true)
     {
         Validate(entry);
+        AssertEntryReadableCore(entry,persist);
+    }
+    void AssertEntryReadableCore(Entry entry,bool persist)
+    {
         RetainedFileReplacement.Recovery recovery;
         try {recovery=RecoveryFor(entry);}
         catch(FileNotFoundException){throw new RetainedFileReplacement.RequiredException(entry.Operation);}
@@ -208,7 +249,9 @@ public sealed class ReplacementRecoveryRegistry
         var first = Inspect(entry); Verify(first); _ = Export(first);
         var latest = Inspect(entry); Verify(latest); Validate(entry);
         beforeAcknowledge?.Invoke();
+        Invalidate();
         RetainedFileReplacement.SaveJson(Path.Combine(directory, operation.ToString("D") + ".json"), entry with {
             Resolution = observed with { PreparedStamp = latest.PreparedStamp, DisplacedStamp = latest.DisplacedStamp } });
+        Invalidate();
     }
 }
