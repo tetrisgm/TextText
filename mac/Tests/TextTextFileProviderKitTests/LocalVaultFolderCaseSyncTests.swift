@@ -23,6 +23,73 @@ final class LocalVaultFolderCaseSyncTests: XCTestCase {
     }
     private func engine(_ f: Fixture) throws -> LocalVaultSync { try makeTestSync(root: f.root, binding: f.binding, transport: f.remote, accountId: "account-a") }
     private func externalMove(_ root: URL) throws { guard rename(root.appendingPathComponent("Case").path, root.appendingPathComponent("CASE").path) == 0 else { throw POSIXError(.init(rawValue: errno)!) } }
+    func testRecoveryOfflineThenExplicitCancellationRetainsFilesAndReceipt() async throws {
+        let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+        let sync = try engine(f); _ = try await sync.sync(); try externalMove(f.root)
+        await f.remote.rejectBeforeCommit()
+        do { _ = try await sync.sync(); XCTFail("Expected rejection") } catch LocalVaultSyncFailure.conflict { }
+        let commands = await f.remote.commands(); let command = try XCTUnwrap(commands.last)
+        await f.remote.recoveryOffline(true)
+        let offline = try await sync.folderSyncMoveRead(id: command.operationId)
+        XCTAssertEqual(offline.state, "unavailable"); XCTAssertNil(offline.requestHash); XCTAssertNotNil(offline.resolutionBlocked)
+        await f.remote.recoveryOffline(false)
+        let row = try await sync.folderSyncMoveRead(id: command.operationId)
+        XCTAssertEqual(row.state, "review"); XCTAssertNil(row.resolutionBlocked)
+        do { try await sync.resolveFolderSyncMove(id: row.id, inspection: row.inspection, localInspection: String(repeating: "0", count: 64), requestHash: row.requestHash!); XCTFail("Stale local consent must refuse") } catch LocalVaultSyncFailure.changed { }
+        let zeroCancels = await f.remote.cancellations(); XCTAssertEqual(zeroCancels, 0)
+        try await sync.resolveFolderSyncMove(id: row.id, inspection: row.inspection, localInspection: row.localInspection, requestHash: row.requestHash!)
+        let rows = try await sync.folderSyncMoveList(); XCTAssertTrue(rows.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("CASE/one.textpack")), f.bytes)
+        XCTAssertFalse(try RetainedFileMove.exactRelativeExists(root: f.root, path: "Case"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: LocalVaultDeviceState.directory(root: f.root).appendingPathComponent("sync/folder-case-cancellations/" + row.id + ".json").path))
+        let oneCancel = await f.remote.cancellations(); XCTAssertEqual(oneCancel, 1)
+    }
+    func testCancelledServerReceiptSurvivesRevokedAcknowledgementAndRestart() async throws {
+        let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+        let sync = try engine(f); _ = try await sync.sync(); try externalMove(f.root); await f.remote.rejectBeforeCommit()
+        do { _ = try await sync.sync(); XCTFail("Expected rejection") } catch LocalVaultSyncFailure.conflict { }
+        let commands = await f.remote.commands(), command = try XCTUnwrap(commands.last)
+        let row = try await sync.folderSyncMoveRead(id: command.operationId), guardState = RecoveryCallbackCounter()
+        do {
+            try await sync.resolveFolderSyncMove(id: row.id, inspection: row.inspection, localInspection: row.localInspection, requestHash: row.requestHash!, beforeAcknowledge: { try await guardState.check() })
+            XCTFail("Revoked post-network scope must retain pending command")
+        } catch is CancellationError { }
+        let resumed = try engine(f), tombstone = try await resumed.folderSyncMoveRead(id: command.operationId)
+        XCTAssertEqual(tombstone.state, "cancelled")
+        try await resumed.resolveFolderSyncMove(id: tombstone.id, inspection: tombstone.inspection, localInspection: tombstone.localInspection, requestHash: tombstone.requestHash!)
+        let cancellations = await f.remote.cancellations(); XCTAssertEqual(cancellations, 1)
+        XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("CASE/one.textpack")), f.bytes)
+    }
+    func testCompletedRecoveryUsesReceiptWithoutCancelling() async throws {
+        let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+        let sync = try engine(f); _ = try await sync.sync(); try externalMove(f.root); await f.remote.loseNextReply()
+        do { _ = try await sync.sync(); XCTFail("Expected lost reply") } catch FolderCaseTransport.Failure.lostReply { }
+        let commands = await f.remote.commands(); let command = try XCTUnwrap(commands.last), row = try await sync.folderSyncMoveRead(id: command.operationId)
+        XCTAssertEqual(row.state, "completed"); XCTAssertNil(row.inspection); XCTAssertNil(row.folders); XCTAssertNil(row.manifestRevision)
+        try await sync.resolveFolderSyncMove(id: row.id, inspection: nil, localInspection: row.localInspection, requestHash: row.requestHash!)
+        let zeroCancels = await f.remote.cancellations(); XCTAssertEqual(zeroCancels, 0)
+        let rows = try await sync.folderSyncMoveList(); XCTAssertTrue(rows.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("CASE/one.textpack")), f.bytes)
+    }
+    func testRecoveryRejectsWrongCommandAndWrongCompletedReceipt() async throws {
+        let f = try await fixture(empty: true); defer { try? FileManager.default.removeItem(at: f.root) }
+        let command = LocalVaultFolderCaseRequest(operationId: UUID().uuidString, source: "Case", destination: "CASE", baseManifestRevision: String(repeating: "a", count: 64), folders: ["Case", "Case/Empty"], items: [])
+        let wrong = LocalVaultFolderCaseServerRecovery(state: "cancelled", requestHash: String(repeating: "d", count: 64), operationId: UUID().uuidString, source: command.source, destination: command.destination, inspection: String(repeating: "e", count: 64), manifestRevision: String(repeating: "a", count: 64), folders: nil, items: nil, result: nil)
+        XCTAssertThrowsError(try LocalVaultFolderCaseSync.validateRecovery(wrong, command: command, root: f.root))
+        let receipt = LocalVaultFolderCaseReceipt(operationId: command.operationId, status: "moved", source: command.source, destination: command.destination, manifestRevision: String(repeating: "b", count: 64), folders: ["CASE"], items: [])
+        let completed = LocalVaultFolderCaseServerRecovery(state: "completed", requestHash: String(repeating: "d", count: 64), operationId: nil, source: nil, destination: nil, inspection: nil, manifestRevision: nil, folders: nil, items: nil, result: receipt)
+        XCTAssertThrowsError(try LocalVaultFolderCaseSync.validateRecovery(completed, command: command, root: f.root))
+    }
+    func testAutomaticCommandWireBoundsBeforeQueue() throws {
+        func request(_ path: String, _ items: Int = 0) -> LocalVaultFolderCaseRequest {
+            .init(operationId: UUID().uuidString, source: path, destination: path.uppercased(), baseManifestRevision: String(repeating: "a", count: 64), folders: [path], items: (0..<items).map { .init(itemId: "item-\($0)", relativePath: path + "/one.textpack", revision: String(repeating: "b", count: 64)) })
+        }
+        XCTAssertNoThrow(try LocalVaultFolderCaseSync.validateWire(request("Case")))
+        XCTAssertThrowsError(try LocalVaultFolderCaseSync.validateWire(request(String(repeating: "a", count: 257))))
+        XCTAssertThrowsError(try LocalVaultFolderCaseSync.validateWire(request("Case", 20_001)))
+        let oversized = LocalVaultFolderCaseRequest(operationId: UUID().uuidString, source: "Case", destination: "CASE", baseManifestRevision: String(repeating: "a", count: 64), folders: ["Case"], items: (0..<20_000).map { .init(itemId: String(repeating: "i", count: 128) + String($0), relativePath: "Case/" + String(repeating: "p", count: 128) + String($0) + ".textpack", revision: String(repeating: "b", count: 64)) })
+        XCTAssertThrowsError(try LocalVaultFolderCaseSync.validateWire(oversized))
+    }
     func testWholeFolderEmptyDescendantAndLostReplyReplayAcrossRestart() async throws {
         let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
         _ = try await engine(f).sync(); try externalMove(f.root); await f.remote.loseNextReply()
@@ -75,6 +142,8 @@ final class LocalVaultFolderCaseSyncTests: XCTestCase {
                 markdown: "---\ntextTextId: case-item\n---\nRetained pending body", documentJSON: document.documentJSON)
             XCTFail("No clean checkpoint ACK may escape while folder receipt is pending")
         } catch LocalVaultSyncFailure.busy { }
+        let recoveryWhileHeld = try await sync.folderSyncMoveList()
+        XCTAssertEqual(recoveryWhileHeld.count, 1); XCTAssertEqual(recoveryWhileHeld.first?.state, "review")
         let heldValue = try await sync.readSharedCheckpoint(itemId: "case-item"); let held = try XCTUnwrap(heldValue); XCTAssertEqual(held.journal, before.journal); XCTAssertEqual(held.journalGeneration, 7)
         await f.remote.release(); _ = try await task.value
         let afterValue = try await sync.readSharedCheckpoint(itemId: "case-item"); let after = try XCTUnwrap(afterValue); XCTAssertEqual(after.path, "CASE/one.textpack"); XCTAssertEqual(after.epoch, 2); XCTAssertEqual(after.seq, 3); XCTAssertEqual(after.journalGeneration, 7); XCTAssertTrue(after.pending)
@@ -97,6 +166,7 @@ final class LocalVaultFolderCaseSyncTests: XCTestCase {
 private actor FolderCaseTransport: LocalVaultSyncTransport {
     enum Failure: Error { case lostReply }
     private var records: [LocalVaultRemoteItem] = [], bytes: Data?, catalog = ["Case", "Case/Empty"], revision = String(repeating: "a", count: 64)
+    private var reject = false, offline = false, cancelled = false, cancelCount = 0
     private var supported = true
     private var sent: [LocalVaultFolderCaseRequest] = [], receipt: LocalVaultFolderCaseReceipt?, writes = 0, lose = false, conflict = false, hold = false
     private var held: CheckedContinuation<Void, Never>?, waiter: CheckedContinuation<Void, Never>?
@@ -114,6 +184,7 @@ private actor FolderCaseTransport: LocalVaultSyncTransport {
     func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws { writes += 1; throw LocalVaultSyncFailure.invalidResponse }
     func moveFolderCase(_ request: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt {
         sent.append(request)
+        if reject { reject = false; throw LocalVaultSyncFailure.conflict }
         if hold { hold = false; await withCheckedContinuation { held = $0; waiter?.resume(); waiter = nil } }
         if receipt == nil {
             catalog = request.folders.map { LocalVaultFolderCaseSync.rebase($0, request.source, request.destination) }; revision = String(repeating: "b", count: 64)
@@ -122,8 +193,24 @@ private actor FolderCaseTransport: LocalVaultSyncTransport {
         }
         if lose { lose = false; throw Failure.lostReply }; if conflict { conflict = false; throw LocalVaultSyncFailure.conflict }; return receipt!
     }
+    func rejectBeforeCommit() { reject = true }
+    func recoveryOffline(_ value: Bool) { offline = value }
+    func cancellations() -> Int { cancelCount }
+    func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery {
+        if offline { throw URLError(.notConnectedToInternet) }
+        if let receipt { return .init(state: "completed", requestHash: String(repeating: "d", count: 64), operationId: nil, source: nil, destination: nil, inspection: nil, manifestRevision: nil, folders: nil, items: nil, result: receipt) }
+        return .init(state: cancelled ? "cancelled" : "review", requestHash: String(repeating: "d", count: 64), operationId: command.operationId, source: command.source, destination: command.destination, inspection: String(repeating: "e", count: 64), manifestRevision: revision, folders: cancelled ? nil : catalog, items: cancelled ? nil : records.map { .init(itemId: $0.itemId, relativePath: $0.relativePath, revision: $0.revision) }, result: nil)
+    }
+    func cancelFolderCase(_ command: LocalVaultFolderCaseRequest, inspection: String) async throws -> LocalVaultFolderCaseServerRecovery {
+        cancelCount += 1; cancelled = true; return try await inspectFolderCase(command)
+    }
     func loseNextReply() { lose = true }; func conflictAfterCommit() { conflict = true }; func holdNext() { hold = true }
     func waitUntilHeld() async { if held != nil { return }; await withCheckedContinuation { waiter = $0 } }
     func release() { held?.resume(); held = nil }
     func commands() -> [LocalVaultFolderCaseRequest] { sent }; func fileWrites() -> Int { writes }
+}
+
+private actor RecoveryCallbackCounter {
+    private var calls = 0
+    func check() throws { calls += 1; if calls == 3 { throw CancellationError() } }
 }

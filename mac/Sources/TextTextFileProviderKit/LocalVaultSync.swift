@@ -1319,6 +1319,7 @@ public actor LocalVaultSync {
                       changes.allSatisfy({ LocalVaultFolderCaseSync.within($0.0.path, first.0.path) }) else { throw LocalVaultSyncFailure.changed }
                 let request = LocalVaultFolderCaseRequest(operationId: UUID().uuidString.lowercased(), source: first.0.path, destination: first.1, baseManifestRevision: context.manifestRevision,
                     folders: baseline.folders.filter { LocalVaultFolderCaseSync.within($0, first.0.path) }, items: current.filter { LocalVaultFolderCaseSync.within($0.relativePath, first.0.path) })
+                try LocalVaultFolderCaseSync.validateWire(request)
                 let affected = Set(request.items.map(\.itemId))
                 guard !state.outbox.values.contains(where: { affected.contains($0.itemId) }), !(state.binaryOutbox?.values.contains(where: { affected.contains($0.itemId) }) ?? false) else { throw LocalVaultSyncFailure.changed }
                 let command = LocalVaultFolderCaseSync.Command(version: 1, rootHash: TextTextStableDigest.sha256Hex(Data(root.path.utf8)), accountId: accountId, request: request, identity: first.0)
@@ -1329,6 +1330,7 @@ public actor LocalVaultSync {
             }
         }
         guard let command = state.folderCaseCommand else { return manifest }
+        try LocalVaultFolderCaseSync.validateWire(command.request)
         guard context != nil else { throw LocalVaultSyncFailure.changed }
         try verifyFolderCaseOwner(); try LocalVaultFolderCaseSync.verifyMovedTree(root: root, command: command)
         let receipt: LocalVaultFolderCaseReceipt
@@ -1337,6 +1339,19 @@ public actor LocalVaultSync {
             let previous = state; state.folderCaseCommand?.conflicted = true; try persist(restoring: previous); throw LocalVaultSyncFailure.conflict
         }
         try Task.checkCancellation(); try verifyFolderCaseOwner()
+        try LocalVaultFolderCaseSync.verifyMovedTree(root: root, command: command)
+        try adoptFolderCaseReceipt(receipt, command: command)
+        return try await transport.manifest()
+    }
+
+    private func requireFolderCaseCommand(_ command: LocalVaultFolderCaseSync.Command) throws {
+        try LocalVaultFolderCaseSync.validateWire(command.request)
+        try verifyFolderCaseOwner()
+        guard state.folderCaseCommand?.request == command.request, state.folderCaseCommand?.rootHash == command.rootHash,
+              state.folderCaseCommand?.accountId == command.accountId else { throw LocalVaultSyncFailure.changed }
+    }
+    private func adoptFolderCaseReceipt(_ receipt: LocalVaultFolderCaseReceipt, command: LocalVaultFolderCaseSync.Command) throws {
+        try requireFolderCaseCommand(command)
         try LocalVaultFolderCaseSync.verifyMovedTree(root: root, command: command)
         let r = command.request
         let folders = r.folders.map { LocalVaultFolderCaseSync.rebase($0, r.source, r.destination) }.sorted()
@@ -1360,7 +1375,81 @@ public actor LocalVaultSync {
         }
         state.managedFolders = state.managedFolders.map { Array(Set($0.map { LocalVaultFolderCaseSync.within($0, r.source) ? LocalVaultFolderCaseSync.rebase($0, r.source, r.destination) : $0 })).sorted() }
         state.folderCaseBaseline = nil; state.folderCaseCommand = nil; try persist()
-        return try await transport.manifest()
+    }
+    public func folderSyncMoveList() async throws -> [LocalVaultFolderSyncRecoveryEntry] {
+        let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
+        guard let command = state.folderCaseCommand else { return [] }
+        return [try await folderSyncMoveRead(id: command.request.operationId)]
+    }
+    public func folderSyncMoveRead(id: String) async throws -> LocalVaultFolderSyncRecoveryEntry {
+        let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
+        guard let command = state.folderCaseCommand, command.request.operationId == id else { throw LocalVaultSyncFailure.changed }
+        try requireFolderCaseCommand(command)
+        try LocalVaultFolderCaseSync.validate(root: root, accountId: accountId, baseline: state.folderCaseBaseline, command: command)
+        var server: LocalVaultFolderCaseServerRecovery?
+        var unavailable = false
+        do { server = try await transport.inspectFolderCase(command.request) }
+        catch {
+            if error is CancellationError { throw error }
+            if error is URLError || error is DecodingError { unavailable = true }
+            else if let failure = error as? LocalVaultSyncFailure {
+                switch failure { case .invalidResponse, .conflict, .httpStatus: unavailable = true; default: throw error }
+            } else { throw error }
+            server = nil
+        }
+        try Task.checkCancellation(); try requireFolderCaseCommand(command)
+        let local = try LocalVaultFolderCaseSync.inspect(root: root, command: command)
+        var blocked = local.blocked
+        if let value = server {
+            do { try LocalVaultFolderCaseSync.validateRecovery(value, command: command.request, root: root) }
+            catch { server = nil; unavailable = true }
+        }
+        if let server {
+            if server.state == "completed" {
+                do { try LocalVaultFolderCaseSync.verifyMovedTree(root: root, command: command) }
+                catch { blocked = "The local folder changed. Keep all files and inspect the original and current locations before finishing." }
+            }
+        }
+        return .init(id: id, command: command.request, state: server?.state ?? "unavailable", expectedIdentity: "mac:\(command.identity.device):\(command.identity.inode)",
+            requestHash: server?.requestHash, from: local.from, to: local.to, localInspection: local.digest, inspection: server?.inspection, manifestRevision: server?.manifestRevision,
+            folders: server?.folders, items: server?.items, result: server?.result, resolutionBlocked: unavailable ? "The server folder recovery could not be verified. The saved command and local files are kept. Reconnect and inspect again." : blocked)
+    }
+    public func resolveFolderSyncMove(id: String, inspection: String?, localInspection: String, requestHash: String,
+        beforeAcknowledge: @escaping @Sendable () async throws -> Void = {}) async throws {
+        guard !running else { throw LocalVaultSyncFailure.busy }
+        let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
+        running = true; defer { running = false }
+        guard let command = state.folderCaseCommand, command.request.operationId == id else { throw LocalVaultSyncFailure.changed }
+        try await beforeAcknowledge(); try requireFolderCaseCommand(command)
+        let current = try await folderSyncMoveRead(id: id)
+        guard current.state != "unavailable", current.resolutionBlocked == nil, current.requestHash == requestHash,
+              current.inspection == inspection, current.localInspection == localInspection else { throw LocalVaultSyncFailure.changed }
+        try await beforeAcknowledge(); try requireFolderCaseCommand(command)
+        guard try LocalVaultFolderCaseSync.inspect(root: root, command: command).digest == localInspection else { throw LocalVaultSyncFailure.changed }
+        if current.state == "completed", let result = current.result {
+            try adoptFolderCaseReceipt(result, command: command); return
+        }
+        let cancellation: LocalVaultFolderCaseServerRecovery
+        if current.state == "review", let inspection { cancellation = try await transport.cancelFolderCase(command.request, inspection: inspection) }
+        else if current.state == "cancelled" {
+            cancellation = .init(state: "cancelled", requestHash: requestHash, operationId: id, source: command.request.source, destination: command.request.destination, inspection: inspection,
+                manifestRevision: current.manifestRevision, folders: nil, items: nil, result: nil)
+        } else { throw LocalVaultSyncFailure.changed }
+        try Task.checkCancellation(); try await beforeAcknowledge(); try requireFolderCaseCommand(command)
+        guard try LocalVaultFolderCaseSync.inspect(root: root, command: command).digest == localInspection else { throw LocalVaultSyncFailure.changed }
+        try LocalVaultFolderCaseSync.validateRecovery(cancellation, command: command.request, root: root)
+        guard cancellation.state == "cancelled", cancellation.requestHash == requestHash, cancellation.inspection == inspection else { throw LocalVaultSyncFailure.changed }
+        struct RetainedCancellation: Codable {
+            let version: Int; let rootHash: String; let accountId: String; let command: LocalVaultFolderCaseRequest; let receipt: LocalVaultFolderCaseServerRecovery
+        }
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let bytes = try encoder.encode(RetainedCancellation(version: 1, rootHash: command.rootHash, accountId: command.accountId, command: command.request, receipt: cancellation))
+        let folder = directory.appendingPathComponent("folder-case-cancellations", isDirectory: true)
+        try RetainedFileReplacement.checkedDirectory(folder)
+        try RetainedFileReplacement.flushDirectory(directory)
+        try writeVaultRecovery(bytes, to: folder.appendingPathComponent(id + ".json"))
+        try RetainedFileReplacement.flushDirectory(folder)
+        let previous = state; state.folderCaseCommand = nil; state.folderCaseBaseline = nil; try persist(restoring: previous)
     }
 
     public func sync(maxItems: Int = 128) async throws -> LocalVaultSyncReport {

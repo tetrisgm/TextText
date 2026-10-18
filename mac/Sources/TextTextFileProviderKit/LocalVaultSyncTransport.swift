@@ -74,6 +74,8 @@ public struct LocalVaultFolderCaseContext: Sendable {
 public protocol LocalVaultSyncTransport: Sendable {
     func folderCaseContext() async -> LocalVaultFolderCaseContext?
     func moveFolderCase(_ request: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt
+    func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery
+    func cancelFolderCase(_ command: LocalVaultFolderCaseRequest, inspection: String) async throws -> LocalVaultFolderCaseServerRecovery
     func canOrganize() async -> Bool
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool
     func manifest() async throws -> [LocalVaultRemoteItem]
@@ -99,6 +101,8 @@ public struct LocalVaultBinaryManifest: Codable, Sendable {
 }
 
 public extension LocalVaultSyncTransport {
+    func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery { throw LocalVaultSyncFailure.invalidResponse }
+    func cancelFolderCase(_ command: LocalVaultFolderCaseRequest, inspection: String) async throws -> LocalVaultFolderCaseServerRecovery { throw LocalVaultSyncFailure.invalidResponse }
     func folderCaseContext() async -> LocalVaultFolderCaseContext? { nil }
     func moveFolderCase(_ request: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt { throw LocalVaultSyncFailure.invalidResponse }
     func folders() async -> [String] { [] }
@@ -130,6 +134,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         return .init(manifestRevision: folderCaseRevision, folders: cachedFolders)
     }
     public func moveFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt {
+        try LocalVaultFolderCaseSync.validateWire(command)
         guard await folderCaseContext() != nil else { throw LocalVaultSyncFailure.invalidResponse }
         var request = request(endpoint.deletingLastPathComponent().appendingPathComponent("folder-case-moves"))
         request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -139,6 +144,33 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
               Set(fields.keys) == Set(["operationId", "status", "source", "destination", "folders", "items", "manifestRevision"]),
               let items = fields["items"] as? [[String: Any]], items.allSatisfy({ Set($0.keys) == Set(["itemId", "relativePath", "revision"]) }) else { throw LocalVaultSyncFailure.invalidResponse }
         return try JSONDecoder().decode(LocalVaultFolderCaseReceipt.self, from: data)
+    }
+    public func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery { try await folderCaseRecovery(command, inspection: nil) }
+    public func cancelFolderCase(_ command: LocalVaultFolderCaseRequest, inspection: String) async throws -> LocalVaultFolderCaseServerRecovery { try await folderCaseRecovery(command, inspection: inspection) }
+    private func folderCaseRecovery(_ command: LocalVaultFolderCaseRequest, inspection: String?) async throws -> LocalVaultFolderCaseServerRecovery {
+        try LocalVaultFolderCaseSync.validateWire(command)
+        struct Body: Encodable { let action: String; let command: LocalVaultFolderCaseRequest; let inspection: String?; let consent: Bool? }
+        var request = request(endpoint.deletingLastPathComponent().appendingPathComponent("folder-case-moves/recovery"))
+        request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = inspection == nil ? 2 : 30
+        request.httpBody = try JSONEncoder().encode(Body(action: inspection == nil ? "inspect" : "cancel", command: command, inspection: inspection, consent: inspection == nil ? nil : true))
+        let (data, _) = try await send(request)
+        guard let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any], let state = fields["state"] as? String else { throw LocalVaultSyncFailure.invalidResponse }
+        let expected: Set<String>
+        switch state {
+        case "completed": expected = ["state", "requestHash", "result"]
+        case "review": expected = ["state", "operationId", "requestHash", "source", "destination", "inspection", "manifestRevision", "folders", "items"]
+        case "cancelled": expected = ["state", "operationId", "requestHash", "source", "destination", "inspection", "manifestRevision"]
+        default: throw LocalVaultSyncFailure.invalidResponse
+        }
+        guard Set(fields.keys) == expected else { throw LocalVaultSyncFailure.invalidResponse }
+        if let result = fields["result"] as? [String: Any] {
+            guard Set(result.keys) == Set(["operationId", "status", "source", "destination", "folders", "items", "manifestRevision"]) else { throw LocalVaultSyncFailure.invalidResponse }
+        }
+        for value in [fields["items"], (fields["result"] as? [String: Any])?["items"]].compactMap({ $0 }) {
+            guard let rows = value as? [[String: Any]], rows.allSatisfy({ Set($0.keys) == Set(["itemId", "relativePath", "revision"]) }) else { throw LocalVaultSyncFailure.invalidResponse }
+        }
+        return try JSONDecoder().decode(LocalVaultFolderCaseServerRecovery.self, from: data)
     }
     private var cachedManifest: [LocalVaultRemoteItem] = []
 

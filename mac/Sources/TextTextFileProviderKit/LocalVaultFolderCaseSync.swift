@@ -28,6 +28,16 @@ struct LocalVaultFolderCaseSync {
             try items(request["items"])
         }
     }
+    static func validateWire(_ request: LocalVaultFolderCaseRequest) throws {
+        guard UUID(uuidString: request.operationId) != nil,
+              request.folders.count <= 20_000, request.items.count <= 20_000,
+              request.source.utf16.count <= 256, request.destination.utf16.count <= 256,
+              request.folders.allSatisfy({ $0.utf16.count <= 256 }),
+              request.items.allSatisfy({ $0.relativePath.utf16.count <= 1024 }),
+              try JSONEncoder().encode(request).count <= 4 * 1024 * 1024 - 1024 else {
+            throw LocalVaultSyncFailure.changed
+        }
+    }
     static func digest(_ value: String) -> Bool { value.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil }
     static func within(_ value: String, _ parent: String) -> Bool { value == parent || value.hasPrefix(parent + "/") }
     static func rebase(_ value: String, _ source: String, _ destination: String) -> String { destination + value.dropFirst(source.count) }

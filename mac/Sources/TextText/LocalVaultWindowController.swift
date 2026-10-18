@@ -706,6 +706,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if method == "list", openError == nil { reply(id, result: .success(["root": "", "items": []])); return }
             reply(id, result: .failure(VaultBridgeError(openError ?? "Open a workspace folder first."))); return
         }
+        if method == "folderSyncMoveRead" || method == "resolveFolderSyncMove" || (method == "recoveryList" && connection?.collaborationEngine != nil) {
+            handleFolderSyncRecovery(id: id, method: method, params: params, root: root)
+            return
+        }
         let replacementOperation = method == "folderRenameRead" || method == "resolveFolderRename" || method == "replacementRead" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove" || method == "recoveryList" || method == "recoveryAssetRead"
         if replacementOperation && params["workspaceRoot"] as? String != root.path {
             reply(id, result: .failure(CancellationError())); return
@@ -750,18 +754,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case "resolveFolderRename":
                     try store.resolveFolderRename(id: Self.string(params, "id"), fromPath: Self.string(params, "fromPath"), toPath: Self.string(params, "toPath"), inspection: Self.string(params, "inspection"), beforeAcknowledge: requireRecoveryScope)
                     return ["resolved": true]
-                case "recoveryList":
-                    let folderRenames = try store.folderRenameRecoveryList()
-                    if folderRenames.contains(where: { !$0.resolved }) {
-                        return ["folderRenames": folderRenames.map(Self.folderRenamePayload), "entries": [], "replacements": [], "assets": [], "truncated": false, "assetsTruncated": false,
-                            "warning": "Inspect the retained folder details before continuing recovery."]
-                    }
-                    let replacements = try store.replacementRecoveryList().filter { params["path"] == nil || $0.path == params["path"] as? String }
-                    let page = try store.recoveryList(path: params["path"] as? String)
-                    let assets = try store.recoveryAssets()
-                    return ["folderRenames": folderRenames.map(Self.folderRenamePayload), "entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
-                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "identityMode": $0.identityMode, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "sourcePath": ($0.sourcePath as Any?) ?? NSNull(), "sourcePresent": ($0.sourcePresent as Any?) ?? NSNull(), "sourceHash": ($0.sourceHash as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
-                        "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
+                case "recoveryList": return try Self.recoveryPayload(root: root, params: params, folderSyncMoves: [])
                 case "recoveryAssetRead":
                     let hash = try Self.string(params, "hash")
                     let bytes = try store.recoveryAssetRead(id: Self.string(params, "id"), hash: hash)
@@ -1021,6 +1014,73 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             return row
         }
         return value
+    }
+
+    private static func recoveryPayload(root: URL, params: [String: Any], folderSyncMoves: [[String: Any]]) throws -> [String: Any] {
+        let store = LocalVaultDocumentStore(root: root)
+        let folderRenames = try store.folderRenameRecoveryList()
+        if folderRenames.contains(where: { !$0.resolved }) {
+            return ["folderSyncMoves": folderSyncMoves, "folderRenames": folderRenames.map(folderRenamePayload), "entries": [], "replacements": [], "assets": [], "truncated": false, "assetsTruncated": false,
+                "warning": "Inspect the retained folder details before continuing recovery."]
+        }
+        let replacements = try store.replacementRecoveryList().filter { params["path"] == nil || $0.path == params["path"] as? String }
+        let page = try store.recoveryList(path: params["path"] as? String)
+        let assets = try store.recoveryAssets()
+        return ["folderSyncMoves": folderSyncMoves, "folderRenames": folderRenames.map(folderRenamePayload), "entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
+            "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "identityMode": $0.identityMode, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "sourcePath": ($0.sourcePath as Any?) ?? NSNull(), "sourcePresent": ($0.sourcePresent as Any?) ?? NSNull(), "sourceHash": ($0.sourceHash as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
+            "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
+    }
+    private static func folderSyncPayload(_ entry: LocalVaultFolderSyncRecoveryEntry) throws -> [String: Any] {
+        let command = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry.command))
+        let result: Any = try entry.result.map { try JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) } ?? NSNull()
+        let items: Any = try entry.items.map { try JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) } ?? NSNull()
+        return ["id": entry.id, "command": command, "state": entry.state, "requestHash": entry.requestHash as Any? ?? NSNull(),
+            "expectedIdentity": entry.expectedIdentity, "from": ["present": entry.from.present, "identity": entry.from.identity as Any? ?? NSNull()] as [String: Any],
+            "to": ["present": entry.to.present, "identity": entry.to.identity as Any? ?? NSNull()] as [String: Any],
+            "localInspection": entry.localInspection, "inspection": entry.inspection as Any? ?? NSNull(), "manifestRevision": entry.manifestRevision as Any? ?? NSNull(),
+            "folders": entry.folders as Any? ?? NSNull(), "items": items, "result": result, "resolutionBlocked": entry.resolutionBlocked as Any? ?? NSNull()]
+    }
+    private func handleFolderSyncRecovery(id: String, method: String, params: [String: Any], root: URL) {
+        let capturedConnection = connection, account = credentials(), engine = connection?.collaborationEngine
+        Task { @MainActor [weak self] in
+            let check: @MainActor @Sendable () throws -> Void = { [weak self] in
+                guard let self, self.root == root, self.connection === capturedConnection, self.connection?.collaborationEngine === engine,
+                      params["workspaceRoot"] as? String == root.path else { throw CancellationError() }
+                guard let account, account.accountId != nil, let current = self.credentials(),
+                      account.sameAccount(as: current) else { throw CancellationError() }
+            }
+            do {
+                try check(); guard let engine else { throw VaultBridgeError("The workspace connection is unavailable. Reconnect and inspect again.") }
+                let result: [String: Any]
+                switch method {
+                case "folderSyncMoveRead": result = try Self.folderSyncPayload(await engine.folderSyncMoveRead(id: Self.string(params, "id")))
+                case "resolveFolderSyncMove":
+                    guard params["consent"] as? Bool == true else { throw VaultBridgeError("Explicit folder recovery consent is required.") }
+                    let inspection = params["inspection"] as? String
+                    try await engine.resolveFolderSyncMove(id: Self.string(params, "id"), inspection: inspection, localInspection: Self.string(params, "localInspection"), requestHash: Self.string(params, "requestHash"), beforeAcknowledge: { try await check() })
+                    result = ["resolved": true]
+                default:
+                    let rows = try await engine.folderSyncMoveList().map { try Self.folderSyncPayload($0) }
+                    let rowBytes = try JSONSerialization.data(withJSONObject: rows)
+                    let path = params["path"] as? String
+                    guard let self else { throw CancellationError() }
+                    let bytes: Data = try await withCheckedThrowingContinuation { continuation in
+                        self.io.async {
+                            do {
+                                guard let rows = try JSONSerialization.jsonObject(with: rowBytes) as? [[String: Any]] else { throw CancellationError() }
+                                let payload = try Self.recoveryPayload(root: root, params: path.map { ["path": $0] } ?? [:], folderSyncMoves: rows)
+                                continuation.resume(returning: try JSONSerialization.data(withJSONObject: payload))
+                            } catch { continuation.resume(throwing: error) }
+                        }
+                    }
+                    guard let payload = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw CancellationError() }
+                    result = payload
+                }
+                try check()
+                if method == "resolveFolderSyncMove" { self?.connection?.schedule() }
+                self?.reply(id, result: .success(result))
+            } catch { self?.reply(id, result: .failure(error)) }
+        }
     }
 
     private static func folderRenamePayload(_ entry: FolderRenameRecoveryEntry) -> [String: Any] {

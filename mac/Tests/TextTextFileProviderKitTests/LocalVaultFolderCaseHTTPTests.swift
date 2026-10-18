@@ -15,6 +15,18 @@ final class LocalVaultFolderCaseHTTPTests: XCTestCase {
         do { _ = try await transport.moveFolderCase(command); XCTFail("No new command without advertised owner capability") } catch LocalVaultSyncFailure.invalidResponse { }
         XCTAssertEqual(state.moves(), 1)
     }
+    func testRecoveryWireHasBoundedInspectAndExplicitCancellationConsent() async throws {
+        let state = FolderCaseHTTPState()
+        FolderCaseURLProtocol.install { request in try state.reply(request) }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FolderCaseURLProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel(); FolderCaseURLProtocol.install(nil) }
+        let transport = try HTTPLocalVaultSyncTransport(origin: URL(string: "https://folder-case.test")!, workspaceId: "fixture", token: "fixture-only", session: session, accountId: "account-a")
+        let command = LocalVaultFolderCaseRequest(operationId: UUID().uuidString, source: "Case", destination: "CASE", baseManifestRevision: String(repeating: "a", count: 64), folders: ["Case"], items: [])
+        let read = try await transport.inspectFolderCase(command); XCTAssertEqual(read.state, "review"); XCTAssertEqual(read.operationId, command.operationId)
+        let cancelled = try await transport.cancelFolderCase(command, inspection: read.inspection!); XCTAssertEqual(cancelled.state, "cancelled")
+        state.future()
+        do { _ = try await transport.inspectFolderCase(command); XCTFail("Unknown recovery response must refuse") } catch LocalVaultSyncFailure.invalidResponse { }
+    }
     func testFutureReceiptFieldsRefuseRatherThanInventSuccess() async throws {
         let state = FolderCaseHTTPState(); state.future()
         FolderCaseURLProtocol.install { request in try state.reply(request) }
@@ -39,11 +51,22 @@ private final class FolderCaseHTTPState: @unchecked Sendable {
             if owner { fields["manifestRevision"] = String(repeating: "a", count: 64); fields["syncCapabilities"] = ["folder-case-moves-v1"] }
             return try JSONSerialization.data(withJSONObject: fields)
         }
-        guard request.httpMethod == "POST", request.url!.path == "/api/vault/fixture/folder-case-moves" else { throw LocalVaultSyncFailure.invalidResponse }
+        guard request.httpMethod == "POST", ["/api/vault/fixture/folder-case-moves", "/api/vault/fixture/folder-case-moves/recovery"].contains(request.url!.path) else { throw LocalVaultSyncFailure.invalidResponse }
         var body = request.httpBody ?? Data()
         if body.isEmpty, let stream = request.httpBodyStream {
             stream.open(); defer { stream.close() }; var buffer = [UInt8](repeating: 0, count: 4096)
             while stream.hasBytesAvailable { let count = stream.read(&buffer, maxLength: buffer.count); guard count >= 0 else { throw LocalVaultSyncFailure.invalidResponse }; if count == 0 { break }; body.append(buffer, count: count); guard body.count <= 4 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse } }
+        }
+        if request.url!.path.hasSuffix("/recovery") {
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let action = try XCTUnwrap(object["action"] as? String)
+            let command = try JSONDecoder().decode(LocalVaultFolderCaseRequest.self, from: JSONSerialization.data(withJSONObject: object["command"]!))
+            if action == "inspect" { XCTAssertEqual(request.timeoutInterval, 2); XCTAssertEqual(Set(object.keys), ["action", "command"]) }
+            else { XCTAssertEqual(action, "cancel"); XCTAssertEqual(object["consent"] as? Bool, true); XCTAssertEqual(object["inspection"] as? String, String(repeating: "e", count: 64)) }
+            var fields: [String: Any] = ["state": action == "inspect" ? "review" : "cancelled", "requestHash": String(repeating: "d", count: 64), "operationId": command.operationId, "source": command.source, "destination": command.destination, "inspection": String(repeating: "e", count: 64), "manifestRevision": String(repeating: "a", count: 64)]
+            if action == "inspect" { fields["folders"] = ["Case"]; fields["items"] = [] as [String] }
+            if unknown { fields["future"] = true }
+            return try JSONSerialization.data(withJSONObject: fields)
         }
         let command = try JSONDecoder().decode(LocalVaultFolderCaseRequest.self, from: body); count += 1
         var fields: [String: Any] = ["operationId": command.operationId, "status": "moved", "source": command.source, "destination": command.destination, "manifestRevision": String(repeating: "b", count: 64), "folders": ["CASE"], "items": []]
