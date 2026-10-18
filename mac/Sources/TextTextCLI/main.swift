@@ -119,7 +119,15 @@ if options.command == "vault" {
 
 let store: CLIWorkspace
 do {
-    store = try CLIWorkspace.locate()
+    store = try await CLIWorkspace.locate()
+    if case .local(let local) = store {
+        if !["commands", "do", "propose"].contains(options.command) {
+            try CLILocalState.configure(root: local.root)
+        }
+        FileHandle.standardError.write(Data("texttext: using local files as an offline writer; account commands are verified separately.\n".utf8))
+    } else {
+        FileHandle.standardError.write(Data("texttext: using authenticated TextText account commands; selected local files are not modified.\n".utf8))
+    }
 } catch {
     fail(String(describing: error))
 }

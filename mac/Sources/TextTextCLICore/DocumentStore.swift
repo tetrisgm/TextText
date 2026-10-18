@@ -411,7 +411,11 @@ public struct DocumentStore: Sendable {
         let handle = try FileHandle(forWritingTo: staging)
         try handle.synchronize(); try handle.close()
         if let preparedOutput {
-            guard contains(preparedOutput), preparedOutput != url else {
+            let privateJournal = LocalVaultDeviceState.directory(root: root).appendingPathComponent("cli-creations", isDirectory: true)
+            let privateOutput = preparedOutput.deletingLastPathComponent().standardizedFileURL == privateJournal.standardizedFileURL &&
+                privateJournal.resolvingSymlinksInPath().path == privateJournal.standardizedFileURL.path &&
+                preparedOutput.pathExtension == "textpack" && UUID(uuidString: preparedOutput.deletingPathExtension().lastPathComponent) != nil
+            guard (contains(preparedOutput) || privateOutput), preparedOutput != url else {
                 throw TextTextCLIError.invalidDocument("invalid creation staging location")
             }
             try fileManager.moveItem(at: staging, to: preparedOutput)

@@ -3,6 +3,15 @@ import XCTest
 @testable import TextTextCLICore
 
 final class LocalVaultTests: XCTestCase {
+    func testKeyedCreationRejectsSymlinkedDestinationAncestor() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Actual"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Alias"), withDestinationURL: root.appendingPathComponent("Actual"))
+        XCTAssertThrowsError(try DocumentStore(root: root).createWithRetryKey(title: "No retarget", body: "Keep private", folder: "Alias", kind: "note", key: "alias-refusal"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Actual/No retarget.textpack").path))
+    }
+
     func testLocalCreationRetrySurvivesRenameAndEditAndRejectsDeletion() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -174,11 +183,11 @@ final class LocalVaultTests: XCTestCase {
         ]
         let vault = temporary.appendingPathComponent("My Notes")
         try LocalVaultConfiguration.open(root: vault, environment: environment)
-        let workspace = try CLIWorkspace.locate(environment: environment)
+        let workspace = try await CLIWorkspace.locate(environment: environment)
         XCTAssertFalse(workspace.usesRemoteSync)
         let document = try await workspace.create(title: "Offline", body: "Original.")
         try await workspace.appendMarkdown("Second paragraph.", to: document)
-        let reopened = try CLIWorkspace.locate(environment: environment)
+        let reopened = try await CLIWorkspace.locate(environment: environment)
         let reference = try await reopened.resolve("Offline")
         let markdown = try await reopened.readMarkdown(at: reference)
         XCTAssertTrue(markdown.contains("Original."))
@@ -186,7 +195,7 @@ final class LocalVaultTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: vault.appendingPathComponent("Offline.textpack").path))
     }
 
-    func testCLIUsesReadableSelectedFolderWhenAppBookmarkCannotResolve() throws {
+    func testCLIUsesReadableSelectedFolderWhenAppBookmarkCannotResolve() async throws {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }
         let vault = temporary.appendingPathComponent("iCloud workspace")
@@ -199,7 +208,7 @@ final class LocalVaultTests: XCTestCase {
         try savedBytes.write(to: configurationURL)
         let environment = ["TEXTTEXT_VAULT_CONFIG": configurationURL.path]
 
-        guard case .local(let workspace) = try CLIWorkspace.locate(environment: environment) else {
+        guard case .local(let workspace) = try await CLIWorkspace.locate(environment: environment) else {
             return XCTFail("a readable selected folder must remain local")
         }
         XCTAssertEqual(workspace.root.standardizedFileURL, vault.standardizedFileURL)
@@ -246,7 +255,7 @@ final class LocalVaultTests: XCTestCase {
         XCTAssertFalse(latest.markdown.contains("Stale edit."))
     }
 
-    func testVaultTakesPrecedenceOverCredentialsAndExplicitRootTakesPrecedenceOverVault() throws {
+    func testVaultTakesPrecedenceOverCredentialsAndExplicitRootTakesPrecedenceOverVault() async throws {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }
         var environment = [
@@ -257,24 +266,25 @@ final class LocalVaultTests: XCTestCase {
         try LocalVaultConfiguration.open(root: vault, environment: environment)
         try Data(#"{"token":"wsk_device","serverOrigin":"https://texttext.app"}"#.utf8)
             .write(to: temporary.appendingPathComponent("credentials.json"))
-        guard case .local(let selected) = try CLIWorkspace.locate(environment: environment) else {
+        guard case .local(let selected) = try await CLIWorkspace.locate(environment: environment) else {
             return XCTFail("selected vault must win over credentials")
         }
         XCTAssertEqual(selected.root.path, vault.path)
         environment["TEXTTEXT_WORKSPACE_ROOT"] = temporary.path
-        guard case .local(let overridden) = try CLIWorkspace.locate(environment: environment) else {
+        guard case .local(let overridden) = try await CLIWorkspace.locate(environment: environment) else {
             return XCTFail("explicit root must be local")
         }
         XCTAssertEqual(overridden.root.path, temporary.path)
     }
 
-    func testMissingSelectedVaultDoesNotFallBackToRemote() throws {
+    func testMissingSelectedVaultDoesNotFallBackToRemote() async throws {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }
         let environment = ["TEXTTEXT_VAULT_CONFIG": temporary.appendingPathComponent("vault.json").path]
         let vault = temporary.appendingPathComponent("Vault")
         try LocalVaultConfiguration.open(root: vault, environment: environment)
         try FileManager.default.removeItem(at: vault)
-        XCTAssertThrowsError(try CLIWorkspace.locate(environment: environment))
+        do { _ = try await CLIWorkspace.locate(environment: environment); XCTFail("Missing selected vault must refuse") }
+        catch { }
     }
 }

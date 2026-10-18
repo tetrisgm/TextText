@@ -124,8 +124,8 @@ public enum CLICommandActor {
 
 /// One command-line view of the workspace.
 ///
-/// Explicit roots and the app's selected vault keep file operations local.
-/// Account commands independently verify the selected folder's account binding.
+/// Explicit roots and unowned selected vaults use offline local files.
+/// Account-bound selected vaults verify one remote backend before any operation.
 /// Device credentials also support remote access when no folder is selected.
 public enum CLIWorkspace: Sendable {
     case local(DocumentStore)
@@ -135,7 +135,7 @@ public enum CLIWorkspace: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default,
         commandSession: URLSession? = nil
-    ) throws -> CLIWorkspace {
+    ) async throws -> CLIWorkspace {
         func local(_ root: URL) -> CLIWorkspace {
             .local(DocumentStore(root: root, accountCommands: LocalWorkspaceCommands(root: root, environment: environment, session: commandSession)))
         }
@@ -146,7 +146,12 @@ public enum CLIWorkspace: Sendable {
         if let configuration = try LocalVaultConfiguration.load(
             environment: environment, fileManager: fileManager,
             allowUnscopedRootFallback: true) {
-            return local(try configuration.resolvingRoot())
+            let root = try configuration.resolvingRoot()
+            if try PortableWorkspaceBinding.read(root: root) != nil {
+                let commands = LocalWorkspaceCommands(root: root, environment: environment, session: commandSession)
+                return .remote(try await commands.authorizedStore())
+            }
+            return local(root)
         }
 
         if let credentials = DeviceCredentials.load(
@@ -231,20 +236,27 @@ public enum CLIWorkspace: Sendable {
         }
     }
 
+    private func selectedLocalStore(for url: URL) throws -> DocumentStore {
+        guard case .local(let store) = self else { throw TextTextCLIError.documentNotFound(url.lastPathComponent) }
+        let root = store.root.standardizedFileURL.resolvingSymlinksInPath().path
+        let target = url.standardizedFileURL.resolvingSymlinksInPath().path
+        guard target.hasPrefix(root + "/") else { throw TextTextCLIError.documentNotFound(url.lastPathComponent) }
+        return store
+    }
+
     public func readContent(
         at reference: CLIDocumentReference
     ) async throws -> CLIDocumentContent {
         switch reference {
         case .local(let url):
+            let store = try selectedLocalStore(for: url)
             if url.pathExtension.lowercased() == "textpack" {
-                let document = try LocalVaultDocumentStore(root: url.deletingLastPathComponent())
-                    .read(path: url.lastPathComponent)
+                let document = try LocalVaultDocumentStore(root: store.root)
+                    .read(path: store.relativePath(of: url))
                 return CLIDocumentContent(markdown: document.contents.markdown, hash: document.hash)
             }
             return CLIDocumentContent(
-                markdown: try DocumentStore(
-                    root: url.deletingLastPathComponent()
-                ).readMarkdown(at: url),
+                markdown: try store.readMarkdown(at: url),
                 hash: nil)
         case .remote(let document):
             guard case .remote(let store) = self else {
@@ -264,8 +276,7 @@ public enum CLIWorkspace: Sendable {
     ) async throws {
         switch reference {
         case .local(let url):
-            try DocumentStore(root: url.deletingLastPathComponent())
-                .writeMarkdown(markdown, to: url, ifMatchHash: ifMatchHash)
+            try selectedLocalStore(for: url).writeMarkdown(markdown, to: url, ifMatchHash: ifMatchHash)
         case .remote(let document):
             guard case .remote(let store) = self else {
                 throw TextTextCLIError.documentNotFound(document.path)
@@ -281,12 +292,13 @@ public enum CLIWorkspace: Sendable {
     ) async throws {
         switch reference {
         case .local(let url):
+            let store = try selectedLocalStore(for: url)
             if let idempotencyKey {
                 guard url.pathExtension.lowercased() == "textpack" else {
                     throw TextTextCLIError.invalidDocument("retry-safe append requires a TextPack")
                 }
-                let vault = LocalVaultDocumentStore(root: url.deletingLastPathComponent())
-                let file = try vault.read(path: url.lastPathComponent)
+                let vault = LocalVaultDocumentStore(root: store.root)
+                let file = try vault.read(path: store.relativePath(of: url))
                 let before = file.contents
                 let separator = before.markdown.hasSuffix("\n") ? "" : "\n"
                 _ = try vault.write(path: file.path, expectedHash: file.hash,
@@ -297,7 +309,6 @@ public enum CLIWorkspace: Sendable {
                     mutationFingerprint: TextTextStableDigest.sha256Hex(Data(("append\u{0}" + markdown).utf8)))
                 return
             }
-            let store = DocumentStore(root: url.deletingLastPathComponent())
             let content = try await readContent(at: reference)
             let current = content.markdown
             let separator = current.hasSuffix("\n") ? "" : "\n"
@@ -317,7 +328,7 @@ public enum CLIWorkspace: Sendable {
     ) async throws {
         switch reference {
         case .local(let url):
-            let store = DocumentStore(root: url.deletingLastPathComponent())
+            let store = try selectedLocalStore(for: url)
             let content = try await readContent(at: reference)
             let current = content.markdown
             try store.writeMarkdown(
@@ -406,8 +417,9 @@ public enum CLIWorkspace: Sendable {
     public func itemId(at reference: CLIDocumentReference) async -> String? {
         switch reference {
         case .remote(let document): return document.itemId
-        case .local(let url):
-            return DocumentStore(root: url.deletingLastPathComponent()).itemId(at: url)
+        case .local:
+            guard let content = try? await readContent(at: reference) else { return nil }
+            return MarkdownIdentityCodec.extract(from: content.markdown)?.itemId
         }
     }
 

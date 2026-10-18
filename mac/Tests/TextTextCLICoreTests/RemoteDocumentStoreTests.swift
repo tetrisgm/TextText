@@ -4,7 +4,7 @@ import XCTest
 @testable import TextTextCLICore
 
 final class RemoteDocumentStoreTests: XCTestCase {
-    func testCLIWorkspaceChoosesSignedInDeviceCredentialWithoutAMount() throws {
+    func testCLIWorkspaceChoosesSignedInDeviceCredentialWithoutAMount() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let credential = root.appendingPathComponent("credentials.json")
@@ -14,7 +14,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
             """.utf8
         ).write(to: credential)
 
-        let workspace = try CLIWorkspace.locate(environment: [
+        let workspace = try await CLIWorkspace.locate(environment: [
             "TEXTTEXT_VAULT_CONFIG": root.appendingPathComponent("missing-vault.json").path,
             "TEXTTEXT_CREDENTIALS_PATH": credential.path
         ])
@@ -22,7 +22,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertTrue(workspace.usesRemoteSync)
     }
 
-    func testExplicitWorkspaceRootStillSelectsTheLocalBackend() throws {
+    func testExplicitWorkspaceRootStillSelectsTheLocalBackend() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let credential = root.appendingPathComponent("credentials.json")
@@ -32,7 +32,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
             """.utf8
         ).write(to: credential)
 
-        let workspace = try CLIWorkspace.locate(environment: [
+        let workspace = try await CLIWorkspace.locate(environment: [
             "TEXTTEXT_VAULT_CONFIG": root.appendingPathComponent("missing-vault.json").path,
             "TEXTTEXT_CREDENTIALS_PATH": credential.path,
             "TEXTTEXT_WORKSPACE_ROOT": root.path,
@@ -41,17 +41,16 @@ final class RemoteDocumentStoreTests: XCTestCase {
         XCTAssertFalse(workspace.usesRemoteSync)
     }
 
-    func testMissingCredentialDoesNotSilentlyDependOnAFileProviderMount() {
+    func testMissingCredentialDoesNotSilentlyDependOnAFileProviderMount() async {
         let missing = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-missing-\(UUID().uuidString).json")
-        XCTAssertThrowsError(
-            try CLIWorkspace.locate(environment: [
+        do {
+            _ = try await CLIWorkspace.locate(environment: [
                 "TEXTTEXT_VAULT_CONFIG": missing.path,
                 "TEXTTEXT_CREDENTIALS_PATH": missing.path
             ])
-        ) { error in
-            XCTAssertEqual(error as? TextTextCLIError, .workspaceNotFound)
-        }
+            XCTFail("Missing credentials must refuse")
+        } catch { XCTAssertEqual(error as? TextTextCLIError, .workspaceNotFound) }
     }
 
     func testRemoteWorkspaceRejectsAbsoluteDocumentPaths() async throws {
@@ -63,7 +62,7 @@ final class RemoteDocumentStoreTests: XCTestCase {
             {"token":"wsk_device","serverOrigin":"https://texttext.app"}
             """.utf8
         ).write(to: credential)
-        let workspace = try CLIWorkspace.locate(environment: [
+        let workspace = try await CLIWorkspace.locate(environment: [
             "TEXTTEXT_VAULT_CONFIG": root.appendingPathComponent("missing-vault.json").path,
             "TEXTTEXT_CREDENTIALS_PATH": credential.path
         ])

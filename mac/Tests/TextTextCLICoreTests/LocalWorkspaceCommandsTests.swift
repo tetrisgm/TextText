@@ -40,7 +40,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
         LocalCommandProtocol.handler = nil
         try FileManager.default.removeItem(at: root)
     }
-    func testLocalFilesStayOfflineAndAccountCommandsUseMatchedAuthority() async throws {
+    func testExplicitLocalFilesStayOfflineAndAccountCommandsUseMatchedAuthority() async throws {
         try Data("# Local\nStill on disk".utf8).write(to: root.appendingPathComponent("local.md"))
         var paths: [String] = []
         LocalCommandProtocol.handler = { request in
@@ -50,10 +50,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
             if request.httpMethod == "GET" { return (200, #"{"commands":[{"name":"get_workspace"}]}"#) }
             return (200, #"{"content":[{"type":"text","text":"command worked"}]}"#)
         }
-        environment.removeValue(forKey: "TEXTTEXT_WORKSPACE_ROOT")
-        environment["TEXTTEXT_VAULT_CONFIG"] = root.appendingPathComponent("selection.json").path
-        _ = try LocalVaultConfiguration.open(root: root, environment: environment)
-        let workspace = try CLIWorkspace.locate(environment: environment, commandSession: session)
+        let workspace = try await CLIWorkspace.locate(environment: environment, commandSession: session)
         XCTAssertFalse(workspace.usesRemoteSync)
         let reference = try await workspace.resolve("local.md")
         let text = try await workspace.readMarkdown(at: reference)
@@ -64,6 +61,41 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
         let reply = try await workspace.runCommand("get_workspace", argumentsJSON: "{}")
         XCTAssertEqual(reply, "command worked")
         XCTAssertEqual(paths, ["/api/vault", "/api/agent/commands", "/api/vault", "/api/agent/commands"])
+    }
+    private func selectBoundRoot() throws {
+        environment.removeValue(forKey: "TEXTTEXT_WORKSPACE_ROOT")
+        environment["TEXTTEXT_VAULT_CONFIG"] = root.appendingPathComponent("selected-routing.json").path
+        _ = try LocalVaultConfiguration.open(root: root, environment: environment)
+    }
+    func testSelectedBoundWorkspaceChoosesOneVerifiedRemoteBackendUpfront() async throws {
+        try selectBoundRoot()
+        var paths: [String] = []
+        LocalCommandProtocol.handler = { request in
+            paths.append(request.url!.path)
+            return (200, #"{"workspaceId":"workspace-a"}"#)
+        }
+        let workspace = try await CLIWorkspace.locate(environment: environment, commandSession: session)
+        XCTAssertTrue(workspace.usesRemoteSync)
+        XCTAssertEqual(paths, ["/api/vault"])
+    }
+    func testSelectedBoundWorkspaceNeverFallsBackToFilesWhenOfflineOrWrongAccount() async throws {
+        try selectBoundRoot()
+        for status in ["offline", "wrong-workspace", "revoked"] {
+            LocalCommandProtocol.handler = { _ in
+                if status == "offline" { throw URLError(.notConnectedToInternet) }
+                if status == "revoked" { return (401, "{}") }
+                return (200, #"{"workspaceId":"workspace-b"}"#)
+            }
+            do {
+                _ = try await CLIWorkspace.locate(environment: environment, commandSession: session)
+                XCTFail("Selected account workspace must refuse \(status), never fall back to local files")
+            } catch { }
+        }
+    }
+    func testExplicitOfflineRootRemainsLocalWithoutContactingAccount() async throws {
+        LocalCommandProtocol.handler = { _ in XCTFail("Explicit offline root must not contact the account"); return (500, "{}") }
+        let workspace = try await CLIWorkspace.locate(environment: environment, commandSession: session)
+        XCTAssertFalse(workspace.usesRemoteSync)
     }
     func testWrongOriginFailsBeforeSendingToken() async throws {
         try Data(#"{"token":"wsk_test","serverOrigin":"https://other.example"}"#.utf8).write(to: credential)
@@ -98,7 +130,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
     }
     private func assertCommandRejected() async {
         do {
-            let workspace = try CLIWorkspace.locate(environment: environment, commandSession: session)
+            let workspace = try await CLIWorkspace.locate(environment: environment, commandSession: session)
             _ = try await workspace.availableCommands()
             XCTFail("Expected rejection")
         } catch {
