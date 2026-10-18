@@ -17,6 +17,7 @@ static class MirrorPolicyTests
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"mirror-policy.json")));
         using var vectors = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"vectors.json")));
         using var schedules = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"schedule-vectors.json")));
+        using var queues = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"queue-vectors.json")));
         using var lifecycles = JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,"lifecycle-vectors.json")));
         var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var view = new WebView2();
@@ -47,6 +48,11 @@ static class MirrorPolicyTests
                 var result=await policy.ScheduleAsync(vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!,ct);
                 if(result!=vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json))throw new Exception("Schedule vector failed: "+vector.GetProperty("name"));
             }
+            foreach(var vector in queues.RootElement.EnumerateArray()) {
+                var result=await policy.QueueAsync(vector.GetProperty("observed").Deserialize<MirrorQueueObservation>(json)!,ct);
+                var expected=vector.GetProperty("decision").Deserialize<MirrorQueueDecision>(json)!;
+                if(result.HasMore!=expected.HasMore || !result.OperationIds.SequenceEqual(expected.OperationIds))throw new Exception("Queue vector failed: "+vector.GetProperty("name"));
+            }
             foreach(var vector in lifecycles.RootElement.EnumerateArray()) {
                 var result=await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!,ct);
                 if(result!=vector.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(json))throw new Exception("Lifecycle vector failed: "+vector.GetProperty("name"));
@@ -56,6 +62,11 @@ static class MirrorPolicyTests
             foreach(var vector in schedules.RootElement.EnumerateArray()) {
                 var result=await policy.ScheduleAsync(vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!,ct);
                 if(result!=vector.GetProperty("decision").Deserialize<MirrorScheduleDecision>(json))throw new Exception("Hidden schedule vector failed");
+            }
+            foreach(var vector in queues.RootElement.EnumerateArray()) {
+                var result=await policy.QueueAsync(vector.GetProperty("observed").Deserialize<MirrorQueueObservation>(json)!,ct);
+                var expected=vector.GetProperty("decision").Deserialize<MirrorQueueDecision>(json)!;
+                if(result.HasMore!=expected.HasMore || !result.OperationIds.SequenceEqual(expected.OperationIds))throw new Exception("Queue vector failed: "+vector.GetProperty("name"));
             }
             foreach(var vector in lifecycles.RootElement.EnumerateArray()) {
                 var result=await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!,ct);
@@ -69,6 +80,22 @@ static class MirrorPolicyTests
                 });
                 var rejected=false;try{await bad.DecideAsync(first,ct);}catch(Exception e) when(e is IOException or JsonException or InvalidOperationException){rejected=true;}
                 if(!rejected)throw new Exception("Accepted forged policy "+field);
+            }
+            foreach(var field in new[]{"scope","requestId","observed","digest","pageId","unknown-id","duplicate-id","reordered-id","over-budget"}) {
+                var bad=new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-a","workspace","connection-a"),async(script,token)=>{
+                    var raw=await view.ExecuteScriptAsync(script).WaitAsync(token);
+                    if(!script.Contains(".queue("))return raw;
+                    var changed=JsonNode.Parse(raw)!;
+                    if(field.EndsWith("-id") || field=="over-budget") {
+                        string[] ids=field=="unknown-id"?["unknown"]:field=="duplicate-id"?["a","a"]:field=="reordered-id"?["b","a"]:["a","b"];
+                        changed["decision"]=JsonSerializer.SerializeToNode(new MirrorQueueDecision(ids,false),new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
+                    } else changed[field]="invalid";
+                    return changed.ToJsonString();
+                });
+                var refusedQueue=false;
+                try{await bad.QueueAsync(new([new("a",false,false,false,true),new("b",false,false,false,true)],field=="reordered-id"?2:1),ct);}
+                catch(Exception e)when(e is IOException or JsonException or InvalidOperationException){refusedQueue=true;}
+                if(!refusedQueue)throw new Exception("Accepted forged queue "+field);
             }
             var next=new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-b","other","connection-b"),
                 (script,token)=>view.ExecuteScriptAsync(script).WaitAsync(token));
