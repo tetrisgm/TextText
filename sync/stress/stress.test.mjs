@@ -611,3 +611,24 @@ test('leaf scenario moves before six normal edits, accounts separate move and fi
 });
 test('leaf scenario refuses changed snapshot, identity, stale live path and review dialog',async()=>{for(const fault of ['leaf-bytes','leaf-identity','leaf-path','leaf-dialog']){const result=await new Coordinator({...makeConfig({rounds:1,faults:{'mac-app':fault}}),leafMove:leafScenario}).run();assert.equal(result.status,'failed',fault);assert.equal(result.acceptance,'none');}});
 test('leaf scenario never combines faults or broadens independent reopen evidence',()=>{for(const patch of [{rounds:2},{folderCaseMove:folderScenario},{browserClose:{role:'mac-web',round:1}},{multiField:true},{rounds:0}])assert.throws(()=>validateConfig({...makeConfig({rounds:1}),leafMove:leafScenario,...patch}));});
+
+test('lost ACK scenario refuses combined faults, simulated claims and incomplete fixture pins',()=>{
+ const base={...makeConfig({mode:'real',rounds:1}),lostAck:{role:'mac-web',round:1},expectedAssetHashes:{'assets/a.bin':'a'.repeat(64)}};
+ assert.doesNotThrow(()=>validateConfig(base));
+ for(const patch of [{mode:'simulated'},{rounds:2},{leafMove:leafScenario},{folderCaseMove:folderScenario},{multiField:true},{offline:{role:'pc-web',round:1}},{browserClose:{role:'mac-web',round:1}},{expectedAssetHashes:{}},{rounds:0}])assert.throws(()=>validateConfig({...base,...patch}));
+});
+
+test('lost ACK scheduler keeps six semantic edits separate and observes all six after replay (simulated only)',async()=>{
+ const {ProcessAdapter}=await import('./adapter.mjs');const assets={'assets/data.bin':'a'.repeat(64)};let faultId,editId;
+ const coordinator=new Coordinator(makeConfig({rounds:1}),{adapterFactory:(role,c)=>{
+  const actor=new ProcessAdapter(role,c.command,{cwd:c.cwd,env:c.env});const send=actor.send.bind(actor),emit=actor.emit.bind(actor);
+  actor.emit=(type,m,...rest)=>{if(type==='message'&&m.type==='state')m.assetHashes=assets;return emit(type,m,...rest);};
+  actor.send=m=>{if(m.type==='armLostAck'){faultId=m.faultId;editId=m.edit.id;queueMicrotask(()=>emit('message',{type:'lost-ack-armed',round:1,proof:{version:1,faultId,editId,phase:'armed',operationId:null,epoch:null,requestSha256:null,responseSha256:null,responseStatus:null,serverArchiveSha256:null,serverRevision:null,serverDocumentSha256:null,serverAssetHashes:null,dropped:0,retries:0,serverCommitted:false,exactRetry:false}}));return;}
+   if(m.type==='observeLostAck'){queueMicrotask(()=>emit('message',{type:'lost-ack-state',round:1,proof:{version:1,faultId,editId,phase:'replayed',operationId:'unit-only',epoch:1,requestSha256:'b'.repeat(64),responseSha256:'c'.repeat(64),responseStatus:200,serverArchiveSha256:'f'.repeat(64),serverRevision:'d'.repeat(64),serverDocumentSha256:'e'.repeat(64),serverAssetHashes:assets,dropped:1,retries:1,serverCommitted:true,exactRetry:true}}));return;}return send(m);};return actor;
+ }});
+ // Injection exercises scheduling only. Public validation correctly refuses this
+ // scenario in simulated mode; fake actors never qualify physical acceptance.
+ coordinator.config.lostAck={role:'mac-web',round:1};coordinator.config.expectedAssetHashes=assets;
+ const result=await coordinator.run();assert.equal(result.status,'passed',JSON.stringify(result.failure));assert.equal(result.acceptance,'none');assert.equal(coordinator.roundResults[0].editCount,6);assert.equal(result.lostAckEvidence.faultCount,1);assert.equal(result.lostAckEvidence.postRetrySamples,3);
+ const events=readFileSync(join(result.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.equal(events.filter(e=>e.type==='lost-ack-post-retry-sample').length,3);assert.ok(events.findIndex(e=>e.type==='lost-ack-armed')<events.findIndex(e=>e.type==='convergence-sample'));
+});

@@ -1,3 +1,6 @@
+import {createLostAckFault,validateLostAckScenario,readLostAckJournal} from './lost-ack.mjs';
+import {inspectLeafPack} from './leaf-move.mjs';
+import {unzipSync} from 'fflate';
 import {validateLeafMove,leafRequest,observeManifestLeaf} from './leaf-move.mjs';
 import {folderRequest,observeManifestFolder} from './folder-case.mjs';
 import { crashOwnedBrowser, closeOwnedBrowser, retainGuardedBrowser, observeOwnedBrowser } from './browser-lifecycle.mjs';
@@ -61,7 +64,7 @@ export function validateConfig(config) {
   if (typeof config.title !== 'string' || !config.title.startsWith(TITLE_PREFIX) || config.title.length > 200) fail(`title must start with "${TITLE_PREFIX}"`);
   if (config.identityReceipt !== undefined && (typeof config.identityReceipt !== 'string' || !isAbsolute(config.identityReceipt))) fail('identityReceipt must be an absolute path');
   const auth = validateAuthMode(config.auth);
-  return { profile: config.profile, workspaceId: config.workspaceId, itemId: config.itemId, title: config.title, auth, ...(config.leafMove!==undefined?{leafMove:validateLeafMove(config.leafMove)}:{}), ...(config.identityReceipt ? { identityReceipt: config.identityReceipt } : {}) };
+  return { profile: config.profile, workspaceId: config.workspaceId, itemId: config.itemId, title: config.title, auth, ...(config.lostAck!==undefined?{lostAck:validateLostAckScenario(config.lostAck)}:{}), ...(config.leafMove!==undefined?{leafMove:validateLeafMove(config.leafMove)}:{}), ...(config.identityReceipt ? { identityReceipt: config.identityReceipt } : {}) };
 }
 
 // Hello must name this machine's web role, real mode, and the configured fixture.
@@ -191,6 +194,7 @@ async function main() {
   const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
   let sessionId = randomUUID(), generation = 1, helloRequest, restarting = false, online = true;
   let context = null, page = null, body = null, heading = null;
+  let boundAccountId, lostAckFault;
   let reloads = 0, started = false, stopping = false;
   let inputProgress, historyProgress, fieldProgress, observeAssets, retainedFailure, retentionAnnounced = false;
 
@@ -269,6 +273,7 @@ async function main() {
         const sessionResponse = await context.request.get(`${ORIGIN}/api/auth/session`, { headers, timeout: 10000 });
         if (!sessionResponse.ok()) throw new StageError('identity', 'authenticated account identity unavailable');
         const accountId = (await sessionResponse.json())?.user?.userId;
+        boundAccountId=accountId;
         const browserVersion = context.browser()?.version();
         identity = { schemaVersion: 1, role: platform.role, platform: process.platform, artifactKind: 'browser',
           principalKind: 'authenticated-account', principalScopeHash: accountScopeHash(ORIGIN, accountId),
@@ -306,6 +311,89 @@ async function main() {
       if (!await page.evaluate(sharedEditorReady, config.itemId)) throw new StageError('shared-ready', 'editor left the shared document');
       if (m.select && !await page.evaluate(selectExactText, { selector: EDITOR, target: m.select })) throw new StageError('prepare', 'replacement target could not be selected');
       out({ type: 'ready', round: m.round });
+    },
+    async armLostAck(m) {
+      await assertOnItem();
+      if (!config.lostAck ||
+          config.lostAck.role !== role ||
+          m.round !== 1 ||
+          m.edit?.id !== `r1-${role}` ||
+          !validateEdit(m.edit).ok ||
+          m.edit.op !== 'append' || m.edit.fieldEdits || m.edit.inputSequence || m.edit.undoRedo ||
+          lostAckFault ||
+          !boundAccountId ||
+          helloRequest?.identitySchema !== 1) throw new StageError('lost-ack', 'Bound fault configuration unavailable');
+      const scope = {
+        origin: ORIGIN,
+        accountId: boundAccountId,
+        workspaceId: config.workspaceId,
+        itemId: config.itemId
+      };
+      if (!(await page.evaluate(readLostAckJournal, scope))) throw new StageError('lost-ack', 'Existing durable editor journal is not clean');
+      lostAckFault = await createLostAckFault({
+        cdp: await context.newCDPSession(page),
+        url: `${ORIGIN}/api/vault/${config.workspaceId}/items/${config.itemId}/collaboration`,
+        itemId: config.itemId,
+        faultId: m.faultId,
+        editId: m.edit.id,
+        verifyRequest: body => page.evaluate(readLostAckJournal, {
+          ...scope,
+          body
+        }),
+        proveCommit: async result => {
+          await assertOnItem();
+          const response = await context.request.get(`${ORIGIN}/api/vault/${config.workspaceId}/items/${config.itemId}`, {
+            headers: {
+              'Cache-Control': 'no-cache'
+            },
+            timeout: 10000
+          });
+          if (!response.ok() || Number(response.headers()['content-length'] ?? 0) > 64 * 1024 * 1024) throw Error('Committed pack unavailable');
+          const bytes = await response.body(),
+            pack = inspectLeafPack(bytes, config);
+          if (decodeURIComponent(response.headers()['x-texttext-path'] ?? '') !== result.relativePath ||
+              response.headers().etag !== `"${pack.archiveSha256}"`) throw Error('Committed path changed');
+          // A concurrent participant may already have advanced the pack revision.
+          // The immutable write receipt still pins the original revision; the
+          // fresh complete pack proves the selected edit exists exactly once.
+          const entries = unzipSync(bytes, {
+            filter: e => e.name === 'document.json' || /^[^/]+\/document\.json$/.test(e.name)
+          });
+          const docs = Object.values(entries);
+          if (docs.length !== 1) throw Error('Ambiguous committed document');
+          const doc = JSON.parse(new TextDecoder('utf-8', {
+            fatal: true
+          }).decode(docs[0]));
+          const occurrences = doc.content.body.split(m.edit.text).length - 1;
+          if (occurrences === 0) return {
+            eligible: false
+          };
+          if (occurrences !== 1) throw Error('Selected edit is not committed exactly once');
+          return {
+            archiveSha256: pack.archiveSha256,
+            documentSha256: pack.documentSha256,
+            assetHashes: pack.assetHashes
+          };
+        }
+      });
+      out({
+        type: 'lost-ack-armed',
+        round: m.round,
+        proof: lostAckFault.proof()
+      });
+    },
+    async observeLostAck(m) {
+      await assertOnItem();
+      if (!lostAckFault || m.round !== 1) throw new StageError('lost-ack', 'No armed fault');
+      const proof = lostAckFault.proof();
+      if (proof.phase === 'replayed') {
+        await lostAckFault.close();
+      }
+      out({
+        type: 'lost-ack-state',
+        round: m.round,
+        proof
+      });
     },
     async transport(m) {
       if (typeof m.online !== 'boolean') throw new StageError('transport', 'online must be boolean');

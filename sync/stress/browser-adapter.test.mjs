@@ -100,3 +100,8 @@ test('diagnostics strip urls and credential-like fragments', () => {
 });
 
 test('browser leaf observation config preserves exact declared scenario without changing item title',()=>{const parent='Six-client acceptance folder 11111111-1111-4111-8111-111111111111',leafMove={role:'mac-cli',round:1,source:parent+'/'+config.title+'.textpack',destination:parent+'/'+config.title+' moved.textpack'};assert.deepEqual(validateConfig({...config,leafMove}).leafMove,leafMove);assert.throws(()=>validateConfig({...config,leafMove:{...leafMove,destination:'Other/arbitrary.textpack'}}));});
+
+test('lost ACK browser config pins exactly one browser role and bounded round',()=>{
+ const lostAck={role:'pc-web',round:1};assert.deepEqual(validateConfig({...config,lostAck}).lostAck,lostAck);
+ for(const bad of [{...lostAck,round:2},{...lostAck,role:'pc-cli'},{...lostAck,extra:true}])assert.throws(()=>validateConfig({...config,lostAck:bad}));
+});

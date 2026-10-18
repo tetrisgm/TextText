@@ -1,3 +1,4 @@
+import {validateLostAckScenario,validateLostAckProof} from './lost-ack.mjs';
 import {validateLeafMove,validateLeafProof,compareLeafProof} from './leaf-move.mjs';
 import {validateFolderCase,validateFolderProof,compareFolderProof} from './folder-case.mjs';
 import { checkFaultProof } from './malformed-repair.mjs';
@@ -135,6 +136,30 @@ export function validateConfig(config) {
     replacementDigest(config.assetReplacements[0]) === replacementDigest(config.assetReplacements[1]) ||
     config.expectedAssetHashes !== undefined)) fail('diagnosticSameEntryRace requires two distinct byte values for one path and no expectedAssetHashes');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
+  if (config.lostAck !== undefined) {
+    config.lostAck = validateLostAckScenario(config.lostAck);
+    if (config.mode !== 'real' ||
+        config.rounds > 1 ||
+        config.leafMove ||
+        config.folderCaseMove ||
+        config.offline ||
+        config.restart ||
+        config.closeProbe ||
+        config.browserClose ||
+        config.closeDuringTraffic ||
+        config.malformedRepair ||
+        config.transientInvalid ||
+        config.fileWrites ||
+        config.multiField ||
+        config.undoRedo ||
+        config.sustainedTyping ||
+        config.assetReplacement ||
+        config.assetReplacements ||
+        config.diagnosticSameEntryRace ||
+        (config.pattern ?? 'append') !== 'append') fail('lostAck requires one real isolated append round or independent reopen');
+    if (!config.expectedAssetHashes || !Object.keys(config.expectedAssetHashes).length) fail('lostAck requires complete binary asset hash pins');
+    if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedDocumentHash ?? '')) fail('lostAck reopen requires expectedDocumentHash');
+  }
   if(config.leafMove!==undefined){
     config.leafMove=validateLeafMove(config.leafMove);
     if(config.folderCaseMove||config.rounds>1||config.offline||config.restart||config.closeProbe||config.browserClose||config.closeDuringTraffic||config.malformedRepair||config.transientInvalid||config.fileWrites||config.multiField||config.undoRedo||config.sustainedTyping||config.assetReplacement||config.assetReplacements||(config.pattern??'append')!=='append')fail('leafMove requires one isolated append round or independent reopen');
@@ -233,6 +258,22 @@ export class Coordinator {
     this.normalCloseInFlight = {};
     this.actorStatus = Object.fromEntries(ROLES.map(role => [role, 'starting']));
     this.runId = `stress-${new Date().toISOString().replace(/[:.]/g, '-')}-${config.seed}`;
+    if (this.config.lostAck && this.config.rounds === 0) {
+      const prior = JSON.parse(boundedFile(this.config.reopenReceipt, 1024 * 1024));
+      verifyReopenIdentity(prior, this.config);
+      const e = prior.lostAckEvidence;
+      if (e?.role !== this.config.lostAck.role ||
+          e.round !== 1 ||
+          e.faultCount !== 1 ||
+          e.postRetrySamples !== REQUIRED_CONVERGENCE_SAMPLES) throw Error('Lost ACK reopen requires prior completed physical fault evidence');
+      validateLostAckProof(e.proof, {
+        faultId: e.proof?.faultId,
+        editId: `r1-${e.role}`,
+        phase: 'replayed',
+        assetHashes: this.config.expectedAssetHashes
+      });
+      this.lostAckEvidence = e;
+    }
     if(this.config.leafMove){
       this.leafOperationId='lm-'+sha256(this.runId+'\0'+canonicalJSON(this.config.leafMove)).slice(0,32);
       if(this.config.mode==='real'&&this.config.rounds===0){
@@ -261,7 +302,7 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
@@ -285,7 +326,7 @@ export class Coordinator {
     try {
       await this.startAdapters();
       const initial = this.collect(0, 'state');
-      this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck) ? { documentSnapshot: true } : {}) });
       const baseline = await initial;
       const texts = ROLES.map(role => baseline.get(role).text);
       const evidence = {};
@@ -297,14 +338,25 @@ export class Coordinator {
       }
       if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', { evidence });
       this.baseline = normalizeText(texts[0]);
-      if (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) {
+      if (this.config.multiField ||
+          this.config.fileWrites ||
+          this.config.malformedRepair ||
+          this.config.closeDuringTraffic ||
+          this.config.folderCaseMove ||
+          this.config.leafMove ||
+          this.config.lostAck) {
         const documents = this.documentStates(baseline);
         this.documentBaseline = documentObservation(documents.get('mac-app')).snapshot;
         this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, []);
         if (this.config.expectedDocumentHash && this.finalDocumentHash !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', {});
       }
       if (this.config.mode === 'real') {
-        if ((this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) && canonicalJSON(this.config.expectedAssetHashes ?? {}) !== canonicalJSON(this.attestations['mac-cli'].initialPack.assetHashes)) throw new StressFailure('scenario-all-assets-required', {});
+        if ((this.config.malformedRepair ||
+            this.config.closeDuringTraffic ||
+            this.config.folderCaseMove ||
+            this.config.leafMove ||
+            this.config.lostAck) &&
+            canonicalJSON(this.config.expectedAssetHashes ?? {}) !== canonicalJSON(this.attestations['mac-cli'].initialPack.assetHashes)) throw new StressFailure('scenario-all-assets-required', {});
         const files = ['mac-cli', 'pc-cli'].map(role => ({ role, ...this.attestations[role].initialPack }));
         if (files.some(file => file.bodySha256 !== hashText(this.baseline)) || files[0].documentSha256 !== files[1].documentSha256
           || JSON.stringify(files[0].assetHashes) !== JSON.stringify(files[1].assetHashes))
@@ -323,7 +375,7 @@ export class Coordinator {
         for (let sample = 2; sample <= REQUIRED_CONVERGENCE_SAMPLES; sample++) {
           await new Promise(resolve => setTimeout(resolve, 500));
           const pending = this.collect(0, 'state');
-          this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) ? { documentSnapshot: true } : {}) });
+          this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck) ? { documentSnapshot: true } : {}) });
           const states = await pending;
           for (const role of ROLES) {
             const state = states.get(role);
@@ -331,7 +383,14 @@ export class Coordinator {
               || hashText(state.text) !== this.config.expectedBaselineHash)
               throw new StressFailure('reopen-hash-mismatch', { role, sample, expected: this.config.expectedBaselineHash });
           }
-          if ((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) && checkMultiFieldAccounting(this.documentBaseline, this.documentStates(states), []) !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', { sample });
+          if ((this.config.multiField ||
+              this.config.fileWrites ||
+              this.config.malformedRepair ||
+              this.config.closeDuringTraffic ||
+              this.config.folderCaseMove ||
+              this.config.leafMove ||
+              this.config.lostAck) &&
+              checkMultiFieldAccounting(this.documentBaseline, this.documentStates(states), []) !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', { sample });
           this.checkAssets(states, 0);if(this.config.folderCaseMove)this.checkFolderReopen(states);if(this.config.leafMove)this.checkLeafReopen(states);
           for (const role of EDITOR_ROLES) this.checkEditor(0, role, states.get(role).editor);
           this.record('reopen-sample', { sample, hash: this.config.expectedBaselineHash, roles: ROLES });
@@ -355,19 +414,19 @@ export class Coordinator {
     const summary = {
       runId: this.runId, status, failure, mode: this.config.mode, fixture: { workspaceId: this.config.fixture.workspaceId, itemId: this.config.fixture.itemId },
       finalHash: this.roundResults.at(-1)?.hash ?? (status === 'passed' ? this.config.expectedBaselineHash ?? (this.baseline ? hashText(this.baseline) : null) : null),
-      ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
+      ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
       expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
-        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.leafMove ? 'six-client-external-leaf-move' : this.config.folderCaseMove ? 'six-client-folder-case-move' : this.config.browserClose ? 'six-client-browser-normal-close' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.lostAck ? 'six-client-browser-lost-ack' : this.config.leafMove ? 'six-client-external-leaf-move' : this.config.folderCaseMove ? 'six-client-folder-case-move' : this.config.browserClose ? 'six-client-browser-normal-close' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+      scenario: { ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
           role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) })) } : {}),
         ...(this.config.diagnosticSameEntryRace ? { diagnosticSameEntryRace: true } : {}) },
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
-      ...(this.leafMoveEvidence?{leafMoveEvidence:this.leafMoveEvidence}:{}), ...(this.folderCaseEvidence?{folderCaseEvidence:this.folderCaseEvidence}:{}), attestations: this.attestations, retainedActors:this.retainedActors, outputDir: this.dir,
+      ...(this.lostAckEvidence?{lostAckEvidence:this.lostAckEvidence}:{}), ...(this.leafMoveEvidence?{leafMoveEvidence:this.leafMoveEvidence}:{}), ...(this.folderCaseEvidence?{folderCaseEvidence:this.folderCaseEvidence}:{}), attestations: this.attestations, retainedActors:this.retainedActors, outputDir: this.dir,
     };
     writeFileSync(join(this.dir, 'summary.json'), JSON.stringify(summary, null, 2));
     this.record('run-end', summary);
@@ -589,6 +648,29 @@ export class Coordinator {
     const ready = this.collect(round, 'ready');
     this.broadcast({ type: 'prepare', round, select: ['overlap-replace', 'file-overlap', 'partial-overlap'].includes(this.config.pattern) ? REPLACE_TARGET : undefined });
     await ready;
+    if (this.config.lostAck) {
+      const role = this.config.lostAck.role,
+        edit = edits.find(e => e.role === role);
+      this.lostAckId = 'la-' + sha256(this.runId + '\0' + role).slice(0, 32);
+      const armed = this.collect(round, 'lost-ack-armed', [role]);
+      this.adapters.get(role).send({
+        type: 'armLostAck',
+        round,
+        faultId: this.lostAckId,
+        edit
+      });
+      validateLostAckProof((await armed).get(role).proof, {
+        faultId: this.lostAckId,
+        editId: edit.id,
+        phase: 'armed'
+      });
+      this.record('lost-ack-armed', {
+        round,
+        role,
+        faultId: this.lostAckId,
+        editId: edit.id
+      });
+    }
     if (this.config.malformedRepair) await this.runMalformed(round);
     const invalidRole = this.config.transientInvalid?.round === round ? this.config.transientInvalid.role : null;
     if (invalidRole) {
@@ -638,7 +720,7 @@ export class Coordinator {
     let samples = 0, stableSamples = 0, stableHash = null;
     do {
       const observing = this.collect(round, 'state');
-      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck) ? { documentSnapshot: true } : {}) });
       states = await observing;
       observed = {};
       for (const role of ROLES) {
@@ -652,7 +734,7 @@ export class Coordinator {
       // Adapter-local settling is insufficient: require three separate all-six
       // observations with the same semantic hash and complete operation evidence.
       for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);
-      const documents = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) ? this.documentStates(states) : null;
+      const documents = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck) ? this.documentStates(states) : null;
       const documentHashes = documents ? new Set([...documents.values()].map(snapshot => documentObservation(snapshot).hash)) : null;
       if (hashes.size === 1 && (!documentHashes || documentHashes.size === 1) && this.checkAssets(states, round)) {
         this.checkRoundContent(states, round, expectedEditIds);
@@ -660,7 +742,7 @@ export class Coordinator {
           const fieldEdits = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic).flatMap(plan => plan.edits.flatMap(edit => edit.fieldEdits ?? (edit.inputSequence ? edit.inputSequence.chunks.map((text,index)=>({role:edit.role,id:edit.id+'-input'+(index+1),op:'append',field:'body',text})) : edit.fileWriteSequence ? edit.fileWriteSequence.chunks.map((text,index) => ({ role: edit.role, id: edit.id + '-write' + (index + 1), op: 'append', field: 'body', text })) : [{ role: edit.role, id: edit.id, op: 'append', field: 'body', text: edit.text }])));
           this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, fieldEdits);
         }
-        const hash = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) ? this.finalDocumentHash : [...hashes][0];
+        const hash = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck) ? this.finalDocumentHash : [...hashes][0];
         stableSamples = hash === stableHash ? stableSamples + 1 : 1;
         stableHash = hash;
         this.record('convergence-sample', { round, sample: samples, stableSamples, hash,
@@ -682,8 +764,74 @@ export class Coordinator {
       }while(Date.now()<deadline);
       if(stable<REQUIRED_CONVERGENCE_SAMPLES)throw new StressFailure('leaf-final-state-timeout',{round});this.leafMoveEvidence.final=final;this.record('leaf-move-final',{round,operationId:this.leafOperationId,proofs:final});
     }
+    if (this.config.lostAck) {
+      const role = this.config.lostAck.role,
+        deadline = Date.now() + this.config.timeoutMs;
+      let proof;
+      do {
+        const pending = this.collect(round, 'lost-ack-state', [role]);
+        this.adapters.get(role).send({
+          type: 'observeLostAck',
+          round
+        });
+        proof = (await pending).get(role).proof;
+        validateLostAckProof(proof, {
+          faultId: this.lostAckId,
+          editId: `r${round}-${role}`,
+          phase: proof?.phase,
+          assetHashes: this.config.expectedAssetHashes
+        });
+        this.record('lost-ack-sample', {
+          round,
+          role,
+          proof
+        });
+        if (proof.phase === 'replayed') break;
+        await new Promise(r => setTimeout(r, 500));
+      } while (Date.now() < deadline);
+      if (proof?.phase !== 'replayed') throw new StressFailure('lost-ack-exact-retry-timeout', {
+        round,
+        role
+      });
+      // Repeat full all-six continuity/content/assets observations AFTER the exact
+      // original retry ACK was delivered. Pre-retry convergence is insufficient.
+      for (let sample = 1; sample <= REQUIRED_CONVERGENCE_SAMPLES; sample++) {
+        const pending = this.collect(round, 'state');
+        this.broadcast({
+          type: 'observe',
+          round,
+          expectedEditIds,
+          expectedAssetPaths: assetPathsOf(this.config),
+          documentSnapshot: true
+        });
+        const after = await pending;
+        this.checkRoundContent(after, round, expectedEditIds);
+        for (const editor of EDITOR_ROLES) this.checkEditor(round, editor, after.get(editor).editor);
+        if (checkMultiFieldAccounting(this.documentBaseline, this.documentStates(after), edits.map(edit => ({
+          ...edit,
+          field: 'body'
+        }))) !== this.finalDocumentHash || !this.checkAssets(after, round)) throw new StressFailure('lost-ack-post-retry-content-mismatch', {
+          round,
+          sample
+        });
+        this.record('lost-ack-post-retry-sample', {
+          round,
+          sample,
+          documentHash: this.finalDocumentHash
+        });
+        if (sample < REQUIRED_CONVERGENCE_SAMPLES) await new Promise(r => setTimeout(r, 500));
+      }
+      this.lostAckEvidence = {
+        role,
+        round,
+        proof,
+        faultCount: 1,
+        postRetrySamples: REQUIRED_CONVERGENCE_SAMPLES
+      };
+      this.record('lost-ack-complete', this.lostAckEvidence);
+    }
     if(this.config.folderCaseMove)await this.moveFolderCase(round,expectedEditIds);
-    const result = { round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : this.config.fileWrites ? { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) } : this.config.malformedRepair ? { faultCount: round } : this.config.folderCaseMove ? {folderCaseMoves:1} : { closeTrafficCount: 1 }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
+    const result = { ...(this.config.lostAck?{lostAckCount:1}:{}), round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : this.config.fileWrites ? { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) } : this.config.malformedRepair ? { faultCount: round } : this.config.folderCaseMove ? {folderCaseMoves:1} : this.config.lostAck ? {lostAckCount:1} : { closeTrafficCount: 1 }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
       ...(this.config.diagnosticSameEntryRace ? { assetHashes: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) } : {}) };
     this.roundResults.push(result);
     this.record('round', result);
