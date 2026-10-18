@@ -1,6 +1,6 @@
 # Windows external rename and shared checkpoints
 
-Date: 2026-10-17. Scope: portable production Windows Core on the Mac. Actual Windows candidate verification is pending; this is not installed-app acceptance or complete T13 coverage.
+Date: October 17, with October 18 PC follow-up below. Scope: production Windows Core on the Mac and actual PC, plus desktop smoke. Installed-app acceptance and complete T13 coverage remain open.
 
 ## Observed failure
 
@@ -37,4 +37,4 @@ Acknowledgement replay now follows the current retained projection only when eve
 
 ## Remaining acceptance
 
-Actual Windows execution remains pending. Case-only file rename policy and other T13 matrix gaps are separate work. This slice does not claim a filesystem-wide atomic compare-and-swap against an uncooperative external writer.
+Actual PC Core now passes the same complete suite against product source `8cf38c26` plus test-runtime launcher correction `ce5a5481`; the interactive desktop smoke also passes. [Shared native receipt](2026-10-17-mirror-lifecycle-policy.md) records archive identity and logs. This verifies the private source candidate, not installation. Case-only file rename policy and other T13 matrix gaps remain separate work. This slice does not claim a filesystem-wide atomic compare-and-swap against an uncooperative external writer.

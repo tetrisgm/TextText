@@ -21,6 +21,12 @@ A local server snapshot cannot atomically lock a later backend restore. A restor
 - Final focused Swift lifecycle source: all 52 `LocalVaultSyncTests` pass in `/private/tmp/texttext-publish-result-before.log`, including missing/corrupt payload, restore during policy RPC, deletion-intent retention, and restore during conflict download. That combined run intentionally fails only the independent publication-result red test.
 - Earlier failures are retained: `/private/tmp/texttext-t11-lifecycle-swift.log` had two recovery-count assertions (existing reporting repeats the same two paths); `/private/tmp/texttext-lifecycle-samepath-swift-final.log` exposed a non-UUID deletion fixture ID correctly rejected by production validation. Tests now assert unique paths and use a stable UUID. Product behavior was not relaxed.
 
+### Actual PC follow-up, October 18
+
+Product source `8cf38c26` was copied from an immutable Git archive, SHA-256 `6e15e68734ef80c92bdcd542a86005da1668d189e94a70f647be1a7a373f347a`, into the existing private test checkout. Shared UI and desktop test builds passed. The first Core run exposed a test apphost runtime-discovery failure; `ce5a5481` explicitly launches owned child tests through the running private runtime. With those test-only changes, the complete actual PC Core suite passed, including restore/rename regressions. Remote log: `C:\Users\Shokunin\dev\texttext-native-8cf38c26-core-runtime.log`.
+
+The full interactive PC desktop smoke passed, task exit 0, including all shared lifecycle vectors in visible and hidden WebView2, page reload fencing, production policy factory, retained-state authentication recovery, composition and normal close/activation guards. Local receipts: `/private/tmp/texttext-lifecycle-pc-smoke-20261018.log` and `/private/tmp/texttext-lifecycle-pc-desktop-20261018.log`; remote receipt directory `windows/build/mirror-lifecycle-smoke-20261018` in the private checkout. WebView2 was 155.0.4283.62. No candidate was installed or sealed by this check.
+
 ## Remaining explicit work
 
 T11 is not complete: remaining queue eligibility, binary lifecycle, missing-remote/placeholder behavior and page-process recovery are separate slices. The new policy currently adds an RPC per eligible remote item (per queued operation on Windows); measure large-workspace latency before choosing a shared batched request contract. Do not add a native fallback.
