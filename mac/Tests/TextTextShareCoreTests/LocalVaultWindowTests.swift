@@ -26,23 +26,45 @@ final class LocalVaultWindowTests: XCTestCase {
         _ = NSApplication.shared
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let entry = repository.appendingPathComponent("mac/build/LocalVault/index.html")
+        let bundle = ProcessInfo.processInfo.environment["TEXTTEXT_VAULT_WINDOW_TEST_BUNDLE"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? repository.appendingPathComponent("mac/build/LocalVault")
+        let entry = bundle.appendingPathComponent("index.html")
         guard FileManager.default.fileExists(atPath: entry.path) else {
             throw XCTSkip("Run node scripts/build-local-vault.mjs before the native editor integration test")
+        }
+        for name in ["app.js", "app.css", "mirror-policy.js", "mirror-policy.json"] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.appendingPathComponent(name).path),
+                "Rebuild the complete current local UI before the native integration test: missing \(name)")
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-native-vault-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "http://127.0.0.1:1")!, workspaceId: "offline-fixture")
+        let account = LocalVaultAccountCredential(origin: binding.origin,
+            token: "offline-test-fixture", accountId: "offline-fixture-account")
+        try PortableWorkspaceBinding.bindVerified(root: root, binding: binding)
+        // Provision the verified profile before any document/helper state exists.
+        // A legacy tuple or accountless cache must not grant this window writes.
+        try LocalVaultAccountRootOwnership.open(root: root, binding: binding,
+            accountId: try XCTUnwrap(account.accountId))
         let files = DocumentStore(root: root)
         let target = try files.create(title: "Integration", body: "Original body.")
-        let binding = try LocalVaultSyncBinding(origin: URL(string: "http://127.0.0.1:1")!, workspaceId: "offline-fixture")
-        try PortableWorkspaceBinding.bindVerified(root: root, binding: binding)
-        let capabilities = try JSONDecoder().decode(LocalVaultSyncCapabilities.self, from: Data(#"{"fullAccess":true,"canCreateContent":true,"writableFolders":[],"writableItems":[],"knownPaths":["Integration.textpack"],"writablePaths":["Integration.textpack"]}"#.utf8))
-        try LocalVaultCapabilityCache.write(capabilities, root: root, binding: binding)
+        let itemId = try XCTUnwrap(files.itemId(at: target))
+        let capabilities = try JSONDecoder().decode(LocalVaultSyncCapabilities.self,
+            from: JSONSerialization.data(withJSONObject: [
+                "fullAccess": true, "canCreateContent": true, "writableFolders": [],
+                "writableItems": [itemId], "knownPaths": [target.lastPathComponent],
+                "writablePaths": [target.lastPathComponent],
+                "pathIdentities": [target.lastPathComponent: itemId]
+            ]))
+        try LocalVaultCapabilityCache.write(capabilities, root: root, binding: binding,
+            accountId: account.accountId)
+        XCTAssertNil(try LocalVaultCapabilityCache.read(root: root, binding: binding),
+            "An account-bound permission cache must not authorize a legacy identity.")
         let controller = LocalVaultWindowController(entry: entry, root: root,
-            websiteDataStore: .nonPersistent(),
-            credentials: { (origin: URL(string: "http://127.0.0.1:1")!, token: "offline-test-fixture") })
-        defer { controller.close() }
+            websiteDataStore: .nonPersistent(), verifiedCredentials: { account })
+        defer { controller.shutdown(); controller.close() }
         let view = try XCTUnwrap(controller.window?.contentView as? WKWebView)
         controller.showWindow(nil)
         try await until(view: view) {
@@ -56,6 +78,9 @@ final class LocalVaultWindowTests: XCTestCase {
         try await until(view: view) {
             (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Document body\"]')?.textContent?.trim()") as? String) == "Original body."
         }
+        let editableOffline = (try? await view.evaluateJavaScript("document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable")) as? Bool
+        XCTAssertEqual(editableOffline, true,
+            "Verified offline permissions must mount the actual writable editor.")
         let signedInRemains = (try? await view.evaluateJavaScript("document.querySelector('section[aria-label=\"TextText account\"] small')?.textContent === 'Signed in'") as? Bool) == true
         XCTAssertTrue(signedInRemains,
             "A signed-in account must retain local editing while the server is offline.")
