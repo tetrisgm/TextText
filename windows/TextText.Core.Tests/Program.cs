@@ -9,6 +9,7 @@ static class Test
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--folder-recovery-fixtures"})) {var folder=Path.Combine(Path.GetTempPath(),"texttext-folder-recovery-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCaseRecoveryTests.Run(folder,Assert);return;}
  if(args.SequenceEqual(new[]{"--folder-propagation-fixtures"})) {var folder=Path.Combine(Path.GetTempPath(),"texttext-folder-propagation-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCasePropagationTests.Run(folder,Assert);return;}
  if(args.Length==2&&args[0]=="--folder-propagation-baseline-audit") {var propagation=Path.Combine(Path.GetTempPath(),"texttext-folder-propagation-native-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(propagation);await FolderPropagationTests.Run(propagation,args[1],Assert);return;}
  if(args.SequenceEqual(new[]{"--folder-case-fixtures"})) {var folderBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&folderBase.StartsWith("/var/"))folderBase="/private"+folderBase;var folder=Path.Combine(folderBase,"texttext-folder-case-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCaseTests.Run(folder,Assert);Console.WriteLine("All folder case fixtures passed. Receipt: "+folder);return;}
@@ -37,7 +38,7 @@ static class Test
  await MirrorPolicyTests.Run(Assert);
  await MirrorLifecycleTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
- await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
+ await FolderCaseRecoveryTests.Run(temp,Assert);await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
  RetainedReplacementAdoptionTests.Run(temp,Assert);
  RecoveryAssetTests.Run(temp,Assert);
  await RetainedReplacementSyncFenceTests.Run(temp,Assert);
@@ -683,6 +684,8 @@ static class Test
   public string? ManifestRevision {get;set;}
   public bool SupportsFolderCaseMoves {get;set;}
   public Func<FolderCaseMoveRequest,Task<FolderCaseMoveReceipt>>? FolderMove;
+  public Func<FolderCaseMoveRequest,bool,string?,CancellationToken,Task<FolderCaseRecoveryReply>>? FolderRecovery;
+  public Task<FolderCaseRecoveryReply> RecoverFolderCaseAsync(FolderCaseMoveRequest command,bool cancel,string? inspection,CancellationToken cancellation=default)=>FolderRecovery?.Invoke(command,cancel,inspection,cancellation)??throw new NotSupportedException();
   public Task<FolderCaseMoveReceipt> MoveFolderCaseAsync(FolderCaseMoveRequest request,CancellationToken cancellation=default)=>FolderMove?.Invoke(request)??throw new NotSupportedException();
   public IReadOnlyList<string> Folders {get;set;}=[];
   public IReadOnlyList<string>? AuthoritativeFolders {get;set;}

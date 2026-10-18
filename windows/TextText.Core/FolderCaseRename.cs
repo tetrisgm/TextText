@@ -115,6 +115,7 @@ internal sealed class FolderCaseRename(TextPackStore store)
         if(ExactPathExists(store.Root,source)||!ExactPathExists(store.Root,destination)||Identity(destination)!=identity||Identity(handle)!=identity){Save(intent with{State="conflict"});throw new RequiredException(intent.Operation);}
         Save(intent with{State="completed"});observe?.Invoke("completed");
     }
+    internal Inspection InspectPaths(Guid operation,string source,string destination)=>Inspect(new Intent(1,operation,RootHash,"",source,destination,"","","pending"));
     Inspection Inspect(Intent intent)
     {
         Endpoint from=new(false,null),to=new(false,null);string? blocked=null;var rows=new List<string>();var count=0;var bytes=0;

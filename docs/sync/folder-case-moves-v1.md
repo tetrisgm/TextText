@@ -48,3 +48,21 @@ Only a response matching the complete retained operation and rebased topology pe
 - The first Windows implementation requires review if an affected per-file, binary, or shared rename outbox command already exists. It preserves those immutable commands. Pending shared text journal state is supported separately.
 - Local unsafe/unreadable/unknown subtree entries or inspection bounds refuse the automatic lane.
 - Actual server executor and physical Mac/Windows tests are separate evidence; a native transport fixture alone is not a multiplayer acceptance pass.
+
+## Authoritative review and cancellation
+
+`POST /api/vault/:workspaceId/folder-case-moves/recovery` accepts either `{action:"inspect", command:<exact original command>}` or `{action:"cancel", command, inspection:<server digest>, consent:true}`. It recovers any retained server intent before answering. A reserved/applied move cannot be cancelled by pretending no receipt exists.
+
+The strict response union is:
+
+- `completed`: `{state,requestHash,result:<moved receipt>}`.
+- `review`: `{state,operationId,requestHash,source,destination,inspection,manifestRevision,folders,items}`. The catalog is the current whole authoritative catalog.
+- `cancelled`: `{state,operationId,requestHash,source,destination,inspection,manifestRevision}`. A durable tombstone blocks all future publication of that exact original command before its acknowledgement is returned.
+
+A native `folderSyncMoves` row has fourteen required keys: `id`, `command`, `state`, `requestHash`, `expectedIdentity`, `from`, `to`, `localInspection`, `inspection`, `manifestRevision`, `folders`, `items`, `result`, `resolutionBlocked`. Endpoint objects contain exact `present` and nullable `identity`. Nullable fields are explicit JSON nulls. Completed rows have only `result` as their server payload; their `inspection`, `manifestRevision`, `folders`, and `items` are null. The receipt's subtree is not relabeled as a whole workspace catalog.
+
+When bounded authoritative inspection fails, the row is explicitly `unavailable`: `requestHash` and server payload fields are null, its local command/proof remain readable, and `resolutionBlocked` explains the failure. This is not evidence of cancellation. Native ownership/profile/schema failures still refuse rather than being disguised as an offline response.
+
+Resolution requires explicit consent and the exact operation, server request hash, server inspection (nullable only for completed), and local metadata digest the user inspected. It rechecks both server and local proof after awaits. Completed operations use immutable normal receipt replay/adoption. Cancellation retains the exact original command and server tombstone in a device-private create-only receipt before clearing pending state. Interruption after receipt persistence resumes by validating that receipt. No cancellation moves, deletes, or overwrites a local tree. If the server still has the original spelling, restoring that local spelling may be necessary before ordinary sync resumes.
+
+The initial Windows implementation scans baseline folder identities at readiness, join, and checkpoint acknowledgement boundaries. Large-catalog cost needs T25 measurement; these functional checks do not establish a typing/close performance acceptance result.

@@ -219,13 +219,20 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     }
 
     static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text"
-        or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
+        or "files.folderSyncMoveList" or "files.folderSyncMoveRead" or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
 
     static object FolderRenameRow(TextPackStore.FolderRenameRecoveryEntry entry) => new {
         id=entry.Id,fromPath=entry.FromPath,toPath=entry.ToPath,expectedIdentity=entry.ExpectedIdentity,
         from=new {present=entry.From.Present,identity=entry.From.Identity},
         to=new {present=entry.To.Present,identity=entry.To.Identity},
         inspection=entry.Inspection,summary=entry.Summary,resolutionBlocked=entry.ResolutionBlocked,resolved=entry.Resolved
+    };
+
+    static object? FolderSyncWire(object? value)=>value is null?null:JsonSerializer.SerializeToElement(value,new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
+    static object FolderSyncMoveRow(SyncEngine.FolderSyncRecoveryEntry row) => new {
+        id=row.Id,command=JsonSerializer.SerializeToElement(row.Command,new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase}),state=row.State,requestHash=row.RequestHash,expectedIdentity=row.ExpectedIdentity,
+        from=new{present=row.From.Present,identity=row.From.Identity},to=new{present=row.To.Present,identity=row.To.Identity},localInspection=row.LocalInspection,inspection=row.Inspection,manifestRevision=row.ManifestRevision,folders=row.Folders,
+        items=FolderSyncWire(row.Items),result=FolderSyncWire(row.Result),resolutionBlocked=row.ResolutionBlocked
     };
 
     void RequireReplacementScope(JsonElement parameters,CancellationToken ct)
@@ -256,6 +263,16 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 return Result(restored);
             }
             case "files.recoveryDirectory": return files.GetRecoveryDirectory();
+            case "files.folderSyncMoveList": {
+                RequireReplacementScope(p,ct);var row=await sync.FolderMoveRecoveryReadAsync(ct);RequireReplacementScope(p,ct);return row is null?Array.Empty<object>():new[]{FolderSyncMoveRow(row)};
+            }
+            case "files.folderSyncMoveRead": {
+                RequireReplacementScope(p,ct);var row=await sync.FolderMoveRecoveryReadAsync(ct);RequireReplacementScope(p,ct);if(row is null||row.Id!=Required(p,"id"))throw new FileChangedException();return FolderSyncMoveRow(row);
+            }
+            case "files.resolveFolderSyncMove": {
+                RequireReplacementScope(p,ct);if(!p.TryGetProperty("consent",out var consent)||consent.ValueKind!=JsonValueKind.True||!p.TryGetProperty("inspection",out var inspection)||inspection.ValueKind is not(JsonValueKind.Null or JsonValueKind.String))throw new InvalidDataException("Explicit fresh folder review is required.");
+                await sync.ResolveFolderMoveRecoveryAsync(Required(p,"id"),inspection.ValueKind==JsonValueKind.Null?null:inspection.GetString(),Required(p,"localInspection"),Required(p,"requestHash"),()=>RequireReplacementScope(p,ct),ct);RequireReplacementScope(p,ct);Changed();return new{resolved=true};
+            }
             case "files.folderRenameList": return ReplacementScope(p,ct,()=>files.FolderRenameRecoveryList().Select(FolderRenameRow).ToArray());
             case "files.folderRenameRead": return ReplacementScope(p,ct,()=>FolderRenameRow(files.FolderRenameRecoveryRead(Required(p,"id"))));
             case "files.resolveFolderRename": return ReplacementScope(p,ct,()=>{

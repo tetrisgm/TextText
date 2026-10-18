@@ -12,6 +12,7 @@ public interface ISyncTransport
     WorkspaceCapabilities? Capabilities => null;
     string? ManifestRevision => null;
     bool SupportsFolderCaseMoves => false;
+    Task<FolderCaseRecoveryReply> RecoverFolderCaseAsync(FolderCaseMoveRequest command,bool cancel,string? inspection,CancellationToken cancellation=default)=>throw new NotSupportedException();
     Task<FolderCaseMoveReceipt> MoveFolderCaseAsync(FolderCaseMoveRequest request,CancellationToken cancellation=default)=>throw new NotSupportedException();
     Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default);
     Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default);

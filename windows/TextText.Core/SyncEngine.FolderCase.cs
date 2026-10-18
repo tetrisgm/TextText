@@ -18,6 +18,13 @@ public sealed record FolderSyncCommand(int Version,FolderCaseMoveRequest Request
     static bool WithinFolder(string path,string folder)=>path==folder||path.StartsWith(folder+"/",StringComparison.Ordinal);
     static string RebaseFolder(string path,string source,string destination)=>destination+path[source.Length..];
     static bool Digest(string? value)=>value is {Length:64}&&value.All(c=>c is >= '0' and <= '9' or >= 'a' and <= 'f');
+    internal static string? FolderWireBlockReason(FolderCaseMoveRequest request)
+    {
+        if(!Guid.TryParseExact(request.OperationId,"D",out _)||request.Source.Length>256||request.Destination.Length>256||request.Folders.Length>20000||request.Items.Length>20000||request.Folders.Any(x=>x is null||x.Length>256)||request.Items.Any(x=>x is null||x.RelativePath.Length>1024))return "This folder command exceeds the automatic server contract. Review the retained folder move; its command and current files remain preserved.";
+        var bytes=JsonSerializer.SerializeToUtf8Bytes(request,new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
+        return bytes.Length>4*1024*1024-1024?"This folder command is too large for authoritative move/recovery inspection. Review it before syncing; the original command and current files remain preserved.":null;
+    }
+    static void RequireFolderWire(FolderCaseMoveRequest request){if(FolderWireBlockReason(request) is {} reason)throw new IOException(reason);}
     void ValidateFolderState(State state)
     {
         if(state.FolderBaseline is {} b){if(b.Version!=1||!Digest(b.ManifestRevision)||b.Folders is null||b.Items is null||b.Identities is null||b.Folders.Length>20000||b.Items.Length>40000||b.Identities.Length!=b.Folders.Length||b.Identities.Select(x=>x.Path).Distinct(StringComparer.Ordinal).Count()!=b.Folders.Length||b.Folders.Distinct(StringComparer.Ordinal).Count()!=b.Folders.Length||b.Items.Select(x=>x.ItemId).Distinct().Count()!=b.Items.Length)throw new InvalidDataException("Invalid folder sync baseline.");foreach(var p in b.Folders)store.ValidateManagedFolder(p);foreach(var x in b.Items){_=store.Resolve(x.RelativePath);if(!Digest(x.Revision))throw new InvalidDataException("Invalid folder item revision.");}foreach(var x in b.Identities){store.ValidateManagedFolder(x.Path);if(!b.Folders.Contains(x.Path,StringComparer.Ordinal)||!System.Text.RegularExpressions.Regex.IsMatch(x.Identity,@"\Awindows:[0-9a-f]{8}:[0-9a-f]{16}\z"))throw new InvalidDataException("Invalid folder directory identity.");}}
@@ -47,7 +54,7 @@ public sealed record FolderSyncCommand(int Version,FolderCaseMoveRequest Request
         while(stack.Count>0)foreach(var p in Directory.EnumerateFileSystemEntries(stack.Pop())){if(++count>60000)throw new IOException("Folder move inspection exceeds its safe bound.");RetainedFileReplacement.CheckPath(p);var rel=Path.GetRelativePath(store.Root,p).Replace('\\','/');if(Directory.Exists(p)){actualFolders.Add(rel);stack.Push(p);}else{actualFiles.Add(rel);if(!expectedFiles.TryGetValue(rel,out var item)||!local.TryGetValue(item.ItemId,out var pack)||pack.Path!=rel)throw new IOException("Folder membership changed. Review the folder move.");}}
         if(!actualFolders.SetEquals(expectedFolders)||!actualFiles.SetEquals(expectedFiles.Keys))throw new IOException("Folder membership changed. Empty folders and file bytes remain preserved for review.");
     }
-    async Task<Dictionary<string,RemoteItem>> ReconcileFolderCase(State state,Dictionary<string,PackFile> local,Dictionary<string,RemoteItem> remote,CancellationToken ct)
+    async Task<Dictionary<string,RemoteItem>> ReconcileFolderCase(State state,Dictionary<string,PackFile> local,Dictionary<string,RemoteItem> remote,CancellationToken ct,Action? beforeAcknowledge=null)
     {
         if(state.FolderCommand==null&&state.FolderBaseline==null&&transport.AuthoritativeFolders is {} firstCatalog&&firstCatalog.Any(x=>((state.ManagedFolders??[]).Contains(x,StringComparer.Ordinal)||state.Items.Values.Any(item=>WithinFolder(item.Path,x)))&&Directory.Exists(store.Resolve(x))&&!FolderCaseRename.ExactPathExists(store.Root,store.Resolve(x))))throw new IOException("This folder changed spelling before its directory identity baseline was recorded. Review the folder move; files remain preserved.");
         if(state.FolderCommand==null&&state.FolderBaseline is {} baseline){
@@ -57,19 +64,24 @@ public sealed record FolderSyncCommand(int Version,FolderCaseMoveRequest Request
                 if(!baseline.Folders.Order(StringComparer.Ordinal).SequenceEqual(currentFolders.Order(StringComparer.Ordinal))||!baseline.Items.Select(x=>(x.ItemId,x.RelativePath)).OrderBy(x=>x.ItemId,StringComparer.Ordinal).SequenceEqual(remote.Values.Where(x=>!x.Deleted).Select(x=>(x.ItemId,x.RelativePath)).OrderBy(x=>x.ItemId,StringComparer.Ordinal)))throw new IOException("Folder topology changed. Review the folder move; local bytes remain preserved.");
                 if(changed.Any(x=>!WithinFolder(x.Identity.Path,source)))throw new IOException("More than one folder moved. Review each move.");
                 var request=new FolderCaseMoveRequest(Guid.NewGuid().ToString("D"),source,destination,transport.ManifestRevision!,baseline.Folders.Where(x=>WithinFolder(x,source)).ToArray(),remote.Values.Where(x=>!x.Deleted&&WithinFolder(x.RelativePath,source)).Select(x=>new FolderCaseMoveItem(x.ItemId,x.RelativePath,x.Revision)).OrderBy(x=>x.ItemId,StringComparer.Ordinal).ToArray());
+                RequireFolderWire(request);
                 var affected=request.Items.Select(x=>x.ItemId).ToHashSet(StringComparer.Ordinal);if(state.Outbox.Any(x=>affected.Contains(x.ItemId))||state.SharedRenames.Keys.Any(affected.Contains)||state.BinaryOutbox.Any(x=>affected.Contains(x.ItemId))||state.PendingPull is {} pull&&affected.Contains(pull.ItemId))throw new IOException("Existing file commands must finish before this folder move can be reviewed. All durable work remains retained.");
                 var command=new FolderSyncCommand(1,request,first.Identity.Identity,TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root)),accountId);VerifyMovedTree(command,local);RetainedReplacementProfile.PrepareFolderSync(store);state.FolderCommand=command;Save(state);
             }
         }
         if(state.FolderCommand is not {} pending)return remote;
         if(!transport.SupportsFolderCaseMoves)throw new IOException("Folder move capability is unavailable; the retained command will not be replaced.");
+        RequireFolderWire(pending.Request);
         HasEligiblePending=true;
         VerifyMovedTree(pending,local);var requestPending=pending.Request;FolderCaseMoveReceipt receipt;
+        beforeAcknowledge?.Invoke();
         try{receipt=await transport.MoveFolderCaseAsync(requestPending,ct);}catch(SyncConflictException){state.FolderCommand=pending with{Conflicted=true};Save(state);throw;}
         ct.ThrowIfCancellationRequested();store.ValidateReplacementRegistry();VerifyMovedTree(pending,store.Scan().ToDictionary(x=>x.ItemId));
         var expectedFolders=requestPending.Folders.Select(x=>RebaseFolder(x,requestPending.Source,requestPending.Destination)).Order(StringComparer.Ordinal).ToArray();var expectedItems=requestPending.Items.Select(x=>x with{RelativePath=RebaseFolder(x.RelativePath,requestPending.Source,requestPending.Destination)}).OrderBy(x=>x.ItemId,StringComparer.Ordinal).ToArray();
         if(receipt.OperationId!=requestPending.OperationId||receipt.Status!="moved"||receipt.Source!=requestPending.Source||receipt.Destination!=requestPending.Destination||!Digest(receipt.ManifestRevision)||receipt.Folders is null||receipt.Items is null||!receipt.Folders.Order(StringComparer.Ordinal).SequenceEqual(expectedFolders)||!receipt.Items.OrderBy(x=>x.ItemId,StringComparer.Ordinal).SequenceEqual(expectedItems))throw new InvalidDataException("Folder move receipt does not match its retained command.");
+        beforeAcknowledge?.Invoke();ct.ThrowIfCancellationRequested();
         foreach(var item in requestPending.Items){var path=RebaseFolder(item.RelativePath,requestPending.Source,requestPending.Destination);if(SharedEditingStore.HasReadyCheckpoint(store,item.ItemId))SharedEditingStore.RebaseProjection(store,item.ItemId,path,adoptingExternalChange:true);if(state.Items.TryGetValue(item.ItemId,out var prior))state.Items[item.ItemId]=prior with{Path=path}; }
+        beforeAcknowledge?.Invoke();ct.ThrowIfCancellationRequested();
         state.ManagedFolders=(state.ManagedFolders??[]).Select(x=>WithinFolder(x,requestPending.Source)?RebaseFolder(x,requestPending.Source,requestPending.Destination):x).Distinct(StringComparer.Ordinal).ToList();state.FolderBaseline=null;state.FolderCommand=null;Save(state);HasEligiblePending=false;
         return (await transport.ManifestAsync(ct)).ToDictionary(x=>x.ItemId);
     }

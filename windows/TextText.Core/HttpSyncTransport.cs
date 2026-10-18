@@ -78,6 +78,14 @@ public sealed class HttpSyncTransport : ISyncTransport
         using var response=await Send(()=>new HttpRequestMessage(HttpMethod.Post,new Uri(endpoint,"folder-case-moves")){Content=new StringContent(JsonSerializer.Serialize(request,FolderWireJson),Encoding.UTF8,"application/json")},cancellation);
         return JsonSerializer.Deserialize<FolderCaseMoveReceipt>(await Bytes(response,cancellation),Json)??throw new InvalidDataException("Invalid folder move receipt.");
     }
+    public async Task<FolderCaseRecoveryReply> RecoverFolderCaseAsync(FolderCaseMoveRequest command,bool cancel,string? inspection,CancellationToken cancellation=default) {
+        var payload=cancel?JsonSerializer.Serialize(new{action="cancel",command,inspection,consent=true},FolderWireJson):JsonSerializer.Serialize(new{action="inspect",command},FolderWireJson);
+        using var response=await Send(()=>new HttpRequestMessage(HttpMethod.Post,new Uri(endpoint,"folder-case-moves/recovery")){Content=new StringContent(payload,Encoding.UTF8,"application/json")},cancellation);
+        var bytes=await Bytes(response,cancellation);using var parsed=JsonDocument.Parse(bytes);if(parsed.RootElement.ValueKind!=JsonValueKind.Object||!parsed.RootElement.TryGetProperty("state",out var stateField)||stateField.ValueKind!=JsonValueKind.String)throw new InvalidDataException("Invalid folder recovery response state.");var state=stateField.GetString();
+        string[] fields=state switch{"completed"=>["state","requestHash","result"],"review"=>["state","operationId","requestHash","source","destination","inspection","manifestRevision","folders","items"],"cancelled"=>["state","operationId","requestHash","source","destination","inspection","manifestRevision"],_=>throw new InvalidDataException("Unsupported folder recovery response.")};
+        RetainedFileReplacement.JsonFields(bytes,fields,fields);
+        return JsonSerializer.Deserialize<FolderCaseRecoveryReply>(bytes,Json)??throw new InvalidDataException("Invalid folder recovery response.");
+    }
     static readonly JsonSerializerOptions FolderWireJson=new(){PropertyNamingPolicy=JsonNamingPolicy.CamelCase};
     Uri Item(string id)=>new(endpoint+"/"+Uri.EscapeDataString(id));
     Uri Binary(string id)=>new(Item(id)+"/binary");
