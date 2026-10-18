@@ -25,6 +25,9 @@ describe("OAuth linking uses surviving encrypted session, not fresh callback tok
       await expect(completeOAuthAccountLink({intent:mintLinkIntent("original",secret),secret,cookieHeader:await cookie(),secure:true,subject:"google:new",link})).rejects.toThrow();
     }
   });
+  it("describes provider-slot and subject refusals without claiming another owner",async()=>{
+    await expect(completeOAuthAccountLink({intent:mintLinkIntent("original",secret),secret,cookieHeader:await cookie(),secure:true,subject:"google:new",link:vi.fn().mockResolvedValue("taken")})).rejects.toThrow("This sign-in method cannot be connected to this account.");
+  });
   it("supports chunked Auth.js session cookies",async()=>{
     const value=(await cookie()).slice(name.length+1);const half=Math.floor(value.length/2);
     const result=await completeOAuthAccountLink({intent:mintLinkIntent("original",secret),secret,cookieHeader:`${name}.0=${value.slice(0,half)}; ${name}.1=${value.slice(half)}`,secure:true,subject:"google:new",link:vi.fn().mockResolvedValue("already-yours")});

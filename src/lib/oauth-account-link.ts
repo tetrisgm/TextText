@@ -15,6 +15,6 @@ export async function completeOAuthAccountLink(input: {
     throw new Error("Sign in to the original account before connecting another sign-in method.");
   }
   const outcome = await input.link(userId, input.subject);
-  if (outcome === "taken") throw new Error("This sign-in method belongs to another account.");
+  if (outcome === "taken") throw new Error("This sign-in method cannot be connected to this account.");
   return session;
 }

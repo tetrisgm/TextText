@@ -7149,7 +7149,7 @@ function providerForSubject(sub: string, userId: string): string {
  * Attaches a way of signing in to an existing person.
  *
  * Returns "linked" when it is now theirs, "already-yours" when it already was,
- * and "taken" when that subject belongs to somebody else. Taken must never
+ * and "taken" when the subject or this account's provider slot is unavailable. Taken must never
  * become a silent move: a subject reaching two accounts is the bug this table
  * exists to make impossible.
  */
@@ -7161,7 +7161,7 @@ export async function linkIdentityToUser(
   return db.transaction(async (tx) => {
     const provider = providerForSubject(sub, userId);
     const inserted = await tx.insert(userIdentities).values({ userId, provider, subject: sub })
-      .onConflictDoNothing({ target: userIdentities.subject }).returning({ userId: userIdentities.userId });
+      .onConflictDoNothing().returning({ userId: userIdentities.userId });
     if (!inserted.length) {
       const [existing] = await tx.select({ userId: userIdentities.userId }).from(userIdentities)
         .where(eq(userIdentities.subject, sub)).limit(1);
