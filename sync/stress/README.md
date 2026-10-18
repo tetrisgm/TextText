@@ -255,3 +255,22 @@ It rechecks pristine source and actual fixed artifact paths; arbitrary receipt
 paths cannot redirect executable, Core, UI or driver hashing. Never seal an old
 receipt after replacing an actor executable. Wrapper/source fixture tests and
 native compilation are preparation evidence only, not six-client acceptance.
+
+## Keyboard undo/redo scenario
+
+`undoRedo: true` is append-only and excludes `sustainedTyping`. Four editor actors
+wait 450 ms (the editor history capture window is 400 ms), insert one unique
+marker through real input, send platform undo, then redo. Each stage must show
+its own marker exactly once, absent, then exactly once, while preserving the
+initial body and every non-own character observed at earlier stages, including
+prior-round markers. Remote additions may interleave. Only the final append is
+one accounted operation; intermediate history observations are not extra edits.
+File actors keep their concurrent ordinary writes. This does not implement
+multi-field history, replacement/deletion history or a complete T22 matrix.
+
+`historyProgress` contains the exact edit ID and ordered insert/undo/redo stages,
+marker text, expected occurrence count, preservation confirmation and monotonic
+elapsed milliseconds. Failures retain the confirmed stage prefix and uncertain
+`attemptedStage`; missing, skipped, wrong-actor or content-loss evidence fails.
+The isolated `undo-redo.browser.mjs` fixture checks real browser keyboard events,
+not TextText collaboration or physical acceptance.

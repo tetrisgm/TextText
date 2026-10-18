@@ -1,3 +1,4 @@
+import { validateUndoRedo, exerciseUndoRedo } from './undo-redo.mjs';
 import { observeSealedSource, fixedDriverFiles, accountScopeHash, createWebAssetObserver } from './identity-observation.mjs';
 import { validateInputSequence, typeInputSequence } from './input-sequence.mjs';
 // Real browser adapter for the six-client stress coordinator (roles mac-web / pc-web).
@@ -75,6 +76,7 @@ export function validateRound(round) {
 }
 
 export function validateEdit(edit) {
+  if (!validateUndoRedo(edit)) return { ok: false, reason: 'undo-redo-invalid' };
   if (!validateInputSequence(edit)) return { ok: false, reason: 'input-sequence-invalid' };
   if (!edit || typeof edit !== 'object') return { ok: false, reason: 'edit-missing' };
   if (typeof edit.id !== 'string' || !/^r\d{1,5}-(mac|pc)-(app|web|cli)$/.test(edit.id)) return { ok: false, reason: 'edit-id-invalid' };
@@ -183,11 +185,11 @@ async function main() {
   const sessionId = randomUUID();
   let context = null, page = null, body = null, heading = null;
   let reloads = 0, started = false, stopping = false;
-  let inputProgress, observeAssets;
+  let inputProgress, historyProgress, observeAssets;
 
   const fail = (round, stage, message) => {
     process.stderr.write(`[${stage}] ${safeMessage(message)}\n`);
-    out({ type: 'error', round, stage, ...(inputProgress ? { inputProgress } : {}), message: `browser adapter failed at stage ${stage}; profile and journals preserved` });
+    out({ type: 'error', round, stage, ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}), message: `browser adapter failed at stage ${stage}; profile and journals preserved` });
   };
 
   const assertOnItem = async () => {
@@ -285,7 +287,14 @@ async function main() {
         if (!await page.evaluate(() => window.getSelection()?.toString() === 'Existing fixture text.')) throw new StageError('edit', 'replacement selection changed before input');
       } else if (!await page.evaluate(caretToEdge, { selector: EDITOR, start: m.edit.op === 'insert-start' })) throw new StageError('edit', 'editor not editable');
       inputProgress = m.edit.inputSequence ? { editId: m.edit.id, chunks: [], acceptedPrefix: '' } : undefined;
-      if (m.edit.inputSequence) {
+      if (m.edit.undoRedo) {
+        historyProgress = { editId: m.edit.id, stages: [] };
+        await exerciseUndoRedo(m.edit, { progress: historyProgress,
+          insert: async text => { await assertOnItem(); await page.keyboard.insertText(text); },
+          undo: async () => { await assertOnItem(); await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z'); },
+          redo: async () => { await assertOnItem(); await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+y'); },
+          snapshot: async () => { await assertOnItem(); return bodyText(); }, now: () => performance.now(), sleep: ms => page.waitForTimeout(ms) });
+      } else if (m.edit.inputSequence) {
         await typeInputSequence(m.edit, { insert: async text => { await assertOnItem(); await page.keyboard.insertText(text); },
           visible: async text => { await assertOnItem(); return (await bodyText()).split(text).length === 2; },
           now: () => performance.now(), sleep: ms => page.waitForTimeout(ms), progress: inputProgress });
@@ -294,8 +303,8 @@ async function main() {
         const after = await bodyText();
         if (after.split(m.edit.text).length < 2) throw new StageError('edit', 'inserted text not visible in editor');
       }
-      out({ type: 'applied', round: m.round, editId: m.edit.id, ...(inputProgress ? { inputProgress } : {}) });
-      inputProgress = undefined;
+      out({ type: 'applied', round: m.round, editId: m.edit.id, ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
+      inputProgress = undefined; historyProgress = undefined;
     },
     async observe(m) {
       if (!validateExpectedIds(m.expectedEditIds)) throw new StageError('observe', 'expectedEditIds invalid');

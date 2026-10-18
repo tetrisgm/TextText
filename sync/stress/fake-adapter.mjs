@@ -46,6 +46,15 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (fault === 'dup-ready') out({ type: 'ready', round: m.round });
       return out({ type: 'ready', round: m.round });
     case 'edit': {
+      let historyProgress;
+      if (m.edit.undoRedo) {
+        historyProgress = { editId: m.edit.id, stages: ['insert','undo','redo'].map((stage,index)=>({stage,editId:m.edit.id,text:m.edit.text,ownOccurrences:index===1?0:1,preservedVisibleContent:true,elapsedMs:450+index+1})) };
+        if (fault === 'history-missing') historyProgress = undefined;
+        else if (fault === 'history-wrong-role') historyProgress.stages[1].editId = 'r1-mac-cli';
+        else if (fault === 'history-skip') historyProgress.stages.splice(1,1);
+        else if (fault === 'history-loss') historyProgress.stages[1].preservedVisibleContent = false;
+        else if (fault === 'history-prefix-fail') { historyProgress.stages=historyProgress.stages.slice(0,1);historyProgress.attemptedStage='undo';return out({type:'error',round:m.round,message:'injected history failure',historyProgress}); }
+      }
       let inputProgress;
       if (m.edit.inputSequence) {
         const chunks = m.edit.inputSequence.chunks;
@@ -62,7 +71,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       // drop-edit: nobody sees the edit (edit ID mismatch). private-edit: only this role sees it (hash divergence).
       if (fault === 'private-edit') { privateEdits.push(m.edit); }
       else if (fault !== 'drop-edit') { if (online) publish(m.edit); else pendingEdits.push(m.edit); }
-      return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(inputProgress ? { inputProgress } : {}) });
+      return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
     }
     case 'transport':
       online = m.online;

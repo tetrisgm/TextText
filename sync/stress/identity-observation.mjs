@@ -24,7 +24,7 @@ export function fixedDriverFiles(role) {
     identity: join(here, 'identity.mjs'), observation: fileURLToPath(import.meta.url),
     node: realpathSync(process.execPath) };
   if (role.endsWith('-cli')) files.fflate = fileURLToPath(import.meta.resolve('fflate'));
-  else Object.assign(files, { session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'),
+  else Object.assign(files, { session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'), history: join(here, 'undo-redo.mjs'),
     readiness: resolve(here, '../../windows/scripts/live-browser-ready.mjs') });
   return files;
 }

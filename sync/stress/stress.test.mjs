@@ -481,3 +481,23 @@ test('coordinator restart verifies fresh observed source and exact attested edit
   identity.sourceCommit='e'.repeat(40);
   await assert.rejects(coordinator.restartActor(1,role),error=>error.code==='restart-identity-mismatch');
 });
+
+test('undo redo plan requires ordered evidence from all four editors and one final operation each', async()=>{
+  const config=makeConfig({rounds:1});config.undoRedo=true;
+  const summary=await new Coordinator(config).run();assert.equal(summary.status,'passed');assert.equal(summary.acceptance,'none');
+  assert.equal(planRounds(42,1,'append',undefined,true)[0].edits.filter(e=>e.undoRedo).length,4);
+  assert.throws(()=>validateConfig({...config,sustainedTyping:{chunks:2,intervalMs:25}}),/undoRedo/);
+  assert.throws(()=>validateConfig({...config,pattern:'unicode'}),/undoRedo/);
+});
+test('undo redo rejects absent wrong actor skipped and content loss evidence', async()=>{
+  for(const fault of ['history-missing','history-wrong-role','history-skip','history-loss']){
+    const config=makeConfig({rounds:1,faults:{'pc-web':fault}});config.undoRedo=true;
+    const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,'history-progress-invalid',fault);assert.equal(summary.roundsCompleted,0);
+  }
+});
+test('failed history retains valid confirmed prefix and uncertain attempted action',async()=>{
+  const config=makeConfig({rounds:1,faults:{'mac-app':'history-prefix-fail'}});config.undoRedo=true;
+  const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,'actor-failed');
+  const lines=readFileSync(join(summary.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  const prefix=lines.find(l=>l.type==='history-prefix-failure');assert.equal(prefix.valid,true);assert.equal(prefix.historyProgress.stages.length,1);assert.equal(prefix.historyProgress.attemptedStage,'undo');
+});

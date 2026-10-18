@@ -239,6 +239,7 @@ final class NativeStressRunner {
     private let capturedWindowAccount: LocalVaultAccountCredential?
     private let deadline: Date
     private(set) var failure: String?
+    private var historyProgress: [String: Any]?
     private var inputProgress: [String: Any]?
     private var opened = false
     private var transportOffline = false
@@ -341,6 +342,7 @@ final class NativeStressRunner {
                         record(["kind": "failure-surface", "state": String(surface.prefix(4096))])
                     }
                     var errorResponse: [String: Any] = ["type": "error", "round": round, "message": error.localizedDescription]
+                    if let historyProgress { errorResponse["historyProgress"] = historyProgress }
                     if let inputProgress { errorResponse["inputProgress"] = inputProgress }
                     response = errorResponse
                 }
@@ -408,6 +410,13 @@ final class NativeStressRunner {
                 throw NativeStressActor.Failure("Edit id or text is out of bounds for this adapter.")
             }
             inputProgress = nil
+            historyProgress = nil
+            if let history = edit["undoRedo"] {
+                guard history as? Bool == true, operation == "append", edit["inputSequence"] == nil else { throw NativeStressActor.Failure("Invalid history operation.") }
+                let completed = try await exerciseHistory(id: id, text: text)
+                historyProgress = nil
+                return ["type": "applied", "round": round, "editId": id, "historyProgress": completed]
+            }
             if let sequence = edit["inputSequence"] {
                 guard operation == "append", let sequence = sequence as? [String: Any],
                       let chunks = sequence["chunks"] as? [String], (2...16).contains(chunks.count),
@@ -646,6 +655,50 @@ final class NativeStressRunner {
             if let current = try await body(), Self.occurrences(of: text, in: current) == 1 { return }
             guard ProcessInfo.processInfo.systemUptime < end else { throw NativeStressActor.Failure("Inserted text did not appear exactly once in the visible editor: " + id) }
             try await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    private func exerciseHistory(id: String, text: String) async throws -> [String: Any] {
+        let start = ProcessInfo.processInfo.systemUptime
+        try await Task.sleep(nanoseconds: 450_000_000) // Product captureTimeout is 400ms.
+        guard let baseline = try await body(), !baseline.contains(text) else { throw NativeStressActor.Failure("History baseline unavailable or marker already present.") }
+        var preserved = baseline
+        var stages: [[String: Any]] = []
+        for (index, stage) in ["insert", "undo", "redo"].enumerated() {
+            if index > 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+            try await requireSelected()
+            historyProgress = ["editId": id, "stages": stages, "attemptedStage": stage]
+            if index == 0 { try await insert(id: id, text: text, start: false, replacing: false, deadlineUptime: start + 15) }
+            else { try historyKey(redo: index == 2) }
+            while true {
+                let elapsed = (ProcessInfo.processInfo.systemUptime - start) * 1000
+                guard elapsed <= 15000 else { throw NativeStressActor.Failure("History visibility or preservation deadline exceeded.") }
+                if let current = try await body(), Self.occurrences(of: text, in: current) == (index == 1 ? 0 : 1) {
+                    let stripped = current.replacingOccurrences(of: text, with: "")
+                    var remaining = Array(preserved.unicodeScalars)[...]
+                    for scalar in stripped.unicodeScalars where remaining.first == scalar { remaining = remaining.dropFirst() }
+                    if remaining.isEmpty {
+                        stages.append(["stage": stage, "editId": id, "text": text, "ownOccurrences": index == 1 ? 0 : 1, "preservedVisibleContent": true, "elapsedMs": elapsed])
+                        preserved = stripped
+                        historyProgress = ["editId": id, "stages": stages]
+                        break
+                    }
+                }
+                try await Task.sleep(nanoseconds: 25_000_000)
+            }
+        }
+        return ["editId": id, "stages": stages]
+    }
+
+    private func historyKey(redo: Bool) throws {
+        guard let window = controller.window else { throw NativeStressActor.Failure("History window unavailable.") }
+        NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+        guard window.makeFirstResponder(webView) else { throw NativeStressActor.Failure("History editor refused first responder.") }
+        let flags: NSEvent.ModifierFlags = redo ? [.command, .shift] : [.command]
+        for kind in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(with: kind, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: redo ? "Z" : "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6) else { throw NativeStressActor.Failure("History keyboard event unavailable.") }
+            NSApp.sendEvent(event)
         }
     }
 

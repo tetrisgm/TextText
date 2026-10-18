@@ -80,7 +80,7 @@ export function fixedArtifactPaths(role, sourceRoot) {
   const files = { driver: join(base, role.endsWith('-cli') ? 'file-adapter.mjs' : 'browser-adapter.mjs'),
     identity: join(base, 'identity.mjs'), observation: join(base, 'identity-observation.mjs'), node: realpathSync(process.execPath) };
   if (role.endsWith('-cli')) files.fflate = join(root, 'node_modules/fflate/esm/index.mjs');
-  else Object.assign(files, { session: join(base, 'browser-session.mjs'), input: join(base, 'input-sequence.mjs'), readiness: join(root, 'windows/scripts/live-browser-ready.mjs') });
+  else Object.assign(files, { session: join(base, 'browser-session.mjs'), input: join(base, 'input-sequence.mjs'), history: join(base, 'undo-redo.mjs'), readiness: join(root, 'windows/scripts/live-browser-ready.mjs') });
   return files;
 }
 export function artifactHashes(role, sourceRoot) {

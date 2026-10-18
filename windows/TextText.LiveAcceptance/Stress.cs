@@ -160,6 +160,7 @@ static class Stress
         Account? capturedAccount;
         string? capturedRoot;
         object? inputProgress;
+        object? historyProgress;
         bool opened;
         readonly string sessionId = "editor-" + Guid.NewGuid().ToString("N");
         readonly string expectedTitle = JsonSerializer.Serialize(config.Title);
@@ -196,7 +197,7 @@ static class Stress
                 {
                     try { reply = await Handle(type, round, request.RootElement, ct).ConfigureAwait(type != "close-probe"); }
                     catch (OperationCanceledException) { throw; }
-                    catch (Exception error) { Fail(error.Message); reply = inputProgress is null ? (object)new { type = "error", round, message = error.Message } : new { type = "error", round, message = error.Message, inputProgress }; }
+                    catch (Exception error) { Fail(error.Message); reply = historyProgress is not null ? (object)new { type = "error", round, message = error.Message, historyProgress } : inputProgress is null ? (object)new { type = "error", round, message = error.Message } : new { type = "error", round, message = error.Message, inputProgress }; }
                 }
                 request.Dispose();
                 Reply(seq, reply);
@@ -269,6 +270,14 @@ static class Stress
                     var text = edit.TryGetProperty("text", out var te) ? te.GetString() ?? "" : "";
                     if (!EditIdPattern.IsMatch(id) || text.Length is 0 or > MaxEditText || text.Contains('\n')) throw new Exception("Edit id or text is out of bounds for this adapter.");
                     inputProgress = null;
+                    historyProgress = null;
+                    if (edit.TryGetProperty("undoRedo", out var history))
+                    {
+                        if (history.ValueKind != JsonValueKind.True || op.GetString() != "append" || edit.TryGetProperty("inputSequence", out _)) throw new Exception("Invalid history operation.");
+                        var completed = await ExerciseHistory(id, text, ct);
+                        historyProgress = null;
+                        return new { type = "applied", round, editId = id, historyProgress = completed };
+                    }
                     if (edit.TryGetProperty("inputSequence", out var sequence))
                     {
                         if (op.GetString() != "append" || sequence.ValueKind != JsonValueKind.Object
@@ -545,6 +554,51 @@ static class Stress
             using var parsed = JsonDocument.Parse(snapshot.RootElement.GetString()!);
             if (parsed.RootElement.GetProperty("title").GetString() != config.Title) throw new Exception("Editor navigated away from the dedicated test item.");
             return parsed.RootElement.GetProperty("body").ValueKind == JsonValueKind.String ? parsed.RootElement.GetProperty("body").GetString() : null;
+        }
+
+        async Task<object> ExerciseHistory(string id, string text, CancellationToken ct)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            await Task.Delay(450, ct); // Product captureTimeout is 400ms.
+            var preserved = await Body() ?? throw new Exception("History baseline unavailable.");
+            if (preserved.Contains(text)) throw new Exception("History marker already present.");
+            var stages = new List<object>();
+            for (var index = 0; index < 3; index++)
+            {
+                if (index > 0) await Task.Delay(1, ct);
+                await RequireSelected(ct);
+                var stage = new[] { "insert", "undo", "redo" }[index];
+                historyProgress = new { editId = id, stages = stages.ToArray(), attemptedStage = stage };
+                if (index == 0) await Insert(id, text, false, false, ct, clock);
+                else
+                {
+                    var key = index == 1 ? "z" : "y";
+                    var code = index == 1 ? "KeyZ" : "KeyY";
+                    var vk = index == 1 ? 90 : 89;
+                    foreach (var kind in new[] { "rawKeyDown", "keyUp" })
+                        await view!.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = kind, modifiers = 2, key, code, windowsVirtualKeyCode = vk, nativeVirtualKeyCode = vk }));
+                }
+                for (;;)
+                {
+                    if (clock.ElapsedMilliseconds > 15000) throw new Exception("History visibility or preservation deadline exceeded.");
+                    var current = await Body();
+                    if (current is not null && current.Split(text, StringSplitOptions.None).Length - 1 == (index == 1 ? 0 : 1))
+                    {
+                        var stripped = current.Replace(text, "", StringComparison.Ordinal);
+                        var prior = preserved.EnumerateRunes().ToArray(); var offset = 0;
+                        foreach (var rune in stripped.EnumerateRunes()) if (offset < prior.Length && rune == prior[offset]) offset++;
+                        if (offset == prior.Length)
+                        {
+                            stages.Add(new { stage, editId = id, text, ownOccurrences = index == 1 ? 0 : 1, preservedVisibleContent = true, elapsedMs = clock.Elapsed.TotalMilliseconds });
+                            preserved = stripped;
+                            historyProgress = new { editId = id, stages = stages.ToArray() };
+                            break;
+                        }
+                    }
+                    await Task.Delay(25, ct);
+                }
+            }
+            return new { editId = id, stages = stages.ToArray() };
         }
 
         async Task Insert(string id, string text, bool start, bool replacing, CancellationToken ct, System.Diagnostics.Stopwatch? sequenceClock = null)

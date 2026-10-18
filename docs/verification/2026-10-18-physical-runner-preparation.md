@@ -30,7 +30,7 @@ duplicate operation evidence, another role's operation ID, a missing actor,
 and an editor reload after first equality. Simulated runs retain acceptance
 `none`.
 
-## Existing capability inventory
+## Capability inventory (updated after 87e84a7d)
 
 | Required case | Runner support | Remaining work before physical acceptance |
 | --- | --- | --- |
@@ -43,20 +43,22 @@ and an editor reload after first equality. Simulated runs retain acceptance
 | Same-write attachment update | `assetReplacement`, paired `assetReplacements` | Same-entry race remains diagnostic, without retained losing-byte attestation |
 | Close under traffic | `closeProbe` for PC app | Other editor roles need guarded close/reopen protocol |
 | Independent durable reopen | `rounds: 0`, `expectedBaselineHash`, `expectedAssetHashes` | Fresh processes and fixture identity from preceding physical receipt |
-| Sustained typing, undo/redo, multiple fields | Not implemented | Native and browser input protocol extension required |
+| Sustained typing | Implemented in 684406ad with bounded real chunks and ordinal evidence | Current private candidates and physical runs still required |
+| Undo/redo | Staged real keyboard history protocol, current uncommitted slice | Native compile and physical history journey still required |
+| Multiple fields | Not implemented | Separate field protocol; navigation title is currently fixture identity |
 | In-place/rapid save, whole-pack creation | Not implemented as explicit scenarios | Ordinary file adapter operations plus scenario-specific accounting |
 | File/folder move, case-only rename, duplicate identity, delete/restore, stale writer | Not implemented | File lifecycle input and path/identity/recovery observation protocol |
 | Lost ACK, retained older journals, authorization changes | Not implemented as matrix scenarios | Explicit supported fault/identity operations and retained work evidence |
-| Source/bundle/browser attestation | Machine, fixture, mode and adapter exist; browser supplies channel label only | Coordinator currently drops extra attestation fields; native build identity contract still needed |
+| Source/bundle/browser attestation | 87e84a7d validates observed artifact/runtime/principal pins and fresh restart attestation | Build coherent private candidates, trusted pins and real readiness; see physical-actor-identity receipt |
 
-## Bounded next input extension design
+## Original sustained input design (implemented by 684406ad)
 
 Do not implement a sustained-typing flag by rapidly sending multiple current
 `edit` messages: the protocol permits one `applied` event per role/round and
 native actors presently accept only append, insert-start and replace-selection.
 
 A faithful next slice adds an optional bounded `inputSequence` to one planned
-editor operation, with at most 64 keyboard chunks, 1–50 Unicode scalar values
+editor operation, with at most 16 keyboard chunks, 1–50 Unicode scalar values
 per chunk and a total deadline. The existing final unique role marker remains
 one logical operation. Each actor must type chunks through its existing real
 keyboard/input path, report each completed chunk's ordinal and monotonic input

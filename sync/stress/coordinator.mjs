@@ -1,3 +1,4 @@
+import { checkUndoRedoProgress } from './undo-redo.mjs';
 import { boundedFile } from './identity-observation.mjs';
 import { normalizeIdentity, checkIdentity, normalizeInitialPack, verifyReopenIdentity, checkRestartAttestation } from './identity.mjs';
 // Bounded six-client stress coordinator. Finite seeded rounds, all-ready barrier, concurrent dispatch,
@@ -37,7 +38,7 @@ const assetPathsOf = (config) => [...new Set([...Object.keys(config.expectedAsse
 const replacementDigest = a => createHash('sha256').update(Buffer.from(a.bytesBase64, 'base64')).digest('hex');
 
 // Deterministic per-round edit plan from the seed.
-export function planRounds(seed, rounds, pattern = 'append', sustainedTyping) {
+export function planRounds(seed, rounds, pattern = 'append', sustainedTyping, undoRedo) {
   const rand = mulberry32(seed);
   const plan = [];
   for (let round = 1; round <= rounds; round += 1) {
@@ -51,7 +52,7 @@ export function planRounds(seed, rounds, pattern = 'append', sustainedTyping) {
         : pattern === 'same-position' && EDITOR_ROLES.includes(role) ? 'insert-start' : 'append';
       const text = pattern === 'unicode' ? `🌿 café 東京 ${marker} 🧪` : marker;
       const chunks = sustainedTyping && EDITOR_ROLES.includes(role) ? [...Array.from({ length: sustainedTyping.chunks - 1 }, (_, i) => `⟦${role}:${round}:${i + 1}:café🌿⟧`), marker] : null;
-      return { role, ...(chunks ? { inputSequence: { chunks, intervalMs: sustainedTyping.intervalMs } } : {}), id: `r${round}-${role}`, op, text: chunks ? chunks.join('') : text };
+      return { role, ...(undoRedo && EDITOR_ROLES.includes(role) ? { undoRedo: true } : {}), ...(chunks ? { inputSequence: { chunks, intervalMs: sustainedTyping.intervalMs } } : {}), id: `r${round}-${role}`, op, text: chunks ? chunks.join('') : text };
     });
     plan.push({ round, edits });
   }
@@ -66,6 +67,7 @@ export function validateConfig(config) {
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
   if (config.pattern !== undefined && !['append', 'same-position', 'unicode', 'overlap-replace', 'file-overlap', 'partial-overlap'].includes(config.pattern)) fail('unknown pattern');
   if (['overlap-replace', 'file-overlap', 'partial-overlap'].includes(config.pattern) && config.rounds > 1) fail('overlap patterns allow one round or a zero-round reopen');
+  if (config.undoRedo !== undefined && (config.undoRedo !== true || config.sustainedTyping || (config.pattern ?? 'append') !== 'append')) fail('undoRedo requires append and excludes sustainedTyping');
   if (config.sustainedTyping !== undefined && (!config.sustainedTyping || (config.pattern ?? 'append') !== 'append'
     || !Number.isInteger(config.sustainedTyping.chunks) || config.sustainedTyping.chunks < 2 || config.sustainedTyping.chunks > 16
     || !Number.isInteger(config.sustainedTyping.intervalMs) || config.sustainedTyping.intervalMs < 10 || config.sustainedTyping.intervalMs > 250)) fail('sustainedTyping requires append, 2..16 chunks and intervalMs 10..250');
@@ -196,13 +198,13 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
       role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) }));
     if (this.config.diagnosticSameEntryRace) scenario.diagnosticSameEntryRace = true;
-    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, ...(this.config.mode === 'real' ? { expectedIdentities: Object.fromEntries(ROLES.map(role => [role, normalizeIdentity(this.config.expectedIdentities[role], role, { expected: true })])) } : {}), rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping)}, null, 2));
+    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, ...(this.config.mode === 'real' ? { expectedIdentities: Object.fromEntries(ROLES.map(role => [role, normalizeIdentity(this.config.expectedIdentities[role], role, { expected: true })])) } : {}), rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo)}, null, 2));
     this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture, scenario });
     this.writeDashboard('running');
   }
@@ -264,7 +266,7 @@ export class Coordinator {
           this.record('reopen-sample', { sample, hash: this.config.expectedBaselineHash, roles: ROLES });
         }
       }
-      for (const plan of planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping)) await this.runRound(plan);
+      for (const plan of planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo)) await this.runRound(plan);
       if (this.config.closeProbe) await this.closeProbe();
     } catch (error) {
       status = 'failed';
@@ -285,8 +287,8 @@ export class Coordinator {
       expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
-        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+      scenario: { ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
@@ -359,11 +361,14 @@ export class Coordinator {
           err: () => done(() => reject(new StressFailure('adapter-error', { round, role }))),
           m: (message) => {
             if (message.type === 'error') {
-              const edit = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping).at(-1)?.edits.find(edit => edit.role === role);
+              const edit = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo).at(-1)?.edits.find(edit => edit.role === role);
               const progress = message.inputProgress;
-              const valid = progress === undefined || (edit && checkInputProgress(edit, progress, false));
+              const history = message.historyProgress;
+              const historyValid = history === undefined || (edit && checkUndoRedoProgress(edit, history, false));
+              if (history) this.record('history-prefix-failure', { round, role, valid: historyValid, ...(historyValid ? { historyProgress: history } : {}) });
+              const valid = historyValid && (progress === undefined || (edit && checkInputProgress(edit, progress, false)));
               if (progress) this.record('input-prefix-failure', { round, role, valid, inputProgress: progress });
-              return done(() => reject(new StressFailure(valid ? 'actor-failed' : 'input-progress-invalid', { round, role, message: redact(String(message.message ?? '')).slice(0, 500), ...(progress ? { inputProgress: progress } : {}) })));
+              return done(() => reject(new StressFailure(!historyValid ? 'history-progress-invalid' : valid ? 'actor-failed' : 'input-progress-invalid', { round, role, ...(history && historyValid ? { historyProgress: history } : {}), message: redact(String(message.message ?? '')).slice(0, 500), ...(progress ? { inputProgress: progress } : {}) })));
             }
             const r = ledger.accept(role, message);
             if (!r.ok) return this.reject({ role, reason: r.reason, event: { round: message.round, type: message.type }, expected: { round, type } });
@@ -420,7 +425,7 @@ export class Coordinator {
     const offlineRole = this.config.offline?.round === round ? this.config.offline.role : null;
     if (offlineRole) await this.setTransport(round, offlineRole, false);
     const pending = this.collect(round, 'applied');                       // all-ready barrier
-    for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text, ...(edit.inputSequence ? { inputSequence: edit.inputSequence } : {}),
+    for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text, ...(edit.undoRedo ? { undoRedo: true } : {}), ...(edit.inputSequence ? { inputSequence: edit.inputSequence } : {}),
       target: edit.op === 'replace-target' ? this.config.pattern === 'partial-overlap' ? PARTIAL_REPLACE_TARGET : REPLACE_TARGET : undefined,
       assetReplacement: assetReplacementsOf(this.config).filter(a => a.role === edit.role && a.round === round)
         .map(a => ({ path: a.path, bytesBase64: a.bytesBase64 }))[0] } }); // concurrent dispatch
@@ -429,13 +434,16 @@ export class Coordinator {
     for (const edit of edits) {
       const progress = applied.get(edit.role).inputProgress;
       if (!checkInputProgress(edit, progress)) throw new StressFailure('input-progress-invalid', { round, role: edit.role, editId: edit.id, inputProgress: progress });
+      const history = applied.get(edit.role).historyProgress;
+      if (!checkUndoRedoProgress(edit, history)) throw new StressFailure('history-progress-invalid', { round, role: edit.role, editId: edit.id });
+      if (history) this.record('history-progress', { round, role: edit.role, ...history });
       if (progress) this.record('input-progress', { round, role: edit.role, ...progress });
     }
     this.record('edit-barrier', { round, roles: ROLES });
     const restartRole = this.config.restart?.round === round ? this.config.restart.role : null;
     if (restartRole) await this.restartActor(round, restartRole);
     if (offlineRole) await this.setTransport(round, offlineRole, true);
-    const expectedEditIds = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping).flatMap((p) => p.edits.map((e) => e.id)).sort();
+    const expectedEditIds = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo).flatMap((p) => p.edits.map((e) => e.id)).sort();
     // A client can report a locally stable state before another replica's save reaches it.
     // Keep all six actors open while checking convergence; a premature failure shuts down
     // the very sync processes we are measuring. The deadline still makes stalls visible.
@@ -492,7 +500,7 @@ export class Coordinator {
     }
     for (const role of ROLES) {
       let remaining = normalizeText(states.get(role).text);
-      for (const edit of planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping).flatMap(p => p.edits)) {
+      for (const edit of planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo).flatMap(p => p.edits)) {
         for (const text of edit.inputSequence?.chunks ?? [edit.text]) {
           if (remaining.split(text).length !== 2) throw new StressFailure('content-mismatch', { round, role, editId: edit.id, text });
           remaining = remaining.replace(text, '');
