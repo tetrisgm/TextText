@@ -5,7 +5,7 @@ import TextTextWorkspaceCore
 /// A deletion retains the actual inode with an exclusive same-volume rename.
 /// Nothing is unlinked and a recreated visible path is never rolled back.
 enum RetainedFileRemoval {
-    static func withLease<T>(at lease: URL, _ body: () throws -> T) throws -> T {
+    static func withLease<T>(at lease: URL, exclusive: Bool = true, _ body: () throws -> T) throws -> T {
         let parent = lease.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         guard parent.resolvingSymlinksInPath().path == parent.path else { throw RetainedFileReplacement.Failure.invalidJournal }
@@ -14,7 +14,7 @@ enum RetainedFileRemoval {
         defer { close(fd) }
         var info = stat()
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw RetainedFileReplacement.Failure.invalidJournal }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { throw RetainedFileReplacement.Failure.unresolved(lease) }
+        guard flock(fd, (exclusive ? LOCK_EX : LOCK_SH) | LOCK_NB) == 0 else { throw RetainedFileReplacement.Failure.unresolved(lease) }
         defer { _ = flock(fd, LOCK_UN) }
         return try body()
     }
@@ -54,6 +54,7 @@ enum RetainedFileRemoval {
     }
     private static func captureUnderLease(_ target: URL, expectedHash: String, recoveryRoot: URL, operation: UUID,
                                          observe: ((String) throws -> Void)?) throws -> RetainedFileReplacement.Recovery {
+        let sourceSyscallPath = try RetainedFileReplacement.physicalPath(target)
         let before = try StableFileSnapshot.read(target)
         guard try RetainedFileReplacement.available(target) >= Int64(before.count) + 64 * 1024 * 1024 else { throw RetainedFileReplacement.Failure.insufficientSpace }
         guard TextTextStableDigest.sha256Hex(before) == expectedHash else { throw LocalVaultDocumentStore.Failure.changed }
@@ -68,6 +69,7 @@ enum RetainedFileRemoval {
         guard fstat(fd, &source) == 0, lstat(directory.path, &destination) == 0, source.st_dev == destination.st_dev else {
             throw RetainedFileReplacement.Failure.unsupported(EXDEV)
         }
+        let displacedSyscallPath = try RetainedFileReplacement.physicalPath(directory.appendingPathComponent("exchange"))
         var record = RetainedFileReplacement.Record(version: 1, operation: operation, filename: target.lastPathComponent,
             expectedHash: expectedHash, preparedHash: expectedHash, state: .pending)
         record.kind = "removal"
@@ -81,8 +83,7 @@ enum RetainedFileRemoval {
             throw RetainedFileReplacement.Failure.unresolved(directory)
         }
         try observe?("beforeCapture")
-        let displaced = directory.appendingPathComponent("exchange")
-        guard renamex_np(try RetainedFileReplacement.physicalPath(target), try RetainedFileReplacement.physicalPath(displaced),
+        guard renamex_np(sourceSyscallPath, displacedSyscallPath,
             UInt32(RENAME_EXCL | RENAME_NOFOLLOW_ANY)) == 0 else { throw RetainedFileReplacement.Failure.unsupported(errno) }
         try RetainedFileReplacement.flushDirectory(directory)
         try RetainedFileReplacement.flushDirectory(target.deletingLastPathComponent())

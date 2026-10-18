@@ -310,6 +310,7 @@ enum RetainedFileReplacement {
                         availableBytes: (() throws -> Int64)? = nil,
                         observe: ((String) throws -> Void)? = nil) throws -> Recovery {
         try assertReadable(target)
+        let targetSyscallPath = try physicalPath(target)
         guard prepared.count <= 64 * 1024 * 1024,
               digest(try StableFileSnapshot.read(target)) == expectedHash else { throw LocalVaultDocumentStore.Failure.changed }
         // Reserve conservative full-copy fallback space plus room for recovery
@@ -326,6 +327,7 @@ enum RetainedFileReplacement {
         defer { close(sourceFD) }
         guard fstat(sourceFD, &sourceInfo) == 0, lstat(directory.path, &stagingInfo) == 0,
               sourceInfo.st_dev == stagingInfo.st_dev else { throw Failure.unsupported(EXDEV) }
+        let exchangeSyscallPath = try physicalPath(directory.appendingPathComponent("exchange"))
         let record = Record(version: 1, operation: operation, filename: target.lastPathComponent,
                             expectedHash: expectedHash, preparedHash: digest(prepared), state: .pending)
         try create(prepared, at: directory.appendingPathComponent("prepared"))
@@ -338,8 +340,7 @@ enum RetainedFileReplacement {
         try observe?("prepared")
         guard digest(try StableFileSnapshot.read(target)) == expectedHash else { throw Failure.unresolved(directory) }
         try observe?("beforeSwap")
-        let exchange = directory.appendingPathComponent("exchange")
-        guard renamex_np(try physicalPath(exchange), try physicalPath(target), UInt32(RENAME_SWAP | RENAME_NOFOLLOW_ANY)) == 0 else {
+        guard renamex_np(exchangeSyscallPath, targetSyscallPath, UInt32(RENAME_SWAP | RENAME_NOFOLLOW_ANY)) == 0 else {
             throw Failure.unsupported(errno)
         }
         try flushDirectory(target.deletingLastPathComponent())

@@ -46,6 +46,12 @@ public enum LocalVaultDeviceState {
         var operationId: UUID? = nil
     }
 
+    private static func decodeDeletion(_ bytes: Data) throws -> DeletionIntent {
+        guard bytes.count <= 8192, let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              Set(fields.keys).isSubset(of: Set(["itemId", "path", "hash", "operationId"])),
+              Set(["itemId", "path", "hash"]).isSubset(of: Set(fields.keys)) else { throw ReplacementRecoveryRegistry.Failure.invalidRegistry }
+        return try JSONDecoder().decode(DeletionIntent.self, from: bytes)
+    }
     private static func deletionURL(root: URL, itemId: String) throws -> URL {
         guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil else {
             throw LocalVaultDocumentStore.Failure.invalidPath
@@ -88,7 +94,7 @@ public enum LocalVaultDeviceState {
     public static func hasDeletion(root: URL, itemId: String, path: String, hash: String) throws -> Bool {
         let target = try deletionURL(root: root, itemId: itemId)
         guard FileManager.default.fileExists(atPath: target.path) else { return false }
-        let intent = try JSONDecoder().decode(DeletionIntent.self, from: Data(contentsOf: target))
+        let intent = try decodeDeletion(StableFileSnapshot.read(target, maximumBytes: 8192))
         return intent.itemId == itemId && intent.path == path && intent.hash == hash
     }
 
@@ -99,7 +105,7 @@ public enum LocalVaultDeviceState {
         return FileManager.default.fileExists(atPath: target.path) ? try Data(contentsOf: target) : nil
     }
     private static func acknowledgeDeletionPublication(root: URL, itemId: String, bytes: Data) throws {
-        let intent = try JSONDecoder().decode(DeletionIntent.self, from: bytes)
+        let intent = try decodeDeletion(bytes)
         guard intent.itemId == itemId else { throw ReplacementRecoveryRegistry.Failure.invalidRegistry }
         guard let operation = intent.operationId else { return }
         try ReplacementRecoveryRegistry(root: root).acknowledgeDeletionPublication(operation: operation,
@@ -118,7 +124,7 @@ public enum LocalVaultDeviceState {
         lock.lock(); defer { lock.unlock() }
         let target = try deletionURL(root: root, itemId: itemId)
         guard FileManager.default.fileExists(atPath: target.path) else { return nil }
-        let intent = try JSONDecoder().decode(DeletionIntent.self, from: Data(contentsOf: target))
+        let intent = try decodeDeletion(StableFileSnapshot.read(target, maximumBytes: 8192))
         guard intent.itemId == itemId, let operation = intent.operationId else { throw ReplacementRecoveryRegistry.Failure.invalidRegistry }
         return (operation, intent.path, intent.hash)
     }
@@ -134,7 +140,7 @@ public enum LocalVaultDeviceState {
         let target = try deletionURL(root: root, itemId: itemId)
         guard FileManager.default.fileExists(atPath: target.path) else { return }
         let snapshot = try Data(contentsOf: target)
-        let intent = try JSONDecoder().decode(DeletionIntent.self, from: snapshot)
+        let intent = try decodeDeletion(snapshot)
         guard intent.operationId == operation, intent.itemId == itemId, intent.path == path, intent.hash == hash else { return }
         try acknowledgeDeletionPublication(root: root, itemId: itemId, bytes: snapshot)
         guard try Data(contentsOf: target) == snapshot else { return }

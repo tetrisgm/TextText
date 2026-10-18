@@ -39,6 +39,59 @@ final class RetainedFileRemovalTests: XCTestCase {
         try writer.delete(path: "Original.textpack", expectedHash: hash(bytes))
         XCTAssertTrue(try LocalVaultDeviceState.hasDeletion(root: root, itemId: "removal-item", path: "Original.textpack", hash: hash(bytes)))
     }
+    func testUnknownMarkerFieldsRefuseBindingAndConsumptionWithoutChangingBytes() throws {
+        let bytes = try pack("before")
+        try bytes.write(to: target)
+        try store.delete(path: "Original.textpack", expectedHash: hash(bytes))
+        let marker = LocalVaultDeviceState.directory(root: root).appendingPathComponent("deletions/removal-item.json")
+        let original = try Data(contentsOf: marker)
+        var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        fields["futureSemantics"] = "do not consume"
+        let future = try JSONSerialization.data(withJSONObject: fields)
+        try future.write(to: marker, options: .atomic)
+        XCTAssertThrowsError(try LocalVaultDeviceState.boundDeletion(root: root, itemId: "removal-item"))
+        XCTAssertThrowsError(try LocalVaultDeviceState.clearDeletion(root: root, itemId: "removal-item", matching: future))
+        XCTAssertThrowsError(try LocalVaultDeviceState.clearDeletion(root: root, itemId: "removal-item"))
+        XCTAssertEqual(try Data(contentsOf: marker), future)
+        try bytes.write(to: target)
+        XCTAssertThrowsError(try store.delete(path: "Original.textpack", expectedHash: hash(bytes)))
+        XCTAssertEqual(try Data(contentsOf: target), bytes)
+        XCTAssertEqual(try Data(contentsOf: marker), future)
+        try original.write(to: marker, options: .atomic)
+        try LocalVaultDeviceState.clearDeletion(root: root, itemId: "removal-item")
+        try LocalVaultDeviceState.recordDeletion(root: root, itemId: "legacy-item", path: "Legacy.textpack", hash: hash(bytes))
+        try LocalVaultDeviceState.clearDeletion(root: root, itemId: "legacy-item")
+        XCTAssertNil(try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: "legacy-item"))
+    }
+    func testFinalGapParentSymlinkNeverRetargetsReplacementOrRemovalOutsideWorkspace() throws {
+        let outside = root.deletingLastPathComponent().appendingPathComponent("retained-outside-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let before = try pack("before"), candidate = try pack("candidate"), foreign = try pack("outside unrelated file")
+        for removing in [false, true] {
+            let name = removing ? "RemovalFolder" : "ReplacementFolder"
+            let folder = root.appendingPathComponent(name), moved = root.appendingPathComponent(name + "-held")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let original = folder.appendingPathComponent("Original.textpack"), outsideFile = outside.appendingPathComponent("Original.textpack")
+            try before.write(to: original); try foreign.write(to: outsideFile, options: .atomic)
+            let operation = UUID(), path = name + "/Original.textpack"
+            let inject: (String) throws -> Void = { stage in
+                if stage == (removing ? "beforeCapture" : "beforeSwap") {
+                    try FileManager.default.moveItem(at: folder, to: moved)
+                    try FileManager.default.createSymbolicLink(at: folder, withDestinationURL: outside)
+                }
+            }
+            if removing {
+                XCTAssertThrowsError(try RetainedFileRemoval.capture(original, expectedHash: hash(before), recoveryRoot: registry.recoveryRoot(path: path),
+                    operation: operation, lease: registry.captureLease(operation: operation), observe: inject))
+            } else {
+                XCTAssertThrowsError(try RetainedFileReplacement.replace(original, expectedHash: hash(before), prepared: candidate, operation: operation,
+                    recoveryRoot: registry.recoveryRoot(path: path), observe: inject))
+            }
+            XCTAssertEqual(try? Data(contentsOf: outsideFile), foreign, "Outside file must remain untouched even when its hash differs from the observed source.")
+            XCTAssertEqual(try Data(contentsOf: moved.appendingPathComponent("Original.textpack")), before)
+        }
+    }
     func testFinalGapRetainsActualExternalBytesAndExplicitAbsentRecovery() throws {
         let before = try pack("before"), external = Data([0, 2, 4, 8])
         try before.write(to: target)

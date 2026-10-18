@@ -20,6 +20,17 @@ final class RetainedReplacementProfileTests: XCTestCase {
         let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: bytes)
         guard owner.version == 1 else { throw LocalVaultAccountRootOwnership.Failure.future }
     }
+    func testStableProfileVerifiersShareReadLeaseButExcludeMigration() throws {
+        try RetainedReplacementProfile.prepare(root: root)
+        let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: Data(contentsOf: marker))
+        var nested = false
+        XCTAssertNoThrow(try RetainedReplacementProfile.verify(root: root, owner: owner) {
+            nested = true
+            XCTAssertNoThrow(try RetainedReplacementProfile.verify(root: self.root, owner: owner), "Stable readers must not reject another reader.")
+            XCTAssertThrowsError(try RetainedReplacementProfile.prepare(root: self.root), "A reader still excludes account migration.")
+        })
+        XCTAssertTrue(nested)
+    }
     func testConcurrentPrepareAndVerifyCannotReconcileAnActiveOwnerExchange() throws {
         let ownerBefore = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: Data(contentsOf: marker))
         var interleaved = false

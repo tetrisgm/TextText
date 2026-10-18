@@ -43,18 +43,35 @@ enum RetainedReplacementProfile {
     static func hasRetainedProfile(stateDirectory: URL) -> Bool {
         FileManager.default.fileExists(atPath: stateDirectory.appendingPathComponent("retained-replacement-profile").path)
     }
-    private static func withMigrationLease<T>(stateDirectory: URL, _ body: () throws -> T) throws -> T {
+    private static func withMigrationLease<T>(stateDirectory: URL, exclusive: Bool = true, _ body: () throws -> T) throws -> T {
         do {
-            return try RetainedFileRemoval.withLease(at: stateDirectory.appendingPathComponent("retained-replacement-profile.lock"), body)
+            return try RetainedFileRemoval.withLease(at: stateDirectory.appendingPathComponent("retained-replacement-profile.lock"), exclusive: exclusive, body)
         } catch RetainedFileReplacement.Failure.unresolved { throw Failure.busy }
     }
-    static func verify(root: URL, owner: LocalVaultAccountRootOwnership.Owner) throws {
+    static func verify(root: URL, owner: LocalVaultAccountRootOwnership.Owner, observe: (() throws -> Void)? = nil) throws {
         try verify(stateDirectory: LocalVaultDeviceState.directory(root: root), owner: owner,
-            expectedRootHash: digest(Data(root.standardizedFileURL.resolvingSymlinksInPath().path.utf8)))
+            expectedRootHash: digest(Data(root.standardizedFileURL.resolvingSymlinksInPath().path.utf8)), observe: observe)
     }
-    static func verify(stateDirectory: URL, owner: LocalVaultAccountRootOwnership.Owner, expectedRootHash rootHash: String) throws {
-        try withMigrationLease(stateDirectory: stateDirectory) {
-            try verifyUnlocked(stateDirectory: stateDirectory, owner: owner, expectedRootHash: rootHash)
+    static func verify(stateDirectory: URL, owner: LocalVaultAccountRootOwnership.Owner, expectedRootHash rootHash: String, observe: (() throws -> Void)? = nil) throws {
+        let stable = try withMigrationLease(stateDirectory: stateDirectory, exclusive: false) {
+            try verifyContents(stateDirectory: stateDirectory, owner: owner, expectedRootHash: rootHash)
+            let target = stateDirectory.appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+            let retained = try RetainedFileReplacement.inspect(target)
+            let stable = retained.allSatisfy { operation in
+                operation.record.state == .completed && operation.record.preparedFingerprint != nil && operation.record.displacedFingerprint != nil &&
+                    operation.record.preparedFingerprint == (try? RetainedFileReplacement.fingerprint(operation.prepared)) &&
+                    operation.record.displacedFingerprint == (try? RetainedFileReplacement.fingerprint(operation.displaced))
+            }
+            if stable { try observe?() }
+            return stable
+        }
+        if !stable {
+            // Reconstruction changes the owner journal. Release the shared
+            // read lease, acquire exclusive ownership, then verify again.
+            try withMigrationLease(stateDirectory: stateDirectory) {
+                try verifyUnlocked(stateDirectory: stateDirectory, owner: owner, expectedRootHash: rootHash)
+                try observe?()
+            }
         }
     }
     private static func verifyUnlocked(stateDirectory: URL, owner: LocalVaultAccountRootOwnership.Owner, expectedRootHash rootHash: String) throws {
