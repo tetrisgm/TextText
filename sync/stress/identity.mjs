@@ -73,3 +73,21 @@ export function checkRestartAttestation(value, pin, role, { fixture, machineId, 
     || value.sessionId === sessionId) throw new Error('restarted actor mode, fixture, machine, generation or fresh session invalid');
   return { identity: checkIdentity(value.identity, pin, role), sessionId: value.sessionId };
 }
+
+// Command-W retains this actor/controller/editor; a process restart cannot satisfy it.
+export function checkRetainedWindowAttestation(value, pin, { fixture, machineId, sessionId, generation }) {
+  if (!record(value) || value.type !== 'attest' || value.round !== 0 || value.mode !== 'real' || value.adapter === 'fake-adapter'
+    || value.machineId !== machineId || value.workspaceId !== fixture.workspaceId || value.itemId !== fixture.itemId
+    || generation !== 1 || value.generation !== generation || value.sessionId !== sessionId || value.windowGeneration !== 2)
+    throw new Error('retained window mode, fixture, machine, generation or original session invalid');
+  return { identity: checkIdentity(value.identity, pin, 'mac-app'), sessionId: value.sessionId, generation, windowGeneration: 2 };
+}
+export function checkMacWindowCloseProof(value, {fixture, ownEditId, sessionId, generation}) {
+  const d=value?.durability;
+  return record(value)&&value.closed===true&&value.flushed===true&&value.keepEditingDialog===false
+    &&value.lifecycle==='normal-window-close'&&value.windowCloseObserved===true&&value.retained===true
+    &&value.ownEditId===ownEditId&&value.ownEditOccurrences===1&&/^[a-f0-9]{64}$/.test(value.fileHash??'')
+    &&value.sessionId===sessionId&&generation===1&&value.generation===generation&&value.windowGeneration===1
+    &&record(d)&&d.outcome==='durable'&&d.workspaceId===fixture.workspaceId&&d.itemId===fixture.itemId
+    &&typeof d.lifecycle==='string'&&d.lifecycle.length>0&&d.lifecycle.length<=512&&Number.isSafeInteger(d.generation)&&d.generation>=0;
+}

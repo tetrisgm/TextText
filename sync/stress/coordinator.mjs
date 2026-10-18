@@ -4,7 +4,7 @@ import { documentObservation, checkMultiFieldAccounting } from './multi-field.mj
 import { checkFieldProgress } from './multi-field-input.mjs';
 import { checkUndoRedoProgress } from './undo-redo.mjs';
 import { boundedFile, canonicalJSON, sha256 } from './identity-observation.mjs';
-import { normalizeIdentity, checkIdentity, normalizeInitialPack, verifyReopenIdentity, checkRestartAttestation } from './identity.mjs';
+import { normalizeIdentity, checkIdentity, checkRetainedWindowAttestation, checkMacWindowCloseProof, normalizeInitialPack, verifyReopenIdentity, checkRestartAttestation } from './identity.mjs';
 // Bounded six-client stress coordinator. Finite seeded rounds, all-ready barrier, concurrent dispatch,
 // exact convergence, first-failure stop with preserved evidence. No background service.
 import { createHash } from 'node:crypto';
@@ -76,7 +76,7 @@ export function validateConfig(config) {
   if (['overlap-replace', 'file-overlap', 'partial-overlap'].includes(config.pattern) && config.rounds > 1) fail('overlap patterns allow one round or a zero-round reopen');
   if (config.closeDuringTraffic !== undefined) {
     const c = config.closeDuringTraffic;
-    if (!c || Object.keys(c).some(key=>!['role','trafficRole','chunks','intervalMs'].includes(key)) || c.role !== 'pc-app' || !['mac-web','pc-web'].includes(c.trafficRole) || !Number.isInteger(c.chunks) || c.chunks < 4 || c.chunks > 16 || !Number.isInteger(c.intervalMs) || c.intervalMs < 100 || c.intervalMs > 250 || config.rounds > 1 || config.fileWrites || config.multiField || config.sustainedTyping || config.undoRedo || config.assetReplacement || config.assetReplacements || config.transientInvalid || config.malformedRepair || config.offline || config.restart || config.closeProbe || (config.pattern ?? 'append') !== 'append') fail('closeDuringTraffic requires pc-app, one browser peer, chunks4..16, intervalMs100..250 and one isolated append round or reopen');
+    if (!c || Object.keys(c).some(key=>!['role','trafficRole','chunks','intervalMs'].includes(key)) || !['mac-app','pc-app'].includes(c.role) || !['mac-web','pc-web'].includes(c.trafficRole) || !Number.isInteger(c.chunks) || c.chunks < 4 || c.chunks > 16 || !Number.isInteger(c.intervalMs) || c.intervalMs < 100 || c.intervalMs > 250 || config.rounds > 1 || config.fileWrites || config.multiField || config.sustainedTyping || config.undoRedo || config.assetReplacement || config.assetReplacements || config.transientInvalid || config.malformedRepair || config.offline || config.restart || config.closeProbe || (config.pattern ?? 'append') !== 'append') fail('closeDuringTraffic requires mac-app/pc-app, one browser peer, chunks4..16, intervalMs100..250 and one isolated append round or reopen');
     config.closeDuringTraffic = {role:c.role,trafficRole:c.trafficRole,chunks:c.chunks,intervalMs:c.intervalMs};
     if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedDocumentHash ?? '')) fail('closeDuringTraffic reopen requires expectedDocumentHash');
   }
@@ -477,8 +477,8 @@ export class Coordinator {
       if(closing&&!completed)during++;
       if(!closing){
         closing=true;closeRequestedMs=elapsedMs;
-        const pending=this.collect(round,'close-probe',[role]);this.adapters.get(role).send({type:'close-probe',round});
-        closePromise=pending.then(results=>{completed=true;closeCompletedMs=performance.now()-start;const result=results.get(role);if(result.closed!==true||result.keepEditingDialog!==false||result.flushed!==true)throw new StressFailure('close-traffic-normal-close-failed',{round,role,result});return result;});
+        const pending=this.collect(round,'close-probe',[role]);this.adapters.get(role).send({type:'close-probe',round,...(role==='mac-app'?{ownEditId:own.id}:{})});
+        closePromise=pending.then(results=>{completed=true;closeCompletedMs=performance.now()-start;const result=results.get(role);if(result.closed!==true||result.keepEditingDialog!==false||result.flushed!==true || (role==='mac-app'&&!checkMacWindowCloseProof(result,{fixture:this.config.fixture,ownEditId:own.id,sessionId:this.editorBaseline[role].sessionId,generation:this.attestations[role].generation??1})))throw new StressFailure('close-traffic-normal-close-failed',{round,role,result});if(role==='mac-app')this.record('mac-normal-window-close',{round,role,...result});return result;});
         closePromise.catch(error=>{closeError=error;});
       }
     };
@@ -493,7 +493,8 @@ export class Coordinator {
       if(closeError)throw closeError;
       if(during<1)throw new StressFailure('close-traffic-insufficient-overlap',{round,role,trafficRole,during,closeRequestedMs,closeCompletedMs});
       this.record('close-during-traffic',{round,role,trafficRole,ownEditId:own.id,observedChunksDuringClose:during,closeRequestedMs,closeCompletedMs,closed:true,flushed:true});
-      await this.restartActor(round,role,true);
+      if(role==='mac-app')await this.reopenRetainedWindow(round);
+      else await this.restartActor(round,role,true);
       return applied;
     } finally { adapter.off('message',onProgress); }
   }
@@ -686,6 +687,20 @@ export class Coordinator {
     if (result.closed !== true || result.keepEditingDialog !== false || result.flushed !== true)
       throw new StressFailure('close-probe-failed', { role, result });
     this.record('close-probe', { role, round: this.config.rounds, ...result });
+  }
+
+  async reopenRetainedWindow(round) {
+    const role='mac-app',pending=this.collect(round,'window-reopen',[role]);
+    this.adapters.get(role).send({type:'window-reopen',round,identitySchema:1});
+    const reply=(await pending).get(role),generation=this.attestations[role].generation??1,sessionId=this.editorBaseline[role].sessionId;
+    if(reply.lifecycle!=='retained-window-reopen'||reply.windowGeneration!==2||reply.generation!==generation||reply.retained!==true)throw new StressFailure('retained-window-reopen-invalid',{round,role});
+    let identity;
+    if(this.config.mode==='real'){
+      try{identity=checkRetainedWindowAttestation(reply.attestation,this.config.expectedIdentities[role],{fixture:this.config.fixture,machineId:this.attestations[role].machineId,sessionId,generation}).identity;}
+      catch(error){throw new StressFailure('retained-window-identity-mismatch',{round,role,reason:String(error.message).slice(0,240)});}
+    }
+    this.checkEditor(round,role,reply.editor);
+    this.record('retained-window-reopen',{round,role,generation,windowGeneration:2,sessionId,...(identity?{identity}:{})});
   }
 
   async restartActor(round, role, graceful = false) {

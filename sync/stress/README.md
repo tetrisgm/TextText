@@ -418,3 +418,28 @@ passing physical receipt, exact scenario, body/full-document hashes, assets and
 artifact pins. Other-role close-under-traffic, forced dirty-journal timing, and
 physical campaigns remain separate work. The legacy closeProbe still means
 normal PC close after convergence only.
+
+### Mac normal window close with observed peer typing
+
+The same closeDuringTraffic object now also accepts `role: "mac-app"` with
+mac-web or pc-web as trafficRole. Its timing/operation/refusal/full-reopen rules
+match the PC scenario above. The Mac actor requires its actual accepted own edit
+for that round and verifies the marker once in both the visible editor and the
+actual fixture pack after normal close.
+
+Mac close means `NSWindow.performClose` through the production durability guard,
+an actual willClose notification, a hidden original window, no Keep editing
+sheet, and a typed shared durability receipt bound to the fixture item/workspace.
+A process exit, hidden window alone, idle receipt, or local-only durability label
+cannot satisfy the proof. The original controller/WebView/native session remains
+retained as in Command-W. The window-reopen command calls production present,
+requires the same mounted editor/session and process/mailbox generation1, and
+records windowGeneration2 only after the observed close/reopen cycle. It obtains
+fresh actual source/account/root attestation. No SIGKILL, process restart or
+fabricated new editor session is used. Final actor shutdown performs a fresh
+flush before normal controller disposal; close does not cache final-flush success.
+
+Fresh physical campaigns and independent fresh-run reopen are still required.
+The isolated NSWindow/WK fixture covers the actor's real close guard strategy,
+not authenticated product collaboration. Browser-close, other combinations and
+forced dirty-journal timing remain separate coverage.

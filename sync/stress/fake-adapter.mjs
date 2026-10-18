@@ -19,6 +19,7 @@ const pendingEdits = [];
 let observations = 0;
 let online = true;
 let malformed;
+let lastEdit;
 
 const publish = (edit) => writeFileSync(join(shared, `${edit.id}.json`), JSON.stringify(edit));
 
@@ -50,6 +51,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       if (fault === 'dup-ready') out({ type: 'ready', round: m.round });
       return out({ type: 'ready', round: m.round });
     case 'edit': {
+      lastEdit=m.edit;
       let writeProgress;
       if (m.edit.fileWriteSequence) {
         const sequence=m.edit.fileWriteSequence,count=fault==='write-prefix-fail'?1:sequence.chunks.length;
@@ -99,7 +101,9 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(writeProgress ? { writeProgress } : {}), ...(fieldEditIds ? { fieldEditIds, ...(fieldProgress ? { fieldProgress } : {}) } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
     }
     case 'close-probe':
-      return setTimeout(()=>out({type:'close-probe',round:m.round,closed:fault!=='close-refuse',keepEditingDialog:fault==='close-refuse',flushed:fault!=='close-refuse'}),fault==='close-fast'?0:250);
+      return setTimeout(()=>out({type:'close-probe',round:m.round,closed:fault!=='close-refuse',keepEditingDialog:fault==='close-refuse',flushed:fault!=='close-refuse',...(role==='mac-app'?{lifecycle:'normal-window-close',windowCloseObserved:fault!=='mac-close-no-event',retained:true,ownEditId:m.ownEditId,ownEditOccurrences:fault==='mac-close-own-missing'?0:1,fileHash:'a'.repeat(64),sessionId,generation,windowGeneration:1,durability:{outcome:fault==='mac-close-idle'?'pending':'durable',workspaceId:'ws-fixture',itemId:'item-fixture',lifecycle:'fixture-life',generation:1}}:{})}),fault==='close-fast'?0:250);
+    case 'window-reopen':
+      return out({type:'window-reopen',round:m.round,lifecycle:'retained-window-reopen',windowGeneration:2,generation:fault==='mac-window-process-restart'?2:generation,retained:true,editor:{sessionId:fault==='mac-window-remount'?'new-session':sessionId,reloads:fault==='mac-window-reload'?1:0}});
     case 'transport':
       online = m.online;
       if (online) while (pendingEdits.length) publish(pendingEdits.shift());

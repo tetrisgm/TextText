@@ -242,6 +242,9 @@ final class NativeStressRunner {
     private var fieldProgress: [String: Any]?
     private var historyProgress: [String: Any]?
     private var inputProgress: [String: Any]?
+    private var windowGeneration = 1
+    private var normalWindowClosed = false
+    private var lastAcceptedOwnEdit: (id: String, text: String)?
     private var opened = false
     private var transportOffline = false
     private var flushed: Bool?
@@ -385,15 +388,7 @@ final class NativeStressRunner {
                 throw NativeStressActor.Failure("Coordinator fixture does not match the configured test item and workspace.")
             }
             try await open()
-            let mailboxName = session.lastPathComponent
-            guard mailboxName.range(of: #"^gen-[0-9]{4}$"#, options: .regularExpression) != nil,
-                  let generation = Int(mailboxName.dropFirst(4)), (1...9999).contains(generation) else {
-                throw NativeStressActor.Failure("The actor requires a fresh relay-owned generation mailbox.")
-            }
-            var result: [String: Any] = ["type": "attest", "round": 0, "mode": "real", "workspaceId": config.workspaceId, "itemId": config.itemId,
-                    "machineId": NativeStressActor.hostName(), "adapter": adapterName, "sessionId": sessionId, "generation": generation]
-            if request["identitySchema"] as? Int == 1 { result["identity"] = try observedIdentity() }
-            return result
+            return try attestation(includeIdentity: request["identitySchema"] as? Int == 1)
         case "prepare":
             try await requireSelected()
             if request["select"] as? String == "Existing fixture text." {
@@ -457,7 +452,46 @@ final class NativeStressRunner {
                 return ["type": "applied", "round": round, "editId": id, "inputProgress": completed]
             }
             try await insert(id: id, text: text, start: operation == "insert-start", replacing: operation == "replace-selection")
+            if operation == "append" { lastAcceptedOwnEdit = (id, text) }
             return ["type": "applied", "round": round, "editId": id]
+        case "close-probe":
+            try await requireSelected()
+            guard windowGeneration == 1, try mailboxGeneration() == 1, !normalWindowClosed,
+                  let own = lastAcceptedOwnEdit, own.id == "r\(round)-mac-app",
+                  request["ownEditId"] as? String == own.id,
+                  let visible = try await body(), visible.components(separatedBy: own.text).count == 2 else {
+                throw NativeStressActor.Failure("Normal close requires this round's actual accepted own edit once.")
+            }
+            let result = try await NativeStressWindowLifecycle.close(controller: controller, webView: webView,
+                workspaceId: config.workspaceId, itemId: config.itemId)
+            _ = try requireActorAccount()
+            let saved = try LocalVaultDocumentStore(root: config.root).read(path: config.relativePath)
+            guard MarkdownIdentityCodec.extract(from: saved.contents.markdown)?.itemId.lowercased() == config.itemId.lowercased(),
+                  saved.contents.markdown.components(separatedBy: own.text).count == 2 else {
+                throw NativeStressActor.Failure("Normal window close did not preserve the exact own intent in the fixture pack.")
+            }
+            normalWindowClosed = true
+            var response = result
+            response.merge(["type": "close-probe", "round": round, "lifecycle": "normal-window-close", "retained": true,
+                "ownEditId": own.id, "ownEditOccurrences": 1, "fileHash": saved.hash, "sessionId": sessionId,
+                "generation": try mailboxGeneration(), "windowGeneration": windowGeneration]) { _, new in new }
+            record(["kind": "normal-window-close", "ownEditId": own.id, "fileHash": saved.hash, "windowGeneration": windowGeneration])
+            // Do not cache flushed=true: this retained editor will receive peer changes.
+            return response
+        case "window-reopen":
+            guard normalWindowClosed, windowGeneration == 1 else { throw NativeStressActor.Failure("No successful normal window close to reopen.") }
+            try await NativeStressWindowLifecycle.reopen(controller: controller, webView: webView)
+            try await until("Retained window did not resume the same shared editor.") {
+                _ = try self.requireActorAccount()
+                return try await self.evaluate("(()=>{const s=document.querySelector('[data-collaboration-item]');return ['ready','saving'].includes(s?.dataset.collaborationState)&&(s?.dataset.collaborationItem||'').toLowerCase()===\(self.expectedItem)&&window.texttextStressSession===\(Self.json(self.sessionId))&&window.texttextStressContinuity?.removed===false})()") == "true"
+            }
+            try await requireSelected()
+            windowGeneration = 2; normalWindowClosed = false
+            let fresh = try attestation(includeIdentity: true)
+            record(["kind": "retained-window-reopen", "windowGeneration": windowGeneration, "sessionId": sessionId])
+            return ["type": "window-reopen", "round": round, "lifecycle": "retained-window-reopen", "retained": true,
+                "windowGeneration": windowGeneration, "generation": try mailboxGeneration(), "attestation": fresh,
+                "editor": ["sessionId": sessionId, "reloads": reloads]]
         case "transport":
             guard opened, let online = request["online"] as? Bool else {
                 throw NativeStressActor.Failure("Transport fault requires an open editor and a boolean online state.")
@@ -492,6 +526,23 @@ final class NativeStressRunner {
         default:
             throw NativeStressActor.Failure("Unsupported coordinator message type.")
         }
+    }
+
+    private func mailboxGeneration() throws -> Int {
+        let name = session.lastPathComponent
+        guard name.range(of: #"^gen-[0-9]{4}$"#, options: .regularExpression) != nil,
+              let generation = Int(name.dropFirst(4)), (1...9999).contains(generation) else {
+            throw NativeStressActor.Failure("The actor requires a fresh relay-owned generation mailbox.")
+        }
+        return generation
+    }
+    private func attestation(includeIdentity: Bool) throws -> [String: Any] {
+        _ = try requireActorAccount()
+        var result: [String: Any] = ["type": "attest", "round": 0, "mode": "real", "workspaceId": config.workspaceId,
+            "itemId": config.itemId, "machineId": NativeStressActor.hostName(), "adapter": adapterName, "sessionId": sessionId,
+            "generation": try mailboxGeneration(), "windowGeneration": windowGeneration]
+        if includeIdentity { result["identity"] = try observedIdentity() }
+        return result
     }
 
     @discardableResult private func requireActorAccount() throws -> LocalVaultAccountCredential {
@@ -840,4 +891,50 @@ final class NativeStressRunner {
         return ok
     }
 }
+
+@MainActor
+final class NativeStressWindowLifecycle {
+    @MainActor private final class Observation { var closed = false }
+    static func close(controller: LocalVaultWindowController, webView: WKWebView,
+                      workspaceId: String, itemId: String, timeout: TimeInterval = 30) async throws -> [String: Any] {
+        guard let window = controller.window, window.isVisible, window.contentView === webView, window.attachedSheet == nil else {
+            throw NativeStressActor.Failure("Normal close requires the visible original native window without a sheet.")
+        }
+        let observation = Observation()
+        let token = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
+            Task { @MainActor in observation.closed = true }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        window.performClose(nil)
+        while !observation.closed || window.isVisible {
+            if window.attachedSheet != nil { throw NativeStressActor.Failure("Normal close showed Keep editing; saved work remains available.") }
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw NativeStressActor.Failure("Normal native window close did not finish within its bound.") }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        guard controller.window === window, window.contentView === webView,
+              let d = controller.lastFlushDurability, d["outcome"] as? String == "durable",
+              d["workspaceId"] as? String == workspaceId, d["itemId"] as? String == itemId,
+              let lifecycle = d["lifecycle"] as? String, !lifecycle.isEmpty, lifecycle.count <= 512,
+              let generation = d["generation"] as? Int, generation >= 0 else {
+            throw NativeStressActor.Failure("Normal close lacks fixture-scoped shared durability or retained native view.")
+        }
+        return ["closed": true, "flushed": true, "keepEditingDialog": false, "windowCloseObserved": true,
+            "durability": ["outcome": "durable", "workspaceId": workspaceId, "itemId": itemId, "lifecycle": lifecycle, "generation": generation]]
+    }
+    static func reopen(controller: LocalVaultWindowController, webView: WKWebView, timeout: TimeInterval = 10) async throws {
+        guard let window = controller.window, !window.isVisible, window.contentView === webView else {
+            throw NativeStressActor.Failure("Retained reopen requires the original normally closed window and view.")
+        }
+        controller.present()
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while true {
+            let visible = (try? await webView.evaluateJavaScript("document.visibilityState==='visible'")) as? Bool == true
+            if window.isVisible && controller.window === window && window.contentView === webView && visible { return }
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw NativeStressActor.Failure("Retained native window did not become visible.") }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+}
+
 #endif
