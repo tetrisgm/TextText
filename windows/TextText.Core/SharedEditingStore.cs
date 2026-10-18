@@ -19,7 +19,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     void PrepareAccount(string itemId,string path,string expectedHash) {
         var directory=DirectoryFor(itemId);
         var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));if(intent!=null)RequireAccount(intent.Checkpoint);
-        var move=Read<MoveIntent>(System.IO.Path.Combine(directory,"move-intent.json"));if(move!=null)RequireAccount(move.Checkpoint);
+        var move=ReadMoveIntent(System.IO.Path.Combine(directory,"move-intent.json"));if(move!=null)RequireAccount(move.Checkpoint);
         var acknowledgement=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"acknowledge.json"));if(acknowledgement!=null)RequireAccount(acknowledgement);
         var file=System.IO.Path.Combine(directory,"checkpoint.json");var checkpoint=Read<SharedCheckpoint>(file);if(checkpoint==null)return;
         Validate(store,checkpoint);if(JournalAccount(checkpoint)==principalAccountId)return;
@@ -34,7 +34,16 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         TextPackStore.AtomicWrite(System.IO.Path.Combine(directory,"archived-account-"+Guid.NewGuid().ToString("N")+".json"),File.ReadAllBytes(file));
         File.Delete(file);
     }
-    sealed record MoveIntent(int Version,string SourcePath,SharedCheckpoint Checkpoint,bool AdoptsExternalChange=false);
+    sealed record MoveIntent(int Version,string SourcePath,SharedCheckpoint Checkpoint,bool AdoptsExternalChange=false,bool? CaseOnly=null);
+    static MoveIntent? ReadMoveIntent(string path)
+    {
+        if(!File.Exists(path))return null;
+        var bytes=RetainedFileReplacement.Read(path,90*1024*1024);
+        RetainedFileReplacement.JsonFields(bytes,["Version","SourcePath","Checkpoint","AdoptsExternalChange","CaseOnly"],["Version","SourcePath","Checkpoint"]);
+        var intent=JsonSerializer.Deserialize<MoveIntent>(bytes)??throw new InvalidDataException("Invalid shared move intent.");
+        if(intent.Version!=1||string.IsNullOrEmpty(intent.SourcePath)||intent.Checkpoint is null||intent.SourcePath==intent.Checkpoint.Path||intent.CaseOnly is not null&&(intent.CaseOnly!=true||!RetainedFileMove.CaseOnlyPaths(intent.SourcePath,intent.Checkpoint.Path)))throw new InvalidDataException("Unsupported shared move intent.");
+        return intent;
+    }
     sealed record Intent(int Version,string BeforeHash,string Payload,SharedCheckpoint Checkpoint);
     sealed record BinaryIntent(int Version,string ItemId,string Path,string BeforeHash,string AfterHash);
     sealed record Active(string ItemId,string Path,IDisposable Lease);
@@ -117,7 +126,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
         if(cp==null)return null;
         Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");
-        if(cp.RetiredReason!=null||File.Exists(store.Resolve(cp.Path)))return cp;
+        if(cp.RetiredReason!=null||RetainedFileMove.ExactLeafExists(store.Resolve(cp.Path)))return cp;
         var target=UniqueProjection(store,itemId);
         return RebaseProjection(store,itemId,target.Path,adoptingExternalChange:true);
     });
@@ -164,31 +173,34 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"))??throw new InvalidOperationException("No shared projection is available.");
         Validate(store,cp);if(cp.ItemId!=itemId||cp.RetiredReason!=null)throw new InvalidDataException("Shared identity mismatch.");
         if(cp.Path==newPath)return cp;
-        if(File.Exists(store.Resolve(cp.Path))) {
+        var sourcePath=store.Resolve(cp.Path);var destinationPath=store.Resolve(newPath);
+        var caseOnly=RetainedFileMove.IsCaseOnlyAlias(sourcePath,destinationPath)||adoptingExternalChange&&RetainedFileMove.IsCaseOnlyAlias(destinationPath,sourcePath);
+        if(caseOnly?RetainedFileMove.ExactLeafExists(sourcePath):File.Exists(sourcePath)) {
             var source=store.Describe(cp.Path);
-            if(source.ItemId!=itemId||source.Hash!=cp.ProjectedHash||File.Exists(store.Resolve(newPath)))throw new FileChangedException();
+            if(source.ItemId!=itemId||source.Hash!=cp.ProjectedHash||!caseOnly&&File.Exists(destinationPath))throw new FileChangedException();
         } else {
             var observed=UniqueProjection(store,itemId);
             if(observed.Path!=newPath||(!adoptingExternalChange&&observed.Hash!=cp.ProjectedHash))throw new FileChangedException();
         }
         var journal=System.Text.Json.Nodes.JsonNode.Parse(cp.Journal)!;journal["relativePath"]=newPath;
         var target=cp with{Path=newPath,Journal=journal.ToJsonString()};Validate(store,target);
-        var intent=new MoveIntent(1,cp.Path,target,adoptingExternalChange);Save(System.IO.Path.Combine(directory,"move-intent.json"),intent);
+        var intent=new MoveIntent(1,cp.Path,target,adoptingExternalChange,CaseOnly:caseOnly?true:null);Save(System.IO.Path.Combine(directory,"move-intent.json"),intent);
         if(interruptAfterIntent)throw new IOException("Interrupted before shared move.");
         return FinishMove(store,directory,intent,interruptAfterMove);
     });
     static void RecoverMove(TextPackStore store,string directory,string itemId) {
-        var intent=Read<MoveIntent>(System.IO.Path.Combine(directory,"move-intent.json"));
+        var intent=ReadMoveIntent(System.IO.Path.Combine(directory,"move-intent.json"));
         if(intent!=null){if(intent.Checkpoint.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");FinishMove(store,directory,intent);}
     }
     static SharedCheckpoint FinishMove(TextPackStore store,string directory,MoveIntent intent,bool interruptAfterMove=false) {
         var cp=intent.Checkpoint;Validate(store,cp);
         if(intent.Version!=1||intent.SourcePath==cp.Path)throw new InvalidDataException("Invalid shared move.");
-        if(File.Exists(store.Resolve(intent.SourcePath))) {
+        if(intent.CaseOnly==true?RetainedFileMove.ExactLeafExists(store.Resolve(intent.SourcePath)):File.Exists(store.Resolve(intent.SourcePath))) {
             var current=store.Describe(intent.SourcePath);if(current.ItemId!=cp.ItemId||current.Hash!=cp.ProjectedHash)throw new FileChangedException();
             store.Rename(intent.SourcePath,cp.Path,current.Hash);
             if(interruptAfterMove)throw new IOException("Interrupted after shared move.");
         }
+        if(intent.CaseOnly==true&&!RetainedFileMove.ExactLeafExists(store.Resolve(cp.Path)))throw new FileChangedException();
         var moved=intent.AdoptsExternalChange?UniqueProjection(store,cp.ItemId):store.Describe(cp.Path);
         if(moved.Path!=cp.Path||moved.ItemId!=cp.ItemId||(!intent.AdoptsExternalChange&&moved.Hash!=cp.ProjectedHash))throw new FileChangedException();
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);File.Delete(System.IO.Path.Combine(directory,"move-intent.json"));return cp;
@@ -196,7 +208,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     SharedCheckpoint? Recover(string itemId) => store.WithExclusiveMutation(() => {
         store.AssertReplacementReadable(itemId);
         var directory=DirectoryFor(itemId);
-        var move=Read<MoveIntent>(System.IO.Path.Combine(directory,"move-intent.json"));if(move!=null)RequireAccount(move.Checkpoint);
+        var move=ReadMoveIntent(System.IO.Path.Combine(directory,"move-intent.json"));if(move!=null)RequireAccount(move.Checkpoint);
         RecoverMove(store,directory,itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
         if(intent!=null) {RequireAccount(intent.Checkpoint);if(intent.Version!=1)throw new InvalidDataException("Unsupported shared intent.");Finish(intent,directory);}
         var prior=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(prior!=null){Validate(store,prior);RequireAccount(prior);}
@@ -271,7 +283,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
                 // A retained intent/checkpoint may attest its own old path.
                 // Never substitute another checkpoint for an unrelated missing path.
                 PrepareAccount(itemId,path,expectedHash);
-                var move=Read<MoveIntent>(System.IO.Path.Combine(DirectoryFor(itemId),"move-intent.json"));
+                var move=ReadMoveIntent(System.IO.Path.Combine(DirectoryFor(itemId),"move-intent.json"));
                 var cp=Recover(itemId);
                 if(move!=null&&move.SourcePath==path&&move.Checkpoint.ItemId==itemId&&cp?.Path==move.Checkpoint.Path&&expectedHash==move.Checkpoint.ProjectedHash)path=cp.Path;
                 var retainedPath=cp?.Path;
