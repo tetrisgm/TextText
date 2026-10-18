@@ -6,13 +6,15 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 
 ## Active work, October 18
 
-- Native retained saves, removals and moves, including leaf case-only changes through active/pending shared editors, pass relevant Mac and actual-PC source gates. Mac and Windows old-case alias writes/removals/moves also pass. Authoritative folder-casing reconciliation and its scoped metadata recovery are being verified on both native platforms.
+- Native retained saves, removals and moves, including leaf case-only changes through active/pending shared editors, pass relevant Mac and actual-PC source gates. Mac and Windows old-case alias writes/removals/moves also pass. Authoritative folder-casing reconciliation and scoped metadata recovery now pass full Mac and actual-PC gates, including initial-identity races. Installed acceptance remains open.
 - The identityless legacy TextPack regression is fixed through explicit path-bound retained recovery; original CLI fixtures pass without invented IDs. The combined native gate also passes shared queue policy consumers. The separate offline-window fixture now passes with verified account ownership and a fresh complete bundle; set `TEXTTEXT_VAULT_WINDOW_TEST_BUNDLE` to current assets when running it.
 - The physical runner supports malformed/repair holds and observed typing during normal Windows close, in addition to source/artifact/principal pins, restart re-attestation, keyboard undo/redo, multi-field observations, browser crash and ordinary file writes. These are source/driver fixtures, not the pending physical campaign; Mac retained-window close now passes 150 runner tests and real WK/AppKit fixtures; browser close and other scenario combinations remain open.
-- Shared retry and lifecycle classifiers already run through the packaged TypeScript owner. Shared queue eligibility/budget selection and native consumers pass Mac, actual-PC and actual WebView2 source gates; installed acceptance remains open. Consult the [lifecycle receipt](verification/2026-10-17-mirror-lifecycle-policy.md) before repeating that implementation.
+- Shared retry and lifecycle classifiers already run through the packaged TypeScript owner. Shared queue eligibility/budget selection and native consumers pass Mac, actual-PC and actual WebView2 source gates; installed acceptance remains open. All 17 runner protocol test files pass (152 tests), and required browser/native bridge checks are registered in manual verification. Consult the [lifecycle receipt](verification/2026-10-17-mirror-lifecycle-policy.md) before repeating that implementation.
 
 ## Verified source references
 
+- [Mac folder reconciliation](verification/2026-10-18-folder-case-reconciliation.md), [Windows folder reconciliation](verification/2026-10-18-windows-folder-case.md), [shared folder recovery](verification/2026-10-18-folder-recovery-ui.md).
+- [Backlinks refresh](verification/2026-10-18-backlinks-invalidation.md), [grid invalidation](verification/2026-10-18-grid-invalidation.md), [real browser journal migration](verification/2026-10-18-browser-journal-compatibility.md), [manual verification coverage](verification/2026-10-18-verification-coverage.md).
 - [Shared application full gate and enabled local PostgreSQL](verification/2026-10-18-shared-full-gate.md).
 - [Mac retained moves](verification/2026-10-18-retained-move.md), [Windows retained moves and case-only leaf names](verification/2026-10-18-windows-retained-move.md), [shared move recovery UI](verification/2026-10-18-move-recovery-ui.md).
 - [Retained replacement](verification/2026-10-18-retained-replacement-native.md), [Mac removal](verification/2026-10-18-retained-removal.md), [Windows removal](verification/2026-10-18-windows-retained-removal.md), [profile reads and parent-path guards](verification/2026-10-18-parent-path-and-profile-reads.md).
@@ -33,6 +35,8 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 New source has not been installed or deployed. Local builds/installs and required Oracle web deployments are already authorized. Final deployment still needs its own fresh backup, migration, health and authenticated smoke.
 
 ## Remaining acceptance
+
+Active source work: real iCloud/HTTP duplicate-delivery checks, historical installed-reader compatibility characterization, and the next physical-runner lifecycle scenario. Actual older installed sources do not understand the new ownership/profile markers; use forward recovery for candidate-written state rather than binary rollback onto that workspace.
 
 Complete the supported current six-client correctness/reopen matrix, active native account switches, real template/agent/MCP workflows, wider provider/crash/upgrade boundaries, 100 seeded rounds, 60-minute soak, and actual T25 latency distributions. Then produce one coherent candidate set, normal installs/deploy, compatible recovery instructions, installed acceptance and the required TextText changelog entry. Source/driver fixtures never substitute for physical acceptance.
 
