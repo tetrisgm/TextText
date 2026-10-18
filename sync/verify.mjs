@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 export const inputs = ['src', 'sync', 'presets/builtin', 'scripts/generate-builtin-presets.ts', 'scripts/builtin-preset-assets.ts', 'scripts/fixtures', 'scripts/vault-http-test-server.ts', 'mac/Sources', 'mac/Tests',
   'scripts/build-local-vault.mjs', 'scripts/verify-production-shutdown.mjs', 'windows/scripts/build-ui.mjs',
   'windows/scripts/stress-native-task.ps1', 'windows/scripts/stress-native-relay.mjs',
-  'windows/TextText.Windows', 'windows/TextText.Smoke', 'windows/TextText.LiveAcceptance', 'windows/TextText.Core', 'windows/TextText.Core.Tests',
+  'windows/TextText.Windows', 'windows/TextText.Windows.Tests', 'windows/TextText.Smoke', 'windows/TextText.LiveAcceptance', 'windows/TextText.Core', 'windows/TextText.Core.Tests',
   'mac/scripts/stress-native.py',
   'mac/Package.swift', 'mac/Package.resolved', 'package.json', 'package-lock.json',
   'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'release/ship.sh', 'mac/scripts/build-app.sh', 'mac/scripts/build-store.sh'];
@@ -71,6 +71,14 @@ async function run(command, args, environment = process.env) {
   });
 }
 
+export async function stressTestPaths(base = root) {
+  const entries = await fs.readdir(path.join(base, 'sync/stress'), { withFileTypes: true });
+  const tests = entries.filter(entry => entry.isFile() && entry.name.endsWith('.test.mjs'))
+    .map(entry => `sync/stress/${entry.name}`).sort();
+  if (!tests.length) throw new Error('The stress runner regression suite is missing.');
+  return tests;
+}
+
 async function main() {
   const flags = new Set(process.argv.slice(2));
   for (const flag of flags) if (!['--check', '--core-only', '--native-only', '--client-only'].includes(flag)) throw new Error(`Unknown flag ${flag}`);
@@ -94,8 +102,11 @@ async function main() {
       await run(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/generate-builtin-presets.ts', '--check']);
       if (scope === 'core' || scope === 'client') {
         await run(process.execPath, ['--test', 'sync/verify.test.mjs']);
-        await run(process.execPath, ['--test', 'sync/stress/stress.test.mjs', 'sync/stress/file-adapter.test.mjs', 'sync/stress/browser-adapter.test.mjs']);
+        await run(process.execPath, ['--test', '--test-concurrency=2', ...await stressTestPaths()]);
         await run(process.execPath, ['sync/browser-journal-compatibility.browser.mjs']);
+        await run(process.execPath, ['src/local-vault/__tests__/folder-rename-recovery.browser.mjs']);
+        await run(process.execPath, ['src/local-vault/__tests__/backlinks-invalidation.browser.mjs']);
+        await run(process.execPath, ['src/local-vault/__tests__/grid-invalidation.browser.mjs']);
         await run(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', '--config',
           scope === 'client' ? 'sync/vitest.client.config.mts' : 'sync/vitest.config.mts'],
           scope === 'core' ? coreDatabaseEnvironment() : process.env);

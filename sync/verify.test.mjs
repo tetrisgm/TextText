@@ -5,7 +5,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { coreDatabaseEnvironment, inputs, fingerprint, validateReceipt, recordPassingRun } from './verify.mjs';
+import { coreDatabaseEnvironment, inputs, fingerprint, validateReceipt, recordPassingRun, stressTestPaths } from './verify.mjs';
+
+test('manual verification discovers every runner regression including new protocol helpers', async () => {
+  const actual = await stressTestPaths();
+  for (const name of ['build-private-actor', 'identity', 'native-close-lifecycle', 'malformed-repair', 'undo-redo']) {
+    assert.ok(actual.includes(`sync/stress/${name}.test.mjs`));
+  }
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-stress-discovery-'));
+  try {
+    await fs.mkdir(path.join(temporary, 'sync/stress'), { recursive: true });
+    await assert.rejects(stressTestPaths(temporary), /suite is missing/);
+    await fs.writeFile(path.join(temporary, 'sync/stress/new-protocol.test.mjs'), '');
+    await fs.writeFile(path.join(temporary, 'sync/stress/README.md'), '');
+    assert.deepEqual(await stressTestPaths(temporary), ['sync/stress/new-protocol.test.mjs']);
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+});
 
 test('invocation through a symlink executes the gate and rejects invalid flags', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-sync-entry-'));
@@ -51,8 +66,9 @@ test('Windows sync sources and regressions invalidate receipts, generated .NET o
   assert.ok(inputs.includes('windows/TextText.Core'));
   assert.ok(inputs.includes('windows/TextText.Core.Tests'));
   assert.ok(inputs.includes('windows/TextText.Windows'));
+  assert.ok(inputs.includes('windows/TextText.Windows.Tests'));
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-windows-gate-'));
-  const paths = ['windows/TextText.Core', 'windows/TextText.Core.Tests', 'windows/TextText.Windows'];
+  const paths = ['windows/TextText.Core', 'windows/TextText.Core.Tests', 'windows/TextText.Windows', 'windows/TextText.Windows.Tests'];
   try {
     for (const directory of paths) {
       await fs.mkdir(path.join(root,directory),{recursive:true});
@@ -73,6 +89,9 @@ test('Windows sync sources and regressions invalidate receipts, generated .NET o
     const beforeBridge = await fingerprint(root,paths);
     await fs.writeFile(path.join(root,paths[2],'Source.cs'),'changed native HTTP bridge');
     assert.notEqual(await fingerprint(root,paths),beforeBridge);
+    const beforeBridgeTests = await fingerprint(root,paths);
+    await fs.writeFile(path.join(root,paths[3],'Source.cs'),'changed bridge regression');
+    assert.notEqual(await fingerprint(root,paths),beforeBridgeTests);
   } finally { await fs.rm(root,{recursive:true,force:true}); }
 });
 

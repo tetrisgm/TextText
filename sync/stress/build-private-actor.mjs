@@ -34,8 +34,10 @@ export function buildPrivateActor(config) {
       for (const profile of existingProfiles) copyFileSync(join(profiles, profile.name), join(destinationProfiles, profile.name));
       run('fresh-signed-app', 'bash', [store ? 'mac/scripts/build-store.sh' : 'mac/scripts/build-app.sh'], env);
       const args = ['build', '--jobs', '2', '-c', 'release', '--triple', 'arm64-apple-macosx14.0', '--package-path', 'mac', '--disable-automatic-resolution', '-Xswiftc', '-DTEXTTEXT_STRESS_ACTOR', '--product', 'TextTextApp'];
-      run('private-native-actor', 'swift', args, env);
-      const bin = command('swift', ['build', '-c', 'release', '--triple', 'arm64-apple-macosx14.0', '--package-path', 'mac', '--show-bin-path'], sourceRoot, { capture: true, env });
+      const bin = withPreservedPackageResolution(sourceRoot, () => {
+        run('private-native-actor', 'swift', args, env);
+        return command('swift', ['build', '-c', 'release', '--triple', 'arm64-apple-macosx14.0', '--package-path', 'mac', '--show-bin-path'], sourceRoot, { capture: true, env });
+      });
       const app = join(sourceRoot, 'mac/build/TextText.app'), entitlements = join(destination, 'actor.entitlements');
       const xml = command('codesign', ['-d', '--entitlements', ':-', app], sourceRoot, { capture: true });
       if (!xml.includes('<plist')) throw new Error('Existing app signing entitlements unavailable');
@@ -60,6 +62,15 @@ export function buildPrivateActor(config) {
     const sealed = sealArtifacts({ repository, sourceRoot, buildReceipt, sidecar });
     return { sourceRoot, buildReceipt, sidecar, identity: sealed, acceptance: 'none' };
   } catch (error) { createOnlyJSON(join(destination, 'failure.json'), { status: 'failed', steps, message: String(error.message).slice(0, 300) }); throw error; }
+}
+
+// Store manifests omit Sparkle. SwiftPM may rewrite this tracked input even
+// though the signed base build already preserved it; actor builds must too.
+export function withPreservedPackageResolution(sourceRoot, action) {
+  const resolution = join(sourceRoot, 'mac/Package.resolved');
+  const original = readFileSync(resolution);
+  try { return action(); }
+  finally { writeFileSync(resolution, original); }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
