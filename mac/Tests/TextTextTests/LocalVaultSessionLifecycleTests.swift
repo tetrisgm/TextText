@@ -118,6 +118,35 @@ final class LocalVaultSessionLifecycleTests: XCTestCase {
         XCTAssertEqual(text, "Original WK retained"); XCTAssertEqual(closes, 1)
     }
     @MainActor
+    func testLegacyAccountReviewDoesNotSilentlyIgnoreUnverifiedIdentity() async throws {
+        _ = NSApplication.shared
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-review-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let entry = base.appendingPathComponent("index.html")
+        try "<html>Legacy review fixture</html>".write(to: entry, atomically: true, encoding: .utf8)
+        let sentinel = base.appendingPathComponent("pending-original.json")
+        let original = Data("unmodified pending fixture".utf8); try original.write(to: sentinel)
+        let controller = LocalVaultWindowController(entry: entry, root: base, websiteDataStore: .nonPersistent(), credentials: { (URL(string: "https://legacy-review.test")!, "fixture") })
+        defer { controller.shutdown(); controller.window?.orderOut(nil) }
+        var retries = 0
+        controller.onVerifyAccount = { retries += 1; return false }
+        let task = controller.reviewSavedWork()
+        XCTAssertNotNil(task, "A legacy signed-in user needs visible verification/retry guidance, not a no-op")
+        guard let task else { return }
+        let window = try XCTUnwrap(controller.window), deadline = Date().addingTimeInterval(3)
+        while window.attachedSheet == nil && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap { descendants($0) } }
+        let views = descendants(try XCTUnwrap(sheet.contentView))
+        XCTAssertTrue(views.compactMap { ($0 as? NSTextField)?.stringValue }.contains { $0.contains("verify") || $0.contains("Verify") })
+        try XCTUnwrap(views.compactMap { $0 as? NSButton }.first { $0.title == "OK" }).performClick(nil)
+        await task.value
+        XCTAssertEqual(retries, 1)
+        XCTAssertEqual(try Data(contentsOf: sentinel), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: LocalVaultDeviceState.directory(root: base).appendingPathComponent("account-owner.json").path))
+    }
+    @MainActor
     func testProductionAccountReviewHonorsChoiceIdentityAndFreshPermission() async throws {
         _ = NSApplication.shared
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap { descendants($0) } }

@@ -31,7 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     // in the menu is never overridden by the default on a later launch.
     private static let loginItemDefaultAppliedKey = "TextTextLoginItemDefaultApplied"
 
-    private let store = StateStore()
+    private let store: StateStore
+    override convenience init() { self.init(store: StateStore()) }
+    init(store: StateStore, localVaultWindow: LocalVaultWindowController? = nil) { self.store = store; self.localVaultWindow = localVaultWindow; super.init() }
     private var changeListener: ChangeListener!
     private var captureAgent: CaptureAgent!
     private var linkController: LinkController!
@@ -277,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         configureShareInbox()
         // Warm account.json for a returning user so the File Provider domain can
         // register on launch. Best effort and file-free.
+        if localVaultWindow != nil { refreshLegacyAccountIdentityIfNeeded() }
         if localVaultWindow == nil && accountGateWindow == nil {
             seedCachedWorkspaceIfNeeded()
             configureSpotlightIndexing()
@@ -672,7 +675,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// web view, replaces local state, or redraws Finder before a sync pass has
     /// established that mirrored content actually changed.
     private func recoverBackgroundSync() {
-        guard localVaultWindow == nil else { return }
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in self?.recoverBackgroundSync() }
             return
@@ -683,6 +685,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             nowUptime: uptime
         ) else { return }
         lastBackgroundRecoveryUptime = uptime
+        guard localVaultWindow == nil else {
+            refreshLegacyAccountIdentityIfNeeded()
+            return
+        }
         // Recover a domain that never registered (e.g. a transient sign-in fetch);
         // a no-op once the workspace is cached and the domain is up.
         seedCachedWorkspaceIfNeeded()
@@ -1761,6 +1767,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             warmMainWindow()
         }
         if let localVaultWindow {
+            refreshLegacyAccountIdentityIfNeeded()
             localVaultWindow.credentialsChanged()
             localVaultWindow.present()
             refreshUI()
@@ -1863,33 +1870,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     /// Signal content immediately, then refresh account.json from the server.
     /// Keep newly-created folders and workspace renames visible to Spotlight
     /// and the File Provider handoff without waiting for an app relaunch.
-    private func refreshWorkspaceMetadataAfterRemoteChange() {
-        signalFileProviderChange(serverReachable: true)
-        guard let credentials = store.loadCredentials() else { return }
+    func refreshLegacyAccountIdentityIfNeeded(fetch: ((Credentials) -> (String?, Data?))? = nil) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.refreshLegacyAccountIdentityIfNeeded(fetch: fetch) }
+            return
+        }
+        guard let credentials = store.loadCredentials(), credentials.accountId == nil else { return }
+        refreshWorkspaceMetadataAfterRemoteChange(fetch: fetch)
+    }
 
+    private func refreshWorkspaceMetadataAfterRemoteChange(fetch: ((Credentials) -> (String?, Data?))? = nil) {
+        guard let credentials = store.loadCredentials() else { return }
+        // A local window owns its own mirror. Identity verification must not
+        // start the legacy File Provider/background writer beside it.
+        if localVaultWindow == nil { signalFileProviderChange(serverReachable: true) }
         workspaceMetadataRefreshGeneration &+= 1
         let generation = workspaceMetadataRefreshGeneration
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
-            let client = ServerClient(
-                origin: resolveServerOrigin(credentials: credentials),
-                token: credentials.token)
-            let verifiedAccountId = try? client.accountIdentity(cachedAccountId: credentials.accountId)
-            guard case .success(let (_, data)) = client.workspace() else { return }
+            let result: (String?, Data?)
+            if let fetch { result = fetch(credentials) }
+            else {
+                let client = ServerClient(origin: resolveServerOrigin(credentials: credentials), token: credentials.token)
+                let accountId = try? client.accountIdentity(cachedAccountId: credentials.accountId)
+                if case .success(let (_, data)) = client.workspace() { result = (accountId, data) }
+                else { result = (accountId, nil) }
+            }
             DispatchQueue.main.async { [weak self] in
-                guard let self,
+                guard let self, generation == self.workspaceMetadataRefreshGeneration,
                       generation > self.workspaceMetadataAppliedGeneration,
-                      let current = self.store.loadCredentials(),
-                      current.token == credentials.token,
+                      let current = self.store.loadCredentials(), current.token == credentials.token,
                       current.serverOrigin == credentials.serverOrigin else { return }
                 self.workspaceMetadataAppliedGeneration = generation
-                if current.accountId == nil, let verifiedAccountId {
+                if current.accountId == nil, let verifiedAccountId = result.0 {
                     guard self.store.cacheVerifiedAccountId(verifiedAccountId, for: credentials) else { return }
                     self.localVaultWindow?.credentialsChanged()
+                    self.localVaultWindow?.accountIdentityVerificationStatus(verified: true)
+                } else if current.accountId == nil {
+                    self.localVaultWindow?.accountIdentityVerificationStatus(verified: false)
                 }
-                guard self.store.cacheWorkspace(data, for: credentials) else { return }
-                // Refresh the extension handoff, including workspace name and
-                // folder-aware signals, then rebuild Spotlight from live metadata.
+                // A failed workspace read cannot discard an independently
+                // authenticated principal or authorize account-state adoption.
+                guard let data = result.1, self.store.cacheWorkspace(data, for: credentials) else { return }
+                guard self.localVaultWindow == nil else { return }
                 self.syncFileProviderDomain(signalExistingDomain: true)
                 self.scheduleSpotlightReindex()
                 self.refreshUI()
@@ -2899,6 +2922,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             guard let account = self?.store.loadCredentials() else { return nil }
             return LocalVaultAccountCredential(origin: resolveServerOrigin(credentials: account), token: account.token, accountId: account.accountId)
         })
+        controller.onVerifyAccount = { [weak self] in
+            self?.refreshLegacyAccountIdentityIfNeeded()
+            return self?.store.loadCredentials()?.accountId != nil
+        }
         controller.onSignIn = { [weak self] in self?.signIn() }
         controller.onSignOut = { [weak self] in self?.signOut() }
         controller.onSettings = { [weak self] in self?.showStatusWindow() }
@@ -3184,6 +3211,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             guard let account = self?.store.loadCredentials() else { return nil }
             return LocalVaultAccountCredential(origin: resolveServerOrigin(credentials: account), token: account.token, accountId: account.accountId)
         })
+            localVaultWindow?.onVerifyAccount = { [weak self] in
+                self?.refreshLegacyAccountIdentityIfNeeded()
+                return self?.store.loadCredentials()?.accountId != nil
+            }
             localVaultWindow?.onSignIn = { [weak self] in self?.signIn() }
             localVaultWindow?.onSignOut = { [weak self] in self?.signOut() }
             localVaultWindow?.onSettings = { [weak self] in self?.showStatusWindow() }

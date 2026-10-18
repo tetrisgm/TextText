@@ -76,6 +76,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
 #endif
     private var agent: LocalVaultAgentController?
     var onSelectedFolder: (() -> Void)?
+    var onVerifyAccount: (() -> Bool)?
     var onSignIn: (() -> Void)?
     var onSignOut: (() -> Void)?
     var onSettings: (() -> Void)?
@@ -252,9 +253,29 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
         legacyDraftsWindow?.present()
     }
+    func accountIdentityVerificationStatus(verified: Bool) {
+        emit("texttext:vault-sync-status", value: ["connected": false, "available": true, "onlineReady": false,
+            "message": verified ? "Account verified. Close and reopen TextText, then choose Review saved work in the File menu. Saved drafts remain unchanged." : "Account verification could not finish. Check the connection, then choose Review saved work in the File menu to retry. Saved drafts remain unchanged."])
+    }
+
     @discardableResult
     func reviewSavedWork() -> Task<Void, Never>? {
-        guard !switchingWorkspace, let root, let window, let account = credentials(), let accountId = account.accountId else { return nil }
+        guard !switchingWorkspace, let root, let window, let account = credentials() else { return nil }
+        guard let accountId = account.accountId else {
+            switchingWorkspace = true
+            return Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.switchingWorkspace = false }
+                let verified = self.onVerifyAccount?() ?? false
+                let alert = NSAlert()
+                alert.messageText = verified ? "Reopen TextText to review saved work" : "Verify this account to review saved work"
+                alert.informativeText = verified
+                    ? "This account is verified. Close and reopen TextText, then choose Review saved work again. This window keeps its original saved drafts until you explicitly review them."
+                    : "TextText is retrying account verification. Check the connection, then choose Review saved work again. Once verified, close and reopen TextText to review the original saved drafts. No saved work has been moved or adopted."
+                alert.addButton(withTitle: "OK")
+                _ = await alert.beginSheetModal(for: window)
+            }
+        }
         switchingWorkspace = true
         return Task { @MainActor [weak self] in
             guard let self else { return }
