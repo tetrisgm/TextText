@@ -37,7 +37,7 @@ export function RecoveryDialog({ path, workspaceRoot = "", onClose, onRestore, o
     active.current = true;
     const generation = ++lifetime.current;
     const controller = new AbortController();
-    setPage(null); setFile(null); setChosen(null); setDeleted(null); setError("");
+    setPage(null); setFile(null); setChosen(null); setDeleted(null); setError(""); setTrash(null); setTrashError("");
     const element = dialog.current;
     element?.showModal();
     if (!path) void request<{ items: TrashItem[]; truncated: boolean }>("trashList", {}, controller.signal).then(value => { if (active.current && lifetime.current === generation) setTrash(value); }).catch((error: Error) => { if (active.current && lifetime.current === generation) setTrashError(error.message); });
@@ -77,7 +77,7 @@ export function RecoveryDialog({ path, workspaceRoot = "", onClose, onRestore, o
     <header><h2 id="vault-recovery-title">{path ? "Version history" : "Trash and recovery"}</h2><button autoFocus disabled={restoring} onClick={dismiss}>Close recovery</button></header>
     <p>{path || "Deleted files and conflict copies retained in this workspace."}</p>
     <p>Restore deleted items to their original location. Saved versions and conflict copies can be restored as separate files.</p>
-    {trashError && <p role="status">Trash needs a connection. {trashError}</p>}
+    {trashError && <p role="status">Trash is unavailable. {trashError}</p>}
     {error && <p role="alert">{error}</p>}
     {!page && !error && <p role="status">Loading recovery files…</p>}
     {page && !page.entries.length && !page.replacements?.length && !page.folderRenames?.length && !page.assets?.length && !trash?.items.length && <p>No retained {path ? "versions for this file" : "deleted files or conflict copies"}.</p>}
@@ -89,6 +89,9 @@ export function RecoveryDialog({ path, workspaceRoot = "", onClose, onRestore, o
       void request<RecoveryPage>("recoveryList", { ...(path ? { path } : {}), workspaceRoot }).then(value => {
         if (active.current && lifetime.current === generation && sequence.current === captured) setPage(value);
       }).catch((cause: Error) => { if (active.current && lifetime.current === generation && sequence.current === captured) setError(cause.message); });
+      if (!path) void request<{ items: TrashItem[]; truncated: boolean }>("trashList", {}).then(value => {
+        if (active.current && lifetime.current === generation && sequence.current === captured) { setTrash(value); setTrashError(""); }
+      }).catch((cause: Error) => { if (active.current && lifetime.current === generation && sequence.current === captured) setTrashError(cause.message); });
     }} />}
     {!!page?.replacements?.length && <ReplacementRecovery entries={page.replacements} workspaceRoot={workspaceRoot} disabled={restoring} onRestore={async file => { await onRestore(file, folderForItem(file.path)); dismiss(); }} />}
     {(!!page?.assets?.length || page?.assetsTruncated) && <RecoveryAssets entries={page.assets ?? []} truncated={page.assetsTruncated} workspaceRoot={workspaceRoot} />}

@@ -20,13 +20,14 @@ window.mount=(scope='one')=>{setVaultTransport(async(method,params)=>{
  throw Error(method);
 });flushSync(()=>root.render(<FolderRenameRecovery key={scope} workspaceRoot={scope} entries={[{...entry,...(window.mode==='future'?{future:true}:{})}]} disabled={false} onResolved={()=>window.folderResolvedCount++}/>));};
 window.replaceTransport=()=>setVaultTransport(async(method,params)=>{window.calls.push({scope:'replaced',method,params});throw Error('Wrong transport');});
-window.mountDialog=()=>{let reads=0;setVaultTransport(async(method,params)=>{
+window.mountDialog=(wholeWorkspace=false)=>{let reads=0,resolved=false;setVaultTransport(async(method,params)=>{
  window.calls.push({scope:'dialog',method,params});
  if(method==='recoveryList')return++reads===1?{entries:[],truncated:false,folderRenames:[entry]}:{entries:[{id:'revision',path:'notes/one.textpack',kind:'revision',hash:'h',savedAt:'2026-10-18T00:00:00Z'}],truncated:false,folderRenames:[]};
  if(method==='folderRenameRead')return entry;
- if(method==='resolveFolderRename')return{resolved:true};
+ if(method==='resolveFolderRename'){resolved=true;return{resolved:true};}
+ if(method==='trashList'){if(!resolved)throw Error('Folder name needs review.');return{items:[{itemId:'deleted',relativePath:'notes/deleted.textpack',revision:'retained'}],truncated:false};}
  throw Error(method);
-});flushSync(()=>root.render(<RecoveryDialog key="dialog" path="notes/one.textpack" workspaceRoot="dialog-root" onClose={()=>window.folderDialogClosedCount++} onRestore={async()=>{throw Error('No restore')}} onRestoreDeleted={async()=>{throw Error('No restore')}}/>));};window.mount();
+});flushSync(()=>root.render(<RecoveryDialog key={wholeWorkspace?"whole-dialog":"dialog"} path={wholeWorkspace?undefined:"notes/one.textpack"} workspaceRoot="dialog-root" onClose={()=>window.folderDialogClosedCount++} onRestore={async()=>{throw Error('No restore')}} onRestoreDeleted={async()=>{throw Error('No restore')}}/>));};window.mount();
 `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' } });
 const browser = await chromium.launch();
 try {
@@ -59,6 +60,9 @@ try {
  await page.evaluate(() => window.mountDialog()); await select(); await page.getByRole('button', { name: 'Keep current folder paths', exact: true }).click();
  await page.getByText('Saved revision', { exact: false }).waitFor(); assert.equal(await page.getByRole('dialog').isVisible(), true); assert.equal(await page.evaluate(() => window.folderDialogClosedCount), 0);
  assert.equal(await page.evaluate(()=>window.calls.filter(call=>call.scope==='replaced').length),0);
- const methods = await page.evaluate(() => [...new Set(window.calls.map(call => call.method))]); assert.deepEqual(methods.sort(), ['folderRenameRead','recoveryList','resolveFolderRename'].sort());
+ await page.evaluate(() => window.mountDialog(true)); await page.getByText('Trash is unavailable.',{exact:false}).waitFor();
+ await select(); await page.getByRole('button',{name:'Keep current folder paths',exact:true}).click();
+ await page.getByRole('button',{name:'notes/deleted.textpack Deleted item',exact:false}).waitFor(); assert.equal(await page.getByText('Trash is unavailable.',{exact:false}).count(),0);
+ const methods = await page.evaluate(() => [...new Set(window.calls.map(call => call.method))]); assert.deepEqual(methods.sort(), ['folderRenameRead','recoveryList','resolveFolderRename','trashList'].sort());
  console.log('PASS folder recovery: exact scoped metadata consent, refusal/reinspection, future/changed/blocked records, stale account isolation, light/dark and dialog refresh; no file mutation commands.');
 } finally { await browser.close(); }
