@@ -12,7 +12,7 @@ const [root, readyFile] = process.argv.slice(2);
 if (!root || !readyFile || !path.isAbsolute(root) || !path.isAbsolute(readyFile)) throw new Error("Pass absolute fixture root and ready-file paths");
 const workspaceId = "contract-workspace";
 const fixtureAuthorization = "Bearer vault-http-fixture";
-let loseNextReply = false;
+let loseReplies = 0;
 const counts = { uploads: 0, downloads: 0, manifests: 0, renames: 0, deletions: 0 };
 
 const server = createServer(async (request, response) => {
@@ -22,7 +22,8 @@ const server = createServer(async (request, response) => {
   };
   if (request.headers.authorization !== fixtureAuthorization) { send(401, { error: "Fixture token required" }); return; }
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
-  if (url.pathname === "/__test/lose-next-reply") { loseNextReply = true; send(200, {}); return; }
+  if (url.pathname === "/__test/lose-next-reply") { loseReplies = 1; send(200, {}); return; }
+  if (url.pathname === "/__test/reply-loss") { loseReplies = url.searchParams.get("enabled") === "1" ? -1 : 0; send(200, {}); return; }
   if (url.pathname === "/__test/stats") { send(200, counts); return; }
   if (url.pathname === "/api/vault") { send(200, { workspaceId, name: "Contract fixture" }); return; }
   const parts = url.pathname.split("/").filter(Boolean);
@@ -79,7 +80,7 @@ const server = createServer(async (request, response) => {
       result = await writeVaultTextpack({ ...location, itemId, operationId, baseRevision,
         relativePath: decodeURIComponent(header("x-texttext-path")), bytes,
       });
-      if (loseNextReply) { loseNextReply = false; request.socket.destroy(); return; }
+      if (loseReplies !== 0) { if (loseReplies > 0) loseReplies--; request.socket.destroy(); return; }
     } else if ((request.method === "PATCH" || request.method === "DELETE") && baseRevision) {
       const mutation = { ...location, itemId, operationId, baseRevision, basePath: decodeURIComponent(header("x-texttext-base-path")) };
       if (request.method === "PATCH") {
