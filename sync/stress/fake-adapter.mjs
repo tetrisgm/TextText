@@ -65,11 +65,15 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       return out({ type: 'perturb', round: m.round, repaired: true });
     case 'observe': {
       observations++;
-      if (fault === 'reload' && m.round > 1) reloads += 1;
+      if ((fault === 'reload' && m.round > 1) || (fault === 'sample-reload' && observations === 3)) reloads += 1;
       // Make the shared directory's content "arrive" in two steps so concurrent writers are observed after a short settle.
       setTimeout(() => {
         const state = document();
         if (fault === 'late-observe' && m.round === 1 && observations === 2) state.text += ' transient';
+        if (fault === 'sample-drift' && observations === 3) state.text += ' transient';
+        if (fault === 'sample-missing-ids' && observations === 3) state.editIds = [];
+        if (fault === 'sample-duplicate-id' && observations === 3) state.editIds.push(state.editIds[0]);
+        if (fault === 'sample-missing' && observations === 3) return;
         out({ type: 'state', round: m.round, ...state, editor: role.endsWith('-cli') ? undefined : { sessionId, reloads } });
       }, 20);
       return;

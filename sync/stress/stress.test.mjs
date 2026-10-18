@@ -177,7 +177,7 @@ test('native restart occurs after all edits are visible and permits exactly one 
   const summary = await new Coordinator(config).run();
   assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
   const plan = JSON.parse(readFileSync(join(summary.outputDir, 'plan.json'), 'utf8'));
-  assert.deepEqual(plan.scenario, { pattern: 'append', offline: config.offline, restart: config.restart, transientInvalid: null });
+  assert.deepEqual(plan.scenario, { requiredConvergenceSamples: 3, pattern: 'append', offline: config.offline, restart: config.restart, transientInvalid: null });
   assert.deepEqual(summary.scenario, plan.scenario);
   const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(lines.find(x => x.type === 'run-start').scenario, plan.scenario);
@@ -338,4 +338,53 @@ test('successful rounds cannot hide a failed final flush or actor shutdown', asy
   assert.equal(summary.acceptance, 'none');
   assert.equal(summary.failure.code, 'shutdown-failed');
   assert.deepEqual(summary.failure.detail.actors.map(a => a.role), ['pc-app']);
+});
+
+
+test('convergence requires three consecutive all-six samples and resets after drift', async () => {
+  const { summary, lines } = await runWith({ faults: { 'pc-web': 'sample-drift' }, rounds: 1 });
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  const samples = lines.filter(line => line.type === 'convergence-sample');
+  assert.deepEqual(samples.map(line => line.stableSamples), [1, 1, 2, 3]);
+  assert.equal(lines.find(line => line.type === 'round').stableSamples, 3);
+  assert.equal(lines.find(line => line.type === 'round').samples, 5);
+  assert.ok(samples.every(line => line.roles.length === 6 && line.editCount === 6));
+  assert.equal(summary.acceptance, 'none');
+});
+
+test('later matching snapshots cannot hide missing, duplicate or wrong actor operation evidence', async () => {
+  for (const fault of ['sample-missing-ids', 'sample-duplicate-id']) {
+    const { summary } = await runWith({ faults: { 'pc-cli': fault }, rounds: 1 });
+    assert.equal(summary.failure.code, 'edit-id-mismatch');
+    assert.equal(summary.failure.detail.role, 'pc-cli');
+    assert.equal(summary.roundsCompleted, 0);
+  }
+  const coordinator = new Coordinator(makeConfig({ rounds: 1 }));
+  coordinator.baseline = 'Existing fixture text.\n';
+  const edits = planRounds(42, 1)[0].edits;
+  const ids = edits.map(edit => edit.id).sort();
+  const states = new Map(ROLES.map(role => [role, { text: coordinator.baseline + edits.map(edit => edit.text).join(''), editIds: ids }]));
+  states.get('pc-app').editIds = ids.map(id => id === 'r1-pc-app' ? 'r1-mac-app' : id);
+  assert.throws(() => coordinator.checkRoundContent(states, 1, ids), error => error.code === 'edit-id-mismatch' && error.detail.role === 'pc-app');
+  states.delete('pc-app');
+  assert.throws(() => coordinator.checkRoundContent(states, 1, ids), error => error.code === 'state-invalid' && error.detail.role === 'pc-app');
+});
+
+test('missing actor or reloaded editor after first convergence prevents acceptance', async () => {
+  const missing = await runWith({ faults: { 'pc-web': 'sample-missing' }, rounds: 1, timeoutMs: 1500 });
+  assert.equal(missing.summary.failure.code, 'timeout');
+  assert.deepEqual(missing.summary.failure.detail.missing, ['pc-web']);
+  const reload = await runWith({ faults: { 'mac-app': 'sample-reload' }, rounds: 1 });
+  assert.equal(reload.summary.failure.code, 'editor-discontinuity');
+  assert.equal(reload.summary.failure.detail.role, 'mac-app');
+});
+
+test('durable reopen rejects a later sample that drifts or reloads', async () => {
+  for (const [fault, code] of [['sample-drift', 'reopen-hash-mismatch'], ['sample-reload', 'editor-discontinuity']]) {
+    const config = makeConfig({ faults: { 'pc-web': fault }, rounds: 0 });
+    config.expectedBaselineHash = hashText('Existing fixture text.\n');
+    const summary = await new Coordinator(config).run();
+    assert.equal(summary.failure.code, code);
+    assert.equal(summary.acceptance, 'none');
+  }
 });

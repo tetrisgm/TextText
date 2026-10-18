@@ -182,7 +182,11 @@ so it tests recovery of an edit that was visible but not given a save wait.
 The restarted app must use its reported new editor session for the remainder
 of the run; every other app and browser keeps its original session. The
 coordinator re-observes temporarily different replicas within the configured
-deadline while all actors remain live. At convergence, every `state` must
+deadline while all actors remain live. Acceptance requires three consecutive
+all-six observations, separated by 500 ms, with the same semantic hash and
+complete operation, baseline and asset evidence. Divergence resets the streak.
+Editor continuity is checked on every observation. The independent zero-round
+reopen also checks three samples of the specified durable hash. At convergence, every `state` must
 produce one identical hash (only CRLF normalized to LF, `text` at most 64 KB) and exactly the cumulative expected
 edit ID set. App and web roles must report `editor` with the same `sessionId`
 as the initial round-zero observation, with zero `reloads`. Each exact planned

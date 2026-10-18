@@ -9,6 +9,7 @@ export const ROLES = ['mac-app', 'mac-web', 'mac-cli', 'pc-app', 'pc-web', 'pc-c
 export const EDITOR_ROLES = ROLES.filter((r) => !r.endsWith('-cli'));
 const MODES = new Set(['real', 'simulated']);
 const MAX_TEXT = 64 * 1024;
+export const REQUIRED_CONVERGENCE_SAMPLES = 3;
 const WORDS = ['alpha', 'bravo', 'delta', 'echo', 'kilo', 'lima', 'oscar', 'tango', 'yankee', 'zulu'];
 export const REPLACE_TARGET = 'Existing fixture text.';
 export const PARTIAL_REPLACE_TARGET = 'fixture text.';
@@ -175,7 +176,7 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
@@ -219,6 +220,24 @@ export class Coordinator {
       }
       if (this.config.rounds === 0) this.checkAssets(baseline, 0);
       for (const role of EDITOR_ROLES) this.checkEditor(0, role, baseline.get(role).editor);
+      if (this.config.rounds === 0) {
+        this.record('reopen-sample', { sample: 1, hash: this.config.expectedBaselineHash, roles: ROLES });
+        for (let sample = 2; sample <= REQUIRED_CONVERGENCE_SAMPLES; sample++) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const pending = this.collect(0, 'state');
+          this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config) });
+          const states = await pending;
+          for (const role of ROLES) {
+            const state = states.get(role);
+            if (!state || typeof state.text !== 'string' || state.text.length > MAX_TEXT
+              || hashText(state.text) !== this.config.expectedBaselineHash)
+              throw new StressFailure('reopen-hash-mismatch', { role, sample, expected: this.config.expectedBaselineHash });
+          }
+          this.checkAssets(states, 0);
+          for (const role of EDITOR_ROLES) this.checkEditor(0, role, states.get(role).editor);
+          this.record('reopen-sample', { sample, hash: this.config.expectedBaselineHash, roles: ROLES });
+        }
+      }
       for (const plan of planRounds(this.config.seed, this.config.rounds, this.config.pattern)) await this.runRound(plan);
       if (this.config.closeProbe) await this.closeProbe();
     } catch (error) {
@@ -239,7 +258,7 @@ export class Coordinator {
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
         ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+      scenario: { requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
@@ -373,7 +392,7 @@ export class Coordinator {
     // the very sync processes we are measuring. The deadline still makes stalls visible.
     let states, observed, hashes;
     const convergenceDeadline = Date.now() + this.config.timeoutMs;
-    let samples = 0;
+    let samples = 0, stableSamples = 0, stableHash = null;
     do {
       const observing = this.collect(round, 'state');
       this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config) });
@@ -381,13 +400,24 @@ export class Coordinator {
       observed = {};
       for (const role of ROLES) {
         const s = states.get(role);
-        if (typeof s.text !== 'string' || s.text.length > MAX_TEXT) throw new StressFailure('state-invalid', { round, role, reason: 'text missing or over bound' });
+        if (!s || typeof s.text !== 'string' || s.text.length > MAX_TEXT) throw new StressFailure('state-invalid', { round, role, reason: 'text missing or over bound' });
         writeFileSync(join(this.dir, 'adapters', `${role}.last-state.json`), JSON.stringify({round, text:s.text, editor:s.editor, editIds:s.editIds}));
         observed[role] = { hash: hashText(s.text), editIds: [...new Set(Array.isArray(s.editIds) ? s.editIds : [])].sort(), editor: s.editor };
       }
       hashes = new Set(Object.values(observed).map((o) => o.hash));
       samples++;
-      if (hashes.size === 1 && this.checkAssets(states, round)) break;
+      // Adapter-local settling is insufficient: require three separate all-six
+      // observations with the same semantic hash and complete operation evidence.
+      for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);
+      if (hashes.size === 1 && this.checkAssets(states, round)) {
+        this.checkRoundContent(states, round, expectedEditIds);
+        const hash = [...hashes][0];
+        stableSamples = hash === stableHash ? stableSamples + 1 : 1;
+        stableHash = hash;
+        this.record('convergence-sample', { round, sample: samples, stableSamples, hash,
+          roles: ROLES, editCount: expectedEditIds.length });
+        if (stableSamples >= REQUIRED_CONVERGENCE_SAMPLES) break;
+      } else { stableSamples = 0; stableHash = null; }
       this.record('convergence-pending', { round, sample: samples, hashes: Object.fromEntries(ROLES.map(r => [r, observed[r].hash])) });
       await new Promise(resolve => setTimeout(resolve, 500));
     } while (Date.now() < convergenceDeadline);
@@ -395,8 +425,20 @@ export class Coordinator {
     if (hashes.size !== 1) throw new StressFailure('hash-divergence', { round, samples, durationMs: Date.now() - started, evidence });
     if (!this.checkAssets(states, round)) throw new StressFailure('asset-mismatch', { round, expected: this.config.expectedAssetHashes,
       actual: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) });
+    if (stableSamples < REQUIRED_CONVERGENCE_SAMPLES) throw new StressFailure('convergence-unstable', { round, samples, stableSamples, required: REQUIRED_CONVERGENCE_SAMPLES });
+    const result = { round, hash: [...hashes][0], samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
+      ...(this.config.diagnosticSameEntryRace ? { assetHashes: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) } : {}) };
+    this.roundResults.push(result);
+    this.record('round', result);
+    this.writeDashboard('running');
+  }
+
+  checkRoundContent(states, round, expectedEditIds) {
     for (const role of ROLES) {
-      const ids = observed[role].editIds;
+      const state = states.get(role);
+      if (!state || typeof state.text !== 'string' || state.text.length > MAX_TEXT)
+        throw new StressFailure('state-invalid', { round, role });
+      const ids = Array.isArray(state.editIds) ? [...state.editIds].sort() : [];
       if (ids.length !== expectedEditIds.length || ids.some((id, i) => id !== expectedEditIds[i])) throw new StressFailure('edit-id-mismatch', { round, role, expected: expectedEditIds, actual: ids });
     }
     for (const role of ROLES) {
@@ -408,12 +450,6 @@ export class Coordinator {
       const expectedBaseline = ['overlap-replace', 'file-overlap', 'partial-overlap'].includes(this.config.pattern) ? this.baseline.replace(REPLACE_TARGET, '') : this.baseline;
       if (remaining !== expectedBaseline) throw new StressFailure('baseline-lost', { round, role });
     }
-    for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);
-    const result = { round, hash: [...hashes][0], editCount: expectedEditIds.length, durationMs: Date.now() - started,
-      ...(this.config.diagnosticSameEntryRace ? { assetHashes: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) } : {}) };
-    this.roundResults.push(result);
-    this.record('round', result);
-    this.writeDashboard('running');
   }
 
   async setTransport(round, role, online) {
