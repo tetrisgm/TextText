@@ -61,6 +61,18 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     // Local TextPack and recovery-journal writes continue while this is set.
     private var stressCollaborationOffline = false
     func setStressCollaborationOffline(_ offline: Bool) { stressCollaborationOffline = offline }
+    func stressVerifiedAccount(expectedRoot: URL? = nil) throws -> LocalVaultAccountCredential {
+        if let expectedRoot {
+            guard root?.standardizedFileURL.resolvingSymlinksInPath() == expectedRoot.standardizedFileURL.resolvingSymlinksInPath() else {
+                throw VaultBridgeError("The private test window's folder changed. Reopen the expected workspace.")
+            }
+        }
+        guard let owner = profileAccount, owner.accountId != nil,
+              let current = credentials(), owner.sameAccount(as: current) else {
+            throw VaultBridgeError("The private test window's account changed. Reopen it under the expected account.")
+        }
+        return current
+    }
 #endif
     private var agent: LocalVaultAgentController?
     var onSelectedFolder: (() -> Void)?
@@ -737,7 +749,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let page = try store.recoveryList(path: params["path"] as? String)
                     let assets = try store.recoveryAssets()
                     return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
-                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "currentHash": $0.currentHash, "preparedHash": $0.preparedHash, "displacedHash": $0.displacedHash, "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
+                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "kind": $0.kind, "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": $0.displacedHash, "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
                         "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
                 case "recoveryAssetRead":
                     let hash = try Self.string(params, "hash")
@@ -745,16 +757,24 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     return ["data": bytes.base64EncodedString(), "hash": hash, "filename": "local-asset.bin", "byteLength": bytes.count]
                 case "replacementRead":
                     let recovered = try store.replacementRecoveryRead(id: Self.string(params, "id"), version: Self.string(params, "version"))
+                    if recovered.absent { return ["absent": true, "path": recovered.path, "hash": NSNull(), "data": NSNull()] }
+                    guard let bytes = recovered.data, let hash = recovered.hash else { throw VaultBridgeError("This recovery file is unavailable. Reopen Recovery to inspect it again.") }
                     if let document = recovered.document {
                         var value = Self.payload(document)
-                        value["data"] = recovered.data.base64EncodedString()
+                        value["data"] = bytes.base64EncodedString()
                         return value
                     }
-                    return ["opaque": true, "path": recovered.path, "hash": recovered.hash, "data": recovered.data.base64EncodedString(),
+                    return ["opaque": true, "path": recovered.path, "hash": hash, "data": bytes.base64EncodedString(),
                         "parseError": recovered.parseError ?? "This retained file cannot be opened as a TextPack."]
                 case "resolveReplacement":
+                    let kind = params["kind"] as? String ?? "replacement"
+                    let present = params["currentPresent"] as? Bool ?? true
+                    guard (params["kind"] == nil || params["kind"] is String),
+                          (params["currentPresent"] == nil || params["currentPresent"] is Bool),
+                          kind == "replacement" || kind == "removal",
+                          present || (kind == "removal" && params["currentHash"] is NSNull) else { throw VaultBridgeError("The inspected file changed. Reopen Recovery before continuing.") }
                     try store.resolveReplacement(id: Self.string(params, "id"), path: Self.string(params, "path"), itemId: Self.string(params, "itemId"),
-                        currentHash: Self.string(params, "currentHash"), preparedHash: Self.string(params, "preparedHash"), displacedHash: Self.string(params, "displacedHash"))
+                        currentHash: present ? Self.string(params, "currentHash") : nil, preparedHash: Self.string(params, "preparedHash"), displacedHash: Self.string(params, "displacedHash"), kind: kind, currentPresent: present)
                     return ["resolved": true]
                 case "recoveryRead":
                     let recovered = try store.recoveryRead(id: Self.string(params, "id"))

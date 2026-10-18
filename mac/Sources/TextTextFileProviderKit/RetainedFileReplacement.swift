@@ -14,7 +14,7 @@ enum RetainedFileReplacement {
         var names: [String: String] = [:]
     }
     private static let cache = ManifestCache()
-    enum State: String, Codable { case pending, conflict, completed }
+    enum State: String, Codable { case pending, conflict, completed, cancelled }
     struct Record: Codable, Equatable {
         let version: Int
         let operation: UUID
@@ -25,6 +25,7 @@ enum RetainedFileReplacement {
         var preparedFingerprint: String? = nil
         var displacedFingerprint: String? = nil
         var acknowledgedDisplacedHash: String? = nil
+        var kind: String? = nil
     }
     struct Recovery {
         let directory: URL
@@ -85,7 +86,7 @@ enum RetainedFileReplacement {
         guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw Failure.invalidJournal }
         return "\(info.st_dev):\(info.st_ino):\(info.st_size):\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)"
     }
-    private static func physicalPath(_ url: URL) throws -> String {
+    static func physicalPath(_ url: URL) throws -> String {
         guard let parent = realpath(url.deletingLastPathComponent().path, nil) else { throw POSIXError(.ENOENT) }
         defer { free(parent) }
         return String(cString: parent) + "/" + url.lastPathComponent
@@ -105,7 +106,7 @@ enum RetainedFileReplacement {
     static func operationDirectory(target: URL, operation: UUID) -> URL {
         base(target).appendingPathComponent(operation.uuidString, isDirectory: true)
     }
-    private static func checkedDirectory(_ url: URL) throws {
+    static func checkedDirectory(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         guard url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path else { throw Failure.invalidJournal }
     }
@@ -141,7 +142,7 @@ enum RetainedFileReplacement {
         guard [ENOTSUP, EXDEV, EINVAL, ENOSYS].contains(code) else { throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO) }
         try create(bytes, at: exchange)
     }
-    private static func available(_ target: URL) throws -> Int64 {
+    static func available(_ target: URL) throws -> Int64 {
         let values = try target.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
         guard let capacity = values.volumeAvailableCapacityForImportantUsage ?? values.volumeAvailableCapacity.map(Int64.init) else { throw POSIXError(.EIO) }
         return capacity
@@ -159,7 +160,7 @@ enum RetainedFileReplacement {
               fsync(destination) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         guard digest(try StableFileSnapshot.read(exchange)) == preparedHash else { throw Failure.invalidJournal }
     }
-    private static func save(_ record: Record, in directory: URL) throws {
+    static func save(_ record: Record, in directory: URL) throws {
         let temporary = directory.appendingPathComponent("manifest-" + UUID().uuidString)
         try create(JSONEncoder().encode(record), at: temporary)
         guard rename(temporary.path, directory.appendingPathComponent("manifest.json").path) == 0 else { throw POSIXError(.EIO) }
@@ -199,7 +200,9 @@ enum RetainedFileReplacement {
             guard record.version == 1, record.filename == target.lastPathComponent,
                   record.operation == operation,
                   validHash(record.expectedHash), validHash(record.preparedHash),
-                  record.acknowledgedDisplacedHash.map(validHash) ?? true else { throw Failure.invalidJournal }
+                  record.acknowledgedDisplacedHash.map(validHash) ?? true,
+                  (record.kind == nil || record.kind == "removal"),
+                  (record.state != .cancelled || record.kind == "removal") else { throw Failure.invalidJournal }
             let result = Recovery(directory: directory, record: record, storageTarget: layout.canonicalTarget)
             cache.lock.lock()
             if cache.values.count >= 2048 { cache.values.removeAll(keepingCapacity: true) }
@@ -210,7 +213,7 @@ enum RetainedFileReplacement {
     static func assertReadable(_ target: URL) throws {
         for recovery in try inspect(target) {
             let checked = recovery.record.state == .completed ? try classify(recovery, target: target) : recovery
-            if checked.record.state != .completed { throw Failure.unresolved(checked.directory) }
+            if checked.record.state != .completed && checked.record.state != .cancelled { throw Failure.unresolved(checked.directory) }
         }
     }
 
@@ -221,6 +224,20 @@ enum RetainedFileReplacement {
               recovery.record.filename == target.lastPathComponent else { throw Failure.invalidJournal }
         guard recovery.record.state != .conflict else { return recovery }
         var record = recovery.record
+        if record.kind == "removal" && (record.state == .pending || record.state == .cancelled) {
+            var actual = stat()
+            let noExchange = lstat(recovery.displaced.path, &actual) != 0 && errno == ENOENT
+            if record.state == .cancelled {
+                guard noExchange, digest(try StableFileSnapshot.read(recovery.prepared)) == record.preparedHash else { throw Failure.invalidJournal }
+                return recovery
+            }
+            if noExchange, digest(try StableFileSnapshot.read(recovery.prepared)) == record.preparedHash,
+               let current = try? StableFileSnapshot.read(target), digest(current) == record.expectedHash {
+                record.state = .cancelled
+                try save(record, in: recovery.directory)
+                return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
+            }
+        }
         let preparedBefore = try fingerprint(recovery.prepared)
         let displacedBefore = try? fingerprint(recovery.displaced)
         if record.state == .completed, record.preparedFingerprint == preparedBefore,
@@ -250,7 +267,9 @@ enum RetainedFileReplacement {
             return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
         }
         let current = try? StableFileSnapshot.read(target)
-        if displaced.map(digest) == record.expectedHash && current.map(digest) == record.preparedHash {
+        var targetInfo = stat()
+        let absent = lstat(target.path, &targetInfo) != 0 && errno == ENOENT
+        if displaced.map(digest) == record.expectedHash && (record.kind == "removal" ? absent : current.map(digest) == record.preparedHash) {
             record.state = .completed
         } else {
             record.state = .conflict

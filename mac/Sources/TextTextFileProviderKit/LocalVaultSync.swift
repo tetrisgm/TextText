@@ -1099,26 +1099,9 @@ public actor LocalVaultSync {
     }
 
     private func removeLocal(path: String, expectedHash: String) throws {
-        let observed = try LocalVaultDocumentStore(root: root).readMetadata(path: path)
-        let itemId = MarkdownIdentityCodec.extract(from: observed.contents.markdown)?.itemId
-        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
-        let url = try LocalVaultDocumentStore(root: root).url(for: path)
-        var error: NSError?
-        var result: Result<Void, Error>?
-        NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &error) { target in
-            result = Result {
-                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
-                let before = try Data(contentsOf: target)
-                guard TextTextStableDigest.sha256Hex(before) == expectedHash else { throw LocalVaultSyncFailure.changed }
-                let history = root.appendingPathComponent(".texttext/history")
-                try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
-                try before.write(to: history.appendingPathComponent(expectedHash + ".textpack"), options: .atomic)
-                try FileManager.default.removeItem(at: target)
-            }
-        }
-        if let error { throw error }
-        guard let result else { throw LocalVaultSyncFailure.changed }
-        try result.get()
+        // Capture the actual removed inode before classifying deletion. A final
+        // external replacement or old writable descriptor must remain recoverable.
+        try LocalVaultDocumentStore(root: root).removeRetaining(path: path, expectedHash: expectedHash)
     }
 
     private func moveLocal(from: String, to: String, expectedHash: String) throws {

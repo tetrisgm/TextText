@@ -7,6 +7,30 @@ import TextTextFileProviderKit
 @testable import TextTextApp
 
 final class LocalVaultSessionLifecycleTests: XCTestCase {
+#if TEXTTEXT_STRESS_ACTOR
+    @MainActor
+    func testPrivateActorIdentityUsesTheCapturedVerifiedWindowAccount() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("actor-account-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let entry = root.appendingPathComponent("index.html")
+        try "<html><body>Private actor account fixture</body></html>".write(to: entry, atomically: true, encoding: .utf8)
+        let origin = URL(string: "https://texttext.test")!
+        var current = LocalVaultAccountCredential(origin: origin, token: "fixture-a", accountId: "account-a")
+        let controller = LocalVaultWindowController(entry: entry, root: root, websiteDataStore: .nonPersistent(), verifiedCredentials: { current })
+        defer { controller.shutdown(); controller.close() }
+        XCTAssertEqual(try controller.stressVerifiedAccount(expectedRoot: root).accountId, "account-a")
+        XCTAssertThrowsError(try controller.stressVerifiedAccount(expectedRoot: root.appendingPathComponent("other")))
+        current = LocalVaultAccountCredential(origin: origin, token: "fixture-refreshed", accountId: "account-a")
+        XCTAssertEqual(try controller.stressVerifiedAccount().accountId, "account-a")
+        current = LocalVaultAccountCredential(origin: origin, token: "fixture-b", accountId: "account-b")
+        XCTAssertThrowsError(try controller.stressVerifiedAccount())
+        let legacy = LocalVaultWindowController(entry: entry, root: root, websiteDataStore: .nonPersistent(), credentials: { (origin, "legacy-fixture") })
+        defer { legacy.shutdown(); legacy.close() }
+        XCTAssertThrowsError(try legacy.stressVerifiedAccount())
+    }
+#endif
     @MainActor
     func testWKMarkedTextPreservesConcurrentOwnerEdit() async throws {
         guard let fixture = ProcessInfo.processInfo.environment["TEXTTEXT_COMPOSITION_BUNDLE"] else { throw XCTSkip("Requires the explicit composition fixture") }

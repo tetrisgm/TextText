@@ -56,7 +56,14 @@ public enum LocalVaultDeviceState {
         return target
     }
 
-    /// Called only after TextText has moved the exact pack into its Trash.
+    /// Orders a retained-removal marker and its durable publication receipt
+    /// against local sync acknowledgement/consumption in this process.
+    static func withDeletionPublication<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock(); defer { lock.unlock() }
+        return try body()
+    }
+
+    /// Called only after TextText has retained the exact removed pack.
     public static func recordDeletion(root: URL, itemId: String, path: String, hash: String) throws {
         lock.lock()
         defer { lock.unlock() }

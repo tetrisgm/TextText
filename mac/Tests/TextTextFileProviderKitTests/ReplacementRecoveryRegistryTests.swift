@@ -274,12 +274,12 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         let entry = try XCTUnwrap(store.replacementRecoveryList().first)
         XCTAssertEqual(try store.replacementRecoveryRead(id: entry.id, version: "displaced").data, external)
         let current = try store.replacementRecoveryRead(id: entry.id, version: "current")
-        XCTAssertThrowsError(try store.write(path: observed.path, expectedHash: entry.currentHash,
+        XCTAssertThrowsError(try store.write(path: observed.path, expectedHash: XCTUnwrap(entry.currentHash),
             markdown: try XCTUnwrap(current.document).contents.markdown, documentJSON: nil, templateJSON: nil,
             templateAuthoringSourceJSON: nil, mutationKey: "retained-final-gap", mutationFingerprint: hash(Data("request".utf8))))
         try store.resolveReplacement(id: entry.id, path: entry.path, itemId: entry.itemId, currentHash: entry.currentHash,
             preparedHash: entry.preparedHash, displacedHash: entry.displacedHash)
-        let replay = try store.write(path: observed.path, expectedHash: entry.currentHash,
+        let replay = try store.write(path: observed.path, expectedHash: XCTUnwrap(entry.currentHash),
             markdown: try XCTUnwrap(current.document).contents.markdown, documentJSON: nil, templateJSON: nil,
             templateAuthoringSourceJSON: nil, mutationKey: "retained-final-gap", mutationFingerprint: hash(Data("request".utf8)))
         XCTAssertEqual(replay.hash, entry.currentHash)

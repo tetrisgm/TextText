@@ -365,25 +365,7 @@ public struct LocalVaultDocumentStore: Sendable {
     }
 
     public func delete(path: String, expectedHash: String) throws {
-        let source = try url(for: path)
-        let trash = root.appendingPathComponent(".texttext/trash", isDirectory: true)
-        guard trash.resolvingSymlinksInPath().path == trash.path else { throw Failure.invalidPath }
-        var outcome: Result<Void, Error>?
-        var coordinationError: NSError?
-        NSFileCoordinator().coordinate(writingItemAt: source, options: .forDeleting, error: &coordinationError) { source in
-            outcome = Result {
-                let current = try readUncoordinated(path: path, url: source)
-                guard current.hash == expectedHash else { throw Failure.changed }
-                try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
-                try FileManager.default.moveItem(at: source, to: trash.appendingPathComponent(UUID().uuidString + ".textpack"))
-                if let itemId = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId {
-                    try LocalVaultDeviceState.recordDeletion(root: root, itemId: itemId, path: path, hash: current.hash)
-                }
-            }
-        }
-        if let coordinationError { throw coordinationError }
-        guard let outcome else { throw CocoaError(.fileWriteUnknown) }
-        try outcome.get()
+        try removeRetaining(path: path, expectedHash: expectedHash, recordDeletion: true)
     }
 
     public func readRevision(path: String, hash: String) throws -> Document {
@@ -530,6 +512,40 @@ public struct LocalVaultDocumentStore: Sendable {
         if preserveHistory { try preserve(bytes, hash: hash) }
         let prefix = String(try canonicalMarkdownEntry(archive).path.dropLast("text.md".count))
         return Document(path: path, hash: hash, contents: contents, publishedAt: publishedAt(archive, prefix: prefix))
+    }
+
+    /// Capture the actual inode at the deletion boundary without unlinking it.
+    /// Callers must fence the stable item identity before acknowledging deletion.
+    func removeRetaining(path: String, expectedHash: String, recordDeletion: Bool = false) throws {
+        let target = try url(for: path)
+        var outcome: Result<Void, Error>?
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: target, options: .forDeleting, error: &coordinationError) { coordinated in
+            outcome = Result {
+                let current = try readUncoordinated(path: path, url: coordinated)
+                guard current.hash == expectedHash, let itemId = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId else { throw Failure.changed }
+                let state = LocalVaultDeviceState.directory(root: root)
+                if FileManager.default.fileExists(atPath: state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName).path) {
+                    try RetainedReplacementProfile.prepare(root: root)
+                }
+                let historyBytes = try StableFileSnapshot.read(coordinated)
+                guard TextTextStableDigest.sha256Hex(historyBytes) == expectedHash else { throw Failure.changed }
+                try preserve(historyBytes, hash: expectedHash)
+                let history = root.appendingPathComponent(".texttext/history/" + expectedHash + ".textpack")
+                guard try StableFileSnapshot.read(history) == historyBytes else { throw Failure.changed }
+                let registry = ReplacementRecoveryRegistry(root: root), operation = UUID()
+                _ = try RetainedFileRemoval.capture(coordinated, expectedHash: expectedHash, recoveryRoot: registry.recoveryRoot(path: path), operation: operation) { stage in
+                    if stage == "prepared" { try registry.register(operation: operation, itemId: itemId, path: path,
+                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "removal", userDeletion: recordDeletion) }
+                    try writeObservationForTesting?(stage == "prepared" ? "removalPrepared" : stage)
+                }
+                try writeObservationForTesting?("beforeDeletionMarker")
+                if recordDeletion { try registry.assertReadable(itemId: itemId) }
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let outcome else { throw CocoaError(.fileWriteUnknown) }
+        try outcome.get()
     }
 
     /// Retain the inode actually displaced by the OS exchange. A matching
