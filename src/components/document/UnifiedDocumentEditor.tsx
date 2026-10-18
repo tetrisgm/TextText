@@ -77,6 +77,7 @@ import {
   requireDocumentSnapshot,
   type DocumentSnapshot,
 } from "@/lib/documents/model";
+import { registerLiveDocumentInspector } from "@/lib/documents/live-inspection";
 import type { TemplateDefinition } from "@/lib/presentation/schema";
 import { DocumentRenderer } from "./DocumentRenderer";
 import { noteCardHref } from "@/lib/note-card-links";
@@ -1559,6 +1560,11 @@ export function UnifiedDocumentEditor({
   useLayoutEffect(() => {
     updateTextRef.current = updateText;
   }, [updateText]);
+
+  useEffect(() => {
+    if (!collab.canEdit) return;
+    return registerLiveDocumentInspector(collab.postId, currentLocalDocument);
+  }, [collab.canEdit, collab.postId, currentLocalDocument]);
 
   // The bridge the assistant reads through. Selections used to flow only
   // into Yjs awareness, which paints collaborative cursors and nothing else;
