@@ -293,3 +293,10 @@ test('actor never attests real on the wrong platform and sanitizes errors', asyn
   assert.match((await mac.handle({ type: 'hello', runId: 'run-y', role: 'mac-cli', mode: 'real', fixture: { workspaceId: WS, itemId: ITEM } })).message, /mac-cli requires darwin/);
   assert.equal(sanitizeError(new ActorError('x', `failed at ${file} with token=abc123`), config), 'failed at <path> with token=[redacted]');
 });
+
+test('folder mutation refuses an unsealed actor before inspecting or renaming any path',async()=>{
+ const {file,config}=fixture();const before=readFileSync(file);const actor=createActor(config,{platform:'darwin'});
+ await actor.handle({type:'hello',runId:'folder-unsealed',role:'mac-cli',mode:'real',fixture:{workspaceId:WS,itemId:ITEM}});
+ const result=await actor.handle({type:'folderMove',round:1,folderCase:{}});
+ assert.equal(result.type,'error');assert.match(result.message,/sealed workspace owner/);assert.ok(readFileSync(file).equals(before));
+});

@@ -591,3 +591,16 @@ test('unknown real normal-close outcome retains known child instead of escalatin
  const coordinator=new Coordinator(config),actor=new EventEmitter();let retains=0,stops=0;actor.role='pc-web';actor.send=()=>true;actor.retainForReview=()=>{retains++;return{driverHostPid:345679};};actor.stop=async()=>{stops++;};coordinator.adapters.set('pc-web',actor);coordinator.openOutput();
  await assert.rejects(coordinator.restartActor(1,'pc-web',true),error=>error.code==='timeout');await coordinator.stopAdapters();assert.equal(retains,1);assert.equal(stops,0);assert.equal(coordinator.retainedActors['pc-web'].driverHostPid,345679);assert.equal(coordinator.retainedActors['pc-web'].browserOwnershipUnverified,true);assert.equal(coordinator.retainedActors['pc-web'].browserPid,undefined);
 });
+
+const folderScenario={role:'mac-cli',round:1,source:'Six-client acceptance folder 12345678-1234-1234-1234-123456789abc',destination:'six-client acceptance folder 12345678-1234-1234-1234-123456789abc',emptyDescendants:['Empty','Empty/Nested']};
+test('folder case scenario accounts six edits plus one ordinary directory move without claiming physical acceptance',async()=>{
+ const config={...makeConfig({rounds:1}),folderCaseMove:folderScenario};
+ const result=await new Coordinator(config).run();
+ assert.equal(result.status,'passed',JSON.stringify(result.failure));assert.equal(result.acceptance,'none');const events=readFileSync(join(result.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.equal(result.roundsCompleted,1);assert.equal(events.filter(e=>e.type==='folder-case-move').length,1);assert.equal(result.folderCaseEvidence.stableSamples,3);
+});
+test('folder case scenario refuses lost bytes, directory identity, empty descendants and recovery dialogs',async()=>{
+ for(const fault of ['folder-bytes','folder-identity','folder-empty','folder-dialog']){
+  const config={...makeConfig({rounds:1,faults:{'mac-app':fault}}),folderCaseMove:folderScenario};
+  const result=await new Coordinator(config).run();assert.equal(result.status,'failed',fault);assert.equal(result.acceptance,'none');
+ }
+});

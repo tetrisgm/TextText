@@ -357,7 +357,15 @@ static class Stress
                     if (!continuous || sessionSeen != expectedSession) reloads++;
                     log(new { kind = "observed", round, continuous, sessionPresent = sessionSeen == expectedSession, reloads, editIds });
                     var documentSnapshot = request.TryGetProperty("documentSnapshot", out var full) && full.ValueKind == JsonValueKind.True ? await InspectDocument(ct) : (JsonElement?)null;
-                    return new { type = "state", round, text, editIds, documentSnapshot, editor = new { sessionId, reloads } };
+                    object? folderCaseProof=null; bool? folderCasePending=null; bool? folderCaseReviewVisible=null;
+                    if(request.TryGetProperty("folderCase",out var folder)) {
+                        RequireActorScope();
+                        var observed=FolderCaseObservation.Observe(capturedRoot!,config.ItemId,config.Title,config.File,folder);
+                        folderCaseProof=observed.Proof;folderCasePending=observed.Pending;
+                        folderCaseReviewVisible=window.OwnedWindows.Count>0||await view.ExecuteScriptAsync("!!document.querySelector('dialog[open]')")=="true";
+                        await RequireSelected(ct);
+                    }
+                    return new { type = "state", round, text, editIds, documentSnapshot, folderCaseProof, folderCasePending, folderCaseReviewVisible, editor = new { sessionId, reloads } };
                 }
                 case "close-probe":
                 {

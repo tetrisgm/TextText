@@ -480,3 +480,13 @@ or a completed physical campaign. The isolated
 normal close/profile reopen and retained child ownership across parent exit.
 Its explicit disposable-fixture cleanup is separate from the production runner's
 retained-page policy, and it never emits six-client acceptance.
+
+### One external folder case change
+
+`folderCaseMove:{role:"mac-cli"|"pc-cli",round:1,source:"Six-client acceptance folder <UUID>",destination:"six-client acceptance folder <same UUID>",emptyDescendants:["Empty","Empty/Nested"]}` selects one isolated append round. Provision a **new dedicated owned folder** and one article inside it; never point this scenario at Notes, the workspace root, or existing content. Declare every empty descendant and its ancestors. Unknown entries, links, a distinct destination, or incomplete membership refuse the mutation. Other fault/input scenarios cannot be combined with this one.
+
+Six ordinary inputs first converge with full-document and asset accounting. Three stable per-role observations pin exact source spelling, tree membership and each machine's own archive bytes. One ordinary direct-file actor retains the original archive and proof, rechecks the owned tree and account/root guard, and calls the OS directory rename. This Node rename does **not** promise atomic no-overwrite protection against an arbitrary external filesystem race. Failure retains evidence and never rolls back, prunes or deletes another path.
+
+Native actors report read-only OS directory identities and exact pack bytes alongside the existing live editor/session observation. Web actors report the authenticated folder manifest alongside the actual selected editor; this does not claim a UI breadcrumb observation. ZIP bytes must remain equal on each machine before/after, not between machines. Three complete post-move observations require exact destination paths including empty descendants, old exact spelling absent, same UUID, document/assets, existing editor sessions, and no open review dialog. A temporarily unchanged old tree is pending, bounded by the scenario timeout. There is no concurrent typing during the directory move phase. Independent zero-round reopen must use the same scenario and prior final proofs. Simulated tests and isolated filesystem fixtures are not six-client physical acceptance.
+
+For physical acceptance, include at least one real disposable binary asset and pin its hash in the fixture configuration. An empty asset set proves no binary-asset behavior. The article title must equal its actual filename stem: creation can append an ID suffix, so use the advertised guarded title update on this new item and independently verify its path stayed unchanged. Do not loosen the title/path guard or reuse an older Notes fixture.

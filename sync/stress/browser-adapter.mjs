@@ -1,3 +1,4 @@
+import {folderRequest,observeManifestFolder} from './folder-case.mjs';
 import { crashOwnedBrowser, closeOwnedBrowser, retainGuardedBrowser, observeOwnedBrowser } from './browser-lifecycle.mjs';
 import { readLiveFieldDocument } from './multi-field-page.mjs';
 import { validateFieldSequence, typeFieldSequence } from './multi-field-input.mjs';
@@ -363,7 +364,15 @@ async function main() {
       }
       if (await page.evaluate(continuityRemoved)) throw new StageError('continuity', 'original editor node was removed');
       const text = samples[samples.length - 1];
-      out({ type: 'state', round: m.round, text, editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
+      let folderCaseProof,folderCasePending=false,folderCaseReviewVisible=false;
+      if(m.folderCase){
+        const request=folderRequest(m.folderCase);
+        const response=await context.request.get(`${ORIGIN}/api/vault/${config.workspaceId}/items?folderCase=${request.operationId}`,{headers:{'Cache-Control':'no-cache'},timeout:10000});
+        if(!response.ok())throw new StageError('folder-case','Authenticated folder manifest unavailable');
+        const observed=observeManifestFolder(config,request,await response.json());folderCaseProof=observed.proof;folderCasePending=observed.pending;
+        await assertOnItem();folderCaseReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
+      }
+      out({ type: 'state' , round: m.round, text, ...(folderCaseProof?{folderCaseProof,folderCasePending,folderCaseReviewVisible}:{}), editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
     },
     async shutdown() {
       if (retainedFailure) return;

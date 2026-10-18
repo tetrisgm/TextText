@@ -11,6 +11,8 @@ let shared = sharedRoot; // scoped per run on hello so repeated runs start empty
 const fault = process.env.STRESS_FAKE_FAULT ?? '';
 const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 let role = 'unknown';
+let fixtureItemId;
+const folderProof=(request,phase=request.phase)=>{const s=request.scenario,name=phase==='before'?s.source:s.destination;return {version:1,kind:role.endsWith('-web')?'manifest':'filesystem',operationId:request.operationId,phase,source:s.source,destination:s.destination,itemId:fixtureItemId,relativePath:name+'/Six-client acceptance simulated fixture.textpack',folderIdentity:role.endsWith('-web')?null:'1:123',archiveSha256:'a'.repeat(64),folders:[name,...s.emptyDescendants.map(p=>name+'/'+p)].sort()};};
 let generation = 1;
 let sessionId = `editor-${process.pid}-${generation}`;
 let reloads = 0;
@@ -37,7 +39,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
   switch (m.type) {
     case 'hello': {
-      role = m.role;
+      role = m.role; fixtureItemId=m.fixture.itemId;
       shared = join(sharedRoot, m.runId); mkdirSync(shared, { recursive: true });
       const fixture = fault === 'wrong-fixture' ? { workspaceId: 'other-workspace', itemId: m.fixture.itemId } : m.fixture;
       out({ type: 'attest', round: 0, mode: fault === 'claim-real' ? 'real' : 'simulated', adapter: 'fake-adapter', ...fixture,
@@ -127,6 +129,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       return out({type:'malformed-repaired',round:m.round,proof:{...malformed,heldMs:performance.now()-malformed.started,repaired:true,cleanup:m.cleanup===true,repairSha256:fault==='malformed-repair-hash'?'e'.repeat(64):malformed.originalSha256,repairFileIdentity:'d'.repeat(64)}});
     case 'perturb':
       return out({ type: 'perturb', round: m.round, repaired: true });
+    case 'folderMove': {
+      const before=folderProof(m.folderCase,'before'),after=folderProof(m.folderCase,'after');
+      writeFileSync(join(shared,'folder-moved.flag'),m.folderCase.operationId);
+      return out({type:'folder-moved',round:m.round,operationId:m.folderCase.operationId,before,after,retainedEvidence:true});
+    }
     case 'observe': {
       observations++;
       if ((fault === 'reload' && m.round > 1) || (fault === 'sample-reload' && observations === 3)) reloads += 1;
@@ -142,6 +149,12 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         if (fault === 'sample-duplicate-id' && observations === 3) state.editIds.push(state.editIds[0]);
         if (fault === 'sample-missing' && observations === 3) return;
         if (!m.documentSnapshot || fault === 'field-missing-document') delete state.documentSnapshot;
+        if(m.folderCase){
+          const moved=readdirSync(shared).includes('folder-moved.flag')&&fault!=='folder-stuck';
+          const pending=m.folderCase.phase==='after'&&!moved;
+          state.folderCaseProof=folderProof(m.folderCase,pending?'before':m.folderCase.phase);state.folderCasePending=pending;state.folderCaseReviewVisible=fault==='folder-dialog';
+          if(m.folderCase.phase==='after'&&!pending){if(fault==='folder-bytes')state.folderCaseProof.archiveSha256='b'.repeat(64);if(fault==='folder-identity')state.folderCaseProof.folderIdentity='1:124';if(fault==='folder-empty')state.folderCaseProof.folders.pop();}
+        }
         out({ type: 'state', round: m.round, ...state, editor: role.endsWith('-cli') ? undefined : { sessionId, reloads } });
       }, 20);
       return;

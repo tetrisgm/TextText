@@ -45,6 +45,7 @@ test('artifact mapping is fixed per role and receipts are create-only',()=>{
   assert.match(fixedArtifactPaths('mac-app',dir).nativeExecutable,/mac\/build\/TextText.app\/Contents\/MacOS\/TextText$/);
   assert.match(fixedArtifactPaths('pc-app',dir).core,/windows\/build\/stress-actor\/TextText.Core.dll$/);
   assert.throws(()=>fixedArtifactPaths('wrong-role',dir),/Unknown/);
+  for(const role of ['mac-cli','pc-cli','mac-web','pc-web']) assert.equal(fixedArtifactPaths(role,dir).folderCase,join(dir,'sync/stress/folder-case.mjs'));
   const receipt=join(dir,'receipt.json');createOnlyJSON(receipt,{status:'first'});
   assert.throws(()=>createOnlyJSON(receipt,{status:'second'}),/exist/i);
   assert.equal(JSON.parse(readFileSync(receipt)).status,'first');
@@ -66,7 +67,7 @@ test('sealer refuses changed produced artifacts and writes one immutable trusted
   if(process.platform!=='darwin') return;
   const {dir,repo}=sourceFixture(),here=new URL('./',import.meta.url);
   mkdirSync(join(repo,'sync/stress'),{recursive:true});
-  for(const name of ['build-private-actor.mjs','seal-artifacts.mjs','artifact-source.mjs','identity-observation.mjs','identity.mjs','file-adapter.mjs','file-write-sequence.mjs','malformed-repair.mjs','multi-field-page.mjs','multi-field.mjs','multi-field-input.mjs','multi-field-pack.mjs','undo-redo.mjs']) copyFileSync(new URL(name,here),join(repo,'sync/stress',name));
+  for(const name of ['build-private-actor.mjs','seal-artifacts.mjs','artifact-source.mjs','identity-observation.mjs','identity.mjs','folder-case.mjs','file-adapter.mjs','file-write-sequence.mjs','malformed-repair.mjs','multi-field-page.mjs','multi-field.mjs','multi-field-input.mjs','multi-field-pack.mjs','undo-redo.mjs']) copyFileSync(new URL(name,here),join(repo,'sync/stress',name));
   command('git',['add','sync'],repo,{capture:true});command('git',['-c','user.name=Source proof fixture','-c','user.email=source-proof@example.invalid','commit','--quiet','-m','wrapper fixture'],repo,{capture:true});
   const prepared=preparePristineSource(repo,'HEAD',join(dir,'candidate'));
   mkdirSync(join(prepared.sourceRoot,'node_modules/fflate/esm'),{recursive:true});writeFileSync(join(prepared.sourceRoot,'node_modules/fflate/esm/index.mjs'),'fixture dependency bytes');
@@ -116,4 +117,18 @@ for(const variant of ['remote','alternates','common-dir','index','hook','config'
   }
   assert.throws(()=>verifySourceTree(repo,prepared.proof.sourceCommit,source));
   assert.equal(command('git',['rev-parse','HEAD'],repo,{capture:true}),prepared.proof.sourceCommit);
+});
+test('a full source bundle in a fresh bare object store prepares the same committed archive',()=>{
+  const {dir,repo}=sourceFixture();writeFileSync(join(repo,'source.mjs'),'second committed source\n');
+  command('git',['add','source.mjs'],repo,{capture:true});command('git',['-c','user.name=Source proof fixture','-c','user.email=source-proof@example.invalid','commit','--quiet','-m','second fixture'],repo,{capture:true});
+  const commit=command('git',['rev-parse','HEAD'],repo,{capture:true}),bundle=join(dir,'source.bundle'),bare=join(dir,'reference.git');
+  command('git',['bundle','create',bundle,'HEAD'],repo,{capture:true});command('git',['init','--quiet','--bare',bare],dir,{capture:true});
+  command('git',['fetch','--quiet',bundle,'HEAD:refs/heads/main'],bare,{capture:true});
+  command('git',['symbolic-ref','HEAD','refs/heads/main'],bare,{capture:true});
+  assert.equal(command('git',['rev-parse','HEAD'],bare,{capture:true}),commit);
+  assert.equal(command('git',['remote'],bare,{capture:true}),'');
+  const fromOriginal=preparePristineSource(repo,commit,join(dir,'original-archive'));
+  const fromBare=preparePristineSource(bare,commit,join(dir,'bare-archive'));
+  assert.equal(fromBare.proof.sourceCommit,commit);assert.equal(fromBare.proof.sourceInputSha256,fromOriginal.proof.sourceInputSha256);
+  assert.equal(command('git',['rev-parse','--show-toplevel'],fromBare.sourceRoot,{capture:true}),fromBare.sourceRoot);
 });

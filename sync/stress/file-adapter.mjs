@@ -1,3 +1,4 @@
+import {folderRequest,inspectOwnedFolder,observeOwnedFolder,moveOwnedFolder,compareFolderProof} from './folder-case.mjs';
 import { installMalformed, observeMalformed, repairMalformed } from './malformed-repair.mjs';
 import { validateWriteSequence, applyWriteSequence } from './file-write-sequence.mjs';
 import { appendFieldToPack } from './multi-field-pack.mjs';
@@ -312,7 +313,7 @@ export function sanitizeError(error, config) {
 // One actor instance: `handle(message)` returns the reply (or null). Commands are serialized by the
 // caller (stdin pipe) or by the test. `platform` is injectable only so tests can prove the refusal path.
 export function createActor(config, { platform = process.platform, machineId = hostname(), now = () => new Date().toISOString() } = {}) {
-  const state = { malformed: null, writeProgress: null, ownerScope: null, ownerGuard: null, runId: null, runDir: null, role: config.role };
+  const state = { malformed: null, writeProgress: null, ownerScope: null, ownerGuard: null, folderBaseline:null, runId: null, runDir: null, role: config.role };
   const journal = (entry) => { if (state.runDir) appendFileSync(join(state.runDir, 'journal.jsonl'), `${JSON.stringify({ at: now(), ...entry })}\n`); };
   const handlers = {
     async hello(m) {
@@ -401,13 +402,31 @@ export function createActor(config, { platform = process.platform, machineId = h
       await transientInvalidPack({ file: config.file, config, round: m.round, runDir: state.runDir, journal });
       return { type: 'perturb', round: m.round, repaired: true };
     },
+    async folderMove(m) {
+      requireRun();if(!state.ownerGuard)throw new ActorError('folder-case','Folder mutation requires sealed workspace owner binding');const request=folderRequest(m.folderCase);
+      if(request.phase!=='before'||config.role!==request.scenario.role||!state.folderBaseline||state.folderBaseline.operationId!==request.operationId)throw new ActorError('folder-case','Folder mutation lacks the observed baseline');
+      if(canonicalJSON(inspectOwnedFolder(config,request))!==canonicalJSON(state.folderBaseline))throw new ActorError('folder-case','Folder baseline changed before external rename');
+      const proof=moveOwnedFolder(config,request,{guard:requireRun,runDir:state.runDir,afterGuard:()=>{config.file=resolve(config.workspaceRoot,request.scenario.destination,config.title+'.textpack');requireRun();}});
+      journal({event:'folder-moved',round:m.round,...proof});return {type:'folder-moved',round:m.round,...proof};
+    },
     async observe(m) {
+      let folderCaseProof,folderCasePending=false;
+      if(m.folderCase){
+        if(!state.runId)throw new ActorError('protocol','hello must come first');
+        const request=folderRequest(m.folderCase),observed=observeOwnedFolder(config,request);folderCaseProof=observed.proof;folderCasePending=observed.pending;
+        if(request.phase==='before'){requireRun();state.folderBaseline=folderCaseProof;}
+        else if(!folderCasePending) {
+          if(state.folderBaseline){if(state.folderBaseline.operationId!==request.operationId)throw new ActorError('folder-case','Folder operation changed');compareFolderProof(state.folderBaseline,folderCaseProof);}
+          else if(resolve(config.file)!==resolve(config.workspaceRoot,folderCaseProof.relativePath))throw new ActorError('folder-case','Reopen must explicitly configure the final path');
+          config.file=resolve(config.workspaceRoot,folderCaseProof.relativePath);
+        }
+      }
       requireRun();
       const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [], expectedAssetPaths: m.expectedAssetPaths ?? [], includeDocument: m.documentSnapshot === true });
       requireRun();
       journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, assetHashes: o.assetHashes, stable: o.stable, timedOut: o.timedOut });
       const documentSnapshot = o.documentSnapshot;
-      return { type: 'state', round: m.round, ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
+      return { type: 'state', round: m.round, ...(folderCaseProof ? {folderCaseProof,folderCasePending}:{}), ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
     },
     async shutdown() { journal({ event: 'shutdown' }); return null; },
   };

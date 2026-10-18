@@ -522,6 +522,14 @@ final class NativeStressRunner {
             record(["kind": "observed", "round": round, "continuous": continuous, "sessionPresent": sessionPresent, "reloads": reloads, "editIds": editIds])
             var response: [String: Any] = ["type": "state", "round": round, "text": text, "editIds": editIds, "editor": ["sessionId": sessionId, "reloads": reloads]]
             if request["documentSnapshot"] as? Bool == true { response["documentSnapshot"] = try await inspectDocument() }
+            if let folder = request["folderCase"] as? [String: Any] {
+                _ = try requireActorAccount()
+                let observed = try NativeStressFolderCase.observe(root: config.root, itemId: config.itemId, title: config.title, relativePath: config.relativePath, request: folder)
+                response["folderCaseProof"] = observed.proof; response["folderCasePending"] = observed.pending
+                let dialogVisible = try await evaluate("!!document.querySelector('dialog[open]')") == "true"
+                response["folderCaseReviewVisible"] = controller.window?.attachedSheet != nil || dialogVisible
+                try await requireSelected()
+            }
             return response
         default:
             throw NativeStressActor.Failure("Unsupported coordinator message type.")
