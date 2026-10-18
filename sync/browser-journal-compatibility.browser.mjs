@@ -1,7 +1,10 @@
 // Isolated real-browser storage verification. No hosted service or user profile.
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
+
+const engine = process.argv[2] ?? 'chromium';
+if (!['chromium', 'webkit'].includes(engine) || process.argv.length > 3) throw Error('Choose chromium or webkit');
 
 const bundle = await build({ stdin: { contents: `
 import {FileCollaborationClient,fileCollaborationJournalKey} from './src/sync/client';
@@ -20,7 +23,7 @@ window.row=()=>new Promise((resolve,reject)=>{
  request.onsuccess=()=>{const db=request.result;const tx=db.transaction('journals');const read=tx.objectStore('journals').get(window.key);read.onsuccess=()=>resolve(read.result??null);tx.oncomplete=()=>db.close();};
 });
 `, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"production"' } });
-const browser = await chromium.launch();
+const browser = await ({ chromium, webkit })[engine].launch();
 try {
   const context = await browser.newContext();
   await context.route('https://journal-compatibility.test/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Journal compatibility fixture</title>' }));
@@ -86,5 +89,5 @@ try {
   assert.equal(refused.requests,0);
   assert.deepEqual(await page.evaluate(()=>window.row()),future);
   await context.close();
-  console.log('PASS real Chromium: aborted legacy journal migration preserves exact fallback and no committed row; fresh pages recover pending body and original operation ID durably without network requests; future IDB schema refuses without rewriting.');
+  console.log(`PASS real ${engine}: aborted legacy journal migration preserves exact fallback and no committed row; fresh pages recover pending body and original operation ID durably without network requests; future IDB schema refuses without rewriting.`);
 } finally { await browser.close(); }
