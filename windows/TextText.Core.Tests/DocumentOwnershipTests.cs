@@ -50,8 +50,7 @@ static class DocumentOwnershipTests
             await preparing.CheckpointAsync(h.SessionToken,original.Hash,bytes,checkpoint);preparing.Close(h.SessionToken);
         }
         var nonce=Guid.NewGuid().ToString("N");File.WriteAllText(Path.Combine(store.Root,".document-owner-fixture"),nonce);
-        var start=new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true};
-        if(Path.GetFileNameWithoutExtension(start.FileName).Equals("dotnet",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(typeof(DocumentOwnershipTests).Assembly.Location);
+        var start=OwnedTestProcess.Create();
         start.ArgumentList.Add("--hold-document-owner-fixture");start.ArgumentList.Add(store.Root);
         start.Environment.Clear();foreach(var key in new[]{"PATH","HOME","TMPDIR","TEMP","TMP","DOTNET_ROOT","SystemRoot"})if(Environment.GetEnvironmentVariable(key) is {} value)start.Environment[key]=value;
         start.Environment["TEXTTEXT_DOCUMENT_FIXTURE_NONCE"]=nonce;

@@ -43,8 +43,7 @@ static class AccountStateAdoptionTests
     static async Task SeparateProcess(string temporary,Action<bool,string> assert) {
         var f=await Create(temporary,"adoption-process-restart");var nonce=Guid.NewGuid().ToString("N");File.WriteAllText(Path.Combine(f.Store.Root,".adoption-fixture"),nonce);
         try{AccountStateAdoption.AdoptAfterExplicitReview(f.Store,new Uri("https://texttext.test"),"workspace","account-a",step=>{if(step=="applied:"+f.CheckpointPath)throw new Interrupted();});}catch(Interrupted){}
-        var start=new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true};
-        if(Path.GetFileNameWithoutExtension(start.FileName).Equals("dotnet",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(typeof(AccountStateAdoptionTests).Assembly.Location);
+        var start=OwnedTestProcess.Create();
         start.ArgumentList.Add("--resume-account-adoption-fixture");start.ArgumentList.Add(f.Store.Root);start.Environment["TEXTTEXT_ADOPTION_FIXTURE_NONCE"]=nonce;
         using var child=Process.Start(start)??throw new Exception("Could not start owned adoption child.");
         var output=child.StandardOutput.ReadToEndAsync();var errors=child.StandardError.ReadToEndAsync();
