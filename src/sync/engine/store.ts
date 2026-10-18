@@ -2630,6 +2630,13 @@ export async function moveVaultFolder(input:VaultLocation & {operationId:string;
  });
 }
 
+export function folderCaseRequestHash(input: VaultFolderCaseRequest & {actorUserId:string}) {
+ const folders=[...input.folders].sort();const items=input.items.map(({itemId,relativePath,revision})=>({itemId,relativePath,revision})).sort((a,b)=>a.itemId.localeCompare(b.itemId));
+ if(new Set(folders).size!==folders.length||new Set(items.map(row=>row.itemId)).size!==items.length)throw Error("Duplicate folder case topology");
+ return hash(json(["folder-case-v1",input.actorUserId,input.source,input.destination,input.baseManifestRevision,folders,items]));
+}
+function folderCaseCancellationPath(layout:Layout,operationId:string){return path.join(layout.control,"folder-case-cancellations",`${segment(operationId)}.json`);}
+
 /** Narrow owner-only native sync lane. The stable request freezes exact original
  * topology and revisions; unlike reviewed general moves, content drift refuses. */
 export async function moveVaultFolderCase(input: VaultLocation & VaultFolderCaseRequest & {
@@ -2640,9 +2647,11 @@ export async function moveVaultFolderCase(input: VaultLocation & VaultFolderCase
  segment(input.operationId);const layout=await setup(input);
  const folders=[...input.folders].sort();const items=input.items.map(({itemId,relativePath,revision})=>({itemId,relativePath,revision})).sort((a,b)=>a.itemId.localeCompare(b.itemId));
  if(new Set(folders).size!==folders.length||new Set(items.map(row=>row.itemId)).size!==items.length)throw Error("Duplicate folder case topology");
- const requestHash=hash(json(["folder-case-v1",input.actorUserId,input.source,input.destination,input.baseManifestRevision,folders,items]));
+ const requestHash=folderCaseRequestHash(input);
  return locked(layout,async()=>{
-  await input.authorize();await recover(layout);
+  await input.authorize();
+  if(await maybeRead(folderCaseCancellationPath(layout,input.operationId)))throw Error("Folder case operation was cancelled; retain its recovery receipt");
+  await recover(layout);
   const saved=await maybeRead(path.join(layout.receipts,`${input.operationId}.json`));
   if(saved){const receipt=JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;if(receipt.requestHash!==requestHash||receipt.result.status!=="folder_moved"||!receipt.result.caseMove)throw Error("Operation id was reused");await deliverReceipt(layout,receipt);return receipt.result.caseMove;}
   const current=await manifestSnapshot(layout);
@@ -2657,5 +2666,49 @@ export async function moveVaultFolderCase(input: VaultLocation & VaultFolderCase
   const intent:FolderMoveIntent={kind:"move_folder",workspaceId:input.workspaceId,operationId:input.operationId,requestHash,actorUserId:input.actorUserId,actorType:"human",plan,manifest:{folders:current.folders,items:current.items},treeHash:tree.hash,treeIdentity:tree.entries[0].identity};
   const pendingDir=await directory(layout.pending,input.operationId);await atomicWrite(path.join(pendingDir,"intent.json"),json(intent));await syncDirectory(layout.pending);
   const result=await applySubtreeMove(layout,intent,pendingDir);if(result.status!=="folder_moved"||!result.caseMove)throw Error("Folder case receipt unavailable");return result.caseMove;
+ });
+}
+
+export type VaultFolderCaseRecovery =
+ | {state:"completed";requestHash:string;result:VaultFolderCaseResult}
+ | {state:"review";operationId:string;requestHash:string;source:string;destination:string;inspection:string;manifestRevision:string;folders:string[];items:VaultFolderCaseRequest["items"]}
+ | {state:"cancelled";operationId:string;requestHash:string;source:string;destination:string;inspection:string;manifestRevision:string};
+/** A cancellation is a separate owner-reviewed tombstone, never inferred from
+ * HTTP failure. The engine lock serializes it with every original/retry move.
+ * Recovery must finish any retained intent before absence can authorize review. */
+export async function recoverVaultFolderCase(input:VaultLocation & VaultFolderCaseRequest & {
+ actorUserId:string;authorize:()=>Promise<void>;action:"inspect"|"cancel";inspection?:string;
+ verifyUncommitted:()=>Promise<void>;
+ auditCancellation:(result:Extract<VaultFolderCaseRecovery,{state:"cancelled"}>)=>Promise<void>;
+}):Promise<VaultFolderCaseRecovery>{
+ const layout=await setup(input);const requestHash=folderCaseRequestHash(input);
+ return locked(layout,async()=>{
+  await input.authorize();
+  const cancellationPath=folderCaseCancellationPath(layout,input.operationId);
+  const prior=await maybeRead(cancellationPath);
+  if(prior){const result=JSON.parse(prior.toString()) as Extract<VaultFolderCaseRecovery,{state:"cancelled"}>;
+   if(result.state!=="cancelled"||result.operationId!==input.operationId||result.requestHash!==requestHash||result.source!==input.source||result.destination!==input.destination)throw Error("Operation id was reused");
+   await input.auditCancellation(result);return result;
+  }
+  await recover(layout);
+  const saved=await maybeRead(path.join(layout.receipts,`${segment(input.operationId)}.json`));
+  if(saved){const receipt=JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;
+   if(receipt.requestHash!==requestHash||receipt.result.status!=="folder_moved"||!receipt.result.caseMove)throw Error("Operation id was reused");
+   await deliverReceipt(layout,receipt);return{state:"completed",requestHash,result:receipt.result.caseMove};
+  }
+  // SQL coordinator must refuse both reserved and applied metadata. It also
+  // rechecks owner under the workspace row lock; no engine call is made there.
+  await input.verifyUncommitted();
+  if(await maybeRead(path.join(layout.pending,segment(input.operationId),"intent.json")))throw Error("Folder move must finish recovery before cancellation");
+  const current=await manifestSnapshot(layout);
+  const folders=[...current.folders].sort();const items=current.items.map(({itemId,relativePath,revision})=>({itemId,relativePath,revision})).sort((a,b)=>a.itemId.localeCompare(b.itemId));
+  const inspection=hash(json(["folder-case-cancel-v1",input.workspaceId,input.actorUserId,requestHash,current.revision,folders,items,current.problems]));
+  if(input.action==="inspect")return{state:"review",operationId:input.operationId,requestHash,source:input.source,destination:input.destination,inspection,manifestRevision:current.revision,folders,items};
+  if(input.inspection!==inspection)throw Error("Folder recovery inspection changed; inspect again");
+  await input.authorize();await input.verifyUncommitted();
+  const latest=await manifestSnapshot(layout);if(latest.revision!==current.revision)throw Error("Folder recovery inspection changed; inspect again");
+  const result:Extract<VaultFolderCaseRecovery,{state:"cancelled"}>={state:"cancelled",operationId:input.operationId,requestHash,source:input.source,destination:input.destination,inspection,manifestRevision:current.revision};
+  await directory(layout.control,"folder-case-cancellations");await atomicWrite(cancellationPath,json(result));
+  await input.auditCancellation(result);return result;
  });
 }

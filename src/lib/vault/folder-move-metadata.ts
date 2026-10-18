@@ -108,3 +108,14 @@ export async function coordinateFolderMove(root:string,intent:import("@/sync/eng
  if(!rootSignature)throw Error("Moved folder identity unavailable");
  await completeFolderMoveMetadata({...identity,rootSignature});
 }
+
+/** Called only under the engine workspace lock, before a cancellation tombstone.
+ * An applied/reserved row without a file receipt needs forward recovery. */
+export async function verifyFolderCaseUncommitted(input:{workspaceId:string;actorUserId:string;operationId:string;requestHash:string}) {
+ if(!db)throw Error("Sharing requires the database");
+ return db.transaction(async tx=>{
+  await ownerLock(tx,input.workspaceId,input.actorUserId);
+  const [prior]=await tx.select().from(vaultFolderMoves).where(and(eq(vaultFolderMoves.workspaceId,input.workspaceId),eq(vaultFolderMoves.operationId,input.operationId)));
+  if(prior&&(prior.requestHash!==input.requestHash||prior.actorUserId!==input.actorUserId||prior.status!=="aborted"))throw Error("Folder move metadata must finish recovery before cancellation");
+ });
+}

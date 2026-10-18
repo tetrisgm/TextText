@@ -1,7 +1,7 @@
 import {expect,it} from "vitest";
 import * as fs from "node:fs/promises";import os from "node:os";import path from "node:path";
 import {emptyDocumentSnapshot} from "@/lib/documents/model";import{buildTextpack}from"@/lib/github/textpack";
-import{ensureVaultFolders,writeVaultTextpack,listVaultTextpacks,moveVaultFolderCase,readVaultTextpack,type VaultMutationReceipt}from"./store";
+import{ensureVaultFolders,writeVaultTextpack,listVaultTextpacks,moveVaultFolderCase,recoverVaultFolderCase,readVaultTextpack,type VaultMutationReceipt}from"./store";
 import{planFolderMove}from"./folder-move-plan";
 async function fixture(){const root=await fs.mkdtemp(path.join(process.env.TEXTTEXT_PROPAGATION_ROOT??os.tmpdir(),"texttext-case-tree-"));const audits=new Map<string,VaultMutationReceipt>();let failure="";
  const context={root,workspaceId:"workspace",onReceipt:async (row:VaultMutationReceipt)=>{audits.set(row.operationId,row);if(failure==="audit"){failure="";throw Error("Lost acknowledgement");}},onFolderMove:async(_:unknown,phase:string)=>{if(failure===phase){failure="";throw Error("Metadata unavailable");}}};
@@ -27,3 +27,43 @@ it("refuses missing empty descendants, changed revision, changed manifest and di
  expect(Buffer.from((await readVaultTextpack({...f.context,itemId:"case-one"}))!.bytes)).toEqual(Buffer.from(f.bytes));expect(f.audits.size).toBe(0);
 }finally{await fs.rm(f.root,{recursive:true,force:true});}});
 it("recovers a staged tree after metadata outage before receipt without duplicate aliases",async()=>{const f=await fixture();try{f.fail("complete");await expect(moveVaultFolderCase(f.request)).rejects.toThrow("Metadata unavailable");const result=await moveVaultFolderCase(f.request);expect(result.status).toBe("moved");expect((await listVaultTextpacks(f.context)).folders).toEqual(["Parent","Parent/CASE","Parent/CASE/Empty child"]);expect(f.audits.size).toBe(1);}finally{await fs.rm(f.root,{recursive:true,force:true});}});
+
+it("inspects and durably cancels only the exact uncommitted command, retaining files and fencing late replay",async()=>{const f=await fixture();try{
+ const cancellationAudits:unknown[]=[];const input={...f.request,action:"inspect" as const,verifyUncommitted:async()=>{},auditCancellation:async(row:unknown)=>{cancellationAudits.push(row);}};
+ const before=await listVaultTextpacks(f.context);const review=await recoverVaultFolderCase(input);expect(review.state).toBe("review");if(review.state!=="review")throw Error("review missing");
+ expect(review.folders).toEqual(before.folders);expect(review.requestHash).toMatch(/^[a-f0-9]{64}$/);expect(cancellationAudits).toHaveLength(0);
+ const cancelled=await recoverVaultFolderCase({...input,action:"cancel",inspection:review.inspection});expect(cancelled.state).toBe("cancelled");
+ expect(await recoverVaultFolderCase(input)).toEqual(cancelled);expect(cancellationAudits).toHaveLength(2);
+ await expect(moveVaultFolderCase(f.request)).rejects.toThrow("cancelled");
+ await expect(recoverVaultFolderCase({...input,destination:"Parent/case"})).rejects.toThrow("reused");
+ expect((await listVaultTextpacks(f.context)).revision).toBe(before.revision);expect(Buffer.from((await readVaultTextpack({...f.context,itemId:"case-one"}))!.bytes)).toEqual(Buffer.from(f.bytes));
+}finally{await fs.rm(f.root,{recursive:true,force:true});}});
+it("refuses stale cancellation consent, unresolved metadata and revoked owners without cancelling",async()=>{const f=await fixture();try{
+ const input={...f.request,action:"inspect" as const,verifyUncommitted:async()=>{},auditCancellation:async()=>{}};
+ const review=await recoverVaultFolderCase(input);if(review.state!=="review")throw Error("review missing");
+ await ensureVaultFolders(f.context,["Later empty folder"]);
+ await expect(recoverVaultFolderCase({...input,action:"cancel",inspection:review.inspection})).rejects.toThrow("inspection changed");
+ await expect(recoverVaultFolderCase({...input,verifyUncommitted:async()=>{throw Error("reserved metadata");}})).rejects.toThrow("reserved metadata");
+ await expect(recoverVaultFolderCase({...input,authorize:async()=>{throw Error("Revoked");}})).rejects.toThrow("Revoked");
+ expect(await fs.readdir(path.join(f.root,"workspace/.texttext/receipts"))).not.toContain("case-command.json");
+ const current=await listVaultTextpacks(f.context);const result=await moveVaultFolderCase({...f.request,baseManifestRevision:current.revision});expect(result.status).toBe("moved");
+}finally{await fs.rm(f.root,{recursive:true,force:true});}});
+it("returns completed receipt rather than cancellation after committed response loss",async()=>{const f=await fixture();try{
+ f.fail("audit");await expect(moveVaultFolderCase(f.request)).rejects.toThrow("Lost acknowledgement");
+ const result=await recoverVaultFolderCase({...f.request,action:"cancel",inspection:"a".repeat(64),verifyUncommitted:async()=>{throw Error("must not inspect committed metadata");},auditCancellation:async()=>{throw Error("must not cancel completed move");}});
+ expect(result.state).toBe("completed");if(result.state!=="completed")throw Error("receipt missing");expect(result.result).toEqual(await moveVaultFolderCase(f.request));
+}finally{await fs.rm(f.root,{recursive:true,force:true});}});
+it("keeps a cancellation tombstone after audit outage and replays its audit without moving",async()=>{const f=await fixture();try{
+ let fail=true;const input={...f.request,action:"inspect" as const,verifyUncommitted:async()=>{},auditCancellation:async()=>{if(fail){fail=false;throw Error("Cancellation audit unavailable");}}};
+ const review=await recoverVaultFolderCase(input);if(review.state!=="review")throw Error("review missing");
+ await expect(recoverVaultFolderCase({...input,action:"cancel",inspection:review.inspection})).rejects.toThrow("audit unavailable");
+ await expect(moveVaultFolderCase(f.request)).rejects.toThrow("cancelled");expect((await recoverVaultFolderCase(input)).state).toBe("cancelled");
+ expect((await listVaultTextpacks(f.context)).folders).toContain("Parent/Case/Empty child");
+}finally{await fs.rm(f.root,{recursive:true,force:true});}});
+
+it("never cancels a staged move while metadata recovery remains unavailable",async()=>{const f=await fixture();try{
+ f.fail("complete");await expect(moveVaultFolderCase(f.request)).rejects.toThrow("Metadata unavailable");
+ const input={...f.request,action:"cancel" as const,inspection:"a".repeat(64),verifyUncommitted:async()=>{throw Error("must not bypass retained intent");},auditCancellation:async()=>{throw Error("must not cancel retained intent");}};
+ f.fail("complete");await expect(recoverVaultFolderCase(input)).rejects.toThrow("Metadata unavailable");
+ expect((await recoverVaultFolderCase(input)).state).toBe("completed");expect((await moveVaultFolderCase(f.request)).status).toBe("moved");
+}finally{await fs.rm(f.root,{recursive:true,force:true});}});

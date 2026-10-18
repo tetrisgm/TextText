@@ -1,4 +1,4 @@
-import { coordinateFolderMove, previewFolderMoveMetadata } from "./vault/folder-move-metadata";
+import { coordinateFolderMove, previewFolderMoveMetadata, verifyFolderCaseUncommitted } from "./vault/folder-move-metadata";
 import { folderMovePlanHash, type planFolderMove } from "@/sync/engine/folder-move-plan";
 import { freezeFolderMoveReview } from "./vault/folder-move-review";
 import type { FolderMoveIntent } from "@/sync/engine/folder-move-operation";
@@ -14,6 +14,8 @@ import {
   createVaultFolder as createDirectoryFolder,
   moveVaultFolder as moveDirectoryFolder,
   moveVaultFolderCase as moveDirectoryFolderCase,
+  recoverVaultFolderCase as recoverDirectoryFolderCase,
+  folderCaseRequestHash,
   readVaultTextpack as readDirectoryTextpack,
   readVaultTextpackPath as readDirectoryTextpackPath,
   readVaultTextpackIdentity as readDirectoryTextpackIdentity,
@@ -8552,4 +8554,16 @@ export async function moveVaultFolderCase(input: FolderMoveActor & import("@/syn
  if(!db)throw new Error(NO_DATABASE);
  return moveDirectoryFolderCase({...input,...folderMoveCoordinator(input.root),authorize:()=>authorizeFolderMoveOwner(input),
   preparePlan: current=>previewFolderMoveMetadata({...input,folders:current.folders,items:current.items,manifestRevision:current.revision,caseOnly:true})});
+}
+
+export async function recoverVaultFolderCase(input:FolderMoveActor & import("@/sync/engine/store").VaultFolderCaseRequest & {action:"inspect"|"cancel";inspection?:string}) {
+ if(!db)throw new Error(NO_DATABASE);
+ return recoverDirectoryFolderCase({...input,...folderMoveCoordinator(input.root),authorize:()=>authorizeFolderMoveOwner(input),
+  verifyUncommitted:()=>verifyFolderCaseUncommitted({...input,requestHash:folderCaseRequestHash(input)}),
+  auditCancellation:async result=>{
+   if(!db)throw new Error(NO_DATABASE);
+   const digest=createHash("sha256").update(`vault:folder-case-cancel:${input.workspaceId}:${input.operationId}`).digest("hex");
+   const id=`${digest.slice(0,8)}-${digest.slice(8,12)}-${digest.slice(12,16)}-${digest.slice(16,20)}-${digest.slice(20,32)}`;
+   await db.insert(actionAudit).values({id,actorUserId:input.actorUserId,actorType:"human",actionName:"vault.folder.case.cancel",targetType:"folder",targetId:`${input.workspaceId}:${result.source}`,inputSummary:`operation ${input.operationId}`,outputSummary:`cancelled ${result.requestHash}`}).onConflictDoNothing({target:actionAudit.id});
+  }});
 }
