@@ -180,6 +180,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
       const pack = await openPack(bytes(result.data), result.path, result.hash, result.itemId);
       return { ...pack.file, data: result.data };
     }
+    if (method === "resolveMove") return rpc.request("files.resolveMove", { ...params, ...recoveryScope }, signal);
     if (method === "resolveReplacement") return rpc.request("files.resolveReplacement", { ...params, ...recoveryScope }, signal);
     if (method === "cancelUncapturedDeletion") return rpc.request("files.cancelUncapturedDeletion", { ...params, ...recoveryScope }, signal);
     if (method === "recoveryAssetRead") return rpc.request("files.recoveryAssetRead", { ...params, ...recoveryScope }, signal);

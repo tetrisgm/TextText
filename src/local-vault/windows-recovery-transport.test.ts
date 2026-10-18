@@ -88,3 +88,21 @@ it("returns explicit removal absence without parsing a fabricated empty pack", a
     await expect(transport.request("replacementRead", { id: "removed", version: "prepared" })).rejects.toThrow("Invalid local recovery response");
   } finally { transport.destroy(); }
 });
+
+
+it("binds four-version move consent to the original native root", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const move = { ...replacement, kind: "move", sourcePath: "Original.textpack", sourcePresent: false, sourceHash: null, currentPresent: true, captured: true };
+  const view = native((method, params) => {
+    if (method === "native.status") return status;
+    if (method === "files.resolveMove") {
+      expect(params).toMatchObject({ ...move, workspaceRoot: status.root });
+      return { resolved: true };
+    }
+    throw new Error(method);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try {
+    expect(await transport.request("resolveMove", { ...move, workspaceRoot: "untrusted" })).toEqual({ resolved: true });
+  } finally { transport.destroy(); }
+});

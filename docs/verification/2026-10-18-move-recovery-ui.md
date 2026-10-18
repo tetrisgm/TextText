@@ -1,0 +1,7 @@
+# T13 shared move recovery controls
+
+Move entries bind destination path/current hash and original sourcePath/source presence/source hash. The dialog requires four inspected snapshots: immutable prepared baseline, optional captured version, destination now, and original path now. Foreign or opaque current/source files can be inspected and retained without overwriting them. Missing versions are explicit absence descriptors, not fabricated empty files. Inconsistent source absence/hash refuses consent. Captured moves use Keep current files; uncaptured moves use Cancel move. Both send resolveMove with all bound observations. Windows transport overrides the caller root with the captured native root.
+
+Source gates pass: TypeScript noEmit, six Windows recovery transport tests and the production-component browser fixture. The browser covers all prior replacement/removal cases plus captured move four-version inspection, recreated source, mismatched source refusal and uncaptured opaque destination. Logs: `/private/tmp/texttext-move-recovery-ui-final-typecheck-20261018.log`, `/private/tmp/texttext-move-recovery-transport-20261018.log`, `/private/tmp/texttext-move-recovery-ui-final-browser-20261018.log`. Light/dark screenshots use the existing recovery styling.
+
+Native move intent, both-path fencing and bridge resolveMove handlers are a separate in-progress slice. No installed or physical move recovery acceptance is claimed by this UI checkpoint. Normal replacement/removal commands retain their separate strict contracts.
