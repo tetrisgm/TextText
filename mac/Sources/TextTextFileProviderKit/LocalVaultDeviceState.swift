@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Sync cursors, upload outbox and live-edit journals belong to this Mac, not
 /// to an iCloud/Dropbox/OneDrive-synchronized workspace folder.
@@ -41,6 +42,7 @@ public enum LocalVaultDeviceState {
         let itemId: String
         let path: String
         let hash: String
+        var operationId: UUID? = nil
     }
 
     private static func deletionURL(root: URL, itemId: String) throws -> URL {
@@ -64,14 +66,22 @@ public enum LocalVaultDeviceState {
     }
 
     /// Called only after TextText has retained the exact removed pack.
-    public static func recordDeletion(root: URL, itemId: String, path: String, hash: String) throws {
+    public static func recordDeletion(root: URL, itemId: String, path: String, hash: String, operationId: UUID? = nil) throws {
         lock.lock()
         defer { lock.unlock() }
         let target = try deletionURL(root: root, itemId: itemId)
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        let intent = DeletionIntent(itemId: itemId, path: path, hash: hash)
+        let intent = DeletionIntent(itemId: itemId, path: path, hash: hash, operationId: operationId)
         try JSONEncoder().encode(intent).write(to: target, options: .atomic)
+        if operationId != nil {
+            let fd = open(target.path, O_RDWR | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { throw POSIXError(.EIO) }
+            defer { close(fd) }
+            guard fsync(fd) == 0 else { throw POSIXError(.EIO) }
+            try RetainedFileReplacement.flushDirectory(target.deletingLastPathComponent())
+            try RetainedFileReplacement.flushDirectory(target.deletingLastPathComponent().deletingLastPathComponent())
+        }
     }
 
     public static func hasDeletion(root: URL, itemId: String, path: String, hash: String) throws -> Bool {
@@ -87,10 +97,19 @@ public enum LocalVaultDeviceState {
         let target = try deletionURL(root: root, itemId: itemId)
         return FileManager.default.fileExists(atPath: target.path) ? try Data(contentsOf: target) : nil
     }
+    private static func acknowledgeDeletionPublication(root: URL, itemId: String, bytes: Data) throws {
+        let intent = try JSONDecoder().decode(DeletionIntent.self, from: bytes)
+        guard intent.itemId == itemId else { throw ReplacementRecoveryRegistry.Failure.invalidRegistry }
+        guard let operation = intent.operationId else { return }
+        try ReplacementRecoveryRegistry(root: root).acknowledgeDeletionPublication(operation: operation,
+            itemId: intent.itemId, path: intent.path, hash: intent.hash)
+    }
     static func clearDeletion(root: URL, itemId: String, matching snapshot: Data) throws {
         lock.lock(); defer { lock.unlock() }
         let target = try deletionURL(root: root, itemId: itemId)
         guard FileManager.default.fileExists(atPath: target.path), try Data(contentsOf: target) == snapshot else { return }
+        try acknowledgeDeletionPublication(root: root, itemId: itemId, bytes: snapshot)
+        guard try Data(contentsOf: target) == snapshot else { return }
         try FileManager.default.removeItem(at: target)
     }
 
@@ -98,7 +117,12 @@ public enum LocalVaultDeviceState {
         lock.lock()
         defer { lock.unlock() }
         let target = try deletionURL(root: root, itemId: itemId)
-        if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+        if FileManager.default.fileExists(atPath: target.path) {
+            let snapshot = try Data(contentsOf: target)
+            try acknowledgeDeletionPublication(root: root, itemId: itemId, bytes: snapshot)
+            guard try Data(contentsOf: target) == snapshot else { return }
+            try FileManager.default.removeItem(at: target)
+        }
     }
 
     /// A restored file cancels the intent only while it is still present.
@@ -109,7 +133,12 @@ public enum LocalVaultDeviceState {
         let file = try LocalVaultDocumentStore(root: root).url(for: path)
         guard FileManager.default.fileExists(atPath: file.path) else { return }
         let target = try deletionURL(root: root, itemId: itemId)
-        if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+        if FileManager.default.fileExists(atPath: target.path) {
+            let snapshot = try Data(contentsOf: target)
+            try acknowledgeDeletionPublication(root: root, itemId: itemId, bytes: snapshot)
+            guard try Data(contentsOf: target) == snapshot else { return }
+            try FileManager.default.removeItem(at: target)
+        }
     }
 
     public static func migrate(root: URL) throws {

@@ -407,7 +407,17 @@ struct ReplacementRecoveryRegistry {
         guard lstat(original.path, &info) != 0, errno == ENOENT else { throw Failure.unresolved(entry.operation) }
         return try RetainedFileRemoval.cancelUncaptured(retained, preservedAt: candidate)
     }
-    private func restoreDeletionMarker(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery) throws {
+    /// Called by every operation-bound marker consumption path before unlink.
+    /// This receipt closes marker-write/crash/other-process-ACK/restart replay.
+    func acknowledgeDeletionPublication(operation: UUID, itemId: String, path: String, hash: String) throws {
+        guard var entry = try entries(itemId: itemId).first(where: { $0.operation == operation }),
+              entry.kind == "removal", entry.userDeletion == true, entry.path == path,
+              entry.expectedHash == hash else { throw Failure.invalidRegistry }
+        if entry.deletionMarkerPublished == true { return }
+        entry.deletionMarkerPublished = true
+        try save(entry, creating: false)
+    }
+    private func restoreDeletionMarker(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery, observe: ((String) throws -> Void)? = nil) throws {
         guard entry.kind == "removal", entry.userDeletion == true, entry.deletionMarkerPublished != true, entry.deletionIntentCancelled != true else { return }
         let visible = root.appendingPathComponent(entry.path)
         let restored: Bool
@@ -464,7 +474,8 @@ struct ReplacementRecoveryRegistry {
             let verified = try inspect(latest)
             guard verified.preparedHash == inspection.preparedHash, verified.displacedHash == inspection.displacedHash,
                   try visibleMatches(visible, hash: nil, present: false) else { throw Failure.observedVersionChanged }
-            try LocalVaultDeviceState.recordDeletion(root: root, itemId: entry.itemId, path: entry.path, hash: entry.expectedHash)
+            try LocalVaultDeviceState.recordDeletion(root: root, itemId: entry.itemId, path: entry.path, hash: entry.expectedHash, operationId: entry.operation)
+            try observe?("markerWritten")
             var recorded = latest
             recorded.deletionMarkerPublished = true
             try save(recorded, creating: false)
@@ -472,7 +483,7 @@ struct ReplacementRecoveryRegistry {
     }
     /// Nil identity means a malformed/unidentified projection. Fail closed for
     /// any unresolved workspace entry instead of accepting a renamed candidate.
-    func assertReadable(itemId: String?) throws {
+    func assertReadable(itemId: String?, observeDeletionPublication: ((String) throws -> Void)? = nil) throws {
         var validatedTargets: [String: (URL, RetainedFileReplacement.Layout?)] = [:]
         for entry in try entries(itemId: itemId) {
             let key = entry.path + "\0" + (entry.recoveryPath ?? entry.path)
@@ -492,19 +503,19 @@ struct ReplacementRecoveryRegistry {
                     if retained.record.state != .completed || retained.record.acknowledgedDisplacedHash != resolution.displacedHash {
                         try RetainedFileReplacement.acknowledge(retained, preparedHash: resolution.preparedHash, displacedHash: resolution.displacedHash)
                     }
-                    try restoreDeletionMarker(entry, retained)
+                    try restoreDeletionMarker(entry, retained, observe: observeDeletionPublication)
                     continue
                 }
                 let inspection = try inspect(entry)
                 guard inspection.preparedHash == resolution.preparedHash,
                       inspection.displacedHash == resolution.displacedHash else { throw Failure.unresolved(entry.operation) }
                 try RetainedFileReplacement.acknowledge(retained, preparedHash: resolution.preparedHash, displacedHash: resolution.displacedHash)
-                try restoreDeletionMarker(entry, retained)
+                try restoreDeletionMarker(entry, retained, observe: observeDeletionPublication)
                 continue
             }
             let classified = try cancelRenamedUncaptured(entry, retained) ?? RetainedFileReplacement.classify(retained, target: visibleClassificationTarget(entry, retained))
             guard classified.record.state == .completed || classified.record.state == .cancelled else { throw Failure.unresolved(entry.operation) }
-            try restoreDeletionMarker(entry, classified)
+            try restoreDeletionMarker(entry, classified, observe: observeDeletionPublication)
         }
     }
     /// Snapshot every retained version into the existing recoverable TextPack

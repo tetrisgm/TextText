@@ -231,11 +231,16 @@ enum RetainedFileReplacement {
                 guard noExchange, digest(try StableFileSnapshot.read(recovery.prepared)) == record.preparedHash else { throw Failure.invalidJournal }
                 return recovery
             }
-            if noExchange, digest(try StableFileSnapshot.read(recovery.prepared)) == record.preparedHash,
-               let current = try? StableFileSnapshot.read(target), digest(current) == record.expectedHash {
-                record.state = .cancelled
-                try save(record, in: recovery.directory)
-                return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
+            if noExchange {
+                guard digest(try StableFileSnapshot.read(recovery.prepared)) == record.preparedHash else { throw Failure.invalidJournal }
+                if let current = try? StableFileSnapshot.read(target), digest(current) == record.expectedHash {
+                    record.state = .cancelled
+                    try save(record, in: recovery.directory)
+                    return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
+                }
+                // No capture occurred. Keep refusing without sealing an
+                // irreversible conflict; exact restoration may cancel safely.
+                return recovery
             }
         }
         let preparedBefore = try fingerprint(recovery.prepared)

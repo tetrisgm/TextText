@@ -540,7 +540,11 @@ public struct LocalVaultDocumentStore: Sendable {
                     try writeObservationForTesting?(stage == "prepared" ? "removalPrepared" : stage)
                 }
                 try writeObservationForTesting?("beforeDeletionMarker")
-                if recordDeletion { try registry.assertReadable(itemId: itemId) }
+                if recordDeletion {
+                    try registry.assertReadable(itemId: itemId) { stage in
+                        try writeObservationForTesting?(stage == "markerWritten" ? "deletionMarkerWritten" : stage)
+                    }
+                }
             }
         }
         if let coordinationError { throw coordinationError }

@@ -95,6 +95,34 @@ final class RetainedFileRemovalTests: XCTestCase {
         try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: "removal-item")
         XCTAssertFalse(try LocalVaultDeviceState.hasDeletion(root: root, itemId: "removal-item", path: "Original.textpack", hash: hash(before)))
     }
+    func testOperationBoundMarkerAcknowledgedBeforeConsumptionCannotReissueAfterRestart() throws {
+        let bytes = try pack("operation-bound marker")
+        for mode in ["matching-ack", "clear", "restored-clear"] {
+            let isolated = root.appendingPathComponent(mode)
+            try FileManager.default.createDirectory(at: isolated, withIntermediateDirectories: true)
+            let original = isolated.appendingPathComponent("Original.textpack")
+            try bytes.write(to: original)
+            var writer = LocalVaultDocumentStore(root: isolated)
+            writer.writeObservationForTesting = { if $0 == "deletionMarkerWritten" { throw Interrupted.stopped } }
+            XCTAssertThrowsError(try writer.delete(path: "Original.textpack", expectedHash: hash(bytes)))
+            let index = ReplacementRecoveryRegistry(root: isolated)
+            let before = try XCTUnwrap(index.entries().first)
+            XCTAssertNotEqual(before.deletionMarkerPublished, true)
+            let marker = try XCTUnwrap(LocalVaultDeviceState.deletionSnapshot(root: isolated, itemId: "removal-item"))
+            let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: marker) as? [String: Any])
+            XCTAssertEqual(fields["operationId"] as? String, before.operation.uuidString)
+            if mode == "matching-ack" { try LocalVaultDeviceState.clearDeletion(root: isolated, itemId: "removal-item", matching: marker) }
+            if mode == "clear" { try LocalVaultDeviceState.clearDeletion(root: isolated, itemId: "removal-item") }
+            if mode == "restored-clear" {
+                try bytes.write(to: original)
+                try LocalVaultDeviceState.clearDeletionIfRestored(root: isolated, itemId: "removal-item", path: "Original.textpack")
+            }
+            XCTAssertEqual(try XCTUnwrap(ReplacementRecoveryRegistry(root: isolated).entries().first).deletionMarkerPublished, true)
+            XCTAssertNil(try LocalVaultDeviceState.deletionSnapshot(root: isolated, itemId: "removal-item"))
+            try ReplacementRecoveryRegistry(root: isolated).assertReadable(itemId: "removal-item")
+            XCTAssertNil(try LocalVaultDeviceState.deletionSnapshot(root: isolated, itemId: "removal-item"), mode)
+        }
+    }
     func testRestoredUnissuedIntentCannotOverwriteLaterDeletionLifetime() throws {
         let first = try pack("first lifetime"), second = try pack("restored second lifetime")
         try first.write(to: target)
@@ -166,6 +194,23 @@ final class RetainedFileRemovalTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: renamed), mode == "changed" ? changed : before)
             if mode == "foreign-original" { XCTAssertEqual(try Data(contentsOf: source), foreign) }
         }
+    }
+    func testUncapturedForeignOriginalRemainsPendingUntilExpectedRestored() throws {
+        let before = try pack("before"), foreign = try pack("foreign", id: "foreign-item")
+        try before.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "removalPrepared" { throw Interrupted.stopped } }
+        XCTAssertThrowsError(try writer.delete(path: "Original.textpack", expectedHash: hash(before)))
+        try foreign.write(to: target, options: .atomic)
+        XCTAssertThrowsError(try registry.assertReadable(itemId: "removal-item"))
+        let entry = try XCTUnwrap(registry.entries().first)
+        let reference = registry.recoveryRoot(path: entry.path).appendingPathComponent("Original.textpack")
+        XCTAssertEqual(try RetainedFileReplacement.recovery(target: reference, operation: entry.operation).record.state, .pending)
+        XCTAssertEqual(try Data(contentsOf: target), foreign)
+        try before.write(to: target, options: .atomic)
+        XCTAssertNoThrow(try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: "removal-item"))
+        XCTAssertEqual(try RetainedFileReplacement.recovery(target: reference, operation: entry.operation).record.state, .cancelled)
+        XCTAssertNil(try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: "removal-item"))
     }
     func testRemovedIdentityElsewhereRefusesAmbiguousResolution() throws {
         let before = try pack("before"), external = Data([2])
