@@ -369,6 +369,25 @@ public sealed class TextPackStore
     }
     public string Preserve(byte[] bytes,string kind)
     {
-        var path=System.IO.Path.Combine(GetRecoveryDirectory(),kind+"-"+Hash(bytes)+".textpack"); if(!File.Exists(path)) AtomicWrite(path,bytes); return path;
+        return PreserveBytes(bytes,kind,".textpack",64*1024*1024);
+    }
+    public string PreserveAsset(byte[] bytes,string kind) => PreserveBytes(bytes,kind,".asset",16*1024*1024);
+    string PreserveBytes(byte[] bytes,string kind,string extension,int maximum) {
+        if(bytes.Length>maximum)throw new InvalidDataException("Recovery exceeds bounds.");
+        lock(gate) {
+            var path=System.IO.Path.Combine(GetRecoveryDirectory(),kind+"-"+Hash(bytes)+extension);
+            CheckLinks(path);
+            if(!File.Exists(path)) {
+                using var created=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None);
+                created.Write(bytes);created.Flush(true);
+            } else {
+                using var existing=new FileStream(path,FileMode.Open,FileAccess.ReadWrite,FileShare.Read);
+                if(existing.Length!=bytes.Length)throw new InvalidDataException("Existing recovery bytes changed.");
+                var captured=new byte[bytes.Length];existing.ReadExactly(captured);
+                if(existing.ReadByte()!=-1||!captured.AsSpan().SequenceEqual(bytes))throw new InvalidDataException("Existing recovery bytes changed.");
+                existing.Flush(true);
+            }
+            return path;
+        }
     }
 }

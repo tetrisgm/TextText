@@ -11,9 +11,9 @@ cp mac/Package.resolved "$lock_copy"
 test_log=$(mktemp)
 trap 'cp "$lock_copy" mac/Package.resolved; rm -f "$lock_copy" "$test_log"' EXIT
 TEXTTEXT_STORE=1 TEXTTEXT_VAULT_HTTP_TEST=1 swift test --package-path mac --jobs 2 \
-  --filter 'LocalVault(MirrorPolicyHostTests|AccountStateAdoptionTests|AccountRootOwnershipTests|AccountIdentityTests|SyncTests|SharedEditingTests|RecoveryTests|DeviceStateTests|HTTPContractTests|SessionLifecycleTests|ConnectionControllerTests|CollaborationTests)|StableFileSnapshotTests|DocumentCreationTests|RemoteDocumentStoreTests' 2>&1 | tee "$test_log"
+  --filter 'LocalVault(ConflictRetentionTests|MirrorPolicyHostTests|AccountStateAdoptionTests|AccountRootOwnershipTests|AccountIdentityTests|SyncTests|SharedEditingTests|RecoveryTests|DeviceStateTests|HTTPContractTests|SessionLifecycleTests|ConnectionControllerTests|CollaborationTests)|StableFileSnapshotTests|DocumentCreationTests|RemoteDocumentStoreTests' 2>&1 | tee "$test_log"
 # Swift exits successfully even if a filter selects zero tests. Fail closed.
-for suite in MirrorPolicyHost AccountStateAdoption AccountRootOwnership AccountIdentity Sync SharedEditing Recovery DeviceState HTTPContract SessionLifecycle ConnectionController Collaboration; do
+for suite in ConflictRetention MirrorPolicyHost AccountStateAdoption AccountRootOwnership AccountIdentity Sync SharedEditing Recovery DeviceState HTTPContract SessionLifecycle ConnectionController Collaboration; do
   grep -Eq "Test Case '.*LocalVault${suite}Tests .*' passed" "$test_log" || {
     echo "Required native sync suite did not execute: LocalVault${suite}Tests" >&2
     exit 1

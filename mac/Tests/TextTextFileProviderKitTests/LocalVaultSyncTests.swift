@@ -1034,6 +1034,68 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(currentAsset, Data("remote".utf8))
         try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
+    func testBinaryRecoveryFaultRetainsOriginalStagedAssetAndOperation() async throws {
+        let parent = root!
+        for damage in ["missing", "corrupt", "recovery", "journal"] {
+            root = parent.appendingPathComponent(damage)
+            defer { root = parent }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let workspace = root!, original = try withAsset(pack("Text"), bytes: Data("first".utf8))
+            try putLocal(original)
+            let transport = FakeVaultTransport(), sync = try engine(transport)
+            _ = try await sync.sync()
+            let session = try await sync.beginSharedEditing(itemId: itemId, path: path, expectedHash: TextTextStableDigest.sha256Hex(original))
+            let submitted = Data("submitted asset".utf8)
+            let local = try withAsset(original, bytes: submitted), remote = try withAsset(original, bytes: Data("remote winner".utf8))
+            try putLocal(local)
+            await transport.beforeNextBinaryPatch { operation in
+                let staged = LocalVaultDeviceState.directory(root: workspace).appendingPathComponent("sync/outbox/" + operation + ".asset")
+                if damage == "missing" { try FileManager.default.removeItem(at: staged) }
+                else if damage == "corrupt" { try Data("corrupt".utf8).write(to: staged) }
+                else if damage == "journal" {
+                    let state = LocalVaultDeviceState.directory(root: workspace).appendingPathComponent("sync/state.json")
+                    try FileManager.default.moveItem(at: state, to: state.appendingPathExtension("fixture-retained"))
+                    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: false)
+                } else {
+                    let copy = workspace.appendingPathComponent(".texttext/conflicts/" + operation + "/local.textpack")
+                    try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try Data("corrupt recovery".utf8).write(to: copy)
+                }
+            }
+            await transport.conflictNextBinaryPatch(with: remote)
+            var refused = LocalVaultSyncReport()
+            var journalFailure: Error?
+            do { refused = try await sync.sync() }
+            catch { if damage == "journal" { journalFailure = error } else { throw error } }
+            XCTAssertTrue(!refused.errors.isEmpty || journalFailure != nil)
+            let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+            if damage == "journal" {
+                if FileManager.default.fileExists(atPath: stateURL.path) { try FileManager.default.removeItem(at: stateURL) }
+                try FileManager.default.moveItem(at: stateURL.appendingPathExtension("fixture-retained"), to: stateURL)
+            }
+            let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+            let pending = try XCTUnwrap((state["binaryOutbox"] as? [String: [String: Any]])?[itemId])
+            let operation = try XCTUnwrap(pending["operationId"] as? String)
+            XCTAssertEqual(pending["conflicted"] as? Bool, false)
+            XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), local)
+            try submitted.write(to: stateURL.deletingLastPathComponent().appendingPathComponent("outbox/" + operation + ".asset"))
+            if damage == "recovery" {
+                let copy = workspace.appendingPathComponent(".texttext/conflicts/" + operation + "/local.textpack")
+                XCTAssertEqual(try Data(contentsOf: copy), Data("corrupt recovery".utf8))
+                try FileManager.default.moveItem(at: copy, to: copy.appendingPathExtension("fixture-quarantine"))
+            }
+            await transport.conflictNextBinaryPatch(with: remote)
+            let recovered = try await sync.sync()
+            XCTAssertTrue(recovered.errors.isEmpty, "\(recovered.errors)")
+            let requests = await transport.binaryRequests()
+            XCTAssertEqual(requests.map(\.operationId), [operation, operation])
+            let retained = workspace.appendingPathComponent(".texttext/conflicts/" + operation)
+            XCTAssertEqual(try Data(contentsOf: retained.appendingPathComponent("local-asset.bin")), submitted)
+            XCTAssertEqual(try Data(contentsOf: retained.appendingPathComponent("remote.textpack")), remote)
+            try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        }
+    }
+
     func testRetainedBinaryConflictDoesNotFenceTextCheckpoint() async throws {
         let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
         try putLocal(original)
@@ -1296,13 +1358,16 @@ actor FakeVaultTransport: LocalVaultSyncTransport {
     private var loseReply = false
     private var loseBinaryReply = false
     private var nextBinaryConflict: Data?
+    private var binaryHook: (@Sendable (String) throws -> Void)?
     private var binaryTrace: [(operationId: String, expectedHash: String?, bytes: Data?)] = []
     func loseNextBinaryReply() { loseBinaryReply = true }
     func conflictNextBinaryPatch(with data: Data) { nextBinaryConflict = data }
+    func beforeNextBinaryPatch(_ hook: @escaping @Sendable (String) throws -> Void) { binaryHook = hook }
     func binaryRequests() -> [(operationId: String, expectedHash: String?, bytes: Data?)] { binaryTrace }
     func binaryPatch(itemId: String, operationId: String, entryPath: String, expectedHash: String?, expectedLifecycle: String?, bytes: Data?) throws -> String {
         binaryTrace.append((operationId, expectedHash, bytes))
         guard entryPath == "assets/data.txt", items[itemId] != nil else { throw LocalVaultSyncFailure.invalidResponse }
+        let hook = binaryHook; binaryHook = nil; try hook?(operationId)
         if let changed = nextBinaryConflict {
             nextBinaryConflict = nil
             set(itemId: itemId, path: items[itemId]!.relativePath, data: changed)

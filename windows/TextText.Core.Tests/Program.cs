@@ -22,6 +22,7 @@ static class Test
  await DocumentOwnershipTests.Run(temp,Assert);
  await MirrorPolicyTests.Run(Assert);
  await MirrorLifecycleTests.Run(temp,Assert);
+ await ConflictRecoveryTests.Run(temp,Assert);
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed","legacy-conflict","legacy-missing-proof","legacy-corrupt-proof"}) {
  var metadataStore=new TextPackStore(Path.Combine(temp,"metadata-"+failure),Path.Combine(temp,"metadata-state-"+failure));

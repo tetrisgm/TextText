@@ -9,6 +9,21 @@ private func writeVaultSyncJournal(_ data: Data, to url: URL) throws {
     try handle.close()
 }
 
+private func writeVaultRecovery(_ data: Data, to url: URL) throws {
+    guard url.standardizedFileURL.resolvingSymlinksInPath() == url.standardizedFileURL else {
+        throw LocalVaultSyncFailure.invalidResponse
+    }
+    if FileManager.default.fileExists(atPath: url.path) {
+        guard try StableFileSnapshot.read(url) == data else { throw LocalVaultSyncFailure.invalidResponse }
+    } else {
+        // Recovery is immutable. A partial or externally changed copy must be
+        // reviewed rather than silently overwritten on a later retry.
+        try data.write(to: url, options: .withoutOverwriting)
+    }
+    let handle = try FileHandle(forWritingTo: url)
+    try handle.synchronize(); try handle.close()
+}
+
 public struct LocalVaultSyncBinding: Codable, Sendable, Equatable {
     public let origin: URL
     public let workspaceId: String
@@ -546,6 +561,10 @@ public actor LocalVaultSync {
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
         try writeVaultSyncJournal(JSONEncoder().encode(state), to: directory.appendingPathComponent("state.json"))
     }
+    // Capture immediately before synchronous journal mutations, after awaits.
+    private func persist(restoring previous: State) throws {
+        do { try persist() } catch { state = previous; throw error }
+    }
     private func payload(_ pending: Pending) -> URL {
         directory.appendingPathComponent("outbox/\(pending.operationId).textpack")
     }
@@ -586,9 +605,7 @@ public actor LocalVaultSync {
     private func stagedBinaryBytes(_ pending: BinaryPending) throws -> Data? {
         guard let expected = pending.payloadHash else { return nil }
         let url = binaryPayload(pending.operationId)
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 16 * 1024 * 1024 else { throw LocalVaultSyncFailure.invalidResponse }
-        let bytes = try Data(contentsOf: url)
+        let bytes = try StableFileSnapshot.read(url, maximumBytes: 16 * 1024 * 1024)
         guard TextTextStableDigest.sha256Hex(bytes) == expected else { throw LocalVaultSyncFailure.invalidResponse }
         return bytes
     }
@@ -596,18 +613,19 @@ public actor LocalVaultSync {
     private func preserveBinaryConflict(_ pending: BinaryPending) async throws -> LocalVaultRemotePack {
         let remote = try await transport.download(itemId: pending.itemId)
         try validate(remote, itemId: pending.itemId, path: remote.relativePath)
-        let local = try Data(contentsOf: LocalVaultDocumentStore(root: root).url(for: pending.path))
+        let staged = try stagedBinaryBytes(pending)
+        let local = try StableFileSnapshot.read(LocalVaultDocumentStore(root: root).url(for: pending.path))
         let localHash = TextTextStableDigest.sha256Hex(local)
         let folder = ".texttext/conflicts/\(pending.operationId)"
         let destination = root.appendingPathComponent(folder)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         let localPath = "\(folder)/local.textpack", remotePath = "\(folder)/remote.textpack"
-        try local.write(to: root.appendingPathComponent(localPath), options: .atomic)
-        try remote.data.write(to: root.appendingPathComponent(remotePath), options: .atomic)
+        try writeVaultRecovery(local, to: root.appendingPathComponent(localPath))
+        try writeVaultRecovery(remote.data, to: root.appendingPathComponent(remotePath))
         var paths = [localPath, remotePath]
-        if let bytes = try stagedBinaryBytes(pending) {
+        if let bytes = staged {
             let assetPath = "\(folder)/local-asset.bin"
-            try bytes.write(to: root.appendingPathComponent(assetPath), options: .atomic)
+            try writeVaultRecovery(bytes, to: root.appendingPathComponent(assetPath))
             paths.append(assetPath)
         }
         state.conflicts[pending.itemId] = Conflict(localHash: localHash, remoteRevision: remote.revision,
@@ -632,6 +650,7 @@ public actor LocalVaultSync {
             updated = current
         } else { return false }
         sharedSessions[itemId]?.hash = updated.hash
+        let previous = state
         if let winnerHash { state.binaryBaselines?[itemId, default: [:]][pending.entryPath] = winnerHash }
         else { state.binaryBaselines?[itemId]?.removeValue(forKey: pending.entryPath) }
         if state.baselines[itemId]?.path == path {
@@ -640,7 +659,7 @@ public actor LocalVaultSync {
         }
         state.binaryOutbox?.removeValue(forKey: itemId)
         state.conflicts.removeValue(forKey: itemId)
-        try persist()
+        try persist(restoring: previous)
         if pending.payloadHash != nil { try? FileManager.default.removeItem(at: binaryPayload(pending.operationId)) }
         return true
     }
@@ -649,8 +668,9 @@ public actor LocalVaultSync {
         if let pending = state.binaryOutbox?[itemId], !pending.conflicted,
            !remote.isDeleted, (pending.lifecycle != remote.lifecycle || pending.path != remote.relativePath) {
             _ = try await preserveBinaryConflict(pending)
+            let previous = state
             state.binaryOutbox?[itemId]?.conflicted = true
-            try persist()
+            try persist(restoring: previous)
             return false
         }
         guard !remote.isDeleted, remote.relativePath == path,
@@ -683,13 +703,15 @@ public actor LocalVaultSync {
             pending = BinaryPending(itemId: itemId, path: path, entryPath: entry,
                                     expectedHash: hashes[entry], lifecycle: remote.lifecycle,
                                     payloadHash: bytes.map { TextTextStableDigest.sha256Hex($0) }, operationId: operationId)
+            let previous = state
             if state.binaryOutbox == nil { state.binaryOutbox = [:] }
             state.binaryOutbox?[itemId] = pending
-            try persist() // Exact bytes and operation ID precede the request.
+            try persist(restoring: previous) // Exact bytes and operation ID precede the request.
         }
         guard let pending, pending.lifecycle == remote.lifecycle, pending.path == path else {
             if state.binaryOutbox?[itemId] != nil {
-                state.binaryOutbox?[itemId]?.conflicted = true; try persist()
+                let previous = state
+                state.binaryOutbox?[itemId]?.conflicted = true; try persist(restoring: previous)
             }
             return false
         }
@@ -698,6 +720,7 @@ public actor LocalVaultSync {
             let revision = try await transport.binaryPatch(itemId: itemId, operationId: pending.operationId,
                 entryPath: pending.entryPath, expectedHash: pending.expectedHash,
                 expectedLifecycle: pending.lifecycle, bytes: bytes)
+            let previous = state
             if state.binaryBaselines == nil { state.binaryBaselines = [:] }
             if bytes == nil { state.binaryBaselines?[itemId]?.removeValue(forKey: pending.entryPath) }
             else { state.binaryBaselines?[itemId, default: [:]][pending.entryPath] = TextTextStableDigest.sha256Hex(bytes!) }
@@ -705,13 +728,14 @@ public actor LocalVaultSync {
             if state.binaryRevisions == nil { state.binaryRevisions = [:] }
             state.binaryRevisions?[itemId] = revision
             state.binaryOutbox?.removeValue(forKey: itemId)
-            try persist()
+            try persist(restoring: previous)
             if pending.payloadHash != nil { try? FileManager.default.removeItem(at: binaryPayload(pending.operationId)) }
             return true
         } catch LocalVaultSyncFailure.conflict {
             let winner = try await preserveBinaryConflict(pending)
+            let previous = state
             state.binaryOutbox?[itemId]?.conflicted = true
-            try persist() // Both packs and the exact unsent asset are durable before suppressing retries.
+            try persist(restoring: previous) // Both packs and the exact unsent asset are durable before suppressing retries.
             // The server's CAS winner owns the main path; the losing full pack
             // remains durable. A racing local edit leaves the conflict fenced.
             return try adoptBinaryWinner(pending, winner: winner)
@@ -830,19 +854,30 @@ public actor LocalVaultSync {
         }
     }
 
+    private func pendingRecoveryBytes(_ pending: Pending) throws -> Data? {
+        let source = payload(pending)
+        // Legacy deletion intents did not promise a staged history copy.
+        if pending.action == "delete", !FileManager.default.fileExists(atPath: source.path) { return nil }
+        let bytes = try StableFileSnapshot.read(source)
+        guard TextTextStableDigest.sha256Hex(bytes) == pending.hash else { throw LocalVaultSyncFailure.invalidResponse }
+        return bytes
+    }
+
     private func preserveConflict(_ pending: Pending, remote: LocalVaultRemotePack, verifiedLocal: Data? = nil) throws -> [String] {
         try validate(remote, itemId: pending.itemId, path: remote.relativePath)
+        let local = try verifiedLocal ?? pendingRecoveryBytes(pending)
+        if let local { guard TextTextStableDigest.sha256Hex(local) == pending.hash else { throw LocalVaultSyncFailure.invalidResponse } }
         let folder = ".texttext/conflicts/\(pending.operationId)"
         let destination = root.appendingPathComponent(folder)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         var paths: [String] = []
-        if let local = verifiedLocal ?? (try? Data(contentsOf: payload(pending))) {
+        if let local {
             let path = "\(folder)/local-\((pending.path as NSString).lastPathComponent)"
-            try writeVaultSyncJournal(local, to: root.appendingPathComponent(path))
+            try writeVaultRecovery(local, to: root.appendingPathComponent(path))
             paths.append(path)
         }
         let remotePath = "\(folder)/remote-\((remote.relativePath as NSString).lastPathComponent)"
-        try writeVaultSyncJournal(remote.data, to: root.appendingPathComponent(remotePath))
+        try writeVaultRecovery(remote.data, to: root.appendingPathComponent(remotePath))
         paths.append(remotePath)
         state.conflicts[pending.itemId] = Conflict(localHash: pending.hash, remoteRevision: remote.revision,
                                                  paths: paths, remotePath: remote.relativePath)
@@ -850,16 +885,18 @@ public actor LocalVaultSync {
     }
 
     private func preserveDeletedConflict(_ pending: Pending, tombstone: LocalVaultRemoteItem) throws -> [String] {
+        let local = try pendingRecoveryBytes(pending)
         let folder = ".texttext/conflicts/\(pending.operationId)"
         let destination = root.appendingPathComponent(folder)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         var paths: [String] = []
-        if let local = try? Data(contentsOf: payload(pending)) {
+        if let local {
             let path = "\(folder)/local-\((pending.path as NSString).lastPathComponent)"
-            try local.write(to: root.appendingPathComponent(path), options: .atomic)
+            try writeVaultRecovery(local, to: root.appendingPathComponent(path))
             paths.append(path)
         }
-        try JSONEncoder().encode(tombstone).write(to: destination.appendingPathComponent("remote-deletion.json"), options: .atomic)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        try writeVaultRecovery(encoder.encode(tombstone), to: destination.appendingPathComponent("remote-deletion.json"))
         state.conflicts[pending.itemId] = Conflict(localHash: pending.hash, remoteRevision: tombstone.revision,
                                                  paths: paths, remotePath: tombstone.relativePath)
         return paths
@@ -874,8 +911,9 @@ public actor LocalVaultSync {
                               nativeEditor: originMarkerHash == hash,
                               lifecycle: state.lifecycles?[itemId], originMarkerHash: originMarkerHash)
         if let bytes { try writeVaultSyncJournal(bytes, to: payload(pending)) }
+        let previous = state
         state.outbox[itemId] = pending
-        try persist()
+        try persist(restoring: previous)
         // The outbox now owns this origin through retries. Never consume the
         // marker before its pending upload and origin are durable together.
         if let originMarkerHash { try editOrigins.consumeNativeSave(path: path, hash: originMarkerHash) }
@@ -953,6 +991,17 @@ public actor LocalVaultSync {
 
     private func send(_ pending: Pending, report: inout LocalVaultSyncReport) async throws {
         guard await canSend(pending) else { return }
+        let baselineBefore = state.baselines[pending.itemId], conflictBefore = state.conflicts[pending.itemId]
+        var didRetire = false
+        defer {
+            // Network awaits may let unrelated documents advance. Restore only
+            // this operation's state, without replacing their newer journals.
+            if !didRetire && (state.outbox[pending.itemId] == nil || state.outbox[pending.itemId] == pending) {
+                state.outbox[pending.itemId] = pending
+                state.baselines[pending.itemId] = baselineBefore
+                state.conflicts[pending.itemId] = conflictBefore
+            }
+        }
         do {
             if pending.action == "delete" {
                 guard let base = pending.baseRevision else { throw LocalVaultSyncFailure.invalidResponse }
@@ -1006,6 +1055,7 @@ public actor LocalVaultSync {
         try persist()
         if pending.action == "delete" { try LocalVaultDeviceState.clearDeletion(root: root, itemId: pending.itemId) }
         try? FileManager.default.removeItem(at: payload(pending))
+        didRetire = true
     }
 
     private func removeLocal(path: String, expectedHash: String) throws {

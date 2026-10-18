@@ -170,12 +170,23 @@ public sealed class SyncEngine
         return Path.Combine(store.StateDirectory,"binary-outbox",operationId+".asset");
     }
     byte[]? BinaryPayload(BinaryPending pending) {
-        if(pending.PayloadHash is null)return pending.BytesBase64 is null?null:Convert.FromBase64String(pending.BytesBase64);
+        if(pending.PayloadHash is null) {
+            if(pending.BytesBase64 is null)return null;
+            if(pending.BytesBase64.Length>((16*1024*1024+2)/3)*4)throw new InvalidDataException("Binary payload exceeds bounds.");
+            var legacy=Convert.FromBase64String(pending.BytesBase64);
+            if(legacy.Length>16*1024*1024)throw new InvalidDataException("Binary payload exceeds bounds.");
+            return legacy;
+        }
         var path=BinaryPayloadPath(pending.Id);
-        if(new FileInfo(path).Length>16*1024*1024)throw new InvalidDataException("Binary payload exceeds bounds.");
-        var bytes=File.ReadAllBytes(path);
+        using var input=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read);
+        if(input.Length>16*1024*1024)throw new InvalidDataException("Binary payload exceeds bounds.");
+        var bytes=new byte[checked((int)input.Length)];input.ReadExactly(bytes);
+        if(input.ReadByte()!=-1)throw new InvalidDataException("Binary payload changed during recovery.");
         if(TextPackStore.Hash(bytes)!=pending.PayloadHash)throw new InvalidDataException("Binary payload changed during recovery.");
         return bytes;
+    }
+    void PreserveBinaryPayload(BinaryPending pending) {
+        if(BinaryPayload(pending) is {} bytes)store.PreserveAsset(bytes,"binary-conflict-asset");
     }
     void Report(bool running,string? error,int pending) { Status=new(running,error,pending);StatusChanged?.Invoke(Status); }
     public async Task SyncAsync(CancellationToken cancellation=default,bool localChangesOnly=false)
@@ -474,6 +485,7 @@ public sealed class SyncEngine
                 if(TextPackStore.Hash(localPack)!=local.Hash)throw new InvalidDataException("Local conflict pack changed during read.");
                 var remotePack=await transport.DownloadAsync(remote.ItemId,ct);
                 if(TextPackStore.Hash(remotePack.Data)!=remotePack.Revision)throw new InvalidDataException("Remote conflict pack changed during download.");
+                PreserveBinaryPayload(pending);
                 store.Preserve(localPack,"binary-conflict-local");
                 store.Preserve(remotePack.Data,"binary-conflict-remote");
                 state.BinaryOutbox[state.BinaryOutbox.IndexOf(pending)]=pending with{Conflicted=true};Save(state);
@@ -522,6 +534,7 @@ public sealed class SyncEngine
         } catch(SyncConflictException) {
             var remotePack=await transport.DownloadAsync(pending.ItemId,ct);
             if(TextPackStore.Hash(remotePack.Data)!=remotePack.Revision)throw new InvalidDataException("Remote conflict pack changed during download.");
+            PreserveBinaryPayload(pending);
             ResolveBinaryConflict(state,local,baseline,pending.EntryPath,remote,remotePack);
             state.BinaryOutbox.Remove(pending);Save(state);
             if(pending.PayloadHash is not null)try{File.Delete(BinaryPayloadPath(pending.Id));}catch(IOException){}
