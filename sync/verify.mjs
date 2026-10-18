@@ -95,6 +95,7 @@ async function main() {
       if (scope === 'core' || scope === 'client') {
         await run(process.execPath, ['--test', 'sync/verify.test.mjs']);
         await run(process.execPath, ['--test', 'sync/stress/stress.test.mjs', 'sync/stress/file-adapter.test.mjs', 'sync/stress/browser-adapter.test.mjs']);
+        await run(process.execPath, ['sync/browser-journal-compatibility.browser.mjs']);
         await run(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', '--config',
           scope === 'client' ? 'sync/vitest.client.config.mts' : 'sync/vitest.config.mts'],
           scope === 'core' ? coreDatabaseEnvironment() : process.env);
