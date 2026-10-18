@@ -242,7 +242,7 @@ public actor LocalVaultSync {
         guard document.hash == expectedHash || replayedOwnWrite,
               MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
         if let saved = checkpoint, saved.retiredReason == nil, saved.pending, saved.path != path,
-           !FileManager.default.fileExists(atPath: try LocalVaultDocumentStore(root: root).url(for: saved.path).path),
+           try !RetainedFileMove.exactLeafExists(root.appendingPathComponent(saved.path)),
            try uniqueSameIdentityPath(itemId: itemId, excluding: saved.path) == path {
             // The file was renamed while the app was closed. The retained
             // journal follows the unique same-identity file; a different hash
@@ -393,7 +393,8 @@ public actor LocalVaultSync {
         guard checkpoint?.retiredReason == nil, live != nil || checkpoint?.pending == true else { return false }
         let source = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
         let store = LocalVaultDocumentStore(root: root)
-        guard !FileManager.default.fileExists(atPath: try store.url(for: source).path) else { return false }
+        _ = try store.url(for: source)
+        guard try !RetainedFileMove.exactLeafExists(root.appendingPathComponent(source)) else { return false }
         guard let destination = try uniqueSameIdentityPath(itemId: itemId, excluding: source),
               let moved = try? store.read(path: destination),
               MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == itemId else { return false }

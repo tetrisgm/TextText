@@ -496,6 +496,77 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(first).path))
     }
+    func testCaseOnlySharedRebaseRecoversBothCrashWindows() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        let target = try checkpoint(original)
+        _ = try store.materialize(checkpoint: target, expectedHash: original.hash,
+            markdown: original.contents.markdown, documentJSON: XCTUnwrap(original.contents.documentJSON))
+        let first = "Notes/note.textpack", second = "Notes/NOTE.textpack"
+        XCTAssertThrowsError(try store.rebase(itemId: itemId, newPath: first, interruptAfterIntent: true))
+        let recovered = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertEqual(recovered.path, first); XCTAssertTrue(recovered.pending)
+        XCTAssertEqual(recovered.projectedHash, original.hash)
+        XCTAssertThrowsError(try store.rebase(itemId: itemId, newPath: second, interruptAfterMove: true))
+        let twice = try XCTUnwrap(store.checkpoint(itemId: itemId))
+        XCTAssertEqual(twice.path, second); XCTAssertTrue(twice.pending)
+        XCTAssertEqual(twice.projectedHash, original.hash)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Notes").path), ["NOTE.textpack"])
+    }
+    func testActiveSharedSessionFollowsExternalLeafCaseBeforeCheckpoint() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let destination = "Notes/note.textpack"
+        _ = try LocalVaultDocumentStore(root: root).rename(path: path, expectedHash: original.hash, newPath: destination)
+        let target = try checkpoint(original), next = try changes(original, body: "Pending after leaf case rename")
+        let result = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: target.journal, pending: true, markdown: next.0, documentJSON: next.1)
+        XCTAssertEqual(result.document.path, destination)
+        XCTAssertEqual(result.checkpoint.path, destination); XCTAssertTrue(result.checkpoint.pending)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Notes").path), ["note.textpack"])
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+    }
+    func testPendingSharedCheckpointReopensAfterExternalLeafCase() async throws {
+        let original = try fixture(), transport = SharedTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let engine = try makeTestSync(root: root, binding: binding, transport: transport)
+        _ = try await engine.sync()
+        let session = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let target = try checkpoint(original), next = try changes(original, body: "Pending before closing")
+        let saved = try await engine.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: target.journal, pending: true, markdown: next.0, documentJSON: next.1)
+        try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let destination = "Notes/note.textpack"
+        _ = try LocalVaultDocumentStore(root: root).rename(path: path, expectedHash: saved.document.hash, newPath: destination)
+        let reopened = try await engine.beginSharedEditing(itemId: itemId, path: destination, expectedHash: saved.document.hash)
+        let checkpoint = try await engine.readSharedCheckpoint(itemId: itemId)
+        XCTAssertEqual(checkpoint?.path, destination); XCTAssertTrue(checkpoint?.pending == true)
+        XCTAssertEqual(checkpoint?.projectedHash, saved.document.hash)
+        try await engine.endSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId)
+    }
+    func testFutureAndUnknownSharedCaseMoveIntentsRemainUntouched() throws {
+        let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
+        _ = try store.materialize(checkpoint: checkpoint(original), expectedHash: original.hash,
+            markdown: original.contents.markdown, documentJSON: XCTUnwrap(original.contents.documentJSON))
+        XCTAssertThrowsError(try store.rebase(itemId: itemId, newPath: "Notes/note.textpack", interruptAfterIntent: true))
+        let intent = LocalVaultDeviceState.directory(root: root).appendingPathComponent("shared-editing/" + itemId + "/move-intent.json")
+        let baseline = try Data(contentsOf: intent)
+        for future in [false, true] {
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: baseline) as? [String: Any])
+            if future { object["version"] = 2 } else { object["futureField"] = true }
+            let bytes = try JSONSerialization.data(withJSONObject: object)
+            try bytes.write(to: intent)
+            XCTAssertThrowsError(try store.checkpoint(itemId: itemId))
+            XCTAssertEqual(try Data(contentsOf: intent), bytes)
+            XCTAssertEqual(try LocalVaultDocumentStore(root: root).read(path: path).hash, original.hash)
+        }
+        try baseline.write(to: intent)
+        XCTAssertEqual(try store.checkpoint(itemId: itemId)?.path, "Notes/note.textpack")
+    }
     func testPathRebaseRejectsOccupiedDestinationAndPreservesBothFiles() throws {
         let original = try fixture(), store = LocalVaultSharedEditingStore(root: root)
         _ = try store.materialize(checkpoint: checkpoint(original), expectedHash: original.hash,

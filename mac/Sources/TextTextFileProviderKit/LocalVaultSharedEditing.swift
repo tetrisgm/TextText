@@ -62,7 +62,7 @@ struct LocalVaultSharedEditingStore: Sendable {
             try requireAccount(JSONDecoder().decode(Intent.self, from: data).checkpoint)
         }
         if let data = try read(directory.appendingPathComponent("move-intent.json"), limit: 5 * 1024 * 1024) {
-            try requireAccount(JSONDecoder().decode(MoveIntent.self, from: data).checkpoint)
+            try requireAccount(decodeMoveIntent(data).checkpoint)
         }
     }
     func prepareAccount(itemId: String, path: String, expectedHash: String) throws {
@@ -92,6 +92,20 @@ struct LocalVaultSharedEditingStore: Sendable {
         /// The destination was renamed and edited outside TextText; the retained
         /// projection stays as the reconciliation base at the new path.
         var adoptsExternalChange: Bool?
+        var caseOnly: Bool? = nil
+    }
+    private func decodeMoveIntent(_ data: Data) throws -> MoveIntent {
+        guard let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(fields.keys).isSubset(of: Set(["version", "sourcePath", "checkpoint", "adoptsExternalChange", "caseOnly"])) else { throw LocalVaultSharedFailure.invalid }
+        let intent = try JSONDecoder().decode(MoveIntent.self, from: data)
+        guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
+        if intent.caseOnly == true {
+            let destination = intent.checkpoint.path
+            guard intent.sourcePath != destination,
+                  (intent.sourcePath as NSString).deletingLastPathComponent == (destination as NSString).deletingLastPathComponent,
+                  (intent.sourcePath as NSString).lastPathComponent.lowercased() == (destination as NSString).lastPathComponent.lowercased() else { throw LocalVaultSharedFailure.invalid }
+        }
+        return intent
     }
     private struct Intent: Codable {
         var version: Int? = 1
@@ -290,7 +304,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         // recover interrupted transactions before this can advertise readiness.
         if !recoverIntents, ["move-intent.json", "intent.json", "binary-intent.json"].contains(where: { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }) { return nil }
         if let data = try read(directory.appendingPathComponent("move-intent.json"), limit: 5 * 1024 * 1024) {
-            let intent = try JSONDecoder().decode(MoveIntent.self, from: data)
+            let intent = try decodeMoveIntent(data)
             guard intent.checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
             return try finishMove(intent, directory: directory)
         }
@@ -448,11 +462,16 @@ struct LocalVaultSharedEditingStore: Sendable {
         try validate(target)
         let store = LocalVaultDocumentStore(root: root)
         var adopted = false
-        if FileManager.default.fileExists(atPath: try store.url(for: source).path) {
+        _ = try store.url(for: source); _ = try store.url(for: newPath)
+        let sourceURL = root.appendingPathComponent(source), destinationURL = root.appendingPathComponent(newPath)
+        let caseOnly = try RetainedFileMove.caseOnlyAlias(sourceURL, destinationURL) || RetainedFileMove.caseOnlyAlias(destinationURL, sourceURL)
+        let sourcePresent = caseOnly ? try RetainedFileMove.exactLeafExists(sourceURL) : FileManager.default.fileExists(atPath: try store.url(for: source).path)
+        if sourcePresent {
+            let destinationOccupied = FileManager.default.fileExists(atPath: try store.url(for: newPath).path)
             let current = try store.read(path: source)
             guard current.hash == target.projectedHash,
                   MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId,
-                  !FileManager.default.fileExists(atPath: try store.url(for: newPath).path) else { throw LocalVaultSyncFailure.changed }
+                  (caseOnly || !destinationOccupied) else { throw LocalVaultSyncFailure.changed }
         } else {
             // Finder, the CLI or a cloud provider already moved the file. Adopt
             // the same identity at its new location; a changed projection is
@@ -463,7 +482,7 @@ struct LocalVaultSharedEditingStore: Sendable {
             adopted = moved.hash != target.projectedHash
         }
         let directory = try itemDirectory(itemId)
-        let intent = MoveIntent(sourcePath: source, checkpoint: target, adoptsExternalChange: adopted ? true : nil)
+        let intent = MoveIntent(sourcePath: source, checkpoint: target, adoptsExternalChange: adopted ? true : nil, caseOnly: caseOnly ? true : nil)
         try write(JSONEncoder().encode(intent), to: directory.appendingPathComponent("move-intent.json"))
         if interruptAfterIntent { throw LocalVaultSharedFailure.interrupted }
         return try finishMove(intent, directory: directory, interruptAfterMove: interruptAfterMove)
@@ -473,20 +492,31 @@ struct LocalVaultSharedEditingStore: Sendable {
         guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
         try validate(intent.checkpoint)
         let store = LocalVaultDocumentStore(root: root)
-        let source = try store.url(for: intent.sourcePath)
+        let validatedSource = try store.url(for: intent.sourcePath)
+        let source = intent.caseOnly == true ? root.appendingPathComponent(intent.sourcePath) : validatedSource
         let target = intent.checkpoint
         guard intent.sourcePath != target.path else { throw LocalVaultSharedFailure.invalid }
-        if FileManager.default.fileExists(atPath: source.path) {
+        let sourcePresent = intent.caseOnly == true ? try RetainedFileMove.exactLeafExists(source) : FileManager.default.fileExists(atPath: source.path)
+        if sourcePresent {
+            if intent.caseOnly == true {
+                guard try RetainedFileMove.caseOnlyAlias(source, root.appendingPathComponent(target.path)) else { throw LocalVaultSyncFailure.changed }
+            }
             let current = try store.read(path: intent.sourcePath)
             guard current.hash == target.projectedHash,
                   MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == target.itemId else { throw LocalVaultSyncFailure.changed }
             _ = try store.rename(path: intent.sourcePath, expectedHash: current.hash, newPath: target.path)
             if interruptAfterMove { throw LocalVaultSharedFailure.interrupted }
         }
+        if intent.caseOnly == true {
+            guard try !RetainedFileMove.exactLeafExists(source), try RetainedFileMove.exactLeafExists(root.appendingPathComponent(target.path)) else { throw LocalVaultSyncFailure.changed }
+        }
         let moved = try store.read(path: target.path)
         guard moved.hash == target.projectedHash || intent.adoptsExternalChange == true,
               MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == target.itemId else { throw LocalVaultSyncFailure.changed }
         try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
+        if intent.caseOnly == true {
+            guard try !RetainedFileMove.exactLeafExists(source), try RetainedFileMove.exactLeafExists(root.appendingPathComponent(target.path)) else { throw LocalVaultSyncFailure.changed }
+        }
         try write(JSONEncoder().encode(target), to: directory.appendingPathComponent("checkpoint.json"))
         try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         try FileManager.default.removeItem(at: directory.appendingPathComponent("move-intent.json"))

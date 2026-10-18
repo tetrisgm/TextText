@@ -270,6 +270,42 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         try acceptMove(row)
         XCTAssertEqual(try store.read(path: "original.textpack").hash, hash(foreign))
     }
+    func testWritesAndRemovalThroughStaleLeafAliasRetainDiscoverableOperations() throws {
+        let original = try pack("baseline"), later = try pack("later alias write")
+        try original.write(to: target)
+        _ = try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "original.textpack")
+        guard FileManager.default.fileExists(atPath: target.path) else { throw XCTSkip("Stale case aliases require a case-insensitive volume") }
+        _ = try store.replaceExact(path: "Original.textpack", expectedHash: hash(original), bytes: later)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { !$0.hasPrefix(".") }, ["original.textpack"])
+        XCTAssertEqual(try store.read(path: "original.textpack").hash, hash(later))
+        try store.delete(path: "Original.textpack", expectedHash: hash(later))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("original.textpack").path))
+        XCTAssertNoThrow(try registry.assertReadable(itemId: "registry-item"))
+        XCTAssertFalse(try store.recoveryList().entries.isEmpty)
+    }
+    func testMoveThroughStaleLeafAliasRetainsDiscoverableReplay() throws {
+        let original = try pack("baseline")
+        try original.write(to: target)
+        _ = try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "original.textpack")
+        guard FileManager.default.fileExists(atPath: target.path) else { throw XCTSkip("Stale case aliases require a case-insensitive volume") }
+        _ = try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Final.textpack")
+        XCTAssertEqual(try store.read(path: "Final.textpack").hash, hash(original))
+        XCTAssertEqual(try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Final.textpack").hash, hash(original))
+        XCTAssertNoThrow(try registry.assertReadable(itemId: "registry-item"))
+    }
+    func testExtensionCaseRenameSupportsSaveAndRemovalWithoutChangingSpelling() throws {
+        let original = try pack("baseline"), later = try pack("later extension-case save")
+        try original.write(to: target)
+        let destination = "original.TEXTPACK"
+        _ = try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: destination)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { !$0.hasPrefix(".") }, [destination])
+        _ = try store.replaceExact(path: destination, expectedHash: hash(original), bytes: later)
+        XCTAssertEqual(try store.read(path: destination).hash, hash(later))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { !$0.hasPrefix(".") }, [destination])
+        try store.delete(path: destination, expectedHash: hash(later))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(destination).path))
+        XCTAssertNoThrow(try registry.assertReadable(itemId: "registry-item"))
+    }
     func testRenamedCandidateCannotBypassReadOrLostReplyFence() throws {
         let (_, prepared, _) = try stagedConflict()
         let renamed = root.appendingPathComponent("renamed.textpack")

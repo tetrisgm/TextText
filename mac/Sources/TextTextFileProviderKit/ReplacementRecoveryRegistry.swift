@@ -177,7 +177,11 @@ struct ReplacementRecoveryRegistry {
         }
     }
     private func usesWorkspaceStaging(_ entry: Entry) -> Bool {
-        entry.recoveryPath == ".texttext/retained-replacements/" + digest(Data(entry.path.utf8)) + "/" + (entry.path as NSString).lastPathComponent
+        let prefix = ".texttext/retained-replacements/" + digest(Data(entry.path.utf8)) + "/"
+        guard let path = entry.recoveryPath, path.hasPrefix(prefix) else { return false }
+        let leaf = String(path.dropFirst(prefix.count))
+        return !leaf.isEmpty && !leaf.contains("/") && !leaf.contains("\\") &&
+            leaf.lowercased() == (entry.path as NSString).lastPathComponent.lowercased()
     }
     private func target(_ entry: Entry) throws -> URL {
         let path = entry.recoveryPath ?? entry.path
@@ -185,7 +189,7 @@ struct ReplacementRecoveryRegistry {
         guard !visibleParts.isEmpty, entry.path.utf8.count <= 4096,
               entry.path.utf8.allSatisfy({ $0 >= 32 && $0 != 127 }),
               visibleParts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") }),
-              entry.path.hasSuffix(".textpack") else { throw Failure.invalidRegistry }
+              entry.path.lowercased().hasSuffix(".textpack") else { throw Failure.invalidRegistry }
         if usesWorkspaceStaging(entry) {
             // Only this recomputed layout admits hidden path components. The
             // helper validates its operation directory's physical containment.
@@ -203,7 +207,7 @@ struct ReplacementRecoveryRegistry {
         guard !parts.isEmpty, path.utf8.count <= 4096,
               path.utf8.allSatisfy({ $0 >= 32 && $0 != 127 }),
               parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") }),
-              path.hasSuffix(".textpack") else { throw Failure.invalidRegistry }
+              path.lowercased().hasSuffix(".textpack") else { throw Failure.invalidRegistry }
         let target = root.appendingPathComponent(path)
         guard let physicalRoot else { throw Failure.invalidRegistry }
         var parentURL = target.deletingLastPathComponent()
@@ -345,7 +349,7 @@ struct ReplacementRecoveryRegistry {
     }
     /// Must be durable before invoking the replacement primitive. Even failure
     /// before staging remains a visible refusal, never a silent replay success.
-    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false, destinationPath: String? = nil, caseOnly: Bool = false) throws {
+    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false, destinationPath: String? = nil, caseOnly: Bool = false, storageFilename: String? = nil) throws {
         var entry = Entry(version: 1, operation: operation, workspaceRootHash: digest(Data(root.path.utf8)), ownerHash: try ownerHash(), itemId: itemId, path: path,
                           expectedHash: expectedHash, preparedHash: preparedHash, resolution: nil)
         entry.kind = kind
@@ -354,7 +358,10 @@ struct ReplacementRecoveryRegistry {
         try validateMove(entry)
         entry.userDeletion = userDeletion ? true : nil
         guard kind == nil || kind == "removal" || kind == "move" else { throw Failure.invalidRegistry }
-        if workspaceStaging { entry.recoveryPath = ".texttext/retained-replacements/" + digest(Data(path.utf8)) + "/" + (path as NSString).lastPathComponent }
+        if workspaceStaging {
+            entry.recoveryPath = ".texttext/retained-replacements/" + digest(Data(path.utf8)) + "/" + (storageFilename ?? (path as NSString).lastPathComponent)
+            guard usesWorkspaceStaging(entry) else { throw Failure.invalidRegistry }
+        }
         guard !itemId.isEmpty, itemId.utf8.count <= 256, validHash(expectedHash), validHash(preparedHash) else { throw Failure.invalidRegistry }
         _ = try target(entry)
         try save(entry, creating: true)
@@ -402,7 +409,7 @@ struct ReplacementRecoveryRegistry {
         return recovery
     }
     private func visibleClassificationTarget(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery) -> URL {
-        usesWorkspaceStaging(entry) ? root.appendingPathComponent(entry.path) : classificationTarget(retained)
+        usesWorkspaceStaging(entry) ? root.appendingPathComponent(entry.path).deletingLastPathComponent().appendingPathComponent(retained.record.filename) : classificationTarget(retained)
     }
     private func classificationTarget(_ recovery: RetainedFileReplacement.Recovery) -> URL {
         recovery.directory.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(recovery.record.filename)

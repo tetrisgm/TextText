@@ -388,7 +388,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 _ = try RetainedFileMove.move(from, to: to, expectedHash: expectedHash, recoveryRoot: registry.recoveryRoot(path: path),
                     operation: operation, lease: registry.captureLease(operation: operation), caseOnly: caseOnly) { stage in
                     if stage == "prepared" { try registry.register(operation: operation, itemId: itemId, path: path,
-                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "move", destinationPath: newPath, caseOnly: caseOnly) }
+                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "move", destinationPath: newPath, caseOnly: caseOnly, storageFilename: from.lastPathComponent) }
                     try writeObservationForTesting?(stage == "prepared" ? "movePrepared" : stage)
                 }
                 try writeObservationForTesting?("renamed")
@@ -573,7 +573,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 let registry = ReplacementRecoveryRegistry(root: root), operation = UUID()
                 _ = try RetainedFileRemoval.capture(coordinated, expectedHash: expectedHash, recoveryRoot: registry.recoveryRoot(path: path), operation: operation, lease: registry.captureLease(operation: operation)) { stage in
                     if stage == "prepared" { try registry.register(operation: operation, itemId: itemId, path: path,
-                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "removal", userDeletion: recordDeletion) }
+                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "removal", userDeletion: recordDeletion, storageFilename: coordinated.lastPathComponent) }
                     try writeObservationForTesting?(stage == "prepared" ? "removalPrepared" : stage)
                 }
                 try writeObservationForTesting?("beforeDeletionMarker")
@@ -602,7 +602,7 @@ public struct LocalVaultDocumentStore: Sendable {
             recoveryRoot: registry.recoveryRoot(path: path)) { stage in
             if stage == "prepared" {
                 try registry.register(operation: operation, itemId: itemId, path: path, expectedHash: expectedHash,
-                    preparedHash: TextTextStableDigest.sha256Hex(bytes), workspaceStaging: true)
+                    preparedHash: TextTextStableDigest.sha256Hex(bytes), workspaceStaging: true, storageFilename: target.lastPathComponent)
             }
             try writeObservationForTesting?(stage == "prepared" ? "retainedPrepared" : stage)
         }
