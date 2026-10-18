@@ -537,3 +537,18 @@ test('browser restart rechecks actual source principal assets and fresh attested
  coordinator.collect=async()=>new Map([[role,reply]]);await coordinator.restartActor(1,role);assert.equal(JSON.stringify(coordinator.restartEvidence[role]).includes('never-retain'),false);assert.throws(()=>coordinator.checkEditor(1,role,{sessionId:'wrong-browser-session',reloads:0}),error=>error.code==='editor-discontinuity');
  for(const change of [{principalScopeHash:'c'.repeat(64)},{driverSourceCommit:'d'.repeat(40)},{artifacts:{driver:'e'.repeat(64)}},{browserVersion:'unexpected-version'},{deploymentId:'unexpected-build'}]){reply.attestation.identity={...identity,...change};await assert.rejects(coordinator.restartActor(1,role),error=>error.code==='restart-identity-mismatch');}
 });
+
+test('ordinary file in-place and rapid atomic modes account every chunk and all six full documents',async()=>{
+ for(const mode of ['in-place','atomic']){const config=makeConfig({rounds:1});config.fileWrites={role:'mac-cli',mode,writes:3,intervalMs:10};const coordinator=new Coordinator(config),summary=await coordinator.run();assert.equal(summary.status,'passed');assert.equal(summary.acceptance,'none');assert.match(summary.finalDocumentHash,/^[a-f0-9]{64}$/);assert.equal(coordinator.roundResults[0].writeSuboperationCount,8);}
+});
+test('ordinary file sequence rejects wrong actor skipped ordinal wrong readback and wrong inode proof',async()=>{
+ for(const fault of ['write-wrong-role','write-skipped','write-readback','write-inode']){const config=makeConfig({rounds:1,faults:{'mac-cli':fault}});config.fileWrites={role:'mac-cli',mode:'in-place',writes:3,intervalMs:10};const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,'write-progress-invalid',fault);assert.equal(summary.roundsCompleted,0);}
+});
+test('uncertain file write retains confirmed suboperations and attempted incomplete write',async()=>{
+ const config=makeConfig({rounds:1,faults:{'mac-cli':'write-prefix-fail'}});config.fileWrites={role:'mac-cli',mode:'in-place',writes:3,intervalMs:10};const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,'actor-failed');assert.equal(summary.failure.detail.writeProgress.writes.length,1);assert.equal(summary.failure.detail.writeProgress.attemptedWrite.phase,'writing');
+ assert.throws(()=>validateConfig({...config,fileWrites:{...config.fileWrites,writes:9}}),/fileWrites/);assert.throws(()=>validateConfig({...config,fileWrites:{...config.fileWrites,role:'mac-app'}}),/fileWrites/);assert.throws(()=>validateConfig({...config,multiField:true}),/fileWrites/);
+});
+test('interleaved file write chunks preserve baseline without requiring concatenated arbitrary CRDT order',()=>{
+ const config=makeConfig({rounds:1});config.fileWrites={role:'mac-cli',mode:'atomic',writes:3,intervalMs:10};const coordinator=new Coordinator(config);coordinator.baseline='Existing fixture text.\n';const edits=planRounds(42,1,'append',undefined,undefined,undefined,config.fileWrites)[0].edits;
+ const chunks=edits.map(edit=>edit.fileWriteSequence?.chunks??[edit.text]);const text=coordinator.baseline+Array.from({length:3},(_,index)=>chunks.map(values=>values[index]??'').join('')).join('');const ids=edits.map(edit=>edit.id).sort();assert.doesNotThrow(()=>coordinator.checkRoundContent(new Map(ROLES.map(role=>[role,{text,editIds:ids}])),1,ids));
+});

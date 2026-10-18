@@ -58,7 +58,7 @@ export function verifyReopenIdentity(receipt, config) {
     || !Number.isInteger(receipt.roundsCompleted) || receipt.roundsCompleted < 1
     || receipt.fixture?.workspaceId !== config.fixture.workspaceId || receipt.fixture?.itemId !== config.fixture.itemId
     || receipt.finalHash !== config.expectedBaselineHash) throw new Error('reopen must reference a prior passing physical mutation receipt and exact fixture/hash');
-  if (Boolean(receipt.scenario?.multiField) !== Boolean(config.multiField) || (config.multiField && receipt.finalDocumentHash !== config.expectedDocumentHash)) throw new Error('reopen full document field pins differ from prior receipt');
+  if (Boolean(receipt.scenario?.multiField) !== Boolean(config.multiField) || ((config.multiField || config.fileWrites) && receipt.finalDocumentHash !== config.expectedDocumentHash) || JSON.stringify(receipt.scenario?.fileWrites ?? null) !== JSON.stringify(config.fileWrites ?? null)) throw new Error('reopen full document field pins differ from prior receipt');
   if (JSON.stringify(digestMap(receipt.expectedAssetHashes ?? {}, { empty: true })) !== JSON.stringify(digestMap(config.expectedAssetHashes ?? {}, { empty: true }))) throw new Error('reopen asset pins differ from prior receipt');
   for (const [role, pin] of Object.entries(config.expectedIdentities)) {
     const previous = normalizeIdentity(receipt.attestations?.[role]?.identity, role, { expected: true });

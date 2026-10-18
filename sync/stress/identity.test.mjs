@@ -110,3 +110,10 @@ test('multi-field independent reopen binds full document hash and scenario in ad
  for(const changed of [{...receipt,finalDocumentHash:'e'.repeat(64)},{...receipt,scenario:{}},{...receipt,finalDocumentHash:undefined}])assert.throws(()=>verifyReopenIdentity(changed,config),/field pins/);
  assert.throws(()=>verifyReopenIdentity(receipt,{...config,multiField:false}),/field pins/);
 });
+
+test('ordinary file independent reopen binds full document and exact writer mode receipt',()=>{
+ const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'];const fileWrites={role:'mac-cli',mode:'in-place',writes:3,intervalMs:10};
+ const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,fileWrites,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-file-writes',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{fileWrites},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const changed of [{...config,expectedDocumentHash:'e'.repeat(64)},{...config,fileWrites:{...fileWrites,mode:'atomic'}},{...config,fileWrites:undefined}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);
+});

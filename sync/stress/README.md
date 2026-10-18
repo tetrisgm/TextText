@@ -329,3 +329,33 @@ coordinator's following online=true command is idempotent. Plain browser restart
 without that offline case does not prove an upload was pending at the kill.
 The isolated browser crash/journal fixture proves driver/profile mechanics and
 browser storage recovery, not TextText or six-client physical acceptance.
+
+## Ordinary in-place and rapid file writes
+
+`fileWrites: { role: "mac-cli", mode: "in-place", writes: 3, intervalMs: 10 }`
+selects one CLI actor; rotate `mac-cli` and `pc-cli` in separate campaigns. Mode
+is `in-place` or `atomic`, writes is 1..8, intervalMs is 10..250, and the complete
+run is bounded to 600 accepted suboperations including the other five actors.
+Only plain append is supported; other input/asset/fault scenario combinations
+are rejected. More than one write is a rapid burst. Existing atomic append
+behavior remains available without this flag.
+
+Each write appends a unique seeded-plan chunk. The final chunk contains the
+ordinary role marker, while every write has its own role-bound suboperation ID.
+Every attempt retains the observed preimage backup. In-place uses the original
+r+ file descriptor, verifies inode/preimage, truncates, writes and fsyncs; it
+never falls back to rename. Atomic writes fsync a new temporary file before
+rename. Both require exact readback, the expected file identity behavior and
+unchanged binary assets. Precondition failures preserve the observed external
+file and retry at most five times. A post-truncate or uncertain readback failure
+stops with the confirmed write prefix and attempted phase/byte count; no repair
+or success is invented. Fsync evidence concerns file contents, not machine power
+loss durability of directory metadata.
+
+This scenario requires an existing article with visible populated Subtitle so
+all six actors can provide actual complete live snapshots. Convergence checks
+body chunks independently (allowing CRDT interleaving), complete document
+semantics and exact asset pins. Independent reopen requires the same fileWrites
+configuration, `expectedBaselineHash`, `expectedDocumentHash` and prior physical
+receipt. These modes do not implement whole-pack creation or the remaining file
+lifecycle/malformed metadata matrix.

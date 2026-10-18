@@ -41,12 +41,13 @@ and an editor reload after first equality. Simulated runs retain acceptance
 | App/browser crash/restart | `restart` for either app or browser; browser owned SIGKILL/profile proof | Fresh candidate and physical rotation across every supported role |
 | Invalid intermediate pack repaired atomically | `transientInvalid` for either file actor | Fresh physical evidence; malformed metadata variants need scenario design |
 | Same-write attachment update | `assetReplacement`, paired `assetReplacements` | Same-entry race remains diagnostic, without retained losing-byte attestation |
-| Close under traffic | `closeProbe` for PC app | Other editor roles need guarded close/reopen protocol |
+| Normal close / close during traffic | `closeProbe` checks PC normal close after converged rounds | Actual concurrent peer input during close and guarded reopen are still missing for every role |
 | Independent durable reopen | `rounds: 0`, `expectedBaselineHash`, `expectedAssetHashes` | Fresh processes and fixture identity from preceding physical receipt |
 | Sustained typing | Implemented in 684406ad with bounded real chunks and ordinal evidence | Current private candidates and physical runs still required |
 | Undo/redo | 414c13bf implements real keyboard history protocol and adversarial accounting | Current private candidates and physical history journey still required |
 | Body and existing article subtitle | Source-prepared all-six full-snapshot accounting and real field inputs | Native checks/current private candidates/physical runs; navigation title remains stable |
-| In-place/rapid save, whole-pack creation | Not implemented as explicit scenarios | Ordinary file adapter operations plus scenario-specific accounting |
+| In-place/rapid saves | Bounded fileWrites source supports real in-place or atomic bursts with per-write proof | Fresh attested physical campaign for each role/mode and full-state reopen |
+| Whole-pack creation | Not implemented as an explicit scenario | Identity/lifecycle input and accepted creation accounting |
 | File/folder move, case-only rename, duplicate identity, delete/restore, stale writer | Not implemented | File lifecycle input and path/identity/recovery observation protocol |
 | Lost ACK, retained older journals, authorization changes | Not implemented as matrix scenarios | Explicit supported fault/identity operations and retained work evidence |
 | Source/bundle/browser attestation | 87e84a7d validates observed artifact/runtime/principal pins and fresh restart attestation | Build coherent private candidates, trusted pins and real readiness; see physical-actor-identity receipt |

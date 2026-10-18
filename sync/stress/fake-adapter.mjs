@@ -49,6 +49,16 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (fault === 'dup-ready') out({ type: 'ready', round: m.round });
       return out({ type: 'ready', round: m.round });
     case 'edit': {
+      let writeProgress;
+      if (m.edit.fileWriteSequence) {
+        const sequence=m.edit.fileWriteSequence,count=fault==='write-prefix-fail'?1:sequence.chunks.length;
+        writeProgress={editId:m.edit.id,mode:sequence.mode,writes:sequence.chunks.slice(0,count).map((text,index)=>({ordinal:index+1,suboperationId:m.edit.id+'-write'+(index+1),text,beforeSha256:'b'.repeat(64),afterSha256:'c'.repeat(64),readBackSha256:'c'.repeat(64),beforeFileIdentity:'d'.repeat(64),afterFileIdentity:(sequence.mode==='in-place'?'d':'e').repeat(64),assetDigest:'f'.repeat(64),fsynced:true,unchangedAssets:true,elapsedMs:index*sequence.intervalMs+1})),acceptedPrefix:sequence.chunks.slice(0,count).join('')};
+        if(fault==='write-wrong-role')writeProgress.editId='r1-pc-cli';
+        if(fault==='write-skipped')writeProgress.writes[1].ordinal=3;
+        if(fault==='write-readback')writeProgress.writes[0].readBackSha256='a'.repeat(64);
+        if(fault==='write-inode')writeProgress.writes[0].afterFileIdentity='a'.repeat(64);
+        if(fault==='write-prefix-fail'){writeProgress.attemptedWrite={ordinal:2,suboperationId:m.edit.id+'-write2',text:sequence.chunks[1],phase:'writing',bytesWritten:12};publish({...m.edit,text:writeProgress.acceptedPrefix});return out({type:'error',round:m.round,message:'injected uncertain file write',writeProgress});}
+      }
       let fieldProgress, fieldEditIds;
       if (m.edit.fieldEdits) {
         fieldEditIds = m.edit.fieldEdits.map(edit => edit.id);
@@ -82,7 +92,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       // drop-edit: nobody sees the edit (edit ID mismatch). private-edit: only this role sees it (hash divergence).
       if (fault === 'private-edit') { privateEdits.push(m.edit); }
       else if (fault !== 'drop-edit') { if (online) publish(m.edit); else pendingEdits.push(m.edit); }
-      return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(fieldEditIds ? { fieldEditIds, ...(fieldProgress ? { fieldProgress } : {}) } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
+      return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(writeProgress ? { writeProgress } : {}), ...(fieldEditIds ? { fieldEditIds, ...(fieldProgress ? { fieldProgress } : {}) } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
     }
     case 'transport':
       online = m.online;

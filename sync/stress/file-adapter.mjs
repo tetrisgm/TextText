@@ -1,3 +1,4 @@
+import { validateWriteSequence, applyWriteSequence } from './file-write-sequence.mjs';
 import { appendFieldToPack } from './multi-field-pack.mjs';
 import { validateFieldSequence } from './multi-field-input.mjs';
 import { observeSealedSource, fixedDriverFiles, ownerBindingScope, captureOwnerBindingGuard, canonicalJSON } from './identity-observation.mjs';
@@ -310,7 +311,7 @@ export function sanitizeError(error, config) {
 // One actor instance: `handle(message)` returns the reply (or null). Commands are serialized by the
 // caller (stdin pipe) or by the test. `platform` is injectable only so tests can prove the refusal path.
 export function createActor(config, { platform = process.platform, machineId = hostname(), now = () => new Date().toISOString() } = {}) {
-  const state = { ownerScope: null, ownerGuard: null, runId: null, runDir: null, role: config.role };
+  const state = { writeProgress: null, ownerScope: null, ownerGuard: null, runId: null, runDir: null, role: config.role };
   const journal = (entry) => { if (state.runDir) appendFileSync(join(state.runDir, 'journal.jsonl'), `${JSON.stringify({ at: now(), ...entry })}\n`); };
   const handlers = {
     async hello(m) {
@@ -359,6 +360,14 @@ export function createActor(config, { platform = process.platform, machineId = h
       const edit = m.edit ?? {};
       if (!['append', 'replace-target'].includes(edit.op) || typeof edit.id !== 'string' || typeof edit.text !== 'string') throw new ActorError('edit', 'unsupported file edit');
       if (edit.fieldEdits !== undefined && (!validateFieldSequence(edit.fieldEdits, config.role) || edit.fieldEdits[0].text !== edit.text || edit.fieldEdits.some(field => field.id !== edit.id + '-' + field.field) || edit.assetReplacement || edit.op !== 'append')) throw new ActorError('edit', 'invalid field sequence');
+      state.writeProgress = null;
+      if (edit.fileWriteSequence !== undefined) {
+        if (!validateWriteSequence(edit, config.role) || edit.fieldEdits || edit.assetReplacement) throw new ActorError('edit', 'invalid ordinary write sequence');
+        state.writeProgress = { editId: edit.id, mode: edit.fileWriteSequence.mode, writes: [], acceptedPrefix: '' };
+        const writeProgress = await applyWriteSequence({ file: config.file, config, edit, round: m.round, runDir: state.runDir, progress: state.writeProgress, guard: requireRun, journal });
+        state.writeProgress = null;
+        return { type: 'applied', round: m.round, editId: edit.id, writeProgress };
+      }
       const result = await applyEdit({ file: config.file, config, text: edit.text, target: edit.op === 'replace-target' ? edit.target : undefined,
         assetReplacement: edit.assetReplacement, fieldEdits: edit.fieldEdits, beforeReplace: () => requireRun(), round: m.round, runDir: state.runDir, journal });
       requireRun();
@@ -391,7 +400,7 @@ export function createActor(config, { platform = process.platform, machineId = h
       } catch (error) {
         const message = `${error?.code ?? 'error'}: ${sanitizeError(error, config)}`;
         try { journal({ event: 'error', round, message }); } catch { /* evidence directory may not exist yet */ }
-        return { type: 'error', round, message };
+        return { type: 'error', round, message, ...(state.writeProgress ? { writeProgress: state.writeProgress } : {}) };
       }
     },
   };
