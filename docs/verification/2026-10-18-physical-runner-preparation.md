@@ -47,7 +47,7 @@ and an editor reload after first equality. Simulated runs retain acceptance
 | In-place/rapid save, whole-pack creation | Not implemented as explicit scenarios | Ordinary file adapter operations plus scenario-specific accounting |
 | File/folder move, case-only rename, duplicate identity, delete/restore, stale writer | Not implemented | File lifecycle input and path/identity/recovery observation protocol |
 | Lost ACK, retained older journals, authorization changes | Not implemented as matrix scenarios | Explicit supported fault/identity operations and retained work evidence |
-| Source/bundle/browser attestation | Machine, fixture, mode and adapter exist; browser supplies version | Coordinator currently drops extra attestation fields; native build identity contract still needed |
+| Source/bundle/browser attestation | Machine, fixture, mode and adapter exist; browser supplies channel label only | Coordinator currently drops extra attestation fields; native build identity contract still needed |
 
 ## Bounded next input extension design
 

@@ -1,3 +1,4 @@
+import { validateInputSequence, typeInputSequence } from './input-sequence.mjs';
 // Real browser adapter for the six-client stress coordinator (roles mac-web / pc-web).
 // Drives a visible installed Chrome (darwin) or Edge (win32) through Playwright against
 // https://texttext.app using a persistent profile. It never runs headless, never simulates
@@ -72,6 +73,7 @@ export function validateRound(round) {
 }
 
 export function validateEdit(edit) {
+  if (!validateInputSequence(edit)) return { ok: false, reason: 'input-sequence-invalid' };
   if (!edit || typeof edit !== 'object') return { ok: false, reason: 'edit-missing' };
   if (typeof edit.id !== 'string' || !/^r\d{1,5}-(mac|pc)-(app|web|cli)$/.test(edit.id)) return { ok: false, reason: 'edit-id-invalid' };
   if (!['append', 'insert-start', 'replace-selection'].includes(edit.op)) return { ok: false, reason: 'edit-op-unsupported' };
@@ -179,10 +181,11 @@ async function main() {
   const sessionId = randomUUID();
   let context = null, page = null, body = null, heading = null;
   let reloads = 0, started = false, stopping = false;
+  let inputProgress;
 
   const fail = (round, stage, message) => {
     process.stderr.write(`[${stage}] ${safeMessage(message)}\n`);
-    out({ type: 'error', round, stage, message: `browser adapter failed at stage ${stage}; profile and journals preserved` });
+    out({ type: 'error', round, stage, ...(inputProgress ? { inputProgress } : {}), message: `browser adapter failed at stage ${stage}; profile and journals preserved` });
   };
 
   const assertOnItem = async () => {
@@ -261,10 +264,18 @@ async function main() {
       if (m.edit.op === 'replace-selection') {
         if (!await page.evaluate(() => window.getSelection()?.toString() === 'Existing fixture text.')) throw new StageError('edit', 'replacement selection changed before input');
       } else if (!await page.evaluate(caretToEdge, { selector: EDITOR, start: m.edit.op === 'insert-start' })) throw new StageError('edit', 'editor not editable');
-      await page.keyboard.insertText(m.edit.text);
-      const after = await bodyText();
-      if (after.split(m.edit.text).length < 2) throw new StageError('edit', 'inserted text not visible in editor');
-      out({ type: 'applied', round: m.round, editId: m.edit.id });
+      inputProgress = m.edit.inputSequence ? { editId: m.edit.id, chunks: [], acceptedPrefix: '' } : undefined;
+      if (m.edit.inputSequence) {
+        await typeInputSequence(m.edit, { insert: async text => { await assertOnItem(); await page.keyboard.insertText(text); },
+          visible: async text => { await assertOnItem(); return (await bodyText()).split(text).length === 2; },
+          now: () => performance.now(), sleep: ms => page.waitForTimeout(ms), progress: inputProgress });
+      } else {
+        await page.keyboard.insertText(m.edit.text);
+        const after = await bodyText();
+        if (after.split(m.edit.text).length < 2) throw new StageError('edit', 'inserted text not visible in editor');
+      }
+      out({ type: 'applied', round: m.round, editId: m.edit.id, ...(inputProgress ? { inputProgress } : {}) });
+      inputProgress = undefined;
     },
     async observe(m) {
       if (!validateExpectedIds(m.expectedEditIds)) throw new StageError('observe', 'expectedEditIds invalid');

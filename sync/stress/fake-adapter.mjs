@@ -45,11 +45,25 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (fault === 'stale-ready') out({ type: 'ready', round: m.round - 1 });
       if (fault === 'dup-ready') out({ type: 'ready', round: m.round });
       return out({ type: 'ready', round: m.round });
-    case 'edit':
+    case 'edit': {
+      let inputProgress;
+      if (m.edit.inputSequence) {
+        const chunks = m.edit.inputSequence.chunks;
+        const count = fault === 'input-prefix-fail' ? 2 : fault === 'input-early-final' ? chunks.length - 1 : chunks.length;
+        inputProgress = { editId: m.edit.id, chunks: chunks.slice(0, count).map((text, index) => ({ ordinal: index + 1, text, visible: true, elapsedMs: index * m.edit.inputSequence.intervalMs + 1 })), acceptedPrefix: chunks.slice(0, count).join('') };
+        if (fault === 'input-skip') inputProgress.chunks[1].ordinal = 3;
+        if (fault === 'input-wrong-role') inputProgress.editId = 'r1-mac-cli';
+        if (fault === 'input-clock') inputProgress.chunks[1].elapsedMs = 0;
+        if (fault === 'input-prefix-fail') {
+          publish({ ...m.edit, text: inputProgress.acceptedPrefix });
+          return out({ type: 'error', round: m.round, message: 'injected partial input failure', inputProgress });
+        }
+      }
       // drop-edit: nobody sees the edit (edit ID mismatch). private-edit: only this role sees it (hash divergence).
       if (fault === 'private-edit') { privateEdits.push(m.edit); }
       else if (fault !== 'drop-edit') { if (online) publish(m.edit); else pendingEdits.push(m.edit); }
-      return out({ type: 'applied', round: m.round, editId: m.edit.id });
+      return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(inputProgress ? { inputProgress } : {}) });
+    }
     case 'transport':
       online = m.online;
       if (online) while (pendingEdits.length) publish(pendingEdits.shift());

@@ -235,6 +235,7 @@ final class NativeStressRunner {
     private let adapterName: String
     private let deadline: Date
     private(set) var failure: String?
+    private var inputProgress: [String: Any]?
     private var opened = false
     private var transportOffline = false
     private var flushed: Bool?
@@ -334,7 +335,9 @@ final class NativeStressRunner {
                     if let surface = try? await evaluate("JSON.stringify({heading:document.querySelector('.vault-context-location h2')?.textContent,buttons:[...document.querySelectorAll('button')].map(x=>x.getAttribute('aria-label')||x.textContent?.trim()).filter(Boolean).slice(0,30),notices:[...document.querySelectorAll('[role=alert],.vault-notice')].map(x=>x.textContent?.trim()).filter(Boolean).slice(0,8),visibleTextStart:document.body.innerText.slice(0,1000),editor:!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable,collab:document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')})") {
                         record(["kind": "failure-surface", "state": String(surface.prefix(4096))])
                     }
-                    response = ["type": "error", "round": round, "message": error.localizedDescription]
+                    var errorResponse: [String: Any] = ["type": "error", "round": round, "message": error.localizedDescription]
+                    if let inputProgress { errorResponse["inputProgress"] = inputProgress }
+                    response = errorResponse
                 }
             }
             try reply(seq, response)
@@ -390,6 +393,38 @@ final class NativeStressRunner {
             guard Self.editId.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)) != nil,
                   !text.isEmpty, text.count <= NativeStressActor.maxEditText, !text.contains("\n"), !text.contains("\r") else {
                 throw NativeStressActor.Failure("Edit id or text is out of bounds for this adapter.")
+            }
+            inputProgress = nil
+            if let sequence = edit["inputSequence"] {
+                guard operation == "append", let sequence = sequence as? [String: Any],
+                      let chunks = sequence["chunks"] as? [String], (2...16).contains(chunks.count),
+                      Set(chunks).count == chunks.count, chunks.joined() == text,
+                      chunks.allSatisfy({ (1...50).contains($0.unicodeScalars.count) && !$0.contains("\n") && !$0.contains("\r") }),
+                      let interval = sequence["intervalMs"] as? Int, (10...250).contains(interval) else {
+                    throw NativeStressActor.Failure("Invalid bounded input sequence.")
+                }
+                var acknowledgments: [[String: Any]] = []
+                var prefix = ""
+                let started = ProcessInfo.processInfo.systemUptime
+                inputProgress = ["editId": id, "chunks": acknowledgments, "acceptedPrefix": prefix]
+                for (index, chunk) in chunks.enumerated() {
+                    guard ProcessInfo.processInfo.systemUptime - started < 15 else { throw NativeStressActor.Failure("Input sequence deadline exceeded.") }
+                    try await requireSelected()
+                    guard try await evaluate("window.texttextStressContinuity?.removed === false && window.texttextStressSession === \(Self.json(sessionId))") == "true" else { throw NativeStressActor.Failure("Editor replaced during input sequence.") }
+                    inputProgress = ["editId": id, "chunks": acknowledgments, "acceptedPrefix": prefix, "attemptedChunk": ["ordinal": index + 1, "text": chunk]]
+                    try await insert(id: id, text: chunk, start: false, replacing: false, deadlineUptime: started + 15)
+                    guard try await evaluate("window.texttextStressContinuity?.removed === false && window.texttextStressSession === \(Self.json(sessionId))") == "true" else { throw NativeStressActor.Failure("Editor replaced during input sequence.") }
+                    let elapsed = (ProcessInfo.processInfo.systemUptime - started) * 1000
+                    guard elapsed <= 15000 else { throw NativeStressActor.Failure("Input sequence deadline exceeded.") }
+                    prefix += chunk
+                    acknowledgments.append(["ordinal": index + 1, "text": chunk, "visible": true, "elapsedMs": elapsed])
+                    inputProgress = ["editId": id, "chunks": acknowledgments, "acceptedPrefix": prefix]
+                    record(["kind": "input-chunk", "editId": id, "ordinal": index + 1, "elapsedMs": elapsed])
+                    if index + 1 < chunks.count { try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000) }
+                }
+                let completed = inputProgress!
+                inputProgress = nil
+                return ["type": "applied", "round": round, "editId": id, "inputProgress": completed]
             }
             try await insert(id: id, text: text, start: operation == "insert-start", replacing: operation == "replace-selection")
             return ["type": "applied", "round": round, "editId": id]
@@ -519,7 +554,7 @@ final class NativeStressRunner {
         text.components(separatedBy: needle).count - 1
     }
 
-    private func insert(id: String, text: String, start: Bool, replacing: Bool) async throws {
+    private func insert(id: String, text: String, start: Bool, replacing: Bool, deadlineUptime: TimeInterval? = nil) async throws {
         guard let before = try await body() else { throw NativeStressActor.Failure("Test editor body is not present.") }
         guard !before.contains(text) else { throw NativeStressActor.Failure("Edit text already present before input: " + id) }
         // Real contenteditable focus and a collapsed selection at the end (selection
@@ -530,10 +565,10 @@ final class NativeStressRunner {
         guard focused == "true" else { throw NativeStressActor.Failure("Could not place the caret in the document body.") }
         let path = try insertNatively(text)
         record(["kind": "input", "editId": id, "path": path])
-        let end = Date().addingTimeInterval(NativeStressActor.editBound)
+        let end = deadlineUptime ?? (ProcessInfo.processInfo.systemUptime + NativeStressActor.editBound)
         while true {
             if let current = try await body(), Self.occurrences(of: text, in: current) == 1 { return }
-            guard Date() < end else { throw NativeStressActor.Failure("Inserted text did not appear exactly once in the visible editor: " + id) }
+            guard ProcessInfo.processInfo.systemUptime < end else { throw NativeStressActor.Failure("Inserted text did not appear exactly once in the visible editor: " + id) }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
     }

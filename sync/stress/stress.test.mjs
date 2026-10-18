@@ -388,3 +388,57 @@ test('durable reopen rejects a later sample that drifts or reloads', async () =>
     assert.equal(summary.acceptance, 'none');
   }
 });
+
+test('sustained input has one logical operation and complete ordinal progress from every editor', async () => {
+  const config = makeConfig({ rounds: 1 });
+  config.sustainedTyping = { chunks: 4, intervalMs: 25 };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.status, 'passed', JSON.stringify(summary.failure));
+  assert.equal(summary.acceptance, 'none');
+  const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const progress = lines.filter(line => line.type === 'input-progress');
+  assert.deepEqual(progress.map(line => line.role), ['mac-app', 'mac-web', 'pc-app', 'pc-web']);
+  assert.ok(progress.every(line => line.chunks.length === 4));
+  const plan = JSON.parse(readFileSync(join(summary.outputDir, 'plan.json'), 'utf8'));
+  assert.deepEqual(plan.scenario.sustainedTyping, config.sustainedTyping);
+  assert.equal(plan.rounds[0].edits.filter(edit => edit.inputSequence).length, 4);
+  assert.throws(() => validateConfig({ ...config, pattern: 'same-position' }), /sustainedTyping/);
+  assert.throws(() => validateConfig({ ...config, sustainedTyping: { chunks: 65, intervalMs: 25 } }), /sustainedTyping/);
+});
+
+test('sustained input rejects wrong actor, skipped ordinal, nonmonotonic time and early final acknowledgment', async () => {
+  for (const fault of ['input-wrong-role', 'input-skip', 'input-clock', 'input-early-final']) {
+    const config = makeConfig({ rounds: 1, faults: { 'pc-app': fault } });
+    config.sustainedTyping = { chunks: 4, intervalMs: 25 };
+    const summary = await new Coordinator(config).run();
+    assert.equal(summary.failure.code, 'input-progress-invalid', fault);
+    assert.equal(summary.failure.detail.role, 'pc-app');
+    assert.equal(summary.roundsCompleted, 0);
+  }
+});
+
+test('partial sequence failure preserves confirmed input prefix in failure receipt', async () => {
+  const config = makeConfig({ rounds: 1, faults: { 'mac-web': 'input-prefix-fail' } });
+  config.sustainedTyping = { chunks: 4, intervalMs: 25 };
+  const summary = await new Coordinator(config).run();
+  assert.equal(summary.failure.code, 'actor-failed');
+  assert.equal(summary.failure.detail.inputProgress.chunks.length, 2);
+  const lines = readFileSync(join(summary.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const prefix = lines.find(line => line.type === 'input-prefix-failure');
+  assert.equal(prefix.role, 'mac-web');
+  assert.equal(prefix.valid, true);
+  assert.equal(prefix.inputProgress.acceptedPrefix, planRounds(42, 1, 'append', config.sustainedTyping)[0].edits[1].inputSequence.chunks.slice(0, 2).join(''));
+});
+
+test('interleaved sustained chunks are accounted without requiring one arbitrary CRDT ordering', () => {
+  const config = makeConfig({ rounds: 1 }); config.sustainedTyping = { chunks: 4, intervalMs: 25 };
+  const coordinator = new Coordinator(config); coordinator.baseline = 'Existing fixture text.\n';
+  const edits = planRounds(42, 1, 'append', config.sustainedTyping)[0].edits;
+  const chunks = edits.map(edit => edit.inputSequence?.chunks ?? [edit.text]);
+  const interleaved = Array.from({ length: 4 }, (_, index) => chunks.map(values => values[index] ?? '').join('')).join('');
+  const ids = edits.map(edit => edit.id).sort();
+  const states = new Map(ROLES.map(role => [role, { text: coordinator.baseline + interleaved, editIds: ids }]));
+  assert.doesNotThrow(() => coordinator.checkRoundContent(states, 1, ids));
+  states.get('pc-cli').text = states.get('pc-cli').text.replace(chunks[0][0], '');
+  assert.throws(() => coordinator.checkRoundContent(states, 1, ids), error => error.code === 'content-mismatch');
+});

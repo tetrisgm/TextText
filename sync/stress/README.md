@@ -86,6 +86,17 @@ marker once and removes the union of the original text. Seed 87 passed a
 physical six-client round and a separate durable reopen; see the acceptance
 contract for exact receipts.
 
+Set `sustainedTyping` to `{ "chunks": 8, "intervalMs": 50 }` with the
+append pattern for bounded real editor input sequences. The four editors type
+2–16 unique Unicode chunks with 10–250 ms spacing; both direct-file actors
+perform their ordinary writes concurrently. One final `applied` reply contains
+contiguous ordinal, visible-text and monotonic-time receipts for the one logical
+operation. Failure preserves the confirmed prefix and any uncertain attempted
+chunk. The coordinator accounts for each exact chunk independently, permitting
+cross-actor CRDT interleaving. This capability has source/orchestration tests;
+physical sustained typing acceptance is pending. See
+`docs/verification/2026-10-18-sustained-typing-runner.md`.
+
 ## Run
 
 ```

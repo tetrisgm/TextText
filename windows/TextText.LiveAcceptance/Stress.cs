@@ -157,6 +157,7 @@ static class Stress
     {
         public string? Failure { get; private set; }
         WebView2? view;
+        object? inputProgress;
         bool opened;
         readonly string sessionId = "editor-" + Guid.NewGuid().ToString("N");
         readonly string expectedTitle = JsonSerializer.Serialize(config.Title);
@@ -193,7 +194,7 @@ static class Stress
                 {
                     try { reply = await Handle(type, round, request.RootElement, ct).ConfigureAwait(type != "close-probe"); }
                     catch (OperationCanceledException) { throw; }
-                    catch (Exception error) { Fail(error.Message); reply = new { type = "error", round, message = error.Message }; }
+                    catch (Exception error) { Fail(error.Message); reply = inputProgress is null ? (object)new { type = "error", round, message = error.Message } : new { type = "error", round, message = error.Message, inputProgress }; }
                 }
                 request.Dispose();
                 Reply(seq, reply);
@@ -261,6 +262,41 @@ static class Stress
                     var id = edit.TryGetProperty("id", out var ie) ? ie.GetString() ?? "" : "";
                     var text = edit.TryGetProperty("text", out var te) ? te.GetString() ?? "" : "";
                     if (!EditIdPattern.IsMatch(id) || text.Length is 0 or > MaxEditText || text.Contains('\n')) throw new Exception("Edit id or text is out of bounds for this adapter.");
+                    inputProgress = null;
+                    if (edit.TryGetProperty("inputSequence", out var sequence))
+                    {
+                        if (op.GetString() != "append" || sequence.ValueKind != JsonValueKind.Object
+                            || !sequence.TryGetProperty("chunks", out var chunkArray) || chunkArray.ValueKind != JsonValueKind.Array
+                            || !sequence.TryGetProperty("intervalMs", out var intervalValue) || !intervalValue.TryGetInt32(out var interval)
+                            || interval is < 10 or > 250) throw new Exception("Invalid bounded input sequence.");
+                        var chunks = chunkArray.EnumerateArray().Select(chunk => chunk.ValueKind == JsonValueKind.String ? chunk.GetString()! : "").ToArray();
+                        if (chunks.Length is < 2 or > 16 || chunks.Distinct(StringComparer.Ordinal).Count() != chunks.Length
+                            || string.Concat(chunks) != text || chunks.Any(chunk => chunk.EnumerateRunes().Count() is < 1 or > 50 || chunk.Contains('\n') || chunk.Contains('\r')))
+                            throw new Exception("Invalid bounded input sequence.");
+                        var acknowledgments = new List<object>();
+                        var prefix = "";
+                        var started = System.Diagnostics.Stopwatch.StartNew();
+                        inputProgress = new { editId = id, chunks = acknowledgments.ToArray(), acceptedPrefix = prefix };
+                        for (var index = 0; index < chunks.Length; index++)
+                        {
+                            if (started.ElapsedMilliseconds >= 15000) throw new Exception("Input sequence deadline exceeded.");
+                            await RequireSelected(ct);
+                            if (await view!.ExecuteScriptAsync($"window.texttextStressContinuity?.removed === false && window.texttextStressSession === {expectedSession}") != "true") throw new Exception("Editor replaced during input sequence.");
+                            inputProgress = new { editId = id, chunks = acknowledgments.ToArray(), acceptedPrefix = prefix, attemptedChunk = new { ordinal = index + 1, text = chunks[index] } };
+                            await Insert(id, chunks[index], false, false, ct, started);
+                            if (await view!.ExecuteScriptAsync($"window.texttextStressContinuity?.removed === false && window.texttextStressSession === {expectedSession}") != "true") throw new Exception("Editor replaced during input sequence.");
+                            var elapsedMs = started.Elapsed.TotalMilliseconds;
+                            if (elapsedMs > 15000) throw new Exception("Input sequence deadline exceeded.");
+                            prefix += chunks[index];
+                            acknowledgments.Add(new { ordinal = index + 1, text = chunks[index], visible = true, elapsedMs });
+                            inputProgress = new { editId = id, chunks = acknowledgments.ToArray(), acceptedPrefix = prefix };
+                            log(new { kind = "input-chunk", editId = id, ordinal = index + 1, elapsedMs });
+                            if (index + 1 < chunks.Length) await Task.Delay(interval, ct);
+                        }
+                        var completed = inputProgress;
+                        inputProgress = null;
+                        return new { type = "applied", round, editId = id, inputProgress = completed };
+                    }
                     await Insert(id, text, op.GetString() == "insert-start", op.GetString() == "replace-selection", ct);
                     return new { type = "applied", round, editId = id };
                 }
@@ -447,7 +483,7 @@ static class Stress
             return parsed.RootElement.GetProperty("body").ValueKind == JsonValueKind.String ? parsed.RootElement.GetProperty("body").GetString() : null;
         }
 
-        async Task Insert(string id, string text, bool start, bool replacing, CancellationToken ct)
+        async Task Insert(string id, string text, bool start, bool replacing, CancellationToken ct, System.Diagnostics.Stopwatch? sequenceClock = null)
         {
             var before = await Body() ?? throw new Exception("Test editor body is not present.");
             if (before.Contains(text)) throw new Exception("Edit text already present before input: " + id);
@@ -464,7 +500,7 @@ static class Stress
             {
                 var body = await Body();
                 if (body is not null && body.Split(text, StringSplitOptions.None).Length == 2) break;
-                if (DateTimeOffset.UtcNow >= deadline) throw new Exception("Inserted text did not appear exactly once in the visible editor: " + id);
+                if (DateTimeOffset.UtcNow >= deadline || sequenceClock?.ElapsedMilliseconds >= 15000) throw new Exception("Inserted text did not appear exactly once in the visible editor: " + id);
                 await Task.Delay(100, ct);
             }
         }
