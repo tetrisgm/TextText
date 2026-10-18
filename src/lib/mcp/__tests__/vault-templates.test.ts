@@ -157,9 +157,10 @@ it("updates an authored look as a new immutable version and advertises editable 
   const pinned = (await readVaultTextpack({ ...location(), itemId: target }))!;
   const updated = await executeVaultTemplateTool("update_item_type", parseWorkspaceToolInput("update_item_type", {
     template_id: created.template_id, base_version: 1, source_item_id: created.itemId, source_hash: base.revision,
-    blueprint: { ...blueprint, name: "Review improved" }, idempotency_key: "authored-v2",
+    blueprint: { ...blueprint, name: "Review improved" }, idempotency_key: "authored-v2", save_scope: { mode: "version" },
   }), context());
   if (!("template_id" in updated)) throw new Error("missing updated template");
+  expect(await executeVaultTemplateTool("update_item_type", parseWorkspaceToolInput("update_item_type", { template_id: created.template_id, base_version: 1, source_item_id: created.itemId, source_hash: base.revision, blueprint: { ...blueprint, name: "Review improved" }, idempotency_key: "authored-v2" }), context())).toEqual(updated);
   expect(updated.template_id).toBe(created.template_id); expect(updated.template_version).toBe(2);
   expect(updated.itemId).not.toBe(created.itemId);
   expect((await readVaultTextpack({ ...location(), itemId: created.itemId }))!.revision).toBe(base.revision);
@@ -198,6 +199,7 @@ it("rejects incompatible fields, false base identity/version and implicit applic
   await expect(executeVaultTemplateTool("update_item_type", { ...args, base_version: 5 }, context())).rejects.toThrow("current workspace template");
   await expect(executeVaultTemplateTool("update_item_type", { ...args, template_id: "other.id" }, context())).rejects.toThrow("current workspace template");
   await expect(executeVaultTemplateTool("update_item_type", { ...args, apply: true }, context())).rejects.toThrow("separately");
+  for (const save_scope of [{ mode: "folder", folderPath: "Notes" }, { mode: "usages", folderPaths: ["Notes"] }]) await expect(executeVaultTemplateTool("update_item_type", { ...args, save_scope }, context())).rejects.toThrow("separately");
   authorizeCreation.mockRejectedValue(new Error("library revoked"));
   await expect(executeVaultTemplateTool("update_item_type", args, context())).rejects.toThrow("library revoked");
 });

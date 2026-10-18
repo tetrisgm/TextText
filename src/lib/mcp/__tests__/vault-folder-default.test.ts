@@ -15,6 +15,7 @@ vi.mock("@/lib/store", async () => {
   return { setVaultFolderTemplate: (input: Parameters<typeof engine.setVaultFolderTemplate>[0]) => engine.setVaultFolderTemplate({ ...input, audit: { actorUserId: "actor", actorType: "human" }, onReceipt: async () => {} }), writeVaultTextpack: engine.writeVaultTextpack };
 });
 import { executeVaultTemplateTool } from "../vault-templates";
+import { parseWorkspaceToolInput } from "@/lib/ai/tools";
 import { mutateVaultTool } from "../vault-mutations";
 let root: string;
 const auth = vi.fn(async () => {});
@@ -24,7 +25,7 @@ const args = () => ({ folder_path: "Notes", template_id: "texttext.article", tem
 beforeEach(async () => { auth.mockReset().mockResolvedValue(undefined); root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-folder-default-")); await fs.mkdir(path.join(root, "workspace", "Notes"), { recursive: true }); });
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
 it("pins a default separately from collection layout and applies only to future generic creation", async () => {
-  const saved = await executeVaultTemplateTool("set_folder_template", args(), context());
+  const saved = await executeVaultTemplateTool("set_folder_template", parseWorkspaceToolInput("set_folder_template", { ...args(), apply_to_existing: false }), context());
   expect(saved).toMatchObject({ status: "written" });
   if (!("itemId" in saved)) throw Error("missing item");
   const file = await engine.readVaultTextpack({ ...location(), itemId: saved.itemId });
@@ -119,3 +120,8 @@ it("creates beyond 2048 notes and invalidates cached markers on rename/replaceme
   await fs.writeFile(path.join(directory, "0001.textpack"), marker.bytes);
   await expect(mutateVaultTool("create_item", { title: "Ambiguous", folder_path: "Notes", idempotency_key: "scale-duplicate" }, context())).rejects.toThrow("multiple folder views");
 }, 30_000);
+
+it("refuses bulk folder restyling without writing a default", async () => {
+  await expect(executeVaultTemplateTool("set_folder_template", parseWorkspaceToolInput("set_folder_template", { ...args(), apply_to_existing: true }), context())).rejects.toThrow("separately");
+  expect(await fs.readdir(path.join(root, "workspace", "Notes"))).toEqual([]);
+});

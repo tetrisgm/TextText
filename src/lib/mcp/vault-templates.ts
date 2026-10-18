@@ -7,6 +7,7 @@ import { BUILTIN_TEMPLATES, getBuiltinTemplate } from "@/lib/presentation/templa
 import { validatedLookSource } from "@/lib/presentation/template-library";
 import type { VaultTemplateCreation } from "@/lib/presentation/vault-template-authoring";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
+import { itemTypeSaveScopeSchema } from "@/lib/presentation/item-type-update";
 export type VaultTemplateContext = {
   receiptOnly?: boolean;
   root: string; workspaceId: string; actorUserId: string; actorType: "human" | "external_agent";
@@ -19,7 +20,8 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
   if (args.template_version !== undefined && (typeof args.template_version !== "number" || !Number.isSafeInteger(args.template_version) || args.template_version < 1)) throw new Error("Invalid template version");
   const location = { receiptOnly: context.receiptOnly, root: context.root, workspaceId: context.workspaceId };
   if (name === "set_folder_template") {
-    if (Object.keys(args).some(key => !["folder_path", "template_id", "template_version", "source_item_id", "source_hash", "if_match_hash", "idempotency_key"].includes(key)) || !context.authorizeFolder || typeof args.folder_path !== "string" || typeof args.template_id !== "string" || typeof args.template_version !== "number" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim() || !(args.if_match_hash === null || typeof args.if_match_hash === "string" && /^[a-f0-9]{64}$/.test(args.if_match_hash))) throw new Error("Choose a folder, exact template version, current folder view hash (or null) and stable idempotency key");
+    if (args.apply_to_existing !== undefined && args.apply_to_existing !== false) throw new Error("Apply a template to existing items separately from setting the folder default.");
+    if (Object.keys(args).some(key => !["folder_path", "template_id", "template_version", "source_item_id", "source_hash", "if_match_hash", "idempotency_key", "apply_to_existing"].includes(key)) || !context.authorizeFolder || typeof args.folder_path !== "string" || typeof args.template_id !== "string" || typeof args.template_version !== "number" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim() || !(args.if_match_hash === null || typeof args.if_match_hash === "string" && /^[a-f0-9]{64}$/.test(args.if_match_hash))) throw new Error("Choose a folder, exact template version, current folder view hash (or null) and stable idempotency key");
     let source: { itemId: string; revision: string } | undefined;
     if (args.source_item_id !== undefined || args.source_hash !== undefined) {
       if (typeof args.source_item_id !== "string" || typeof args.source_hash !== "string" || !/^[a-f0-9]{64}$/.test(args.source_hash)) throw new Error("Provide the pinned custom template source");
@@ -55,7 +57,8 @@ export async function executeVaultTemplateTool(name: string, args: Record<string
     return { ...receipt, template_id: `local.${itemId}`, template_version: 1, source_item_id: itemId, source_hash: receipt.revision };
   }
   if (name === "update_item_type") {
-    if (Object.keys(args).some(key => !["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key", "apply", "apply_to_existing"].includes(key)) || args.apply === true || args.apply_to_existing === true) throw new Error("Save a new template version separately from applying it to existing items.");
+    if (args.save_scope !== undefined && itemTypeSaveScopeSchema.parse(args.save_scope).mode !== "version") throw new Error("Save a new template version separately from applying it to existing items.");
+    if (Object.keys(args).some(key => !["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key", "apply", "apply_to_existing", "save_scope"].includes(key)) || args.apply === true || args.apply_to_existing === true) throw new Error("Save a new template version separately from applying it to existing items.");
     if (!context.authorizeCreation || typeof args.template_id !== "string" || typeof args.base_version !== "number" || !Number.isSafeInteger(args.base_version) || args.base_version < 1 || args.base_version >= Number.MAX_SAFE_INTEGER || typeof args.source_item_id !== "string" || typeof args.source_hash !== "string" || typeof args.idempotency_key !== "string" || !args.idempotency_key.trim()) throw new Error("Read the template and provide its source hash, base version and stable idempotency key");
     const version = args.base_version + 1;
     const operationId = createHash("sha256").update(JSON.stringify([context.actorUserId, name, args.idempotency_key])).digest("hex");
