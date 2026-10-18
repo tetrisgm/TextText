@@ -420,7 +420,9 @@ function parseScalar(raw: string): unknown {
 
 function fieldText(value: unknown, key: string): string {
   if (typeof value !== "string") throw new Error(`${key} must be text`);
-  return value.trim();
+  // Bare frontmatter is already trimmed before parsing. Quoted authored titles
+  // must keep their whitespace so text.md agrees with document.json and Yjs.
+  return key === "title" ? value : value.trim();
 }
 
 function fieldPostType(value: unknown, key: string): ItemKind {

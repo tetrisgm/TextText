@@ -11,6 +11,15 @@ function snapshot() {
   return document;
 }
 describe("local vault document projection", () => {
+  it.each([" Leading", "Trailing ", " Both \t", "Line\n"])("preserves authored title whitespace coherently: %j", title => {
+    const document = snapshot();
+    const previous = { ...file, ...writePayload(file, document) };
+    document.content.title = title;
+    const payload = writePayload(previous, document);
+    expect(JSON.parse(payload.documentJSON).content.title).toBe(title);
+    expect(coherentProjection(payload.markdown, payload.documentJSON)?.content.title).toBe(title);
+    expect(readDocument(payload).content.title).toBe(title);
+  });
   it.each(["texttext.note", "texttext.gallery", "texttext.article"])("writes canonical tags and a fresh coherent projection for %s", templateId => {
     const original = snapshot();
     original.presentation.template.id = templateId;

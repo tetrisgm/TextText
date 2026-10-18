@@ -28,6 +28,26 @@ function mutation(doc: Y.Doc, change: () => void) {
 }
 
 describe("file pack full-document collaboration", () => {
+  it("keeps a partial title ending in a space readable after its acknowledged update", () => {
+    const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1);
+    const writer = client(initial.update);
+    try {
+      const update = mutation(writer, () => documentText(writer, "title").insert(documentText(writer, "title").length, " partial "));
+      const accepted = applyVaultCollaboration(initial, bytes, [update]);
+      // collaborationCheckpoint validates an existing revision through this
+      // same empty-update path before returning the authoritative GET state.
+      expect(readDocument(openPack(accepted.bytes, "Shared.textpack", accepted.state.revision).file).content.title).toBe("Shared note partial ");
+      const read = applyVaultCollaboration(accepted.state, accepted.bytes, ["AAA="]);
+      expect(read.bytes).toEqual(accepted.bytes);
+      const continued = client(accepted.state.update);
+      try {
+        const next = mutation(continued, () => documentText(continued, "body").insert(5, " still editing"));
+        const saved = applyVaultCollaboration(accepted.state, accepted.bytes, [next]);
+        expect(readDocument(openPack(saved.bytes, "Shared.textpack", saved.state.revision).file).content.title).toBe("Shared note partial ");
+        expect(readDocument(openPack(saved.bytes, "Shared.textpack", saved.state.revision).file).content.body).toBe("Hello still editing");
+      } finally { continued.destroy(); }
+    } finally { writer.destroy(); }
+  });
   it("keeps authored canonical tags in both Yjs and the pack through later edits and replay", () => {
     const bytes = fixture(), initial = seedVaultCollaboration(bytes, "item-1", 1);
     const writer = client(initial.update), concurrent = client(initial.update);

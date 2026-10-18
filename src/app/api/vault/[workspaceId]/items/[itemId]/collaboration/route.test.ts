@@ -32,6 +32,12 @@ describe("file collaboration route", () => {
     expect(mocks.authorizeMetadata).toHaveBeenCalledTimes(4);
     expect(mocks.authorize).not.toHaveBeenCalled();
   });
+  it("keeps a projection-conflict read retryable instead of claiming the accepted edit was invalid", async () => {
+    mocks.read.mockRejectedValue(new Error("text.md and document.json contain competing edits. Both representations are preserved in the file."));
+    const response = await GET(new Request(url), context);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Collaboration is temporarily unavailable. Retry with the same operation identifier." });
+  });
   it("does not expose a waited result after access is revoked", async () => {
     mocks.authorizeMetadata.mockResolvedValueOnce(identity).mockResolvedValueOnce(new Response(null, { status: 404 }));
     expect((await GET(new Request(`${url}?epoch=1&seq=2&waitMs=1000`), context)).status).toBe(404);
