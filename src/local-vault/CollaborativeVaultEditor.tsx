@@ -340,7 +340,8 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const downloadRecovery = () => {
     const journal = clientRef.current?.recoveryJournal;
     const rawJournal = clientRef.current?.recoveryRawJournal;
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ document: latestSnapshot.current, journal, rawJournal }, null, 2)], { type: "application/json" }));
+    const checkpointFailure = clientRef.current?.recoveryCheckpointFailure ?? null;
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ document: latestSnapshot.current, journal, rawJournal, checkpointFailure }, null, 2)], { type: "application/json" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "TextText document recovery.json"; anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };

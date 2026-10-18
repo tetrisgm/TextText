@@ -7,6 +7,7 @@ import { getBuiltinTemplate } from "@/lib/presentation/templates";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
 import { authoringSourceSchema } from "@/lib/presentation/authoring-source";
 import { MAX_UPDATE_CHARS } from "@/lib/collab/limits";
+import { checkpointFailureDiagnostic, type CheckpointFailureDiagnostic } from "./checkpoint-diagnostic";
 
 const REMOTE = Symbol("file-collaboration-remote");
 const LIMIT = 4 * 1024 * 1024;
@@ -513,6 +514,7 @@ export class FileCollaborationClient {
   private checkpointRunning: Promise<void> | null = null;
   private checkpointTimer: ReturnType<typeof setTimeout> | null = null;
   private checkpointError: unknown = null;
+  private checkpointFailure: CheckpointFailureDiagnostic | null = null;
   private checkpointSavedGeneration = -1;
   private checkpointProgress = new Set<() => void>();
   private initialFileReconciled: boolean;
@@ -531,6 +533,7 @@ export class FileCollaborationClient {
   get recoveryJournal(): FileCollaborationJournal | null { return this.saved; }
   get hasUnreadableJournal(): boolean { return this.unreadableJournal; }
   get recoveryRawJournal(): string | null { return this.rawRecoveryJournal; }
+  get recoveryCheckpointFailure(): CheckpointFailureDiagnostic | null { return this.checkpointFailure ? Object.freeze({ ...this.checkpointFailure }) : null; }
   get hasPendingChanges(): boolean { return Boolean((this.initialRetirement && !this.saved) || this.unreadableJournal || this.unqueuedDirty || this.batch || this.pending.length || (this.recovery && !this.recovery.adopted)); }
   /** A durable recovery intent exists and the replacement epoch is not yet proven adopted. */
   get isRecovering(): boolean { return this.recovering !== null; }
@@ -632,6 +635,10 @@ export class FileCollaborationClient {
         if (this.dead) continue;
         const clean = !this.hasPendingChanges && !this.saved?.retired && !this.initialRetirement &&
           !value.journal.pending.length && !value.journal.batch && !value.journal.unqueuedDirty && !value.journal.retired;
+        this.checkpointFailure = checkpointFailureDiagnostic(error, {
+          journalGeneration: value.journal.journalGeneration ?? null, epoch: value.journal.epoch, seq: value.journal.seq,
+          pendingCount: value.journal.pending.length, hasBatch: Boolean(value.journal.batch), unqueuedDirty: value.journal.unqueuedDirty === true, clean,
+        });
         if ((error as { code?: string } | null)?.code === "session_closed" && clean) {
           this.frozen = true; this.canEdit = false; this.cancelWork();
           this.report("stale-session", "Reopening this note…");

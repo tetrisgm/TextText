@@ -814,6 +814,26 @@ describe("durable file collaboration client", () => {
     expect(await editor.flushLocal()).toBe(false);
   });
 
+  it("keeps the sanitized original clean checkpoint failure before generic retirement", async () => {
+    const server = new Server(), writes: FileCollaborationCheckpoint[] = [];
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal: new Journal(), request: server.request,
+      checkpoint: async value => { writes.push(value); throw Object.assign(new Error("A newer shared editing checkpoint is already saved."), { code: "503", stack: "not-exportable", request: { authorization: "not-exportable" } }); } });
+    clients.push(editor); expect(editor.recoveryCheckpointFailure).toBeNull();
+    await editor.start(); expect(await editor.flushLocal()).toBe(false);
+    expect(writes).toHaveLength(1);
+    const original = writes[0].journal, exported = editor.recoveryCheckpointFailure;
+    expect(exported).toEqual({ version: 1, code: "503", message: "A newer shared editing checkpoint is already saved.", journalGeneration: original.journalGeneration, epoch: original.epoch, seq: original.seq,
+      pendingCount: 0, hasBatch: false, unqueuedDirty: false, clean: true });
+    expect(editor.recoveryJournal?.retired).toBe("This note needs to be reopened. Your edits are saved for recovery.");
+    expect(editor.recoveryJournal?.journalGeneration).toBe(original.journalGeneration! + 1);
+    expect(editor.hasPendingChanges).toBe(false); expect(editor.canEdit).toBe(false);
+    expect(JSON.stringify(exported)).not.toContain("not-exportable");
+    expect(editor.recoveryCheckpointFailure).not.toBe(exported);
+    expect(() => Object.assign(exported!, { code: "changed" })).toThrow();
+    expect(editor.recoveryCheckpointFailure?.code).toBe("503");
+    expect(server.pushes).toEqual([]);
+  });
+
   it("preserves the legacy journal when opening transactional browser storage is blocked", async () => {
     const server = new Server(), legacy = client(server, new Journal());
     await legacy.start(); legacy.mutate(doc => documentText(doc, "body").insert(5, " blocked"));
