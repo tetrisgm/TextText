@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import {buildLocalVault} from '../../../scripts/build-local-vault.mjs';
+import {mkdtemp,writeFile,readFile,rm,symlink} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {chromium} from 'playwright';
+const workspaceId='11111111-1111-4111-8111-111111111111';
+const url=`https://texttext.app/vault/${workspaceId}`;
+const contents=`
+import React from 'react';import{createRoot}from'react-dom/client';
+import{VaultApp}from'./src/local-vault/VaultApp';import{setVaultTransport}from'./src/local-vault/bridge';
+window.calls=[];window.copied=[];
+Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>window.copied.push(value)}});
+setVaultTransport(async(method,params)=>{window.calls.push({method,params});
+ if(method==='list')return{root:'vault:'+JSON.stringify(['account-a','${workspaceId}']),name:'Scoped workspace',fullAccess:true,canCreateContent:true,folders:['Notes'],items:[]};
+ if(method==='workspaceAccess')return{fullAccess:true,isOwner:true,canEditContent:true,canComment:true,canManageShares:true,grants:[]};
+ if(method==='folderViews'||method==='templates')return{files:[]};
+ if(method==='connection')return{connected:false,available:false};
+ if(method==='shareList')return{grants:[]};
+ return{};
+});createRoot(document.getElementById('root')).render(<VaultApp allowFolderPicker={false}/>);
+`;
+const dir=await mkdtemp(path.join(tmpdir(),'texttext-web-scope-'));
+await symlink(path.join(process.cwd(),'node_modules'),path.join(dir,'node_modules'));
+await writeFile(path.join(dir,'entry.tsx'),contents.replaceAll("'./src/","'"+process.cwd()+"/src/"));
+await buildLocalVault({entry:path.join(dir,'entry.tsx'),output:dir});
+const script=await readFile(path.join(dir,'app.js'),'utf8');
+const browser=await chromium.launch();try{
+ const page=await browser.newPage();page.setDefaultTimeout(5000);
+ await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:'<div id="root"></div>'}));
+ await page.goto(url);await page.addScriptTag({content:script});
+ await page.getByRole('navigation',{name:'Folders'}).locator('summary').filter({hasText:'Notes'}).click();
+ await page.getByRole('button',{name:'Share',exact:true}).click();
+ await page.getByRole('button',{name:'Copy link',exact:true}).click();
+ await page.getByRole('button',{name:'Copied',exact:true}).waitFor();
+ assert.deepEqual(await page.evaluate(()=>window.copied),[url+'#folder=Notes']);
+ const calls=await page.evaluate(()=>window.calls);
+ assert.ok(calls.some(call=>call.method==='shareList'&&call.params.scopeKey==='Notes'));
+ assert.equal(calls.filter(call=>/^(write|create|shareInvite|shareRole|shareRevoke)$/.test(call.method)).length,0);
+ console.log('PASS account-scoped real VaultApp shares the actual workspace route while retaining account-scoped storage identity.');
+}finally{await browser.close();await rm(dir,{recursive:true,force:true});}

@@ -6,6 +6,7 @@ import { newItemPack } from "./new-item-pack";
 import { loadFolderItemDefault, folderStarter } from "./folder-item-default";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
 import { listingCapabilities } from "./listing-capabilities";
+import { workspaceIdFromWebRoot } from "./web-workspace-root";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { retryBootstrap, isTransientBootstrapError } from "./bootstrap-retry";
 import { templateStarterDocument } from "./template-starter";
@@ -620,7 +621,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const [nativePublishAccess, setNativePublishAccess] = useState<{ workspaceId: string; itemId: string; canPublish: boolean } | null>(null);
   const [nativePublishRefresh, setNativePublishRefresh] = useState(0);
   const currentFileRef = useRef<(() => VaultFile) | null>(null);
-  const webWorkspaceId = !allowFolderPicker && listing?.root.startsWith("vault:") ? listing.root.slice("vault:".length) : null;
+  const webWorkspaceId = !allowFolderPicker ? workspaceIdFromWebRoot(listing?.root) : null;
   const nativeWorkspaceId = allowFolderPicker && nativeConnection?.root === listing?.root ? nativeConnection?.workspaceId ?? null : null;
   const sharingWorkspaceId = webWorkspaceId ?? nativeWorkspaceId;
   const accessScope = useMemo(() => sharingWorkspaceId && listing?.root
