@@ -694,8 +694,22 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if method == "list", openError == nil { reply(id, result: .success(["root": "", "items": []])); return }
             reply(id, result: .failure(VaultBridgeError(openError ?? "Open a workspace folder first."))); return
         }
+        let replacementOperation = method == "replacementRead" || method == "resolveReplacement" || method == "recoveryList" || method == "recoveryAssetRead"
+        if replacementOperation && params["workspaceRoot"] as? String != root.path {
+            reply(id, result: .failure(CancellationError())); return
+        }
+        let recoveryConnection = connection
+        let recoveryAccount = credentials()
         io.async { [weak self] in
             let result: Result<[String: Any], Error> = Result {
+                if replacementOperation {
+                    let valid = DispatchQueue.main.sync {
+                        guard let self, self.root == root, self.connection === recoveryConnection else { return false }
+                        let current = self.credentials()
+                        return recoveryAccount.map { account in current.map { account.sameAccount(as: $0) } ?? false } ?? (current == nil)
+                    }
+                    guard valid else { throw CancellationError() }
+                }
                 let store = LocalVaultDocumentStore(root: root)
                 switch method {
                 case "list": return try Self.list(root: root)
@@ -719,8 +733,29 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     }
                     return ["path": path]
                 case "recoveryList":
+                    let replacements = try store.replacementRecoveryList().filter { params["path"] == nil || $0.path == params["path"] as? String }
                     let page = try store.recoveryList(path: params["path"] as? String)
-                    return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated]
+                    let assets = try store.recoveryAssets()
+                    return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
+                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "currentHash": $0.currentHash, "preparedHash": $0.preparedHash, "displacedHash": $0.displacedHash, "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
+                        "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
+                case "recoveryAssetRead":
+                    let hash = try Self.string(params, "hash")
+                    let bytes = try store.recoveryAssetRead(id: Self.string(params, "id"), hash: hash)
+                    return ["data": bytes.base64EncodedString(), "hash": hash, "filename": "local-asset.bin", "byteLength": bytes.count]
+                case "replacementRead":
+                    let recovered = try store.replacementRecoveryRead(id: Self.string(params, "id"), version: Self.string(params, "version"))
+                    if let document = recovered.document {
+                        var value = Self.payload(document)
+                        value["data"] = recovered.data.base64EncodedString()
+                        return value
+                    }
+                    return ["opaque": true, "path": recovered.path, "hash": recovered.hash, "data": recovered.data.base64EncodedString(),
+                        "parseError": recovered.parseError ?? "This retained file cannot be opened as a TextPack."]
+                case "resolveReplacement":
+                    try store.resolveReplacement(id: Self.string(params, "id"), path: Self.string(params, "path"), itemId: Self.string(params, "itemId"),
+                        currentHash: Self.string(params, "currentHash"), preparedHash: Self.string(params, "preparedHash"), displacedHash: Self.string(params, "displacedHash"))
+                    return ["resolved": true]
                 case "recoveryRead":
                     let recovered = try store.recoveryRead(id: Self.string(params, "id"))
                     var value = Self.payload(recovered.document)
@@ -838,9 +873,15 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             let conflictCurrent = current
             DispatchQueue.main.async {
                 guard self?.root == root else { self?.reply(id, result: .failure(CancellationError())); return }
+                if replacementOperation {
+                    let current = self?.credentials()
+                    let same = recoveryAccount.map { account in current.map { account.sameAccount(as: $0) } ?? false } ?? (current == nil)
+                    guard same, self?.connection === recoveryConnection else { self?.reply(id, result: .failure(CancellationError())); return }
+                }
                 let decorated = result.map { value in
                     method == "list" ? Self.withCapabilities(value, self?.connection?.capabilities) : value
                 }
+                if method == "resolveReplacement", case .success = decorated { self?.connection?.schedule() }
                 self?.reply(id, result: decorated, current: conflictCurrent)
             }
         }

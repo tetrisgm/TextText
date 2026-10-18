@@ -841,3 +841,7 @@
 
 /* Keep the invite action on the accent surface while hovered. */
 .vault-app .vault-sharing-invite button:not(:disabled):hover { background:var(--tt-accent); }
+
+.vault-replacement-recovery{border-block:1px solid var(--line);padding:16px 0;margin:16px 0}.vault-replacement-recovery>p,.vault-replacement-recovery>div>p{max-width:70ch;line-height:1.5;color:var(--muted)}.vault-replacement-recovery [role=group]{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.vault-replacement-recovery [aria-pressed=true]{background:var(--selection)}.vault-replacement-recovery nav{max-height:20vh}.vault-replacement-recovery button{white-space:normal;overflow-wrap:anywhere}
+
+.vault-replacement-recovery details{margin:12px 0}.vault-replacement-recovery code{overflow-wrap:anywhere;white-space:normal}.vault-replacement-recovery details li{margin:8px 0}.vault-replacement-recovery details summary{cursor:pointer}

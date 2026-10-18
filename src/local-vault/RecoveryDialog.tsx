@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { vaultRequest, type VaultFile } from "./bridge";
+import { captureVaultRequest, vaultRequest, type VaultFile } from "./bridge";
 import { readDocument } from "./model";
 import { folderForItem } from "./folders";
+import { RecoveryAssets, type RecoveryAssetEntry } from "./RecoveryAssets";
+import { ReplacementRecovery, type ReplacementRecoveryEntry } from "./ReplacementRecovery";
 
 export type TrashItem = { itemId: string; relativePath: string; revision: string };
 export type TrashRestore = TrashItem & { operationId: string; basePath: string; baseRevision: string };
 type RecoveryEntry = { id: string; path: string; kind: "deleted" | "revision" | "conflict"; savedAt: string; hash: string };
-type RecoveryPage = { entries: RecoveryEntry[]; truncated: boolean };
+type RecoveryPage = { entries: RecoveryEntry[]; truncated: boolean; replacements?: ReplacementRecoveryEntry[]; warning?: string; assets?: RecoveryAssetEntry[]; assetsTruncated?: boolean };
 type RecoveryFile = VaultFile & { data: string };
 const labels = { deleted: "Deleted file", revision: "Saved revision", conflict: "Conflict copy" };
 
-export function RecoveryDialog({ path, onClose, onRestore, onRestoreDeleted }: {
-  path?: string; onClose: () => void;
+export function RecoveryDialog({ path, workspaceRoot = "", onClose, onRestore, onRestoreDeleted }: {
+  path?: string; workspaceRoot?: string; onClose: () => void;
   onRestoreDeleted: (request: TrashRestore) => Promise<void>;
   onRestore: (file: RecoveryFile, folder: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [request] = useState(() => (window as unknown as { webkit?: { messageHandlers?: { localVault?: unknown } } }).webkit?.messageHandlers?.localVault ? vaultRequest : captureVaultRequest());
   const [trash, setTrash] = useState<{ items: TrashItem[]; truncated: boolean } | null>(null);
   const [deleted, setDeleted] = useState<TrashRestore | null>(null);
   const [trashError, setTrashError] = useState("");
@@ -28,15 +31,19 @@ export function RecoveryDialog({ path, onClose, onRestore, onRestoreDeleted }: {
   const [folder, setFolder] = useState(path ? folderForItem(path) : "");
   const active = useRef(true);
   const sequence = useRef(0);
+  const lifetime = useRef(0);
   useEffect(() => {
     active.current = true;
+    const generation = ++lifetime.current;
+    const controller = new AbortController();
+    setPage(null); setFile(null); setChosen(null); setDeleted(null); setError("");
     const element = dialog.current;
     element?.showModal();
-    if (!path) void vaultRequest<{ items: TrashItem[]; truncated: boolean }>("trashList", {}).then(value => { if (active.current) setTrash(value); }).catch((error: Error) => { if (active.current) setTrashError(error.message); });
-    void vaultRequest<RecoveryPage>("recoveryList", path ? { path } : {}).then((value) => { if (active.current) setPage(value); })
-      .catch((error: Error) => { if (active.current) setError(error.message); });
-    return () => { active.current = false; element?.close(); };
-  }, [path]);
+    if (!path) void request<{ items: TrashItem[]; truncated: boolean }>("trashList", {}, controller.signal).then(value => { if (active.current && lifetime.current === generation) setTrash(value); }).catch((error: Error) => { if (active.current && lifetime.current === generation) setTrashError(error.message); });
+    void request<RecoveryPage>("recoveryList", { ...(path ? { path } : {}), workspaceRoot }, controller.signal).then((value) => { if (active.current && lifetime.current === generation) setPage(value); })
+      .catch((error: Error) => { if (active.current && lifetime.current === generation) setError(error.message); });
+    return () => { active.current = false; ++sequence.current; ++lifetime.current; controller.abort(); element?.close(); };
+  }, [path, request, workspaceRoot]);
   useEffect(() => {
     const element = dialog.current;
     const cancel = (event: Event) => { if (restoring) event.preventDefault(); };
@@ -46,16 +53,16 @@ export function RecoveryDialog({ path, onClose, onRestore, onRestoreDeleted }: {
   }, [onClose, restoring]);
   const dismiss = () => { dialog.current?.close(); onClose(); };
   const preview = async (entry: RecoveryEntry) => {
-    const request = ++sequence.current;
+    const captured = ++sequence.current;
     setDeleted(null); setFolder(folderForItem(entry.path)); setChosen(entry); setFile(null); setLoading(true); setError("");
     try {
-      const recovered = await vaultRequest<RecoveryFile>("recoveryRead", { id: entry.id });
+      const recovered = await request<RecoveryFile>("recoveryRead", { id: entry.id });
       if (recovered.hash !== entry.hash) throw new Error("This recovery copy changed. Close and reopen recovery before restoring it.");
       readDocument(recovered);
       if (!recovered.data) throw new Error("The complete recovery file is unavailable.");
-      if (active.current && sequence.current === request) setFile(recovered);
-    } catch (error) { if (active.current && sequence.current === request) setError(error instanceof Error ? error.message : "The recovery copy could not be opened."); }
-    finally { if (active.current && sequence.current === request) setLoading(false); }
+      if (active.current && sequence.current === captured) setFile(recovered);
+    } catch (error) { if (active.current && sequence.current === captured) setError(error instanceof Error ? error.message : "The recovery copy could not be opened."); }
+    finally { if (active.current && sequence.current === captured) setLoading(false); }
   };
   const restore = async () => {
     if ((!file && !deleted) || restoring) return;
@@ -72,8 +79,11 @@ export function RecoveryDialog({ path, onClose, onRestore, onRestoreDeleted }: {
     {trashError && <p role="status">Trash needs a connection. {trashError}</p>}
     {error && <p role="alert">{error}</p>}
     {!page && !error && <p role="status">Loading recovery files…</p>}
-    {page && !page.entries.length && !trash?.items.length && <p>No retained {path ? "versions for this file" : "deleted files or conflict copies"}.</p>}
+    {page && !page.entries.length && !page.replacements?.length && !page.assets?.length && !trash?.items.length && <p>No retained {path ? "versions for this file" : "deleted files or conflict copies"}.</p>}
+    {page?.warning && <p role="status">{page.warning}</p>}
     {page?.truncated && <p role="status">Recovery reached its scan limit. More copies may exist in the workspace’s .texttext folder.</p>}
+    {!!page?.replacements?.length && <ReplacementRecovery entries={page.replacements} workspaceRoot={workspaceRoot} disabled={restoring} onRestore={async file => { await onRestore(file, folderForItem(file.path)); dismiss(); }} />}
+    {(!!page?.assets?.length || page?.assetsTruncated) && <RecoveryAssets entries={page.assets ?? []} truncated={page.assetsTruncated} workspaceRoot={workspaceRoot} />}
     <div className="vault-recovery-columns">
       <nav aria-label="Recovery files">{trash?.items.map(item => <button key={`trash:${item.itemId}`} disabled={restoring} aria-pressed={deleted?.itemId === item.itemId} onClick={() => { ++sequence.current; setFile(null); setChosen(null); setLoading(false); setError(""); setDeleted(current => current?.itemId === item.itemId ? current : { ...item, operationId: crypto.randomUUID(), basePath: item.relativePath, baseRevision: item.revision }); }}><strong>{item.relativePath}</strong><span>Deleted item</span></button>)}{page?.entries.map((entry) => <button key={entry.id} disabled={restoring} aria-pressed={chosen?.id === entry.id} onClick={() => void preview(entry)}>
         <strong>{entry.path}</strong><span>{labels[entry.kind]}</span><time dateTime={entry.savedAt}>{Number.isNaN(Date.parse(entry.savedAt)) ? "Date unavailable" : new Date(entry.savedAt).toLocaleString()}</time>
@@ -84,7 +94,7 @@ export function RecoveryDialog({ path, onClose, onRestore, onRestoreDeleted }: {
         {document && file && <><h3>{document.content.title || "Untitled"}</h3>
           <pre className="vault-recovery-text">{document.content.body?.slice(0, 50_000) || "No body text in this version."}</pre>
           {document.content.body.length > 50_000 && <p>Showing the first 50,000 characters. Restore includes the complete file.</p>}
-          <p>{file.assets?.length ?? 0} attachments retained. {file.templateJSON ? "Saved design included." : "Standard design."}</p>
+          <p>{file.assets?.length ?? 0} {file.assets?.length === 1 ? "attachment" : "attachments"} retained. {file.templateJSON ? "Saved design included." : "Standard design."}</p>
           <label>Restore into folder<input aria-label="Restore into folder" value={folder} disabled={restoring} onChange={(event) => setFolder(event.target.value)} placeholder="Workspace root" /></label>
           <button disabled={restoring} onClick={() => void restore()}>{restoring ? "Restoring…" : "Restore as a new file"}</button>
         </>}

@@ -598,7 +598,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const [folderDesignOpen, setFolderDesignOpen] = useState(false);
   const [movingFolder, setMovingFolder] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [recovery, setRecovery] = useState<{ path?: string } | null>(null);
+  const [recovery, setRecovery] = useState<{ path?: string; scope: string } | null>(null);
   const [sharing, setSharing] = useState<VaultShareScope | null>(null);
   const [publishing, setPublishing] = useState<{ workspaceId: string; itemId: string; label: string } | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -626,6 +626,9 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const accessScope = useMemo(() => sharingWorkspaceId && listing?.root
     ? { root: listing.root, workspaceId: sharingWorkspaceId, connection: allowFolderPicker ? nativeConnection : null } : null,
     [sharingWorkspaceId, listing?.root, allowFolderPicker, nativeConnection]);
+  const recoveryScope = JSON.stringify([listing?.root ?? "", nativeConnection?.workspaceId ?? "", nativeConnection?.accountId ?? ""]);
+  const recoveryScopeRef = useRef(recoveryScope);
+  recoveryScopeRef.current = recoveryScope;
   const [workspaceAccess, setWorkspaceAccess] = useState<{ scope: NonNullable<typeof accessScope>; value: VaultAccess } | null>(null);
   const access = accessScope && workspaceAccess?.scope === accessScope ? workspaceAccess.value : null;
   useEffect(() => { queueMicrotask(() => setSharing(null)); }, [accessScope]);
@@ -1004,7 +1007,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
       if (result.file) { setSelected(result.file); refresh(); }
     });
   };
-  const openRecovery = (path?: string) => { closeMoreActions(); void operate(async () => setRecovery(path ? { path } : {})); };
+  const openRecovery = (path?: string) => { closeMoreActions(); setRecovery({ path, scope: recoveryScope }); };
   const openFolderDesign = () => { closeMoreActions(); setFolderDesignOpen(true); };
   const openSearch = useCallback(() => {
     if (searchOpen || document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
@@ -1416,23 +1419,32 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         key={`${sharingWorkspaceId}:${selectedItemId}`} itemId={selectedItemId} path={selected.path}
         canComment={commentCapabilities.canComment} canResolve={commentCapabilities.canResolve}
         onClose={() => { setCommentsOpen(false); commentsButton.current?.focus(); }} /></div>}
-      {recovery && <RecoveryDialog key={`recovery:${listing?.root}:${recovery.path ?? "trash"}`} path={recovery.path} onClose={() => setRecovery(null)} onRestoreDeleted={async (request) => {
+      {recovery && recovery.scope === recoveryScope && <RecoveryDialog key={`recovery:${recoveryScope}:${recovery.path ?? "trash"}`} workspaceRoot={listing?.root ?? ""} path={recovery.path} onClose={() => setRecovery(null)} onRestoreDeleted={async (request) => {
         if (!await flushRef.current()) throw new Error("Save the current document before restoring an item.");
+        const assertScope = () => { if (recovery.scope !== recoveryScopeRef.current) throw new Error("The workspace changed. Reopen recovery to continue."); };
+        assertScope();
         const { itemId, operationId, basePath, baseRevision, relativePath } = request;
         const restored = await vaultRequest<{ status: string; relativePath: string; revision: string }>("trashRestore", { itemId, operationId, basePath, baseRevision, relativePath });
+        assertScope();
         if (restored.status !== "restored") throw new Error("The original location is occupied. Refresh Trash before trying again.");
         await vaultRequest("trashReconcile", { itemId, operationId, basePath, baseRevision, relativePath: restored.relativePath, revision: restored.revision });
+        assertScope();
         const file = await vaultRequest<VaultFile>("read", { path: restored.relativePath });
+        assertScope();
         if (packIdentity(file.markdown) !== itemId) throw new Error("The restored item is still arriving. Try Restore item again.");
         closeRemoved(); setSelected(file); setDestinationFolder(folderForItem(file.path)); refresh();
       }} onRestore={async (file, folder) => {
         if (!await flushRef.current()) throw new Error("Save or resolve the current document before restoring a copy.");
+        const assertScope = () => { if (recovery.scope !== recoveryScopeRef.current) throw new Error("The workspace changed. Reopen recovery to continue."); };
+        assertScope();
         if (readFolderView(file)) {
           const definitions = await vaultRequest<{ files: VaultFile[] }>("folderViews", { folder });
+          assertScope();
           if (definitions.files.length) throw new Error("That folder already has a design. Choose another folder for this recovered design copy.");
         }
         const title = `${readDocument(file).content.title || "Untitled"} (recovered)`;
         const restored = await vaultRequest<VaultFile>("importPack", { title, data: file.data, folder });
+        assertScope();
         closeRemoved(); setSelected(restored); setDestinationFolder(folderForItem(restored.path)); refresh();
       }} />}
       {sharing && canShare && sharing.workspaceId === sharingWorkspaceId && <VaultShareDialog key={`${sharing.workspaceId}:${sharing.scopeType}:${sharing.scopeKey}`} scope={sharing} workspaceURL={allowFolderPicker
