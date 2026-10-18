@@ -42,3 +42,13 @@ grep -q 'All Windows bridge startup tests passed.' "$test_log" || {
   echo 'Required Windows bridge regressions did not execute.' >&2
   exit 1
 }
+
+# Read-only private actor proofs are portable only where OS identity permits;
+# this project explicitly refuses filesystem proof on the Mac and exercises its
+# configuration, canonical document and real session-binding logic instead.
+dotnet run --project windows/TextText.LiveAcceptance.Tests/TextText.LiveAcceptance.Tests.csproj \
+  --configuration Release 2>&1 | tee "$test_log"
+grep -Eq '[1-9][0-9]* portable actor checks passed; Windows filesystem checks require actual PC' "$test_log" || {
+  echo 'Required private Windows actor read-proof checks did not execute.' >&2
+  exit 1
+}

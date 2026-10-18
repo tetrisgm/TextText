@@ -67,8 +67,10 @@ test('Windows sync sources and regressions invalidate receipts, generated .NET o
   assert.ok(inputs.includes('windows/TextText.Core.Tests'));
   assert.ok(inputs.includes('windows/TextText.Windows'));
   assert.ok(inputs.includes('windows/TextText.Windows.Tests'));
+  assert.ok(inputs.includes('windows/TextText.LiveAcceptance.Tests'));
+  assert.ok(inputs.includes('windows/scripts/build.ps1'));
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-windows-gate-'));
-  const paths = ['windows/TextText.Core', 'windows/TextText.Core.Tests', 'windows/TextText.Windows', 'windows/TextText.Windows.Tests'];
+  const paths = ['windows/TextText.Core', 'windows/TextText.Core.Tests', 'windows/TextText.Windows', 'windows/TextText.Windows.Tests', 'windows/TextText.LiveAcceptance.Tests'];
   try {
     for (const directory of paths) {
       await fs.mkdir(path.join(root,directory),{recursive:true});
@@ -92,7 +94,22 @@ test('Windows sync sources and regressions invalidate receipts, generated .NET o
     const beforeBridgeTests = await fingerprint(root,paths);
     await fs.writeFile(path.join(root,paths[3],'Source.cs'),'changed bridge regression');
     assert.notEqual(await fingerprint(root,paths),beforeBridgeTests);
+    const beforeActorTests = await fingerprint(root,paths);
+    await fs.writeFile(path.join(root,paths[4],'Source.cs'),'changed private actor read-proof regression');
+    assert.notEqual(await fingerprint(root,paths),beforeActorTests);
   } finally { await fs.rm(root,{recursive:true,force:true}); }
+});
+
+test('normal Windows and manual native gates require private actor proofs without launching acceptance', async () => {
+  const project = 'windows/TextText.LiveAcceptance.Tests/TextText.LiveAcceptance.Tests.csproj';
+  const build = await fs.readFile(new URL('../windows/scripts/build.ps1', import.meta.url), 'utf8');
+  const manual = await fs.readFile(new URL('../scripts/test-sync.sh', import.meta.url), 'utf8');
+  assert.ok(build.includes(`& $dotnet run --project ${project} --configuration Release\n  if ($LASTEXITCODE -ne 0)`));
+  assert.ok(manual.includes(`dotnet run --project ${project}`));
+  assert.ok(manual.includes('Required private Windows actor read-proof checks did not execute.'));
+  assert.ok(build.includes('& powershell -NoProfile -ExecutionPolicy Bypass -File windows/scripts/smoke.ps1'));
+  assert.ok(!build.includes('run --project windows/TextText.LiveAcceptance/TextText.LiveAcceptance.csproj'));
+  assert.ok(!manual.includes('run --project windows/TextText.LiveAcceptance/TextText.LiveAcceptance.csproj'));
 });
 
 test('default source fingerprint includes binary presets and their generation logic', async () => {

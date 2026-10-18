@@ -19,6 +19,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Native core regression tests failed.' }
   & $dotnet run --project windows/TextText.Windows.Tests/TextText.Windows.Tests.csproj --configuration Release
   if ($LASTEXITCODE -ne 0) { throw 'Windows startup regression tests failed.' }
+  & $dotnet run --project windows/TextText.LiveAcceptance.Tests/TextText.LiveAcceptance.Tests.csproj --configuration Release
+  if ($LASTEXITCODE -ne 0) { throw 'Private actor read-proof regression tests failed.' }
   & $dotnet run --project windows/TextText.Agent.Tests/TextText.Agent.Tests.csproj --configuration Release
   if ($LASTEXITCODE -ne 0) { throw 'Native agent regression tests failed.' }
   & node node_modules/vitest/vitest.mjs run --config sync/vitest.client.config.mts
