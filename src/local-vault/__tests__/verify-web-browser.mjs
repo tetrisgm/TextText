@@ -13,7 +13,7 @@ let browser;
 try {
   await buildLocalVault({ entry: "src/local-vault/__tests__/web-entry.tsx", output });
   await build({ entryPoints: ["src/lib/vault/collaboration.ts"], outfile: path.join(output, "collaboration.mjs"), bundle: true, platform: "node", format: "esm" });
-  const { seedVaultCollaboration, applyVaultCollaboration } = await import(path.join(output, "collaboration.mjs"));
+  const { seedVaultCollaboration, applyVaultCollaboration, reconcileVaultCollaborationEpoch } = await import(path.join(output, "collaboration.mjs"));
   const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
   const waitFor = async (predicate) => {
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -30,6 +30,7 @@ try {
   const initial = zipSync({ [prefix + "text.md"]: strToU8(`---\ntextTextId: "${id}"\ntitle: "Web note"\n---\n\nOriginal body`), [prefix + "document.json"]: strToU8(JSON.stringify(document)), [prefix + "assets/preserved.bin"]: new Uint8Array([7, 8, 9]) });
   const files = new Map([[id, { path: "Notes/Web.textpack", bytes: initial }]]);
   const collaboration = new Map();
+  const retainedEpochs = new Map(), recoveryReceipts = new Map();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const failures = [], unexpected = [];
@@ -92,11 +93,25 @@ try {
         if (!file) { await route.fulfill({ status: 404 }); return; }
         let state = collaboration.get(itemId);
         if (!state || state.revision !== digest(file.bytes)) {
+          if (state) retainedEpochs.set(`${itemId}:${state.epoch}`, { version: 1, state, deleted: false });
           state = seedVaultCollaboration(file.bytes, itemId, (state?.epoch ?? 0) + 1);
           collaboration.set(itemId, state);
         }
         if (request.method() === "POST") {
           const payload = request.postDataJSON();
+          if (payload.recoveryUpdate !== undefined) {
+            const key = `${itemId}:${payload.operationId}`;
+            const requestHash = digest(JSON.stringify([payload.epoch, payload.recoveryUpdate]));
+            const previous = recoveryReceipts.get(key);
+            if (previous) { assert.equal(previous.requestHash, requestHash); await route.fulfill({ json: previous.result }); return; }
+            const retained = retainedEpochs.get(`${itemId}:${payload.epoch}`);
+            assert.ok(retained, "Fixture must retain the replaced epoch before recovery");
+            const recovered = reconcileVaultCollaborationEpoch(retained, payload.recoveryUpdate, state, file.bytes, file.path);
+            assert.equal(recovered.status, "merged");
+            files.set(itemId, { ...file, bytes: recovered.bytes }); collaboration.set(itemId, recovered.state);
+            const result = { status: "written", revision: recovered.state.revision };
+            recoveryReceipts.set(key, { requestHash, result }); await route.fulfill({ json: result }); return;
+          }
           if (payload.epoch !== state.epoch) { await route.fulfill({ status: 409, json: { code: "epoch_changed" } }); return; }
           const applied = applyVaultCollaboration(state, file.bytes, payload.updates);
           files.set(itemId, { ...file, bytes: applied.bytes });
@@ -132,7 +147,7 @@ try {
     if (/^\/vault\/cover-[a-zA-Z0-9-]+\.jpg$/.test(url.pathname)) {
       await route.fulfill({body:await readFile(path.join(output,path.basename(url.pathname))),contentType:"image/jpeg"});return;
     }
-    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/app.css")) {
+    if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("/mirror-policy.js") || url.pathname.endsWith("/app.css")) {
       const leaf = url.pathname.split("/").at(-1);
       await route.fulfill({ body: await readFile(path.join(output, leaf)), contentType: leaf.endsWith(".js") ? "application/javascript" : "text/css" }); return;
     }
@@ -169,7 +184,16 @@ try {
   const propose=async text=>{await page.getByRole("textbox",{name:"Message assistant"}).fill(text);await page.getByRole("button",{name:"Send",exact:true}).click();await page.getByRole("button",{name:"Approve change",exact:true}).last().waitFor();};
   await propose("Propose a body change");assert.equal(decisions.length,0);assert.ok(strFromU8(unzipSync(files.get(id).bytes)[prefix+"text.md"]).includes("Original body"));
   await page.getByRole("button",{name:"Approve change",exact:true}).click();await page.getByRole("button",{name:"Check result",exact:true}).click();await page.getByText("Change saved.",{exact:true}).waitFor();assert.equal(writesApplied,1);
-  await page.locator("main").getByText("Approved through assistant",{exact:true}).waitFor();
+  try { await page.locator("main").getByText("Approved through assistant",{exact:true}).waitFor(); }
+  catch (error) {
+    console.error("Assistant refresh fixture diagnostic", JSON.stringify({ failures, unexpected,
+      main: (await page.locator("main").innerText()).slice(0, 6000),
+      serverBody: JSON.parse(strFromU8(unzipSync(files.get(id).bytes)[prefix+"document.json"])).content.body,
+      state: collaboration.has(id) ? { epoch: collaboration.get(id).epoch, seq: collaboration.get(id).seq, revision: collaboration.get(id).revision } : null,
+    }));
+    throw error;
+  }
+  assert.ok(recoveryReceipts.size > 0, "External assistant write must cross the retained epoch recovery protocol");
   await propose("Propose another change");await page.getByRole("button",{name:"Reject change",exact:true}).click();await page.getByText("Change rejected.",{exact:true}).waitFor();
   await propose("Propose stale change");await page.getByRole("button",{name:"Approve change",exact:true}).click();await page.getByText("This item changed. Ask for a new proposal.",{exact:true}).waitFor();
   assert.deepEqual(decisions.map(value=>value.decision),["approve","approve","deny","approve"]);

@@ -133,7 +133,7 @@ it.each([true, false])("ledgers typing and metadata before readiness (server ID 
   userEditOrigin:{current:{}},localOrigin:{current:{}},bodyMirrorRef:{current:{}},
   currentLocalDocument:()=>ledger.current??initial,promoteOnEdit:vi.fn(),replaceYText,
   useCallback:(callback:unknown)=>callback,useLayoutEffect:()=>{},updateTextRef:{current:null}};
- const updateText=compile(editor.slice(editor.indexOf("  const updateText = useCallback("),editor.indexOf("  // The bridge the assistant reads through.")),"updateText",bindings);
+ const updateText=compile(editor.slice(editor.indexOf("  const updateText = useCallback("),editor.indexOf("  // Read-only inspection shares")),"updateText",bindings);
  updateText("body","alpha omega");
  expect(ledger.current?.content.body).toBe("alpha omega");
  expect(documentText(doc,"body").toString()).toBe("alpha DELETE omega");

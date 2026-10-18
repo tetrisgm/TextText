@@ -1561,6 +1561,7 @@ export function UnifiedDocumentEditor({
     updateTextRef.current = updateText;
   }, [updateText]);
 
+  // Read-only inspection shares the editor's accepted pre-ready local snapshot.
   useEffect(() => {
     if (!collab.canEdit) return;
     return registerLiveDocumentInspector(collab.postId, currentLocalDocument);
