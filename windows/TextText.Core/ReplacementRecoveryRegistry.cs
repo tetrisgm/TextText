@@ -50,35 +50,35 @@ public sealed class ReplacementRecoveryRegistry
         else if(parsed.Version != 1) throw new InvalidDataException("Unsupported replacement owner.");
         return RetainedReplacementProfile.PrincipalHash(parsed);
     }
-    string Target(Entry entry)
+    string Target(Entry entry,ISet<string>? verified=null)
     {
         if (entry.Path.Length > 4096 || !entry.Path.EndsWith(".textpack", StringComparison.Ordinal) || entry.Path.Contains('\\') || entry.Path.Contains(':') ||
             entry.Path.Split('/').Any(part => part.Length == 0 || part.StartsWith('.') || part.EndsWith(' ') || part.EndsWith('.')))
             throw new InvalidDataException("Invalid replacement path.");
         var target = Path.GetFullPath(Path.Combine(root, entry.Path));
         if (!target.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Replacement leaves workspace.");
-        RetainedFileReplacement.CheckPath(target); return target;
+        RetainedFileReplacement.CheckPath(target,verified); return target;
     }
-    void Validate(Entry entry,bool verifyOwner=true,bool validatePaths=true)
+    void Validate(Entry entry,bool verifyOwner=true,bool validatePaths=true,ISet<string>? verified=null)
     {
         if (entry.Version != 1 || entry.Operation == Guid.Empty || entry.RootHash != rootHash || verifyOwner&&entry.OwnerHash != OwnerHash() ||
             !ValidItemId(entry.ItemId) ||
             !RetainedFileReplacement.ValidHash(entry.ExpectedHash) || !RetainedFileReplacement.ValidHash(entry.PreparedHash))
             throw new InvalidDataException("Replacement registry scope cannot be verified.");
-        if(validatePaths){_ = Target(entry);if(entry.RecoveryPath is not null)_=RecoveryLocation(entry);}
+        if(validatePaths){_ = Target(entry,verified);if(entry.RecoveryPath is not null)_=RecoveryLocation(entry,verified);}
         if (entry.Resolution is { } resolution && (!RetainedFileReplacement.ValidHash(resolution.CurrentHash) ||
             !RetainedFileReplacement.ValidHash(resolution.PreparedHash) || !RetainedFileReplacement.ValidHash(resolution.DisplacedHash)))
             throw new InvalidDataException("Invalid replacement resolution.");
     }
-    string RecoveryLocation(Entry entry)
+    string RecoveryLocation(Entry entry,ISet<string>? verified=null)
     {
         var relative=entry.RecoveryPath??throw new InvalidDataException("Missing retained location.");
         if(relative.Length>4096||!relative.StartsWith(".texttext/retained-replacements/",StringComparison.Ordinal)||relative.Contains('\\')||relative.Contains(':')||relative.Split('/').Any(part=>part is "" or "." or ".."))throw new InvalidDataException("Invalid retained replacement location.");
         var full=Path.GetFullPath(Path.Combine(root,relative));
         if(!full.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Retained replacement leaves workspace.");
-        var expected=RetainedFileReplacement.OperationDirectory(Target(entry),entry.Operation,Path.Combine(root,".texttext","retained-replacements",TextPackStore.Hash(Encoding.UTF8.GetBytes(entry.Path))));
+        var expected=RetainedFileReplacement.OperationDirectory(Target(entry,verified),entry.Operation,Path.Combine(root,".texttext","retained-replacements",TextPackStore.Hash(Encoding.UTF8.GetBytes(entry.Path))));
         if(full!=expected)throw new InvalidDataException("Retained replacement location does not match its original path and operation.");
-        RetainedFileReplacement.CheckPath(full);return full;
+        RetainedFileReplacement.CheckPath(full,verified);return full;
     }
     public (byte[] Bytes,bool NeedsAdoption) BindForAdoption(byte[] bytes,string filename,AccountRootOwnership.Owner owner)
     {
@@ -120,24 +120,25 @@ public sealed class ReplacementRecoveryRegistry
         throw new FileChangedException();
     }
     static bool ValidItemId(string value) => value.Length is >0 and <=128 && char.IsAsciiLetterOrDigit(value[0]) && value.All(character=>char.IsAsciiLetterOrDigit(character)||character is '_' or '-');
-    public IReadOnlyList<Entry> Entries(string? itemId=null)
+    public IReadOnlyList<Entry> Entries(string? itemId=null)=>ReadEntries(itemId,new HashSet<string>(StringComparer.Ordinal));
+    IReadOnlyList<Entry> ReadEntries(string? itemId,ISet<string> verified)
     {
-        RetainedFileReplacement.CheckPath(directory);
+        RetainedFileReplacement.CheckPath(directory,verified);
         var ownerHash=OwnerHash();
         if (!Directory.Exists(directory)) return [];
         var result = new List<Entry>();
         var validatedTargets=new HashSet<string>(StringComparer.Ordinal);
         foreach (var name in IndexedPaths(itemId)) {
-            var stamp=RetainedFileReplacement.Fingerprint(name);Entry entry;
+            var stamp=RetainedFileReplacement.Fingerprint(name,ancestorsVerified:true);Entry entry;
             lock(cacheGate)entry=stamp is not null&&records.TryGetValue(name,out var cached)&&cached.Stamp==stamp?cached.Entry:null!;
             if(entry is null) {
                 var bytes=RetainedFileReplacement.Read(name,16384);CheckFields(bytes);
                 entry=JsonSerializer.Deserialize<Entry>(bytes)??throw new InvalidDataException("Invalid replacement registry.");
-                if(stamp!=RetainedFileReplacement.Fingerprint(name))throw new FileChangedException();
+                if(stamp!=RetainedFileReplacement.Fingerprint(name,ancestorsVerified:true))throw new FileChangedException();
                 if(stamp is not null)lock(cacheGate){if(records.Count>=4096)records.Clear();records[name]=(stamp,entry);}
             }
             if (Path.GetFileName(name) != entry.Operation.ToString("D") + ".json" || OperatingSystem.IsWindows()&&itemId is not null&&entry.ItemId!=itemId) throw new InvalidDataException("Replacement registry name or identity mismatch.");
-            Validate(entry,verifyOwner:false,validatePaths:validatedTargets.Add(entry.Path+"\0"+entry.RecoveryPath+(entry.RecoveryPath is null?"":"\0"+entry.Operation.ToString("D"))));
+            Validate(entry,verifyOwner:false,validatePaths:validatedTargets.Add(entry.Path+"\0"+entry.RecoveryPath+(entry.RecoveryPath is null?"":"\0"+entry.Operation.ToString("D"))),verified:verified);
             if(entry.OwnerHash!=ownerHash)throw new InvalidDataException("Replacement registry owner changed.");
             if(itemId is null||entry.ItemId==itemId)result.Add(entry);
         }
@@ -174,11 +175,11 @@ public sealed class ReplacementRecoveryRegistry
         if (preparedStamp != RetainedFileReplacement.Fingerprint(recovery.Prepared) || displacedStamp != RetainedFileReplacement.Fingerprint(recovery.Displaced)) throw new FileChangedException();
         return new(entry, recovery, prepared, displaced, preparedStamp, displacedStamp);
     }
-    RetainedFileReplacement.Recovery RecoveryFor(Entry entry)
+    RetainedFileReplacement.Recovery RecoveryFor(Entry entry,ISet<string>? verified=null)
     {
-        if(entry.RecoveryPath is not null)return RetainedFileReplacement.InspectDirectory(RecoveryLocation(entry),Path.GetFileName(entry.Path),entry.Operation);
-        var original=Target(entry);var directory=RetainedFileReplacement.OperationDirectory(original,entry.Operation);
-        if(Directory.Exists(directory))return RetainedFileReplacement.Inspect(original,entry.Operation);
+        if(entry.RecoveryPath is not null)return RetainedFileReplacement.InspectDirectory(RecoveryLocation(entry,verified),Path.GetFileName(entry.Path),entry.Operation,verified);
+        var original=Target(entry,verified);var directory=RetainedFileReplacement.OperationDirectory(original,entry.Operation);
+        if(Directory.Exists(directory))return RetainedFileReplacement.InspectDirectory(directory,Path.GetFileName(original),entry.Operation,verified);
         // A raw folder rename moves its hidden retained inode directory too.
         // Search only directories, bound work, and require a unique operation.
         var matches=new List<string>();var visited=0;
@@ -195,21 +196,23 @@ public sealed class ReplacementRecoveryRegistry
         }
         Visit(root);
         if(matches.Count!=1)throw new RetainedFileReplacement.RequiredException(entry.Operation);
-        return RetainedFileReplacement.InspectDirectory(matches[0],Path.GetFileName(original),entry.Operation);
+        return RetainedFileReplacement.InspectDirectory(matches[0],Path.GetFileName(original),entry.Operation,verified);
     }
     public void AssertReadable(string? itemId)
     {
-        foreach(var entry in Entries(itemId))AssertEntryReadableCore(entry,true);
+        var verified=new HashSet<string>(StringComparer.Ordinal);
+        foreach(var entry in ReadEntries(itemId,verified))AssertEntryReadableCore(entry,true,verified);
     }
     public void AssertEntryReadable(Entry entry,bool persist=true)
     {
-        Validate(entry);
-        AssertEntryReadableCore(entry,persist);
+        var verified=new HashSet<string>(StringComparer.Ordinal);
+        Validate(entry,verified:verified);
+        AssertEntryReadableCore(entry,persist,verified);
     }
-    void AssertEntryReadableCore(Entry entry,bool persist)
+    void AssertEntryReadableCore(Entry entry,bool persist,ISet<string> verified)
     {
         RetainedFileReplacement.Recovery recovery;
-        try {recovery=RecoveryFor(entry);}
+        try {recovery=RecoveryFor(entry,verified);}
         catch(FileNotFoundException){throw new RetainedFileReplacement.RequiredException(entry.Operation);}
         catch(DirectoryNotFoundException){throw new RetainedFileReplacement.RequiredException(entry.Operation);}
         if(recovery.Record.ExpectedHash!=entry.ExpectedHash||recovery.Record.PreparedHash!=entry.PreparedHash)throw new InvalidDataException("Replacement manifest mismatch.");
@@ -219,7 +222,7 @@ public sealed class ReplacementRecoveryRegistry
             if(inspection.PreparedHash==resolution.PreparedHash&&inspection.DisplacedHash==resolution.DisplacedHash)return;
             throw new RetainedFileReplacement.RequiredException(entry.Operation);
         }
-        if(RetainedFileReplacement.Classify(recovery,Target(entry),persist).Record.State!="completed")throw new RetainedFileReplacement.RequiredException(entry.Operation);
+        if(RetainedFileReplacement.Classify(recovery,Target(entry,verified),persist,verified).Record.State!="completed")throw new RetainedFileReplacement.RequiredException(entry.Operation);
     }
     public IReadOnlyList<string> Export(Inspection inspection)
     {

@@ -66,6 +66,11 @@ static class RetainedReplacementTests
             if (shape == "missing-target") File.Delete(target);
             if (shape == "complete") {
                 registry.AssertReadable("retained-id");
+                var manifestPath=Path.Combine(directory,"manifest.json");var knownManifest=File.ReadAllBytes(manifestPath);
+                var future=JsonSerializer.Deserialize<RetainedFileReplacement.Manifest>(knownManifest)! with{Version=2};
+                File.WriteAllBytes(manifestPath,JsonSerializer.SerializeToUtf8Bytes(future));
+                assert(Refuses(()=>registry.AssertReadable("retained-id")),"warm manifest cache refuses an in-place future-version replacement");
+                File.WriteAllBytes(manifestPath,knownManifest);
                 assert(RetainedFileReplacement.Inspect(target, operation).Record.State == "completed", "retained replacement reconstructs completion only with exact target and backup");
                 File.WriteAllBytes(target, external); registry.AssertReadable("retained-id");
                 assert(File.ReadAllBytes(target).SequenceEqual(external), "later legitimate save does not invalidate completed retained replacement");

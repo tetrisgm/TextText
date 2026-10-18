@@ -45,13 +45,14 @@ public static class RetainedFileReplacement
     }
     // Portable test runs deliberately do not cache: Windows change-time and file
     // identity are required before metadata can stand in for hashing retained bytes.
-    public static Stamp? Fingerprint(string path)
+    public static Stamp? Fingerprint(string path, bool ancestorsVerified=false)
     {
         if (!OperatingSystem.IsWindows()) return null;
-        CheckPath(path);
+        if(!ancestorsVerified)CheckPath(path);
         using var handle = CreateFileW(NativePath(path), 0, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
         if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var info) ||
             !GetFileInformationByHandleEx(handle, 0, out var basic, (uint)Marshal.SizeOf<BasicInfo>())) return null;
+        if(ancestorsVerified&&(info.Attributes&(uint)(FileAttributes.ReparsePoint|FileAttributes.Directory))!=0)throw new IOException("Linked recovery paths are not supported.");
         return new(((long)info.SizeHigh << 32) | info.SizeLow, basic.Creation, basic.Write, basic.Change,
             info.Volume, ((ulong)info.IndexHigh << 32) | info.IndexLow);
     }
@@ -62,17 +63,20 @@ public static class RetainedFileReplacement
         if(full.StartsWith(@"\\?\",StringComparison.Ordinal))return full;
         return full.StartsWith(@"\\",StringComparison.Ordinal)?@"\\?\UNC\"+full[2..]:@"\\?\"+full;
     }
-    static (string Hash, Stamp? Stamp) HashStable(string path)
+    static (string Hash, Stamp? Stamp) HashStable(string path,bool ancestorsVerified=false)
     {
-        var before = Fingerprint(path); var hash = TextPackStore.Hash(Read(path)); var after = Fingerprint(path);
+        var before = Fingerprint(path,ancestorsVerified); var hash = TextPackStore.Hash(ancestorsVerified?ReadVerified(path):Read(path)); var after = Fingerprint(path,ancestorsVerified);
         if (before != after) throw new FileChangedException();
         return (hash, after);
     }
-    public static void CheckPath(string path)
+    public static void CheckPath(string path, ISet<string>? verified=null)
     {
-        for (var current = Path.GetFullPath(path); !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current))
+        for (var current = Path.GetFullPath(path); !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current)) {
+            if(verified?.Contains(current)==true)break;
             if ((File.Exists(current) || Directory.Exists(current)) && ProviderPaths.IsUnsafeReparse(current))
                 throw new IOException("Linked recovery paths are not supported.");
+            verified?.Add(current);
+        }
     }
     public static byte[] Read(string path, int maximum = 64 * 1024 * 1024)
     {
@@ -84,9 +88,28 @@ public static class RetainedFileReplacement
         if (file.ReadByte() != -1) throw new FileChangedException();
         return bytes;
     }
-    static (string? Hash, Stamp? Stamp) TryHash(string path)
+    // Caller has checked the operation directory in this guard. The final file
+    // is opened without following a reparse point and held against writers.
+    static byte[] ReadVerified(string path,int maximum=64*1024*1024)
     {
-        try { return HashStable(path); }
+        if(!OperatingSystem.IsWindows())return Read(path,maximum);
+        using var handle=CreateFileW(NativePath(path),0x80000000,1,IntPtr.Zero,3,0x00200000,IntPtr.Zero);
+        if(handle.IsInvalid||!GetFileInformationByHandle(handle,out var info)) {
+            var error=Marshal.GetLastWin32Error();
+            if(error==2)throw new FileNotFoundException("Retained recovery file is missing.",path);
+            if(error==3)throw new DirectoryNotFoundException("Retained recovery directory is missing.");
+            throw new IOException("Cannot open retained recovery file.",new System.ComponentModel.Win32Exception(error));
+        }
+        if((info.Attributes&(uint)(FileAttributes.ReparsePoint|FileAttributes.Directory))!=0)throw new IOException("Retained recovery path is not a regular file.");
+        using var file=new FileStream(handle,FileAccess.Read);
+        if(file.Length>maximum)throw new InvalidDataException("Recovery file exceeds limits.");
+        var bytes=new byte[checked((int)file.Length)];file.ReadExactly(bytes);
+        if(file.ReadByte()!=-1)throw new FileChangedException();
+        return bytes;
+    }
+    static (string? Hash, Stamp? Stamp) TryHash(string path,bool ancestorsVerified=false)
+    {
+        try { return HashStable(path,ancestorsVerified); }
         catch (IOException) { return (null, null); }
         catch (UnauthorizedAccessException) { return (null, null); }
     }
@@ -113,13 +136,21 @@ public static class RetainedFileReplacement
     {
         return InspectDirectory(OperationDirectory(target, operation), Path.GetFileName(target), operation);
     }
-    public static Recovery InspectDirectory(string directory,string filename,Guid operation)
+    static readonly object manifestGate=new();
+    static readonly Dictionary<string,(Stamp Stamp,Manifest Manifest)> manifests=new(StringComparer.Ordinal);
+    public static Recovery InspectDirectory(string directory,string filename,Guid operation,ISet<string>? verified=null)
     {
-        CheckPath(directory);
-        var bytes=Read(Path.Combine(directory,"manifest.json"),8192);
+        CheckPath(directory,verified);
+        var path=Path.Combine(directory,"manifest.json");var stamp=Fingerprint(path,ancestorsVerified:true);Manifest? manifest=null;
+        lock(manifestGate)if(stamp is not null&&manifests.TryGetValue(path,out var cached)&&cached.Stamp==stamp)manifest=cached.Manifest;
+        if(manifest is null) {
+        var bytes=ReadVerified(path,8192);
         JsonFields(bytes,["Version","Operation","Filename","ExpectedHash","PreparedHash","State","PreparedStamp","DisplacedStamp"],["Version","Operation","Filename","ExpectedHash","PreparedHash","State"]);
-        var manifest = JsonSerializer.Deserialize<Manifest>(bytes)
+        manifest = JsonSerializer.Deserialize<Manifest>(bytes)
             ?? throw new InvalidDataException("Missing replacement manifest.");
+        if(stamp!=Fingerprint(path,ancestorsVerified:true))throw new FileChangedException();
+        if(stamp is not null)lock(manifestGate){if(manifests.Count>=4096)manifests.Clear();manifests[path]=(stamp,manifest);}
+        }
         if (manifest.Version != 1 || manifest.Operation != operation || manifest.Filename != filename ||
             Path.GetFileName(directory)!=operation.ToString("D") || Path.GetFileName(Path.GetDirectoryName(directory))!=TextPackStore.Hash(Encoding.UTF8.GetBytes(filename)) ||
             Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(directory)))!=".texttext-replacements" ||
@@ -128,17 +159,19 @@ public static class RetainedFileReplacement
         return new(directory, manifest);
     }
     public static string OriginalTarget(Recovery recovery) => Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(recovery.Directory)))!,recovery.Record.Filename);
-    public static Recovery Classify(Recovery recovery, string target,bool persist=true)
+    public static Recovery Classify(Recovery recovery, string target,bool persist=true,ISet<string>? verified=null)
     {
         if (Path.GetFileName(recovery.Directory)!=recovery.Record.Operation.ToString("D") ||
             Path.GetFileName(Path.GetDirectoryName(recovery.Directory))!=TextPackStore.Hash(Encoding.UTF8.GetBytes(recovery.Record.Filename)) ||
             recovery.Record.Filename != Path.GetFileName(target)) throw new InvalidDataException("Replacement target mismatch.");
-        var preparedUnchanged = Unchanged(recovery.Prepared, recovery.Record.PreparedStamp);
-        var prepared = preparedUnchanged ? (Hash: recovery.Record.PreparedHash, Stamp: recovery.Record.PreparedStamp) : HashStable(recovery.Prepared);
+        CheckPath(recovery.Directory,verified);
+        bool Matches(string path,Stamp? expected)=>expected is not null&&expected==Fingerprint(path,ancestorsVerified:true);
+        var preparedUnchanged = Matches(recovery.Prepared, recovery.Record.PreparedStamp);
+        var prepared = preparedUnchanged ? (Hash: recovery.Record.PreparedHash, Stamp: recovery.Record.PreparedStamp) : HashStable(recovery.Prepared,ancestorsVerified:true);
         if (prepared.Hash != recovery.Record.PreparedHash) throw new InvalidDataException("Prepared recovery changed.");
         if (recovery.Record.State == "conflict") return recovery;
-        if (recovery.Record.State == "completed" && preparedUnchanged && Unchanged(recovery.Displaced, recovery.Record.DisplacedStamp)) return recovery;
-        var displaced = TryHash(recovery.Displaced);
+        if (recovery.Record.State == "completed" && preparedUnchanged && Matches(recovery.Displaced, recovery.Record.DisplacedStamp)) return recovery;
+        var displaced = TryHash(recovery.Displaced,ancestorsVerified:true);
         // A completed operation can be followed by legitimate later target writes.
         // An old open descriptor may still change its displaced file, however.
         var state = recovery.Record.State == "completed"
