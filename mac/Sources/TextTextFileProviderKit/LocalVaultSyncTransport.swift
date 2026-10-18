@@ -53,7 +53,27 @@ public struct LocalVaultSyncCapabilities: Sendable, Codable, Equatable {
     }
 }
 
+public struct LocalVaultFolderCaseItem: Codable, Sendable, Equatable {
+    public let itemId: String, relativePath: String, revision: String
+}
+public struct LocalVaultFolderCaseRequest: Codable, Sendable, Equatable {
+    public let operationId: String, source: String, destination: String, baseManifestRevision: String
+    public let folders: [String]
+    public let items: [LocalVaultFolderCaseItem]
+}
+public struct LocalVaultFolderCaseReceipt: Codable, Sendable, Equatable {
+    public let operationId: String, status: String, source: String, destination: String, manifestRevision: String
+    public let folders: [String]
+    public let items: [LocalVaultFolderCaseItem]
+}
+public struct LocalVaultFolderCaseContext: Sendable {
+    public let manifestRevision: String
+    public let folders: [String]
+}
+
 public protocol LocalVaultSyncTransport: Sendable {
+    func folderCaseContext() async -> LocalVaultFolderCaseContext?
+    func moveFolderCase(_ request: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt
     func canOrganize() async -> Bool
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool
     func manifest() async throws -> [LocalVaultRemoteItem]
@@ -79,6 +99,8 @@ public struct LocalVaultBinaryManifest: Codable, Sendable {
 }
 
 public extension LocalVaultSyncTransport {
+    func folderCaseContext() async -> LocalVaultFolderCaseContext? { nil }
+    func moveFolderCase(_ request: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt { throw LocalVaultSyncFailure.invalidResponse }
     func folders() async -> [String] { [] }
     func authoritativeFolders() async -> [String]? { nil }
     func canOrganize() async -> Bool { true }
@@ -102,6 +124,22 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private var hasFolderCatalog = false
     public func folders() -> [String] { cachedFolders }
     public func authoritativeFolders() async -> [String]? { hasFolderCatalog && fullAccess && canCreateContent ? cachedFolders : nil }
+    private var folderCaseRevision: String?
+    public func folderCaseContext() async -> LocalVaultFolderCaseContext? {
+        guard accountId != nil, fullAccess, canCreateContent, hasFolderCatalog, let folderCaseRevision else { return nil }
+        return .init(manifestRevision: folderCaseRevision, folders: cachedFolders)
+    }
+    public func moveFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt {
+        guard await folderCaseContext() != nil else { throw LocalVaultSyncFailure.invalidResponse }
+        var request = request(endpoint.deletingLastPathComponent().appendingPathComponent("folder-case-moves"))
+        request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(command)
+        let (data, _) = try await send(request)
+        guard let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(fields.keys) == Set(["operationId", "status", "source", "destination", "folders", "items", "manifestRevision"]),
+              let items = fields["items"] as? [[String: Any]], items.allSatisfy({ Set($0.keys) == Set(["itemId", "relativePath", "revision"]) }) else { throw LocalVaultSyncFailure.invalidResponse }
+        return try JSONDecoder().decode(LocalVaultFolderCaseReceipt.self, from: data)
+    }
     private var cachedManifest: [LocalVaultRemoteItem] = []
 
     public init(origin: URL, workspaceId: String, token: String, session: URLSession = .shared, accountId: String? = nil) throws {
@@ -162,6 +200,8 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
             let fullAccess: Bool?
             let canCreateContent: Bool?
             let writableFolders: [String]?
+            let manifestRevision: String?
+            let syncCapabilities: [String]?
         }
         var url = endpoint
         if wait {
@@ -183,7 +223,10 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         fullAccess = decoded.fullAccess == true
         canCreateContent = decoded.canCreateContent == true
         writableFolders = (decoded.writableFolders ?? []).filter { !$0.isEmpty && !$0.hasPrefix("/") && !$0.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) && !$0.contains("\\") }
-        let changed = hasFolderCatalog != (decoded.folders != nil && decoded.fullAccess == true && decoded.canCreateContent == true) || manifest != cachedManifest || folders != cachedFolders || previousCapabilities.0 != fullAccess || previousCapabilities.1 != canCreateContent || previousCapabilities.2 != writableFolders
+        let nextCaseRevision = decoded.syncCapabilities?.contains("folder-case-moves-v1") == true && decoded.manifestRevision?.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil ? decoded.manifestRevision : nil
+        let caseChanged = nextCaseRevision != folderCaseRevision
+        folderCaseRevision = nextCaseRevision
+        let changed = caseChanged || hasFolderCatalog != (decoded.folders != nil && decoded.fullAccess == true && decoded.canCreateContent == true) || manifest != cachedManifest || folders != cachedFolders || previousCapabilities.0 != fullAccess || previousCapabilities.1 != canCreateContent || previousCapabilities.2 != writableFolders
         cachedFolders = folders
         hasFolderCatalog = decoded.folders != nil && decoded.fullAccess == true && decoded.canCreateContent == true
         cachedManifest = manifest
