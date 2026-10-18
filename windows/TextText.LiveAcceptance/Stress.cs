@@ -164,6 +164,7 @@ static class Stress
         object? historyProgress;
         object? fieldProgress;
         bool opened;
+        string? soakRunId;
         readonly string sessionId = "editor-" + Guid.NewGuid().ToString("N");
         readonly string expectedTitle = JsonSerializer.Serialize(config.Title);
         readonly string expectedItem = JsonSerializer.Serialize(config.ItemId);
@@ -236,6 +237,7 @@ static class Stress
 
         async Task<object> Handle(string type, int round, JsonElement request, CancellationToken ct)
         {
+            if (request.TryGetProperty("soakSample", out _) && type != "observe") throw new InvalidDataException("Soak sample only supports readonly observe.");
             if (type != "hello") RequireActorScope();
             switch (type)
             {
@@ -249,12 +251,13 @@ static class Stress
                         || !fixture.TryGetProperty("itemId", out var i) || i.GetString() != config.ItemId
                         || !fixture.TryGetProperty("workspaceId", out var w) || w.GetString() != config.WorkspaceId)
                         throw new Exception("Coordinator fixture does not match the configured test item and workspace.");
+                    soakRunId = request.TryGetProperty("runId", out var run) ? run.GetString() : null;
                     await Open(ct);
                     if (request.TryGetProperty("identitySchema", out var schema) && schema.GetInt32() == 1)
                         return new { type = "attest", round = 0, mode = "real", workspaceId = config.WorkspaceId, itemId = config.ItemId,
-                            machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId, identity = ObservedIdentity() };
+                            finiteSoakCorrelation = 1, machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId, identity = ObservedIdentity() };
                     return new { type = "attest", round = 0, mode = "real", workspaceId = config.WorkspaceId, itemId = config.ItemId,
-                        machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId };
+                        finiteSoakCorrelation = 1, machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId };
                 }
                 case "prepare":
                     await RequireSelected(ct);
@@ -349,6 +352,7 @@ static class Stress
                 }
                 case "observe":
                 {
+                    JsonElement? soakSample = request.TryGetProperty("soakSample",out var sample) ? SoakSample.Validate(sample,soakRunId) : null;
                     await RequireSelected(ct);
                     var expected = request.TryGetProperty("expectedEditIds", out var ids) && ids.ValueKind == JsonValueKind.Array
                         ? ids.EnumerateArray().Select(e => e.GetString() ?? "").OrderBy(e => e, StringComparer.Ordinal).ToArray() : [];
@@ -376,7 +380,7 @@ static class Stress
                         leafMoveReviewVisible=window.OwnedWindows.Count>0||await view.ExecuteScriptAsync("!!document.querySelector('dialog[open]')")=="true";
                         RequireActorScope();await RequireSelected(ct);
                     }
-                    return new { type = "state", round, text, editIds, documentSnapshot, folderCaseProof, folderCasePending, folderCaseReviewVisible, leafMoveProof,leafMovePending,leafMoveReviewVisible, editor = new { sessionId, reloads } };
+                    return new { type = "state", round, text, editIds, documentSnapshot, soakSample, folderCaseProof, folderCasePending, folderCaseReviewVisible, leafMoveProof,leafMovePending,leafMoveReviewVisible, editor = new { sessionId, reloads } };
                 }
                 case "close-probe":
                 {

@@ -1,3 +1,4 @@
+import {readSoakObservation,assertSoakObserveOnly} from './soak-correlation.mjs';
 import {createLostAckFault,validateLostAckScenario,readLostAckJournal} from './lost-ack.mjs';
 import {inspectLeafPack} from './leaf-move.mjs';
 import {unzipSync} from 'fflate';
@@ -98,6 +99,12 @@ export function validateEdit(edit) {
 
 export function validateExpectedIds(ids) {
   return Array.isArray(ids) && ids.length <= MAX_EXPECTED_IDS && ids.every((id) => typeof id === 'string' && id.length <= 64);
+}
+
+// The same readonly boundary is exercised by unit tests without launching a browser.
+export async function observeBrowserState(message, runId, read) {
+  if (!validateExpectedIds(message.expectedEditIds)) throw new StageError('observe', 'expectedEditIds invalid');
+  return readSoakObservation(message.soakSample, runId, read);
 }
 
 // Edit IDs derived from the markers actually present in the text, unique, first-seen order.
@@ -281,7 +288,7 @@ async function main() {
           deploymentId: build.buildId, driverSourceCommit: source.sourceCommit, sourceReceiptSha256: source.sourceReceiptSha256,
           artifacts: { ...source.artifacts, ...await observeAssets() } };
       }
-      return { type: 'attest', round: 0, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: !isRestart && profile.created, generation, ...(identity ? { identity } : {}) };
+      return { type: 'attest', round: 0, finiteSoakCorrelation: 1, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: !isRestart && profile.created, generation, ...(identity ? { identity } : {}) };
   }
   const handlers = {
     async hello(m) {
@@ -440,40 +447,42 @@ async function main() {
       inputProgress = undefined; historyProgress = undefined; fieldProgress = undefined;
     },
     async observe(m) {
-      if (!validateExpectedIds(m.expectedEditIds)) throw new StageError('observe', 'expectedEditIds invalid');
-      await assertOnItem();
-      const samples = [];
-      const deadline = Date.now() + OBSERVE_MS;
-      // Real body samples only; the state sent is the last actual sample even when not settled,
-      // so the coordinator judges convergence from evidence rather than from this adapter's claim.
-      for (;;) {
-        samples.push(await bodyText());
-        if (isSettled(samples, m.expectedEditIds) || Date.now() > deadline) break;
-        await page.waitForTimeout(SAMPLE_MS);
-      }
-      if (await page.evaluate(continuityRemoved)) throw new StageError('continuity', 'original editor node was removed');
-      const text = samples[samples.length - 1];
-      let leafMoveProof,leafMovePending=false,leafMoveReviewVisible=false;
-      if(m.leafMove){
-        const request=leafRequest(m.leafMove);if(!config.leafMove||canonicalJSON(config.leafMove)!==canonicalJSON(request.scenario))throw new StageError('leaf-move','Scenario differs from actor configuration');const base=`${ORIGIN}/api/vault/${encodeURIComponent(config.workspaceId)}/items`;
-        const response=await context.request.get(base+'?leafMove='+request.operationId,{headers:{'Cache-Control':'no-cache'},timeout:10000});
-        if(!response.ok())throw new StageError('leaf-move','Authenticated manifest unavailable');
-        const pack=await context.request.get(base+'/'+encodeURIComponent(config.itemId),{headers:{'Cache-Control':'no-cache'},timeout:10000});
-        if(!pack.ok()||Number(pack.headers()['content-length']??0)>64*1024*1024)throw new StageError('leaf-move','Authenticated pack unavailable');
-        const observed=observeManifestLeaf(config,request,await response.json(),await pack.body());leafMoveProof=observed.proof;leafMovePending=observed.pending;
-        if(decodeURIComponent(pack.headers()['x-texttext-path']??'')!==leafMoveProof.relativePath||pack.headers().etag!==`"${leafMoveProof.archiveSha256}"`)throw new StageError('leaf-move','Pack path/revision changed during manifest read');
-        await assertOnItem();if(leafMoveProof.documentSha256!==sha256(canonicalJSON(await inspectDocument())))leafMovePending=true;
-        leafMoveReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
-      }
-      let folderCaseProof,folderCasePending=false,folderCaseReviewVisible=false;
-      if(m.folderCase){
-        const request=folderRequest(m.folderCase);
-        const response=await context.request.get(`${ORIGIN}/api/vault/${config.workspaceId}/items?folderCase=${request.operationId}`,{headers:{'Cache-Control':'no-cache'},timeout:10000});
-        if(!response.ok())throw new StageError('folder-case','Authenticated folder manifest unavailable');
-        const observed=observeManifestFolder(config,request,await response.json());folderCaseProof=observed.proof;folderCasePending=observed.pending;
-        await assertOnItem();folderCaseReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
-      }
-      out({ type: 'state' , round: m.round, text, ...(folderCaseProof?{folderCaseProof,folderCasePending,folderCaseReviewVisible}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending,leafMoveReviewVisible}:{}), editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
+      const observed = await observeBrowserState(m, helloRequest?.runId, async () => {
+        await assertOnItem();
+        const samples = [];
+        const deadline = Date.now() + OBSERVE_MS;
+        // Real body samples only; the state sent is the last actual sample even when not settled,
+        // so the coordinator judges convergence from evidence rather than from this adapter's claim.
+        for (;;) {
+          samples.push(await bodyText());
+          if (isSettled(samples, m.expectedEditIds) || Date.now() > deadline) break;
+          await page.waitForTimeout(SAMPLE_MS);
+        }
+        if (await page.evaluate(continuityRemoved)) throw new StageError('continuity', 'original editor node was removed');
+        const text = samples[samples.length - 1];
+        let leafMoveProof,leafMovePending=false,leafMoveReviewVisible=false;
+        if(m.leafMove){
+          const request=leafRequest(m.leafMove);if(!config.leafMove||canonicalJSON(config.leafMove)!==canonicalJSON(request.scenario))throw new StageError('leaf-move','Scenario differs from actor configuration');const base=`${ORIGIN}/api/vault/${encodeURIComponent(config.workspaceId)}/items`;
+          const response=await context.request.get(base+'?leafMove='+request.operationId,{headers:{'Cache-Control':'no-cache'},timeout:10000});
+          if(!response.ok())throw new StageError('leaf-move','Authenticated manifest unavailable');
+          const pack=await context.request.get(base+'/'+encodeURIComponent(config.itemId),{headers:{'Cache-Control':'no-cache'},timeout:10000});
+          if(!pack.ok()||Number(pack.headers()['content-length']??0)>64*1024*1024)throw new StageError('leaf-move','Authenticated pack unavailable');
+          const observed=observeManifestLeaf(config,request,await response.json(),await pack.body());leafMoveProof=observed.proof;leafMovePending=observed.pending;
+          if(decodeURIComponent(pack.headers()['x-texttext-path']??'')!==leafMoveProof.relativePath||pack.headers().etag!==`"${leafMoveProof.archiveSha256}"`)throw new StageError('leaf-move','Pack path/revision changed during manifest read');
+          await assertOnItem();if(leafMoveProof.documentSha256!==sha256(canonicalJSON(await inspectDocument())))leafMovePending=true;
+          leafMoveReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
+        }
+        let folderCaseProof,folderCasePending=false,folderCaseReviewVisible=false;
+        if(m.folderCase){
+          const request=folderRequest(m.folderCase);
+          const response=await context.request.get(`${ORIGIN}/api/vault/${config.workspaceId}/items?folderCase=${request.operationId}`,{headers:{'Cache-Control':'no-cache'},timeout:10000});
+          if(!response.ok())throw new StageError('folder-case','Authenticated folder manifest unavailable');
+          const observed=observeManifestFolder(config,request,await response.json());folderCaseProof=observed.proof;folderCasePending=observed.pending;
+          await assertOnItem();folderCaseReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
+        }
+        return { type: 'state' , round: m.round, text, ...(folderCaseProof?{folderCaseProof,folderCasePending,folderCaseReviewVisible}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending,leafMoveReviewVisible}:{}), editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length };
+      });
+      out(observed);
     },
     async shutdown() {
       if (retainedFailure) return;
@@ -490,6 +499,7 @@ async function main() {
     let m;
     try { m = JSON.parse(line); } catch { return fail(0, 'input', 'request is not JSON'); }
     if (!m || typeof m.type !== 'string' || !(m.type in handlers)) return fail(0, 'input', 'unknown request type');
+    try { assertSoakObserveOnly(m); } catch { return fail(0,'input','soakSample is valid only on observe'); }
     const round = m.type === 'hello' || m.type === 'shutdown' ? 0 : m.round;
     if (!validateRound(round)) return fail(0, 'input', 'round invalid');
     if (m.type !== 'hello' && m.type !== 'shutdown' && !started) return fail(round, m.type, 'hello required first');

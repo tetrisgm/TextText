@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { planRounds } from './coordinator.mjs';
 import {
-  roleForPlatform, validateConfig, validateHello, validateEdit, validateExpectedIds, validateRound,
+  observeBrowserState, roleForPlatform, validateConfig, validateHello, validateEdit, validateExpectedIds, validateRound,
   markerEditIds, allExpectedPresent, isSettled, safeMessage, TITLE_PREFIX,
 } from './browser-adapter.mjs';
 
@@ -104,4 +104,60 @@ test('browser leaf observation config preserves exact declared scenario without 
 test('lost ACK browser config pins exactly one browser role and bounded round',()=>{
  const lostAck={role:'pc-web',round:1};assert.deepEqual(validateConfig({...config,lostAck}).lostAck,lostAck);
  for(const bad of [{...lostAck,round:2},{...lostAck,role:'pc-cli'},{...lostAck,extra:true}])assert.throws(()=>validateConfig({...config,lostAck:bad}));
+});
+
+test('browser readonly observation correlates current sample after read without replacing document/assets/session', async () => {
+  const original = {
+    type: 'state',
+    round: 100,
+    text: 'actual body',
+    editIds: [],
+    assetHashes: {
+      'assets/a.png': 'a'.repeat(64)
+    },
+    documentSnapshot: {
+      schemaVersion: 1
+    },
+    editor: {
+      sessionId: 'current-editor',
+      reloads: 0
+    }
+  };
+  let reads = 0;
+  const sample = {
+    version: 1,
+    id: 'browser-owned:soak:120'
+  };
+  const observed = await observeBrowserState({
+    expectedEditIds: [],
+    soakSample: sample
+  }, 'browser-owned', async () => {
+    reads++;
+    return original;
+  });
+  assert.equal(reads, 1);
+  assert.deepEqual(observed, {
+    ...original,
+    soakSample: sample
+  });
+  assert.notEqual(observed.soakSample, sample);
+  const ordinary = await observeBrowserState({
+    expectedEditIds: []
+  }, 'browser-owned', async () => observed);
+  assert.deepEqual(ordinary, original);
+  for (const soakSample of [{
+    version: 1,
+    id: 'other:soak:0'
+  }, {
+    version: 1,
+    id: 'browser-owned:soak:121'
+  }, {
+    version: 1,
+    id: 'browser-owned:soak:00'
+  }, null]) await assert.rejects(observeBrowserState({
+    expectedEditIds: [],
+    soakSample
+  }, 'browser-owned', async () => {
+    throw Error('reader must not execute');
+  }), /soak sample/i);
 });

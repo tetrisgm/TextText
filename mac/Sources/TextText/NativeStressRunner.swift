@@ -248,6 +248,7 @@ final class NativeStressRunner {
     private var historyProgress: [String: Any]?
     private var inputProgress: [String: Any]?
     private var windowGeneration = 1
+    private var soakRunId: String?
     private var normalWindowClosed = false
     private var lastAcceptedOwnEdit: (id: String, text: String)?
     private var opened = false
@@ -384,6 +385,7 @@ final class NativeStressRunner {
 
     private func handle(type: String, round: Int, request: [String: Any]) async throws -> [String: Any] {
         _ = try requireActorAccount()
+        if request["soakSample"] != nil && type != "observe" { throw NativeStressActor.Failure("Soak sample only supports readonly observe.") }
         switch type {
         case "hello":
             guard request["role"] as? String == NativeStressActor.roleServed else { throw NativeStressActor.Failure("This native adapter only serves the \(NativeStressActor.roleServed) role.") }
@@ -392,6 +394,7 @@ final class NativeStressRunner {
             guard fixture["itemId"] as? String == config.itemId, fixture["workspaceId"] as? String == config.workspaceId else {
                 throw NativeStressActor.Failure("Coordinator fixture does not match the configured test item and workspace.")
             }
+            soakRunId = request["runId"] as? String
             try await open()
             return try attestation(includeIdentity: request["identitySchema"] as? Int == 1)
         case "prepare":
@@ -479,7 +482,7 @@ final class NativeStressRunner {
             var response = result
             response.merge(["type": "close-probe", "round": round, "lifecycle": "normal-window-close", "retained": true,
                 "ownEditId": own.id, "ownEditOccurrences": 1, "fileHash": saved.hash, "sessionId": sessionId,
-                "generation": try mailboxGeneration(), "windowGeneration": windowGeneration]) { _, new in new }
+                "generation": try mailboxGeneration(), "windowGeneration": windowGeneration, "finiteSoakCorrelation": 1]) { _, new in new }
             record(["kind": "normal-window-close", "ownEditId": own.id, "fileHash": saved.hash, "windowGeneration": windowGeneration])
             // Do not cache flushed=true: this retained editor will receive peer changes.
             return response
@@ -515,6 +518,7 @@ final class NativeStressRunner {
             record(["kind": "transport", "round": round, "online": online, "editorState": state])
             return ["type": "transport", "round": round, "online": online, "state": state]
         case "observe":
+            let soakSample = try request["soakSample"].map { try NativeStressSoakSample.validate($0, runId: soakRunId) }
             try await requireSelected()
             let raw = request["expectedEditIds"] as? [Any] ?? []
             guard raw.count <= 10_000 else { throw NativeStressActor.Failure("Expected edit id list is out of bounds.") }
@@ -550,6 +554,7 @@ final class NativeStressRunner {
                 let dialogVisible = try await evaluate("!!document.querySelector('dialog[open]')") == "true"
                 response["leafMoveReviewVisible"] = controller.window?.attachedSheet != nil || dialogVisible
             }
+            if let soakSample { response["soakSample"] = soakSample }
             return response
         default:
             throw NativeStressActor.Failure("Unsupported coordinator message type.")
@@ -568,7 +573,7 @@ final class NativeStressRunner {
         _ = try requireActorAccount()
         var result: [String: Any] = ["type": "attest", "round": 0, "mode": "real", "workspaceId": config.workspaceId,
             "itemId": config.itemId, "machineId": NativeStressActor.hostName(), "adapter": adapterName, "sessionId": sessionId,
-            "generation": try mailboxGeneration(), "windowGeneration": windowGeneration]
+            "generation": try mailboxGeneration(), "windowGeneration": windowGeneration, "finiteSoakCorrelation": 1]
         if includeIdentity { result["identity"] = try observedIdentity() }
         return result
     }

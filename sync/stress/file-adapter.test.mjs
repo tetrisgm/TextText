@@ -260,7 +260,7 @@ test('actor protocol: attests real on its platform, refuses foreign fixture, run
   r = await actor.handle({ type: 'hello', runId: 'run-x', role: 'pc-cli', mode: 'real', fixture: fixtureOk });
   assert.match(r.message, /assigned role/);
   r = await actor.handle({ type: 'hello', runId: 'run-x', role: 'mac-cli', mode: 'real', fixture: fixtureOk });
-  assert.deepEqual(r, { type: 'attest', round: 0, mode: 'real', workspaceId: WS, itemId: ITEM, machineId: hostname(), adapter: 'file-adapter' });
+  assert.deepEqual(r, { type: 'attest', round: 0, mode: 'real', workspaceId: WS, itemId: ITEM, machineId: hostname(), adapter: 'file-adapter', finiteSoakCorrelation:1 });
   const runDir = join(config.receiptDir, 'run-x');
   assert.ok(existsSync(join(runDir, 'journal.jsonl')));
   r = await actor.handle({ type: 'observe', round: 0, expectedEditIds: [] });
@@ -308,3 +308,146 @@ test('leaf-only reopen config permits declared destination while retaining immut
 });
 
 test('leaf mutation refuses unsealed actor without touching archive',async()=>{const {file,config}=fixture(),before=readFileSync(file),actor=createActor(config,{platform:'darwin'});await actor.handle({type:'hello',runId:'leaf-unsealed',role:'mac-cli',mode:'real',fixture:{workspaceId:WS,itemId:ITEM}});const result=await actor.handle({type:'leafMove',round:1,leafMove:{}});assert.equal(result.type,'error');assert.match(result.message,/sealed owner/);assert.ok(readFileSync(file).equals(before));});
+
+test('finite sample echoes only after actual file read and never changes content or leaks into ordinary observe', async () => {
+  const {
+      file,
+      config
+    } = fixture(),
+    actor = createActor(config, {
+      platform: 'darwin'
+    }),
+    bytes = readFileSync(file);
+  const hello = await actor.handle({
+    type: 'hello',
+    runId: 'sample-owned',
+    role: 'mac-cli',
+    mode: 'real',
+    fixture: {
+      workspaceId: WS,
+      itemId: ITEM
+    }
+  });
+  assert.equal(hello.finiteSoakCorrelation, 1);
+  const descriptor = {
+      version: 1,
+      id: 'sample-owned:soak:0'
+    },
+    request = {
+      type: 'observe',
+      round: 100,
+      expectedEditIds: [],
+      expectedAssetPaths: ['assets/photo.png'],
+      documentSnapshot: true,
+      soakSample: descriptor
+    };
+  const pending = actor.handle(request);
+  descriptor.id = 'sample-owned:soak:1';
+  const sampled = await pending;
+  assert.equal(sampled.type, 'state');
+  assert.deepEqual(sampled.soakSample, {
+    version: 1,
+    id: 'sample-owned:soak:0'
+  });
+  assert.equal(sampled.text, BASE_BODY);
+  assert.ok(sampled.documentSnapshot);
+  assert.equal(sampled.assetHashes['assets/photo.png'], createHash('sha256').update(PNG).digest('hex'));
+  assert.ok(readFileSync(file).equals(bytes));
+  const ordinary = await actor.handle({
+    type: 'observe',
+    round: 100,
+    expectedEditIds: [],
+    documentSnapshot: true
+  });
+  assert.equal(ordinary.type, 'state');
+  assert.equal(Object.hasOwn(ordinary, 'soakSample'), false);
+  assert.equal(ordinary.text, sampled.text);
+  assert.ok(readFileSync(file).equals(bytes));
+  for (const soakSample of [{
+    version: 1,
+    id: 'different:soak:0'
+  }, {
+    version: 1,
+    id: 'sample-owned:soak:121'
+  }, {
+    version: 1,
+    id: 'sample-owned:soak:01'
+  }, {
+    version: 2,
+    id: 'sample-owned:soak:0'
+  }, {
+    version: 1,
+    id: 'sample-owned:soak:0',
+    future: true
+  }]) {
+    const refused = await actor.handle({
+      type: 'observe',
+      round: 100,
+      expectedEditIds: [],
+      soakSample
+    });
+    assert.equal(refused.type, 'error');
+    assert.equal(Object.hasOwn(refused, 'soakSample'), false);
+    assert.ok(readFileSync(file).equals(bytes));
+  }
+});
+
+test('correlation field on write/prepare/hello refuses before command and preserves exact pack', async () => {
+  const {
+      file,
+      config
+    } = fixture(),
+    actor = createActor(config, {
+      platform: 'darwin'
+    }),
+    bytes = readFileSync(file),
+    sample = {
+      version: 1,
+      id: 'guard-owned:soak:0'
+    };
+  const before = await actor.handle({
+    type: 'hello',
+    runId: 'guard-owned',
+    role: 'mac-cli',
+    mode: 'real',
+    fixture: {
+      workspaceId: WS,
+      itemId: ITEM
+    },
+    soakSample: sample
+  });
+  assert.equal(before.type, 'error');
+  assert.equal(actor.state.runId, null);
+  await actor.handle({
+    type: 'hello',
+    runId: 'guard-owned',
+    role: 'mac-cli',
+    mode: 'real',
+    fixture: {
+      workspaceId: WS,
+      itemId: ITEM
+    }
+  });
+  for (const command of [{
+    type: 'prepare',
+    round: 1
+  }, {
+    type: 'edit',
+    round: 1,
+    edit: {
+      id: 'r1-mac-cli',
+      op: 'append',
+      text: '[mac-cli r1 alpha1]'
+    }
+  }, {
+    type: 'shutdown'
+  }]) {
+    const result = await actor.handle({
+      ...command,
+      soakSample: sample
+    });
+    assert.equal(result.type, 'error');
+    assert.match(result.message, /only on observe/);
+    assert.ok(readFileSync(file).equals(bytes));
+  }
+});

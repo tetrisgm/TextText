@@ -1,3 +1,4 @@
+import {validateSoakSample,assertSoakObserveOnly} from './soak-correlation.mjs';
 import {sha256,canonicalJSON} from './identity-observation.mjs';
 // Simulated adapter for tests and dry runs. Always attests mode "simulated"; it never claims real acceptance.
 // Six processes share one directory of edit files as a stand-in for the sync server.
@@ -12,6 +13,7 @@ let shared = sharedRoot; // scoped per run on hello so repeated runs start empty
 const fault = process.env.STRESS_FAKE_FAULT ?? '';
 const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 let role = 'unknown';
+let runId;
 let fixtureItemId,fixtureWorkspaceId;
 const folderProof=(request,phase=request.phase)=>{const s=request.scenario,name=phase==='before'?s.source:s.destination;return {version:1,kind:role.endsWith('-web')?'manifest':'filesystem',operationId:request.operationId,phase,source:s.source,destination:s.destination,itemId:fixtureItemId,relativePath:name+'/Six-client acceptance simulated fixture.textpack',folderIdentity:role.endsWith('-web')?null:'1:123',archiveSha256:'a'.repeat(64),folders:[name,...s.emptyDescendants.map(p=>name+'/'+p)].sort()};};
 const leafProof=(request,phase=request.phase)=>{const s=request.scenario,path=phase==='before'?s.source:s.destination;return {version:1,kind:role.endsWith('-web')?'manifest':'filesystem',operationId:request.operationId,phase,workspaceId:fixtureWorkspaceId,itemId:fixtureItemId,source:s.source,destination:s.destination,relativePath:path,sourcePresent:phase==='before',destinationPresent:phase==='after',fileIdentity:role.endsWith('-web')?null:'1:123',archiveSha256:'a'.repeat(64),documentSha256:sha256(canonicalJSON(document().documentSnapshot)),assetHashes:{'assets/data.bin':'a'.repeat(64)},selectedItemId:fixtureItemId,selectedPath:role.endsWith('-app')?path:null};};
@@ -39,12 +41,13 @@ const document = () => {
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
+  try { assertSoakObserveOnly(m); } catch { return out({type:'error',round:m.round??0,message:'soakSample is valid only on observe'}); }
   switch (m.type) {
     case 'hello': {
-      role = m.role; fixtureItemId=m.fixture.itemId;fixtureWorkspaceId=m.fixture.workspaceId;
+      role = m.role; runId=m.runId; fixtureItemId=m.fixture.itemId;fixtureWorkspaceId=m.fixture.workspaceId;
       shared = join(sharedRoot, m.runId); mkdirSync(shared, { recursive: true });
       const fixture = fault === 'wrong-fixture' ? { workspaceId: 'other-workspace', itemId: m.fixture.itemId } : m.fixture;
-      out({ type: 'attest', round: 0, mode: fault === 'claim-real' ? 'real' : 'simulated', adapter: 'fake-adapter', ...fixture,
+      out({ type: 'attest', round: 0, finiteSoakCorrelation: 1, mode: fault === 'claim-real' ? 'real' : 'simulated', adapter: 'fake-adapter', ...fixture,
         machineId: process.env.STRESS_FAKE_MACHINE ?? `fake-${role.split('-')[0]}` });
       return;
     }
@@ -141,10 +144,15 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       return out({type:'folder-moved',round:m.round,operationId:m.folderCase.operationId,before,after,retainedEvidence:true});
     }
     case 'observe': {
+      let soakSample;
+      try { soakSample=validateSoakSample(m.soakSample,runId); }
+      catch { return out({type:'error',round:m.round,message:'Invalid finite soak sample descriptor'}); }
+      const sampleRunId=runId;
       observations++;
       if ((fault === 'reload' && m.round > 1) || (fault === 'sample-reload' && observations === 3)) reloads += 1;
       // Make the shared directory's content "arrive" in two steps so concurrent writers are observed after a short settle.
       setTimeout(() => {
+        if(soakSample&&sampleRunId!==runId)return out({type:'error',round:m.round,message:'Finite soak sample run changed'});
         const state = document();
         if(fault==='malformed-peer-loss' && observations===2) state.documentSnapshot.content.fields.fixture='lost';
         if(fault==='malformed-peer-reload' && observations===2) reloads++;
@@ -166,7 +174,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
           state.folderCaseProof=folderProof(m.folderCase,pending?'before':m.folderCase.phase);state.folderCasePending=pending;state.folderCaseReviewVisible=fault==='folder-dialog';
           if(m.folderCase.phase==='after'&&!pending){if(fault==='folder-bytes')state.folderCaseProof.archiveSha256='b'.repeat(64);if(fault==='folder-identity')state.folderCaseProof.folderIdentity='1:124';if(fault==='folder-empty')state.folderCaseProof.folders.pop();}
         }
-        out({ type: 'state', round: m.round, ...state, editor: role.endsWith('-cli') ? undefined : { sessionId, reloads } });
+        out({ type: 'state', round: m.round, ...state, ...(soakSample?{soakSample}:{}), editor: role.endsWith('-cli') ? undefined : { sessionId, reloads } });
       }, 20);
       return;
     }

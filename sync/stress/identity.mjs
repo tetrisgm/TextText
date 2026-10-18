@@ -75,12 +75,15 @@ export function verifyReopenIdentity(receipt, config) {
       JSON.stringify(receipt.scenario?.folderCaseMove ?? null) !== JSON.stringify(config.folderCaseMove ?? null) ||
       JSON.stringify(receipt.scenario?.leafMove ?? null) !== JSON.stringify(config.leafMove ?? null) ||
       JSON.stringify(receipt.scenario?.lostAck ?? null) !== JSON.stringify(config.lostAck ?? null)) throw new Error('reopen full document field pins differ from prior receipt');
+  if (JSON.stringify(receipt.scenario?.soak ?? null) !== JSON.stringify(config.soak ?? null)) throw Error('reopen soak descriptor differs');
+  if (config.soak && (receipt.soakEvidence?.status !== 'dwell-complete' || receipt.soakEvidence?.samples !== 121 || receipt.soakEvidence?.durationMs !== 3600000 || receipt.soakEvidence?.acceptance !== 'partial-not-full-T24')) throw Error('reopen requires completed partial dwell evidence');
   if (JSON.stringify(receipt.scenario?.mixedSchedule ?? null) !== JSON.stringify(config.mixedSchedule ?? null)) throw new Error('reopen mixed schedule descriptors differ');
   if (config.mixedSchedule &&
       (receipt.mixedScheduleEvidence?.seed !== config.seed ||
       !HASH.test(receipt.mixedScheduleEvidence?.sha256 ?? ''))) throw new Error('reopen mixed schedule seed or plan hash missing');
   if (JSON.stringify(digestMap(receipt.expectedAssetHashes ?? {}, { empty: true })) !== JSON.stringify(digestMap(config.expectedAssetHashes ?? {}, { empty: true }))) throw new Error('reopen asset pins differ from prior receipt');
   for (const [role, pin] of Object.entries(config.expectedIdentities)) {
+    if (config.soak && receipt.attestations?.[role]?.finiteSoakCorrelation !== 1) throw Error('reopen soak correlation capability missing');
     const previous = normalizeIdentity(receipt.attestations?.[role]?.identity, role, { expected: true });
     if (!same(previous, normalizeIdentity(pin, role, { expected: true }))) throw new Error(`reopen identity pin changed for ${role}`);
   }

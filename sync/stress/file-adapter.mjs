@@ -1,3 +1,4 @@
+import {readSoakObservation,assertSoakObserveOnly} from './soak-correlation.mjs';
 import {validateLeafMove,leafRequest,qualifyLeafConfig,inspectOwnedLeaf,observeOwnedLeaf,moveOwnedLeaf,compareLeafProof} from './leaf-move.mjs';
 import {folderRequest,inspectOwnedFolder,observeOwnedFolder,moveOwnedFolder,compareFolderProof} from './folder-case.mjs';
 import { installMalformed, observeMalformed, repairMalformed } from './malformed-repair.mjs';
@@ -348,7 +349,7 @@ export function createActor(config, { platform = process.platform, machineId = h
           documentSha256: sha256(canonicalJSON(JSON.parse(strFromU8(entryOf(pack, 'document.json').data)))),
           assetHashes: assetHashesOf(pack, paths) };
       }
-      return { type: 'attest', round: 0, mode: 'real', workspaceId: config.workspaceId, itemId: config.itemId, machineId, adapter: 'file-adapter',
+      return { type: 'attest', round: 0, finiteSoakCorrelation: 1, mode: 'real', workspaceId: config.workspaceId, itemId: config.itemId, machineId, adapter: 'file-adapter',
         ...(identity ? { identity, initialPack } : {}) };
     },
     async prepare(m) {
@@ -416,31 +417,33 @@ export function createActor(config, { platform = process.platform, machineId = h
       const receipt=moveOwnedLeaf(config,request,{guard:requireRun,runDir:state.runDir});config.file=resolve(config.workspaceRoot,receipt.after.relativePath);requireRun();journal({event:'leaf-moved',round:m.round,...receipt});return{type:'leaf-moved',round:m.round,...receipt};
     },
     async observe(m) {
-      let leafMoveProof,leafMovePending=false;
-      if(m.leafMove){
-        if(!state.runId)throw new ActorError('protocol','hello must come first');const request=leafRequest(m.leafMove);
-        if(!config.leafMove||canonicalJSON(config.leafMove)!==canonicalJSON(request.scenario))throw new ActorError('leaf-move','Scenario differs from sealed actor configuration');
-        const observed=observeOwnedLeaf(config,request);leafMoveProof=observed.proof;leafMovePending=observed.pending;
-        if(request.phase==='before'){requireRun();state.leafBaseline=leafMoveProof;}
-        else if(!leafMovePending){if(state.leafBaseline){if(state.leafBaseline.operationId!==request.operationId)throw new ActorError('leaf-move','Operation changed');if(!state.leafRetargeted)compareLeafProof(state.leafBaseline,leafMoveProof);}else if(resolve(config.file)!==resolve(config.workspaceRoot,leafMoveProof.relativePath))throw new ActorError('leaf-move','Reopen requires final configured leaf');config.file=resolve(config.workspaceRoot,leafMoveProof.relativePath);state.leafRetargeted=true;}
-      }
-      let folderCaseProof,folderCasePending=false;
-      if(m.folderCase){
-        if(!state.runId)throw new ActorError('protocol','hello must come first');
-        const request=folderRequest(m.folderCase),observed=observeOwnedFolder(config,request);folderCaseProof=observed.proof;folderCasePending=observed.pending;
-        if(request.phase==='before'){requireRun();state.folderBaseline=folderCaseProof;}
-        else if(!folderCasePending) {
-          if(state.folderBaseline){if(state.folderBaseline.operationId!==request.operationId)throw new ActorError('folder-case','Folder operation changed');compareFolderProof(state.folderBaseline,folderCaseProof);}
-          else if(resolve(config.file)!==resolve(config.workspaceRoot,folderCaseProof.relativePath))throw new ActorError('folder-case','Reopen must explicitly configure the final path');
-          config.file=resolve(config.workspaceRoot,folderCaseProof.relativePath);
+      return readSoakObservation(m.soakSample, state.runId, async () => {
+        let leafMoveProof,leafMovePending=false;
+        if(m.leafMove){
+          if(!state.runId)throw new ActorError('protocol','hello must come first');const request=leafRequest(m.leafMove);
+          if(!config.leafMove||canonicalJSON(config.leafMove)!==canonicalJSON(request.scenario))throw new ActorError('leaf-move','Scenario differs from sealed actor configuration');
+          const observed=observeOwnedLeaf(config,request);leafMoveProof=observed.proof;leafMovePending=observed.pending;
+          if(request.phase==='before'){requireRun();state.leafBaseline=leafMoveProof;}
+          else if(!leafMovePending){if(state.leafBaseline){if(state.leafBaseline.operationId!==request.operationId)throw new ActorError('leaf-move','Operation changed');if(!state.leafRetargeted)compareLeafProof(state.leafBaseline,leafMoveProof);}else if(resolve(config.file)!==resolve(config.workspaceRoot,leafMoveProof.relativePath))throw new ActorError('leaf-move','Reopen requires final configured leaf');config.file=resolve(config.workspaceRoot,leafMoveProof.relativePath);state.leafRetargeted=true;}
         }
-      }
-      requireRun();
-      const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [], expectedAssetPaths: m.expectedAssetPaths ?? [], includeDocument: m.documentSnapshot === true });
-      requireRun();
-      journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, assetHashes: o.assetHashes, stable: o.stable, timedOut: o.timedOut });
-      const documentSnapshot = o.documentSnapshot;
-      return { type: 'state', round: m.round, ...(folderCaseProof ? {folderCaseProof,folderCasePending}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending}:{}), ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
+        let folderCaseProof,folderCasePending=false;
+        if(m.folderCase){
+          if(!state.runId)throw new ActorError('protocol','hello must come first');
+          const request=folderRequest(m.folderCase),observed=observeOwnedFolder(config,request);folderCaseProof=observed.proof;folderCasePending=observed.pending;
+          if(request.phase==='before'){requireRun();state.folderBaseline=folderCaseProof;}
+          else if(!folderCasePending) {
+            if(state.folderBaseline){if(state.folderBaseline.operationId!==request.operationId)throw new ActorError('folder-case','Folder operation changed');compareFolderProof(state.folderBaseline,folderCaseProof);}
+            else if(resolve(config.file)!==resolve(config.workspaceRoot,folderCaseProof.relativePath))throw new ActorError('folder-case','Reopen must explicitly configure the final path');
+            config.file=resolve(config.workspaceRoot,folderCaseProof.relativePath);
+          }
+        }
+        requireRun();
+        const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [], expectedAssetPaths: m.expectedAssetPaths ?? [], includeDocument: m.documentSnapshot === true });
+        requireRun();
+        journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, assetHashes: o.assetHashes, stable: o.stable, timedOut: o.timedOut });
+        const documentSnapshot = o.documentSnapshot;
+        return { type: 'state', round: m.round, ...(folderCaseProof ? {folderCaseProof,folderCasePending}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending}:{}), ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
+      });
     },
     async shutdown() { journal({ event: 'shutdown' }); return null; },
   };
@@ -451,6 +454,7 @@ export function createActor(config, { platform = process.platform, machineId = h
       const round = Number.isInteger(m?.round) ? m.round : 0;
       try {
         if (!m || typeof m.type !== 'string' || !handlers[m.type]) throw new ActorError('protocol', `unknown message type`);
+        assertSoakObserveOnly(m);
         return await handlers[m.type](m);
       } catch (error) {
         const message = `${error?.code ?? 'error'}: ${sanitizeError(error, config)}`;

@@ -45,7 +45,7 @@ test('reopen binds prior passing physical fixture/hash/assets and all identity p
   const expectedIdentities=Object.fromEntries(roles.map(role=>[role,pin(role)]));
   const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,expectedIdentities};
   const receipt={mode:'real',status:'passed',acceptance:'six-client-append-only',roundsCompleted:1,fixture:config.fixture,finalHash:H,
-    attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+    attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
   assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));
   for(const changes of [{mode:'simulated'},{acceptance:'none'},{roundsCompleted:0},{finalHash:'c'.repeat(64)},{fixture:{workspaceId:'other',itemId:'item'}},{expectedAssetHashes:{'assets/new':H}}])
     assert.throws(()=>verifyReopenIdentity({...receipt,...changes},config));
@@ -105,7 +105,7 @@ test('fresh restart attestation rechecks every pinned identity and binds the nex
 test('multi-field independent reopen binds full document hash and scenario in addition to body and artifact pins',()=>{
  const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'];
  const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,multiField:true,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
- const receipt={mode:'real',status:'passed',acceptance:'six-client-multi-field',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{multiField:true},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-multi-field',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{multiField:true},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));
  for(const changed of [{...receipt,finalDocumentHash:'e'.repeat(64)},{...receipt,scenario:{}},{...receipt,finalDocumentHash:undefined}])assert.throws(()=>verifyReopenIdentity(changed,config),/field pins/);
  assert.throws(()=>verifyReopenIdentity(receipt,{...config,multiField:false}),/field pins/);
@@ -114,18 +114,18 @@ test('multi-field independent reopen binds full document hash and scenario in ad
 test('ordinary file independent reopen binds full document and exact writer mode receipt',()=>{
  const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'];const fileWrites={role:'mac-cli',mode:'in-place',writes:3,intervalMs:10};
  const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,fileWrites,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
- const receipt={mode:'real',status:'passed',acceptance:'six-client-file-writes',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{fileWrites},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-file-writes',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{fileWrites},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const changed of [{...config,expectedDocumentHash:'e'.repeat(64)},{...config,fileWrites:{...fileWrites,mode:'atomic'}},{...config,fileWrites:undefined}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);
 });
 
 test('malformed independent reopen binds full document and exact fault role/kind/hold receipt',()=>{
  const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'];const malformedRepair={role:'mac-cli',kind:'truncated-zip',holdMs:100};
  const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,malformedRepair,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
- const receipt={mode:'real',status:'passed',acceptance:'six-client-malformed-repair',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{malformedRepair},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-malformed-repair',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{malformedRepair},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const changed of [{...config,expectedDocumentHash:'e'.repeat(64)},{...config,malformedRepair:{...malformedRepair,kind:'invalid-document-json'}},{...config,malformedRepair:undefined}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);
 });
 
-test('close traffic independent reopen binds exact role, browser peer, chunks, timing and full document',()=>{const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'],closeDuringTraffic={role:'pc-app',trafficRole:'mac-web',chunks:4,intervalMs:100};const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,closeDuringTraffic,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};const receipt={mode:'real',status:'passed',acceptance:'six-client-close-during-traffic',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{closeDuringTraffic},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const changed of[{...config,closeDuringTraffic:{...closeDuringTraffic,role:'mac-app'}},{...config,closeDuringTraffic:{...closeDuringTraffic,trafficRole:'pc-web'}},{...config,closeDuringTraffic:{...closeDuringTraffic,chunks:5}},{...config,closeDuringTraffic:{...closeDuringTraffic,intervalMs:250}},{...config,closeDuringTraffic:undefined},{...config,expectedDocumentHash:'e'.repeat(64)}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);});
+test('close traffic independent reopen binds exact role, browser peer, chunks, timing and full document',()=>{const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'],closeDuringTraffic={role:'pc-app',trafficRole:'mac-web',chunks:4,intervalMs:100};const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,closeDuringTraffic,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};const receipt={mode:'real',status:'passed',acceptance:'six-client-close-during-traffic',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{closeDuringTraffic},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const changed of[{...config,closeDuringTraffic:{...closeDuringTraffic,role:'mac-app'}},{...config,closeDuringTraffic:{...closeDuringTraffic,trafficRole:'pc-web'}},{...config,closeDuringTraffic:{...closeDuringTraffic,chunks:5}},{...config,closeDuringTraffic:{...closeDuringTraffic,intervalMs:250}},{...config,closeDuringTraffic:undefined},{...config,expectedDocumentHash:'e'.repeat(64)}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);});
 
 test('retained Mac window attestation binds same generation/session and fresh actual identity pins',()=>{const fixture={workspaceId:'workspace',itemId:'item'},value={type:'attest',round:0,mode:'real',adapter:'native',machineId:'mac',...fixture,generation:1,windowGeneration:2,sessionId:'original-session',identity:identity('mac-app')},expected={fixture,machineId:'mac',sessionId:'original-session',generation:1};assert.doesNotThrow(()=>checkRetainedWindowAttestation(value,pin('mac-app'),expected));for(const patch of [{generation:2},{sessionId:'new-session'},{windowGeneration:1},{mode:'simulated'},{itemId:'other'},{machineId:'pc'},{identity:{...value.identity,sourceCommit:'c'.repeat(40)}}])assert.throws(()=>checkRetainedWindowAttestation({...value,...patch},pin('mac-app'),expected));});
 test('Mac normal window proof requires actual close/own intent and scoped typed shared durability',()=>{const fixture={workspaceId:'workspace',itemId:'item'},expected={fixture,ownEditId:'r1-mac-app',sessionId:'session',generation:1},value={closed:true,flushed:true,keepEditingDialog:false,lifecycle:'normal-window-close',windowCloseObserved:true,retained:true,ownEditId:'r1-mac-app',ownEditOccurrences:1,fileHash:H,sessionId:'session',generation:1,windowGeneration:1,durability:{outcome:'durable',...fixture,lifecycle:'lifetime',generation:3}};assert.ok(checkMacWindowCloseProof(value,expected));for(const patch of[{windowCloseObserved:false},{ownEditId:'r1-pc-app'},{ownEditOccurrences:0},{generation:2},{sessionId:'other'},{durability:{outcome:'durable'}},{durability:{...value.durability,itemId:'other'}},{durability:{...value.durability,outcome:'local-file-durable'}}])assert.equal(checkMacWindowCloseProof({...value,...patch},expected),false);});
@@ -133,7 +133,7 @@ test('Mac normal window proof requires actual close/own intent and scoped typed 
 test('browser normal-close independent reopen binds exact browser role and declared fault round',()=>{
  const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'],browserClose={role:'mac-web',round:1};
  const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,browserClose,expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
- const receipt={mode:'real',status:'passed',acceptance:'six-client-browser-normal-close',roundsCompleted:1,fixture:config.fixture,finalHash:H,scenario:{browserClose},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-browser-normal-close',roundsCompleted:1,fixture:config.fixture,finalHash:H,scenario:{browserClose},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));
  for(const changed of [{...config,browserClose:undefined},{...config,browserClose:{...browserClose,role:'pc-web'}},{...config,browserClose:{...browserClose,round:2}}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);
 });
@@ -141,14 +141,14 @@ test('browser normal-close independent reopen binds exact browser role and decla
 test('leaf independent reopen binds full document and immutable exact old/new path scenario',()=>{
  const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'],leafMove={role:'mac-cli',round:1,source:'Owned/Original.textpack',destination:'Owned/Moved.textpack'};
  const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,leafMove,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
- const receipt={mode:'real',status:'passed',acceptance:'six-client-external-leaf-move',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{leafMove},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-external-leaf-move',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{leafMove},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const changed of [{...config,leafMove:undefined},{...config,leafMove:{...leafMove,destination:'Owned/Other.textpack'}},{...config,expectedDocumentHash:'e'.repeat(64)}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);
 });
 
 test('lost ACK independent reopen binds fault role and complete document pins',()=>{
  const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'],lostAck={role:'mac-web',round:1};
  const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,lostAck,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
- const receipt={mode:'real',status:'passed',acceptance:'six-client-browser-lost-ack',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{lostAck},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-browser-lost-ack',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{lostAck},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const patch of [{lostAck:undefined},{lostAck:{role:'pc-web',round:1}},{expectedDocumentHash:'e'.repeat(64)}])assert.throws(()=>verifyReopenIdentity(receipt,{...config,...patch}),/field pins/);
 });
 
@@ -216,4 +216,15 @@ test('mixed reopen binds descriptors, seed and complete document semantics', () 
     ...receipt,
     mixedScheduleEvidence: undefined
   }, config));
+});
+
+
+test('independent reopen binds exact partial dwell descriptor and completion without promoting T24',()=>{
+  const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'];
+  const soak={version:1,durationMs:3600000,cadenceMs:30000};
+  const config={fixture:{workspaceId:'ws',itemId:'item'},expectedBaselineHash:H,expectedDocumentHash:H,expectedAssetHashes:{},expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)])),soak};
+  const receipt={mode:'real',status:'passed',acceptance:'six-client-finite-dwell-partial-not-full-T24',roundsCompleted:100,fixture:config.fixture,finalHash:H,expectedAssetHashes:{},scenario:{soak},soakEvidence:{status:'dwell-complete',samples:121,durationMs:3600000,acceptance:'partial-not-full-T24'},attestations:Object.fromEntries(roles.map(role=>[role,{finiteSoakCorrelation:1,identity:checkIdentity(identity(role),pin(role),role)}]))};
+  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));
+  for(const patch of [{soakEvidence:undefined},{soakEvidence:{...receipt.soakEvidence,samples:120}},{soakEvidence:{...receipt.soakEvidence,acceptance:'full-T24'}}])assert.throws(()=>verifyReopenIdentity({...receipt,...patch},config));
+  assert.throws(()=>verifyReopenIdentity(receipt,{...config,soak:{...soak,cadenceMs:60000}}));
 });

@@ -1,3 +1,6 @@
+import {setTimeout as finiteDelay} from 'node:timers/promises';
+import {FiniteSoak, validateSoak, SOAK_LIMITS} from './finite-soak.mjs';
+import {validateSoakSample} from './soak-correlation.mjs';
 import {validateMixedSchedule,createMixedSchedule,fieldOperations,preflightMixedDocument,MIXED_LIMITS} from './mixed-schedule.mjs';
 import {validateLostAckScenario,validateLostAckProof} from './lost-ack.mjs';
 import {validateLeafMove,validateLeafProof,compareLeafProof} from './leaf-move.mjs';
@@ -137,6 +140,11 @@ export function validateConfig(config) {
     replacementDigest(config.assetReplacements[0]) === replacementDigest(config.assetReplacements[1]) ||
     config.expectedAssetHashes !== undefined)) fail('diagnosticSameEntryRace requires two distinct byte values for one path and no expectedAssetHashes');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
+  if (config.soak !== undefined) {
+    validateSoak(config.soak);
+    if (!Number.isSafeInteger(config.seed)) fail('soak requires a safe integer seed');
+    if (!config.mixedSchedule || (config.mode === 'real' && config.rounds !== 0 && config.rounds !== 100)) fail('soak requires mixedSchedule and100 real rounds before dwell');
+  }
   if (config.mixedSchedule !== undefined) {
     config.mixedSchedule = validateMixedSchedule(config.mixedSchedule);
     if (config.rounds !== 0 && config.rounds !== config.mixedSchedule.rounds.length || (config.pattern ?? 'append') !== 'append' || config.lostAck || config.leafMove || config.folderCaseMove || config.offline || config.restart || config.closeProbe || config.browserClose || config.closeDuringTraffic || config.malformedRepair || config.transientInvalid || config.fileWrites || config.multiField || config.undoRedo || config.sustainedTyping || config.assetReplacement || config.assetReplacements || config.diagnosticSameEntryRace) fail('mixedSchedule requires exact descriptor count and isolated compatible append kinds');
@@ -254,12 +262,16 @@ export class StressFailure extends Error {
 }
 
 export class Coordinator {
-  constructor(config, { adapterFactory } = {}) {
+  constructor(config, { adapterFactory, soakClock, soakSleep } = {}) {
+    if (config.mode === "real" && (soakClock || soakSleep)) throw Error("Real soak cannot replace monotonic clock or sleep");
+    this.soakClock = soakClock ?? (() => performance.now());
+    this.soakSleep = soakSleep ?? ((ms, signal) => finiteDelay(ms, undefined, {signal}));
     this.config = validateConfig(config);
     this.mixedPlan=this.config.mixedSchedule?createMixedSchedule(this.config.mixedSchedule,this.config.seed,planRounds(this.config.seed,this.config.mixedSchedule.rounds.length)):null;
     if (this.mixedPlan && this.config.rounds === 0) {
       const prior = JSON.parse(boundedFile(this.config.reopenReceipt, 1024 * 1024));
       verifyReopenIdentity(prior, this.config);
+      if (this.config.soak) { this.soakEvidence=prior.soakEvidence; this.soakReopenOf=prior.runId; }
       if (prior.mixedScheduleEvidence?.sha256 !== this.mixedPlan.sha256 || prior.roundsCompleted !== this.mixedPlan.rounds.length || canonicalJSON(prior.mixedScheduleEvidence) !== canonicalJSON(this.scheduleEvidence())) throw Error('Mixed reopen requires identical complete immutable plan');
     }
     this.makeAdapter = adapterFactory ?? ((role, c) => new ProcessAdapter(role, c.command, { cwd: c.cwd, env: c.env }));
@@ -337,7 +349,7 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { ...(this.config.soak?{soak:this.config.soak}:{}), ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
@@ -347,6 +359,7 @@ export class Coordinator {
       seed: this.config.seed,
       fixture: this.config.fixture,
       scenario,
+      ...(this.config.soak ? {soak:this.config.soak}:{}),
       ...(this.config.mode === 'real' ? {
         expectedIdentities: Object.fromEntries(ROLES.map(role => [role, normalizeIdentity(this.config.expectedIdentities[role], role, {
           expected: true
@@ -460,6 +473,7 @@ export class Coordinator {
         }
       }
       for (const plan of this.plannedRounds()) await this.runRound(plan);
+      if (this.config.soak && this.config.rounds > 0) await this.runSoak();
       if (this.config.closeProbe) await this.closeProbe();
     } catch (error) {
       status = 'failed';
@@ -481,20 +495,70 @@ export class Coordinator {
       expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
-        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.mixedSchedule ? 'six-client-compatible-mixed-schedule' : this.config.lostAck ? 'six-client-browser-lost-ack' : this.config.leafMove ? 'six-client-external-leaf-move' : this.config.folderCaseMove ? 'six-client-folder-case-move' : this.config.browserClose ? 'six-client-browser-normal-close' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+        ? (this.config.soak ? 'six-client-finite-dwell-partial-not-full-T24' : this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.mixedSchedule ? 'six-client-compatible-mixed-schedule' : this.config.lostAck ? 'six-client-browser-lost-ack' : this.config.leafMove ? 'six-client-external-leaf-move' : this.config.folderCaseMove ? 'six-client-folder-case-move' : this.config.browserClose ? 'six-client-browser-normal-close' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+      scenario: { ...(this.config.soak?{soak:this.config.soak}:{}), ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
           role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) })) } : {}),
         ...(this.config.diagnosticSameEntryRace ? { diagnosticSameEntryRace: true } : {}) },
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
-      ...(this.mixedPlan?{mixedScheduleEvidence:this.scheduleEvidence(),mixedPreflight:this.mixedPreflight??null}:{}), ...(this.lostAckEvidence?{lostAckEvidence:this.lostAckEvidence}:{}), ...(this.leafMoveEvidence?{leafMoveEvidence:this.leafMoveEvidence}:{}), ...(this.folderCaseEvidence?{folderCaseEvidence:this.folderCaseEvidence}:{}), attestations: this.attestations, retainedActors:this.retainedActors, outputDir: this.dir,
+      ...(this.soakEvidence?{soakEvidence:this.soakEvidence,...(this.soakReopenOf?{soakReopenOf:this.soakReopenOf}:{})}:{}), ...(this.mixedPlan?{mixedScheduleEvidence:this.scheduleEvidence(),mixedPreflight:this.mixedPreflight??null}:{}), ...(this.lostAckEvidence?{lostAckEvidence:this.lostAckEvidence}:{}), ...(this.leafMoveEvidence?{leafMoveEvidence:this.leafMoveEvidence}:{}), ...(this.folderCaseEvidence?{folderCaseEvidence:this.folderCaseEvidence}:{}), attestations: this.attestations, retainedActors:this.retainedActors, outputDir: this.dir,
     };
     writeFileSync(join(this.dir, 'summary.json'), JSON.stringify(summary, null, 2));
     this.record('run-end', summary);
     this.writeDashboard(status, failure);
     return summary;
+  }
+
+  async runSoak() {
+    const round = this.config.rounds, expectedEditIds = this.plannedRounds().flatMap(p => p.edits.map(e => e.id)).sort();
+    const clock = this.soakClock, start = clock(), states = new Map();
+    const bindings = Object.fromEntries(ROLES.map(role => [role, sha256(canonicalJSON({attestation:this.attestations[role], editor:this.editorBaseline[role]??null}))]));
+    const soak = new FiniteSoak({spec:this.config.soak, runId:this.runId, startMs:start, identities:bindings,
+      oracle:(role,state) => {
+        if (EDITOR_ROLES.includes(role)) this.checkEditor(round,role,state.editor);
+        const observed = documentObservation(state.documentSnapshot);
+        return observed.hash === this.finalDocumentHash && observed.snapshot.content.body === state.text;
+      }});
+    let current, resolveSample, rejectSample, fatal;
+    const listeners = [], abort = new AbortController();
+    const fail = error => { fatal ??= error; rejectSample?.(fatal); abort.abort(); };
+    for (const [role,adapter] of this.adapters) {
+      const message = state => {
+        if (state.type !== 'state') { if (state.type === 'error') fail(new Error('Soak actor failed')); return; }
+        try {
+          const sample = validateSoakSample(state.soakSample,this.runId);
+          if (!sample || !current || state.round !== round) throw Error('Missing or stale soak correlation');
+          states.set(role,state);
+          const complete = soak.receive({sampleId:sample.id,role,identity:sha256(canonicalJSON({attestation:this.attestations[role],editor:EDITOR_ROLES.includes(role)?state.editor:null})),observation:state,evidenceBytes:Buffer.byteLength(JSON.stringify({sampleId:sample.id,role,hash:documentObservation(state.documentSnapshot).hash,editor:state.editor??null}))},clock());
+          if (complete) {
+            this.checkRoundContent(states,round,expectedEditIds);
+            if (!this.checkAssets(states,round) || checkMultiFieldAccounting(this.documentBaseline,this.documentStates(states),fieldOperations(this.plannedRounds()),this.accountingOptions()) !== this.finalDocumentHash) throw Error('Soak full oracle mismatch');
+            resolveSample();
+          }
+        } catch(error) { fail(new StressFailure('soak-sample-failed',{role,sampleId:current?.sampleId??null,reason:String(error.message).slice(0,200)})); }
+      };
+      const exit = () => fail(new StressFailure('soak-actor-exited',{role,sampleId:current?.sampleId??null}));
+      const error = () => fail(new StressFailure('soak-adapter-error',{role,sampleId:current?.sampleId??null}));
+      adapter.on('message',message);adapter.on('exit',exit);adapter.on('error',error);
+      listeners.push(()=>{adapter.off('message',message);adapter.off('exit',exit);adapter.off('error',error);});
+    }
+    try {
+      for(let index=0;index<SOAK_LIMITS.samples;index++) {
+        const due=start+index*SOAK_LIMITS.cadenceMs;
+        while(clock()<due) { if(fatal) throw fatal; await this.soakSleep(Math.max(1,due-clock()),abort.signal); }
+        if(fatal) throw fatal;
+        states.clear();current=soak.begin(clock());
+        let timer;
+        const pending=new Promise((resolve,reject)=>{resolveSample=resolve;rejectSample=reject;timer=setTimeout(()=>reject(new StressFailure('soak-response-timeout',{sampleId:current.sampleId,missing:ROLES.filter(role=>!states.has(role))})),Math.max(1,current.deadlineMs-clock()));});
+        this.broadcast({type:'observe',round,soakSample:{version:1,id:current.sampleId},expectedEditIds,expectedAssetPaths:assetPathsOf(this.config),documentSnapshot:true});
+        try {await pending;} finally {clearTimeout(timer);resolveSample=rejectSample=null;}
+        if(fatal)throw fatal;
+        this.record('soak-sample',{sampleId:current.sampleId,index,elapsedMs:clock()-start,documentHash:this.finalDocumentHash,roles:ROLES});
+      }
+      this.soakEvidence=soak.result(clock());
+    } finally {abort.abort();listeners.forEach(remove=>remove());}
   }
 
   async startAdapters() {
@@ -511,6 +575,7 @@ export class Coordinator {
     }
     const attest = await pending;
     this.checkAttestations(attest);
+    if (this.config.soak && ROLES.some(role => attest.get(role)?.finiteSoakCorrelation !== 1)) throw new StressFailure('soak-correlation-capability-missing', {});
   }
 
   checkAttestations(attest) {
@@ -535,6 +600,7 @@ export class Coordinator {
       }
       this.attestations[role] = { mode: a.mode, machineId: a.machineId.slice(0, 160), adapter: String(a.adapter ?? 'unknown').slice(0, 80),
         ...(identity ? { identity } : {}), ...(initialPack ? { initialPack } : {}),
+        ...(a.finiteSoakCorrelation === 1 ? {finiteSoakCorrelation:1} : {}),
         ...(typeof a.sessionId === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(a.sessionId) ? { sessionId: a.sessionId } : {}),
         ...(Number.isInteger(a.generation) && a.generation >= 1 && a.generation <= 10000 ? { generation: a.generation } : {}) };
     }

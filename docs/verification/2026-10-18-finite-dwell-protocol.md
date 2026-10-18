@@ -1,0 +1,23 @@
+# Finite quiet dwell protocol (future candidate source)
+
+This slice integrates the previously committed pure finite protocol into the existing six-role coordinator and private test actors. It introduces no production writer, daemon, account action or live campaign. The exact60-minute/30-second cadence follows a completed100-round real compatible schedule. All actors remain mounted until the dwell finishes or fails.
+
+Correlation is capability-gated before input and scoped to the current hello run ID. Each actual readonly observe echoes one bounded sample ID. A dedicated listener remains installed across the entire dwell, so delayed ordinary states, duplicate replies and foreign IDs cannot satisfy a newer sample. Monotonic deadlines, strict cadence, evidence budgets and full existing content/assets/session checks fail closed. Independent reopen binds the original partial evidence without repeating the dwell.
+
+The reported acceptance is partial, not full T24. No native idle upload, listener/document retention or OS resource telemetry is invented; fields remain null. The existing binary-byte proof scope is the two direct-file roles, with all-six complete document snapshots. Quiet dwell cannot qualify a mixed-workload hour or prove zero rewrite/idle requests from stable document hashes.
+
+The source gates below pass. No physical run is claimed. Actor changes require newly sealed matching artifacts before any future campaign; old candidates cannot be treated as supporting this optional protocol.
+
+## Source verification so far
+
+- Pure finite clock/identity-reopen checks:24 pass (`node --test sync/stress/finite-soak.test.mjs sync/stress/identity.test.mjs`).
+- Coordinator virtual-clock integration:10 pass. A two-round simulated schedule performs all726 readonly correlated replies; missing/foreign IDs, duplicates, initial or final-sample content drift, session drift, asset metadata drift and missing capability fail. Missing capability refuses before any prepare/edit. Every simulated receipt remains acceptance:none.
+- Adapter/helper/sealer focused checks:56 pass after adding the newly pinned shared helper to the sealer test's copied source fixture. The first combined Node run had250 pass/1 failure from that missing fixture file; that failure is preserved, not claimed green. Explicit line-terminator negatives already passed on the current Node runtime before canonical-string checks, so there is no claimed newline-parser RED.
+- Native Mac conditional actor compiles and both NativeStressSoakSampleTests pass;13.37second build. Only these two pure protocol tests were selected, not WK/UI tests. Exact pre-existing Package.resolved SHA256 eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb restored afterward; all compiler/test children exited.
+
+Private logs: /private/tmp/texttext-finite-soak-pure-identity-20261018.log, texttext-finite-dwell-integration-20261018.log, texttext-finite-dwell-all-node-20261018.log, texttext-soak-adapter-boundary-final-focused-20261018.log and texttext-finite-soak-swift-20261018.log. Final combined Node:252 pass,0 skip in138.10seconds (`node --test --test-concurrency=1 sync/stress/*.test.mjs`), log /private/tmp/texttext-finite-dwell-all-node-final-20261018.log. This is a source gate, not an artifact seal.
+
+
+Actual Windows:24 private actor helper checks pass and the complete WPF private actor compiles in Release with zero errors. Evidence: /private/tmp/texttext-finite-soak-pc-verified-20261018-yah4ip9z/{input.json,result.json,helper.stdout.log,actor.stdout.log}. This uses a fresh committed-base archive plus four exact named uncommitted C# overlays, each hash-verified before execution; it is a diagnostic compile, not a coherent candidate seal or app launch. Two earlier compile failures are retained in separate owned scratch directories: a new test loop variable shadowed an existing fixture ID (CS0136), then the WPF project required an explicit System.IO import that its console test project supplies implicitly (CS0246). Both narrow source corrections are covered by the final actual-PC run. No owner application, workspace, credentials, review state or machine configuration was changed.
+
+Archived F3 file-adapter echo-absence evidence is retained at /private/tmp/texttext-soak-file-actual-old-red-20261018.log. Older artifacts do not advertise the new correlation capability; the coordinator refuses them before prepare/edit when dwell is enabled. Ordinary observations retain the old protocol. The new helper is pinned in both Node driver inventories and their source-copy test fixture. Exact24-file source/receipt hashes are retained at /private/tmp/texttext-finite-dwell-final-source-20261018.json. No additional product feature is included in this slice.

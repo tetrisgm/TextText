@@ -996,3 +996,35 @@ for (const driftSample of [2, 3]) test(`mixed later reopen sample ${driftSample}
   assert.equal(result.roundsCompleted, 0);
   assert.match(result.failure.detail.message ?? result.failure.code, /baseline|document|semantic/i);
 });
+
+
+const soakSpec = {version:1,durationMs:3600000,cadenceMs:30000};
+test('finite dwell refuses nonmixed or shorter real prerequisite before actor startup', () => {
+  assert.throws(()=>validateConfig({...makeConfig(),soak:soakSpec}),/mixedSchedule/);
+  const config={...makeConfig({mode:'real',rounds:2}),soak:soakSpec,mixedSchedule:{version:1,rounds:[{kind:'plain'},{kind:'fields'}]}};
+  assert.throws(()=>validateConfig(config),/100 real rounds/);
+});
+for (const fault of [null,'missing-id','old-id','duplicate','content','session','asset','last-content','capability']) test(`finite dwell correlated virtual-clock integration ${fault??'complete'} (no physical acceptance)`,async()=>{
+  const {ProcessAdapter}=await import('./adapter.mjs');let now=100,soakRequests=0,mutations=0;
+  const config={...makeConfig({rounds:2}),soak:soakSpec,mixedSchedule:{version:1,rounds:[{kind:'plain'},{kind:'fields'}]}};
+  const coordinator=new Coordinator(config,{soakClock:()=>now,soakSleep:async ms=>{now+=ms;},adapterFactory:(role,c)=>{
+    const actor=new ProcessAdapter(role,c.command,{env:c.env}),emit=actor.emit.bind(actor),send=actor.send.bind(actor);
+    actor.send=m=>{if(m.soakSample)soakRequests++;if(['prepare','edit'].includes(m.type))mutations++;return send(m);};
+    actor.emit=(type,m,...args)=>{
+      if(type==='message'&&role==='mac-app'&&m.type==='attest'&&fault==='capability')delete m.finiteSoakCorrelation;
+      if(type==='message'&&m.type==='state'&&m.soakSample&&role==='mac-app'){
+        if(fault==='missing-id')delete m.soakSample;
+        if(fault==='old-id')m.soakSample.id='previous:soak:0';
+        if(fault==='content'||(fault==='last-content'&&m.soakSample?.id.endsWith(':120')))m.documentSnapshot.content.subtitle+='drift';
+        if(fault==='session')m.editor.sessionId+='changed';
+        if(fault==='asset')m.documentSnapshot.content.assets=[{path:'unknown.bin'}];
+        if(fault==='duplicate'){emit(type,m,...args);return emit(type,m,...args);}
+      }
+      return emit(type,m,...args);
+    };return actor;
+  }});
+  const result=await coordinator.run();
+  assert.equal(result.acceptance,'none');
+  if(fault){assert.equal(result.status,'failed');assert.equal(result.soakEvidence,undefined);if(fault==='capability')assert.equal(mutations,0);}
+  else{assert.equal(result.status,'passed',JSON.stringify(result.failure));assert.equal(result.soakEvidence.samples,121);assert.equal(result.soakEvidence.acceptance,'partial-not-full-T24');assert.equal(result.soakEvidence.nativeIdleMutations,null);assert.equal(soakRequests,726);}
+});
