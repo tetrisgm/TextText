@@ -26,7 +26,7 @@ Script paths are relative to `src/local-vault/__tests__/`.
 | `gallery-image-stage.browser.mjs` | Pass, 3.67 s | Keyboard reaches image edges; synthetic pointer pan; caption updates preserve position; Fit and asset changes reset; light/dark/narrow | Physical gestures, native cursor behavior and large real assets |
 | `verify-editor-image-paste.mjs` | Pass after fixture correction, 1.20 s | Synthetic PNG/GIF paste inserts Markdown and a continuation paragraph; exact original bytes and asset metadata survive TextPack encoding | Actual OS clipboard/paste and native file persistence |
 | `note-tag-paste.browser.mjs` | Pass after product correction; fails with only that correction removed | Production `VaultApp` edits a body and mixed-case tag, flushes before image insertion, then writes through CAS; all emitted representation pairs are coherent and original PNG bytes survive | Installed account/file transports; full application campaign remains incomplete |
-| `verify-browser.mjs` | **Partial, failed** | Completed preceding assertions for Command-K discovery/search/open/reopen, bookmark search, capture/image imports, and read-only recovery preview plus full retained-pack restore including unknown entries | Full script and later template/gallery/feed flows are not accepted; see failure below |
+| `verify-browser.mjs` | **Pass, 47.81 s after corrections below** | Full shared application fixture: writing, bookmarks, story formatting/publishing, gallery/feed flows, import/drop/paste, recovery/history, conflicts, Command-K and narrow shell; zero HTTP/fetch calls | Installed host workflows and the earlier intermittent Heading observation remain separate; see final rerun below |
 
 Rendered spot checks inspected the dark document list and light gallery comment panel. The scripts also capture light/dark variants. Gallery fixture images are deliberately 1×1 pixels; these screenshots are control/layout checks, not realistic image-library acceptance.
 
@@ -69,7 +69,7 @@ The production keyboard shortcut buffers the first typed characters before the t
 
 Both the tag/paste and rapid-draft regressions now run in the existing required `npm run test:note-template:browser` command. Its six scripts all passed (`note-template-required-rerun.log`): open-item move, rename/caret continuity and revocation, note templates, parent references, tag/paste, and rapid draft. The open-item move and note-template mocks needed the current `workspaceAccess` owner response; a temporary diagnostic showed the old transport stuck at “Loading workspace permissions…” with only `list` and `workspaceAccess` requests. Those are fixture-contract corrections; product permission checks remain unchanged.
 
-The subsequent full broad rerun again hit the earlier intermittent Heading assertion, before reaching the corrected card path. That failure remains under investigation; focused passes do not establish full broad acceptance.
+The subsequent full broad rerun again hit the earlier intermittent Heading assertion, before reaching the corrected card path. Focused passes alone did not establish full broad acceptance; the later full rerun is recorded below.
 
 ### Accent control contrast
 
@@ -79,6 +79,18 @@ These existing accent-background selectors now use `--vault-accent-ink`, matchin
 
 The fixture now runs in required `npm run test:document-layout:browser`; both layout and contrast scripts pass (`document-layout-required.log`). Red/green contrast logs are `accent-contrast-before.log` and `accent-contrast-after.log`, with their screenshot/JSON directories recorded inside.
 
+### Final full fixture rerun
+
+The complete `verify-browser.mjs` fixture passed in **47.81 seconds** against a fresh isolated production `main.tsx` bundle, including the tag, caret and accent changes. Its temporary harness changes only the bundle path and original `createRequire` base as described above. No live network/content writes occurred.
+
+- Bundle `app.js` SHA-256: `f076ee728f46efefdefa0a867c16603c0c296f0c3b068d7022ad66cb7088f5d9`.
+- Source harness SHA-256: `be72f7ec6a32861df4d761e5809d75a6a2a332545e63c0cb3cc59161b590de01`.
+- Logs/metadata: `settled-browser.log`, `settled-metadata.json` in the campaign directory.
+- Two further harness corrections preserve the original checks: newly authored feed tags expect canonical lowercase storage; gallery checks wait for decoded image ratios before measuring boxes, and imported-caption assertions wait for the asynchronous persisted save. A diagnostic confirmed seven gallery tiles including prior drop/paste imports, with the portrait/landscape pair correctly measured at 87×174 and 348×174. The wait does not assume only the three later fixture images exist.
+- The earlier intermittent Heading assertion did not recur in the final full run or a separate 12-iteration production `VaultApp` story link → Command-K → Heading probe (`heading-focused-probe.log`). Its root cause has **not** been established; the broad harness now reports the actual text/DOM if it recurs. No editor implementation was changed for this observation.
+
+These results accept the bounded shared fixture campaign. They do not complete T19 or replace installed Mac/PC/web acceptance.
+
 ## Still required
 
-Run the installed T19 matrix on current coherent Mac/PC/web candidates. In particular, ordinary file import/export round trips, physical clipboard use, real account changes, concurrent comments, search invalidation after remote changes, and later broad-fixture flows remain open. Per-device List/Cards preference storage remains a documented product choice/gap; this campaign does not introduce cross-device preference synchronization.
+Run the installed T19 matrix on current coherent Mac/PC/web candidates. In particular, ordinary file import/export round trips, physical clipboard use, real account changes, concurrent comments and search invalidation after remote changes remain open. Per-device List/Cards preference storage remains a documented product choice/gap; this campaign does not introduce cross-device preference synchronization.

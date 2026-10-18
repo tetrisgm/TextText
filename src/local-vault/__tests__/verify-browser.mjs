@@ -1725,7 +1725,10 @@ try {
     throw error;
   });
   await storyBody.fill("Heading");
-  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Heading");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Heading").catch(async error => {
+    console.error("Heading replacement state:", await storyBody.evaluate(element => ({ text: element.textContent, html: element.innerHTML })));
+    throw error;
+  });
   await page.waitForTimeout(450);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await storyBody.evaluate((element) => {
@@ -1891,11 +1894,16 @@ try {
   await page.getByRole("button", { name: "Close image search" }).click();
   assert.equal(await gallerySearch.count(), 0);
   await page.getByRole("button", { name: "Open One photograph" }).waitFor();
+  // Search remounts image tiles. Wait for decoded natural ratios before
+  // checking their fitted boxes, rather than measuring the loading fallback.
+  await page.waitForFunction(() => {
+    const images = [...document.querySelectorAll(".vault-photo-grid button img")];
+    return images.length >= 3 && images.every(image => image.complete && image.naturalWidth > 0 &&
+      Math.abs(image.clientWidth / image.clientHeight - image.naturalWidth / image.naturalHeight) < .03);
+  });
   const portraitTile = await page.getByRole("button", { name: "Open Two photographs image 1" }).boundingBox();
   const landscapeTile = await page.getByRole("button", { name: "Open Two photographs image 2" }).boundingBox();
   assert.ok(portraitTile && landscapeTile && portraitTile.width < landscapeTile.width && Math.abs(portraitTile.height - landscapeTile.height) < 2);
-  await page.waitForFunction(() => [...document.querySelectorAll(".vault-photo-grid button img")].every(image =>
-    Math.abs(image.clientWidth / image.clientHeight - image.naturalWidth / image.naturalHeight) < .03));
   const galleryRatios = await page.locator(".vault-photo-grid").evaluate(grid => [...grid.querySelectorAll("button img")].map(image => ({ display: image.clientWidth / image.clientHeight, natural: image.naturalWidth / image.naturalHeight })));
   const uncroppedGallery = galleryRatios.every(({ display, natural }) => Math.abs(display - natural) < .03);
   assert.ok(uncroppedGallery);
@@ -2189,6 +2197,8 @@ try {
   await importedImage.getByRole("button", { name: "Edit caption" }).click();
   await importedImage.getByRole("textbox", { name: "Image caption" }).fill("A measured portrait.");
   await importedImage.getByRole("button", { name: "Save caption" }).click();
+  await waitForFixture(() => [...files.values()].some(file => file.path.startsWith("Gallery/Measured-") &&
+    JSON.parse(file.documentJSON).content.assets[0]?.caption === "A measured portrait."), "imported image caption save");
   const measured = [...files.values()].find(file => file.path.startsWith("Gallery/Measured-"));
   assert.deepEqual(JSON.parse(measured.documentJSON).content.assets.map(asset => [asset.width, asset.height]), [[120, 240]]);
   assert.equal(JSON.parse(measured.documentJSON).content.assets[0].caption, "A measured portrait.");
@@ -3156,7 +3166,7 @@ try {
   await page.getByRole("button", { name: "A considered design headline" }).first().waitFor();
   const followed = [...files.values()].find((file) => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://www.theverge.com/rss/index.xml");
   assert.ok(followed?.path.startsWith("Feeds/"));
-  assert.deepEqual(JSON.parse(followed.documentJSON).content.tags, ["Tech"]);
+  assert.deepEqual(JSON.parse(followed.documentJSON).content.tags, ["tech"]);
   await page.getByRole("button", { name: "Add source", exact: true }).click();
   const addSource = page.getByRole("dialog", { name: "Subscribe to a feed" });
   await addSource.getByRole("heading", { name: "Add a source" }).waitFor();
@@ -3171,7 +3181,7 @@ try {
   await addSource.getByRole("button", { name: "Subscribe" }).click();
   const discovered = [...files.values()].find(file => JSON.parse(file.documentJSON).content.fields.feedUrl === "https://journal.example/feed.xml");
   assert.ok(discovered?.path.startsWith("Feeds/"));
-  assert.deepEqual(JSON.parse(discovered.documentJSON).content.tags, ["Design"]);
+  assert.deepEqual(JSON.parse(discovered.documentJSON).content.tags, ["design"]);
   await page.getByRole("button", { name: "TextText", exact: true }).click();
   await chooseMoreAction("New from template");
   const builtInPicker = page.getByRole("dialog", { name: "New from template", exact: true });
