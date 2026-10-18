@@ -10,4 +10,5 @@ const config = JSON.parse(readFileSync(resolve(path), 'utf8'));
 const summary = await new Coordinator(config).run();
 process.stdout.write(`${summary.status} (${summary.roundsCompleted}/${summary.roundsPlanned} rounds, acceptance ${summary.acceptance})\n${summary.outputDir}\n`);
 if (summary.failure) process.stdout.write(`${summary.failure.code}: ${JSON.stringify(summary.failure.detail).slice(0, 1000)}\n`);
+if (Object.keys(summary.retainedActors ?? {}).length) process.stdout.write(`Guarded browser and driver retained for owner review: ${JSON.stringify(summary.retainedActors)}\nClose the guarded browser only after reviewing its pending edits. No automatic cleanup was sent to that actor.\n`);
 process.exit(summary.status === 'passed' ? 0 : 1);

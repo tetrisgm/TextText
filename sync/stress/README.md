@@ -443,3 +443,40 @@ Fresh physical campaigns and independent fresh-run reopen are still required.
 The isolated NSWindow/WK fixture covers the actor's real close guard strategy,
 not authenticated product collaboration. Browser-close, other combinations and
 forced dirty-journal timing remain separate coverage.
+
+### Browser normal close before convergence
+
+`browserClose: { role: "mac-web", round: 1 }` also accepts `pc-web`. It supports
+one plain append round, or an independent zero-round reopen with the same
+scenario and prior receipt. Other fault, multi-field, sustained typing, history,
+attachment replacement and malformed-file scenarios are refused in combination.
+After all six input receipts, before convergence, the selected browser closes its
+actual page with `runBeforeUnload: true`. The adapter requires the page close,
+normal context close, and disappearance of the exact owned browser PID. It never
+uses a kill signal. Reopen uses the same persistent profile without exchanging a
+new login, a different observed browser PID, generation 2, and fresh actual
+artifact/account/editor attestation. The other five actors remain mounted.
+
+A beforeunload dialog is dismissed to keep the guarded page open, and the run
+fails. The actor reports its verified browser/profile and driver ownership, enters
+a retained error state, and accepts no further mutations. In a real configured
+scenario the coordinator stops the other five actors but sends no shutdown,
+stdin-close or kill to the guarded actor. The retained driver keeps its browser
+alive after the coordinator exits; `summary.json` and the console report the
+owned processes for owner review. A timed-out or unreadable close reply also
+retains the known adapter child, with browser ownership explicitly unverified;
+an absent reply is never permission to kill the potentially guarded browser.
+Fresh successful close/reopen proof is required before ordinary cleanup resumes.
+Closing a proven guarded browser after reviewing pending edits ends its driver. This is an explicitly invoked failed acceptance
+process, not an installed background job. Do not force cleanup to manufacture a
+successful close receipt.
+
+Passing requires the existing exact marker/baseline/asset checks and three
+all-six convergence samples, plus a separate durable reopen. This bounded slice
+covers normal close after acknowledged input; it does not claim a forced dirty
+journal, offline close, dropped transport acknowledgement, two-account access,
+or a completed physical campaign. The isolated
+`browser-normal-close.browser.mjs` fixture exercises real keyboard input,
+normal close/profile reopen and retained child ownership across parent exit.
+Its explicit disposable-fixture cleanup is separate from the production runner's
+retained-page policy, and it never emits six-client acceptance.

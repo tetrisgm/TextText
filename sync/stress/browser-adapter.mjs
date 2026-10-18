@@ -1,4 +1,4 @@
-import { crashOwnedBrowser } from './browser-lifecycle.mjs';
+import { crashOwnedBrowser, closeOwnedBrowser, retainGuardedBrowser, observeOwnedBrowser } from './browser-lifecycle.mjs';
 import { readLiveFieldDocument } from './multi-field-page.mjs';
 import { validateFieldSequence, typeFieldSequence } from './multi-field-input.mjs';
 import { validateUndoRedo, exerciseUndoRedo } from './undo-redo.mjs';
@@ -190,11 +190,13 @@ async function main() {
   let sessionId = randomUUID(), generation = 1, helloRequest, restarting = false, online = true;
   let context = null, page = null, body = null, heading = null;
   let reloads = 0, started = false, stopping = false;
-  let inputProgress, historyProgress, fieldProgress, observeAssets;
+  let inputProgress, historyProgress, fieldProgress, observeAssets, retainedFailure, retentionAnnounced = false;
 
   const fail = (round, stage, message) => {
+    if (retentionAnnounced) return;
     process.stderr.write(`[${stage}] ${safeMessage(message)}\n`);
-    out({ type: 'error', round, stage, ...(fieldProgress ? { fieldProgress } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}), message: `browser adapter failed at stage ${stage}; profile and journals preserved` });
+    out({ type: 'error', round, stage, ...(fieldProgress ? { fieldProgress } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}), message: `browser adapter failed at stage ${stage}; profile and journals preserved`, ...(retainedFailure ? {retained:retainedFailure} : {}) });
+    if (retainedFailure) retentionAnnounced = true;
   };
 
   const assertOnItem = async () => {
@@ -284,15 +286,17 @@ async function main() {
     },
     async restart(m) {
       await assertOnItem();
+      if (m.graceful !== undefined && typeof m.graceful !== 'boolean') throw new StageError('restart', 'graceful must be boolean');
       if (generation !== 1 || !helloRequest) throw new StageError('restart', 'only one attested browser restart supported');
       restarting = true;
       const wasOffline = !online;
       try {
-        const killed = await crashOwnedBrowser(context, ownedProfile);
+        if (m.graceful === true && wasOffline) throw new StageError('restart', 'normal browser close requires online transport');
+        const killed = m.graceful === true ? await closeOwnedBrowser(context, page, ownedProfile) : await crashOwnedBrowser(context, ownedProfile);
         generation += 1; sessionId = randomUUID(); reloads = 0; online = true;
         const attestation = await openBrowser(helloRequest, true);
         out({ type: 'restart', round: m.round, generation, attestation,
-          crash: killed, reconnectByRestart: wasOffline, online: true });
+          ...(m.graceful === true ? { lifecycle: 'normal-close-reopen', normalClose: killed, reopenedBrowser: await observeOwnedBrowser(context, ownedProfile) } : { crash: killed }), reconnectByRestart: wasOffline, online: true });
       } finally { restarting = false; }
     },
     async prepare(m) {
@@ -362,6 +366,7 @@ async function main() {
       out({ type: 'state', round: m.round, text, editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
     },
     async shutdown() {
+      if (retainedFailure) return;
       stopping = true;
       await context?.close().catch(() => {});
       process.exit(0);
@@ -370,6 +375,7 @@ async function main() {
 
   let queue = Promise.resolve();
   const handle = (line) => {
+    if (retainedFailure) return;
     if (line.length > MAX_LINE) return fail(0, 'input', 'request line too long');
     let m;
     try { m = JSON.parse(line); } catch { return fail(0, 'input', 'request is not JSON'); }
@@ -377,7 +383,15 @@ async function main() {
     const round = m.type === 'hello' || m.type === 'shutdown' ? 0 : m.round;
     if (!validateRound(round)) return fail(0, 'input', 'round invalid');
     if (m.type !== 'hello' && m.type !== 'shutdown' && !started) return fail(round, m.type, 'hello required first');
-    queue = queue.then(() => handlers[m.type](m)).catch((error) => fail(round, error.stage ?? m.type, error));
+    queue = queue.then(() => handlers[m.type](m)).catch((error) => {
+      if (error.retention) {
+        retainedFailure = error.retention;
+        // This human-invoked failed actor remains available for recovery. The
+        // owner closing its browser is the only automatic end condition.
+        retainGuardedBrowser(context);
+      }
+      fail(round, error.stage ?? m.type, error);
+    });
   };
   const rl = createInterface({ input: process.stdin });
   rl.on('line', handle);

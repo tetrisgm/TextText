@@ -133,6 +133,11 @@ export function validateConfig(config) {
     replacementDigest(config.assetReplacements[0]) === replacementDigest(config.assetReplacements[1]) ||
     config.expectedAssetHashes !== undefined)) fail('diagnosticSameEntryRace requires two distinct byte values for one path and no expectedAssetHashes');
   if (!Number.isInteger(config.timeoutMs) || config.timeoutMs < 100 || config.timeoutMs > 120000) fail('timeoutMs must be 100..120000');
+  if (config.browserClose !== undefined) {
+    const close=config.browserClose;
+    if (!close || Object.keys(close).some(key=>!['role','round'].includes(key)) || !['mac-web','pc-web'].includes(close.role) || close.round!==1 || config.rounds>1 || config.offline || config.restart || config.closeProbe || config.closeDuringTraffic || config.malformedRepair || config.transientInvalid || config.fileWrites || config.multiField || config.undoRedo || config.sustainedTyping || config.assetReplacement || config.assetReplacements || (config.pattern??'append')!=='append') fail('browserClose requires one browser, round1 and an isolated plain append round or reopen');
+    config.browserClose={role:close.role,round:1};
+  }
   if (config.offline !== undefined) {
     if (!config.offline || !EDITOR_ROLES.includes(config.offline.role)
       || !Number.isInteger(config.offline.round) || config.offline.round < 1 || config.offline.round > config.rounds) {
@@ -211,6 +216,8 @@ export class Coordinator {
     this.attestations = {};
     this.editorBaseline = {};
     this.restartEvidence = {};
+    this.retainedActors = {};
+    this.normalCloseInFlight = {};
     this.actorStatus = Object.fromEntries(ROLES.map(role => [role, 'starting']));
     this.runId = `stress-${new Date().toISOString().replace(/[:.]/g, '-')}-${config.seed}`;
   }
@@ -225,7 +232,7 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
@@ -323,15 +330,15 @@ export class Coordinator {
       expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
-        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.browserClose ? 'six-client-browser-normal-close' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+      scenario: { ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
           role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) })) } : {}),
         ...(this.config.diagnosticSameEntryRace ? { diagnosticSameEntryRace: true } : {}) },
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
-      attestations: this.attestations, outputDir: this.dir,
+      attestations: this.attestations, retainedActors:this.retainedActors, outputDir: this.dir,
     };
     writeFileSync(join(this.dir, 'summary.json'), JSON.stringify(summary, null, 2));
     this.record('run-end', summary);
@@ -398,6 +405,14 @@ export class Coordinator {
           m: (message) => {
             if (type === 'applied' && message.type === 'traffic-progress' && this.config.closeDuringTraffic?.trafficRole === role) return;
             if (message.type === 'error') {
+              if (this.config.mode === 'real' && this.config.browserClose?.role === role && this.config.browserClose.round === round && message.round === round && type === 'restart' && message.retained) {
+                const r=message.retained;
+                if (r.schemaVersion===1 && r.pageRetained===true && r.contextRetained===true && Number.isSafeInteger(r.driverPid) && r.driverPid>1 && Number.isSafeInteger(r.browserPid) && r.browserPid>1 && /^[a-f0-9]{64}$/.test(r.profileScopeHash??'')) {
+                  const ownership=adapter.retainForReview();
+                  this.retainedActors[role]={schemaVersion:1,driverPid:r.driverPid,browserPid:r.browserPid,profileScopeHash:r.profileScopeHash,pageRetained:true,contextRetained:true,round,reason:'normal-close-refused',driverHostPid:ownership.driverHostPid};
+                  this.record('actor-retained-for-review',{role,...this.retainedActors[role]});
+                }
+              }
               const edit = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic).at(-1)?.edits.find(edit => edit.role === role);
               const progress = message.inputProgress;
               const writes = message.writeProgress;
@@ -582,6 +597,7 @@ export class Coordinator {
     this.record('edit-barrier', { round, roles: ROLES });
     const restartRole = this.config.restart?.round === round ? this.config.restart.role : null;
     if (restartRole) await this.restartActor(round, restartRole);
+    if (this.config.browserClose?.round === round) await this.restartActor(round, this.config.browserClose.role, true);
     if (offlineRole) await this.setTransport(round, offlineRole, true);
     const expectedEditIds = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic).flatMap((p) => p.edits.map((e) => e.id)).sort();
     // A client can report a locally stable state before another replica's save reaches it.
@@ -704,6 +720,7 @@ export class Coordinator {
   }
 
   async restartActor(round, role, graceful = false) {
+    if (this.config.mode==='real' && graceful && this.config.browserClose?.role===role && this.config.browserClose.round===round) this.normalCloseInFlight[role]={round};
     const pending = this.collect(round, 'restart', [role]);
     this.adapters.get(role).send({ type: 'restart', round, ...(graceful ? {graceful:true} : {}) });
     const reply = (await pending).get(role);
@@ -719,10 +736,12 @@ export class Coordinator {
         { fixture: this.config.fixture, machineId: this.attestations[role].machineId, sessionId: baseline.sessionId, generation: reply.generation }); }
       catch (error) { throw new StressFailure('restart-identity-mismatch', { round, role, reason: String(error.message).slice(0, 240) }); }
     }
-    if (role.endsWith('-web') && (!reply.crash || reply.crash.method !== 'SIGKILL' || reply.crash.exited !== true || !/^[a-f0-9]{64}$/.test(reply.crash.profileScopeHash ?? '') || !Number.isSafeInteger(reply.crash.pid) || reply.crash.pid <= 1 || reply.online !== true || reply.reconnectByRestart !== (this.config.offline?.role === role && this.config.offline?.round === round))) throw new StressFailure('restart-crash-evidence-invalid', { round, role });
-    const evidence = { round, ...(graceful ? {lifecycle:'normal-close-reopen'} : {}), ...(role.endsWith('-web') ? { crash: { pid: reply.crash.pid, profileScopeHash: reply.crash.profileScopeHash, method: 'SIGKILL', exited: true }, reconnectByRestart: reply.reconnectByRestart, online: true } : {}), generation: reply.generation, sessionId: null,
+    if (role.endsWith('-web') && !graceful && (!reply.crash || reply.crash.method !== 'SIGKILL' || reply.crash.exited !== true || !/^[a-f0-9]{64}$/.test(reply.crash.profileScopeHash ?? '') || !Number.isSafeInteger(reply.crash.pid) || reply.crash.pid <= 1 || reply.online !== true || reply.reconnectByRestart !== (this.config.offline?.role === role && this.config.offline?.round === round))) throw new StressFailure('restart-crash-evidence-invalid', { round, role });
+    if (role.endsWith('-web') && graceful && (!reply.normalClose || reply.normalClose.method!=='normal-close' || reply.normalClose.runBeforeUnload!==true || reply.normalClose.pageClosed!==true || reply.normalClose.contextClosed!==true || reply.normalClose.exited!==true || !/^[a-f0-9]{64}$/.test(reply.normalClose.profileScopeHash??'') || !Number.isSafeInteger(reply.normalClose.pid) || reply.normalClose.pid<=1 || reply.crash!==undefined || reply.online!==true || reply.reconnectByRestart!==false || !Number.isSafeInteger(reply.reopenedBrowser?.pid) || reply.reopenedBrowser.pid<=1 || reply.reopenedBrowser.pid===reply.normalClose.pid || reply.reopenedBrowser.profileScopeHash!==reply.normalClose.profileScopeHash)) throw new StressFailure('normal-close-evidence-invalid',{round,role});
+    const evidence = { round, ...(graceful ? {lifecycle:'normal-close-reopen'} : {}), ...(role.endsWith('-web') && graceful ? { normalClose:reply.normalClose,reopenedBrowser:reply.reopenedBrowser } : {}), ...(role.endsWith('-web') && !graceful ? { crash: { pid: reply.crash.pid, profileScopeHash: reply.crash.profileScopeHash, method: 'SIGKILL', exited: true }, reconnectByRestart: reply.reconnectByRestart, online: true } : {}), generation: reply.generation, sessionId: null,
       ...(attested ? { attestedSessionId: attested.sessionId, identity: attested.identity } : {}) };
     this.restartEvidence[role] = evidence;
+    delete this.normalCloseInFlight[role];
     this.record('restart', { round, role, ...evidence });
   }
 
@@ -747,6 +766,16 @@ export class Coordinator {
       // Native actors flush the production journal before exiting. Give that operation
       // its normal request budget instead of killing a healthy save after two seconds.
       let exit;
+      if (this.normalCloseInFlight[a.role] && !this.retainedActors[a.role]) {
+        const ownership=a.exit ? {driverExited:true,exit:a.exit} : a.retainForReview();
+        this.retainedActors[a.role]={...this.normalCloseInFlight[a.role],...ownership,reason:'normal-close-outcome-uncertain',browserOwnershipUnverified:true};
+        this.record('actor-retained-for-review',{role:a.role,...this.retainedActors[a.role]});
+      }
+      if (this.retainedActors[a.role]) {
+        exit={code:null,signal:'retained-for-review'};
+        this.record('adapter-retained',{role:a.role,ownership:this.retainedActors[a.role]});
+        return {role:a.role,exit};
+      }
       try { exit = await a.stop(Math.min(60_000, Math.max(2_000, this.config.timeoutMs))); }
       catch { exit = { code: null, signal: 'stop-error' }; }
       if (a.stderr) writeFileSync(join(this.dir, 'adapters', `${a.role}.stderr.log`), a.stderr);

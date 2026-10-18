@@ -568,3 +568,26 @@ test('close traffic preserves uncertain peer input prefix when normal close has 
 
 test('Mac normal close retains actual session/process generation while reopening window cycle2',async()=>{const config=makeConfig({rounds:1});config.closeDuringTraffic={role:'mac-app',trafficRole:'pc-web',chunks:5,intervalMs:100};const summary=await new Coordinator(config).run();assert.equal(summary.status,'passed',JSON.stringify(summary.failure));assert.equal(summary.acceptance,'none');const events=readFileSync(join(summary.outputDir,'results.jsonl'),'utf8');assert.match(events,/mac-normal-window-close/);assert.match(events,/retained-window-reopen/);assert.doesNotMatch(events,/"lifecycle":"normal-close-reopen"/);});
 test('Mac window close rejects missing real close event/own intent/durability and changed retained lifetime',async()=>{for(const fault of ['mac-close-no-event','mac-close-own-missing','mac-close-idle','mac-window-process-restart','mac-window-remount','mac-window-reload']){const config=makeConfig({rounds:1,faults:{'mac-app':fault}});config.closeDuringTraffic={role:'mac-app',trafficRole:'mac-web',chunks:4,intervalMs:100};const summary=await new Coordinator(config).run();assert.equal(summary.status,'failed',fault);assert.equal(summary.roundsCompleted,0,fault);}});
+
+test('browser normal close is isolated, recorded, and keeps six-client edit accounting',async()=>{
+ const config=makeConfig({rounds:1});config.browserClose={role:'mac-web',round:1};
+ const summary=await new Coordinator(config).run();assert.equal(summary.status,'passed');assert.equal(summary.acceptance,'none');assert.equal(summary.roundsCompleted,1);assert.deepEqual(summary.scenario.browserClose,config.browserClose);
+ const lines=readFileSync(join(summary.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);const restart=lines.find(line=>line.type==='restart');assert.equal(restart.lifecycle,'normal-close-reopen');assert.equal(restart.normalClose.method,'normal-close');assert.equal(restart.crash,undefined);assert.equal(lines.filter(line=>line.type==='round')[0].editCount,6);
+ for(const extra of [{offline:{role:'mac-web',round:1}},{restart:{role:'mac-web',round:1}},{undoRedo:true},{multiField:true},{rounds:2},{browserClose:{role:'pc-app',round:1}},{browserClose:{role:'pc-web',round:2}},{browserClose:{role:'pc-web',round:1,force:true}}])assert.throws(()=>validateConfig({...config,...extra}),/browserClose/);
+});
+test('browser normal close refuses crash or missing actual page-close proof',async()=>{
+ for(const fault of ['browser-normal-crash','browser-page-not-closed','close-reopen-wrong-lifecycle']){const config=makeConfig({rounds:1,faults:{'pc-web':fault}});config.browserClose={role:'pc-web',round:1};const result=await new Coordinator(config).run();assert.equal(result.status,'failed',fault);assert.equal(result.roundsCompleted,0,fault);assert.equal(result.acceptance,'none');}
+});
+
+test('real configured guarded browser is retained without shutdown or signals',async()=>{
+ const {EventEmitter}=await import('node:events');const config=makeConfig({rounds:1,mode:'real'});config.browserClose={role:'mac-web',round:1};
+ const coordinator=new Coordinator(config),actor=new EventEmitter();let retains=0,stops=0;actor.role='mac-web';actor.retainForReview=()=>{retains++;return{driverHostPid:345679};};actor.stop=async()=>{stops++;return{code:0};};coordinator.adapters.set('mac-web',actor);coordinator.openOutput();
+ const wait=coordinator.collect(1,'restart',['mac-web']);actor.emit('message',{type:'error',round:1,message:'production guard retained',retained:{schemaVersion:1,driverPid:345679,browserPid:345678,profileScopeHash:'a'.repeat(64),pageRetained:true,contextRetained:true}});
+ await assert.rejects(wait,error=>error.code==='actor-failed');await coordinator.stopAdapters();assert.equal(retains,1);assert.equal(stops,0);assert.equal(coordinator.retainedActors['mac-web'].browserPid,345678);
+});
+
+test('unknown real normal-close outcome retains known child instead of escalating cleanup',async()=>{
+ const {EventEmitter}=await import('node:events');const config=makeConfig({rounds:1,mode:'real',timeoutMs:100});config.browserClose={role:'pc-web',round:1};
+ const coordinator=new Coordinator(config),actor=new EventEmitter();let retains=0,stops=0;actor.role='pc-web';actor.send=()=>true;actor.retainForReview=()=>{retains++;return{driverHostPid:345679};};actor.stop=async()=>{stops++;};coordinator.adapters.set('pc-web',actor);coordinator.openOutput();
+ await assert.rejects(coordinator.restartActor(1,'pc-web',true),error=>error.code==='timeout');await coordinator.stopAdapters();assert.equal(retains,1);assert.equal(stops,0);assert.equal(coordinator.retainedActors['pc-web'].driverHostPid,345679);assert.equal(coordinator.retainedActors['pc-web'].browserOwnershipUnverified,true);assert.equal(coordinator.retainedActors['pc-web'].browserPid,undefined);
+});

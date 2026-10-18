@@ -115,7 +115,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       reloads = 0;
       const browserRestart = role.endsWith('-web'); const wasOffline = !online;
       if (browserRestart) { online = true; for (const edit of pendingEdits.splice(0)) publish(edit); }
-      return out({ type: 'restart', round: m.round, generation, ...(m.graceful && fault!=='close-reopen-wrong-lifecycle'?{lifecycle:'normal-close-reopen'}:{}), ...(browserRestart ? { crash: { pid: 345678, profileScopeHash: 'a'.repeat(64), method: fault === 'browser-graceful' ? 'close' : 'SIGKILL', exited: true }, reconnectByRestart: fault === 'browser-offline-lie' ? !wasOffline : wasOffline, online: true } : {}) });
+      return out({ type: 'restart', round: m.round, generation, ...(m.graceful && fault!=='close-reopen-wrong-lifecycle'?{lifecycle:'normal-close-reopen'}:{}), ...(browserRestart && m.graceful ? {normalClose:{pid:345678,profileScopeHash:'a'.repeat(64),method:fault==='browser-normal-crash'?'SIGKILL':'normal-close',runBeforeUnload:true,pageClosed:fault!=='browser-page-not-closed',contextClosed:true,exited:true},reopenedBrowser:{pid:345680,profileScopeHash:'a'.repeat(64)},reconnectByRestart:false,online:true} : {}), ...(browserRestart && !m.graceful ? { crash: { pid: 345678, profileScopeHash: 'a'.repeat(64), method: fault === 'browser-graceful' ? 'close' : 'SIGKILL', exited: true }, reconnectByRestart: fault === 'browser-offline-lie' ? !wasOffline : wasOffline, online: true } : {}) });
     }
     case 'installMalformed':
       malformed={role,round:m.round,kind:m.kind,sourcePresent:true,fsynced:true,acceptedEdits:0,originalSha256:'a'.repeat(64),faultSha256:'b'.repeat(64),fileIdentity:'c'.repeat(64),started:performance.now()};

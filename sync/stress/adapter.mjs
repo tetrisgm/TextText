@@ -74,6 +74,15 @@ export class ProcessAdapter extends EventEmitter {
     return true;
   }
 
+  // Detach only a proven guarded actor; do not close stdin or signal it.
+  retainForReview() {
+    if (!this.child || this.exit) throw new Error('Retained actor already exited');
+    const pid=this.child.pid;
+    this.child.unref();
+    for (const pipe of [this.child.stdin,this.child.stdout,this.child.stderr]) pipe?.unref?.();
+    return {driverHostPid:pid};
+  }
+
   // Clean stop: shutdown message, then SIGTERM, then SIGKILL, each bounded.
   async stop(graceMs = 2000) {
     if (!this.child || this.exit) return this.exit;

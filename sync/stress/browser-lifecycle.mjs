@@ -38,3 +38,49 @@ export async function crashOwnedBrowser(context,profile,{signal=(pid,kind)=>proc
     }
   } finally {browser.off('disconnected',mark);}
 }
+
+// Normal page close is deliberately distinct from a crash. A production
+// beforeunload refusal fails without forcing the page or closing its context.
+export async function closeOwnedBrowser(context,page,profile,{signal=(pid,kind)=>process.kill(pid,kind),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),now=()=>performance.now()}={}) {
+  if(!page||page.isClosed())throw new Error('Owned browser page unavailable before normal close');
+  const first=await observeOwnedBrowser(context,profile),browser=context.browser();
+  let blocked=false,closed=false;
+  const bounded=async action=>{let timer;try{return await Promise.race([action(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Normal browser close request timed out')),10000);})]);}finally{clearTimeout(timer);}};
+  const dialog=async value=>{blocked=true;await value.dismiss().catch(()=>{});};
+  const didClose=()=>{closed=true;};page.on('dialog',dialog);page.on('close',didClose);
+  try {
+    const fresh=await observeOwnedBrowser(context,profile);
+    if(fresh.pid!==first.pid||fresh.profileScopeHash!==first.profileScopeHash||page.isClosed())throw new Error('Owned browser changed before normal close');
+    await bounded(()=>page.close({runBeforeUnload:true}));
+    const deadline=now()+10000;
+    while(!closed&&!page.isClosed()){
+      if(blocked)throw new Error('Production beforeunload refused normal browser close');
+      if(now()>=deadline)throw new Error('Normal browser page close was not observed');
+      await sleep(25);
+    }
+    if(blocked)throw new Error('Production beforeunload refused normal browser close');
+    await bounded(()=>context.close());
+    for(;;){
+      let gone=false;
+      try{signal(fresh.pid,0);}catch(error){if(error.code==='ESRCH')gone=true;else throw new Error('Normal owned browser exit could not be verified');}
+      if(gone&&!browser.isConnected())return{...fresh,method:'normal-close',runBeforeUnload:true,pageClosed:true,contextClosed:true,exited:true};
+      if(now()>=deadline)throw new Error('Normal owned browser exit was not observed');
+      await sleep(25);
+    }
+  }catch(error){
+    if(!page.isClosed()&&browser.isConnected()){
+      const retained=await observeOwnedBrowser(context,profile);
+      if(retained.pid===first.pid&&retained.profileScopeHash===first.profileScopeHash)error.retention={schemaVersion:1,driverPid:process.pid,browserPid:retained.pid,profileScopeHash:retained.profileScopeHash,pageRetained:true,contextRetained:true};
+    }
+    throw error;
+  }finally{page.off('dialog',dialog);page.off('close',didClose);}
+}
+
+// A refused close is a human-review boundary, not permission for runner cleanup
+// to destroy the guarded page. Keep the owned driver until its browser closes.
+export function retainGuardedBrowser(context,{onExit=()=>process.exit(1)}={}) {
+  const browser=context.browser();
+  if(!browser?.isConnected())throw new Error('Guarded browser unavailable for retention');
+  const hold=setInterval(()=>{},60000);
+  browser.once('disconnected',()=>{clearInterval(hold);onExit();});
+}
