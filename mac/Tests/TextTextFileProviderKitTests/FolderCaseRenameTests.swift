@@ -139,6 +139,82 @@ final class FolderCaseRenameTests: XCTestCase {
         XCTAssertEqual(calls, 2)
         XCTAssertFalse(try store.folderRenameRecoveryRead(id: first.id).resolved)
     }
+    func testForeignSwapDuringProfilePreparationCannotBecomeNewExpectedDirectory() throws {
+        try owned(); try source()
+        XCTAssertThrowsError(try FolderCaseRename(root: root).rename(sourcePath: "Before", destinationPath: "before") { stage in
+            if stage == "folderBeforeProfile" {
+                try FileManager.default.moveItem(at: self.root.appendingPathComponent("Before"), to: self.root.appendingPathComponent("Preserved"))
+                try FileManager.default.createDirectory(at: self.root.appendingPathComponent("Before"), withIntermediateDirectories: false)
+                try Data("foreign during setup".utf8).write(to: self.root.appendingPathComponent("Before/foreign.bin"))
+            }
+        })
+        XCTAssertThrowsError(try FolderCaseRename(root: root).assertReadable())
+        XCTAssertTrue(try RetainedFileMove.exactRelativeExists(root: root, path: "Before/foreign.bin"))
+        XCTAssertFalse(try RetainedFileMove.exactRelativeExists(root: root, path: "before"))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Preserved/child.bin")), Data("preserved contents".utf8))
+    }
+    func testForeignSwapBeforeParentPinCannotBecomeNewExpectedDirectory() throws {
+        try owned(); try source()
+        XCTAssertThrowsError(try FolderCaseRename(root: root).rename(sourcePath: "Before", destinationPath: "before") { stage in
+            if stage == "folderBeforeParentPin" {
+                try FileManager.default.moveItem(at: self.root.appendingPathComponent("Before"), to: self.root.appendingPathComponent("Preserved"))
+                try FileManager.default.createDirectory(at: self.root.appendingPathComponent("Before"), withIntermediateDirectories: false)
+                try Data("foreign during setup".utf8).write(to: self.root.appendingPathComponent("Before/foreign.bin"))
+            }
+        })
+        XCTAssertThrowsError(try FolderCaseRename(root: root).assertReadable())
+        XCTAssertTrue(try RetainedFileMove.exactRelativeExists(root: root, path: "Before/foreign.bin"))
+        XCTAssertFalse(try RetainedFileMove.exactRelativeExists(root: root, path: "before"))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Preserved/child.bin")), Data("preserved contents".utf8))
+    }
+    func testUnsafeAncestorRemainsVisibleAsBlockedUnverifiedRecoveryMetadata() throws {
+        try owned(); try source()
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Parent"), withIntermediateDirectories: false)
+        try FileManager.default.moveItem(at: root.appendingPathComponent("Before"), to: root.appendingPathComponent("Parent/Before"))
+        XCTAssertThrowsError(try FolderCaseRename(root: root).rename(sourcePath: "Parent/Before", destinationPath: "Parent/before") { stage in
+            if stage == "folderPrepared" {
+                try FileManager.default.moveItem(at: self.root.appendingPathComponent("Parent/Before"), to: self.root.appendingPathComponent("Parent/Original"))
+                try FileManager.default.createDirectory(at: self.root.appendingPathComponent("Parent/Before"), withIntermediateDirectories: false)
+            }
+        })
+        try FileManager.default.moveItem(at: root.appendingPathComponent("Parent"), to: root.appendingPathComponent("PreservedParent"))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Outside"), withIntermediateDirectories: false)
+        try Data("untouched".utf8).write(to: root.appendingPathComponent("Outside/bytes.bin"))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Parent"), withDestinationURL: root.appendingPathComponent("Outside"))
+        let store = LocalVaultDocumentStore(root: root), row = try XCTUnwrap(store.folderRenameRecoveryList().first)
+        XCTAssertTrue(row.from.present); XCTAssertNil(row.from.identity)
+        XCTAssertTrue(row.to.present); XCTAssertNil(row.to.identity)
+        XCTAssertNotNil(row.resolutionBlocked)
+        XCTAssertThrowsError(try store.resolveFolderRename(id: row.id, fromPath: row.fromPath, toPath: row.toPath, inspection: row.inspection))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Outside/bytes.bin")), Data("untouched".utf8))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("PreservedParent/Original/child.bin")), Data("preserved contents".utf8))
+    }
+    func testStreamingHistoryStillValidatesUnknownRecordsAndLaterConflicts() throws {
+        try owned(); try source()
+        try FolderCaseRename(root: root).rename(sourcePath: "Before", destinationPath: "before")
+        let directory = LocalVaultDeviceState.directory(root: root).appendingPathComponent("folder-case-renames")
+        let original = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first { $0.pathExtension == "json" })
+        let template = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: original)) as? [String: Any])
+        var last: URL!
+        for _ in 0..<32 {
+            let operation = UUID(), target = directory.appendingPathComponent(operation.uuidString + ".json")
+            var object = template; object["operation"] = operation.uuidString
+            try JSONSerialization.data(withJSONObject: object).write(to: target)
+            last = target
+        }
+        try FolderCaseRename(root: root).assertReadable()
+        XCTAssertTrue(try LocalVaultDocumentStore(root: root).folderRenameRecoveryList().isEmpty)
+        var changed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: last)) as? [String: Any])
+        changed["futureField"] = true
+        let future = try JSONSerialization.data(withJSONObject: changed); try future.write(to: last)
+        XCTAssertThrowsError(try FolderCaseRename(root: root).assertReadable())
+        XCTAssertThrowsError(try LocalVaultDocumentStore(root: root).folderRenameRecoveryList())
+        XCTAssertEqual(try Data(contentsOf: last), future)
+        changed.removeValue(forKey: "futureField"); changed["state"] = "conflict"
+        try JSONSerialization.data(withJSONObject: changed).write(to: last)
+        XCTAssertThrowsError(try FolderCaseRename(root: root).assertReadable())
+        XCTAssertEqual(try LocalVaultDocumentStore(root: root).folderRenameRecoveryList().count, 1)
+    }
     func testFullRelativePresenceRejectsParentAliasButAllowsExactDescendant() throws {
         try source()
         XCTAssertTrue(try RetainedFileMove.exactRelativeExists(root: root, path: "Before/child.bin"))

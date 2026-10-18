@@ -76,20 +76,21 @@ struct FolderCaseRename {
         guard Darwin.rename(temporary.path, directory.appendingPathComponent(record.operation.uuidString + ".json").path) == 0 else { throw POSIXError(.EIO) }
         try RetainedFileReplacement.flushDirectory(directory)
     }
-    private func records() throws -> [Record] {
-        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+    private func forEachRecord(_ body: (Record) throws -> Void) throws {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw Failure.invalid }
-        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        guard names.count <= 20_000 else { throw Failure.invalid }
         let principal = try principal()
-        let records = try names.filter { name in
+        var enumerationError: Error?
+        guard let entries = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil,
+            options: [.skipsSubdirectoryDescendants, .skipsPackageDescendants], errorHandler: { _, error in
+                enumerationError = error; return false
+            }) else { throw Failure.invalid }
+        for case let entry as URL in entries {
+            let name = entry.lastPathComponent
             if name.hasPrefix(".staged-") {
                 guard UUID(uuidString: String(name.dropFirst(8))) != nil else { throw Failure.invalid }
-                return false
+                continue
             }
-            return true
-        }
-        return try records.sorted().map { name in
             guard name.hasSuffix(".json"), let id = UUID(uuidString: String(name.dropLast(5))) else { throw Failure.invalid }
             let bytes = try StableFileSnapshot.read(directory.appendingPathComponent(name), maximumBytes: 16_384)
             guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
@@ -110,8 +111,9 @@ struct FolderCaseRename {
                   source.lastPathComponent != destination.lastPathComponent,
                   source.lastPathComponent.lowercased() == destination.lastPathComponent.lowercased(),
                   record.explicitResolution == nil || record.state == "completed" else { throw Failure.invalid }
-            return record
+            try body(record)
         }
+        if let enumerationError { throw enumerationError }
     }
     private func endpoint(_ path: String) throws -> Endpoint {
         let components = path.split(separator: "/")
@@ -141,7 +143,7 @@ struct FolderCaseRename {
     func assertReadable() throws {
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         try RetainedFileRemoval.withLease(at: lease) {
-            for record in try records() {
+            try forEachRecord { record in
                 let checked = try classify(record)
                 guard checked.state == "completed" || checked.state == "cancelled" else { throw Failure.unresolved }
             }
@@ -164,28 +166,36 @@ struct FolderCaseRename {
     func rename(sourcePath: String, destinationPath: String, observe: ((String) throws -> Void)? = nil) throws {
         try validate(sourcePath); try validate(destinationPath)
         let source = root.appendingPathComponent(sourcePath), destination = root.appendingPathComponent(destinationPath)
+        let initialSource = try identity(source), initialParent = try identity(source.deletingLastPathComponent())
         guard source.deletingLastPathComponent() == destination.deletingLastPathComponent(),
               source.lastPathComponent != destination.lastPathComponent,
               source.lastPathComponent.lowercased() == destination.lastPathComponent.lowercased(),
               try RetainedFileMove.exactRelativeExists(root: root, path: sourcePath),
               try !RetainedFileMove.exactRelativeExists(root: root, path: destinationPath),
-              try identity(source) == identity(destination) else { throw Failure.changed }
+              initialSource == (try identity(destination)) else { throw Failure.changed }
+        try observe?("folderBeforeProfile")
         try RetainedReplacementProfile.prepareFolderCase(root: root)
         try RetainedFileRemoval.withLease(at: lease) {
-            for prior in try records() { let checked = try classify(prior); guard checked.state != "conflict" else { throw Failure.unresolved } }
-            let parent = source.deletingLastPathComponent()
-            let parentInfo = try identity(parent), expected = try identity(source)
-            let fd = try openParent(sourcePath)
-            guard fd >= 0 else { throw Failure.invalid }; defer { close(fd) }
-            var info = stat()
-            guard fstat(fd, &info) == 0, parentInfo == Identity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino)) else { throw Failure.changed }
+            try forEachRecord { prior in let checked = try classify(prior); guard checked.state != "conflict" else { throw Failure.unresolved } }
+            let parentInfo = initialParent, expected = initialSource
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             guard directory.resolvingSymlinksInPath().path == directory.path else { throw Failure.invalid }
             try RetainedFileReplacement.flushDirectory(state)
             var record = Record(version: 1, operation: UUID(), rootHash: digest(Data(root.path.utf8)), ownerHash: try principal(),
                 sourcePath: sourcePath, destinationPath: destinationPath, sourceIdentity: expected, parentIdentity: parentInfo, state: "pending")
             guard !FileManager.default.fileExists(atPath: directory.appendingPathComponent(record.operation.uuidString + ".json").path) else { throw Failure.invalid }
-            try save(record); try observe?("folderPrepared")
+            try save(record)
+            try observe?("folderBeforeParentPin")
+            let fd: Int32
+            do { fd = try openParent(sourcePath) }
+            catch { record.state = "conflict"; try save(record); throw error }
+            defer { close(fd) }
+            var info = stat()
+            guard fstat(fd, &info) == 0, parentInfo == Identity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino)),
+                  try endpoint(sourcePath).identity == expected.token, try !endpoint(destinationPath).present else {
+                record.state = "conflict"; try save(record); throw Failure.changed
+            }
+            try observe?("folderPrepared")
             // No expected-inode argument exists on Darwin. Always inspect the
             // actual result; a foreign leaf remains visible and fences retries.
             let result = source.lastPathComponent.withCString { old in destination.lastPathComponent.withCString { new in
@@ -199,11 +209,19 @@ struct FolderCaseRename {
         }
     }
     private func inspect(_ record: Record) throws -> Inspection {
-        let from = try endpoint(record.sourcePath), to = try endpoint(record.destinationPath)
-        var lines = ["from:\(from.present):\(from.identity ?? "")", "to:\(to.present):\(to.identity ?? "")"]
         var blocked: String?, count = 0, metadataBytes = 0
+        func probe(_ path: String) -> Endpoint {
+            do { return try endpoint(path) }
+            catch {
+                blocked = "A folder path has an unsafe or unreadable parent. Its presence could not be verified."
+                return Endpoint(present: true, identity: nil)
+            }
+        }
+        let from = probe(record.sourcePath), to = probe(record.destinationPath)
+        var lines = ["from:\(from.present):\(from.identity ?? "")", "to:\(to.present):\(to.identity ?? "")"]
         for path in [record.sourcePath, record.destinationPath] {
-            guard try endpoint(path).present else { continue }
+            let endpoint = path == record.sourcePath ? from : to
+            guard endpoint.present, endpoint.identity != nil else { continue }
             let base = root.appendingPathComponent(path)
             var rootInfo = stat()
             guard lstat(base.path, &rootInfo) == 0 else { blocked = "A folder path could not be inspected."; continue }
@@ -226,11 +244,21 @@ struct FolderCaseRename {
         return Inspection(record: record, from: from, to: to, digest: digest(bytes), summary: "Inspected \(min(count, 10_000)) directory entries. No file contents were copied.", blocked: blocked)
     }
     func list() throws -> [Inspection] {
-        try records().filter { $0.state == "pending" || $0.state == "conflict" || $0.explicitResolution != nil }.map(inspect)
+        var result: [Inspection] = []
+        try forEachRecord { record in
+            if record.state == "pending" || record.state == "conflict" || record.explicitResolution != nil {
+                guard result.count < 40_000 else { throw Failure.invalid }
+                result.append(try inspect(record))
+            }
+        }
+        return result.sorted { $0.record.operation.uuidString < $1.record.operation.uuidString }
     }
     func read(id: String) throws -> Inspection {
-        guard let operation = UUID(uuidString: id), let record = try records().first(where: { $0.operation == operation }) else { throw Failure.invalid }
-        return try inspect(record)
+        guard let operation = UUID(uuidString: id) else { throw Failure.invalid }
+        var matching: Record?
+        try forEachRecord { if $0.operation == operation { matching = $0 } }
+        guard let matching else { throw Failure.invalid }
+        return try inspect(matching)
     }
     func resolve(id: String, fromPath: String, toPath: String, inspection: String, beforeAcknowledge: (() throws -> Void)?) throws {
         try RetainedFileRemoval.withLease(at: lease) {
