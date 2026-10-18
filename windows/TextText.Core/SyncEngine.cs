@@ -32,6 +32,8 @@ public sealed class SyncEngine
     readonly WorkspaceWriterOwnership workspaceOwnership;
     readonly MirrorPolicy? mirrorPolicy;
     readonly TextPackStore store; readonly ISyncTransport transport; readonly SemaphoreSlim gate=new(1,1); readonly string statePath; readonly string? accountId;
+    public bool HasEligiblePending {get;private set;}
+    int remainingQueueBudget;
     public SyncStatus Status {get;private set;}=new(false,null,0);
     public event Action<SyncStatus>? StatusChanged;
     public event Action? DurabilityChanged;
@@ -216,6 +218,7 @@ public sealed class SyncEngine
             using var fileLock=workspaceOwnership.Acquire();
             if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("The shared sync policy is unavailable. Reopen the workspace to retry.");
             await mirrorPolicy.ReadyAsync(cancellation);
+            HasEligiblePending=false;remainingQueueBudget=128;
             state=Load();var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
             Report(true,null,state.Outbox.Count);
             var local=store.Scan().ToDictionary(x=>x.ItemId);
@@ -654,8 +657,20 @@ public sealed class SyncEngine
     }
     void Queue(State state,Operation operation) {state.Outbox.Add(operation with {Lifecycle=state.Items.GetValueOrDefault(operation.ItemId)?.Lifecycle});Save(state);}
     async Task Drain(State state,CancellationToken ct) {
-        while(state.Outbox.Any(x=>!x.Conflicted&&!IsEditing(x.ItemId)&&!store.ReplacementBlocked(x.ItemId)&&Permitted(state,x))) {
-            var op=state.Outbox.First(x=>!x.Conflicted&&!IsEditing(x.ItemId)&&!store.ReplacementBlocked(x.ItemId)&&Permitted(state,x));string? revision=null;
+        var captured=state.Outbox.ToArray();
+        var candidates=captured.Select(op=>new MirrorQueueCandidate(op.Id,op.Conflicted,IsEditing(op.ItemId),store.ReplacementBlocked(op.ItemId),Permitted(state,op))).ToArray();
+        var selection=await mirrorPolicy!.QueueAsync(new(candidates,remainingQueueBudget),ct);
+        // Capabilities can change while the page evaluates the captured queue.
+        // Publish the current snapshot before any selected operation is sent.
+        RememberCapabilities(state);
+        HasEligiblePending=HasEligiblePending||selection.HasMore;
+        var selected=selection.OperationIds.ToHashSet(StringComparer.Ordinal);
+        foreach(var op in captured.Where(op=>selected.Contains(op.Id))) {
+            // Keep the captured durable operation unchanged. A reply cannot
+            // authorize a replaced journal, editor lease or permission grant.
+            ct.ThrowIfCancellationRequested();
+            if(!state.Outbox.Contains(op)||op.Conflicted||IsEditing(op.ItemId)||store.ReplacementBlocked(op.ItemId)||!Permitted(state,op))continue;
+            remainingQueueBudget--;string? revision=null;
             try {
                 store.AssertReplacementReadable(op.ItemId);
                 if(op.Kind=="upload") revision=await transport.UploadAsync(op.ItemId,op.Path,Convert.FromBase64String(op.Payload!),op.Revision,op.Id,ct);

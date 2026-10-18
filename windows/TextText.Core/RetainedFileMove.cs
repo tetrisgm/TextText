@@ -10,6 +10,23 @@ public static class RetainedFileMove
         RetainedFileReplacement.CheckPath(path);var parent=Path.GetDirectoryName(Path.GetFullPath(path))!;
         return Directory.Exists(parent)&&Directory.EnumerateFileSystemEntries(parent).Any(entry=>Path.GetFileName(entry)==Path.GetFileName(path));
     }
+    internal static string ExistingPhysicalLeaf(string path)
+    {
+        RetainedFileReplacement.CheckPath(path);if(!File.Exists(path))return path;
+        var requested=Path.GetFileName(path);var candidates=new List<string>();var visited=0;
+        foreach(var entry in Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(Path.GetFullPath(path))!)) {
+            if(++visited>20000)throw new InvalidDataException("Too many files to inspect the actual filename safely.");
+            var name=Path.GetFileName(entry);if(name==requested)return path;
+            if(string.Equals(name,requested,StringComparison.OrdinalIgnoreCase))candidates.Add(entry);
+        }
+        if(candidates.Count!=1)throw new IOException("The actual filename could not be verified.");
+        var actual=candidates[0];RetainedFileReplacement.CheckPath(actual);
+        if(OperatingSystem.IsWindows()) {
+            var logical=RetainedFileReplacement.Fingerprint(path);var physical=RetainedFileReplacement.Fingerprint(actual);
+            if(logical is null||physical is null||logical.Volume!=physical.Volume||logical.FileId!=physical.FileId)throw new IOException("The filename alias does not identify the same file.");
+        }
+        return actual;
+    }
     internal static bool IsCaseOnlyAlias(string source,string target)
     {
         if(!CaseOnlyPaths(source,target)||!RetainedFileReplacement.ExistsNoFollow(target)||!ExactLeafExists(source)||ExactLeafExists(target))return false;

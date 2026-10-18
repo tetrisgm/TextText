@@ -1,3 +1,4 @@
+import queueVectors from "../../sync/fixtures/mirror-queue.json";
 import lifecycleVectors from "../../sync/fixtures/mirror-lifecycle.json";
 import { describe, expect, it } from "vitest";
 import { createMirrorPolicyHost } from "./mirror-policy-host";
@@ -24,6 +25,23 @@ describe("portable mirror policy host", () => {
     }
     host.retire();
     expect(() => host.schedule({...request, observed: schedules[0].observed})).toThrow("Stale");
+  });
+  it("fences queue selection and echoes exact ordered observations", () => {
+    const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
+    for (const vector of queueVectors) {
+      const input = {...request, observed: vector.observed};
+      const before = JSON.stringify(input);
+      const result = host.queue(input);
+      expect(result).toEqual({...input, decision: vector.decision});
+      expect(result.observed).not.toBe(vector.observed);
+      expect(JSON.stringify(input)).toBe(before);
+      expect(() => host.queue({...input, generation: 0})).toThrow("Stale");
+      expect(() => host.queue({...input, observed: {...vector.observed, payload: "forbidden"}})).toThrow();
+    }
+    host.bind({scope: {...scope, lifecycle: "replacement"}, generation: 1});
+    expect(() => host.queue({...request, observed: queueVectors[0].observed})).toThrow("Stale");
+    host.retire();
+    expect(() => host.queue({...request, generation: 2, scope: {...scope, lifecycle: "replacement"}, observed: queueVectors[0].observed})).toThrow("Stale");
   });
   it("fences lifecycle decisions and echoes every observation", () => {
     const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});

@@ -10,6 +10,7 @@ await buildLocalVault({output});
 await copyFile('sync/fixtures/mirror-policy.json',path.join(output,'vectors.json'));
 await copyFile('sync/fixtures/mirror-schedule.json',path.join(output,'schedule-vectors.json'));
 await copyFile('sync/fixtures/mirror-lifecycle.json',path.join(output,'lifecycle-vectors.json'));
+await copyFile('sync/fixtures/mirror-queue.json',path.join(output,'queue-vectors.json'));
 // Load the exact packaged script without an editor, transport or credentials.
 await writeFile(path.join(output,'policy-fixture.html'),'<meta charset="utf-8"><p>Isolated native policy host</p><script src="mirror-policy.js"></script>');
 const manifest=JSON.parse(await readFile(path.join(output,'mirror-policy.json'),'utf8'));
@@ -45,10 +46,17 @@ try {
   const reply=await page.evaluate(request=>window.texttextMirrorPolicy.lifecycle(request),request);
   assert.deepEqual(reply,{...request,decision:vector.decision});
  }
+ const queues=JSON.parse(await readFile(path.join(output,'queue-vectors.json'),'utf8'));
+ for(const [i,vector] of queues.entries()) {
+  const request={...binding,scope,requestId:'queue-'+i,observed:vector.observed};
+  const reply=await page.evaluate(request=>window.texttextMirrorPolicy.queue(request),request);
+  assert.deepEqual(reply,{...request,decision:vector.decision});
+ }
  await page.context().setOffline(false);await page.reload();
  const second=await page.evaluate(()=>window.texttextMirrorPolicy.handshake());
  assert.notEqual(first.pageId,second.pageId);
  await page.evaluate(scope=>window.texttextMirrorPolicy.bind({scope,generation:0}),scope);
  await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.evaluate(request),{...binding,scope,requestId:'old',observed:vectors[0].observed}),/Stale/);
+ await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.queue(request),{...binding,scope,requestId:'old-queue',observed:queues[0].observed}),/Stale/);
  console.log('PASS packaged mirror policy: shared vectors without an editor, offline evaluation, exact digest, reload fences old page');
 } finally {await browser.close();}

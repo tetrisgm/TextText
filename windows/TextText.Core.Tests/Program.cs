@@ -9,6 +9,8 @@ static class Test
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--mirror-queue-fixtures"})) {var queueBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&queueBase.StartsWith("/var/"))queueBase="/private"+queueBase;var queue=Path.Combine(queueBase,"texttext-queue-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(queue);await MirrorQueueIntegrationTests.Run(queue,Assert);Console.WriteLine("All mirror queue fixtures passed. Receipt: "+queue);return;}
+ if(args.SequenceEqual(new[]{"--alias-mutation-fixtures"})) {var aliasBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&aliasBase.StartsWith("/var/"))aliasBase="/private"+aliasBase;var alias=Path.Combine(aliasBase,"texttext-alias-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(alias);AliasMutationTests.Run(alias,Assert);Console.WriteLine("All alias mutation fixtures passed. Receipt: "+alias);return;}
  if(args.SequenceEqual(new[]{"--shared-case-fixtures"})) {var sharedBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&sharedBase.StartsWith("/var/"))sharedBase="/private"+sharedBase;var shared=Path.Combine(sharedBase,"texttext-shared-case-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(shared);await SharedCaseMoveTests.Run(shared,Assert);Console.WriteLine("All shared case fixtures passed. Receipt: "+shared);return;}
  if(args.SequenceEqual(new[]{"--retained-move-fixtures"})) {var moveBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&moveBase.StartsWith("/var/"))moveBase="/private"+moveBase;var move=Path.Combine(moveBase,"texttext-move-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(move);RetainedMoveTests.Run(move,Assert);Console.WriteLine("All retained move fixtures passed. Receipt: "+move);return;}
  if(args.SequenceEqual(new[]{"--retained-replacement-fixtures"})) {
@@ -32,7 +34,7 @@ static class Test
  await MirrorPolicyTests.Run(Assert);
  await MirrorLifecycleTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
- await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
+ await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
  RetainedReplacementAdoptionTests.Run(temp,Assert);
  RecoveryAssetTests.Run(temp,Assert);
  await RetainedReplacementSyncFenceTests.Run(temp,Assert);

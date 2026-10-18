@@ -8,12 +8,12 @@ public sealed partial class ReplacementRecoveryRegistry
     IDisposable RequireCaptureLease(Guid operation){try{return AcquireCaptureLease(operation);}catch(IOException){throw new RetainedFileReplacement.RequiredException(operation);}}
     internal IReadOnlyList<(string Path,byte[] Bytes)> RemovalIdentityMatches(Entry entry,bool strict=false)
     {
-        var result=new List<(string,byte[])>();var visited=0;
+        var result=new List<(string,byte[])>();var visited=0;var authoritative=RetainedFileMove.ExistingPhysicalLeaf(Target(entry));
         void Visit(string parent) {
             RetainedFileReplacement.CheckPath(parent);
             foreach(var full in Directory.EnumerateFileSystemEntries(parent)) {
                 if(Path.GetFileName(full).StartsWith('.'))continue;
-                if(Path.GetRelativePath(root,full).Replace('\\','/')==entry.Path)continue;
+                if(full==authoritative)continue;
                 if(++visited>20000)throw new InvalidDataException("Too many files to inspect removal safely.");
                 try{RetainedFileReplacement.CheckPath(full);}catch(IOException)when(!strict){continue;}
                 if(Directory.Exists(full)){Visit(full);continue;}

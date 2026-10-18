@@ -143,7 +143,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 MirrorScheduleDecision decision;
                 try {
                     if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("The shared sync policy is unavailable.");
-                    decision=await mirrorPolicy.ScheduleAsync(new(outcome,failures,false,false),lifetime.Token);
+                    decision=await mirrorPolicy.ScheduleAsync(new(outcome,failures,sync.HasEligiblePending,false),lifetime.Token);
                 } catch(OperationCanceledException) when(lifetime.IsCancellationRequested) { break; }
                 catch {
                     // No executable policy means no background writer or invented

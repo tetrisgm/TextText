@@ -34,6 +34,33 @@ static class MirrorPolicyTests
             var policy=NativePolicyTestHost.Create();
             check(await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!)==vector.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(json),"source lifecycle vector: "+vector.GetProperty("name"));
         }
+        foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-queue.json"))).RootElement.EnumerateArray()) {
+            var policy=NativePolicyTestHost.Create();
+            var result=await policy.QueueAsync(vector.GetProperty("observed").Deserialize<MirrorQueueObservation>(json)!);
+            check(JsonSerializer.Serialize(result,json)==JsonSerializer.Serialize(vector.GetProperty("decision").Deserialize<MirrorQueueDecision>(json),json),"source queue vector: "+vector.GetProperty("name"));
+        }
+        var largeCandidates=Enumerable.Range(0,512).Select(i=>new MirrorQueueCandidate("operation-"+i,false,false,false,true)).ToArray();
+        var largeQueue=await NativePolicyTestHost.Create().QueueAsync(new(largeCandidates,128));
+        check(largeQueue.HasMore&&largeQueue.OperationIds.SequenceEqual(largeCandidates.Take(128).Select(c=>c.OperationId)),"bounded native queue snapshot above former small RPC line limit");
+        foreach(var altered in new[]{"scope","requestId","observed","digest","pageId","unknown-id","duplicate-id","reordered-id","over-budget"}) {
+            var policy=new MirrorPolicy(digest,scope,(script,ct)=>{
+                if(script.Contains(".handshake("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId="page",generation=1}));
+                if(script.Contains(".bind("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId="page",generation=1,scope},json));
+                var request=JsonNode.Parse(script[(script.IndexOf('(')+1)..^1])!;
+                request["decision"]=JsonSerializer.SerializeToNode(new MirrorQueueDecision(["a"],false),json);
+                if(altered=="unknown-id")request["decision"]!["operationIds"]=new JsonArray("unknown");
+                else if(altered=="duplicate-id")request["decision"]!["operationIds"]=new JsonArray("a","a");
+                else if(altered=="reordered-id")request["decision"]!["operationIds"]=new JsonArray("b","a");
+                else if(altered=="over-budget")request["decision"]!["operationIds"]=new JsonArray("a","b");
+                else request[altered]="invalid";
+                return Task.FromResult(request.ToJsonString());
+            });
+            var budget=altered=="reordered-id"?2:1;
+            var refused=false;
+            try{await policy.QueueAsync(new([new("a",false,false,false,true),new("b",false,false,false,true)],budget));}
+            catch(Exception e)when(e is IOException or JsonException or InvalidOperationException){refused=true;}
+            check(refused,"queue reply refuses "+altered);
+        }
         check(MirrorFailure.Outcome(new HttpRequestException("ignored",null,System.Net.HttpStatusCode.Unauthorized))=="auth-required","401 classified structurally");
         check(MirrorFailure.Outcome(new HttpRequestException("401 text is not status"))=="transient","network error text cannot invent authentication failure");
         check(MirrorFailure.Outcome(new IOException("offline"))=="storage","storage failure is not a generic network retry");

@@ -1,0 +1,220 @@
+[
+  {
+    "name": "empty",
+    "observed": {
+      "candidates": [],
+      "budget": 128
+    },
+    "decision": {
+      "operationIds": [],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "retained order",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "z",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        },
+        {
+          "operationId": "a",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 2
+    },
+    "decision": {
+      "operationIds": [
+        "z",
+        "a"
+      ],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "bounded continuation",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "z",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        },
+        {
+          "operationId": "a",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 1
+    },
+    "decision": {
+      "operationIds": [
+        "z"
+      ],
+      "hasMore": true
+    }
+  },
+  {
+    "name": "exhausted pass",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "z",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 0
+    },
+    "decision": {
+      "operationIds": [],
+      "hasMore": true
+    }
+  },
+  {
+    "name": "conflicted excluded",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "fenced",
+          "conflicted": true,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        },
+        {
+          "operationId": "other",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 1
+    },
+    "decision": {
+      "operationIds": [
+        "other"
+      ],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "editorOwned excluded",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "fenced",
+          "conflicted": false,
+          "editorOwned": true,
+          "recoveryBlocked": false,
+          "permitted": true
+        },
+        {
+          "operationId": "other",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 1
+    },
+    "decision": {
+      "operationIds": [
+        "other"
+      ],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "recoveryBlocked excluded",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "fenced",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": true,
+          "permitted": true
+        },
+        {
+          "operationId": "other",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 1
+    },
+    "decision": {
+      "operationIds": [
+        "other"
+      ],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "permitted excluded",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "fenced",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": false
+        },
+        {
+          "operationId": "other",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 1
+    },
+    "decision": {
+      "operationIds": [
+        "other"
+      ],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "only fenced",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "blocked",
+          "conflicted": false,
+          "editorOwned": false,
+          "recoveryBlocked": false,
+          "permitted": false
+        }
+      ],
+      "budget": 0
+    },
+    "decision": {
+      "operationIds": [],
+      "hasMore": false
+    }
+  }
+]

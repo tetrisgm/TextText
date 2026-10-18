@@ -20,6 +20,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
     }
     private struct Manifest: Decodable { let digest: String }
     private struct LifecycleVector: Decodable { let name: String, observed: LocalVaultMirrorLifecycleObservation, decision: LocalVaultMirrorLifecycleDecision }
+    private struct QueueVector: Decodable { let name: String, observed: LocalVaultMirrorQueueObservation, decision: LocalVaultMirrorQueueDecision }
     private struct ScheduleVector: Decodable { let name: String, observed: LocalVaultMirrorScheduleObservation, decision: LocalVaultMirrorScheduleDecision }
     private struct Vector: Decodable { let name: String, observed: LocalVaultMirrorObservation, disposition: LocalVaultMirrorDisposition }
     func testUnresponsivePolicyTimesOutAndRetiresItsLease() async throws {
@@ -43,6 +44,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         let manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: base.appendingPathComponent("mirror-policy.json")))
         let vectors = try JSONDecoder().decode([Vector].self, from: Data(contentsOf: base.appendingPathComponent("vectors.json")))
         let schedules = try JSONDecoder().decode([ScheduleVector].self, from: Data(contentsOf: base.appendingPathComponent("schedule-vectors.json")))
+        let queues = try JSONDecoder().decode([QueueVector].self, from: Data(contentsOf: base.appendingPathComponent("queue-vectors.json")))
         let lifecycles = try JSONDecoder().decode([LifecycleVector].self, from: Data(contentsOf: base.appendingPathComponent("lifecycle-vectors.json")))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-policy-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -86,6 +88,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
             let result = try await policy.schedule(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
         }
+        for vector in queues {
+            let result = try await policy.queue(vector.observed)
+            XCTAssertEqual(result, vector.decision, vector.name)
+        }
         for vector in lifecycles {
             let result = try await policy.lifecycle(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
@@ -100,6 +106,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         for vector in schedules {
             let result = try await policy.schedule(vector.observed)
             XCTAssertEqual(result, vector.decision, "Closed host: " + vector.name)
+        }
+        for vector in queues {
+            let result = try await policy.queue(vector.observed)
+            XCTAssertEqual(result, vector.decision, vector.name)
         }
         for vector in lifecycles {
             let result = try await policy.lifecycle(vector.observed)
@@ -116,6 +126,22 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
             let bad = LocalVaultMirrorPolicy(digest: manifest.digest,
                 scope: LocalVaultMirrorScope(accountId: "account-a", workspaceId: "workspace", lifecycle: "connection-a"), evaluate: { try await tampered($0) })
             do { _ = try await bad.decide(vectors[0].observed); XCTFail("Accepted forged \(field)") } catch {}
+        }
+        for field in ["scope", "requestId", "observed", "digest", "pageId", "unknown-id", "duplicate-id", "reordered-id", "over-budget"] {
+            let tampered: @MainActor @Sendable (String) async throws -> String = { script in
+                let raw = try await evaluate(script)
+                guard script.contains(".queue(") else { return raw }
+                var result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
+                if field.hasSuffix("-id") || field == "over-budget" {
+                    let ids = field == "unknown-id" ? ["unknown"] : field == "duplicate-id" ? ["a", "a"] : field == "reordered-id" ? ["b", "a"] : ["a", "b"]
+                    result["decision"] = ["operationIds": ids, "hasMore": false]
+                } else { result[field] = "invalid" }
+                return String(decoding: try JSONSerialization.data(withJSONObject: result), as: UTF8.self)
+            }
+            let bad = LocalVaultMirrorPolicy(digest: manifest.digest,
+                scope: LocalVaultMirrorScope(accountId: "account-a", workspaceId: "workspace", lifecycle: "connection-a"), evaluate: { try await tampered($0) })
+            let candidates = ["a", "b"].map { LocalVaultMirrorQueueCandidate(operationId: $0, conflicted: false, editorOwned: false, recoveryBlocked: false, permitted: true) }
+            do { _ = try await bad.queue(.init(candidates: candidates, budget: field == "reordered-id" ? 2 : 1)); XCTFail("Accepted forged queue \(field)") } catch {}
         }
         let next = LocalVaultMirrorPolicy(digest: manifest.digest,
             scope: LocalVaultMirrorScope(accountId: "account-b", workspaceId: "other", lifecycle: "connection-b"), evaluate: { try await evaluate($0) })

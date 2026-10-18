@@ -60,7 +60,7 @@ actor NativePolicyTestHost {
         }
         guard let input, let output else { throw CocoaError(.fileReadUnknown) }
         let request = try JSONSerialization.data(withJSONObject: ["context": context, "script": script]) + Data([10])
-        guard request.count <= 20000 else { throw CocoaError(.fileWriteUnknown) }
+        guard request.count <= 16 * 1024 * 1024 else { throw CocoaError(.fileWriteUnknown) }
         let deadline = DispatchTime.now().uptimeNanoseconds + 4_000_000_000
         try request.withUnsafeBytes { bytes in
             var offset = 0
@@ -77,7 +77,7 @@ actor NativePolicyTestHost {
             var bytes = [UInt8](repeating: 0, count: 4096)
             let count = Darwin.read(output.fileDescriptor, &bytes, bytes.count)
             if count == -1 && (errno == EAGAIN || errno == EINTR) { continue }
-            guard count > 0, buffered.count + count < 32768 else { throw CocoaError(.fileReadCorruptFile) }
+            guard count > 0, buffered.count + count <= 16 * 1024 * 1024 else { throw CocoaError(.fileReadCorruptFile) }
             buffered.append(contentsOf: bytes.prefix(count))
         }
         let end = buffered.firstIndex(of: 10)!

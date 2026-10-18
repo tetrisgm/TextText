@@ -75,6 +75,22 @@ public struct LocalVaultMirrorLifecycleDecision: Codable, Equatable, Sendable {
     public let baseline: String, pending: String
 }
 
+public struct LocalVaultMirrorQueueCandidate: Codable, Equatable, Sendable {
+    public let operationId: String
+    public let conflicted: Bool, editorOwned: Bool, recoveryBlocked: Bool, permitted: Bool
+    public init(operationId: String, conflicted: Bool, editorOwned: Bool, recoveryBlocked: Bool, permitted: Bool) {
+        self.operationId = operationId; self.conflicted = conflicted; self.editorOwned = editorOwned
+        self.recoveryBlocked = recoveryBlocked; self.permitted = permitted
+    }
+}
+public struct LocalVaultMirrorQueueObservation: Codable, Equatable, Sendable {
+    public let candidates: [LocalVaultMirrorQueueCandidate], budget: Int
+    public init(candidates: [LocalVaultMirrorQueueCandidate], budget: Int) { self.candidates = candidates; self.budget = budget }
+}
+public struct LocalVaultMirrorQueueDecision: Codable, Equatable, Sendable {
+    public let operationIds: [String], hasMore: Bool
+}
+
 /// Validates the existing page's pure policy RPC. This contains no mirror algorithm.
 public actor LocalVaultMirrorPolicy {
     public typealias Evaluate = @Sendable (String) async throws -> String
@@ -115,6 +131,10 @@ public actor LocalVaultMirrorPolicy {
     private struct LifecycleReply: Decodable {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorLifecycleObservation, decision: LocalVaultMirrorLifecycleDecision
+    }
+    private struct QueueReply: Decodable {
+        let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
+        let observed: LocalVaultMirrorQueueObservation, decision: LocalVaultMirrorQueueDecision
     }
     public init(digest: String, scope: LocalVaultMirrorScope, timeoutNanoseconds: UInt64 = 5_000_000_000, evaluate: @escaping Evaluate) {
         self.digest = digest; self.scope = scope; self.evaluate = evaluate; self.timeoutNanoseconds = timeoutNanoseconds
@@ -211,6 +231,24 @@ public actor LocalVaultMirrorPolicy {
         guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
               ["keep", "adopt", "defer"].contains(reply.decision.baseline),
               ["none", "keep", "adopt", "retire-delete", "fence-edit", "keep-fenced", "defer"].contains(reply.decision.pending) else { throw Failure.stale }
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+        return reply.decision
+    }
+
+    public func queue(_ observed: LocalVaultMirrorQueueObservation) async throws -> LocalVaultMirrorQueueDecision {
+        await acquire(); defer { release() }
+        try await prepare()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let reply = try await call("queue", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: QueueReply.self)
+        try check(reply.version, reply.digest, reply.pageId, reply.generation)
+        let ids = reply.decision.operationIds
+        guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
+              (0...512).contains(observed.budget), ids.count <= observed.budget,
+              Set(ids).count == ids.count else { throw Failure.stale }
+        let selected = Set(ids)
+        guard observed.candidates.filter({ selected.contains($0.operationId) }).map(\.operationId) == ids else { throw Failure.stale }
         let current = try await call("handshake", as: Identity.self)
         try check(current.version, current.digest, current.pageId, current.generation)
         return reply.decision

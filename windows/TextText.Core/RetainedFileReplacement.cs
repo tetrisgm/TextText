@@ -138,7 +138,7 @@ public static class RetainedFileReplacement
     }
     static readonly object manifestGate=new();
     static readonly Dictionary<string,(Stamp Stamp,Manifest Manifest)> manifests=new(StringComparer.Ordinal);
-    public static Recovery InspectDirectory(string directory,string filename,Guid operation,ISet<string>? verified=null)
+    public static Recovery InspectDirectory(string directory,string filename,Guid operation,ISet<string>? verified=null,bool allowCaseAlias=false)
     {
         CheckPath(directory,verified);
         var path=Path.Combine(directory,"manifest.json");var stamp=Fingerprint(path,ancestorsVerified:true);Manifest? manifest=null;
@@ -151,8 +151,8 @@ public static class RetainedFileReplacement
         if(stamp!=Fingerprint(path,ancestorsVerified:true))throw new FileChangedException();
         if(stamp is not null)lock(manifestGate){if(manifests.Count>=4096)manifests.Clear();manifests[path]=(stamp,manifest);}
         }
-        if (manifest.Version != 1 || manifest.Operation != operation || manifest.Filename != filename ||
-            Path.GetFileName(directory)!=operation.ToString("D") || Path.GetFileName(Path.GetDirectoryName(directory))!=TextPackStore.Hash(Encoding.UTF8.GetBytes(filename)) ||
+        if (manifest.Version != 1 || manifest.Operation != operation || (manifest.Filename != filename&&!(allowCaseAlias&&string.Equals(manifest.Filename,filename,StringComparison.OrdinalIgnoreCase))) ||
+            Path.GetFileName(directory)!=operation.ToString("D") || Path.GetFileName(Path.GetDirectoryName(directory))!=TextPackStore.Hash(Encoding.UTF8.GetBytes(manifest.Filename)) ||
             Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(directory)))!=".texttext-replacements" ||
             !ValidHash(manifest.ExpectedHash) || !ValidHash(manifest.PreparedHash) ||
             manifest.Kind is not (null or "removal" or "move") || manifest.State is not ("pending" or "conflict" or "completed" or "cancelled") || manifest.State=="cancelled"&&manifest.Kind is not ("removal" or "move") || manifest.Kind is ("removal" or "move")&&manifest.ExpectedHash!=manifest.PreparedHash) throw new InvalidDataException("Invalid replacement manifest.");

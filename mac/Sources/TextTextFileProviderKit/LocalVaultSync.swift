@@ -1021,9 +1021,22 @@ public actor LocalVaultSync {
         return replacement
     }
 
-    private func send(_ pending: Pending, report: inout LocalVaultSyncReport) async throws {
+    private func send(_ pending: Pending, report: inout LocalVaultSyncReport, preselected: Bool = false) async throws {
         try assertReplacementReadable(itemId: pending.itemId)
-        guard await canSend(pending) else { return }
+        guard state.outbox[pending.itemId] == pending else { return }
+        if !preselected {
+            guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
+            let editorOwned = try sharedProtection(itemId: pending.itemId)
+            let permitted = await canSend(pending)
+            guard state.outbox[pending.itemId] == pending else { return }
+            let selected = try await mirrorPolicy.queue(.init(candidates: [.init(operationId: pending.operationId,
+                conflicted: false, editorOwned: editorOwned,
+                recoveryBlocked: false, permitted: permitted)], budget: 1))
+            guard selected.operationIds == [pending.operationId] else { return }
+        }
+        guard state.outbox[pending.itemId] == pending,
+              try !sharedProtection(itemId: pending.itemId), await canSend(pending),
+              state.outbox[pending.itemId] == pending else { return }
         try assertReplacementReadable(itemId: pending.itemId)
         let baselineBefore = state.baselines[pending.itemId], conflictBefore = state.conflicts[pending.itemId]
         var didRetire = false
@@ -1294,16 +1307,34 @@ public actor LocalVaultSync {
         }
         try await reconcileLifecycles(manifest: manifest, report: &report)
         // Retry exact journal entries before producing new operations.
-        var writablePending: [Pending] = []
+        // Mac conflict history records retained versions, not a conflicted
+        // operation flag. A coherent later save is staged with a fresh CAS.
+        // Such durable entries normalize to conflicted:false; unchanged
+        // conflicted versions are excluded before staging below.
+        var capturedPending: [Pending] = []
+        var candidates: [LocalVaultMirrorQueueCandidate] = []
         for pending in state.outbox.values.sorted(by: { $0.path < $1.path }) {
             do {
-                if let current = try await adoptQueuedUploadPath(pending, remote: remoteByID[pending.itemId], budget: budget, report: &report),
-                   await canSend(current) { writablePending.append(current) }
+                guard let current = try await adoptQueuedUploadPath(pending, remote: remoteByID[pending.itemId], budget: budget, report: &report) else { continue }
+                let editorOwned = try sharedProtection(itemId: current.itemId)
+                let permitted = await canSend(current)
+                guard state.outbox[current.itemId] == current else { report.hasMore = true; continue }
+                capturedPending.append(current)
+                candidates.append(.init(operationId: current.operationId, conflicted: false,
+                    editorOwned: editorOwned, recoveryBlocked: false, permitted: permitted))
             } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
-        for pending in writablePending.prefix(budget) {
-            do { try await send(pending, report: &report) }
-            catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
+        let selection = try await mirrorPolicy.queue(.init(candidates: candidates, budget: budget))
+        report.hasMore = report.hasMore || selection.hasMore
+        let selected = Set(selection.operationIds)
+        for pending in capturedPending where selected.contains(pending.operationId) {
+            do {
+                // The page decides eligibility, never authority over a newer
+                // native journal, permission grant or collaboration lease.
+                guard state.outbox[pending.itemId] == pending, try !sharedProtection(itemId: pending.itemId),
+                      await canSend(pending), state.outbox[pending.itemId] == pending else { continue }
+                try await send(pending, report: &report, preselected: true)
+            } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
         if report.uploaded > 0 {
             manifest = try await transport.manifest(); remoteByID.removeAll()
@@ -1584,9 +1615,20 @@ public actor LocalVaultSync {
         }
         state.cursor = (start + count) % ids.count
         report.hasMore = report.hasMore || !indexComplete || start + count < ids.count
-        for pending in state.outbox.values {
-            if await canSend(pending) { report.hasMore = true; break }
+        var remainingCandidates: [LocalVaultMirrorQueueCandidate] = []
+        for pending in state.outbox.values.sorted(by: { $0.path < $1.path }) {
+            do {
+                let editorOwned = try sharedProtection(itemId: pending.itemId)
+                let permitted = await canSend(pending)
+                guard state.outbox[pending.itemId] == pending else { report.hasMore = true; continue }
+                remainingCandidates.append(.init(operationId: pending.operationId, conflicted: false,
+                    editorOwned: editorOwned, recoveryBlocked: false, permitted: permitted))
+            } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
+        do {
+            let remainingSelection = try await mirrorPolicy.queue(.init(candidates: remainingCandidates, budget: 0))
+            report.hasMore = report.hasMore || remainingSelection.hasMore
+        } catch { try report.failed(error, message: "The shared sync policy is unavailable. Reopen the workspace to retry.") }
         try await reconcileManagedFolders()
         try persist()
         return report

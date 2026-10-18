@@ -22,7 +22,7 @@ it('old application import paths remain implementation-free compatibility seams'
   }
 });
 
-for (const entry of ['client', 'server']) {
+for (const entry of ['client', 'server', 'engine/mirror-queue']) {
   it(`${entry} has no runtime dependency on UI, app routes or authentication`, () => {
     const seen = new Set<string>();
     function visit(file: string, chain: string[]) {
@@ -31,7 +31,7 @@ for (const entry of ['client', 'server']) {
       function dependency(specifier: string) {
         const trace = [...chain, file, specifier].join(' -> ');
         expect(/^(react(?:-dom)?(?:\/|$)|next(?:\/|$))/.test(specifier), trace).toBe(false);
-        if (entry === 'client') expect(specifier.startsWith('node:'), trace).toBe(false);
+        if (entry !== 'server') expect(specifier.startsWith('node:'), trace).toBe(false);
         const base = specifier.startsWith('@/') ? path.join(root, 'src', specifier.slice(2))
           : specifier.startsWith('.') ? path.resolve(path.dirname(file), specifier) : null;
         if (!base) return;

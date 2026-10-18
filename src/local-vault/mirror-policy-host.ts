@@ -1,3 +1,4 @@
+import { mirrorQueue, validateMirrorQueueObservation } from "../sync/engine/mirror-queue";
 import { mirrorLifecycle, validateMirrorLifecycleObservation } from "../sync/engine/mirror-lifecycle";
 import { mirrorDisposition, validateMirrorObservation } from "../sync/engine/mirror-policy";
 
@@ -59,6 +60,11 @@ export function createMirrorPolicyHost(digest: string, pageId: string) {
       const {v, envelope} = validateRequest(value);
       const observed = validateMirrorLifecycleObservation(v.observed);
       return { ...envelope, observed, decision: mirrorLifecycle(observed) };
+    },
+    queue(value: unknown) {
+      const {v, envelope} = validateRequest(value);
+      const observed = validateMirrorQueueObservation(v.observed);
+      return { ...envelope, observed, decision: mirrorQueue(observed) };
     },
     retire() { retired = true; },
   });

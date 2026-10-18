@@ -234,7 +234,7 @@ public sealed partial class TextPackStore
     public PackFile Write(string path, byte[] bytes, string? expectedHash = null)
     {
         var id = Identity(bytes);
-        lock(gate) { AssertReplacementReadable(id); var full=Resolve(path); Match(full,expectedHash); if(File.Exists(full)) { var previous=ReadProjection(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); }
+        lock(gate) { AssertReplacementReadable(id); var full=RetainedFileMove.ExistingPhysicalLeaf(Resolve(path)); Match(full,expectedHash); if(File.Exists(full)) { var previous=ReadProjection(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); }
             if(OperatingSystem.IsWindows() && expectedHash is not null) {
                 RetainedReplacementProfile.Prepare(this);
                 var operation=Guid.NewGuid();
@@ -385,7 +385,7 @@ public sealed partial class TextPackStore
     public void RemoveRetaining(string path,string expectedHash,bool recordDeletion=false)
     {
         lock(gate) {
-            var full=Resolve(path);Match(full,expectedHash);var bytes=ReadProjection(full);var identity=Identity(bytes);
+            var full=RetainedFileMove.ExistingPhysicalLeaf(Resolve(path));Match(full,expectedHash);var bytes=ReadProjection(full);var identity=Identity(bytes);
             if(Hash(bytes)!=expectedHash)throw new FileChangedException();
             if(recordDeletion)ClearPriorDeletionForRestoredFile(identity,path,expectedHash);
             RetainedReplacementProfile.Prepare(this);Preserve(bytes,"history");

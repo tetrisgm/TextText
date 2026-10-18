@@ -1,0 +1,22 @@
+# Shared mirror queue selection
+
+## Contract
+
+The packaged TypeScript owner now selects existing durable outbox operations. Requests contain ordered opaque operation IDs, captured conflict/editor/recovery/permission flags and a finite budget from zero to 512. They contain no paths, payloads or credentials. Strict validation rejects duplicates, unknown fields and oversized snapshots. Replies select existing IDs in captured order and report eligible continuation.
+
+The existing native queue formats and ordering remain: Mac path order and Windows durable FIFO. Native adapters retain filesystem leases, operation/payload storage, capability capture and final authority checks. Windows limits ordinary outbox sends to 128 attempts per pass and passes eligible continuation to the shared scheduler. Mac preserves its existing bounded pass phases and routes both retained retries and newly staged sends through selection. Neither adapter creates replacement IDs during retry.
+
+Mac conflict history describes retained versions, not a conflicted operation bit. Its unchanged conflicted versions are excluded before staging; a coherent later save receives a fresh CAS operation and remains eligible. Windows supplies its persisted per-operation conflict flag. This normalization preserves each supported durable format rather than treating a previous conflict as a permanent ban on later edits.
+
+The host uses the existing version/digest/page/account/workspace/lifecycle/request fences and a post-reply handshake. Native revalidation rejects changed permissions, active/protected editors, recovery fences and replaced operations. The new method is additive; a missing or replaced policy page pauses writes with retained work. There is no native policy fallback or new writer/runtime.
+
+## Evidence
+
+- Shared selector/host/boundary suites pass, including all flag combinations, budget boundaries, immutable ordered IDs, detached replies and strict malformed-input refusal: `/private/tmp/texttext-mirror-queue-shared-final-20261018.log`.
+- Nine serialized vectors run in the packaged browser offline and through native wrappers. The test-only RPC harness has finite larger bounds for queue snapshots; a 512-candidate native fixture exceeds the previous small-message limit.
+- Windows actual-PC full Core passed 965 assertions and 57 bridge checks; portable Mac Core passed 943 and 57 bridge checks. Exact archive/source pins are in `/private/tmp/texttext-t13-alias-final-source.json`. The 129-operation fixture proves the 128-send budget, exact FIFO IDs/payloads and restart continuation, plus protected-journal, stale-page and unavailable-page refusal.
+- A permission change during the queue RPC originally reached the revoked Windows transport. The unchanged red fixture is `/private/tmp/texttext-t11-queue-red-core.log`. Refreshing current transport capabilities before the final permission check passes the hardened zero-attempt assertion.
+- A Mac newly staged upload originally bypassed selection: `/private/tmp/texttext-mac-new-staged-queue-red-20261018.log`. Routing it through selection passes the unchanged regression, with exact staged operation and payload retained after revocation. All five Mac queue integration tests pass: `/private/tmp/texttext-mac-queue-newstage-green-20261018.log`.
+- The first combined Mac gate caught incorrect conflict-history normalization and an error escaping the final continuation query. Both were corrected without changing the existing conflict or real-WK policy fixtures. The focused nine-test rerun passes: `/private/tmp/texttext-queue-conflict-page-regressions-20261018.log`. Failed full evidence remains `/private/tmp/texttext-legacy-queue-native-full-20261018.log`.
+
+The exact-source combined Mac gate passes 50 app tests (three opt-in skips), two real offline-window tests, 239 FileProvider tests (six opt-in skips), and 73 CLI tests. The real packaged WK policy fixture ran. Log and 12 affected Swift hashes: `/private/tmp/texttext-legacy-queue-native-full-second-20261018.log` and its `-source.json` companion. Explicit Windows WebView2 queue-vector execution and installed acceptance remain pending. This source slice does not claim the physical six-client campaign or complete T11 acceptance.

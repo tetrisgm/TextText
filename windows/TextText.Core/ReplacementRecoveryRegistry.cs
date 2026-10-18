@@ -56,7 +56,7 @@ public sealed partial class ReplacementRecoveryRegistry
     }
     string Target(Entry entry,ISet<string>? verified=null)
     {
-        if (entry.Path.Length > 4096 || !entry.Path.EndsWith(".textpack", StringComparison.Ordinal) || entry.Path.Contains('\\') || entry.Path.Contains(':') ||
+        if (entry.Path.Length > 4096 || !entry.Path.EndsWith(".textpack", StringComparison.OrdinalIgnoreCase) || entry.Path.Contains('\\') || entry.Path.Contains(':') ||
             entry.Path.Split('/').Any(part => part.Length == 0 || part.StartsWith('.') || part.EndsWith(' ') || part.EndsWith('.')))
             throw new InvalidDataException("Invalid replacement path.");
         var target = Path.GetFullPath(Path.Combine(root, entry.Path));
@@ -87,7 +87,13 @@ public sealed partial class ReplacementRecoveryRegistry
         var full=Path.GetFullPath(Path.Combine(root,relative));
         if(!full.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Retained replacement leaves workspace.");
         var expected=RetainedFileReplacement.OperationDirectory(Target(entry,verified),entry.Operation,Path.Combine(root,".texttext","retained-replacements",TextPackStore.Hash(Encoding.UTF8.GetBytes(entry.Path))));
-        if(full!=expected)throw new InvalidDataException("Retained replacement location does not match its original path and operation.");
+        if(full!=expected) {
+            var recoveryRoot=Path.Combine(root,".texttext","retained-replacements",TextPackStore.Hash(Encoding.UTF8.GetBytes(entry.Path)));
+            if(Path.GetFileName(full)!=entry.Operation.ToString("D")||Path.GetDirectoryName(Path.GetDirectoryName(full))!=Path.Combine(recoveryRoot,".texttext-replacements"))throw new InvalidDataException("Retained replacement location does not match its original path and operation.");
+            var recovery=RetainedFileReplacement.InspectDirectory(full,Path.GetFileName(entry.Path),entry.Operation,verified,allowCaseAlias:true);
+            var physical=Path.Combine(Path.GetDirectoryName(Target(entry,verified))!,recovery.Record.Filename);
+            if(full!=RetainedFileReplacement.OperationDirectory(physical,entry.Operation,recoveryRoot))throw new InvalidDataException("Retained replacement basename changed.");
+        }
         RetainedFileReplacement.CheckPath(full,verified);return full;
     }
     public (byte[] Bytes,bool NeedsAdoption) BindForAdoption(byte[] bytes,string filename,AccountRootOwnership.Owner owner)
@@ -199,7 +205,7 @@ public sealed partial class ReplacementRecoveryRegistry
     }
     RetainedFileReplacement.Recovery RecoveryFor(Entry entry,ISet<string>? verified=null)
     {
-        if(entry.RecoveryPath is not null)return RetainedFileReplacement.InspectDirectory(RecoveryLocation(entry,verified),Path.GetFileName(entry.Path),entry.Operation,verified);
+        if(entry.RecoveryPath is not null)return RetainedFileReplacement.InspectDirectory(RecoveryLocation(entry,verified),Path.GetFileName(entry.Path),entry.Operation,verified,allowCaseAlias:true);
         var original=Target(entry,verified);var directory=RetainedFileReplacement.OperationDirectory(original,entry.Operation);
         if(Directory.Exists(directory))return RetainedFileReplacement.InspectDirectory(directory,Path.GetFileName(original),entry.Operation,verified);
         // A raw folder rename moves its hidden retained inode directory too.
@@ -252,7 +258,7 @@ public sealed partial class ReplacementRecoveryRegistry
             if(inspection.PreparedHash==resolution.PreparedHash&&inspection.DisplacedHash==resolution.DisplacedHash){if(persist)RestoreDeletionMarker(entry,recovery);return;}
             throw new RetainedFileReplacement.RequiredException(entry.Operation);
         }
-        var classified=(persist?CancelRenamedUncaptured(entry,recovery):null)??RetainedFileReplacement.Classify(recovery,Target(entry,verified),persist,verified);
+        var classified=(persist?CancelRenamedUncaptured(entry,recovery):null)??RetainedFileReplacement.Classify(recovery,Path.Combine(Path.GetDirectoryName(Target(entry,verified))!,recovery.Record.Filename),persist,verified);
         if(classified.Record.State is not ("completed" or "cancelled"))throw new RetainedFileReplacement.RequiredException(entry.Operation);
         if(persist)RestoreDeletionMarker(entry,classified);
     }

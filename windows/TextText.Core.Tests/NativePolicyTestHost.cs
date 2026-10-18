@@ -34,7 +34,7 @@ static class NativePolicyTestHost
                 await child.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new{context,script}).AsMemory(),ct);
                 await child.StandardInput.FlushAsync(ct);
                 var line=await child.StandardOutput.ReadLineAsync(ct)??throw new IOException("Policy test host exited.");
-                if(line.Length>32768)throw new IOException("Policy test host response exceeded bounds.");
+                if(line.Length>16*1024*1024)throw new IOException("Policy test host response exceeded bounds.");
                 using var reply=JsonDocument.Parse(line);
                 if(!reply.RootElement.GetProperty("ok").GetBoolean())throw new IOException("Policy test host rejected request.");
                 return reply.RootElement.GetProperty("result").GetString()!;
