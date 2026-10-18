@@ -375,6 +375,7 @@ public sealed partial class TextPackStore
         lock(gate) {
             var full=Resolve(path);Match(full,expectedHash);var bytes=ReadProjection(full);var identity=Identity(bytes);
             if(Hash(bytes)!=expectedHash)throw new FileChangedException();
+            if(recordDeletion)ClearPriorDeletionForRestoredFile(identity,path,expectedHash);
             RetainedReplacementProfile.Prepare(this);Preserve(bytes,"history");
             var operation=Guid.NewGuid();var recoveryRoot=System.IO.Path.Combine(Root,".texttext","retained-replacements",Hash(Encoding.UTF8.GetBytes(path)));
             _=RetainedFileRemoval.Capture(full,expectedHash,recoveryRoot,operation,point=>{
@@ -386,6 +387,18 @@ public sealed partial class TextPackStore
         }
         Changed?.Invoke();
     }
+    void ClearPriorDeletionForRestoredFile(string itemId,string path,string expectedHash)
+    {
+        using var publication=DeletionPublication(StateDirectory);
+        var existing=Intent(itemId);if(existing is null||existing.Kind=="rename")return;
+        if(existing.Kind!="delete")throw new InvalidDataException("Unknown pending file intent cannot be replaced.");
+        var bound=Replacements.RequireBoundDeletionMarker(itemId);var source=ReadProjection(Resolve(path));
+        if(Identity(source)!=itemId||Hash(source)!=expectedHash)throw new FileChangedException();
+        Replacements.MarkDeletionConsumed(bound.Intent);
+        var marker=System.IO.Path.Combine(StateDirectory,"intent-"+itemId+".json");
+        if(!RetainedFileReplacement.Read(marker,8192).SequenceEqual(bound.Bytes))throw new FileChangedException();
+        File.Delete(marker);
+    }
     internal static IDisposable DeletionPublication(string state)
     {
         var path=System.IO.Path.Combine(state,".deletion-publication.lock");RetainedFileReplacement.CheckPath(path);
@@ -396,7 +409,12 @@ public sealed partial class TextPackStore
     void ConsumeIntent(string id,FileIntent? expected=null)
     {
         using var publication=DeletionPublication(StateDirectory);var saved=Intent(id);if(saved is null||expected is not null&&saved!=expected)return;
-        Replacements.MarkDeletionConsumed(saved);File.Delete(System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"));
+        if(saved.OperationId is not null) {
+            var bound=Replacements.RequireBoundDeletionMarker(id);if(bound.Intent!=saved)throw new FileChangedException();
+            Replacements.MarkDeletionConsumed(saved);
+            if(!RetainedFileReplacement.Read(System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"),8192).SequenceEqual(bound.Bytes))throw new FileChangedException();
+        }
+        File.Delete(System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"));
     }
     public void ClearIntent(string id, FileIntent expected) {lock(gate)ConsumeIntent(id,expected);}
     public void ClearIntent(string id) {lock(gate)ConsumeIntent(id);}

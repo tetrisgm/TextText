@@ -12,7 +12,7 @@ public sealed partial class ReplacementRecoveryRegistry
         RetainedFileReplacement.Stamp? PreparedStamp = null, RetainedFileReplacement.Stamp? DisplacedStamp = null,bool? CurrentPresent=null);
     public sealed record UncapturedCancellation(string PreparedHash,string? CurrentHash,bool CurrentPresent,RetainedFileReplacement.Stamp? PreparedStamp=null);
     public sealed record Entry(int Version, Guid Operation, string RootHash, string? OwnerHash, string ItemId,
-        string Path, string ExpectedHash, string PreparedHash, Resolution? Resolution = null,string? RecoveryPath=null,string? Kind=null,bool? UserDeletion=null,bool? DeletionMarkerPublished=null,bool? DeletionIntentCancelled=null,UncapturedCancellation? UncapturedCancellation=null);
+        string Path, string ExpectedHash, string PreparedHash, Resolution? Resolution = null,string? RecoveryPath=null,string? Kind=null,bool? UserDeletion=null,bool? DeletionMarkerPublished=null,bool? DeletionIntentCancelled=null,UncapturedCancellation? UncapturedCancellation=null,Guid? SupersededBy=null);
     public sealed record Inspection(Entry Entry, RetainedFileReplacement.Recovery Recovery, byte[] Prepared, byte[] Displaced,
         RetainedFileReplacement.Stamp? PreparedStamp, RetainedFileReplacement.Stamp? DisplacedStamp)
     {
@@ -69,6 +69,7 @@ public sealed partial class ReplacementRecoveryRegistry
             !RetainedFileReplacement.ValidHash(entry.ExpectedHash) || !RetainedFileReplacement.ValidHash(entry.PreparedHash))
             throw new InvalidDataException("Replacement registry scope cannot be verified.");
         if(validatePaths){_ = Target(entry,verified);if(entry.RecoveryPath is not null)_=RecoveryLocation(entry,verified);}
+        if(entry.SupersededBy is {} superseded&&(superseded==Guid.Empty||superseded==entry.Operation||entry.Kind!="removal"||entry.UserDeletion!=true||entry.DeletionIntentCancelled!=true))throw new InvalidDataException("Invalid superseded deletion receipt.");
         if(entry.UncapturedCancellation is {} cancellation&&(entry.Kind!="removal"||cancellation.PreparedHash!=entry.PreparedHash||(cancellation.CurrentPresent?cancellation.CurrentHash is null||!RetainedFileReplacement.ValidHash(cancellation.CurrentHash):cancellation.CurrentHash is not null)))throw new InvalidDataException("Invalid uncaptured deletion cancellation.");
         if (entry.Resolution is { } resolution && ((resolution.CurrentPresent==false ? entry.Kind!="removal"||resolution.CurrentHash is not null : resolution.CurrentHash is null||!RetainedFileReplacement.ValidHash(resolution.CurrentHash)) ||
             !RetainedFileReplacement.ValidHash(resolution.PreparedHash) || !RetainedFileReplacement.ValidHash(resolution.DisplacedHash)))
@@ -150,7 +151,7 @@ public sealed partial class ReplacementRecoveryRegistry
     }
     static void CheckFields(byte[] bytes)
     {
-        RetainedFileReplacement.JsonFields(bytes,["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash","Resolution","RecoveryPath","Kind","UserDeletion","DeletionMarkerPublished","DeletionIntentCancelled","UncapturedCancellation"],["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash"]);
+        RetainedFileReplacement.JsonFields(bytes,["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash","Resolution","RecoveryPath","Kind","UserDeletion","DeletionMarkerPublished","DeletionIntentCancelled","UncapturedCancellation","SupersededBy"],["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash"]);
         using var parsed=JsonDocument.Parse(bytes);
         if(parsed.RootElement.TryGetProperty("UncapturedCancellation",out var cancellation)&&cancellation.ValueKind!=JsonValueKind.Null)
             RetainedFileReplacement.JsonFields(System.Text.Encoding.UTF8.GetBytes(cancellation.GetRawText()),["PreparedHash","CurrentHash","CurrentPresent","PreparedStamp"],["PreparedHash","CurrentHash","CurrentPresent"]);

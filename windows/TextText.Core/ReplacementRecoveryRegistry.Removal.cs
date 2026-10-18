@@ -43,6 +43,16 @@ public sealed partial class ReplacementRecoveryRegistry
         return RetainedFileRemoval.CancelUncaptured(recovery,Path.Combine(root,matches[0].Path));
     }
     void SaveEntry(Entry entry) {Validate(entry);Invalidate();RetainedFileReplacement.SaveJson(Path.Combine(directory,entry.Operation.ToString("D")+".json"),entry);Invalidate();}
+    internal (FileIntent Intent,byte[] Bytes) RequireBoundDeletionMarker(string itemId)
+    {
+        var bytes=RetainedFileReplacement.Read(Path.Combine(stateDirectory,"intent-"+itemId+".json"),8192);
+        try {
+            RetainedFileReplacement.JsonFields(bytes,["Kind","ItemId","Path","Hash","Destination","OperationId"],["Kind","ItemId","Path","Hash","OperationId"]);
+            var intent=JsonSerializer.Deserialize<FileIntent>(bytes)??throw new InvalidDataException("Invalid deletion marker.");
+            if(intent.Kind!="delete"||intent.ItemId!=itemId||intent.OperationId is null||!Guid.TryParseExact(intent.OperationId,"D",out var operation)||operation==Guid.Empty||!RetainedFileReplacement.ValidHash(intent.Hash))throw new InvalidDataException("An existing deletion marker is not bound to a known operation.");
+            return(intent,bytes);
+        } catch(JsonException error){throw new InvalidDataException("Invalid deletion marker.",error);}
+    }
     internal void MarkDeletionConsumed(FileIntent intent)
     {
         if(intent.OperationId is null)return;
@@ -58,6 +68,7 @@ public sealed partial class ReplacementRecoveryRegistry
         var matches=RemovalIdentityMatches(entry);
         if(matches.Count>1)throw new InvalidDataException("Duplicate document identity prevents removal publication.");
         var restored=current||matches.Count==1;
+        if(restored)removalObservation?.Invoke("restorationObserved");
         using var publication=TextPackStore.DeletionPublication(stateDirectory);
         var latest=Entries(entry.ItemId).Single(item=>item.Operation==entry.Operation);
         if(latest.DeletionMarkerPublished==true||latest.DeletionIntentCancelled==true)return;
@@ -69,7 +80,10 @@ public sealed partial class ReplacementRecoveryRegistry
             SaveEntry(latest with{DeletionIntentCancelled=true});
             if(File.Exists(marker)) {
                 var existing=JsonSerializer.Deserialize<FileIntent>(RetainedFileReplacement.Read(marker,8192));
-                if(existing?.OperationId==entry.Operation.ToString("D"))File.Delete(marker);
+                if(existing?.Kind=="delete") {
+                    var bound=RequireBoundDeletionMarker(entry.ItemId);
+                    if(Guid.Parse(bound.Intent.OperationId!)==entry.Operation&&bound.Intent.Path==entry.Path&&bound.Intent.Hash==entry.ExpectedHash&&RetainedFileReplacement.Read(marker,8192).SequenceEqual(bound.Bytes))File.Delete(marker);
+                }
             }
             return;
         }
@@ -86,7 +100,22 @@ public sealed partial class ReplacementRecoveryRegistry
         if(verified.PreparedHash!=inspection.PreparedHash||verified.DisplacedHash!=inspection.DisplacedHash||RetainedFileReplacement.ExistsNoFollow(Target(entry))||RemovalIdentityMatches(entry).Count!=0)throw new FileChangedException();
         if(File.Exists(marker)) {
             var existing=JsonSerializer.Deserialize<FileIntent>(RetainedFileReplacement.Read(marker,8192));
-            if(existing?.OperationId is {} prior&&prior!=entry.Operation.ToString("D"))throw new RetainedFileReplacement.RequiredException(entry.Operation);
+            if(existing?.Kind=="delete") {
+                var bound=RequireBoundDeletionMarker(entry.ItemId);var prior=Guid.Parse(bound.Intent.OperationId!);
+                if(prior!=entry.Operation) {
+                    var other=Entries(entry.ItemId).SingleOrDefault(item=>item.Operation==prior)??throw new InvalidDataException("The other deletion marker has no registry operation.");
+                    if(other.Kind!="removal"||other.UserDeletion!=true||other.DeletionMarkerPublished!=true||other.DeletionIntentCancelled==true||other.Path!=bound.Intent.Path||other.ExpectedHash!=bound.Intent.Hash||RetainedFileReplacement.ExistsNoFollow(Target(other)))throw new InvalidDataException("The other deletion marker cannot prove completion.");
+                    var proof=RecoveryFor(other);
+                    if(other.Resolution is {} consent){if(consent.CurrentPresent!=false||consent.CurrentHash is not null)throw new InvalidDataException("The other deletion was not consented as absent.");}
+                    else if(proof.Record.State!="completed")throw new InvalidDataException("The other deletion is incomplete.");
+                    AssertEntryReadable(other,persist:false);
+                    if(!RetainedFileReplacement.Read(marker,8192).SequenceEqual(bound.Bytes)||RetainedFileReplacement.ExistsNoFollow(Target(entry))||RetainedFileReplacement.ExistsNoFollow(Target(other)))throw new FileChangedException();
+                    SaveEntry(latest with{DeletionIntentCancelled=true,SupersededBy=other.Operation});return;
+                }
+                if(bound.Intent.Path!=entry.Path||bound.Intent.Hash!=entry.ExpectedHash)throw new InvalidDataException("Deletion marker scope changed.");
+                SaveEntry(latest with{DeletionMarkerPublished=true});return;
+            }
+            if(existing?.Kind!="rename")throw new InvalidDataException("Unknown pending file intent cannot be replaced.");
         }
         RetainedFileReplacement.SaveJson(marker,new FileIntent("delete",entry.ItemId,entry.Path,entry.ExpectedHash,OperationId:entry.Operation.ToString("D")));
         removalObservation?.Invoke("markerWritten");

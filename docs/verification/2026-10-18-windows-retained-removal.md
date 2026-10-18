@@ -1,6 +1,6 @@
 # Windows retained removal
 
-Status: the source slice passed portable Mac and actual-PC Core/bridge gates. No installed application or public release changed. Marker supersession causality, full application rebuild, and real typing/durable-close acceptance remain separate follow-ups; this does not close T13 or the full plan.
+Status: the source slice passed portable Mac and actual-PC Core/bridge gates. No installed application or public release changed. Root ownership migration serialization, full application rebuild, and real typing/durable-close acceptance remain separate follow-ups; this does not close T13 or the full plan.
 
 ## Behavior
 
@@ -27,6 +27,14 @@ The first full gates exposed an unrelated linked-folder regression: the new iden
 
 Coverage includes expected/foreign/opaque final-boundary races; actual Windows old-descriptor writes after capture; interrupted staging, capture and marker publication; independent acknowledgement before the publication flag; restoration followed by a new deletion; unchanged and ambiguous raw rename; active capture versus a second store; read-only inspection; explicit uncaptured cancellation, cancellation after export, and receipt-before-helper crash replay.
 
+## Marker causality follow-up
+
+A new source-present user deletion acknowledges a prior operation-bound deletion marker before capturing the new inode. An older unissued operation encountering another valid published marker verifies its root/principal/item/path/hash binding, exact completion or consented absence, retained bytes, and unchanged marker bytes. It records `supersededBy` and preserves the newer marker byte-for-byte. Restoration is rechecked under the publication lock; clearing matches the exact operation. Legacy, unbound, missing-operation, and unknown-field markers cannot be implicitly coalesced.
+
+Full gates on this follow-up passed 835 portable Mac Core assertions, 850 actual-PC Core assertions, and 51 bridge checks on each machine. The focused portable gate passed 191 assertions. Tests cover old A paused before publication then valid B, restoration observed before same-byte B, ordinary native B, prior B restored then fresh A with same or changed bytes, exact new hash preservation, and consumed markers never resurrecting old operations.
+
+The five-file follow-up source archive SHA-256 is `e9d348780052fa3f30e25b56769138d0dc2bf4b7d93bcb9de77a037d218eee3c`, based on checkpoint `d4b570f8`. Exact hashes are `/private/tmp/texttext-t13-causal-source.json`; logs are `/private/tmp/texttext-t13-causal-full-mac.log`, `/private/tmp/texttext-t13-causal-bridge-mac.log`, `/private/tmp/texttext-t13-causal-core.log`, and `/private/tmp/texttext-t13-causal-bridge.log`. Actual-PC Core DLL SHA-256: `aa1b3e30cb1378c5fc9552338e02dec2a76f76aab21be4441b9a8408f2d320eb`.
+
 ## Limits
 
-Directory-entry persistence under sudden Windows power loss remains unproven. File contents and metadata records use explicit `Flush(true)` before publication. Retention grows without automatic deletion or a lifetime count cap. These tests do not prove the pending marker supersession follow-up, installed UI, historical-client compatibility, sustained convergence, or real typing and durable close.
+Directory-entry persistence under sudden Windows power loss remains unproven. File contents and metadata records use explicit `Flush(true)` before publication. Retention grows without automatic deletion or a lifetime count cap. These tests do not prove concurrent root ownership migration, installed UI, historical-client compatibility, sustained convergence, or real typing and durable close.
