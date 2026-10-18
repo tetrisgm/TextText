@@ -3,7 +3,7 @@
 // a receipt to a different executable, Core library or UI bundle.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, lstatSync, readlinkSync, realpathSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, lstatSync, readlinkSync, realpathSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve, join, relative, isAbsolute, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,7 @@ export function command(program, args, cwd, { capture = false, env = process.env
   return result.stdout?.trim() ?? '';
 }
 export function sourceEntries(repository, commit) {
+  requireOrdinaryGitEnvironment();
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Expected a resolved source commit');
   if (command('git', ['rev-parse', '--show-object-format'], repository, { capture: true }) !== 'sha1') throw new Error('Unsupported source object format');
   return command('git', ['ls-tree', '-rz', '--full-tree', commit], repository, { capture: true }).split('\0').filter(Boolean).map(line => {
@@ -23,10 +24,66 @@ export function sourceEntries(repository, commit) {
     return { mode: match[1], blob: match[2], path: match[3] };
   });
 }
+const gitPathEnvironment = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS'];
+function requireOrdinaryGitEnvironment() {
+  if (gitPathEnvironment.some(key => process.env[key])) throw new Error('Private source cannot inherit Git path overrides');
+}
+export function verifyPrivateGitMetadata(sourceRoot, commit) {
+  requireOrdinaryGitEnvironment();
+  const root = realpathSync(sourceRoot), metadata = join(root, '.git');
+  const info = lstatSync(metadata);
+  if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(metadata) !== metadata) throw new Error('Private Git metadata must stay inside the archive');
+  let count = 0;
+  const visit = path => {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      if (++count > 50000) throw new Error('Private Git metadata exceeds bound');
+      const file = join(path, entry.name), stat = lstatSync(file);
+      if (stat.isSymbolicLink() || realpathSync(file) !== file || (!stat.isDirectory() && (!stat.isFile() || stat.nlink > 1))) throw new Error('Private Git metadata links are forbidden');
+      if (stat.isDirectory()) visit(file);
+    }
+  };
+  visit(metadata);
+  for (const name of ['commondir', 'objects/info/alternates', 'objects/info/http-alternates'])
+    if (existsSync(join(metadata, name))) throw new Error('Private Git shared object/common directory is forbidden');
+  const git = args => command('git', args, root, { capture: true });
+  if (realpathSync(git(['rev-parse', '--absolute-git-dir'])) !== metadata
+      || realpathSync(resolve(root, git(['rev-parse', '--git-common-dir']))) !== metadata
+      || realpathSync(git(['rev-parse', '--show-toplevel'])) !== root
+      || git(['rev-parse', 'HEAD']) !== commit || git(['remote']) !== ''
+      || git(['config', '--local', '--get', 'push.default']) !== 'nothing'
+      || git(['config', '--local', '--get', 'core.fsmonitor']) !== 'false') throw new Error('Private Git identity or isolation changed');
+  const hooks = join(metadata, 'disabled-hooks');
+  if (git(['config', '--local', '--get', 'core.hooksPath']) !== hooks || readdirSync(hooks).length) throw new Error('Private Git hooks must remain empty');
+  const config = git(['config', '--local', '--name-only', '--list']).split('\n');
+  const permitted = new Set(['core.repositoryformatversion', 'core.filemode', 'core.bare', 'core.logallrefupdates', 'core.ignorecase', 'core.precomposeunicode', 'core.symlinks', 'core.hookspath', 'core.fsmonitor', 'push.default']);
+  if (config.some(key => !permitted.has(key.toLowerCase()))) throw new Error('Unexpected private Git configuration');
+  const expected = sourceEntries(root, commit).map(entry => `${entry.mode} ${entry.blob} 0\t${entry.path}`).sort();
+  const indexed = git(['ls-files', '--stage', '-z']).split('\0').filter(Boolean).sort();
+  if (canonicalJSON(expected) !== canonicalJSON(indexed)) throw new Error('Private Git index differs from committed archive');
+}
+function initializePrivateGit(repository, commit, sourceRoot) {
+  requireOrdinaryGitEnvironment();
+  sourceRoot = realpathSync(sourceRoot);
+  command('git', ['init', '--quiet', '--initial-branch=main'], sourceRoot, { capture: true });
+  const git = args => command('git', args, sourceRoot, { capture: true });
+  const hooks = join(sourceRoot, '.git/disabled-hooks'); mkdirSync(hooks);
+  git(['config', '--local', 'core.hooksPath', hooks]);
+  git(['config', '--local', 'core.fsmonitor', 'false']);
+  git(['config', '--local', 'push.default', 'nothing']);
+  // Local fetch copies objects; no shared object store, remote, linked checkout,
+  // reset, or original-repository metadata is used by subsequent build tools.
+  git(['fetch', '--quiet', '--depth=1', '--no-tags', '--no-write-fetch-head', realpathSync(repository), commit]);
+  git(['update-ref', 'refs/heads/main', commit]);
+  git(['read-tree', commit]);
+  writeFileSync(join(sourceRoot, '.git/info/exclude'), '/.env.local\n');
+  writeFileSync(join(sourceRoot, '.env.local'), '', { flag: 'wx', mode: 0o600 });
+  verifyPrivateGitMetadata(sourceRoot, commit);
+}
 export function verifySourceTree(repository, commit, sourceRoot) {
   const entries = sourceEntries(repository, commit);
   if (!entries.length || entries.length > 30000) throw new Error('Source inventory outside bounds');
   const actualRoot = realpathSync(sourceRoot), hashes = [];
+  verifyPrivateGitMetadata(actualRoot, commit);
   for (const entry of entries) {
     const file = join(actualRoot, entry.path), info = lstatSync(file);
     let bytes;
@@ -56,13 +113,19 @@ export function verifySourceTree(repository, commit, sourceRoot) {
   const visit = (directory, prefix = '') => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const name = prefix ? prefix + '/' + entry.name : entry.name;
+      if (name === '.git') continue; // Validated isolated metadata above.
+      if (name === '.env.local' && !tracked.has(name)) {
+        const file = join(directory, entry.name), info = lstatSync(file);
+        if (!info.isFile() || info.isSymbolicLink() || info.size !== 0 || realpathSync(file) !== file) throw new Error('Private local environment must remain an empty regular file');
+        continue;
+      }
       if (generated(name)) continue;
       if (entry.isDirectory()) visit(join(directory, entry.name), name);
       else if (!tracked.has(name)) throw new Error('Untracked source input appeared during build');
     }
   };
   visit(actualRoot);
-  return { sourceCommit: commit, sourceInputSha256: sha256(canonicalJSON(hashes)), files: entries.length,
+  return { sourceCommit: commit, sourceInputSha256: sha256(canonicalJSON(hashes)), files: entries.length, gitMetadata: 'isolated-private-index-v1',
     executableModeEvidence: process.platform === 'win32' ? 'git-archive-manifest' : 'filesystem-and-git-manifest' };
 }
 export function fixedArtifactPaths(role, sourceRoot) {
@@ -139,6 +202,7 @@ export function sealArtifacts({ repository, sourceRoot, buildReceipt, sidecar })
   createOnlyJSON(sidecar, value); return value;
 }
 export function preparePristineSource(repository, ref, destination) {
+  requireOrdinaryGitEnvironment();
   const commit = command('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], repository, { capture: true });
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Source ref did not resolve to a commit');
   mkdirSync(destination, { recursive: false, mode: 0o700 });
@@ -146,5 +210,6 @@ export function preparePristineSource(repository, ref, destination) {
   command('git', ['archive', '--format=tar', '--output', archive, commit], repository);
   mkdirSync(sourceRoot, { mode: 0o700 });
   command('tar', ['-xf', archive, '-C', sourceRoot], repository);
+  initializePrivateGit(repository, commit, sourceRoot);
   return { sourceRoot: realpathSync(sourceRoot), proof: verifySourceTree(repository, commit, sourceRoot), sourceArchiveSha256: sha256(boundedFile(archive, 256 * 1024 * 1024)) };
 }

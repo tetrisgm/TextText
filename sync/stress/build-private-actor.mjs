@@ -4,12 +4,18 @@ import { readFileSync, copyFileSync, writeFileSync, readdirSync, mkdirSync, exis
 import { join, isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { command, preparePristineSource, verifySourceTree, artifactHashes, fixedArtifactPaths, createOnlyJSON, sealArtifacts, wrapperHashes } from './artifact-source.mjs';
+export function requireLocalPrivateDatabase(environment = process.env) {
+  let hostname;
+  try { hostname = new URL(environment.DATABASE_URL).hostname; } catch { /* Never expose connection details. */ }
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname)) throw new Error('Private Mac build gates require an inherited local PostgreSQL connection');
+}
 export function buildPrivateActor(config) {
   const { repository, ref, destination, role } = config;
   if (!isAbsolute(repository) || !isAbsolute(destination) || typeof ref !== 'string'
     || !/^(mac|pc)-(app|web|cli)$/.test(role) || !role.startsWith(process.platform === 'darwin' ? 'mac-' : 'pc-')) throw new Error('Explicit existing repository/ref, fresh absolute destination and matching physical role required');
   if (config.sidecar !== undefined && !isAbsolute(config.sidecar)) throw new Error('Sidecar must be an explicit absolute path');
   if (role === 'mac-app' && config.macEdition === 'store-local' && !config.sidecar) throw new Error('Store actor requires an explicit sandbox-readable sidecar outside the signed app');
+  if (role === 'mac-app') requireLocalPrivateDatabase();
   const prepared = preparePristineSource(repository, ref, destination), { sourceRoot } = prepared;
   const steps = [];
   const run = (id, program, args, env) => { command(program, args, sourceRoot, { env: env ?? process.env }); steps.push({ id, status: 'passed' }); };
@@ -24,7 +30,7 @@ export function buildPrivateActor(config) {
     } else if (role === 'mac-app') {
       if (!['standalone', 'store-local'].includes(config.macEdition) || !process.env.TEXTTEXT_SIGN_ID) throw new Error('Explicit Mac edition and existing TEXTTEXT_SIGN_ID environment required');
       const store = config.macEdition === 'store-local';
-      const env = { ...process.env, ...(store ? { TEXTTEXT_STORE_LOCAL: '1', TEXTTEXT_STORE: '1' } : { TEXTTEXT_LOCAL_DEVELOPMENT_BUILD: '1' }) };
+      const env = { ...process.env, TEXTTEXT_LOCAL_DATABASE_INHERITED: '1', ...(store ? { TEXTTEXT_STORE_LOCAL: '1', TEXTTEXT_STORE: '1' } : { TEXTTEXT_LOCAL_DEVELOPMENT_BUILD: '1' }) };
       // Reuse only existing provisioning metadata at its established names.
       // This copies no account tokens, keys or Keychain data.
       const profiles = join(repository, 'mac/profiles'), destinationProfiles = join(sourceRoot, 'mac/profiles');

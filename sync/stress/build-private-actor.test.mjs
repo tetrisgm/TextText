@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withPreservedPackageResolution } from './build-private-actor.mjs';
+import { withPreservedPackageResolution, requireLocalPrivateDatabase } from './build-private-actor.mjs';
 
 for (const fails of [false, true]) test(`private actor restores exact package resolution after Swift ${fails ? 'failure' : 'success'}`, () => {
   const root = mkdtempSync(join(tmpdir(), 'texttext-actor-resolution-'));
@@ -21,4 +21,11 @@ for (const fails of [false, true]) test(`private actor restores exact package re
     else assert.equal(withPreservedPackageResolution(root, action), 'private-bin-path');
     assert.deepEqual(readFileSync(path), original);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('private Mac build rejects absent or foreign inherited database before creating source', () => {
+  for (const DATABASE_URL of [undefined, '', 'not-a-url', 'postgresql://fixture@remote.invalid/fixture'])
+    assert.throws(() => requireLocalPrivateDatabase({ DATABASE_URL }), /local PostgreSQL/);
+  for (const host of ['localhost', '127.0.0.1', '[::1]'])
+    assert.doesNotThrow(() => requireLocalPrivateDatabase({ DATABASE_URL: `postgresql://fixture@${host}/fixture` }));
 });

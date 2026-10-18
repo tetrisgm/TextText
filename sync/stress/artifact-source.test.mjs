@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, readFileSync, copyFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, readFileSync, copyFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { command, preparePristineSource, verifySourceTree, fixedArtifactPaths, createOnlyJSON, verifyBuildSteps, requiredBuildSteps, wrapperHashes, artifactHashes, sealArtifacts } from './artifact-source.mjs';
@@ -80,4 +80,40 @@ test('sealer refuses changed produced artifacts and writes one immutable trusted
   assert.throws(()=>sealArtifacts(config),/exist/i);
   writeFileSync(join(prepared.sourceRoot,'node_modules/fflate/esm/index.mjs'),'changed dependency bytes');
   assert.throws(()=>sealArtifacts({...config,sidecar:join(dir,'wrong.json')}),/artifacts changed/);
+});
+
+test('private archive has isolated clean Git identity and cannot change original refs or dirty files',()=>{
+  const {dir,repo}=sourceFixture();
+  const original=command('git',['rev-parse','HEAD'],repo,{capture:true});
+  writeFileSync(join(repo,'source.mjs'),'owner dirty bytes');
+  const prepared=preparePristineSource(repo,original,join(dir,'private'));
+  assert.equal(command('git',['rev-parse','HEAD'],prepared.sourceRoot,{capture:true}),original);
+  assert.equal(command('git',['status','--porcelain'],prepared.sourceRoot,{capture:true}),'');
+  assert.equal(command('git',['remote'],prepared.sourceRoot,{capture:true}),'');
+  assert.equal(readFileSync(join(prepared.sourceRoot,'.env.local')).length,0);
+  command('git',['update-ref','refs/heads/private-test',original],prepared.sourceRoot,{capture:true});
+  assert.equal(command('git',['for-each-ref','--format=%(refname)','refs/heads/private-test'],repo,{capture:true}),'');
+  assert.equal(readFileSync(join(repo,'source.mjs'),'utf8'),'owner dirty bytes');
+  assert.equal(command('git',['rev-parse','HEAD'],repo,{capture:true}),original);
+});
+for(const variant of ['remote','alternates','common-dir','index','hook','config','environment-content','environment-symlink','metadata-symlink'])test(`private archive refuses ${variant} tampering`,()=>{
+  const {dir,repo}=sourceFixture(),prepared=preparePristineSource(repo,'HEAD',join(dir,'private'));
+  const source=prepared.sourceRoot,git=join(source,'.git');
+  if(variant==='remote')command('git',['remote','add','origin',repo],source,{capture:true});
+  if(variant==='alternates')writeFileSync(join(git,'objects/info/alternates'),join(repo,'.git/objects'));
+  if(variant==='common-dir')writeFileSync(join(git,'commondir'),join(repo,'.git'));
+  if(variant==='index')command('git',['update-index','--force-remove','source.mjs'],source,{capture:true});
+  if(variant==='hook')writeFileSync(join(git,'disabled-hooks/post-checkout'),'unexpected hook');
+  if(variant==='config')command('git',['config','--local','include.path',join(repo,'.git/config')],source,{capture:true});
+  if(variant==='environment-content')writeFileSync(join(source,'.env.local'),'not-empty');
+  if(variant==='environment-symlink'){
+    if(process.platform==='win32')return;
+    renameSync(join(source,'.env.local'),join(dir,'kept-empty-env'));symlinkSync(join(dir,'kept-empty-env'),join(source,'.env.local'));
+  }
+  if(variant==='metadata-symlink'){
+    if(process.platform==='win32')return;
+    renameSync(git,join(dir,'kept-metadata'));symlinkSync(join(repo,'.git'),git);
+  }
+  assert.throws(()=>verifySourceTree(repo,prepared.proof.sourceCommit,source));
+  assert.equal(command('git',['rev-parse','HEAD'],repo,{capture:true}),prepared.proof.sourceCommit);
 });
