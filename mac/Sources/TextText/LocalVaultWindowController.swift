@@ -642,6 +642,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 case .failure(let error):
                     let code = Self.collaborationErrorCode(error, method: method)
                     var detail: [String: Any] = ["code": code, "message": error.localizedDescription]
+                    if let kind = Self.checkpointFailureKind(error, method: method) { detail["checkpointFailureKind"] = kind }
                     if let status = (error as? LocalVaultCollaborationError)?.status { detail["status"] = status }
                     if let path = (error as? LocalVaultCollaborationError)?.path { detail["path"] = path }
                     self?.emit("texttext:vault-reply", value: ["id": id, "error": detail])
@@ -961,6 +962,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 self?.reply(id, result: decorated, current: conflictCurrent)
             }
         }
+    }
+    static func checkpointFailureKind(_ error: Error, method: String) -> String? {
+        method == "collaborationCheckpoint" ? LocalVaultCheckpointFailureKind.classify(error).rawValue : nil
     }
     static func collaborationErrorCode(_ error: Error, method: String) -> String {
         if let typed = error as? LocalVaultCollaborationError { return typed.code }

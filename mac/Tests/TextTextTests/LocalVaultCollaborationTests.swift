@@ -110,6 +110,14 @@ final class LocalVaultCollaborationTests: XCTestCase {
         XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.busy, method: "collaborationCheckpoint"), "503")
     }
     @MainActor
+    func testCheckpointClassificationIsScopedWithoutChangingExistingErrorCodes() {
+        XCTAssertEqual(LocalVaultWindowController.checkpointFailureKind(LocalVaultSyncFailure.busy, method: "collaborationCheckpoint"), "sync-busy")
+        for method in ["collaborationOpen", "collaborationRead", "read", "collaborationClose"] {
+            XCTAssertNil(LocalVaultWindowController.checkpointFailureKind(LocalVaultSyncFailure.busy, method: method))
+        }
+        XCTAssertEqual(LocalVaultWindowController.collaborationErrorCode(LocalVaultSyncFailure.busy, method: "collaborationCheckpoint"), "503")
+    }
+    @MainActor
     func testClosingExpiredSessionIsIdempotentButCannotCheckpoint() async {
         let relay = LocalVaultCollaboration(credentials: { nil })
         for attempt in 0..<2 {

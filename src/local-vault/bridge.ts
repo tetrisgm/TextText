@@ -1,3 +1,4 @@
+import { readCheckpointFailureKind, type CheckpointFailureKind } from "../sync/engine/checkpoint-diagnostic";
 export type VaultItem = { path: string; title?: string; itemId?: string; canEditContent?: boolean };
 export type VaultListing = { root: string; name?: string; folders?: string[]; items: VaultItem[]; fullAccess?: boolean; canCreateContent?: boolean; writableFolders?: string[] };
 export type VaultFile = {
@@ -10,10 +11,12 @@ export type VaultFile = {
   assets?: { filename: string; contentType: string; data: string; remoteURL?: string }[];
 };
 export class VaultError extends Error {
+  declare readonly checkpointFailureKind?: CheckpointFailureKind;
   /** `path` is where a live native session now writes when the file moved outside TextText. */
   constructor(message: string, public code?: string, public current?: VaultFile, public path?: string) { super(message); }
 }
 type PendingRequest = {
+  method: string;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   onTimeout: () => void;
@@ -42,6 +45,10 @@ if (typeof window !== "undefined") window.addEventListener("texttext:vault-reply
     const failure = new VaultError(typeof error === "string" ? error : error.message, error.code, error.current,
       typeof error.path === "string" ? error.path : undefined);
     if (Number.isInteger(error.status) && error.status >= 400 && error.status <= 599) Object.assign(failure, { status: error.status });
+    if (request.method === "collaborationCheckpoint") {
+      const kind = readCheckpointFailureKind(error);
+      if (kind !== undefined) Object.assign(failure, {checkpointFailureKind: kind});
+    }
     request.reject(failure);
   }
   else request.resolve(result);
@@ -96,7 +103,7 @@ export function vaultRequest<T>(method: string, params: Record<string, unknown> 
     };
     const cleanup = () => signal?.removeEventListener("abort", abort);
     const request: PendingRequest = {
-      resolve: resolve as (value: unknown) => void, reject, onTimeout: cancelNative, cleanup,
+      method, resolve: resolve as (value: unknown) => void, reject, onTimeout: cancelNative, cleanup,
     };
     pending.set(id, request);
     // Every native request starts with the ordinary timeout. Native open/import

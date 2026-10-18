@@ -194,3 +194,32 @@ it("carries the native session's new path on a local_changed refusal", async () 
   surface.dispatchEvent(new CustomEvent("texttext:vault-reply", { detail: { id: sent[1].id, error: { code: "local_changed", message: "changed", path: 7 } } }));
   await plainRejected;
 });
+
+it("carries only allowlisted native checkpoint failure classification on checkpoint replies", async () => {
+  vi.resetModules();
+  const sent: { id: string; method: string }[] = [];
+  const surface = Object.assign(new EventTarget(), { webkit: { messageHandlers: { localVault: { postMessage: (body: typeof sent[number]) => sent.push(body) } } } });
+  vi.stubGlobal("window", surface);
+  const { vaultRequest, VaultError } = await import("./bridge");
+  for (const [method, kind, expected] of [
+    ["collaborationCheckpoint", "shared-generation", "shared-generation"],
+    ["collaborationCheckpoint", "unknown", "unknown"],
+    ["collaborationCheckpoint", "future-private-path", undefined],
+    ["collaborationCheckpoint", "shared-generation\n", undefined],
+    ["collaborationCheckpoint", { rawDomain: "private" }, undefined],
+    ["collaborationCheckpoint", undefined, undefined],
+    ["collaborationPush", "shared-generation", undefined],
+    ["read", "filesystem-permission", undefined],
+  ] as const) {
+    const request = vaultRequest(method, {});
+    const rejected = expect(request).rejects.toSatisfy((error: unknown) => error instanceof VaultError && error.code === "503" && error.checkpointFailureKind === expected && !("rawDomain" in error));
+    surface.dispatchEvent(new CustomEvent("texttext:vault-reply", {detail: {id: sent.at(-1)!.id, error: {code:"503", message:"Details withheld.", checkpointFailureKind:kind, rawDomain:"private"}}}));
+    await rejected;
+  }
+  let invoked = false;
+  const request = vaultRequest("collaborationCheckpoint", {});
+  const rejected = expect(request).rejects.toSatisfy((error: unknown) => error instanceof VaultError && error.checkpointFailureKind === undefined);
+  const error = Object.defineProperty({code:"503",message:"Details withheld."},"checkpointFailureKind",{get(){invoked=true;throw Error("private");}});
+  surface.dispatchEvent(new CustomEvent("texttext:vault-reply", {detail:{id:sent.at(-1)!.id,error}}));
+  await rejected; expect(invoked).toBe(false);
+});

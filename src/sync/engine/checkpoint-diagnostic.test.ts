@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkpointFailureDiagnostic } from "./checkpoint-diagnostic";
+import { checkpointFailureDiagnostic, readCheckpointFailureKind } from "./checkpoint-diagnostic";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 
@@ -27,7 +27,29 @@ describe("safe checkpoint failure export", () => {
     let traps = 0;
     const proxy = new Proxy({}, { getOwnPropertyDescriptor() { traps++; throw Error("withheld"); } });
     expect(checkpointFailureDiagnostic(proxy, context)).toMatchObject({ code: "unknown", message: "Details withheld." });
-    expect(traps).toBe(3); // Reflection can invoke proxy traps; their errors stay contained.
+    expect(traps).toBe(4); // Reflection can invoke proxy traps; their errors stay contained.
+  });
+  it("exports only exact own typed native failure kinds without inferring or invoking accessors", () => {
+    for (const kind of ["shared-invalid", "shared-generation", "sync-busy", "replacement-review", "document-changed", "ownership-adoption", "filesystem-other", "cancelled", "unknown"]) {
+      expect(checkpointFailureDiagnostic({ checkpointFailureKind: kind, code: "503", message: "/private/not-exported" }, context)).toMatchObject({ checkpointFailureKind: kind, code: "503", message: "Details withheld." });
+    }
+    for (const kind of [undefined, null, "future-class", "shared-generation\n", { rawDomain: "private" }, ["profile"]]) {
+      expect(checkpointFailureDiagnostic({ checkpointFailureKind: kind }, context)).not.toHaveProperty("checkpointFailureKind");
+    }
+    expect(checkpointFailureDiagnostic(Object.create({ checkpointFailureKind: "shared-generation" }), context)).not.toHaveProperty("checkpointFailureKind");
+    let invoked = false;
+    const error = Object.defineProperty({}, "checkpointFailureKind", { get() { invoked = true; throw Error("private"); } });
+    expect(checkpointFailureDiagnostic(error, context)).not.toHaveProperty("checkpointFailureKind");
+    expect(invoked).toBe(false);
+    expect(checkpointFailureDiagnostic({ code: "503", message: "A newer shared editing checkpoint is already saved." }, context)).not.toHaveProperty("checkpointFailureKind");
+  });
+  it("matches the complete typed native enum without admitting future classification", () => {
+    const source = readFileSync(new URL("../../../mac/Sources/TextTextFileProviderKit/LocalVaultCheckpointFailureKind.swift", import.meta.url), "utf8");
+    const enumBody = source.split("public static func classify")[0];
+    const native = [...enumBody.matchAll(/case [A-Za-z]+ = "([a-z-]+)"/g)].map(match => match[1]);
+    expect(native).toHaveLength(33); expect(new Set(native).size).toBe(33);
+    for (const kind of native) expect(readCheckpointFailureKind({checkpointFailureKind:kind})).toBe(kind);
+    expect(readCheckpointFailureKind({checkpointFailureKind:"future-kind"})).toBeUndefined();
   });
   it("bounds context to safe scalar values without reflecting other fields", () => {
     const result = checkpointFailureDiagnostic({ code: "local_changed", message: "The file changed outside shared editing." }, { ...context, journalGeneration: Infinity, epoch: -1, seq: 0.5, pendingCount: Number.MAX_SAFE_INTEGER + 1 });

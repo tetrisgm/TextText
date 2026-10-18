@@ -1,8 +1,25 @@
+/** Typed native classification only. Never infer it from exception text or numeric codes. */
+const checkpointFailureKinds = [
+  "shared-invalid", "shared-session", "shared-generation", "shared-protected", "shared-interrupted", "shared-account",
+  "sync-busy", "sync-changed", "sync-conflict", "sync-response", "sync-binding", "sync-identity", "sync-http",
+  "replacement-space", "replacement-review", "replacement-unsupported", "replacement-record",
+  "document-path", "document-changed", "document-size", "document-identity",
+  "ownership-adoption", "ownership-account", "ownership-future", "profile", "recovery-record",
+  "filesystem-missing", "filesystem-permission", "filesystem-space", "filesystem-readonly", "filesystem-other", "cancelled", "unknown",
+] as const;
+export type CheckpointFailureKind = typeof checkpointFailureKinds[number];
+const safeFailureKinds = new Set<string>(checkpointFailureKinds);
+export function readCheckpointFailureKind(error: unknown): CheckpointFailureKind | undefined {
+  const value = ownData(error, "checkpointFailureKind");
+  return typeof value === "string" && safeFailureKinds.has(value) ? value as CheckpointFailureKind : undefined;
+}
+
 /** Exportable checkpoint context, never the raw exception or request. */
 export type CheckpointFailureDiagnostic = Readonly<{
   version: 1;
   code: string;
   message: string;
+  checkpointFailureKind?: CheckpointFailureKind;
   journalGeneration: number | null;
   epoch: number | null;
   seq: number | null;
@@ -44,9 +61,10 @@ function scalar(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 export function checkpointFailureDiagnostic(error: unknown, context: CheckpointFailureContext): CheckpointFailureDiagnostic {
-  const code = ownData(error, "code"), message = ownData(error, "message");
+  const code = ownData(error, "code"), message = ownData(error, "message"), kind = readCheckpointFailureKind(error);
   return Object.freeze({
     version: 1,
+    ...(kind === undefined ? {} : {checkpointFailureKind: kind}),
     code: typeof code === "string" && safeCodes.has(code) ? code : statusCode(code) ?? statusCode(ownData(error, "status")) ?? "unknown",
     message: typeof message === "string" && safeMessages.has(message) ? message : "Details withheld.",
     journalGeneration: scalar(context.journalGeneration), epoch: scalar(context.epoch), seq: scalar(context.seq), pendingCount: scalar(context.pendingCount),
