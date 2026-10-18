@@ -16,9 +16,10 @@ export function documentObservation(snapshot) {
   if (Buffer.byteLength(canonical) > 256 * 1024) throw new Error('Full document observation exceeds bound');
   return { snapshot: JSON.parse(canonical), canonical, hash: sha256(canonical) };
 }
-export function checkMultiFieldAccounting(baseline, observations, edits) {
+export function checkMultiFieldAccounting(baseline, observations, edits, {maxEdits=600}={}) {
+  if (![600,1200].includes(maxEdits)) throw new Error('Unsupported field accounting budget');
   const original = documentObservation(baseline);
-  if (!Array.isArray(edits) || edits.length > 600 || edits.some(edit=>!validateMultiFieldEdit(edit))
+  if (!Array.isArray(edits) || edits.length > maxEdits || edits.some(edit=>!validateMultiFieldEdit(edit))
     || new Set(edits.map(edit=>edit.id)).size !== edits.length) throw new Error('Invalid field operation plan');
   for (const field of MULTI_FIELD_KEYS) {
     const texts = edits.filter(edit=>edit.field===field).map(edit=>edit.text);

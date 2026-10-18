@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -296,13 +296,30 @@ test('editor continuity is enforced for app/web roles', async () => {
 });
 
 test('attestation rejects wrong fixture, mixed modes, and shared machine identity', async () => {
-  assert.equal((await runWith({ faults: { 'pc-cli': 'wrong-fixture' } })).summary.failure.code, 'fixture-mismatch');
-  assert.equal((await runWith({ faults: { 'mac-web': 'claim-real' } })).summary.failure.code, 'mode-mismatch');
+  assert.equal((await runWith({
+    faults: {
+      'pc-cli': 'wrong-fixture'
+    }
+  })).summary.failure.code, 'fixture-mismatch');
+  assert.equal((await runWith({
+    faults: {
+      'mac-web': 'claim-real'
+    }
+  })).summary.failure.code, 'mode-mismatch');
   // A real-mode run cannot accept a simulated adapter.
-  assert.equal((await runWith({ mode: 'real' })).summary.failure.code, 'mode-mismatch');
-  assert.equal((await runWith({ mode: 'real', faults: Object.fromEntries(ROLES.map(role => [role, 'claim-real'])) })).summary.failure.code, 'mode-mismatch');
-  const env = Object.fromEntries(ROLES.map((r) => [r, { STRESS_FAKE_MACHINE: 'same-box' }]));
-  assert.equal((await runWith({ env })).summary.failure.code, 'machine-shared');
+  assert.equal((await runWith({
+    mode: 'real'
+  })).summary.failure.code, 'mode-mismatch');
+  assert.equal((await runWith({
+    mode: 'real',
+    faults: Object.fromEntries(ROLES.map(role => [role, 'claim-real']))
+  })).summary.failure.code, 'mode-mismatch');
+  const env = Object.fromEntries(ROLES.map(r => [r, {
+    STRESS_FAKE_MACHINE: 'same-box'
+  }]));
+  assert.equal((await runWith({
+    env
+  })).summary.failure.code, 'machine-shared');
 });
 
 test('redact strips credentials from logged lines', () => {
@@ -631,4 +648,351 @@ test('lost ACK scheduler keeps six semantic edits separate and observes all six 
  coordinator.config.lostAck={role:'mac-web',round:1};coordinator.config.expectedAssetHashes=assets;
  const result=await coordinator.run();assert.equal(result.status,'passed',JSON.stringify(result.failure));assert.equal(result.acceptance,'none');assert.equal(coordinator.roundResults[0].editCount,6);assert.equal(result.lostAckEvidence.faultCount,1);assert.equal(result.lostAckEvidence.postRetrySamples,3);
  const events=readFileSync(join(result.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.equal(events.filter(e=>e.type==='lost-ack-post-retry-sample').length,3);assert.ok(events.findIndex(e=>e.type==='lost-ack-armed')<events.findIndex(e=>e.type==='convergence-sample'));
+});
+
+const mixedSpec={version:1,rounds:['plain','cli-writes','typing','fields','history'].map(kind=>({kind}))};
+test('compatible mixed schedule executes an immutable five-kind prefix with one mounted cohort (simulated only)', async () => {
+  const coordinator = new Coordinator({
+    ...makeConfig({
+      rounds: 5
+    }),
+    mixedSchedule: mixedSpec
+  });
+  const result = await coordinator.run();
+  assert.equal(result.status, 'passed', JSON.stringify(result.failure));
+  assert.equal(result.acceptance, 'none');
+  assert.equal(result.roundsCompleted, 5);
+  assert.deepEqual(coordinator.roundResults.map(r => r.scheduleKind), mixedSpec.rounds.map(r => r.kind));
+  assert.equal(result.mixedScheduleEvidence.totals.semanticAdditions, 49);
+  assert.equal(result.mixedScheduleEvidence.totals.driverActions, 57);
+  assert.equal(result.mixedScheduleEvidence.totals.cliPackWrites, 11);
+  const plan = JSON.parse(readFileSync(join(result.outputDir, 'plan.json'), 'utf8'));
+  assert.equal(plan.mixedScheduleEvidence.sha256, result.mixedScheduleEvidence.sha256);
+  assert.equal(plan.rounds.length, 5);
+  const lines = readFileSync(join(result.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(lines.filter(e => e.type === 'mixed-schedule-preflight').length, 1);
+  assert.equal(lines.filter(e => e.type === 'round').length, 5);
+});
+test('mixed schedule refuses combined flags, descriptor/round drift and unbounded input before launch', () => {
+  const base = {
+    ...makeConfig({
+      rounds: 5
+    }),
+    mixedSchedule: mixedSpec
+  };
+  assert.doesNotThrow(() => validateConfig(base));
+  for (const patch of [{
+    rounds: 4
+  }, {
+    fileWrites: {
+      role: 'mac-cli',
+      mode: 'atomic',
+      writes: 2,
+      intervalMs: 25
+    }
+  }, {
+    lostAck: {
+      role: 'mac-web',
+      round: 1
+    }
+  }, {
+    multiField: true
+  }, {
+    pattern: 'same-position'
+  }, {
+    offline: {
+      role: 'mac-web',
+      round: 1
+    }
+  }, {
+    mixedSchedule: {
+      version: 1,
+      rounds: Array(100).fill({
+        kind: 'typing'
+      })
+    }
+  }]) assert.throws(() => validateConfig({
+    ...base,
+    ...patch
+  }));
+});
+
+test('mixed preflight refuses projected JSONL overflow before first prepare or edit (simulated only)', async () => {
+  const {
+    ProcessAdapter
+  } = await import('./adapter.mjs');
+  let mutations = 0;
+  const coordinator = new Coordinator({
+    ...makeConfig({
+      rounds: 1
+    }),
+    mixedSchedule: {
+      version: 1,
+      rounds: [{
+        kind: 'plain'
+      }]
+    }
+  }, {
+    adapterFactory: (role, c) => {
+      const actor = new ProcessAdapter(role, c.command, {
+          cwd: c.cwd,
+          env: c.env
+        }),
+        emit = actor.emit.bind(actor),
+        send = actor.send.bind(actor);
+      actor.emit = (type, m, ...args) => {
+        if (type === 'message' && m.type === 'state') {
+          m.text = 'x'.repeat(40000);
+          m.documentSnapshot.content.body = m.text;
+          m.documentSnapshot.content.fields = {
+            blob: 'x'.repeat(200000)
+          };
+        }
+        return emit(type, m, ...args);
+      };
+      actor.send = m => {
+        if (['prepare', 'edit'].includes(m.type)) mutations++;
+        return send(m);
+      };
+      return actor;
+    }
+  });
+  const result = await coordinator.run();
+  assert.equal(result.status, 'failed');
+  assert.match(result.failure.detail.message, /JSONL line/);
+  assert.equal(result.roundsCompleted, 0);
+  assert.equal(mutations, 0);
+  assert.equal(result.acceptance, 'none');
+});
+test('mixed independent reopen recomputes exact immutable plan hash before any actor starts', async () => {
+  const {
+    createMixedSchedule
+  } = await import('./mixed-schedule.mjs');
+  const base = makeConfig({
+    mode: 'real',
+    rounds: 0
+  });
+  const plan = createMixedSchedule(mixedSpec, base.seed, planRounds(base.seed, 5));
+  const evidence = {
+    version: 1,
+    seed: base.seed,
+    sha256: plan.sha256,
+    roundCount: 5,
+    totals: plan.totals
+  };
+  const config = {
+    ...base,
+    mixedSchedule: mixedSpec,
+    expectedBaselineHash: 'a'.repeat(64),
+    expectedDocumentHash: 'd'.repeat(64),
+    expectedAssetHashes: {
+      'assets/data.bin': 'b'.repeat(64)
+    }
+  };
+  const receipt = {
+    mode: 'real',
+    status: 'passed',
+    acceptance: 'six-client-compatible-mixed-schedule',
+    roundsCompleted: 5,
+    fixture: base.fixture,
+    finalHash: config.expectedBaselineHash,
+    finalDocumentHash: config.expectedDocumentHash,
+    expectedAssetHashes: config.expectedAssetHashes,
+    scenario: {
+      mixedSchedule: mixedSpec
+    },
+    mixedScheduleEvidence: evidence,
+    attestations: Object.fromEntries(ROLES.map(role => [role, {
+      identity: base.expectedIdentities[role]
+    }]))
+  };
+  const directory = mkdtempSync(join(tmpdir(), 'texttext-mixed-reopen-'));
+  config.reopenReceipt = join(directory, 'prior.json');
+  writeFileSync(config.reopenReceipt, JSON.stringify(receipt));
+  assert.doesNotThrow(() => new Coordinator(config));
+  for (const changed of [{
+    ...receipt,
+    mixedScheduleEvidence: {
+      ...evidence,
+      sha256: 'f'.repeat(64)
+    }
+  }, {
+    ...receipt,
+    roundsCompleted: 4
+  }, {
+    ...receipt,
+    mixedScheduleEvidence: {
+      ...evidence,
+      totals: {
+        ...plan.totals,
+        semanticAdditions: 1
+      }
+    }
+  }]) {
+    writeFileSync(config.reopenReceipt, JSON.stringify(changed));
+    assert.throws(() => new Coordinator(config), /immutable plan/);
+  }
+});
+
+test('mixed later-round failures retain actual scheduled prefixes instead of recomputing plain history', async () => {
+  for (const [kind, role, fault, event] of [['typing', 'mac-web', 'input-prefix-fail', 'input-prefix-failure'], ['fields', 'mac-app', 'field-prefix-fail', 'field-prefix-failure'], ['history', 'mac-app', 'history-prefix-fail', 'history-prefix-failure'], ['cli-writes', 'mac-cli', 'write-prefix-fail', 'write-prefix-failure']]) {
+    const config = {
+      ...makeConfig({
+        rounds: 2,
+        faults: {
+          [role]: fault
+        }
+      }),
+      mixedSchedule: {
+        version: 1,
+        rounds: [{
+          kind: 'plain'
+        }, {
+          kind
+        }]
+      }
+    };
+    const result = await new Coordinator(config).run();
+    assert.equal(result.status, 'failed', kind);
+    assert.equal(result.acceptance, 'none');
+    assert.equal(result.failure.code, 'actor-failed', JSON.stringify(result.failure));
+    assert.equal(result.roundsCompleted, 1);
+    const events = readFileSync(join(result.outputDir, 'results.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    const prefix = events.find(e => e.type === event);
+    assert.equal(prefix.valid, true, kind);
+    assert.equal(prefix.round, 2);
+  }
+});
+test('mixed complete snapshot cannot hide missing typed suboperation evidence', async () => {
+  const config = {
+    ...makeConfig({
+      rounds: 2,
+      faults: {
+        'mac-web': 'input-early-final'
+      }
+    }),
+    mixedSchedule: {
+      version: 1,
+      rounds: [{
+        kind: 'plain'
+      }, {
+        kind: 'typing'
+      }]
+    }
+  };
+  const result = await new Coordinator(config).run();
+  assert.equal(result.status, 'failed');
+  assert.equal(result.failure.code, 'input-progress-invalid');
+  assert.equal(result.roundsCompleted, 1);
+  assert.equal(result.acceptance, 'none');
+});
+
+test('mixed reused future subtitle marker refuses before first prepare/edit (simulated only)', async () => {
+  const {
+    ProcessAdapter
+  } = await import('./adapter.mjs');
+  let mutations = 0;
+  const coordinator = new Coordinator({
+    ...makeConfig({
+      rounds: 2
+    }),
+    mixedSchedule: {
+      version: 1,
+      rounds: [{
+        kind: 'plain'
+      }, {
+        kind: 'fields'
+      }]
+    }
+  }, {
+    adapterFactory: (role, c) => {
+      const actor = new ProcessAdapter(role, c.command, {
+          cwd: c.cwd,
+          env: c.env
+        }),
+        emit = actor.emit.bind(actor),
+        send = actor.send.bind(actor);
+      actor.emit = (type, m, ...args) => {
+        if (type === 'message' && m.type === 'state') m.documentSnapshot.content.subtitle += '⟦mac-app:r2:subtitle⟧';
+        return emit(type, m, ...args);
+      };
+      actor.send = m => {
+        if (['prepare', 'edit'].includes(m.type)) mutations++;
+        return send(m);
+      };
+      return actor;
+    }
+  });
+  const result = await coordinator.run();
+  assert.equal(result.status, 'failed');
+  assert.match(result.failure.detail.message, /already|ambiguous/i);
+  assert.equal(result.roundsCompleted, 0);
+  assert.equal(mutations, 0);
+  assert.equal(result.acceptance, 'none');
+});
+
+for (const driftSample of [2, 3]) test(`mixed later reopen sample ${driftSample} rejects subtitle/full-document drift despite stable body (simulated runtime path only)`, async () => {
+  const {
+      ProcessAdapter
+    } = await import('./adapter.mjs'),
+    {
+      documentObservation
+    } = await import('./multi-field.mjs');
+  const snapshot = {
+    schemaVersion: 1,
+    content: {
+      title: 'Six-client acceptance simulated fixture',
+      subtitle: 'Existing subtitle.',
+      body: 'Existing fixture text.\n',
+      fields: {
+        fixture: 'simulated-only'
+      },
+      tags: [],
+      assets: []
+    },
+    presentation: {
+      template: {
+        id: 'texttext.article',
+        version: 1
+      },
+      theme: {}
+    }
+  };
+  const coordinator = new Coordinator({
+    ...makeConfig({
+      rounds: 2
+    }),
+    mixedSchedule: {
+      version: 1,
+      rounds: [{
+        kind: 'plain'
+      }, {
+        kind: 'fields'
+      }]
+    }
+  }, {
+    adapterFactory: (role, c) => {
+      const actor = new ProcessAdapter(role, c.command, {
+          cwd: c.cwd,
+          env: c.env
+        }),
+        emit = actor.emit.bind(actor);
+      let observed = 0;
+      actor.emit = (type, m, ...args) => {
+        if (type === 'message' && m.type === 'state' && role === 'mac-web' && ++observed === driftSample) m.documentSnapshot.content.subtitle += ' stale subtitle';
+        return emit(type, m, ...args);
+      };
+      return actor;
+    }
+  });
+  // Only exercise the zero-round observation loop here. Separate constructor /
+  // identity tests cover genuine prior physical receipt and plan attestation.
+  coordinator.config.rounds = 0;
+  coordinator.config.expectedBaselineHash = hashText(snapshot.content.body);
+  coordinator.config.expectedDocumentHash = documentObservation(snapshot).hash;
+  const result = await coordinator.run();
+  assert.equal(result.status, 'failed', `sample${driftSample}`);
+  assert.equal(result.acceptance, 'none');
+  assert.equal(result.roundsCompleted, 0);
+  assert.match(result.failure.detail.message ?? result.failure.code, /baseline|document|semantic/i);
 });

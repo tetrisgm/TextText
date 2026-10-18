@@ -58,7 +58,27 @@ export function verifyReopenIdentity(receipt, config) {
     || !Number.isInteger(receipt.roundsCompleted) || receipt.roundsCompleted < 1
     || receipt.fixture?.workspaceId !== config.fixture.workspaceId || receipt.fixture?.itemId !== config.fixture.itemId
     || receipt.finalHash !== config.expectedBaselineHash) throw new Error('reopen must reference a prior passing physical mutation receipt and exact fixture/hash');
-  if (Boolean(receipt.scenario?.multiField) !== Boolean(config.multiField) || ((config.multiField || config.fileWrites || config.malformedRepair || config.closeDuringTraffic || config.folderCaseMove || config.leafMove || config.lostAck) && receipt.finalDocumentHash !== config.expectedDocumentHash) || JSON.stringify(receipt.scenario?.fileWrites ?? null) !== JSON.stringify(config.fileWrites ?? null) || JSON.stringify(receipt.scenario?.malformedRepair ?? null) !== JSON.stringify(config.malformedRepair ?? null) || JSON.stringify(receipt.scenario?.closeDuringTraffic ?? null) !== JSON.stringify(config.closeDuringTraffic ?? null) || JSON.stringify(receipt.scenario?.browserClose ?? null) !== JSON.stringify(config.browserClose ?? null) || JSON.stringify(receipt.scenario?.folderCaseMove ?? null) !== JSON.stringify(config.folderCaseMove ?? null) || JSON.stringify(receipt.scenario?.leafMove ?? null) !== JSON.stringify(config.leafMove ?? null) || JSON.stringify(receipt.scenario?.lostAck ?? null) !== JSON.stringify(config.lostAck ?? null)) throw new Error('reopen full document field pins differ from prior receipt');
+  if (Boolean(receipt.scenario?.multiField) !== Boolean(config.multiField) ||
+      (config.multiField ||
+      config.fileWrites ||
+      config.malformedRepair ||
+      config.closeDuringTraffic ||
+      config.folderCaseMove ||
+      config.leafMove ||
+      config.lostAck ||
+      config.mixedSchedule) &&
+      receipt.finalDocumentHash !== config.expectedDocumentHash ||
+      JSON.stringify(receipt.scenario?.fileWrites ?? null) !== JSON.stringify(config.fileWrites ?? null) ||
+      JSON.stringify(receipt.scenario?.malformedRepair ?? null) !== JSON.stringify(config.malformedRepair ?? null) ||
+      JSON.stringify(receipt.scenario?.closeDuringTraffic ?? null) !== JSON.stringify(config.closeDuringTraffic ?? null) ||
+      JSON.stringify(receipt.scenario?.browserClose ?? null) !== JSON.stringify(config.browserClose ?? null) ||
+      JSON.stringify(receipt.scenario?.folderCaseMove ?? null) !== JSON.stringify(config.folderCaseMove ?? null) ||
+      JSON.stringify(receipt.scenario?.leafMove ?? null) !== JSON.stringify(config.leafMove ?? null) ||
+      JSON.stringify(receipt.scenario?.lostAck ?? null) !== JSON.stringify(config.lostAck ?? null)) throw new Error('reopen full document field pins differ from prior receipt');
+  if (JSON.stringify(receipt.scenario?.mixedSchedule ?? null) !== JSON.stringify(config.mixedSchedule ?? null)) throw new Error('reopen mixed schedule descriptors differ');
+  if (config.mixedSchedule &&
+      (receipt.mixedScheduleEvidence?.seed !== config.seed ||
+      !HASH.test(receipt.mixedScheduleEvidence?.sha256 ?? ''))) throw new Error('reopen mixed schedule seed or plan hash missing');
   if (JSON.stringify(digestMap(receipt.expectedAssetHashes ?? {}, { empty: true })) !== JSON.stringify(digestMap(config.expectedAssetHashes ?? {}, { empty: true }))) throw new Error('reopen asset pins differ from prior receipt');
   for (const [role, pin] of Object.entries(config.expectedIdentities)) {
     const previous = normalizeIdentity(receipt.attestations?.[role]?.identity, role, { expected: true });

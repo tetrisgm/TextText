@@ -151,3 +151,69 @@ test('lost ACK independent reopen binds fault role and complete document pins',(
  const receipt={mode:'real',status:'passed',acceptance:'six-client-browser-lost-ack',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{lostAck},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const patch of [{lostAck:undefined},{lostAck:{role:'pc-web',round:1}},{expectedDocumentHash:'e'.repeat(64)}])assert.throws(()=>verifyReopenIdentity(receipt,{...config,...patch}),/field pins/);
 });
+
+test('mixed reopen binds descriptors, seed and complete document semantics', () => {
+  const roles = ['mac-app', 'mac-web', 'mac-cli', 'pc-app', 'pc-web', 'pc-cli'],
+    mixedSchedule = {
+      version: 1,
+      rounds: [{
+        kind: 'plain'
+      }, {
+        kind: 'fields'
+      }]
+    };
+  const config = {
+    seed: 42,
+    fixture: {
+      workspaceId: 'workspace',
+      itemId: 'item'
+    },
+    expectedBaselineHash: H,
+    mixedSchedule,
+    expectedDocumentHash: 'd'.repeat(64),
+    expectedIdentities: Object.fromEntries(roles.map(role => [role, pin(role)]))
+  };
+  const receipt = {
+    mode: 'real',
+    status: 'passed',
+    acceptance: 'six-client-compatible-mixed-schedule',
+    roundsCompleted: 2,
+    fixture: config.fixture,
+    finalHash: H,
+    finalDocumentHash: config.expectedDocumentHash,
+    scenario: {
+      mixedSchedule
+    },
+    mixedScheduleEvidence: {
+      seed: 42,
+      sha256: 'f'.repeat(64)
+    },
+    attestations: Object.fromEntries(roles.map(role => [role, {
+      identity: checkIdentity(identity(role), pin(role), role)
+    }]))
+  };
+  assert.doesNotThrow(() => verifyReopenIdentity(receipt, config));
+  for (const patch of [{
+    seed: 43
+  }, {
+    mixedSchedule: {
+      version: 1,
+      rounds: [{
+        kind: 'fields'
+      }, {
+        kind: 'plain'
+      }]
+    }
+  }, {
+    expectedDocumentHash: 'e'.repeat(64)
+  }, {
+    mixedSchedule: undefined
+  }]) assert.throws(() => verifyReopenIdentity(receipt, {
+    ...config,
+    ...patch
+  }));
+  assert.throws(() => verifyReopenIdentity({
+    ...receipt,
+    mixedScheduleEvidence: undefined
+  }, config));
+});

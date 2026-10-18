@@ -28,3 +28,25 @@ test('missing subtitle or wrong template cannot masquerade as the real multi-fie
  assert.throws(()=>documentObservation({...baseline,content:{...baseline.content,subtitle:undefined}}),/visible/);
  assert.throws(()=>documentObservation({...baseline,presentation:{template:{id:'texttext.note'}}}),/article/);
 });
+
+test('mixed accounting requires explicit bounded expansion while default600 remains', () => {
+  const edits = Array.from({
+    length: 601
+  }, (_, i) => ({
+    role: 'mac-app',
+    id: `r${i + 1}-mac-app`,
+    field: 'body',
+    op: 'append',
+    text: `⟦mixed:${i + 1}⟧`
+  }));
+  const current = structuredClone(baseline);
+  current.content.body += edits.map(e => e.text).join('');
+  const states = new Map(roles.map(role => [role, structuredClone(current)]));
+  assert.throws(() => checkMultiFieldAccounting(baseline, states, edits));
+  assert.doesNotThrow(() => checkMultiFieldAccounting(baseline, states, edits, {
+    maxEdits: 1200
+  }));
+  for (const maxEdits of [0, 601, 1201, Infinity]) assert.throws(() => checkMultiFieldAccounting(baseline, states, edits, {
+    maxEdits
+  }));
+});
