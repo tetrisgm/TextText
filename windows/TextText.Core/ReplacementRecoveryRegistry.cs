@@ -11,8 +11,9 @@ public sealed partial class ReplacementRecoveryRegistry
     public sealed record Resolution(string? CurrentHash, string PreparedHash, string DisplacedHash,
         RetainedFileReplacement.Stamp? PreparedStamp = null, RetainedFileReplacement.Stamp? DisplacedStamp = null,bool? CurrentPresent=null);
     public sealed record UncapturedCancellation(string PreparedHash,string? CurrentHash,bool CurrentPresent,RetainedFileReplacement.Stamp? PreparedStamp=null);
+    public sealed record MoveConsent(string PreparedHash,string? DisplacedHash,bool Captured,bool CurrentPresent,string? CurrentHash,bool SourcePresent,string? SourceHash);
     public sealed record Entry(int Version, Guid Operation, string RootHash, string? OwnerHash, string ItemId,
-        string Path, string ExpectedHash, string PreparedHash, Resolution? Resolution = null,string? RecoveryPath=null,string? Kind=null,bool? UserDeletion=null,bool? DeletionMarkerPublished=null,bool? DeletionIntentCancelled=null,UncapturedCancellation? UncapturedCancellation=null,Guid? SupersededBy=null);
+        string Path, string ExpectedHash, string PreparedHash, Resolution? Resolution = null,string? RecoveryPath=null,string? Kind=null,bool? UserDeletion=null,bool? DeletionMarkerPublished=null,bool? DeletionIntentCancelled=null,UncapturedCancellation? UncapturedCancellation=null,Guid? SupersededBy=null,string? SourcePath=null,MoveConsent? MoveResolution=null);
     public sealed record Inspection(Entry Entry, RetainedFileReplacement.Recovery Recovery, byte[] Prepared, byte[] Displaced,
         RetainedFileReplacement.Stamp? PreparedStamp, RetainedFileReplacement.Stamp? DisplacedStamp)
     {
@@ -64,10 +65,13 @@ public sealed partial class ReplacementRecoveryRegistry
     }
     void Validate(Entry entry,bool verifyOwner=true,bool validatePaths=true,ISet<string>? verified=null)
     {
-        if (entry.Version != 1 || entry.Kind is not (null or "removal") || entry.Kind=="removal"&&entry.ExpectedHash!=entry.PreparedHash || entry.UserDeletion==true&&entry.Kind!="removal" || (entry.DeletionMarkerPublished==true||entry.DeletionIntentCancelled==true)&&(entry.Kind!="removal"||entry.UserDeletion!=true) || entry.Operation == Guid.Empty || entry.RootHash != rootHash || verifyOwner&&entry.OwnerHash != OwnerHash() ||
+        if (entry.Version != 1 || entry.Kind is not (null or "removal" or "move") || entry.Kind is ("removal" or "move")&&entry.ExpectedHash!=entry.PreparedHash || entry.UserDeletion==true&&entry.Kind!="removal" || (entry.DeletionMarkerPublished==true||entry.DeletionIntentCancelled==true)&&(entry.Kind!="removal"||entry.UserDeletion!=true) || entry.Operation == Guid.Empty || entry.RootHash != rootHash || verifyOwner&&entry.OwnerHash != OwnerHash() ||
             !ValidItemId(entry.ItemId) ||
             !RetainedFileReplacement.ValidHash(entry.ExpectedHash) || !RetainedFileReplacement.ValidHash(entry.PreparedHash))
             throw new InvalidDataException("Replacement registry scope cannot be verified.");
+        if((entry.Kind=="move")!=(entry.SourcePath is not null)||entry.SourcePath==entry.Path||entry.Kind!="move"&&entry.MoveResolution is not null)throw new InvalidDataException("Invalid move registry scope.");
+        if(entry.SourcePath is not null)_=Target(entry with{Path=entry.SourcePath},verified);
+        if(entry.MoveResolution is {} move)ValidateMoveConsent(entry,move);
         if(validatePaths){_ = Target(entry,verified);if(entry.RecoveryPath is not null)_=RecoveryLocation(entry,verified);}
         if(entry.SupersededBy is {} superseded&&(superseded==Guid.Empty||superseded==entry.Operation||entry.Kind!="removal"||entry.UserDeletion!=true||entry.DeletionIntentCancelled!=true))throw new InvalidDataException("Invalid superseded deletion receipt.");
         if(entry.UncapturedCancellation is {} cancellation&&(entry.Kind!="removal"||cancellation.PreparedHash!=entry.PreparedHash||(cancellation.CurrentPresent?cancellation.CurrentHash is null||!RetainedFileReplacement.ValidHash(cancellation.CurrentHash):cancellation.CurrentHash is not null)))throw new InvalidDataException("Invalid uncaptured deletion cancellation.");
@@ -95,10 +99,12 @@ public sealed partial class ReplacementRecoveryRegistry
         var principal=RetainedReplacementProfile.PrincipalHash(owner);
         if(entry.OwnerHash is not null&&entry.OwnerHash!=principal)throw new SharedAccountMismatchException();
         var recovery=RecoveryFor(entry);
-        if(recovery.Record.Kind!=entry.Kind||recovery.Record.ExpectedHash!=entry.ExpectedHash||recovery.Record.PreparedHash!=entry.PreparedHash)throw new InvalidDataException("Retained replacement manifest differs from its registry.");
+        if(recovery.Record.SourcePath!=entry.SourcePath||recovery.Record.Kind!=entry.Kind||recovery.Record.ExpectedHash!=entry.ExpectedHash||recovery.Record.PreparedHash!=entry.PreparedHash)throw new InvalidDataException("Retained replacement manifest differs from its registry.");
         return entry.OwnerHash==principal?(bytes,false):(JsonSerializer.SerializeToUtf8Bytes(entry with{OwnerHash=principal}),true);
     }
     static string[] RecordPaths(string directory) => Directory.GetFileSystemEntries(directory).Where(name=>!Path.GetFileName(name).StartsWith('.')).ToArray();
+    static string PathKey(string path)=>"\0path:"+(OperatingSystem.IsWindows()?path.ToUpperInvariant():path);
+    static bool SameMovePath(string? first,string? second)=>string.Equals(first,second,OperatingSystem.IsWindows()?StringComparison.OrdinalIgnoreCase:StringComparison.Ordinal);
     string[] IndexedPaths(string? itemId)
     {
         if(itemId is null || !OperatingSystem.IsWindows())return RecordPaths(directory);
@@ -114,6 +120,12 @@ public sealed partial class ReplacementRecoveryRegistry
                     throw new InvalidDataException("Replacement registry identity cannot be indexed.");
                 if(!items.TryGetValue(identity,out var values))items[identity]=values=[];
                 values.Add(path);
+                if(parsed.RootElement.TryGetProperty("Kind",out var kind)&&kind.ValueKind==JsonValueKind.String&&kind.GetString()=="move") {
+                    foreach(var name in new[]{"Path","SourcePath"}) {
+                        if(!parsed.RootElement.TryGetProperty(name,out var member)||member.ValueKind!=JsonValueKind.String)throw new InvalidDataException("Move paths cannot be indexed.");
+                        var key=PathKey(member.GetString()!);if(!items.TryGetValue(key,out var members))items[key]=members=[];members.Add(path);
+                    }
+                }
             }
             if(generation!=RetainedFileReplacement.Fingerprint(directory))continue;
             lock(cacheGate) {
@@ -126,14 +138,14 @@ public sealed partial class ReplacementRecoveryRegistry
     }
     static bool ValidItemId(string value) => value.Length is >0 and <=128 && char.IsAsciiLetterOrDigit(value[0]) && value.All(character=>char.IsAsciiLetterOrDigit(character)||character is '_' or '-');
     public IReadOnlyList<Entry> Entries(string? itemId=null)=>ReadEntries(itemId,new HashSet<string>(StringComparer.Ordinal));
-    IReadOnlyList<Entry> ReadEntries(string? itemId,ISet<string> verified)
+    IReadOnlyList<Entry> ReadEntries(string? itemId,ISet<string> verified,string? movePath=null)
     {
         RetainedFileReplacement.CheckPath(directory,verified);
         var ownerHash=OwnerHash();
         if (!Directory.Exists(directory)) return [];
         var result = new List<Entry>();
         var validatedTargets=new HashSet<string>(StringComparer.Ordinal);
-        foreach (var name in IndexedPaths(itemId)) {
+        foreach (var name in IndexedPaths(movePath is null?itemId:PathKey(movePath))) {
             var stamp=RetainedFileReplacement.Fingerprint(name,ancestorsVerified:true);Entry entry;
             lock(cacheGate)entry=stamp is not null&&records.TryGetValue(name,out var cached)&&cached.Stamp==stamp?cached.Entry:null!;
             if(entry is null) {
@@ -142,27 +154,29 @@ public sealed partial class ReplacementRecoveryRegistry
                 if(stamp!=RetainedFileReplacement.Fingerprint(name,ancestorsVerified:true))throw new FileChangedException();
                 if(stamp is not null)lock(cacheGate){if(records.Count>=4096)records.Clear();records[name]=(stamp,entry);}
             }
-            if (Path.GetFileName(name) != entry.Operation.ToString("D") + ".json" || OperatingSystem.IsWindows()&&itemId is not null&&entry.ItemId!=itemId) throw new InvalidDataException("Replacement registry name or identity mismatch.");
+            if (Path.GetFileName(name) != entry.Operation.ToString("D") + ".json" || OperatingSystem.IsWindows()&&(itemId is not null&&entry.ItemId!=itemId||movePath is not null&&(entry.Kind!="move"||!SameMovePath(entry.Path,movePath)&&!SameMovePath(entry.SourcePath,movePath)))) throw new InvalidDataException("Replacement registry name or identity mismatch.");
             Validate(entry,verifyOwner:false,validatePaths:validatedTargets.Add(entry.Path+"\0"+entry.RecoveryPath+(entry.RecoveryPath is null?"":"\0"+entry.Operation.ToString("D"))),verified:verified);
             if(entry.OwnerHash!=ownerHash)throw new InvalidDataException("Replacement registry owner changed.");
-            if(itemId is null||entry.ItemId==itemId)result.Add(entry);
+            if((itemId is null||entry.ItemId==itemId)&&(movePath is null||entry.Kind=="move"&&(SameMovePath(entry.Path,movePath)||SameMovePath(entry.SourcePath,movePath))))result.Add(entry);
         }
         return result;
     }
     static void CheckFields(byte[] bytes)
     {
-        RetainedFileReplacement.JsonFields(bytes,["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash","Resolution","RecoveryPath","Kind","UserDeletion","DeletionMarkerPublished","DeletionIntentCancelled","UncapturedCancellation","SupersededBy"],["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash"]);
+        RetainedFileReplacement.JsonFields(bytes,["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash","Resolution","RecoveryPath","Kind","UserDeletion","DeletionMarkerPublished","DeletionIntentCancelled","UncapturedCancellation","SupersededBy","SourcePath","MoveResolution"],["Version","Operation","RootHash","OwnerHash","ItemId","Path","ExpectedHash","PreparedHash"]);
         using var parsed=JsonDocument.Parse(bytes);
+        if(parsed.RootElement.TryGetProperty("MoveResolution",out var move)&&move.ValueKind!=JsonValueKind.Null)
+            RetainedFileReplacement.JsonFields(Encoding.UTF8.GetBytes(move.GetRawText()),["PreparedHash","DisplacedHash","Captured","CurrentPresent","CurrentHash","SourcePresent","SourceHash"],["PreparedHash","DisplacedHash","Captured","CurrentPresent","CurrentHash","SourcePresent","SourceHash"]);
         if(parsed.RootElement.TryGetProperty("UncapturedCancellation",out var cancellation)&&cancellation.ValueKind!=JsonValueKind.Null)
             RetainedFileReplacement.JsonFields(System.Text.Encoding.UTF8.GetBytes(cancellation.GetRawText()),["PreparedHash","CurrentHash","CurrentPresent","PreparedStamp"],["PreparedHash","CurrentHash","CurrentPresent"]);
         if(parsed.RootElement.TryGetProperty("Resolution",out var resolution)&&resolution.ValueKind!=JsonValueKind.Null)
             RetainedFileReplacement.JsonFields(System.Text.Encoding.UTF8.GetBytes(resolution.GetRawText()),["CurrentHash","PreparedHash","DisplacedHash","PreparedStamp","DisplacedStamp","CurrentPresent"],["CurrentHash","PreparedHash","DisplacedHash"]);
     }
     void Invalidate() { lock(cacheGate)indexes.Remove(directory); }
-    public void Register(Guid operation, string itemId, string path, string expectedHash, string preparedHash,string? recoveryDirectory=null,string? kind=null,bool userDeletion=false)
+    public void Register(Guid operation, string itemId, string path, string expectedHash, string preparedHash,string? recoveryDirectory=null,string? kind=null,bool userDeletion=false,string? sourcePath=null)
     {
         var entry = new Entry(1, operation, rootHash, OwnerHash(), itemId, path, expectedHash, preparedHash,
-            RecoveryPath:recoveryDirectory is null?null:Path.GetRelativePath(root,recoveryDirectory).Replace('\\','/'),Kind:kind,UserDeletion:userDeletion?true:null);
+            RecoveryPath:recoveryDirectory is null?null:Path.GetRelativePath(root,recoveryDirectory).Replace('\\','/'),Kind:kind,UserDeletion:userDeletion?true:null,SourcePath:sourcePath);
         Validate(entry); Directory.CreateDirectory(directory); RetainedFileReplacement.CheckPath(directory);
         Invalidate();
         RetainedFileReplacement.SaveJson(Path.Combine(directory, operation.ToString("D") + ".json"), entry, creating: true);
@@ -172,7 +186,7 @@ public sealed partial class ReplacementRecoveryRegistry
     {
         Validate(entry);
         var recovery = RecoveryFor(entry);
-        if (recovery.Record.Kind!=entry.Kind||recovery.Record.ExpectedHash != entry.ExpectedHash || recovery.Record.PreparedHash != entry.PreparedHash)
+        if (recovery.Record.SourcePath!=entry.SourcePath||recovery.Record.Kind!=entry.Kind||recovery.Record.ExpectedHash != entry.ExpectedHash || recovery.Record.PreparedHash != entry.PreparedHash)
             throw new InvalidDataException("Replacement registry and manifest disagree.");
         var preparedStamp = RetainedFileReplacement.Fingerprint(recovery.Prepared);
         var displacedStamp = RetainedFileReplacement.Fingerprint(recovery.Displaced);
@@ -218,13 +232,14 @@ public sealed partial class ReplacementRecoveryRegistry
     }
     void AssertEntryReadableCore(Entry entry,bool persist,ISet<string> verified)
     {
+        if(entry.Kind=="move"){AssertMoveReadable(entry,persist);return;}
         RetainedFileReplacement.Recovery recovery;
         try {recovery=RecoveryFor(entry,verified);}
         catch(FileNotFoundException){throw new RetainedFileReplacement.RequiredException(entry.Operation);}
         catch(DirectoryNotFoundException){throw new RetainedFileReplacement.RequiredException(entry.Operation);}
         using var captureLease=persist&&entry.Kind=="removal"&&entry.Resolution is null&&recovery.Record.State=="pending"?RequireCaptureLease(entry.Operation):null;
         if(captureLease is not null)recovery=RecoveryFor(entry,verified);
-        if(recovery.Record.Kind!=entry.Kind||recovery.Record.ExpectedHash!=entry.ExpectedHash||recovery.Record.PreparedHash!=entry.PreparedHash)throw new InvalidDataException("Replacement manifest mismatch.");
+        if(recovery.Record.SourcePath!=entry.SourcePath||recovery.Record.Kind!=entry.Kind||recovery.Record.ExpectedHash!=entry.ExpectedHash||recovery.Record.PreparedHash!=entry.PreparedHash)throw new InvalidDataException("Replacement manifest mismatch.");
         if(entry.UncapturedCancellation is not null) {
             var uncaptured=InspectUncaptured(entry);
             if(persist&&uncaptured.Recovery.Record.State!="cancelled")RetainedFileReplacement.SaveJson(Path.Combine(uncaptured.Recovery.Directory,"manifest.json"),uncaptured.Recovery.Record with{State="cancelled"});

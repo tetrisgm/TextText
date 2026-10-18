@@ -67,6 +67,31 @@ static class ReplacementBridgeTests
             check(noCapture.GetProperty("absent").GetBoolean()&&noCapture.GetProperty("data").ValueKind==JsonValueKind.Null,"native uncaptured displaced read never fabricates an empty archive");
             _=await bridge.InvokeAsync("files.cancelUncapturedDeletion",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=unfinished.ToString("D"),path=uncaptured.Path,itemId=uncaptured.ItemId,preparedHash=uncaptured.Hash,currentPresent=true,currentHash=TextPackStore.Hash(recreated)}),CancellationToken.None);
             check(File.ReadAllBytes(store.Resolve(uncaptured.Path)).SequenceEqual(recreated)&&store.ReplacementRecoveryList().Single(entry=>entry.Id==unfinished.ToString("D")).Resolved,"native cancel unfinished deletion preserves recreated bytes and keeps readonly snapshots");
+            var moveBaseline=Pack("move baseline","bridge-move");var moveForeign=Pack("foreign destination","bridge-move-foreign");
+            var moveSource=Pack("recreated source","bridge-source-foreign");var moving=store.Write("MoveFrom.textpack",moveBaseline);
+            var moveHook=typeof(TextPackStore).GetProperty("MoveObservationForTesting",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!;
+            moveHook.SetValue(store,(Action<string>)(phase=>{if(phase=="beforeMove")File.WriteAllBytes(store.Resolve(moving.Path),moveForeign);}));
+            var moveRefused=false;try{store.Rename(moving.Path,"MoveTo.textpack",moving.Hash);}catch(IOException){moveRefused=true;}
+            finally{moveHook.SetValue(store,null);}
+            check(moveRefused,"bridge fixture reproduces a refused foreign move without acknowledging its old baseline");
+            File.WriteAllBytes(store.Resolve(moving.Path),moveSource);
+            var moves=Json((await bridge.InvokeAsync("files.replacementList",Json(Scope(root)),CancellationToken.None))!);
+            var moveRow=moves.EnumerateArray().Single(row=>row.GetProperty("kind").GetString()=="move");
+            var moveId=moveRow.GetProperty("id").GetString()!;
+            check(moveRow.GetProperty("sourcePath").GetString()==moving.Path&&moveRow.GetProperty("sourcePresent").GetBoolean()&&
+                moveRow.GetProperty("sourceHash").GetString()==TextPackStore.Hash(moveSource),"native move listing binds the recreated original path and destination");
+            var sourceRead=Json((await bridge.InvokeAsync("files.replacementRead",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=moveId,version="source"}),CancellationToken.None))!);
+            check(Convert.FromBase64String(sourceRead.GetProperty("data").GetString()!).SequenceEqual(moveSource),"native move source inspection returns exact recreated bytes");
+            object MoveConsent(string sourceHash,string account="account-a")=>new {workspaceRoot=root,workspaceId=workspace,accountId=account,id=moveId,
+                kind="move",path="MoveTo.textpack",sourcePath=moving.Path,itemId=moving.ItemId,preparedHash=moving.Hash,
+                displacedHash=TextPackStore.Hash(moveForeign),captured=true,currentPresent=true,currentHash=TextPackStore.Hash(moveForeign),sourcePresent=true,sourceHash};
+            refused=false;try{await bridge.InvokeAsync("files.resolveMove",Json(MoveConsent(new string('f',64))),CancellationToken.None);}catch(IOException){refused=true;}
+            check(refused,"move consent refuses a source hash changed since inspection");
+            refused=false;try{await bridge.InvokeAsync("files.resolveMove",Json(MoveConsent(TextPackStore.Hash(moveSource),"account-b")),CancellationToken.None);}catch(Exception error)when(error is IOException or SharedAccountMismatchException){refused=true;}
+            check(refused,"move consent refuses another account before acknowledgement");
+            _=await bridge.InvokeAsync("files.resolveMove",Json(MoveConsent(TextPackStore.Hash(moveSource))),CancellationToken.None);
+            check(File.ReadAllBytes(store.Resolve(moving.Path)).SequenceEqual(moveSource)&&File.ReadAllBytes(store.Resolve("MoveTo.textpack")).SequenceEqual(moveForeign)&&
+                store.ReplacementRecoveryList().Single(entry=>entry.Id==moveId).Resolved,"native move consent preserves both foreign visible files and retained baseline");
             transport.Release.TrySetResult();await bridge.RetireAsync();
             var closed=false;try{await bridge.InvokeAsync("files.replacementRead",Json(Scope(root)),CancellationToken.None);}catch(Exception error)when(error is OperationCanceledException or ObjectDisposedException){closed=true;}
             check(closed,"retired native bridge refuses recovery reads from the old connection");

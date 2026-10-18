@@ -20,6 +20,7 @@ public sealed partial class TextPackStore
     public event Action? Changed;
     internal Action? BeforeWriteCommitForTesting { get; set; }
     internal Action<string>? RemovalObservationForTesting { get; set; }
+    internal Action<string>? MoveObservationForTesting { get; set; }
     readonly object gate = new();
     internal T WithExclusiveMutation<T>(Func<T> action) { lock(gate) return action(); }
     public TextPackStore(string root, string? stateDirectory = null)
@@ -86,7 +87,7 @@ public sealed partial class TextPackStore
         if (stream.ReadByte() != -1) throw new FileChangedException();
         return bytes;
     }
-    public byte[] Read(string path) { lock(gate) { var bytes=ReadProjection(Resolve(path)); string? id;try{id=Identity(bytes);}catch{AssertReplacementReadable(null);throw;}AssertReplacementReadable(id);return bytes; } }
+    public byte[] Read(string path) { lock(gate) { Replacements.AssertPathReadable(path);var bytes=ReadProjection(Resolve(path)); string? id;try{id=Identity(bytes);}catch{AssertReplacementReadable(null);throw;}AssertReplacementReadable(id);return bytes; } }
     public PackFile Describe(string path) { var bytes = Read(path); return new(path, Hash(bytes), Identity(bytes)); }
     public static string Identity(byte[] bytes)
     {
@@ -226,6 +227,7 @@ public sealed partial class TextPackStore
         finally { if(File.Exists(temp)) File.Delete(temp); }
     }
     void Match(string full, string? expected) {
+        Replacements.AssertPathReadable(System.IO.Path.GetRelativePath(Root,full).Replace('\\','/'));
         if(File.Exists(full)) {var bytes=ReadProjection(full);AssertReplacementReadable(Identity(bytes));if(expected is null||Hash(bytes)!=expected)throw new FileChangedException();}
         else if(expected is not null)throw new FileChangedException();
     }
@@ -364,9 +366,18 @@ public sealed partial class TextPackStore
     }
     public void Rename(string from,string to,string expectedHash)
     {
-        lock(gate) { var source=Resolve(from); var target=Resolve(to); Match(source,expectedHash); if(File.Exists(target)) throw new IOException("Destination exists.");
-            var intent=new FileIntent("rename",Identity(ReadProjection(source)),from,expectedHash,to); RecordIntent(intent);
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!); File.Move(source,target); }
+        lock(gate) {
+            var source=Resolve(from);var target=Resolve(to);Match(source,expectedHash);Replacements.AssertPathReadable(to);
+            if(RetainedFileReplacement.ExistsNoFollow(target))throw new IOException("Destination exists.");
+            var before=ReadProjection(source);if(Hash(before)!=expectedHash)throw new FileChangedException();var identity=Identity(before);
+            RetainedReplacementProfile.Prepare(this);var operation=Guid.NewGuid();
+            var recoveryRoot=System.IO.Path.Combine(Root,".texttext","retained-replacements",Hash(Encoding.UTF8.GetBytes(to)));
+            _=RetainedFileMove.Move(source,target,from,expectedHash,recoveryRoot,operation,Replacements.CaptureLeasePath(operation),point=>{
+                if(point=="prepared")Replacements.Register(operation,identity,to,expectedHash,expectedHash,RetainedFileReplacement.OperationDirectory(target,operation,recoveryRoot),kind:"move",sourcePath:from);
+                MoveObservationForTesting?.Invoke(point);
+            });
+            AssertReplacementReadable(identity);RecordIntent(new FileIntent("rename",identity,from,expectedHash,to));
+        }
         Changed?.Invoke();
     }
     public void Delete(string path,string expectedHash)=>RemoveRetaining(path,expectedHash,recordDeletion:true);

@@ -19,7 +19,7 @@ public sealed partial class TextPackStore
             return result;
         }
     }
-    public sealed record ReplacementRecoveryEntry(string Id, string Path, string ItemId, string? CurrentHash, string PreparedHash, string? DisplacedHash, string SavedAt,bool Resolved=false,string Kind="replacement",bool CurrentPresent=true,bool Captured=true,string? ResolutionBlocked=null);
+    public sealed record ReplacementRecoveryEntry(string Id, string Path, string ItemId, string? CurrentHash, string PreparedHash, string? DisplacedHash, string SavedAt,bool Resolved=false,string Kind="replacement",bool CurrentPresent=true,bool Captured=true,string? ResolutionBlocked=null,string? SourcePath=null,bool? SourcePresent=null,string? SourceHash=null);
     public sealed record ReplacementRecoveryFile(string Path, string? Hash, string ItemId, byte[]? Data, bool Opaque=false, string? ParseError=null,bool Absent=false);
     ReplacementRecoveryFile ReplacementVisible(ReplacementRecoveryRegistry.Entry entry)
     {
@@ -55,6 +55,10 @@ public sealed partial class TextPackStore
         lock(gate) {
             var result=new List<ReplacementRecoveryEntry>();
             foreach(var entry in Replacements.Entries()) {
+                if(entry.Kind=="move") {var move=Replacements.InspectMove(entry);var moveResolved=entry.MoveResolution is not null;
+                    var readable=true;try{Replacements.AssertMoveReadable(entry,false);}catch(RetainedFileReplacement.RequiredException){readable=false;moveResolved=false;}
+                    if(!moveResolved&&readable&&move.Recovery.Record.State is "completed" or "cancelled")continue;
+                    result.Add(new(entry.Operation.ToString("D"),entry.Path,entry.ItemId,move.Current is null?null:Hash(move.Current),entry.PreparedHash,move.Displaced is null?null:Hash(move.Displaced),Directory.GetCreationTimeUtc(move.Recovery.Directory).ToString("O"),moveResolved,"move",move.Current is not null,move.Captured,move.Blocked,entry.SourcePath,move.Source is not null,move.Source is null?null:Hash(move.Source)));continue;}
                 if(entry.Kind=="removal"&&!Replacements.RemovalHasCapturedInode(entry)) {
                     var uncaptured=Replacements.InspectUncaptured(entry);
                     if(uncaptured.Recovery.Record.State=="cancelled"&&entry.UncapturedCancellation is null)continue;
@@ -77,6 +81,13 @@ public sealed partial class TextPackStore
         lock(gate) {
             if(!Guid.TryParseExact(id,"D",out var operation))throw new InvalidDataException("Invalid replacement identity.");
             var entry=Replacements.Entries().SingleOrDefault(entry=>entry.Operation==operation)??throw new InvalidDataException("Unknown replacement.");
+            if(entry.Kind=="move") {
+                var move=Replacements.InspectMove(entry);var moveBytes=version switch{"current"=>move.Current,"source"=>move.Source,"prepared"=>move.Prepared,"displaced"=>move.Displaced,_=>throw new InvalidDataException("Unknown move version.")};
+                var selectedPath=version=="source"?entry.SourcePath!:entry.Path;
+                if(moveBytes is null)return new(selectedPath,null,entry.ItemId,null,Absent:true);
+                try{var moveIdentity=Identity(moveBytes);if(version=="prepared"&&moveIdentity!=entry.ItemId)throw new InvalidDataException("Move baseline identity changed.");return new(selectedPath,Hash(moveBytes),moveIdentity,moveBytes);}
+                catch(Exception error)when(version!="prepared"&&error is IOException or InvalidDataException or System.Text.Json.JsonException or System.Text.DecoderFallbackException){return new(selectedPath,Hash(moveBytes),"",moveBytes,true,"This retained file cannot be opened as a TextText document. Download its exact bytes for recovery.");}
+            }
             var visible=RecoveryCurrent(entry);
             if(entry.Kind=="removal"&&!Replacements.RemovalHasCapturedInode(entry)) {
                 var uncaptured=Replacements.InspectUncaptured(entry);
@@ -106,6 +117,11 @@ public sealed partial class TextPackStore
             if(entry.ItemId!=itemId||(entry.Kind??"replacement")!=kind||visible.Path!=path||!visible.Absent!=currentPresent||visible.Hash!=currentHash)throw new FileChangedException();
             Replacements.ResolveKeepCurrent(operation,itemId,path,new(currentHash,preparedHash,displacedHash,CurrentPresent:currentPresent),beforeAcknowledge);
         }
+        Changed?.Invoke();
+    }
+    public void ResolveMove(string id,string path,string sourcePath,string itemId,string preparedHash,string? displacedHash,bool captured,bool currentPresent,string? currentHash,bool sourcePresent,string? sourceHash,Action? beforeAcknowledge=null)
+    {
+        lock(gate){if(!Guid.TryParseExact(id,"D",out var operation))throw new InvalidDataException("Invalid move identity.");Replacements.ResolveMove(operation,path,sourcePath,itemId,new(preparedHash,displacedHash,captured,currentPresent,currentHash,sourcePresent,sourceHash),beforeAcknowledge);}
         Changed?.Invoke();
     }
     public void CancelUncapturedDeletion(string id,string path,string itemId,string preparedHash,bool currentPresent,string? currentHash,Action? beforeAcknowledge=null)

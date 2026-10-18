@@ -250,12 +250,26 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
             }
             case "files.recoveryDirectory": return files.GetRecoveryDirectory();
             case "files.replacementList": return ReplacementScope(p,ct,()=>files.ReplacementRecoveryList().Select(entry=>new {
-                id=entry.Id,path=entry.Path,itemId=entry.ItemId,currentHash=entry.CurrentHash,preparedHash=entry.PreparedHash,displacedHash=entry.DisplacedHash,savedAt=entry.SavedAt,resolved=entry.Resolved,kind=entry.Kind,currentPresent=entry.CurrentPresent,captured=entry.Captured,resolutionBlocked=entry.ResolutionBlocked }).ToArray());
+                id=entry.Id,path=entry.Path,itemId=entry.ItemId,currentHash=entry.CurrentHash,preparedHash=entry.PreparedHash,displacedHash=entry.DisplacedHash,savedAt=entry.SavedAt,resolved=entry.Resolved,kind=entry.Kind,currentPresent=entry.CurrentPresent,captured=entry.Captured,resolutionBlocked=entry.ResolutionBlocked,sourcePath=entry.SourcePath,sourcePresent=entry.SourcePresent,sourceHash=entry.SourceHash }).ToArray());
             case "files.replacementRead": return ReplacementScope(p,ct,()=>{
                 var file=files.ReplacementRecoveryRead(Required(p,"id"),Required(p,"version"));
                 if(file.Absent)return (object)new {absent=true,path=file.Path,hash=(string?)null,data=(string?)null};
                 if(file.Data is null||file.Hash is null)throw new InvalidDataException("Recovery bytes are unavailable. Reopen Recovery.");
                 return new {path=file.Path,hash=file.Hash,itemId=file.ItemId,data=Convert.ToBase64String(file.Data),opaque=file.Opaque,parseError=file.ParseError};
+            });
+            case "files.resolveMove": return ReplacementScope(p,ct,()=>{
+                var present=p.GetProperty("currentPresent").GetBoolean();
+                var sourcePresent=p.GetProperty("sourcePresent").GetBoolean();
+                var captured=p.GetProperty("captured").GetBoolean();
+                if(Required(p,"kind")!="move" ||
+                   (!present&&p.GetProperty("currentHash").ValueKind!=JsonValueKind.Null) ||
+                   (!sourcePresent&&p.GetProperty("sourceHash").ValueKind!=JsonValueKind.Null) ||
+                   (!captured&&p.GetProperty("displacedHash").ValueKind!=JsonValueKind.Null))
+                    throw new InvalidDataException("The inspected move changed. Reopen Recovery.");
+                files.ResolveMove(Required(p,"id"),Required(p,"path"),Required(p,"sourcePath"),Required(p,"itemId"),Required(p,"preparedHash"),
+                    captured?Required(p,"displacedHash"):null,captured,present,present?Required(p,"currentHash"):null,
+                    sourcePresent,sourcePresent?Required(p,"sourceHash"):null,()=>RequireReplacementScope(p,ct));
+                Changed();return new {resolved=true};
             });
             case "files.resolveReplacement": return ReplacementScope(p,ct,()=>{
                 var kind=p.TryGetProperty("kind",out var kindValue)?kindValue.GetString():"replacement";
