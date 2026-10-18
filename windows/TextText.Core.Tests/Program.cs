@@ -9,6 +9,13 @@ static class Test
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--retained-replacement-fixtures"})) {
+ var fixtureBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&fixtureBase.StartsWith("/var/"))fixtureBase="/private"+fixtureBase;
+ var fixture=Path.Combine(fixtureBase,"texttext-retained-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);
+ RetainedReplacementTests.Run(fixture,Assert);RetainedReplacementAdoptionTests.Run(fixture,Assert);RecoveryAssetTests.Run(fixture,Assert);
+ await RetainedReplacementSyncFenceTests.Run(fixture,Assert);
+ Console.WriteLine("All retained replacement fixtures passed. Receipt: "+fixture);return;
+ }
  if(args.Length>0){if(args.Length!=2)throw new InvalidOperationException("Unknown test mode.");if(args[0]=="--resume-account-adoption-fixture")AccountStateAdoptionTests.ResumeFixture(args[1]);else if(args[0]=="--hold-document-owner-fixture")await DocumentOwnershipTests.Hold(args[1]);else throw new InvalidOperationException("Unknown test mode.");return;}
  var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  var unavailableStore=new TextPackStore(Path.Combine(temp,"policy-unavailable"),Path.Combine(temp,"policy-unavailable-state"));
@@ -23,6 +30,10 @@ static class Test
  await MirrorPolicyTests.Run(Assert);
  await MirrorLifecycleTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
+ RetainedReplacementTests.Run(temp,Assert);
+ RetainedReplacementAdoptionTests.Run(temp,Assert);
+ RecoveryAssetTests.Run(temp,Assert);
+ await RetainedReplacementSyncFenceTests.Run(temp,Assert);
  var store=new TextPackStore(Path.Combine(temp,"workspace"),Path.Combine(temp,"device"));
  foreach(var failure in new[]{"none","lost-ack","before-commit","server-changed","legacy-conflict","legacy-missing-proof","legacy-corrupt-proof"}) {
  var metadataStore=new TextPackStore(Path.Combine(temp,"metadata-"+failure),Path.Combine(temp,"metadata-state-"+failure));

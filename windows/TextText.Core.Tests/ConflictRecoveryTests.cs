@@ -11,7 +11,7 @@ static class ConflictRecoveryTests
         return output.ToArray();
     }
     public static async Task Run(string temp,Action<bool,string> check) {
-        foreach(var fault in new[]{"none","missing","corrupt","corrupt-recovery","corrupt-remote-recovery","corrupt-asset-recovery"}) {
+        foreach(var fault in new[]{"none","missing","corrupt","corrupt-recovery","corrupt-remote-recovery","corrupt-asset-recovery","corrupt-provenance-recovery"}) {
             var store=new TextPackStore(Path.Combine(temp,"recovery-"+fault),Path.Combine(temp,"recovery-state-"+fault));
             byte[] a=[1,1],b=[2,2],c=[3,3],d=[4,4];
             var original=BinaryEntryPacks.Patch(Pack("retained text"),"assets/data.bin",null,a);
@@ -35,6 +35,7 @@ static class ConflictRecoveryTests
                 store.Write(file.Path,laterPack,store.Describe(file.Path).Hash);
                 remote.Data=winnerPack;remote.Item=remote.Item! with{Revision=TextPackStore.Hash(winnerPack)};
                 var staged=Path.Combine(store.StateDirectory,"binary-outbox",operation+".asset");
+                if(fault=="corrupt-provenance-recovery")corruptCopy=Path.Combine(store.GetRecoveryDirectory(),"binary-conflict-asset-"+TextPackStore.Hash(b)+"-"+operation+".json");
                 if(fault=="missing")File.Delete(staged);
                 if(fault=="corrupt")File.WriteAllBytes(staged,[9,9]);
                 if(fault.EndsWith("-recovery",StringComparison.Ordinal))File.WriteAllBytes(corruptCopy,[9,9]);
@@ -57,6 +58,8 @@ static class ConflictRecoveryTests
             check(File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-local-"+TextPackStore.Hash(laterPack)+".textpack")).SequenceEqual(laterPack),"current local pack C is retained");
             check(File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-remote-"+TextPackStore.Hash(winnerPack)+".textpack")).SequenceEqual(winnerPack),"remote winner D is retained");
             check(File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-asset-"+TextPackStore.Hash(b)+".asset")).SequenceEqual(b),"original submitted asset B remains recoverable after later local C and remote D");
+            var provenance=JsonSerializer.Deserialize<TextPackStore.AssetProvenance>(File.ReadAllBytes(Path.Combine(recovery,"binary-conflict-asset-"+TextPackStore.Hash(b)+"-"+operation+".json")))!;
+            check(provenance.Version==1&&provenance.OperationId==operation&&provenance.ItemId==file.ItemId&&provenance.Path==file.Path&&provenance.EntryPath=="assets/data.bin"&&provenance.PayloadHash==TextPackStore.Hash(b)&&provenance.ExpectedHash==TextPackStore.Hash(a)&&provenance.Hash==TextPackStore.Hash(b)&&provenance.Filename=="binary-conflict-asset-"+TextPackStore.Hash(b)+".asset","submitted asset provenance retains original operation identity and exact metadata");
             check(BinaryEntryPacks.Assets(store.Read(file.Path))["assets/data.bin"].Bytes.SequenceEqual(d),"server winner lands after durable three-version recovery");
         }
     }

@@ -12,7 +12,7 @@ public sealed record FileIntent(string Kind, string ItemId, string Path, string 
 public sealed record FileMutationReceipt(int Version, string Fingerprint, string ItemId, string Path, string Hash, bool Committed);
 public sealed record FileCreationReceipt(int Version, string Intent, string ItemId, string Path, string Hash, string Data);
 public sealed class FileChangedException() : IOException("The file changed. Reload its current contents before writing.");
-public sealed class TextPackStore
+public sealed partial class TextPackStore
 {
     public string Root { get; }
     public string StateDirectory { get; }
@@ -85,7 +85,7 @@ public sealed class TextPackStore
         if (stream.ReadByte() != -1) throw new FileChangedException();
         return bytes;
     }
-    public byte[] Read(string path) { lock(gate) return ReadProjection(Resolve(path)); }
+    public byte[] Read(string path) { lock(gate) { var bytes=ReadProjection(Resolve(path)); string? id;try{id=Identity(bytes);}catch{AssertReplacementReadable(null);throw;}AssertReplacementReadable(id);return bytes; } }
     public PackFile Describe(string path) { var bytes = Read(path); return new(path, Hash(bytes), Identity(bytes)); }
     public static string Identity(byte[] bytes)
     {
@@ -224,12 +224,26 @@ public sealed class TextPackStore
         try { using(var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { stream.Write(bytes); stream.Flush(true); } CheckLinks(path); beforeCommit?.Invoke(); File.Move(temp,path,overwrite); }
         finally { if(File.Exists(temp)) File.Delete(temp); }
     }
-    void Match(string full, string? expected) { if (File.Exists(full) ? expected == null || Hash(ReadProjection(full)) != expected : expected != null) throw new FileChangedException(); }
+    void Match(string full, string? expected) {
+        if(File.Exists(full)) {var bytes=ReadProjection(full);AssertReplacementReadable(Identity(bytes));if(expected is null||Hash(bytes)!=expected)throw new FileChangedException();}
+        else if(expected is not null)throw new FileChangedException();
+    }
     public PackFile Write(string path, byte[] bytes, string? expectedHash = null)
     {
         var id = Identity(bytes);
-        lock(gate) { var full=Resolve(path); Match(full,expectedHash); if(File.Exists(full)) { var previous=ReadProjection(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); }
-            AtomicWrite(full, bytes, expectedHash != null, () => {
+        lock(gate) { AssertReplacementReadable(id); var full=Resolve(path); Match(full,expectedHash); if(File.Exists(full)) { var previous=ReadProjection(full); if(Identity(previous)!=id) throw new InvalidDataException("A different document already occupies this path."); Preserve(previous, "history"); }
+            if(OperatingSystem.IsWindows() && expectedHash is not null) {
+                RetainedReplacementProfile.Prepare(this);
+                var operation=Guid.NewGuid();
+                var recoveryRoot=System.IO.Path.Combine(Root,".texttext","retained-replacements",Hash(Encoding.UTF8.GetBytes(path)));
+                _=RetainedFileReplacement.Replace(full,expectedHash,bytes,operation,point=>{
+                    if(point=="prepared") {
+                        BeforeWriteCommitForTesting?.Invoke();CheckLinks(full);Match(full,expectedHash);
+                        Replacements.Register(operation,id,path,expectedHash,Hash(bytes),RetainedFileReplacement.OperationDirectory(full,operation,recoveryRoot));
+                    }
+                },recoveryRoot);
+                AssertReplacementReadable(id);
+            } else AtomicWrite(full, bytes, expectedHash != null, () => {
                 BeforeWriteCommitForTesting?.Invoke();
                 // Staging and fsync can take time. Recheck after both, so an
                 // external save during preparation remains available to merge.
@@ -249,6 +263,7 @@ public sealed class TextPackStore
         var journal=System.IO.Path.Combine(StateDirectory,"mutation-"+operationId.ToLowerInvariant()+".json");
         CheckLinks(journal); CheckLinks(journal+".lock");
         lock(gate) {
+            AssertReplacementReadable(id);
             using var fence=new FileStream(journal+".lock",FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
             FileMutationReceipt? receipt=null;
             if(File.Exists(journal)) {
@@ -280,6 +295,7 @@ public sealed class TextPackStore
             if(expectedHash is null && (Scan().Any(file=>file.ItemId==id && file.Path!=path) || LastScanErrors.Any(error=>error.ItemId==id)))
                 throw new FileChangedException();
             var result=Write(path,bytes,expectedHash);
+            AssertReplacementReadable(id);
             AtomicWrite(journal,JsonSerializer.SerializeToUtf8Bytes(receipt with { Committed=true }));
             return result;
         }

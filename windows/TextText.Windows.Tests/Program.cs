@@ -26,10 +26,11 @@ var root = Path.Combine(temp, "workspace"); var state = Path.Combine(temp, "stat
 Directory.CreateDirectory(root); Directory.CreateDirectory(state);
 try {
     await AccountBridgeTests.Run(temp,Assert);
+    await ReplacementBridgeTests.Run(temp,Assert);
     var local = new TextPackStore(root, state).Write("Notes/Startup.textpack", Pack("startup", "startup-1"));
     var transport = new StalledTransport();
     var events = new ConcurrentQueue<string>();
-    var context = new WorkspaceContext(root, "11111111-2222-3333-4444-555555555555", new Uri("https://texttext.app"), () => Task.FromResult("fixture-token"), (name, _) => { events.Enqueue(name); return Task.CompletedTask; });
+    var context = new WorkspaceContext(root, "11111111-2222-3333-4444-555555555555", new Uri("https://texttext.app"), () => Task.FromResult("fixture-token"), (name, _) => { events.Enqueue(name); return Task.CompletedTask; }, MirrorPolicyFactory:()=>NativePolicyTestHost.Create());
     using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
     var bridge = new WindowsBridge(context, transport, state);
     try {

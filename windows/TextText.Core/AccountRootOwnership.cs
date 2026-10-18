@@ -30,6 +30,7 @@ public static class AccountRootOwnership
         var expected=Expected(store,origin,workspaceId,accountId);RequireNoAdoption(store.StateDirectory);
         var marker=Path.Combine(store.StateDirectory,FileName);
         if(File.Exists(marker)) { Verify(marker,expected);return; }
+        if(RetainedReplacementProfile.Exists(store.StateDirectory))throw new InvalidDataException("Retained replacement ownership is missing. Restore its preserved ownership before opening this folder.");
         var state=Path.Combine(store.StateDirectory,"sync.json");
         if(File.Exists(state)) {
             var saved=JsonSerializer.Deserialize<SyncEngine.State>(Read(state,90*1024*1024))??throw new InvalidDataException("Invalid sync state.");
@@ -43,14 +44,16 @@ public static class AccountRootOwnership
     }
     internal static void Verify(string path,Owner expected) {
         var actual=JsonSerializer.Deserialize<Owner>(Read(path,4096))??throw new InvalidDataException("Invalid account ownership record.");
-        if(actual.Version!=1)throw new InvalidDataException("Update TextText to open this workspace.");
-        if(actual!=expected)throw new SharedAccountMismatchException();
+        if(actual.Version==2||actual.Version==1&&RetainedReplacementProfile.HasPublishedMarker(Path.GetDirectoryName(path)!))RetainedReplacementProfile.Verify(Path.GetDirectoryName(path)!,actual,expected.RootHash);
+        else if(actual.Version!=1)throw new InvalidDataException("Update TextText to open this workspace.");
+        if((actual with{Version=1})!=(expected with{Version=1}))throw new SharedAccountMismatchException();
     }
     // Only the explicit adoption transaction may publish ownership for legacy
     // bytes. Ordinary opening must first pass the checks above.
     internal static void Publish(TextPackStore store,Owner expected) {
         var marker=Path.Combine(store.StateDirectory,FileName);
         if(File.Exists(marker)){Verify(marker,expected);return;}
+        if(RetainedReplacementProfile.Exists(store.StateDirectory))throw new InvalidDataException("Retained replacement ownership is missing.");
         var temporary=Path.Combine(store.StateDirectory,".account-owner-"+Guid.NewGuid().ToString("N")+".tmp");
         try {
             using(var file=new FileStream(temporary,FileMode.CreateNew,FileAccess.Write,FileShare.None)) {JsonSerializer.Serialize(file,expected);file.Flush(true);}

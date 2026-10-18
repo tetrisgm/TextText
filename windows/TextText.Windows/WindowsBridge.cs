@@ -218,7 +218,23 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         finally { requests.Release(); }
     }
 
-    static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text";
+    static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text"
+        or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
+
+    void RequireReplacementScope(JsonElement parameters,CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if(Required(parameters,"workspaceRoot")!=context.Root)throw new IOException("This recovery belongs to another workspace.");
+        if(Required(parameters,"workspaceId")!=context.WorkspaceId||Optional(parameters,"accountId")!=context.AccountId)throw new SharedAccountMismatchException();
+        if(context.AccountId is {} owner) {
+            if(!File.Exists(Path.Combine(files.StateDirectory,AccountRootOwnership.FileName)))throw new IOException("Recovery ownership is unavailable. Restore its retained ownership record before continuing.");
+            AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,owner);
+        }
+    }
+    T ReplacementScope<T>(JsonElement parameters,CancellationToken ct,Func<T> action)
+    {
+        RequireReplacementScope(parameters,ct);var result=action();RequireReplacementScope(parameters,ct);return result;
+    }
 
     async Task<object?> Execute(string method, JsonElement p, CancellationToken ct)
     {
@@ -233,6 +249,24 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 return Result(restored);
             }
             case "files.recoveryDirectory": return files.GetRecoveryDirectory();
+            case "files.replacementList": return ReplacementScope(p,ct,()=>files.ReplacementRecoveryList().Select(entry=>new {
+                id=entry.Id,path=entry.Path,itemId=entry.ItemId,currentHash=entry.CurrentHash,preparedHash=entry.PreparedHash,displacedHash=entry.DisplacedHash,savedAt=entry.SavedAt,resolved=entry.Resolved }).ToArray());
+            case "files.replacementRead": return ReplacementScope(p,ct,()=>{
+                var file=files.ReplacementRecoveryRead(Required(p,"id"),Required(p,"version"));
+                return new {path=file.Path,hash=file.Hash,itemId=file.ItemId,data=Convert.ToBase64String(file.Data),opaque=file.Opaque,parseError=file.ParseError};
+            });
+            case "files.resolveReplacement": return ReplacementScope(p,ct,()=>{
+                files.ResolveReplacement(Required(p,"id"),Required(p,"path"),Required(p,"itemId"),Required(p,"currentHash"),Required(p,"preparedHash"),Required(p,"displacedHash"),()=>RequireReplacementScope(p,ct));
+                Changed();return new {resolved=true};
+            });
+            case "files.recoveryAssets": return ReplacementScope(p,ct,()=>{
+                var page=files.RecoveryAssets();
+                return new {assets=page.Assets.Select(entry=>new {id=entry.Id,filename=entry.Filename,byteLength=entry.ByteLength,hash=entry.Hash,savedAt=entry.SavedAt,entryPath=entry.EntryPath,itemPath=entry.ItemPath,provenanceError=entry.ProvenanceError}).ToArray(),assetsTruncated=page.Truncated};
+            });
+            case "files.recoveryAssetRead": return ReplacementScope(p,ct,()=>{
+                var file=files.RecoveryAssetRead(Required(p,"id"),Required(p,"hash"));
+                return new {data=Convert.ToBase64String(file.Data),hash=file.Hash,filename=file.Filename,byteLength=file.Data.Length};
+            });
             case "files.ready": {
                 // Readiness decides whether the editor joins shared editing now. While a
                 // sync pass holds the gate the document opens locally and is promoted

@@ -147,6 +147,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
                    !System.Text.Json.Nodes.JsonNode.DeepEquals(journal,System.Text.Json.Nodes.JsonNode.Parse(projection.Journal)))continue;
                 cp=projection;
             }
+            if(store.ReplacementBlocked(cp.ItemId))continue;
             var current=store.Describe(cp.Path);if(current.ItemId!=cp.ItemId||current.Hash!=cp.ProjectedHash)continue;
             if(state.Outbox.Any(x=>x.ItemId==cp.ItemId)||state.PendingPull?.ItemId==cp.ItemId)continue;
             var prior=state.Items.GetValueOrDefault(cp.ItemId);
@@ -193,6 +194,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);File.Delete(System.IO.Path.Combine(directory,"move-intent.json"));return cp;
     }
     SharedCheckpoint? Recover(string itemId) => store.WithExclusiveMutation(() => {
+        store.AssertReplacementReadable(itemId);
         var directory=DirectoryFor(itemId);
         var move=Read<MoveIntent>(System.IO.Path.Combine(directory,"move-intent.json"));if(move!=null)RequireAccount(move.Checkpoint);
         RecoverMove(store,directory,itemId);var intent=Read<Intent>(System.IO.Path.Combine(directory,"intent.json"));
@@ -202,10 +204,12 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));if(cp!=null){Validate(store,cp);RequireAccount(cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");}return cp;
     });
     PackFile Finish(Intent intent,string directory) {
+        store.AssertReplacementReadable(intent.Checkpoint.ItemId);
         Validate(store,intent.Checkpoint);var bytes=Convert.FromBase64String(intent.Payload);if(TextPackStore.Identity(bytes)!=intent.Checkpoint.ItemId||TextPackStore.Hash(bytes)!=intent.Checkpoint.ProjectedHash)throw new InvalidDataException("Invalid shared projection.");
         var current=store.Describe(intent.Checkpoint.Path);
         if(current.Hash==intent.BeforeHash)current=store.Write(current.Path,bytes,current.Hash);
         else if(current.Hash!=intent.Checkpoint.ProjectedHash){Save(System.IO.Path.Combine(directory,"checkpoint.json"),intent.Checkpoint with{RetiredReason="The file changed outside this editing session. Its shared edits are retained."});store.Preserve(bytes,"shared-conflict");File.Delete(System.IO.Path.Combine(directory,"intent.json"));throw new FileChangedException();}
+        store.AssertReplacementReadable(intent.Checkpoint.ItemId);
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),intent.Checkpoint);File.Delete(System.IO.Path.Combine(directory,"intent.json"));return current;
     }
     static void RecoverBinary(TextPackStore store,string directory,string itemId) {
@@ -220,6 +224,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         return true;
     });
     static PackFile FinishBinary(TextPackStore store,string directory,BinaryIntent intent,bool interruptAfterWrite=false) {
+        store.AssertReplacementReadable(intent.ItemId);
         var target=System.IO.Path.Combine(directory,"binary-next.textpack");
         if(!File.Exists(target)||new FileInfo(target).Length>64*1024*1024)throw new InvalidDataException("Binary projection is missing or oversized.");
         var bytes=File.ReadAllBytes(target);

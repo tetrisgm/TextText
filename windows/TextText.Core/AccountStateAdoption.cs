@@ -27,7 +27,7 @@ public static class AccountStateAdoption
         var bytes=File.ReadAllBytes(path);if(bytes.Length>limit)throw new InvalidDataException("Adoption state exceeds its limit.");return bytes;
     }
     static bool Allowed(string path) {
-        var parts=path.Split('/');return path=="sync.json"||parts.Length==3&&parts[0]=="shared-editing"&&Regex.IsMatch(parts[1],@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")&&Active.Contains(parts[2]);
+        var parts=path.Split('/');return path=="sync.json"||parts.Length==2&&parts[0]=="replacement-index"&&Guid.TryParseExact(Path.GetFileNameWithoutExtension(parts[1]),"D",out _)&&parts[1].EndsWith(".json",StringComparison.Ordinal)||parts.Length==3&&parts[0]=="shared-editing"&&Regex.IsMatch(parts[1],@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")&&Active.Contains(parts[2]);
     }
     static string Key(JsonObject value,string name,bool required=false) {
         var keys=value.Select(pair=>pair.Key).Where(key=>key.Equals(name,StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -46,7 +46,9 @@ public static class AccountStateAdoption
         if(saved is not null&&saved!=account)throw new SharedAccountMismatchException();
         return saved is null;
     }
-    static (byte[] Bytes,bool NeedsAdoption) Bind(TextPackStore store,string path,byte[] original,string account) {
+    static (byte[] Bytes,bool NeedsAdoption) Bind(TextPackStore store,string path,byte[] original,AccountRootOwnership.Owner owner) {
+        if(path.StartsWith("replacement-index/",StringComparison.Ordinal))return new ReplacementRecoveryRegistry(store.Root,store.StateDirectory).BindForAdoption(original,Path.GetFileName(path),owner);
+        var account=owner.AccountId;
         var value=JsonNode.Parse(original) as JsonObject??throw new InvalidDataException("Invalid adoption record.");
         bool changed;
         if(path=="sync.json") {
@@ -72,7 +74,14 @@ public static class AccountStateAdoption
         return(JsonSerializer.SerializeToUtf8Bytes(value),changed);
     }
     static List<string> Paths(TextPackStore store) {
-        var paths=new List<string>{"sync.json"};
+        var paths=new List<string>();if(File.Exists(Safe(store.StateDirectory,"sync.json")))paths.Add("sync.json");
+        var replacements=Safe(store.StateDirectory,"replacement-index");
+        if(Directory.Exists(replacements))foreach(var file in Directory.EnumerateFileSystemEntries(replacements)) {
+            if(Path.GetFileName(file).StartsWith('.'))continue;
+            var relative=Path.GetRelativePath(store.StateDirectory,file).Replace('\\','/');
+            if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0||Directory.Exists(file)||!Allowed(relative))throw new InvalidDataException("Unsupported retained replacement entry.");
+            paths.Add(relative);if(paths.Count>2048)throw new InvalidDataException("Too many records for one adoption.");
+        }
         var shared=Safe(store.StateDirectory,"shared-editing");
         if(Directory.Exists(shared))foreach(var item in Directory.EnumerateFileSystemEntries(shared)) {
             if((File.GetAttributes(item)&FileAttributes.ReparsePoint)!=0||!Directory.Exists(item))throw new InvalidDataException("Unsupported retained state directory.");
@@ -89,7 +98,7 @@ public static class AccountStateAdoption
     static Intent Prepare(TextPackStore store,AccountRootOwnership.Owner owner,Action<string>? barrier) {
         var changes=new List<(string Path,byte[] Before,byte[] After)>();long total=0;var needs=false;
         foreach(var path in Paths(store)) {
-            var before=Read(Safe(store.StateDirectory,path));var update=Bind(store,path,before,owner.AccountId);
+            var before=Read(Safe(store.StateDirectory,path));var update=Bind(store,path,before,owner);
             total+=before.Length+update.Bytes.Length;if(total>256L*1024*1024)throw new InvalidDataException("Saved state needs individual recovery before adoption.");
             needs|=update.NeedsAdoption;changes.Add((path,before,update.Bytes));
         }
@@ -115,9 +124,9 @@ public static class AccountStateAdoption
             var before=Read(Safe(transaction,"before/"+entry.Path));var after=Read(Safe(transaction,"after/"+entry.Path));
             total+=before.Length+after.Length;
             if(total>256L*1024*1024||TextPackStore.Hash(before)!=entry.BeforeHash||TextPackStore.Hash(after)!=entry.AfterHash)throw new InvalidDataException("Recovery copies changed. Original state remains protected.");
-            var replacement=Bind(store,entry.Path,before,expected.AccountId);
+            var replacement=Bind(store,entry.Path,before,expected);
             if(TextPackStore.Hash(replacement.Bytes)!=entry.AfterHash)throw new InvalidDataException("Adoption replacement differs from its recorded original.");
-            _ = Bind(store,entry.Path,after,expected.AccountId);
+            _ = Bind(store,entry.Path,after,expected);
             var current=TextPackStore.Hash(Read(Safe(store.StateDirectory,entry.Path)));
             if(current!=entry.BeforeHash&&current!=entry.AfterHash)throw new FileChangedException();
         }

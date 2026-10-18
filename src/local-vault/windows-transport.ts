@@ -58,6 +58,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
   const base = `/api/vault/${encodeURIComponent(status.workspaceId)}/items`;
   const folderMetadataCache = new FolderViewMetadataCache();
   const list = () => rpc.request<Manifest>("files.list");
+  const recoveryScope = { workspaceRoot: status.root, workspaceId: status.workspaceId, accountId: status.accountId ?? null };
   const read = async (itemId: string, signal?: AbortSignal): Promise<OpenPack> => {
     const result = await rpc.request<Read>("files.read", { itemId }, signal);
     return openPack(bytes(result.data), result.path, result.hash, itemId);
@@ -159,6 +160,25 @@ export async function createWindowsVaultTransport(view: NativeView) {
     if (method.startsWith("agent")) return rpc.request(method, params, signal);
     if (method === "connection") return { ...await rpc.request<Status>("native.status", {}, signal), ...await rpc.request<Record<string, unknown>>("files.connection", {}, signal) };
     if (method === "trashReconcile") return rpc.request("files.restoreReconcile", params, signal);
+    if (method === "recoveryList") {
+      const replacements = await rpc.request<unknown[]>("files.replacementList", recoveryScope, signal);
+      const assets = await rpc.request<{ assets: unknown[]; assetsTruncated: boolean }>("files.recoveryAssets", recoveryScope, signal);
+      try {
+        const page = await shared.request(method, params, signal) as Record<string, unknown>;
+        return { ...page, replacements, ...assets };
+      } catch (error) {
+        if (signal?.aborted || (replacements.length === 0 && assets.assets.length === 0)) throw error;
+        return { entries: [], truncated: false, replacements, ...assets, warning: "Saved server versions are unavailable. Local recovery is still available." };
+      }
+    }
+    if (method === "replacementRead") {
+      const result = await rpc.request<Read & { itemId: string; opaque?: boolean; parseError?: string }>("files.replacementRead", { ...params, ...recoveryScope }, signal);
+      if (result.opaque) return { opaque: true, path: result.path, hash: result.hash, data: result.data, parseError: result.parseError };
+      const pack = await openPack(bytes(result.data), result.path, result.hash, result.itemId);
+      return { ...pack.file, data: result.data };
+    }
+    if (method === "resolveReplacement") return rpc.request("files.resolveReplacement", { ...params, ...recoveryScope }, signal);
+    if (method === "recoveryAssetRead") return rpc.request("files.recoveryAssetRead", { ...params, ...recoveryScope }, signal);
     if (method === "recovery") return rpc.request("native.recovery", {}, signal);
     if (["settings", "signOut", "openWeb", "openFolder"].includes(method)) return rpc.request(`native.${method}`, params, signal);
     if (method === "list" || method === "open") {
