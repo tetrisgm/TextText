@@ -6,10 +6,10 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 
 ## Active work, October 18
 
-- Native retained saves, removals and moves, including leaf case-only changes through active/pending shared editors, pass relevant Mac and actual-PC source gates. Mac old-case alias writes/removals/moves also pass. Windows alias mutation and authoritative folder-casing reconciliation remain open.
-- A broader Mac suite exposed an actual compatibility regression: identityless legacy TextPack writes fail. Restore byte-preserving writes through explicit path-bound retained recovery; do not change those CLI fixtures to insert IDs. The separate offline-window fixture now passes with verified account ownership and a fresh complete bundle; set `TEXTTEXT_VAULT_WINDOW_TEST_BUNDLE` to current assets when running it.
-- The physical runner supports malformed/repair holds and observed typing during normal Windows close, in addition to source/artifact/principal pins, restart re-attestation, keyboard undo/redo, multi-field observations, browser crash and ordinary file writes. These are source/driver fixtures, not the pending physical campaign; other close roles and scenario combinations remain open.
-- Shared retry and lifecycle classifiers already run through the packaged TypeScript owner. Shared queue eligibility/budget selection and native consumers are being verified now. Consult the [lifecycle receipt](verification/2026-10-17-mirror-lifecycle-policy.md) before repeating that implementation.
+- Native retained saves, removals and moves, including leaf case-only changes through active/pending shared editors, pass relevant Mac and actual-PC source gates. Mac and Windows old-case alias writes/removals/moves also pass. Authoritative folder-casing reconciliation and its scoped metadata recovery are being verified on both native platforms.
+- The identityless legacy TextPack regression is fixed through explicit path-bound retained recovery; original CLI fixtures pass without invented IDs. The combined native gate also passes shared queue policy consumers. The separate offline-window fixture now passes with verified account ownership and a fresh complete bundle; set `TEXTTEXT_VAULT_WINDOW_TEST_BUNDLE` to current assets when running it.
+- The physical runner supports malformed/repair holds and observed typing during normal Windows close, in addition to source/artifact/principal pins, restart re-attestation, keyboard undo/redo, multi-field observations, browser crash and ordinary file writes. These are source/driver fixtures, not the pending physical campaign; Mac retained-window close now passes 150 runner tests and real WK/AppKit fixtures; browser close and other scenario combinations remain open.
+- Shared retry and lifecycle classifiers already run through the packaged TypeScript owner. Shared queue eligibility/budget selection and native consumers pass Mac, actual-PC and actual WebView2 source gates; installed acceptance remains open. Consult the [lifecycle receipt](verification/2026-10-17-mirror-lifecycle-policy.md) before repeating that implementation.
 
 ## Verified source references
 
@@ -18,6 +18,7 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 - [Retained replacement](verification/2026-10-18-retained-replacement-native.md), [Mac removal](verification/2026-10-18-retained-removal.md), [Windows removal](verification/2026-10-18-windows-retained-removal.md), [profile reads and parent-path guards](verification/2026-10-18-parent-path-and-profile-reads.md).
 - [Process crash/receipt replay](verification/2026-10-18-file-write-process-crash.md), [account-scoped routing](verification/2026-10-18-web-workspace-routing.md).
 - [Legacy path-bound replacement work](verification/2026-10-18-legacy-path-replacement.md).
+- [Shared queue policy](verification/2026-10-18-mirror-queue-policy.md), [Mac retained-window close runner](verification/2026-10-18-mac-window-close-runner.md).
 - [Shared Mac case changes and alias recovery](verification/2026-10-18-shared-leaf-case-and-alias.md), [malformed repair runner](verification/2026-10-18-malformed-repair-runner.md), [close with observed traffic](verification/2026-10-18-close-traffic-runner.md).
 - [Live editor inspection](verification/2026-10-18-live-document-inspection.md), [multi-field runner](verification/2026-10-18-multi-field-runner-preparation.md), [browser crash runner](verification/2026-10-18-browser-crash-runner.md), [ordinary file writes](verification/2026-10-18-ordinary-file-write-runner.md).
 
