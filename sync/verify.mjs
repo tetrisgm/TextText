@@ -116,6 +116,9 @@ async function main() {
           for (const mode of [[], ['--external-file'], ['--early-open'], ['--queued-open'], ['--conflicting-restore'], ['--external-file', '--unfocused-promotion']]) {
             await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-promotion.mts', ...mode]);
           }
+          for (const mode of [[], ['--backward-selection'], ['--focus-elsewhere']]) {
+            await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-title-promotion.mts', ...mode]);
+          }
         }
       } else await run('bash', ['scripts/test-sync.sh', '--native-only']);
     }, () => fingerprint(root));

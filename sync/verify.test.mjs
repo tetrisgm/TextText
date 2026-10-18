@@ -157,3 +157,10 @@ test('failed reruns and edits during a run cannot leave a passing receipt', asyn
     validateReceipt(JSON.parse(await fs.readFile(file, 'utf8')), 'same', 'darwin', 'core');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+
+test('core gate requires title promotion caret, backward selection, and nonstealing variants', async () => {
+  const verifier = await fs.readFile(new URL('./verify.mjs', import.meta.url), 'utf8');
+  assert.ok(verifier.includes("for (const mode of [[], ['--backward-selection'], ['--focus-elsewhere']])"));
+  assert.ok(verifier.includes("['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-title-promotion.mts', ...mode]"));
+});

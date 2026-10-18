@@ -154,8 +154,8 @@ type UnifiedDocumentEditorProps = {
   focusNewNoteTitle?: boolean;
   /** The control that started local note creation, used to avoid stealing a later focus choice. */
   focusNewNoteOrigin?: HTMLElement | null;
-  /** Keep the body's caret when a just-created local note joins shared editing. */
-  focusNewNoteSelection?: { anchor: number; head: number } | null;
+  /** Keep the title or body selection when a just-created local note joins shared editing. */
+  focusNewNoteSelection?: { anchor: number; head: number; direction?: "forward" | "backward" | "none" } | null;
   onNewNoteFocusHandled?: () => void;
   canReviewAgentChanges?: boolean;
   activeAgent?: AssistantAgentIdentity | null;
@@ -990,7 +990,11 @@ export function UnifiedDocumentEditor({
       }
       surface.focus({ preventScroll: true });
       const end = focusNewNoteTitle ? documentRef.current.content.title.length : documentRef.current.content.body.length;
-      if (focusNewNoteTitle && surface instanceof HTMLTextAreaElement) surface.setSelectionRange(end, end);
+      if (focusNewNoteTitle && surface instanceof HTMLTextAreaElement) {
+        const start = Math.max(0, Math.min(end, focusNewNoteSelection?.anchor ?? end));
+        const finish = Math.max(0, Math.min(end, focusNewNoteSelection?.head ?? end));
+        surface.setSelectionRange(Math.min(start, finish), Math.max(start, finish), focusNewNoteSelection?.direction ?? (start > finish ? "backward" : "none"));
+      }
       else if (focusNewNoteSelection) {
         const anchor = Math.max(0, Math.min(end, focusNewNoteSelection.anchor));
         const head = Math.max(0, Math.min(end, focusNewNoteSelection.head));

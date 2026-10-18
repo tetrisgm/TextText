@@ -392,7 +392,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const [retryable, setRetryable] = useState(false);
   const [promoting, setPromoting] = useState(false);
   const [sharedInitial, setSharedInitial] = useState<VaultFile | null>(null);
-  const [resumeBody, setResumeBody] = useState<{ selection: { anchor: number; head: number } | null; focused: boolean } | null>(null);
+  const [resumeEditor, setResumeEditor] = useState<{ target: "body" | "title"; selection: { anchor: number; head: number; direction?: "forward" | "backward" | "none" } | null; focused: boolean } | null>(null);
   const localRoot = useRef<HTMLDivElement>(null);
   const localFlush = useRef<(() => Promise<boolean>) | null>(null);
   const onSharedModeRef = useRef(onSharedMode);
@@ -469,8 +469,12 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
           if (!candidate || stopped || !localFlush.current) continue;
           const body = localRoot.current?.querySelector<HTMLElement>('[aria-label="Document body"]');
           const editingBody = body?.isContentEditable === true;
-          const focused = editingBody && document.activeElement === body;
-          const selection = focused ? activeBodySelection() : null;
+          const title = localRoot.current?.querySelector<HTMLTextAreaElement>('textarea[aria-label="Title"]');
+          const titleFocused = Boolean(title && document.activeElement === title);
+          const focused = titleFocused || editingBody && document.activeElement === body;
+          const selection = titleFocused && title
+            ? { anchor: title.selectionStart, head: title.selectionEnd, direction: title.selectionDirection }
+            : focused ? activeBodySelection() : null;
           setPromoting(true);
           await new Promise<void>(resolve => {
             const frame = requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
@@ -481,7 +485,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
             hasDraft: () => Boolean(localStorage.getItem(draftKey)), read, config });
           if (!ready || stopped) { setPromoting(false); continue; }
           setSharedInitial(ready.file);
-          if (editingBody) setResumeBody({ selection, focused });
+          if (editingBody || titleFocused) setResumeEditor({ target: titleFocused ? "title" : "body", selection, focused });
           localStorage.setItem(`texttext:collaboration-config:${root}:${packIdentity(ready.file.markdown)}`, JSON.stringify(ready.config));
           onSharedModeRef.current?.();
           setMode(ready.config);
@@ -499,9 +503,10 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   if (mode === "local") return <><div ref={localRoot} inert={promoting}><VaultEditor {...props} registerFlush={registerLocalFlush} /></div>
     {promoting && <p className="vault-notice" role="status">Connecting this note…</p>}</>;
   if (mode) return <CollaborativeVaultEditor {...props} initial={sharedInitial ? { ...sharedInitial, path: props.initial.path } : props.initial} config={mode}
-    startEditing={Boolean(resumeBody) || props.startEditing}
-    focusNewNote={Boolean(resumeBody?.focused) || props.focusNewNote} focusNewNoteOrigin={resumeBody ? null : props.focusNewNoteOrigin}
-    focusNewNoteSelection={resumeBody?.selection} onNewNoteFocusHandled={() => { setResumeBody(null); props.onNewNoteFocusHandled?.(); }}
+    startEditing={Boolean(resumeEditor) || props.startEditing}
+    focusNewNote={Boolean(resumeEditor?.focused) || props.focusNewNote} focusNewNoteOrigin={resumeEditor ? null : props.focusNewNoteOrigin}
+    focusNewNoteTitle={resumeEditor ? resumeEditor.target === "title" : props.focusNewNoteTitle}
+    focusNewNoteSelection={resumeEditor?.selection} onNewNoteFocusHandled={() => { setResumeEditor(null); props.onNewNoteFocusHandled?.(); }}
     onLocalFallback={() => setMode("local")} />;
   return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;
 }
