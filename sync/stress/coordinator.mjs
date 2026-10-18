@@ -1,3 +1,4 @@
+import { checkFaultProof } from './malformed-repair.mjs';
 import { checkWriteProgress } from './file-write-sequence.mjs';
 import { documentObservation, checkMultiFieldAccounting } from './multi-field.mjs';
 import { checkFieldProgress } from './multi-field-input.mjs';
@@ -72,6 +73,12 @@ export function validateConfig(config) {
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
   if (config.pattern !== undefined && !['append', 'same-position', 'unicode', 'overlap-replace', 'file-overlap', 'partial-overlap'].includes(config.pattern)) fail('unknown pattern');
   if (['overlap-replace', 'file-overlap', 'partial-overlap'].includes(config.pattern) && config.rounds > 1) fail('overlap patterns allow one round or a zero-round reopen');
+  if (config.malformedRepair !== undefined) {
+    const f = config.malformedRepair;
+    if (!f || Object.keys(f).some(key => !['role','kind','holdMs'].includes(key)) || !['mac-cli','pc-cli'].includes(f.role) || !['truncated-zip','invalid-document-json'].includes(f.kind) || !Number.isInteger(f.holdMs) || f.holdMs < 100 || f.holdMs > 1000 || config.rounds > 20 || config.fileWrites || config.multiField || config.sustainedTyping || config.undoRedo || config.assetReplacement || config.assetReplacements || config.transientInvalid || config.offline || config.restart || config.closeProbe || (config.pattern ?? 'append') !== 'append') fail('malformedRepair requires one CLI, bounded kind/holdMs100..1000, at most20rounds and isolated plain append');
+    config.malformedRepair = { role: f.role, kind: f.kind, holdMs: f.holdMs };
+    if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedDocumentHash ?? '')) fail('malformedRepair reopen requires expectedDocumentHash');
+  }
   if (config.fileWrites !== undefined) {
     const writes = config.fileWrites;
     if (!writes || !['mac-cli','pc-cli'].includes(writes.role) || !['atomic','in-place'].includes(writes.mode) || !Number.isInteger(writes.writes) || writes.writes < 1 || writes.writes > 8 || !Number.isInteger(writes.intervalMs) || writes.intervalMs < 10 || writes.intervalMs > 250 || config.rounds * (writes.writes + 5) > 600 || config.multiField || config.sustainedTyping || config.undoRedo || config.assetReplacement || config.assetReplacements || config.transientInvalid || (config.pattern ?? 'append') !== 'append') fail('fileWrites requires one CLI, atomic/in-place, 1..8 writes, intervalMs10..250, at most600suboperations and plain append');
@@ -211,7 +218,7 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
@@ -235,7 +242,7 @@ export class Coordinator {
     try {
       await this.startAdapters();
       const initial = this.collect(0, 'state');
-      this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentSnapshot: true } : {}) });
       const baseline = await initial;
       const texts = ROLES.map(role => baseline.get(role).text);
       const evidence = {};
@@ -247,13 +254,14 @@ export class Coordinator {
       }
       if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', { evidence });
       this.baseline = normalizeText(texts[0]);
-      if (this.config.multiField || this.config.fileWrites) {
+      if (this.config.multiField || this.config.fileWrites || this.config.malformedRepair) {
         const documents = this.documentStates(baseline);
         this.documentBaseline = documentObservation(documents.get('mac-app')).snapshot;
         this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, []);
         if (this.config.expectedDocumentHash && this.finalDocumentHash !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', {});
       }
       if (this.config.mode === 'real') {
+        if (this.config.malformedRepair && canonicalJSON(this.config.expectedAssetHashes ?? {}) !== canonicalJSON(this.attestations['mac-cli'].initialPack.assetHashes)) throw new StressFailure('malformed-all-assets-required', {});
         const files = ['mac-cli', 'pc-cli'].map(role => ({ role, ...this.attestations[role].initialPack }));
         if (files.some(file => file.bodySha256 !== hashText(this.baseline)) || files[0].documentSha256 !== files[1].documentSha256
           || JSON.stringify(files[0].assetHashes) !== JSON.stringify(files[1].assetHashes))
@@ -272,7 +280,7 @@ export class Coordinator {
         for (let sample = 2; sample <= REQUIRED_CONVERGENCE_SAMPLES; sample++) {
           await new Promise(resolve => setTimeout(resolve, 500));
           const pending = this.collect(0, 'state');
-          this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites) ? { documentSnapshot: true } : {}) });
+          this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentSnapshot: true } : {}) });
           const states = await pending;
           for (const role of ROLES) {
             const state = states.get(role);
@@ -280,7 +288,7 @@ export class Coordinator {
               || hashText(state.text) !== this.config.expectedBaselineHash)
               throw new StressFailure('reopen-hash-mismatch', { role, sample, expected: this.config.expectedBaselineHash });
           }
-          if ((this.config.multiField || this.config.fileWrites) && checkMultiFieldAccounting(this.documentBaseline, this.documentStates(states), []) !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', { sample });
+          if ((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) && checkMultiFieldAccounting(this.documentBaseline, this.documentStates(states), []) !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', { sample });
           this.checkAssets(states, 0);
           for (const role of EDITOR_ROLES) this.checkEditor(0, role, states.get(role).editor);
           this.record('reopen-sample', { sample, hash: this.config.expectedBaselineHash, roles: ROLES });
@@ -304,12 +312,12 @@ export class Coordinator {
     const summary = {
       runId: this.runId, status, failure, mode: this.config.mode, fixture: { workspaceId: this.config.fixture.workspaceId, itemId: this.config.fixture.itemId },
       finalHash: this.roundResults.at(-1)?.hash ?? (status === 'passed' ? this.config.expectedBaselineHash ?? (this.baseline ? hashText(this.baseline) : null) : null),
-      ...((this.config.multiField || this.config.fileWrites) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
+      ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
       expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
-        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+      scenario: { ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
@@ -436,11 +444,52 @@ export class Coordinator {
     return true;
   }
 
+  async runMalformed(round) {
+    const { role, kind, holdMs } = this.config.malformedRepair;
+    const request = async (type, response, extra = {}) => {
+      const pending = this.collect(round, response, [role]);
+      this.adapters.get(role).send({ type, round, ...extra });
+      return (await pending).get(role).proof;
+    };
+    let installed;
+    try {
+      installed = await request('installMalformed', 'malformed-installed', { kind });
+      if (!checkFaultProof(installed, {role,round,kind})) throw new StressFailure('malformed-install-proof', {role,round});
+      this.record('malformed-installed', installed);
+      await new Promise(resolve => setTimeout(resolve, holdMs));
+      const peers = ROLES.filter(peer => peer !== role);
+      const pending = this.collect(round, 'state', peers);
+      const expectedEditIds = planRounds(this.config.seed, round - 1).flatMap(plan => plan.edits.map(edit => edit.id)).sort();
+      for (const peer of peers) this.adapters.get(peer).send({type:'observe',round,expectedEditIds,expectedAssetPaths:assetPathsOf(this.config),documentSnapshot:true});
+      const states = await pending;
+      for (const peer of peers) {
+        const state = states.get(peer);
+        if (EDITOR_ROLES.includes(peer)) this.checkEditor(round, peer, state.editor);
+        const doc = documentObservation(state.documentSnapshot);
+        if (doc.snapshot.content.body !== state.text || doc.hash !== this.finalDocumentHash || JSON.stringify([...state.editIds].sort()) !== JSON.stringify(expectedEditIds)) throw new StressFailure('malformed-peer-state', {round,role:peer});
+        this.record('malformed-peer-state', {round,role:peer,documentHash:doc.hash,editIds:state.editIds,assetHashes:state.assetHashes});
+        if (peer.endsWith('-cli') && this.config.expectedAssetHashes && Object.entries(this.config.expectedAssetHashes).some(([path,hash])=>state.assetHashes?.[path]!==hash)) throw new StressFailure('malformed-peer-assets',{round,role:peer});
+      }
+      const presence = await request('observeMalformed','malformed-present');
+      if (!checkFaultProof(presence,{role,round,kind}) || ['originalSha256','faultSha256','fileIdentity'].some(key=>presence[key]!==installed[key]) || !Number.isFinite(presence.heldMs) || presence.heldMs < holdMs) throw new StressFailure('malformed-presence-proof',{round,role});
+      this.record('malformed-present',presence);
+      const repaired = await request('repairMalformed','malformed-repaired');
+      if (!checkFaultProof(repaired,{role,round,kind}) || repaired.repaired!==true || repaired.cleanup!==false || repaired.repairSha256!==installed.originalSha256 || !/^[a-f0-9]{64}$/.test(repaired.repairFileIdentity ?? '') || repaired.repairFileIdentity===installed.fileIdentity || !Number.isFinite(repaired.heldMs) || repaired.heldMs<presence.heldMs || ['originalSha256','faultSha256','fileIdentity'].some(key=>repaired[key]!==installed[key])) throw new StressFailure('malformed-repair-proof',{round,role});
+      this.record('malformed-repaired',repaired);
+    } catch (error) {
+      // Failed observation is still a failed run, even if owned-fault cleanup succeeds.
+      try { const cleanup=await request('repairMalformed','malformed-repaired',{cleanup:true});this.record('malformed-cleanup',cleanup); }
+      catch (cleanupError) { this.record('malformed-cleanup-refused',{round,role,message:String(cleanupError?.message??cleanupError)}); }
+      throw error;
+    }
+  }
+
   async runRound({ round, edits }) {
     const started = Date.now();
     const ready = this.collect(round, 'ready');
     this.broadcast({ type: 'prepare', round, select: ['overlap-replace', 'file-overlap', 'partial-overlap'].includes(this.config.pattern) ? REPLACE_TARGET : undefined });
     await ready;
+    if (this.config.malformedRepair) await this.runMalformed(round);
     const invalidRole = this.config.transientInvalid?.round === round ? this.config.transientInvalid.role : null;
     if (invalidRole) {
       const pendingRepair = this.collect(round, 'perturb', [invalidRole]);
@@ -491,7 +540,7 @@ export class Coordinator {
     let samples = 0, stableSamples = 0, stableHash = null;
     do {
       const observing = this.collect(round, 'state');
-      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentSnapshot: true } : {}) });
       states = await observing;
       observed = {};
       for (const role of ROLES) {
@@ -505,7 +554,7 @@ export class Coordinator {
       // Adapter-local settling is insufficient: require three separate all-six
       // observations with the same semantic hash and complete operation evidence.
       for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);
-      const documents = (this.config.multiField || this.config.fileWrites) ? this.documentStates(states) : null;
+      const documents = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? this.documentStates(states) : null;
       const documentHashes = documents ? new Set([...documents.values()].map(snapshot => documentObservation(snapshot).hash)) : null;
       if (hashes.size === 1 && (!documentHashes || documentHashes.size === 1) && this.checkAssets(states, round)) {
         this.checkRoundContent(states, round, expectedEditIds);
@@ -513,7 +562,7 @@ export class Coordinator {
           const fieldEdits = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites).flatMap(plan => plan.edits.flatMap(edit => edit.fieldEdits ?? (edit.fileWriteSequence ? edit.fileWriteSequence.chunks.map((text,index) => ({ role: edit.role, id: edit.id + '-write' + (index + 1), op: 'append', field: 'body', text })) : [{ role: edit.role, id: edit.id, op: 'append', field: 'body', text: edit.text }])));
           this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, fieldEdits);
         }
-        const hash = (this.config.multiField || this.config.fileWrites) ? this.finalDocumentHash : [...hashes][0];
+        const hash = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? this.finalDocumentHash : [...hashes][0];
         stableSamples = hash === stableHash ? stableSamples + 1 : 1;
         stableHash = hash;
         this.record('convergence-sample', { round, sample: samples, stableSamples, hash,
@@ -528,7 +577,7 @@ export class Coordinator {
     if (!this.checkAssets(states, round)) throw new StressFailure('asset-mismatch', { round, expected: this.config.expectedAssetHashes,
       actual: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) });
     if (stableSamples < REQUIRED_CONVERGENCE_SAMPLES) throw new StressFailure('convergence-unstable', { round, samples, stableSamples, required: REQUIRED_CONVERGENCE_SAMPLES });
-    const result = { round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
+    const result = { round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : this.config.fileWrites ? { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) } : { faultCount: round }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
       ...(this.config.diagnosticSameEntryRace ? { assetHashes: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) } : {}) };
     this.roundResults.push(result);
     this.record('round', result);

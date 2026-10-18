@@ -359,3 +359,33 @@ semantics and exact asset pins. Independent reopen requires the same fileWrites
 configuration, `expectedBaselineHash`, `expectedDocumentHash` and prior physical
 receipt. These modes do not implement whole-pack creation or the remaining file
 lifecycle/malformed metadata matrix.
+
+### Malformed source, held observers, guarded repair
+
+`malformedRepair: { role: "mac-cli", kind: "truncated-zip", holdMs: 100 }`
+selects either CLI role and `truncated-zip` or `invalid-document-json`.
+This bounded plain-append scenario excludes other fault/input modes and allows
+at most 20 rounds. Use an existing article fixture with a populated Subtitle.
+The latter fault is a valid ZIP with deliberately incomplete canonical JSON;
+the former is an actual prefix of the original ZIP. Original and fault bytes
+are retained as separate fsynced create-only evidence files.
+
+After the all-ready barrier, the selected ordinary file writer installs the
+fault with guarded atomic replacement and verifies raw source identity/hash.
+The coordinator waits at least holdMs, reads actual full document state from the
+other five still-mounted sessions, checks unchanged semantic state/edit IDs and
+editor lifetime, and asks the fault actor to prove the malformed source still
+exists. The receipt records actual elapsed hold time, including observations.
+It then restores the exact original bytes only if the fault inode/hash and
+owner binding still match. Six ordinary edits run afterward, with exact operation
+accounting and three all-six full-document convergence samples. Faults are not
+accepted edits. No typing during the malformed window is claimed.
+
+A failed probe fails the run even if guarded cleanup succeeds. Cleanup never
+recreates a deleted path or replaces externally changed/repaired bytes. The
+original, malformed image, attempt journal, and failure remain available.
+Real mode requires every original asset byte hash in expectedAssetHashes, plus
+normal artifact/principal pins. Independent zero-round reopen requires the same
+fault configuration, prior passing physical receipt, final body/full-document
+hashes and asset pins. Simulated protocol tests and local filesystem fixtures
+are preparation evidence, never six-client physical acceptance.

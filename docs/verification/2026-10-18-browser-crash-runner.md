@@ -40,7 +40,7 @@ upload state. Simulated coordinator tests always retain acceptance `none`.
   not a TextText journal, authenticated product account or six-client sync test.
 
 No native sources or candidates changed in this slice. Current attested physical
-runs, browser close during traffic and the remaining T22 lifecycle/file/fault
+runs, actual peer traffic concurrent with normal close for any role and the remaining T22 lifecycle/file/fault
 matrix still require separate evidence.
 
 Final exact current stress JavaScript suite: 115 passed, zero failures/skips in

@@ -39,7 +39,7 @@ and an editor reload after first equality. Simulated runs retain acceptance
 | Overlapping replacements | `overlap-replace`, `file-overlap`, `partial-overlap` | Explicit deletion without inserted marker is not supported |
 | Offline and reconnect | `offline` for an app/browser | Rotate every supported role; direct-file offline state is not defined |
 | App/browser crash/restart | `restart` for either app or browser; browser owned SIGKILL/profile proof | Fresh candidate and physical rotation across every supported role |
-| Invalid intermediate pack repaired atomically | `transientInvalid` for either file actor | Fresh physical evidence; malformed metadata variants need scenario design |
+| Invalid intermediate pack repaired atomically | `transientInvalid` for either file actor | Fresh physical evidence; bounded truncated-ZIP/invalid-canonical-JSON malformedRepair source now supports held provider probes and guarded repair |
 | Same-write attachment update | `assetReplacement`, paired `assetReplacements` | Same-entry race remains diagnostic, without retained losing-byte attestation |
 | Normal close / close during traffic | `closeProbe` checks PC normal close after converged rounds | Actual concurrent peer input during close and guarded reopen are still missing for every role |
 | Independent durable reopen | `rounds: 0`, `expectedBaselineHash`, `expectedAssetHashes` | Fresh processes and fixture identity from preceding physical receipt |

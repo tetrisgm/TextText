@@ -66,7 +66,7 @@ test('sealer refuses changed produced artifacts and writes one immutable trusted
   if(process.platform!=='darwin') return;
   const {dir,repo}=sourceFixture(),here=new URL('./',import.meta.url);
   mkdirSync(join(repo,'sync/stress'),{recursive:true});
-  for(const name of ['build-private-actor.mjs','seal-artifacts.mjs','artifact-source.mjs','identity-observation.mjs','identity.mjs','file-adapter.mjs','file-write-sequence.mjs','multi-field-page.mjs','multi-field.mjs','multi-field-input.mjs','multi-field-pack.mjs','undo-redo.mjs']) copyFileSync(new URL(name,here),join(repo,'sync/stress',name));
+  for(const name of ['build-private-actor.mjs','seal-artifacts.mjs','artifact-source.mjs','identity-observation.mjs','identity.mjs','file-adapter.mjs','file-write-sequence.mjs','malformed-repair.mjs','multi-field-page.mjs','multi-field.mjs','multi-field-input.mjs','multi-field-pack.mjs','undo-redo.mjs']) copyFileSync(new URL(name,here),join(repo,'sync/stress',name));
   command('git',['add','sync'],repo,{capture:true});command('git',['-c','user.name=Source proof fixture','-c','user.email=source-proof@example.invalid','commit','--quiet','-m','wrapper fixture'],repo,{capture:true});
   const prepared=preparePristineSource(repo,'HEAD',join(dir,'candidate'));
   mkdirSync(join(prepared.sourceRoot,'node_modules/fflate/esm'),{recursive:true});writeFileSync(join(prepared.sourceRoot,'node_modules/fflate/esm/index.mjs'),'fixture dependency bytes');

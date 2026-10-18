@@ -1,3 +1,4 @@
+import { installMalformed, observeMalformed, repairMalformed } from './malformed-repair.mjs';
 import { validateWriteSequence, applyWriteSequence } from './file-write-sequence.mjs';
 import { appendFieldToPack } from './multi-field-pack.mjs';
 import { validateFieldSequence } from './multi-field-input.mjs';
@@ -311,7 +312,7 @@ export function sanitizeError(error, config) {
 // One actor instance: `handle(message)` returns the reply (or null). Commands are serialized by the
 // caller (stdin pipe) or by the test. `platform` is injectable only so tests can prove the refusal path.
 export function createActor(config, { platform = process.platform, machineId = hostname(), now = () => new Date().toISOString() } = {}) {
-  const state = { writeProgress: null, ownerScope: null, ownerGuard: null, runId: null, runDir: null, role: config.role };
+  const state = { malformed: null, writeProgress: null, ownerScope: null, ownerGuard: null, runId: null, runDir: null, role: config.role };
   const journal = (entry) => { if (state.runDir) appendFileSync(join(state.runDir, 'journal.jsonl'), `${JSON.stringify({ at: now(), ...entry })}\n`); };
   const handlers = {
     async hello(m) {
@@ -373,6 +374,27 @@ export function createActor(config, { platform = process.platform, machineId = h
       requireRun();
       journal({ event: 'applied', round: m.round, editId: edit.id, ...result });
       return { type: 'applied', round: m.round, editId: edit.id, ...(edit.fieldEdits ? { fieldEditIds: edit.fieldEdits.map(field => field.id) } : {}) };
+    },
+    async installMalformed(m) {
+      requireRun();
+      if (state.malformed?.active) throw new ActorError('fault', 'malformed fault already active');
+      state.malformed = await installMalformed({ file: config.file, config, round: m.round, kind: m.kind, runDir: state.runDir, guard: requireRun, journal });
+      journal({ event: 'malformed-installed', ...state.malformed.proof });
+      return { type: 'malformed-installed', round: m.round, proof: state.malformed.proof };
+    },
+    async observeMalformed(m) {
+      requireRun();
+      if (state.malformed?.proof.round !== m.round) throw new ActorError('fault', 'wrong malformed round');
+      const proof = observeMalformed(state.malformed);
+      journal({ event: 'malformed-present', ...proof });
+      return { type: 'malformed-present', round: m.round, proof };
+    },
+    async repairMalformed(m) {
+      requireRun();
+      if (state.malformed?.proof.round !== m.round) throw new ActorError('fault', 'wrong malformed round');
+      const proof = repairMalformed(state.malformed, { cleanup: m.cleanup === true });
+      journal({ event: 'malformed-repaired', ...proof });
+      return { type: 'malformed-repaired', round: m.round, proof };
     },
     async perturb(m) {
       requireRun();

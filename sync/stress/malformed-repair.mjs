@@ -1,0 +1,23 @@
+// Fault lifecycle, deliberately separate from accepted editing operations.
+import { lstatSync, readFileSync, openSync, writeSync, fsyncSync, closeSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
+import { unzipSync, zipSync, strToU8 } from 'fflate';
+import { sha256 } from './identity-observation.mjs';
+import { readPack, stableRead, validateIdentity } from './file-adapter.mjs';
+function identity(file) { const s=lstatSync(file,{bigint:true}); if(!s.isFile()||s.isSymbolicLink()||s.ino===0n)throw new Error('Fault requires regular file identity'); return sha256(s.dev+':'+s.ino); }
+function save(file,bytes) { const fd=openSync(file,'wx');try{let offset=0;while(offset<bytes.length){const n=writeSync(fd,bytes,offset,bytes.length-offset,offset);if(n<=0)throw new Error('Fault write made no progress');offset+=n;}fsyncSync(fd);}finally{closeSync(fd);} }
+function image(file) { const before=identity(file),bytes=readFileSync(file),after=identity(file);if(before!==after)throw new Error('Fault source identity changed during observation');return{sha256:sha256(bytes),fileIdentity:after,bytes}; }
+export function checkFaultProof(proof,expected) {return !!proof&&proof.role===expected.role&&proof.round===expected.round&&proof.kind===expected.kind&&proof.sourcePresent===true&&proof.fsynced===true&&proof.acceptedEdits===0&&['originalSha256','faultSha256','fileIdentity'].every(k=>/^[a-f0-9]{64}$/.test(proof[k]??''))&&proof.originalSha256!==proof.faultSha256;}
+export async function installMalformed({file,config,round,kind,runDir,guard=()=>{},now=()=>performance.now(),beforeReplace=()=>{},journal=()=>{}}) {
+ if(!['mac-cli','pc-cli'].includes(config.role)||!Number.isInteger(round)||round<1||!['truncated-zip','invalid-document-json'].includes(kind))throw new Error('Invalid malformed fault request');
+ guard();const original=await stableRead(file);const pack=readPack(original);validateIdentity(pack,config);const originalIdentity=identity(file),originalSha256=sha256(original);
+ let fault;if(kind==='truncated-zip')fault=original.subarray(0,Math.max(1,Math.floor(original.length/2)));else{const entries=unzipSync(original),name=pack.root+'document.json';if(!entries[name])throw new Error('Canonical document required');entries[name]=strToU8('{"schemaVersion":1,"content":');fault=Buffer.from(zipSync(entries));}
+ // A ZIP fault must be unparseable; JSON fault is intentionally ZIP-valid but schema-invalid.
+ if(kind==='truncated-zip'){let rejected=false;try{readPack(fault);}catch{rejected=true;}if(!rejected)throw new Error('Truncated ZIP unexpectedly valid');}
+ const stem=join(runDir,`${config.role}-r${round}-${kind}`);save(stem+'-original.textpack',original);save(stem+'-fault.textpack',fault);
+ journal({event:'malformed-images-retained',role:config.role,round,kind,originalSha256,faultSha256:sha256(fault),acceptedEdits:0});const temp=file+`.${process.pid}.${round}.malformed.tmp`;save(temp,fault);await beforeReplace();guard();const current=image(file);if(current.fileIdentity!==originalIdentity||current.sha256!==originalSha256)throw new Error('Fault precondition changed; original and fault retained');journal({event:'malformed-replacement-attempt',role:config.role,round,kind,acceptedEdits:0});renameSync(temp,file);const actual=image(file);if(actual.sha256!==sha256(fault))throw new Error('Fault readback changed');guard();
+ const installedAt=now(),proof={role:config.role,round,kind,sourcePresent:true,fsynced:true,acceptedEdits:0,originalSha256,faultSha256:actual.sha256,fileIdentity:actual.fileIdentity};
+ return{proof,original,installedAt,file,config,guard,now,journal,active:true};
+}
+export function observeMalformed(fault) {if(!fault?.active)throw new Error('No active fault');fault.guard();const current=image(fault.file);if(current.sha256!==fault.proof.faultSha256||current.fileIdentity!==fault.proof.fileIdentity)throw new Error('Fault source missing or externally changed; preserve external bytes');return{...fault.proof,heldMs:fault.now()-fault.installedAt};}
+export function repairMalformed(fault,{cleanup=false}={}) {const presence=observeMalformed(fault);const temp=fault.file+`.${process.pid}.${fault.proof.round}.repair.tmp`;save(temp,fault.original);fault.guard();observeMalformed(fault);fault.journal({event:'malformed-repair-attempt',role:fault.proof.role,round:fault.proof.round,cleanup,acceptedEdits:0});renameSync(temp,fault.file);const current=image(fault.file);if(current.sha256!==fault.proof.originalSha256)throw new Error('Repair readback changed');validateIdentity(readPack(current.bytes),fault.config);fault.guard();fault.active=false;return{...presence,repaired:true,cleanup,repairSha256:current.sha256,repairFileIdentity:current.fileIdentity,heldMs:fault.now()-fault.installedAt};}

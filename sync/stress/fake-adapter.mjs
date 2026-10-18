@@ -18,6 +18,7 @@ const privateEdits = [];
 const pendingEdits = [];
 let observations = 0;
 let online = true;
+let malformed;
 
 const publish = (edit) => writeFileSync(join(shared, `${edit.id}.json`), JSON.stringify(edit));
 
@@ -107,6 +108,14 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (browserRestart) { online = true; for (const edit of pendingEdits.splice(0)) publish(edit); }
       return out({ type: 'restart', round: m.round, generation, ...(browserRestart ? { crash: { pid: 345678, profileScopeHash: 'a'.repeat(64), method: fault === 'browser-graceful' ? 'close' : 'SIGKILL', exited: true }, reconnectByRestart: fault === 'browser-offline-lie' ? !wasOffline : wasOffline, online: true } : {}) });
     }
+    case 'installMalformed':
+      malformed={role,round:m.round,kind:m.kind,sourcePresent:true,fsynced:true,acceptedEdits:0,originalSha256:'a'.repeat(64),faultSha256:'b'.repeat(64),fileIdentity:'c'.repeat(64),started:performance.now()};
+      return out({type:'malformed-installed',round:m.round,proof:{...malformed,...(fault==='malformed-wrong-role'?{role:'mac-app'}:{})}});
+    case 'observeMalformed':
+      return out({type:'malformed-present',round:m.round,proof:{...malformed,heldMs:performance.now()-malformed.started,...(fault==='malformed-missing'?{sourcePresent:false}:{})}});
+    case 'repairMalformed':
+      if(fault==='malformed-repair-fail')return out({type:'error',round:m.round,message:'injected repair refusal'});
+      return out({type:'malformed-repaired',round:m.round,proof:{...malformed,heldMs:performance.now()-malformed.started,repaired:true,cleanup:m.cleanup===true,repairSha256:fault==='malformed-repair-hash'?'e'.repeat(64):malformed.originalSha256,repairFileIdentity:'d'.repeat(64)}});
     case 'perturb':
       return out({ type: 'perturb', round: m.round, repaired: true });
     case 'observe': {
@@ -115,6 +124,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       // Make the shared directory's content "arrive" in two steps so concurrent writers are observed after a short settle.
       setTimeout(() => {
         const state = document();
+        if(fault==='malformed-peer-loss' && observations===2) state.documentSnapshot.content.fields.fixture='lost';
+        if(fault==='malformed-peer-reload' && observations===2) reloads++;
+        if(fault==='malformed-peer-id' && observations===2) state.editIds=['r99-mac-cli'];
         if (fault === 'late-observe' && m.round === 1 && observations === 2) state.text += ' transient';
         if (fault === 'sample-drift' && observations === 3) state.text += ' transient';
         if (fault === 'sample-missing-ids' && observations === 3) state.editIds = [];
