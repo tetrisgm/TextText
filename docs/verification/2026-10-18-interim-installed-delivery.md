@@ -29,7 +29,7 @@ In the actual installed app, File → Review saved work closed the menu without 
 
 ## Other acceptance progress and open dependencies
 
-Actual gallery and talk CLI create/read/guarded edit/exact retry/stale-write refusal passed on deployed F. Saving a custom gallery look replayed to the same template; immutable v2 creation, stale-base refusal and unchanged v1-pinned item passed. Existing gallery content remained unchanged. Private exact request/result evidence: `/private/tmp/texttext-t20-live-f994-20261018`. UI picker, assets, folder defaults, retirement, assistant and hosted MCP coverage remain open.
+Actual gallery and talk CLI create/read/guarded edit/exact retry/stale-write refusal passed on deployed F. Article, note and bookmark also passed current-F reads, original-create replay to the same IDs, fresh guarded edits, exact edit replay, unchanged non-body schema/template/fields/assets, stale refusal and independent reread. Their original creation was on the prior deployment; that distinction remains recorded. Saving a custom gallery look replayed to the same template; immutable v2 creation, stale-base refusal and unchanged v1-pinned item passed. Existing gallery content remained unchanged. Private exact request/result evidence: `/private/tmp/texttext-t20-live-f994-20261018`. UI picker, assets, folder defaults, retirement, assistant and hosted MCP coverage remain open.
 
 The required existing changelog belongs to separate `Shoku's Space`; the current authorized CLI workspace search returns no match. Historical receipts already establish this workspace separation. No duplicate changelog was created. The existing hosted MCP connection still needs OAuth renewal before that record can be updated.
 
