@@ -274,3 +274,33 @@ elapsed milliseconds. Failures retain the confirmed stage prefix and uncertain
 `attemptedStage`; missing, skipped, wrong-actor or content-loss evidence fails.
 The isolated `undo-redo.browser.mjs` fixture checks real browser keyboard events,
 not TextText collaboration or physical acceptance.
+
+## Body and subtitle scenario
+
+`multiField: true` uses a dedicated existing article whose Subtitle is populated
+and visible. Title and file stem remain fixture identity. It requires plain
+append; sustained typing, undo/redo and asset replacement combinations are
+rejected. Each of the six actors authors two role-bound suboperations, body then
+subtitle. Four editor actors focus the real existing fields and enter keyboard
+text. File actors write both text.md body and the existing canonical `excerpt`
+JSON string in one guarded ordinary external replacement, preserving all other
+entries including document.json and projection baseline. Production reconciliation
+must materialize the final coherent document.
+
+Editor observations use the readonly `window.texttextDocumentInspection` API,
+which returns the actual current provider snapshot. The selected editor's exact
+registration key, fixture, visible body/subtitle, account/root and editor
+continuity must match. No document is reconstructed from DOM plus server/disk.
+Each file actor reads its complete document.json from the same ZIP bytes as its
+body/assets observation. All six full snapshots must converge across three
+samples. Accounting strips only the twelve planned field markers per round,
+preserves both original field baselines and all other document semantics, and
+requires equal complete canonical hashes. `finalHash` remains the body hash;
+`finalDocumentHash` also pins the complete document.
+
+An independent `rounds: 0` reopen keeps `multiField: true` and requires both
+`expectedBaselineHash` and `expectedDocumentHash`, plus the preceding successful
+physical receipt and unchanged artifact/asset pins. Body-only reopen cannot
+stand in for a multi-field receipt. CLI owner binding is rechecked on each
+operation and immediately before replacement; it remains an ordinary file
+writer rather than an authenticated account actor.

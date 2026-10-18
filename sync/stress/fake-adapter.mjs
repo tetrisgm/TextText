@@ -25,7 +25,10 @@ const document = () => {
   const files = readdirSync(shared).filter((f) => f.endsWith('.json')).sort();
   const edits = [...files.map((f) => JSON.parse(readFileSync(join(shared, f), 'utf8'))), ...privateEdits];
   const baseline = fault === 'baseline-lost' && edits.length ? '' : 'Existing fixture text.\n';
-  return { text: (fault === 'different-baseline' ? 'Different fixture text.\n' : baseline) + (fault === 'lie-content' ? '' : edits.map((e) => e.text).join('')), editIds: edits.map((e) => e.id) };
+  const fieldSnapshot = { schemaVersion: 1, content: { title: 'Six-client acceptance simulated fixture', subtitle: 'Existing subtitle.' + edits.flatMap(edit => edit.fieldEdits ?? []).filter(edit => edit.field === 'subtitle').map(edit => edit.text).join(''), body: baseline + edits.map(edit => edit.text).join(''), fields: { fixture: 'simulated-only' }, tags: [], assets: [] }, presentation: { template: { id: 'texttext.article', version: 1 }, theme: {} } };
+  if (fault === 'field-hidden-loss') fieldSnapshot.content.fields = {};
+  if (fault === 'field-body-mismatch') fieldSnapshot.content.body += 'hidden mismatch';
+  return { documentSnapshot: fieldSnapshot, text: (fault === 'different-baseline' ? 'Different fixture text.\n' : baseline) + (fault === 'lie-content' ? '' : edits.map((e) => e.text).join('')), editIds: edits.map((e) => e.id) };
 };
 
 createInterface({ input: process.stdin }).on('line', (line) => {
@@ -46,6 +49,14 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       if (fault === 'dup-ready') out({ type: 'ready', round: m.round });
       return out({ type: 'ready', round: m.round });
     case 'edit': {
+      let fieldProgress, fieldEditIds;
+      if (m.edit.fieldEdits) {
+        fieldEditIds = m.edit.fieldEdits.map(edit => edit.id);
+        if (!role.endsWith('-cli')) fieldProgress = { role, fields: m.edit.fieldEdits.map((edit,index)=>({ ordinal:index+1,editId:edit.id,field:edit.field,text:edit.text,visible:true,preservedVisibleContent:true,elapsedMs:index+1 })) };
+        if (fault === 'field-missing-progress') fieldProgress = undefined;
+        if (fault === 'field-wrong-role') fieldProgress.fields[1].editId = 'r1-mac-cli-subtitle';
+        if (fault === 'field-prefix-fail') { fieldProgress.fields=fieldProgress.fields.slice(0,1);fieldProgress.attemptedField=m.edit.fieldEdits[1].id;return out({type:'error',round:m.round,message:'injected field failure',fieldProgress}); }
+      }
       let historyProgress;
       if (m.edit.undoRedo) {
         historyProgress = { editId: m.edit.id, stages: ['insert','undo','redo'].map((stage,index)=>({stage,editId:m.edit.id,text:m.edit.text,ownOccurrences:index===1?0:1,preservedVisibleContent:true,elapsedMs:450+index+1})) };
@@ -71,7 +82,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       // drop-edit: nobody sees the edit (edit ID mismatch). private-edit: only this role sees it (hash divergence).
       if (fault === 'private-edit') { privateEdits.push(m.edit); }
       else if (fault !== 'drop-edit') { if (online) publish(m.edit); else pendingEdits.push(m.edit); }
-      return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
+      return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(fieldEditIds ? { fieldEditIds, ...(fieldProgress ? { fieldProgress } : {}) } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
     }
     case 'transport':
       online = m.online;
@@ -97,6 +108,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         if (fault === 'sample-missing-ids' && observations === 3) state.editIds = [];
         if (fault === 'sample-duplicate-id' && observations === 3) state.editIds.push(state.editIds[0]);
         if (fault === 'sample-missing' && observations === 3) return;
+        if (!m.documentSnapshot || fault === 'field-missing-document') delete state.documentSnapshot;
         out({ type: 'state', round: m.round, ...state, editor: role.endsWith('-cli') ? undefined : { sessionId, reloads } });
       }, 20);
       return;

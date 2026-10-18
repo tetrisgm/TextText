@@ -21,10 +21,10 @@ export function boundedFile(path, limit = 1024 * 1024) {
 export function fixedDriverFiles(role) {
   const here = dirname(fileURLToPath(import.meta.url));
   const files = { driver: join(here, role.endsWith('-cli') ? 'file-adapter.mjs' : 'browser-adapter.mjs'),
-    identity: join(here, 'identity.mjs'), observation: fileURLToPath(import.meta.url),
+    fields: join(here, 'multi-field.mjs'), fieldInput: join(here, 'multi-field-input.mjs'), history: join(here, 'undo-redo.mjs'), identity: join(here, 'identity.mjs'), observation: fileURLToPath(import.meta.url),
     node: realpathSync(process.execPath) };
-  if (role.endsWith('-cli')) files.fflate = fileURLToPath(import.meta.resolve('fflate'));
-  else Object.assign(files, { session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'), history: join(here, 'undo-redo.mjs'),
+  if (role.endsWith('-cli')) { files.fieldPack = join(here, 'multi-field-pack.mjs'); files.fflate = fileURLToPath(import.meta.resolve('fflate')); }
+  else Object.assign(files, { fieldPage: join(here, 'multi-field-page.mjs'), session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'), history: join(here, 'undo-redo.mjs'),
     readiness: resolve(here, '../../windows/scripts/live-browser-ready.mjs') });
   return files;
 }
@@ -91,4 +91,9 @@ export function createWebAssetObserver(page, origin) {
     if (failure || !paths.length || paths.some(path => !hashes.has(path))) throw new Error(failure ?? 'loaded script evidence incomplete');
     return digestMap(Object.fromEntries(hashes));
   };
+}
+
+export function captureOwnerBindingGuard(config) {
+  const expected = ownerBindingScope(config);
+  return () => { if (ownerBindingScope(config) !== expected) throw new Error('workspace owner binding changed'); return expected; };
 }

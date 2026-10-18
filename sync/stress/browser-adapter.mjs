@@ -1,3 +1,5 @@
+import { readLiveFieldDocument } from './multi-field-page.mjs';
+import { validateFieldSequence, typeFieldSequence } from './multi-field-input.mjs';
 import { validateUndoRedo, exerciseUndoRedo } from './undo-redo.mjs';
 import { observeSealedSource, fixedDriverFiles, accountScopeHash, createWebAssetObserver } from './identity-observation.mjs';
 import { validateInputSequence, typeInputSequence } from './input-sequence.mjs';
@@ -175,6 +177,7 @@ async function main() {
   if (!platform) throw new StageError('platform', 'browser adapter runs only on macOS (Chrome) or Windows (Edge)');
   if (!configPath) throw new StageError('config', 'usage: browser-adapter.mjs <config.json>');
   const config = validateConfig(JSON.parse(readFileSync(configPath, 'utf8').replace(/^﻿/, '')));
+  const role = platform.role;
   const profile = prepareProfile(config.profile, config.auth);
 
   const here = dirname(fileURLToPath(import.meta.url));
@@ -185,11 +188,11 @@ async function main() {
   const sessionId = randomUUID();
   let context = null, page = null, body = null, heading = null;
   let reloads = 0, started = false, stopping = false;
-  let inputProgress, historyProgress, observeAssets;
+  let inputProgress, historyProgress, fieldProgress, observeAssets;
 
   const fail = (round, stage, message) => {
     process.stderr.write(`[${stage}] ${safeMessage(message)}\n`);
-    out({ type: 'error', round, stage, ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}), message: `browser adapter failed at stage ${stage}; profile and journals preserved` });
+    out({ type: 'error', round, stage, ...(fieldProgress ? { fieldProgress } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}), message: `browser adapter failed at stage ${stage}; profile and journals preserved` });
   };
 
   const assertOnItem = async () => {
@@ -204,6 +207,12 @@ async function main() {
     return text;
   };
 
+  async function inspectDocument() {
+    await assertOnItem();
+    const snapshot = await page.evaluate(readLiveFieldDocument, { itemId: config.itemId, workspaceId: config.workspaceId, title: config.title });
+    if (!snapshot || snapshot.content?.title !== config.title || snapshot.presentation?.template?.id !== 'texttext.article') throw new StageError('observe', 'live article snapshot or existing subtitle unavailable');
+    return snapshot;
+  }
   const handlers = {
     async hello(m) {
       if (started) throw new StageError('hello', 'duplicate hello');
@@ -283,11 +292,22 @@ async function main() {
       const v = validateEdit(m.edit);
       if (!v.ok) throw new StageError('edit', v.reason);
       await assertOnItem();
+      if (m.edit.fieldEdits !== undefined && (!validateFieldSequence(m.edit.fieldEdits, role) || m.edit.fieldEdits[0].text !== m.edit.text || m.edit.fieldEdits.some(field => field.id !== m.edit.id + '-' + field.field) || m.edit.undoRedo || m.edit.inputSequence)) throw new StageError('edit', 'field sequence invalid');
       if (m.edit.op === 'replace-selection') {
         if (!await page.evaluate(() => window.getSelection()?.toString() === 'Existing fixture text.')) throw new StageError('edit', 'replacement selection changed before input');
       } else if (!await page.evaluate(caretToEdge, { selector: EDITOR, start: m.edit.op === 'insert-start' })) throw new StageError('edit', 'editor not editable');
       inputProgress = m.edit.inputSequence ? { editId: m.edit.id, chunks: [], acceptedPrefix: '' } : undefined;
-      if (m.edit.undoRedo) {
+      if (m.edit.fieldEdits) {
+        fieldProgress = { role, fields: [] };
+        await typeFieldSequence(m.edit.fieldEdits, role, { progress: fieldProgress,
+          snapshot: async () => (await inspectDocument()).content,
+          insert: async (field, text) => {
+            await assertOnItem();
+            if (field === 'body') { if (!await page.evaluate(caretToEdge, { selector: EDITOR, start: false })) throw new StageError('edit', 'body not editable'); }
+            else { const control = page.getByRole('textbox', { name: 'Subtitle', exact: true }); await control.focus(); await control.evaluate(element => element.setSelectionRange(element.value.length, element.value.length)); }
+            await page.keyboard.insertText(text);
+          }, now: () => performance.now(), sleep: ms => page.waitForTimeout(ms) });
+      } else if (m.edit.undoRedo) {
         historyProgress = { editId: m.edit.id, stages: [] };
         await exerciseUndoRedo(m.edit, { progress: historyProgress,
           insert: async text => { await assertOnItem(); await page.keyboard.insertText(text); },
@@ -303,8 +323,8 @@ async function main() {
         const after = await bodyText();
         if (after.split(m.edit.text).length < 2) throw new StageError('edit', 'inserted text not visible in editor');
       }
-      out({ type: 'applied', round: m.round, editId: m.edit.id, ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
-      inputProgress = undefined; historyProgress = undefined;
+      out({ type: 'applied', round: m.round, editId: m.edit.id, ...(fieldProgress ? { fieldProgress, fieldEditIds: m.edit.fieldEdits.map(edit => edit.id) } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
+      inputProgress = undefined; historyProgress = undefined; fieldProgress = undefined;
     },
     async observe(m) {
       if (!validateExpectedIds(m.expectedEditIds)) throw new StageError('observe', 'expectedEditIds invalid');
@@ -320,7 +340,7 @@ async function main() {
       }
       if (await page.evaluate(continuityRemoved)) throw new StageError('continuity', 'original editor node was removed');
       const text = samples[samples.length - 1];
-      out({ type: 'state', round: m.round, text, editIds: markerEditIds(text), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
+      out({ type: 'state', round: m.round, text, editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
     },
     async shutdown() {
       stopping = true;

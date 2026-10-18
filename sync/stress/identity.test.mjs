@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { normalizeIdentity, checkIdentity, normalizeInitialPack, verifyReopenIdentity } from './identity.mjs';
-import { boundedFile, observeSealedSource, sha256, ownerBindingScope, accountScopeHash, createWebAssetObserver } from './identity-observation.mjs';
+import { boundedFile, observeSealedSource, sha256, ownerBindingScope, captureOwnerBindingGuard, accountScopeHash, createWebAssetObserver } from './identity-observation.mjs';
 const H = 'a'.repeat(64), C = 'b'.repeat(40);
 function identity(role) {
   return { schemaVersion:1, role, platform:role.startsWith('mac-')?'darwin':'win32', artifactKind:role.endsWith('-cli')?'direct-file-driver':role.endsWith('-web')?'browser':'private-acceptance',
@@ -73,6 +73,9 @@ test('workspace binding scope is separate from authenticated account scope and t
   writeFileSync(ownerBindingPath,JSON.stringify(owner));
   const config={role:'mac-cli',file,workspaceRoot:root,ownerBindingPath,workspaceId:'workspace'};
   assert.notEqual(ownerBindingScope(config),accountScopeHash('https://texttext.app','canonical-account'));
+  const guard = captureOwnerBindingGuard(config);assert.equal(guard(),ownerBindingScope(config));
+  writeFileSync(ownerBindingPath,JSON.stringify({...owner,accountId:'changed-account'}));assert.throws(guard,/changed/);
+  writeFileSync(ownerBindingPath,JSON.stringify(owner));
   assert.throws(()=>ownerBindingScope({...config,workspaceId:'different'}),/scope/);
   writeFileSync(ownerBindingPath,JSON.stringify({...owner,rootHash:H}));
   assert.throws(()=>ownerBindingScope(config),/scope/);
@@ -97,4 +100,13 @@ test('fresh restart attestation rechecks every pinned identity and binds the nex
   assert.equal(checkRestartAttestation(fresh,expected,role,scope).sessionId,'new-session');
   for(const changes of [{mode:'simulated'},{adapter:'fake-adapter'},{machineId:'other-machine'},{workspaceId:'other-workspace'},{sessionId:'old-session'},{generation:1},{identity:{...fresh.identity,sourceCommit:'c'.repeat(40)}},{identity:{...fresh.identity,principalScopeHash:'d'.repeat(64)}},{identity:{...fresh.identity,artifacts:{driver:'e'.repeat(64)}}}])
     assert.throws(()=>checkRestartAttestation({...fresh,...changes},expected,role,scope));
+});
+
+test('multi-field independent reopen binds full document hash and scenario in addition to body and artifact pins',()=>{
+ const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'];
+ const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,multiField:true,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-multi-field',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{multiField:true},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));
+ for(const changed of [{...receipt,finalDocumentHash:'e'.repeat(64)},{...receipt,scenario:{}},{...receipt,finalDocumentHash:undefined}])assert.throws(()=>verifyReopenIdentity(changed,config),/field pins/);
+ assert.throws(()=>verifyReopenIdentity(receipt,{...config,multiField:false}),/field pins/);
 });

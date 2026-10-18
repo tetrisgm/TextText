@@ -44,8 +44,8 @@ and an editor reload after first equality. Simulated runs retain acceptance
 | Close under traffic | `closeProbe` for PC app | Other editor roles need guarded close/reopen protocol |
 | Independent durable reopen | `rounds: 0`, `expectedBaselineHash`, `expectedAssetHashes` | Fresh processes and fixture identity from preceding physical receipt |
 | Sustained typing | Implemented in 684406ad with bounded real chunks and ordinal evidence | Current private candidates and physical runs still required |
-| Undo/redo | Staged real keyboard history protocol, current uncommitted slice | Native compile and physical history journey still required |
-| Multiple fields | Not implemented | Separate field protocol; navigation title is currently fixture identity |
+| Undo/redo | 414c13bf implements real keyboard history protocol and adversarial accounting | Current private candidates and physical history journey still required |
+| Body and existing article subtitle | Source-prepared all-six full-snapshot accounting and real field inputs | Native checks/current private candidates/physical runs; navigation title remains stable |
 | In-place/rapid save, whole-pack creation | Not implemented as explicit scenarios | Ordinary file adapter operations plus scenario-specific accounting |
 | File/folder move, case-only rename, duplicate identity, delete/restore, stale writer | Not implemented | File lifecycle input and path/identity/recovery observation protocol |
 | Lost ACK, retained older journals, authorization changes | Not implemented as matrix scenarios | Explicit supported fault/identity operations and retained work evidence |

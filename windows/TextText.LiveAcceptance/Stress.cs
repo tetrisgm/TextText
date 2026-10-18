@@ -161,6 +161,7 @@ static class Stress
         string? capturedRoot;
         object? inputProgress;
         object? historyProgress;
+        object? fieldProgress;
         bool opened;
         readonly string sessionId = "editor-" + Guid.NewGuid().ToString("N");
         readonly string expectedTitle = JsonSerializer.Serialize(config.Title);
@@ -197,7 +198,7 @@ static class Stress
                 {
                     try { reply = await Handle(type, round, request.RootElement, ct).ConfigureAwait(type != "close-probe"); }
                     catch (OperationCanceledException) { throw; }
-                    catch (Exception error) { Fail(error.Message); reply = historyProgress is not null ? (object)new { type = "error", round, message = error.Message, historyProgress } : inputProgress is null ? (object)new { type = "error", round, message = error.Message } : new { type = "error", round, message = error.Message, inputProgress }; }
+                    catch (Exception error) { Fail(error.Message); reply = fieldProgress is not null ? (object)new { type = "error", round, message = error.Message, fieldProgress } : historyProgress is not null ? (object)new { type = "error", round, message = error.Message, historyProgress } : inputProgress is null ? (object)new { type = "error", round, message = error.Message } : new { type = "error", round, message = error.Message, inputProgress }; }
                 }
                 request.Dispose();
                 Reply(seq, reply);
@@ -271,6 +272,13 @@ static class Stress
                     if (!EditIdPattern.IsMatch(id) || text.Length is 0 or > MaxEditText || text.Contains('\n')) throw new Exception("Edit id or text is out of bounds for this adapter.");
                     inputProgress = null;
                     historyProgress = null;
+                    fieldProgress = null;
+                    if (edit.TryGetProperty("fieldEdits", out var fields))
+                    {
+                        var completed = await ExerciseFields(id, text, fields, ct);
+                        fieldProgress = null;
+                        return new { type = "applied", round, editId = id, fieldProgress = completed, fieldEditIds = new[] { id + "-body", id + "-subtitle" } };
+                    }
                     if (edit.TryGetProperty("undoRedo", out var history))
                     {
                         if (history.ValueKind != JsonValueKind.True || op.GetString() != "append" || edit.TryGetProperty("inputSequence", out _)) throw new Exception("Invalid history operation.");
@@ -348,7 +356,8 @@ static class Stress
                     var sessionSeen = await view.ExecuteScriptAsync("window.texttextStressSession ?? null");
                     if (!continuous || sessionSeen != expectedSession) reloads++;
                     log(new { kind = "observed", round, continuous, sessionPresent = sessionSeen == expectedSession, reloads, editIds });
-                    return new { type = "state", round, text, editIds, editor = new { sessionId, reloads } };
+                    var documentSnapshot = request.TryGetProperty("documentSnapshot", out var full) && full.ValueKind == JsonValueKind.True ? await InspectDocument(ct) : (JsonElement?)null;
+                    return new { type = "state", round, text, editIds, documentSnapshot, editor = new { sessionId, reloads } };
                 }
                 case "close-probe":
                 {
@@ -554,6 +563,73 @@ static class Stress
             using var parsed = JsonDocument.Parse(snapshot.RootElement.GetString()!);
             if (parsed.RootElement.GetProperty("title").GetString() != config.Title) throw new Exception("Editor navigated away from the dedicated test item.");
             return parsed.RootElement.GetProperty("body").ValueKind == JsonValueKind.String ? parsed.RootElement.GetProperty("body").GetString() : null;
+        }
+
+        async Task<JsonElement> InspectDocument(CancellationToken ct)
+        {
+            await RequireSelected(ct);
+            var script = "(()=>{const es=document.querySelectorAll('[aria-label=\"Edit item\"][data-ai-item-id]');if(es.length!==1)return null;const e=es[0],k=e.dataset.aiItemId;if(k!==" + expectedItem + "&&!k?.endsWith(':'+" + JsonSerializer.Serialize(config.WorkspaceId) + "+':'+" + expectedItem + "))return null;const api=window.texttextDocumentInspection;const d=api?.version===1?api.read(k):null;const s=e.querySelector('textarea[aria-label=\"Subtitle\"]'),b=e.querySelector('[aria-label=\"Document body\"]');return d&&s&&d.content.subtitle===s.value&&d.content.body===b?.textContent?d:null})()";
+            var raw = await view!.ExecuteScriptAsync(script);
+            if (Encoding.UTF8.GetByteCount(raw) > 262144) throw new Exception("Full live document exceeds bound.");
+            using var parsed = JsonDocument.Parse(raw);
+            var doc = parsed.RootElement;
+            if (doc.ValueKind != JsonValueKind.Object || doc.GetProperty("content").GetProperty("title").GetString() != config.Title
+                || doc.GetProperty("content").GetProperty("subtitle").ValueKind != JsonValueKind.String
+                || doc.GetProperty("presentation").GetProperty("template").GetProperty("id").GetString() != "texttext.article") throw new Exception("Actual live article snapshot or existing subtitle unavailable.");
+            return doc.Clone();
+        }
+
+        async Task<object> ExerciseFields(string id, string text, JsonElement fields, CancellationToken ct)
+        {
+            if (fields.ValueKind != JsonValueKind.Array || fields.GetArrayLength() != 2) throw new Exception("Invalid bounded field sequence.");
+            var edits = fields.EnumerateArray().ToArray();
+            for (var index = 0; index < 2; index++)
+            {
+                var field = index == 0 ? "body" : "subtitle"; var edit = edits[index]; var marker = edit.GetProperty("text").GetString();
+                if (edit.GetProperty("id").GetString() != id + "-" + field || edit.GetProperty("role").GetString() != "pc-app"
+                    || edit.GetProperty("field").GetString() != field || edit.GetProperty("op").GetString() != "append"
+                    || string.IsNullOrEmpty(marker) || marker.Length > 1024 || marker.Contains('\n') || marker.Contains('\r') || (index == 0 && marker != text)) throw new Exception("Invalid role-bound field edit.");
+            }
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var preserved = (await InspectDocument(ct)).GetProperty("content");
+            var progress = new List<object>();
+            for (var index = 0; index < 2; index++)
+            {
+                var edit = edits[index]; var field = edit.GetProperty("field").GetString()!; var marker = edit.GetProperty("text").GetString()!; var editId = edit.GetProperty("id").GetString()!;
+                if (preserved.GetProperty(field).GetString()!.Contains(marker)) throw new Exception("Field marker already present.");
+                if (index > 0) await Task.Delay(1, ct);
+                fieldProgress = new { role = "pc-app", fields = progress.ToArray(), attemptedField = editId };
+                if (field == "body") await Insert(editId, marker, false, false, ct, clock);
+                else
+                {
+                    await RequireSelected(ct);
+                    if (await view!.ExecuteScriptAsync("(()=>{const e=document.querySelector('textarea[aria-label=\"Subtitle\"]');if(!e||e.disabled||e.readOnly)return false;e.focus();e.setSelectionRange(e.value.length,e.value.length);return document.activeElement===e})()") != "true") throw new Exception("Existing subtitle is not editable.");
+                    await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text = marker }));
+                }
+                for (;;)
+                {
+                    if (clock.ElapsedMilliseconds > 15000) throw new Exception("Field visibility or preservation deadline exceeded.");
+                    var current = (await InspectDocument(ct)).GetProperty("content");
+                    if (current.GetProperty(field).GetString()!.Split(marker, StringSplitOptions.None).Length == 2)
+                    {
+                        var intact = true;
+                        foreach (var key in new[] { "body", "subtitle" })
+                        {
+                            var observed = current.GetProperty(key).GetString()!; if (key == field) observed = observed.Replace(marker, "", StringComparison.Ordinal);
+                            var prior = preserved.GetProperty(key).GetString()!.EnumerateRunes().ToArray(); var offset = 0;
+                            foreach (var rune in observed.EnumerateRunes()) if (offset < prior.Length && rune == prior[offset]) offset++;
+                            if (offset != prior.Length) intact = false;
+                        }
+                        if (intact)
+                        {
+                            progress.Add(new { ordinal = index + 1, editId, field, text = marker, visible = true, preservedVisibleContent = true, elapsedMs = clock.Elapsed.TotalMilliseconds });
+                            preserved = current; fieldProgress = new { role = "pc-app", fields = progress.ToArray() }; break;
+                        }
+                    }
+                    await Task.Delay(25, ct);
+                }
+            }
+            return new { role = "pc-app", fields = progress.ToArray() };
         }
 
         async Task<object> ExerciseHistory(string id, string text, CancellationToken ct)

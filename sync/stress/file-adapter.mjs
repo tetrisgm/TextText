@@ -1,4 +1,6 @@
-import { observeSealedSource, fixedDriverFiles, ownerBindingScope, canonicalJSON } from './identity-observation.mjs';
+import { appendFieldToPack } from './multi-field-pack.mjs';
+import { validateFieldSequence } from './multi-field-input.mjs';
+import { observeSealedSource, fixedDriverFiles, ownerBindingScope, captureOwnerBindingGuard, canonicalJSON } from './identity-observation.mjs';
 // Direct-file stress actor for the mac-cli and pc-cli roles. It speaks the coordinator's JSONL
 // protocol and edits one dedicated acceptance TextPack the way an ordinary external tool would:
 // read the whole ZIP, append the exact edit text to the canonical text.md body, keep every other
@@ -222,11 +224,11 @@ export async function stableRead(file, { attempts = 20, settleMs = 50 } = {}) {
 // Read, append, verify the bytes are still what was read, then temp+rename. A concurrent change seen
 // at the final check restarts the whole cycle, a bounded number of times. The pre-edit bytes are kept
 // as a backup in the receipt directory before the original is replaced.
-export async function applyEdit({ file, config, text, target, assetReplacement, round, runDir, journal = () => {}, beforeReplace = () => {} }) {
+export async function applyEdit({ file, config, text, target, assetReplacement, fieldEdits, round, runDir, journal = () => {}, beforeReplace = () => {} }) {
   for (let attempt = 1; attempt <= WRITE_RETRIES; attempt += 1) {
     const before = await stableRead(file);
     const beforeSha = sha256(before);
-    const next = assetReplacement ? editPack(before, config, text, target, assetReplacement)
+    const next = fieldEdits ? fieldEdits.reduce((pack, edit) => appendFieldToPack(pack, config, edit.field, edit.text), before) : assetReplacement ? editPack(before, config, text, target, assetReplacement)
       : target ? replaceTargetInPack(before, config, target, text) : appendToPack(before, config, text);
     const backup = join(runDir, `${config.role}-r${round}-a${attempt}-before.textpack`);
     if (existsSync(backup)) throw new ActorError('receipts', 'backup for this round already exists; use a new run');
@@ -279,7 +281,7 @@ export async function transientInvalidPack({ file, config, round, runDir, journa
 // Read the body until every expected ID is present and several consecutive samples agree, bounded.
 // On timeout the last observation is returned anyway; the coordinator records the mismatch as
 // evidence rather than this actor guessing.
-export async function observeBody({ file, config, expectedEditIds = [], expectedAssetPaths = [], maxMs = config.observeMaxMs ?? OBSERVE.maxMs, pollMs = OBSERVE.pollMs, stableSamples = OBSERVE.stableSamples }) {
+export async function observeBody({ file, config, expectedEditIds = [], expectedAssetPaths = [], includeDocument = false, maxMs = config.observeMaxMs ?? OBSERVE.maxMs, pollMs = OBSERVE.pollMs, stableSamples = OBSERVE.stableSamples }) {
   const deadline = Date.now() + maxMs;
   const expected = new Set(expectedEditIds);
   let last = null; let agree = 0; let sample;
@@ -287,7 +289,7 @@ export async function observeBody({ file, config, expectedEditIds = [], expected
     const bytes = await stableRead(file);
     const pack = readPack(bytes);
     const { body } = validateIdentity(pack, config);
-    sample = { body, editIds: editIdsOf(body), assetHashes: assetHashesOf(pack, expectedAssetPaths), sha256: sha256(bytes) };
+    sample = { body, ...(includeDocument ? { documentSnapshot: JSON.parse(strFromU8(entryOf(pack, 'document.json').data)) } : {}), editIds: editIdsOf(body), assetHashes: assetHashesOf(pack, expectedAssetPaths), sha256: sha256(bytes) };
     agree = last && last.sha256 === sample.sha256 ? agree + 1 : 1;
     last = sample;
     const complete = [...expected].every((id) => sample.editIds.includes(id));
@@ -308,7 +310,7 @@ export function sanitizeError(error, config) {
 // One actor instance: `handle(message)` returns the reply (or null). Commands are serialized by the
 // caller (stdin pipe) or by the test. `platform` is injectable only so tests can prove the refusal path.
 export function createActor(config, { platform = process.platform, machineId = hostname(), now = () => new Date().toISOString() } = {}) {
-  const state = { runId: null, runDir: null, role: config.role };
+  const state = { ownerScope: null, ownerGuard: null, runId: null, runDir: null, role: config.role };
   const journal = (entry) => { if (state.runDir) appendFileSync(join(state.runDir, 'journal.jsonl'), `${JSON.stringify({ at: now(), ...entry })}\n`); };
   const handlers = {
     async hello(m) {
@@ -335,6 +337,9 @@ export function createActor(config, { platform = process.platform, machineId = h
         identity = { schemaVersion: 1, role: config.role, platform, artifactKind: 'direct-file-driver',
           principalKind: 'workspace-owner-binding', principalScopeHash: ownerBindingScope(config),
           runtimeName: 'Node.js', runtimeVersion: process.versions.node, ...source };
+        state.ownerScope = identity.principalScopeHash;
+        state.ownerGuard = captureOwnerBindingGuard(config);
+        if (state.ownerGuard() !== state.ownerScope) throw new ActorError('identity', 'workspace owner binding changed during hello');
         initialPack = { packSha256: sha256(bytes), bodySha256: sha256(body.replace(/\r\n/g, '\n')),
           documentSha256: sha256(canonicalJSON(JSON.parse(strFromU8(entryOf(pack, 'document.json').data)))),
           assetHashes: assetHashesOf(pack, paths) };
@@ -345,6 +350,7 @@ export function createActor(config, { platform = process.platform, machineId = h
     async prepare(m) {
       requireRun();
       validateIdentity(readPack(await stableRead(config.file)), config);
+      requireRun();
       journal({ event: 'ready', round: m.round });
       return { type: 'ready', round: m.round };
     },
@@ -352,10 +358,12 @@ export function createActor(config, { platform = process.platform, machineId = h
       requireRun();
       const edit = m.edit ?? {};
       if (!['append', 'replace-target'].includes(edit.op) || typeof edit.id !== 'string' || typeof edit.text !== 'string') throw new ActorError('edit', 'unsupported file edit');
+      if (edit.fieldEdits !== undefined && (!validateFieldSequence(edit.fieldEdits, config.role) || edit.fieldEdits[0].text !== edit.text || edit.fieldEdits.some(field => field.id !== edit.id + '-' + field.field) || edit.assetReplacement || edit.op !== 'append')) throw new ActorError('edit', 'invalid field sequence');
       const result = await applyEdit({ file: config.file, config, text: edit.text, target: edit.op === 'replace-target' ? edit.target : undefined,
-        assetReplacement: edit.assetReplacement, round: m.round, runDir: state.runDir, journal });
+        assetReplacement: edit.assetReplacement, fieldEdits: edit.fieldEdits, beforeReplace: () => requireRun(), round: m.round, runDir: state.runDir, journal });
+      requireRun();
       journal({ event: 'applied', round: m.round, editId: edit.id, ...result });
-      return { type: 'applied', round: m.round, editId: edit.id };
+      return { type: 'applied', round: m.round, editId: edit.id, ...(edit.fieldEdits ? { fieldEditIds: edit.fieldEdits.map(field => field.id) } : {}) };
     },
     async perturb(m) {
       requireRun();
@@ -364,13 +372,15 @@ export function createActor(config, { platform = process.platform, machineId = h
     },
     async observe(m) {
       requireRun();
-      const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [], expectedAssetPaths: m.expectedAssetPaths ?? [] });
+      const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [], expectedAssetPaths: m.expectedAssetPaths ?? [], includeDocument: m.documentSnapshot === true });
+      requireRun();
       journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, assetHashes: o.assetHashes, stable: o.stable, timedOut: o.timedOut });
-      return { type: 'state', round: m.round, text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
+      const documentSnapshot = o.documentSnapshot;
+      return { type: 'state', round: m.round, ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
     },
     async shutdown() { journal({ event: 'shutdown' }); return null; },
   };
-  const requireRun = () => { if (!state.runId) throw new ActorError('protocol', 'hello must come first'); };
+  const requireRun = () => { if (!state.runId) throw new ActorError('protocol', 'hello must come first'); state.ownerGuard?.(); };
   return {
     state,
     async handle(m) {

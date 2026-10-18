@@ -239,6 +239,7 @@ final class NativeStressRunner {
     private let capturedWindowAccount: LocalVaultAccountCredential?
     private let deadline: Date
     private(set) var failure: String?
+    private var fieldProgress: [String: Any]?
     private var historyProgress: [String: Any]?
     private var inputProgress: [String: Any]?
     private var opened = false
@@ -342,6 +343,7 @@ final class NativeStressRunner {
                         record(["kind": "failure-surface", "state": String(surface.prefix(4096))])
                     }
                     var errorResponse: [String: Any] = ["type": "error", "round": round, "message": error.localizedDescription]
+                    if let fieldProgress { errorResponse["fieldProgress"] = fieldProgress }
                     if let historyProgress { errorResponse["historyProgress"] = historyProgress }
                     if let inputProgress { errorResponse["inputProgress"] = inputProgress }
                     response = errorResponse
@@ -411,6 +413,12 @@ final class NativeStressRunner {
             }
             inputProgress = nil
             historyProgress = nil
+            fieldProgress = nil
+            if let fields = edit["fieldEdits"] {
+                let result = try await exerciseFields(id: id, text: text, value: fields)
+                fieldProgress = nil
+                return ["type": "applied", "round": round, "editId": id, "fieldProgress": result, "fieldEditIds": [id + "-body", id + "-subtitle"]]
+            }
             if let history = edit["undoRedo"] {
                 guard history as? Bool == true, operation == "append", edit["inputSequence"] == nil else { throw NativeStressActor.Failure("Invalid history operation.") }
                 let completed = try await exerciseHistory(id: id, text: text)
@@ -478,7 +486,9 @@ final class NativeStressRunner {
             let sessionPresent = sessionSeen == "\"\(sessionId)\""
             if !continuous || !sessionPresent { reloads += 1 }
             record(["kind": "observed", "round": round, "continuous": continuous, "sessionPresent": sessionPresent, "reloads": reloads, "editIds": editIds])
-            return ["type": "state", "round": round, "text": text, "editIds": editIds, "editor": ["sessionId": sessionId, "reloads": reloads]]
+            var response: [String: Any] = ["type": "state", "round": round, "text": text, "editIds": editIds, "editor": ["sessionId": sessionId, "reloads": reloads]]
+            if request["documentSnapshot"] as? Bool == true { response["documentSnapshot"] = try await inspectDocument() }
+            return response
         default:
             throw NativeStressActor.Failure("Unsupported coordinator message type.")
         }
@@ -656,6 +666,61 @@ final class NativeStressRunner {
             guard ProcessInfo.processInfo.systemUptime < end else { throw NativeStressActor.Failure("Inserted text did not appear exactly once in the visible editor: " + id) }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
+    }
+
+    private func inspectDocument() async throws -> [String: Any] {
+        try await requireSelected()
+        let script = "(()=>{const es=document.querySelectorAll('[aria-label=\"Edit item\"][data-ai-item-id]');if(es.length!==1)return null;const e=es[0],k=e.dataset.aiItemId;if(k!==\(expectedItem)&&!k?.endsWith(':'+\(Self.json(config.workspaceId))+':'+\(expectedItem)))return null;const api=window.texttextDocumentInspection;const d=api?.version===1?api.read(k):null;const s=e.querySelector('textarea[aria-label=\"Subtitle\"]'),b=e.querySelector('[aria-label=\"Document body\"]');return d&&s&&d.content.subtitle===s.value&&d.content.body===b?.textContent?d:null})()"
+        let raw = try await evaluate(script)
+        guard raw.utf8.count <= 262144, let value = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any], let content = value["content"] as? [String: Any],
+              content["title"] as? String == config.title, content["body"] is String, content["subtitle"] is String,
+              let presentation = value["presentation"] as? [String: Any], let template = presentation["template"] as? [String: Any], template["id"] as? String == "texttext.article" else { throw NativeStressActor.Failure("Actual live article snapshot or existing subtitle unavailable.") }
+        return value
+    }
+
+    private func exerciseFields(id: String, text: String, value: Any) async throws -> [String: Any] {
+        guard let edits = value as? [[String: Any]], edits.count == 2 else { throw NativeStressActor.Failure("Invalid bounded field sequence.") }
+        for (index, field) in ["body", "subtitle"].enumerated() {
+            let edit = edits[index]
+            guard edit["id"] as? String == id + "-" + field, edit["role"] as? String == NativeStressActor.roleServed,
+                  edit["field"] as? String == field, edit["op"] as? String == "append", let marker = edit["text"] as? String,
+                  !marker.isEmpty, marker.utf16.count <= 1024, !marker.contains("\n"), !marker.contains("\r"), index != 0 || marker == text else { throw NativeStressActor.Failure("Invalid role-bound field edit.") }
+        }
+        let start = ProcessInfo.processInfo.systemUptime
+        var preserved = (try await inspectDocument())["content"] as! [String: Any]
+        var progress: [[String: Any]] = []
+        for (index, edit) in edits.enumerated() {
+            let field = edit["field"] as! String, marker = edit["text"] as! String, editId = edit["id"] as! String
+            guard !(preserved[field] as! String).contains(marker) else { throw NativeStressActor.Failure("Field marker already present.") }
+            if index > 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+            fieldProgress = ["role": NativeStressActor.roleServed, "fields": progress, "attemptedField": editId]
+            if field == "body" { try await insert(id: editId, text: marker, start: false, replacing: false, deadlineUptime: start + 15) }
+            else {
+                try await requireSelected()
+                guard try await evaluate("(()=>{const e=document.querySelector('textarea[aria-label=\"Subtitle\"]');if(!e||e.disabled||e.readOnly)return false;e.focus();e.setSelectionRange(e.value.length,e.value.length);return document.activeElement===e})()") == "true" else { throw NativeStressActor.Failure("Existing subtitle is not editable.") }
+                _ = try insertNatively(marker)
+            }
+            while true {
+                let elapsed = (ProcessInfo.processInfo.systemUptime - start) * 1000
+                guard elapsed <= 15000 else { throw NativeStressActor.Failure("Field visibility or preservation deadline exceeded.") }
+                let current = (try await inspectDocument())["content"] as! [String: Any]
+                if Self.occurrences(of: marker, in: current[field] as! String) == 1 {
+                    var intact = true
+                    for key in ["body", "subtitle"] {
+                        let observed = key == field ? (current[key] as! String).replacingOccurrences(of: marker, with: "") : current[key] as! String
+                        var remaining = Array((preserved[key] as! String).unicodeScalars)[...]
+                        for scalar in observed.unicodeScalars where remaining.first == scalar { remaining = remaining.dropFirst() }
+                        if !remaining.isEmpty { intact = false }
+                    }
+                    if intact {
+                        progress.append(["ordinal": index + 1, "editId": editId, "field": field, "text": marker, "visible": true, "preservedVisibleContent": true, "elapsedMs": elapsed])
+                        preserved = current; fieldProgress = ["role": NativeStressActor.roleServed, "fields": progress]; break
+                    }
+                }
+                try await Task.sleep(nanoseconds: 25_000_000)
+            }
+        }
+        return ["role": NativeStressActor.roleServed, "fields": progress]
     }
 
     private func exerciseHistory(id: String, text: String) async throws -> [String: Any] {

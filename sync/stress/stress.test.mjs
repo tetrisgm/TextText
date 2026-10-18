@@ -501,3 +501,21 @@ test('failed history retains valid confirmed prefix and uncertain attempted acti
   const lines=readFileSync(join(summary.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
   const prefix=lines.find(l=>l.type==='history-prefix-failure');assert.equal(prefix.valid,true);assert.equal(prefix.historyProgress.stages.length,1);assert.equal(prefix.historyProgress.attemptedStage,'undo');
 });
+
+test('multi-field source protocol requires all six full snapshots and twelve role bound field operations',async()=>{
+ const config=makeConfig({rounds:1});config.multiField=true;
+ const coordinator=new Coordinator(config),summary=await coordinator.run();assert.equal(summary.status,'passed');assert.equal(summary.acceptance,'none');assert.match(summary.finalDocumentHash,/^[a-f0-9]{64}$/);assert.equal(coordinator.roundResults[0].fieldEditCount,12);
+ for(const role of ROLES)assert.equal(createHash('sha256').update(readFileSync(join(summary.outputDir,'adapters',role+'.last-document.json'))).digest('hex'),summary.finalDocumentHash);
+ assert.throws(()=>validateConfig({...config,undoRedo:true}),/multiField/);
+ assert.throws(()=>validateConfig({...config,rounds:0,expectedBaselineHash:'a'.repeat(64)}),/expectedDocumentHash/);
+});
+test('multi-field refuses absent full snapshot, UI snapshot mismatch and wrong or missing input actor evidence',async()=>{
+ for(const [fault,code] of [['field-missing-document','document-state-invalid'],['field-body-mismatch','document-state-invalid'],['field-wrong-role','field-progress-invalid'],['field-missing-progress','field-progress-invalid']]){
+  const config=makeConfig({rounds:1,faults:{'pc-web':fault}});config.multiField=true;
+  const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,code,fault);assert.equal(summary.roundsCompleted,0);
+ }
+});
+test('multi-field failure retains first field prefix and second uncertain field action',async()=>{
+ const config=makeConfig({rounds:1,faults:{'mac-app':'field-prefix-fail'}});config.multiField=true;
+ const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,'actor-failed');assert.equal(summary.failure.detail.fieldProgress.fields.length,1);assert.equal(summary.failure.detail.fieldProgress.attemptedField,'r1-mac-app-subtitle');
+});
