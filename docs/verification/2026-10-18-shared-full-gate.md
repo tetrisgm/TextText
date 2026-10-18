@@ -12,3 +12,5 @@ Earlier broad runs exposed stale fixtures and one source-extraction test boundar
 Failure logs remain `/private/tmp/texttext-shared-full-20261018.log`, `/private/tmp/texttext-shared-full-current-transport-20261018.log`, `/private/tmp/texttext-shared-full-refreshed-fixtures-20261018.log`, `/private/tmp/texttext-shared-full-epoch-aware-fixtures-20261018.log` and `/private/tmp/texttext-web-assistant-refresh-diagnostic-20261018.log`. Focused corrections pass in `/private/tmp/texttext-full-gate-fixture-corrections-20261018.log`. No timeout increase, guard bypass or production mutation was used to make these fixtures pass.
 
 This gate covers shared source tests. Native move, private candidate build, installed acceptance and the current six-client matrix remain separate open gates.
+
+Full enabled local PostgreSQL gate: `npm run test:db`, exit 0, 27 files/119 tests plus four scale tests. The orchestration first checked that DATABASE_URL resolves to loopback without printing its value. Log `/private/tmp/texttext-local-postgres-full-20261018.log`.
