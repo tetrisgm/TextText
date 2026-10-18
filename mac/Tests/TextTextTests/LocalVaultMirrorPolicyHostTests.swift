@@ -2,9 +2,22 @@ import AppKit
 import WebKit
 import XCTest
 import TextTextFileProviderKit
+@testable import TextTextSyncTestSupport
 @testable import TextTextApp
 
 final class LocalVaultMirrorPolicyHostTests: XCTestCase {
+    func testCancelledSourceEvaluationDoesNotPoisonOtherPolicyContexts() async throws {
+        let host = NativePolicyTestHost()
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await host.evaluate(context: UUID().uuidString, script: "window.texttextMirrorPolicy.handshake()")
+        }
+        do { _ = try await cancelled.value; XCTFail("Cancelled evaluator accepted work") }
+        catch is CancellationError {}
+        let reply = try await host.evaluate(context: UUID().uuidString, script: "window.texttextMirrorPolicy.handshake()")
+        let identity = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
+        XCTAssertEqual(identity["version"] as? Int, 1)
+    }
     private struct Manifest: Decodable { let digest: String }
     private struct LifecycleVector: Decodable { let name: String, observed: LocalVaultMirrorLifecycleObservation, decision: LocalVaultMirrorLifecycleDecision }
     private struct ScheduleVector: Decodable { let name: String, observed: LocalVaultMirrorScheduleObservation, decision: LocalVaultMirrorScheduleDecision }

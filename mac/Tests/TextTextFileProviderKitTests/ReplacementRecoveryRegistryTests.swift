@@ -6,6 +6,7 @@ import TextTextWorkspaceCore
 
 final class ReplacementRecoveryRegistryTests: XCTestCase {
     private var root: URL!
+    private var preserveBenchmark = false
     private var target: URL { root.appendingPathComponent("Original.textpack") }
     private var registry: ReplacementRecoveryRegistry { .init(root: root) }
     private var store: LocalVaultDocumentStore { .init(root: root) }
@@ -16,7 +17,7 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         root = URL(fileURLWithPath: String(cString: path)).appendingPathComponent("replacement-registry-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+    override func tearDownWithError() throws { if !preserveBenchmark { try? FileManager.default.removeItem(at: root) } }
     private func pack(_ body: String) throws -> Data {
         let scratch = root.appendingPathComponent("." + UUID().uuidString)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
@@ -142,6 +143,31 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         try Data("old descriptor changed".utf8).write(to: retained.recovery.displaced)
         XCTAssertThrowsError(try store.read(path: "After/Renamed.textpack"))
     }
+    func testCompletedSaveFollowsCaseOnlyContainingFolderRename() throws {
+        let before = root.appendingPathComponent("CaseFolder", isDirectory: true)
+        try FileManager.default.createDirectory(at: before, withIntermediateDirectories: true)
+        let original = try pack("original"), prepared = try pack("prepared"), next = try pack("next")
+        let file = before.appendingPathComponent("Original.textpack"), operation = UUID()
+        try original.write(to: file)
+        _ = try RetainedFileReplacement.replace(file, expectedHash: hash(original), prepared: prepared, operation: operation) { phase in
+            if phase == "prepared" { try self.registry.register(operation: operation, itemId: "registry-item", path: "CaseFolder/Original.textpack", expectedHash: self.hash(original), preparedHash: self.hash(prepared)) }
+        }
+        let changed = root.appendingPathComponent("casefolder", isDirectory: true)
+        XCTAssertEqual(rename(before.path, changed.path), 0)
+        XCTAssertEqual(try store.read(path: "casefolder/Original.textpack").hash, hash(prepared))
+        _ = try RetainedFileReplacement.replace(changed.appendingPathComponent("Original.textpack"), expectedHash: hash(prepared), prepared: next)
+        XCTAssertEqual(try store.read(path: "casefolder/Original.textpack").hash, hash(next))
+    }
+    func testListingRetainedVersionsDoesNotWriteRecoveryCopies() throws {
+        let (operation, _, _) = try stagedConflict()
+        let destination = root.appendingPathComponent(".texttext/conflicts/" + operation.uuidString)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        let shown = try XCTUnwrap(store.replacementRecoveryList().first)
+        _ = try store.replacementRecoveryRead(id: shown.id, version: "displaced")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        try store.resolveReplacement(id: shown.id, path: shown.path, itemId: shown.itemId, currentHash: shown.currentHash, preparedHash: shown.preparedHash, displacedHash: shown.displacedHash)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+    }
     func testLostReplyAfterSuccessfulSwapReconstructsExactCompletion() throws {
         let original = try pack("original"), prepared = try pack("prepared")
         try original.write(to: target)
@@ -153,17 +179,199 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         XCTAssertNoThrow(try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: "registry-item"))
         XCTAssertEqual(try store.read(path: "Original.textpack").hash, hash(prepared))
     }
+    func testIdentityIndexInvalidatesOnPublicationAndValidatesSelectedBytes() throws {
+        let h = hash(Data("bytes".utf8))
+        try registry.register(operation: UUID(), itemId: "first", path: "First.textpack", expectedHash: h, preparedHash: h)
+        XCTAssertEqual(try registry.entries(itemId: "first").count, 1)
+        let second = UUID()
+        try registry.register(operation: second, itemId: "second", path: "Second.textpack", expectedHash: h, preparedHash: h)
+        XCTAssertEqual(try registry.entries(itemId: "second").count, 1)
+        let path = LocalVaultDeviceState.directory(root: root).appendingPathComponent("replacement-index/" + second.uuidString + ".json")
+        var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        fields["version"] = 99
+        try JSONSerialization.data(withJSONObject: fields).write(to: path)
+        XCTAssertThrowsError(try registry.entries(itemId: "second"))
+        XCTAssertEqual(try registry.entries(itemId: "first").count, 1)
+        XCTAssertThrowsError(try registry.entries())
+    }
+    func testRecoveryListingDoesNotClassifyLostReplyOrWriteExports() throws {
+        let original = try pack("original"), prepared = try pack("prepared")
+        try original.write(to: target)
+        let operation = UUID()
+        XCTAssertThrowsError(try RetainedFileReplacement.replace(target, expectedHash: hash(original), prepared: prepared, operation: operation) { stage in
+            if stage == "prepared" { try self.registry.register(operation: operation, itemId: "registry-item", path: "Original.textpack", expectedHash: self.hash(original), preparedHash: self.hash(prepared)) }
+            if stage == "swapped" { throw Interrupted.stopped }
+        })
+        let retained = try RetainedFileReplacement.recovery(target: target, operation: operation)
+        let manifest = retained.directory.appendingPathComponent("manifest.json")
+        let before = try Data(contentsOf: manifest)
+        XCTAssertTrue(try store.replacementRecoveryList().isEmpty)
+        XCTAssertEqual(try Data(contentsOf: manifest), before)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".texttext/conflicts").path))
+    }
+    func testMissingOwnerWithRetainedProfileRefusesEmptyIndex() throws {
+        let state = LocalVaultDeviceState.directory(root: root)
+        try FileManager.default.createDirectory(at: state.appendingPathComponent("retained-replacement-profile"), withIntermediateDirectories: true)
+        XCTAssertThrowsError(try registry.assertReadable(itemId: "not-indexed"))
+    }
+    func testAlreadyOpenStoreRejectsUnattestedProfilesWithoutReplacementIndex() throws {
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: "account-a")
+        let bytes = try pack("visible")
+        try bytes.write(to: target)
+        let opened = store
+        XCTAssertEqual(try opened.read(path: "Original.textpack").hash, hash(bytes))
+        let owner = LocalVaultDeviceState.directory(root: root).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        let before = try Data(contentsOf: owner)
+        try RetainedReplacementProfile.prepare(root: root)
+        let after = try Data(contentsOf: owner)
+        let marker = owner.deletingLastPathComponent().appendingPathComponent("retained-replacement-profile/profile.json")
+        var future = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: marker)) as? [String: Any])
+        future["version"] = 999
+        try JSONSerialization.data(withJSONObject: future).write(to: marker)
+        for ownerBytes in [before, after] {
+            try ownerBytes.write(to: owner, options: .atomic)
+            XCTAssertThrowsError(try opened.read(path: "Original.textpack"))
+            XCTAssertThrowsError(try opened.readMetadata(path: "Original.textpack"))
+            XCTAssertThrowsError(try registry.assertReadable(itemId: "registry-item"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: owner.deletingLastPathComponent().appendingPathComponent("replacement-index").path))
+        XCTAssertEqual(try Data(contentsOf: target), bytes)
+    }
+    func testWorkspaceStagingAllowsManagedFolderPruneAndFollowsVisibleMove() throws {
+        let folder = root.appendingPathComponent("Folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let visible = folder.appendingPathComponent("Document.textpack")
+        let before = try pack("before"), after = try pack("after")
+        try before.write(to: visible)
+        let operation = UUID(), path = "Folder/Document.textpack"
+        _ = try RetainedFileReplacement.replace(visible, expectedHash: hash(before), prepared: after,
+            operation: operation, recoveryRoot: registry.recoveryRoot(path: path)) { stage in
+            if stage == "prepared" { try self.registry.register(operation: operation, itemId: "registry-item", path: path,
+                expectedHash: self.hash(before), preparedHash: self.hash(after), workspaceStaging: true) }
+        }
+        try FileManager.default.moveItem(at: visible, to: target)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+        try FileManager.default.removeItem(at: folder)
+        XCTAssertNoThrow(try registry.assertReadable(itemId: "registry-item"))
+        XCTAssertEqual(try store.read(path: "Original.textpack").hash, hash(after))
+        let retained = try registry.inspect(XCTUnwrap(try registry.entries().first))
+        XCTAssertEqual(retained.displaced, before)
+        XCTAssertEqual(retained.prepared, after)
+    }
+    func testProductionWriteRetainsFinalGapWriterAndFencesReplayUntilRecovery() throws {
+        let original = try pack("original"), external = try pack("external final writer")
+        try original.write(to: target)
+        let observed = try store.read(path: "Original.textpack")
+        var writer = store
+        writer.writeObservationForTesting = { stage in
+            if stage == "beforeSwap" { try external.write(to: self.target, options: .atomic) }
+        }
+        XCTAssertThrowsError(try writer.write(path: observed.path, expectedHash: observed.hash,
+            markdown: observed.contents.markdown + "\nuser candidate", documentJSON: nil, templateJSON: nil,
+            templateAuthoringSourceJSON: nil, mutationKey: "retained-final-gap", mutationFingerprint: hash(Data("request".utf8))))
+        XCTAssertThrowsError(try store.read(path: observed.path))
+        let entry = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: entry.id, version: "displaced").data, external)
+        let current = try store.replacementRecoveryRead(id: entry.id, version: "current")
+        XCTAssertThrowsError(try store.write(path: observed.path, expectedHash: entry.currentHash,
+            markdown: try XCTUnwrap(current.document).contents.markdown, documentJSON: nil, templateJSON: nil,
+            templateAuthoringSourceJSON: nil, mutationKey: "retained-final-gap", mutationFingerprint: hash(Data("request".utf8))))
+        try store.resolveReplacement(id: entry.id, path: entry.path, itemId: entry.itemId, currentHash: entry.currentHash,
+            preparedHash: entry.preparedHash, displacedHash: entry.displacedHash)
+        let replay = try store.write(path: observed.path, expectedHash: entry.currentHash,
+            markdown: try XCTUnwrap(current.document).contents.markdown, documentJSON: nil, templateJSON: nil,
+            templateAuthoringSourceJSON: nil, mutationKey: "retained-final-gap", mutationFingerprint: hash(Data("request".utf8)))
+        XCTAssertEqual(replay.hash, entry.currentHash)
+        let saved = try store.write(path: observed.path, expectedHash: replay.hash, markdown: replay.contents.markdown + "\nnext save",
+            documentJSON: nil, templateJSON: nil, templateAuthoringSourceJSON: nil)
+        XCTAssertEqual(saved.hash, hash(try Data(contentsOf: target)))
+    }
+    func testProductionExactSwapLostReplyReconstructsAndPreservesMode() throws {
+        let original = try pack("original"), prepared = try pack("prepared")
+        try original.write(to: target)
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: target.path)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "swapped" { throw Interrupted.stopped } }
+        XCTAssertThrowsError(try writer.replaceExact(path: "Original.textpack", expectedHash: hash(original), bytes: prepared))
+        let reopened = try LocalVaultDocumentStore(root: root).read(path: "Original.textpack")
+        XCTAssertEqual(reopened.hash, hash(prepared))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: target.path)[.posixPermissions] as? Int, 0o640)
+        XCTAssertTrue(try store.replacementRecoveryList().isEmpty)
+        let saved = try store.replaceExact(path: "Original.textpack", expectedHash: hash(prepared), bytes: original)
+        XCTAssertEqual(saved.hash, hash(original))
+        XCTAssertEqual(try registry.entries().count, 2)
+    }
+    func testProductionOwnedSaveAttestsProfileBeforeExchange() throws {
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: "account-a")
+        let original = try pack("original"), prepared = try pack("prepared")
+        try original.write(to: target)
+        let result = try store.replaceExact(path: "Original.textpack", expectedHash: hash(original), bytes: prepared)
+        XCTAssertEqual(result.hash, hash(prepared))
+        let ownerURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        XCTAssertEqual(try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: Data(contentsOf: ownerURL)).version, 2)
+        XCTAssertNoThrow(try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: "account-a"))
+        XCTAssertThrowsError(try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: "account-b"))
+    }
+    func testOneThousandDocumentIdentityLookupCampaign() throws {
+        guard ProcessInfo.processInfo.environment["TEXTTEXT_RETAINED_BENCHMARK"] == "1" else { throw XCTSkip("Opt-in many-document lookup campaign") }
+        let before = Data("before".utf8), after = Data("after".utf8)
+        for index in 0..<1000 {
+            let path = "Document-\(index).textpack", operation = UUID()
+            let visible = root.appendingPathComponent(path)
+            try before.write(to: visible)
+            _ = try RetainedFileReplacement.replace(visible, expectedHash: hash(before), prepared: after, operation: operation,
+                recoveryRoot: registry.recoveryRoot(path: path)) { stage in
+                if stage == "prepared" { try self.registry.register(operation: operation, itemId: "item-\(index)", path: path,
+                    expectedHash: self.hash(before), preparedHash: self.hash(after), workspaceStaging: true) }
+            }
+        }
+        let started = Date()
+        for index in 0..<1000 { try registry.assertReadable(itemId: "item-\(index)") }
+        print("Retained identity lookup probe: 1000 documents/normal read fences \(Date().timeIntervalSince(started)) seconds")
+    }
     func testOneThousandRetainedSavesUsePersistedFingerprintAttestations() throws {
         guard ProcessInfo.processInfo.environment["TEXTTEXT_RETAINED_BENCHMARK"] == "1" else { throw XCTSkip("Opt-in retained history performance campaign") }
+        if let requested = ProcessInfo.processInfo.environment["TEXTTEXT_RETAINED_BENCHMARK_ROOT"] {
+            let requestedURL = URL(fileURLWithPath: requested)
+            guard let requestedParent = realpath(requestedURL.deletingLastPathComponent().path, nil),
+                  let fixtureParent = realpath(root.deletingLastPathComponent().path, nil) else { throw Interrupted.stopped }
+            defer { free(requestedParent); free(fixtureParent) }
+            guard String(cString: requestedParent) == String(cString: fixtureParent),
+                  requestedURL.lastPathComponent.hasPrefix("texttext-retained-benchmark-") else { throw Interrupted.stopped }
+            let destination = URL(fileURLWithPath: String(cString: requestedParent)).appendingPathComponent(requestedURL.lastPathComponent)
+            var existingInfo = stat()
+            if lstat(destination.path, &existingInfo) == 0 {
+                guard existingInfo.st_mode & S_IFMT == S_IFDIR else { throw Interrupted.stopped }
+            } else if errno != ENOENT { throw Interrupted.stopped }
+            let sentinel = destination.appendingPathComponent(".benchmark-owner")
+            let proof = Data("TextText retained benchmark v2 workspace staging".utf8)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                guard try StableFileSnapshot.read(sentinel, maximumBytes: 128) == proof else { throw Interrupted.stopped }
+            } else {
+                try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+                try RetainedFileReplacement.create(proof, at: sentinel)
+            }
+            try FileManager.default.removeItem(at: root) // Only this test's fresh temporary fixture.
+            root = destination; preserveBenchmark = true
+        }
+        let existing = try registry.entries().count
+        guard existing == 0 || existing == 1000 else { throw Interrupted.stopped }
         var previous = Data(repeating: 0, count: 128 * 1024)
-        try previous.write(to: target)
+        if existing == 0 { try previous.write(to: target) }
+        else {
+            previous = Data(repeating: UInt8(1000 % 251), count: previous.count)
+            previous.replaceSubrange(0..<8, with: withUnsafeBytes(of: UInt64(1000).littleEndian) { Data($0) })
+            XCTAssertEqual(try Data(contentsOf: target), previous)
+        }
         let started = Date()
-        for generation in 1...1000 {
+        for generation in (existing == 0 ? Array(1...1000) : []) {
             var prepared = Data(repeating: UInt8(generation % 251), count: previous.count)
             prepared.replaceSubrange(0..<8, with: withUnsafeBytes(of: UInt64(generation).littleEndian) { Data($0) })
             let operation = UUID(), expected = hash(previous)
-            _ = try RetainedFileReplacement.replace(target, expectedHash: expected, prepared: prepared, operation: operation) { stage in
-                if stage == "prepared" { try self.registry.register(operation: operation, itemId: "registry-item", path: "Original.textpack", expectedHash: expected, preparedHash: self.hash(prepared)) }
+            _ = try RetainedFileReplacement.replace(target, expectedHash: expected, prepared: prepared, operation: operation, recoveryRoot: registry.recoveryRoot(path: "Original.textpack")) { stage in
+                if stage == "prepared" { try self.registry.register(operation: operation, itemId: "registry-item", path: "Original.textpack", expectedHash: expected, preparedHash: self.hash(prepared), workspaceStaging: true) }
             }
             previous = prepared
         }
@@ -173,10 +381,10 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         let cachedStarted = Date()
         try registry.assertReadable(itemId: "registry-item")
         let cachedElapsed = Date().timeIntervalSince(cachedStarted)
-        print("Retained replacement probe: 1000 saves of 128 KiB, total \(Date().timeIntervalSince(started)) seconds; first registry read \(readElapsed) seconds; cached read \(cachedElapsed) seconds")
+        print("Retained replacement probe: \(existing == 0 ? "built 1000 workspace-staged saves of 128 KiB" : "reused 1000-save workspace fixture; guards only"), campaign \(Date().timeIntervalSince(started)) seconds; first registry read \(readElapsed) seconds; cached read \(cachedElapsed) seconds")
         XCTAssertLessThan(readElapsed, 3)
         XCTAssertEqual(try registry.entries().count, 1000)
-        for recovery in try RetainedFileReplacement.inspect(target) {
+        for recovery in try RetainedFileReplacement.inspect(registry.recoveryRoot(path: "Original.textpack").appendingPathComponent("Original.textpack")) {
             XCTAssertNotNil(recovery.record.preparedFingerprint)
             XCTAssertNotNil(recovery.record.displacedFingerprint)
         }

@@ -8,6 +8,7 @@ struct ReplacementRecoveryRegistry {
     private final class EntryCache: @unchecked Sendable {
         let lock = NSLock()
         var values: [String: (String, Entry)] = [:]
+        var indexes: [String: (String, [String: [URL]])] = [:]
     }
     private static let cache = EntryCache()
     private static func requireKnownFields(_ bytes: Data) throws {
@@ -70,11 +71,14 @@ struct ReplacementRecoveryRegistry {
     }
     private func ownerHash() throws -> String {
         let marker = LocalVaultDeviceState.directory(root: root).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
-        guard FileManager.default.fileExists(atPath: marker.path) else { return digest(Data("unowned-local-workspace".utf8)) }
+        guard FileManager.default.fileExists(atPath: marker.path) else {
+            guard !RetainedReplacementProfile.hasRetainedProfile(stateDirectory: marker.deletingLastPathComponent()) else { throw Failure.invalidRegistry }
+            return digest(Data("unowned-local-workspace".utf8))
+        }
         let bytes = try StableFileSnapshot.read(marker, maximumBytes: 4096)
         let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: bytes)
         guard (owner.version == 1 || owner.version == 2), owner.rootHash == digest(Data(root.path.utf8)) else { throw Failure.invalidRegistry }
-        if owner.version == 2 { try RetainedReplacementProfile.verify(root: root, owner: owner) }
+        if owner.version == 2 || RetainedReplacementProfile.hasPublishedMarker(stateDirectory: marker.deletingLastPathComponent()) { try RetainedReplacementProfile.verify(root: root, owner: owner) }
         _ = try LocalVaultAccountIdentity.validate(owner.accountId)
         _ = try PortableWorkspaceBinding.normalized(owner.binding)
         return try RetainedReplacementProfile.principalHash(owner)
@@ -100,8 +104,32 @@ struct ReplacementRecoveryRegistry {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         return (try encoder.encode(entry), true)
     }
+    func recoveryRoot(path: String) -> URL {
+        root.appendingPathComponent(".texttext/retained-replacements/" + digest(Data(path.utf8)), isDirectory: true)
+    }
+    private func usesWorkspaceStaging(_ entry: Entry) -> Bool {
+        entry.recoveryPath == ".texttext/retained-replacements/" + digest(Data(entry.path.utf8)) + "/" + (entry.path as NSString).lastPathComponent
+    }
     private func target(_ entry: Entry) throws -> URL {
         let path = entry.recoveryPath ?? entry.path
+        let visibleParts = entry.path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !visibleParts.isEmpty, entry.path.utf8.count <= 4096,
+              entry.path.utf8.allSatisfy({ $0 >= 32 && $0 != 127 }),
+              visibleParts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") }),
+              entry.path.hasSuffix(".textpack") else { throw Failure.invalidRegistry }
+        if usesWorkspaceStaging(entry) {
+            // Only this recomputed layout admits hidden path components. The
+            // helper validates its operation directory's physical containment.
+            let target = root.appendingPathComponent(path)
+            guard let physicalRoot else { throw Failure.invalidRegistry }
+            var ancestor = target.deletingLastPathComponent()
+            while !FileManager.default.fileExists(atPath: ancestor.path), ancestor.path != root.path { ancestor.deleteLastPathComponent() }
+            guard let actual = realpath(ancestor.path, nil) else { throw Failure.invalidRegistry }
+            defer { free(actual) }
+            let relative = String(ancestor.path.dropFirst(root.path.count))
+            guard String(cString: actual) == physicalRoot + relative else { throw Failure.invalidRegistry }
+            return target
+        }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         guard !parts.isEmpty, path.utf8.count <= 4096,
               path.utf8.allSatisfy({ $0 >= 32 && $0 != 127 }),
@@ -119,7 +147,22 @@ struct ReplacementRecoveryRegistry {
         guard let actual else { throw Failure.invalidRegistry }
         defer { free(actual) }
         let parent = remaining.joined(separator: "/")
-        guard String(cString: actual) == physicalRoot + (parent.isEmpty ? "" : "/" + parent) else { throw Failure.invalidRegistry }
+        let expected = physicalRoot + (parent.isEmpty ? "" : "/" + parent)
+        if String(cString: actual) != expected {
+            // Case-insensitive volumes may preserve a new containing-folder
+            // spelling while the old spelling still resolves the same inode.
+            // Validate every relative component without following links; never
+            // turn distinct case-sensitive directories into one identity.
+            var current = root
+            for component in remaining {
+                current.appendPathComponent(String(component), isDirectory: true)
+                var info = stat()
+                guard lstat(current.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { throw Failure.invalidRegistry }
+            }
+            var lexical = stat(), canonical = stat()
+            guard lstat(parentURL.path, &lexical) == 0, lstat(actual, &canonical) == 0,
+                  lexical.st_dev == canonical.st_dev, lexical.st_ino == canonical.st_ino else { throw Failure.invalidRegistry }
+        }
         return target
     }
     private func save(_ entry: Entry, creating: Bool) throws {
@@ -137,12 +180,51 @@ struct ReplacementRecoveryRegistry {
         try RetainedFileReplacement.flushDirectory(directory.deletingLastPathComponent())
         try RetainedFileReplacement.flushDirectory(root)
     }
-    func entries() throws -> [Entry] {
+    private func indexedPaths(itemId: String?) throws -> [URL] {
+        for _ in 0..<3 {
+            let generation = try directoryFingerprint()
+            Self.cache.lock.lock()
+            let cached = Self.cache.indexes[directory.path]
+            Self.cache.lock.unlock()
+            if let cached, cached.0 == generation {
+                if let itemId { return cached.1[itemId] ?? [] }
+                return cached.1.values.flatMap { $0 }
+            }
+            let paths = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { !$0.lastPathComponent.hasPrefix(".") }
+            var index: [String: [URL]] = [:]
+            for file in paths {
+                // Private records are published atomically. Identity extraction
+                // does not accept the record: selected records still undergo
+                // exact fingerprint/schema/principal checks below.
+                let bytes = try StableFileSnapshot.read(file, maximumBytes: 8192)
+                guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                      let identity = fields["itemId"] as? String, !identity.isEmpty, identity.utf8.count <= 256 else { throw Failure.invalidRegistry }
+                index[identity, default: []].append(file)
+            }
+            guard generation == (try directoryFingerprint()) else { continue }
+            Self.cache.lock.lock()
+            if Self.cache.indexes.count >= 32 { Self.cache.indexes.removeAll(keepingCapacity: true) }
+            Self.cache.indexes[directory.path] = (generation, index)
+            Self.cache.lock.unlock()
+            if let itemId { return index[itemId] ?? [] }
+            return paths
+        }
+        throw Failure.invalidRegistry
+    }
+    private func directoryFingerprint() throws -> String {
+        var info = stat()
+        guard lstat(directory.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { throw Failure.invalidRegistry }
+        return "\(info.st_dev):\(info.st_ino):\(info.st_size):\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)"
+    }
+    func entries(itemId: String? = nil) throws -> [Entry] {
+        // An already-open store must also refuse an interrupted owner/profile
+        // publication, even before its first document replacement is indexed.
+        let principalHash = try ownerHash()
         guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw Failure.invalidRegistry }
-        let paths = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-        let principalHash = try ownerHash()
+        let paths = try indexedPaths(itemId: itemId)
         let rootHash = digest(Data(root.path.utf8))
+        var validatedTargets = Set<String>()
         return try paths.filter { !$0.lastPathComponent.hasPrefix(".") }.map { file in
             let stamp = try RetainedFileReplacement.fingerprint(file)
             Self.cache.lock.lock()
@@ -160,12 +242,12 @@ struct ReplacementRecoveryRegistry {
                 Self.cache.values[file.path] = (stamp, entry)
                 Self.cache.lock.unlock()
             }
-            guard entry.version == 1, entry.operation.uuidString + ".json" == file.lastPathComponent,
+            guard (itemId == nil || entry.itemId == itemId), entry.version == 1, entry.operation.uuidString + ".json" == file.lastPathComponent,
                   entry.workspaceRootHash == rootHash,
                   entry.ownerHash == principalHash,
                   !entry.itemId.isEmpty, entry.itemId.utf8.count <= 256,
                   validHash(entry.expectedHash), validHash(entry.preparedHash) else { throw Failure.invalidRegistry }
-            _ = try target(entry)
+            if validatedTargets.insert(entry.path + "\0" + (entry.recoveryPath ?? entry.path)).inserted { _ = try target(entry) }
             if let resolution = entry.resolution {
                 guard validHash(resolution.visibleHash), validHash(resolution.preparedHash), validHash(resolution.displacedHash) else { throw Failure.invalidRegistry }
             }
@@ -174,19 +256,20 @@ struct ReplacementRecoveryRegistry {
     }
     /// Must be durable before invoking the replacement primitive. Even failure
     /// before staging remains a visible refusal, never a silent replay success.
-    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String) throws {
-        let entry = Entry(version: 1, operation: operation, workspaceRootHash: digest(Data(root.path.utf8)), ownerHash: try ownerHash(), itemId: itemId, path: path,
+    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false) throws {
+        var entry = Entry(version: 1, operation: operation, workspaceRootHash: digest(Data(root.path.utf8)), ownerHash: try ownerHash(), itemId: itemId, path: path,
                           expectedHash: expectedHash, preparedHash: preparedHash, resolution: nil)
+        if workspaceStaging { entry.recoveryPath = ".texttext/retained-replacements/" + digest(Data(path.utf8)) + "/" + (path as NSString).lastPathComponent }
         guard !itemId.isEmpty, itemId.utf8.count <= 256, validHash(expectedHash), validHash(preparedHash) else { throw Failure.invalidRegistry }
         _ = try target(entry)
         try save(entry, creating: true)
     }
-    private func recovery(_ entry: Entry, persistRelocation: Bool = true) throws -> RetainedFileReplacement.Recovery {
-        let originalTarget = try target(entry)
-        let direct = RetainedFileReplacement.operationDirectory(target: originalTarget, operation: entry.operation)
+    private func recovery(_ entry: Entry, persistRelocation: Bool = true, validatedTarget: URL? = nil, layout: RetainedFileReplacement.Layout? = nil) throws -> RetainedFileReplacement.Recovery {
+        let originalTarget = try validatedTarget ?? target(entry)
+        let directPath = layout.map { $0.basePath + "/" + entry.operation.uuidString } ?? RetainedFileReplacement.operationDirectory(target: originalTarget, operation: entry.operation).path
         let recovery: RetainedFileReplacement.Recovery
-        if FileManager.default.fileExists(atPath: direct.path) {
-            recovery = try RetainedFileReplacement.recovery(target: originalTarget, operation: entry.operation)
+        if FileManager.default.fileExists(atPath: directPath) {
+            recovery = try RetainedFileReplacement.recovery(target: originalTarget, operation: entry.operation, layout: layout)
         } else {
             // A provider or user may move the containing folder and its private
             // inode-retention directory. Locate only this exact UUID, never a
@@ -223,21 +306,49 @@ struct ReplacementRecoveryRegistry {
               recovery.record.preparedHash == entry.preparedHash else { throw Failure.unresolved(entry.operation) }
         return recovery
     }
+    private func visibleClassificationTarget(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery) -> URL {
+        usesWorkspaceStaging(entry) ? root.appendingPathComponent(entry.path) : classificationTarget(retained)
+    }
     private func classificationTarget(_ recovery: RetainedFileReplacement.Recovery) -> URL {
         recovery.directory.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(recovery.record.filename)
     }
-    func inspect(_ entry: Entry) throws -> Inspection {
-        let recovery = try recovery(entry)
+    func inspect(_ entry: Entry, persistRelocation: Bool = true) throws -> Inspection {
+        let recovery = try recovery(entry, persistRelocation: persistRelocation)
         let prepared = try StableFileSnapshot.read(recovery.prepared)
         guard digest(prepared) == entry.preparedHash else { throw Failure.invalidRegistry }
         return Inspection(entry: entry, recovery: recovery, prepared: prepared,
                           displaced: try StableFileSnapshot.read(recovery.displaced))
     }
+    /// Recovery listing must not publish classification or acknowledgements.
+    /// Exact retained bytes are inspected without updating relocated paths.
+    func isReadableWithoutMutation(_ entry: Entry) throws -> Bool {
+        let retained = try recovery(entry, persistRelocation: false)
+        let prepared = digest(try StableFileSnapshot.read(retained.prepared))
+        let displaced = digest(try StableFileSnapshot.read(retained.displaced))
+        guard prepared == entry.preparedHash else { throw Failure.invalidRegistry }
+        if let resolution = entry.resolution {
+            return prepared == resolution.preparedHash && displaced == resolution.displacedHash
+        }
+        guard retained.record.state != .conflict else { return false }
+        let expected = retained.record.acknowledgedDisplacedHash ?? entry.expectedHash
+        guard displaced == expected else { return false }
+        if retained.record.state == .completed { return true }
+        return digest(try StableFileSnapshot.read(visibleClassificationTarget(entry, retained))) == entry.preparedHash
+    }
     /// Nil identity means a malformed/unidentified projection. Fail closed for
     /// any unresolved workspace entry instead of accepting a renamed candidate.
     func assertReadable(itemId: String?) throws {
-        for entry in try entries() where itemId == nil || itemId == entry.itemId {
-            let retained = try recovery(entry)
+        var validatedTargets: [String: (URL, RetainedFileReplacement.Layout?)] = [:]
+        for entry in try entries(itemId: itemId) {
+            let key = entry.path + "\0" + (entry.recoveryPath ?? entry.path)
+            let location: (URL, RetainedFileReplacement.Layout?)
+            if let existing = validatedTargets[key] { location = existing }
+            else {
+                let target = try target(entry)
+                location = (target, FileManager.default.fileExists(atPath: target.deletingLastPathComponent().path) ? try RetainedFileReplacement.layout(target: target) : nil)
+                validatedTargets[key] = location
+            }
+            let retained = try recovery(entry, validatedTarget: location.0, layout: location.1)
             if let resolution = entry.resolution {
                 if resolution.preparedFingerprint == (try? RetainedFileReplacement.fingerprint(retained.prepared)),
                    resolution.preparedFingerprint != nil,
@@ -254,7 +365,7 @@ struct ReplacementRecoveryRegistry {
                 try RetainedFileReplacement.acknowledge(retained, preparedHash: resolution.preparedHash, displacedHash: resolution.displacedHash)
                 continue
             }
-            let classified = try RetainedFileReplacement.classify(retained, target: classificationTarget(retained))
+            let classified = try RetainedFileReplacement.classify(retained, target: visibleClassificationTarget(entry, retained))
             guard classified.record.state == .completed else { throw Failure.unresolved(entry.operation) }
         }
     }

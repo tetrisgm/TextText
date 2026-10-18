@@ -532,6 +532,25 @@ public struct LocalVaultDocumentStore: Sendable {
         return Document(path: path, hash: hash, contents: contents, publishedAt: publishedAt(archive, prefix: prefix))
     }
 
+    /// Retain the inode actually displaced by the OS exchange. A matching
+    /// visible candidate never acknowledges an unresolved competing version.
+    private func publishRetainedReplacement(path: String, target: URL, expectedHash: String, bytes: Data, itemId: String) throws {
+        let state = LocalVaultDeviceState.directory(root: root)
+        if FileManager.default.fileExists(atPath: state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName).path) {
+            try RetainedReplacementProfile.prepare(root: root)
+        }
+        let registry = ReplacementRecoveryRegistry(root: root)
+        let operation = UUID()
+        _ = try RetainedFileReplacement.replace(target, expectedHash: expectedHash, prepared: bytes, operation: operation,
+            recoveryRoot: registry.recoveryRoot(path: path)) { stage in
+            if stage == "prepared" {
+                try registry.register(operation: operation, itemId: itemId, path: path, expectedHash: expectedHash,
+                    preparedHash: TextTextStableDigest.sha256Hex(bytes), workspaceStaging: true)
+            }
+            try writeObservationForTesting?(stage == "prepared" ? "retainedPrepared" : stage)
+        }
+    }
+
     /// Publish already validated archive bytes under the same coordinated CAS
     /// used by editor writes. The shared editor stages the intent before calling.
     func replaceExact(path: String, expectedHash: String, bytes: Data) throws -> Document {
@@ -554,7 +573,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 let latest = try StableFileSnapshot.read(coordinated)
                 guard TextTextStableDigest.sha256Hex(latest) == expectedHash else { throw Failure.changed }
                 try preserve(latest, hash: expectedHash)
-                _ = try FileManager.default.replaceItemAt(coordinated, withItemAt: packed)
+                try publishRetainedReplacement(path: path, target: coordinated, expectedHash: expectedHash, bytes: bytes, itemId: identity)
                 try writeObservationForTesting?("replaced")
                 return replacement
             }
@@ -713,7 +732,10 @@ public struct LocalVaultDocumentStore: Sendable {
                 let latestBytes = try StableFileSnapshot.read(coordinated)
                 guard TextTextStableDigest.sha256Hex(latestBytes) == expectedHash else { throw Failure.changed }
                 try preserve(latestBytes, hash: expectedHash)
-                _ = try FileManager.default.replaceItemAt(coordinated, withItemAt: packed)
+                guard let identity = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId,
+                      identity == MarkdownIdentityCodec.extract(from: replacement.contents.markdown)?.itemId else { throw Failure.changed }
+                try publishRetainedReplacement(path: path, target: coordinated, expectedHash: expectedHash,
+                    bytes: StableFileSnapshot.read(packed), itemId: identity)
                 try writeObservationForTesting?("replaced")
                 // Return this operation's exact projection. A subsequent
                 // external save must fail the caller's hash check, never be

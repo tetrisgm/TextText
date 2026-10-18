@@ -46,12 +46,13 @@ extension LocalVaultDocumentStore {
         for entry in try replacements.entries() {
             var resolved = false
             do {
-                try replacements.assertReadable(itemId: entry.itemId)
-                guard entry.resolution != nil else { continue }
-                resolved = true
+                let readable = try replacements.isReadableWithoutMutation(entry)
+                if readable {
+                    guard entry.resolution != nil else { continue }
+                    resolved = true
+                }
             } catch ReplacementRecoveryRegistry.Failure.unresolved { }
-            let inspection = try replacements.inspect(entry)
-            _ = try replacements.export(inspection)
+            let inspection = try replacements.inspect(entry, persistRelocation: false)
             let (visible, _) = try replacementVisible(entry)
             let values = try inspection.recovery.directory.resourceValues(forKeys: [.creationDateKey])
             result.append(ReplacementRecoveryEntry(id: entry.operation.uuidString, path: visible.path, itemId: entry.itemId,

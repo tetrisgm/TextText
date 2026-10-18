@@ -279,7 +279,7 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
             let backup = try XCTUnwrap(result.recoveryDirectory).appendingPathComponent("before/" + relative)
             XCTAssertEqual(try Data(contentsOf: backup), before)
             XCTAssertEqual(try Data(contentsOf: staging), unfinished)
-            let registry = ReplacementRecoveryRegistry(root: f.root), entry = try XCTUnwrap(registry.entries().first)
+            let registry = ReplacementRecoveryRegistry(root: f.root), entry = try XCTUnwrap(registry.entries().first(where: { $0.operation == retained.operation }))
             let inspection = try registry.inspect(entry)
             XCTAssertEqual(inspection.prepared, retained.prepared)
             XCTAssertEqual(inspection.displaced, retained.displaced)

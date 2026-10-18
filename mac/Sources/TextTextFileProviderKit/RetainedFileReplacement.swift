@@ -11,6 +11,7 @@ enum RetainedFileReplacement {
     private final class ManifestCache: @unchecked Sendable {
         let lock = NSLock()
         var values: [String: (String, Recovery)] = [:]
+        var names: [String: String] = [:]
     }
     private static let cache = ManifestCache()
     enum State: String, Codable { case pending, conflict, completed }
@@ -28,8 +29,27 @@ enum RetainedFileReplacement {
     struct Recovery {
         let directory: URL
         let record: Record
-        var prepared: URL { directory.appendingPathComponent("prepared") }
-        var displaced: URL { directory.appendingPathComponent("exchange") }
+        var storageTarget: URL?
+        let prepared: URL
+        let displaced: URL
+        let directoryBasePath: String
+        let storageBasePath: String?
+        init(directory: URL, record: Record, storageTarget: URL? = nil) {
+            self.directory = directory; self.record = record; self.storageTarget = storageTarget
+            self.directoryBasePath = directory.deletingLastPathComponent().path
+            self.storageBasePath = storageTarget.map { RetainedFileReplacement.base($0).path }
+            self.prepared = directory.appendingPathComponent("prepared")
+            self.displaced = directory.appendingPathComponent("exchange")
+        }
+    }
+    struct Layout {
+        let target: URL
+        let canonicalTarget: URL
+        let basePath: String
+    }
+    static func layout(target: URL) throws -> Layout {
+        let targetPath = try physicalPath(target)
+        return Layout(target: target, canonicalTarget: URL(fileURLWithPath: targetPath), basePath: (targetPath as NSString).deletingLastPathComponent + "/.texttext-replacements/" + nameHash(target.lastPathComponent))
     }
     enum Failure: Error, LocalizedError {
         case unresolved(URL), invalidJournal, unsupported(Int32), insufficientSpace
@@ -44,12 +64,25 @@ enum RetainedFileReplacement {
     }
 
     private static func digest(_ bytes: Data) -> String { TextTextStableDigest.sha256Hex(bytes) }
+    private static func nameHash(_ filename: String) -> String {
+        cache.lock.lock()
+        let known = cache.names[filename]
+        cache.lock.unlock()
+        if let known { return known }
+        let hash = digest(Data(filename.utf8))
+        cache.lock.lock()
+        if cache.names.count >= 2048 { cache.names.removeAll(keepingCapacity: true) }
+        cache.names[filename] = hash
+        cache.lock.unlock()
+        return hash
+    }
     private static func validHash(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
-    static func fingerprint(_ url: URL) throws -> String {
+    static func fingerprint(_ url: URL) throws -> String { try fingerprint(path: url.path) }
+    private static func fingerprint(path: String) throws -> String {
         var info = stat()
-        guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw Failure.invalidJournal }
+        guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw Failure.invalidJournal }
         return "\(info.st_dev):\(info.st_ino):\(info.st_size):\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)"
     }
     private static func physicalPath(_ url: URL) throws -> String {
@@ -62,12 +95,12 @@ enum RetainedFileReplacement {
         defer { free(actual) }
         let targetPath = try physicalPath(target)
         let parent = (targetPath as NSString).deletingLastPathComponent
-        let expected = parent + "/.texttext-replacements/" + digest(Data(target.lastPathComponent.utf8)) + "/" + operation.uuidString
+        let expected = parent + "/.texttext-replacements/" + nameHash(target.lastPathComponent) + "/" + operation.uuidString
         guard String(cString: actual) == expected else { throw Failure.invalidJournal }
     }
     private static func base(_ target: URL) -> URL {
         target.deletingLastPathComponent().appendingPathComponent(".texttext-replacements", isDirectory: true)
-            .appendingPathComponent(digest(Data(target.lastPathComponent.utf8)), isDirectory: true)
+            .appendingPathComponent(nameHash(target.lastPathComponent), isDirectory: true)
     }
     static func operationDirectory(target: URL, operation: UUID) -> URL {
         base(target).appendingPathComponent(operation.uuidString, isDirectory: true)
@@ -145,26 +178,32 @@ enum RetainedFileReplacement {
             return try recovery(target: target, operation: id)
         }
     }
-    static func recovery(target: URL, operation: UUID) throws -> Recovery {
-            let directory = operationDirectory(target: target, operation: operation)
-            try validateOperationDirectory(directory, target: target, operation: operation)
-            let manifest = directory.appendingPathComponent("manifest.json")
-            let stamp = try fingerprint(manifest)
+    static func recovery(target: URL, operation: UUID, layout knownLayout: Layout? = nil) throws -> Recovery {
+            let layout = try knownLayout ?? Self.layout(target: target)
+            guard layout.target.path == target.path else { throw Failure.invalidJournal }
+            let directoryPath = layout.basePath + "/" + operation.uuidString
+            guard let actual = realpath(directoryPath, nil) else { throw Failure.invalidJournal }
+            defer { free(actual) }
+            guard String(cString: actual) == directoryPath else { throw Failure.invalidJournal }
+            let manifestPath = directoryPath + "/manifest.json"
+            let stamp = try fingerprint(path: manifestPath)
             cache.lock.lock()
-            let cached = cache.values[manifest.path]
+            let cached = cache.values[manifestPath]
             cache.lock.unlock()
             if let cached, cached.0 == stamp { return cached.1 }
+            let directory = URL(fileURLWithPath: directoryPath, isDirectory: true)
+            let manifest = URL(fileURLWithPath: manifestPath)
             let bytes = try StableFileSnapshot.read(manifest, maximumBytes: 4096)
-            guard stamp == (try fingerprint(manifest)) else { throw Failure.invalidJournal }
+            guard stamp == (try fingerprint(path: manifestPath)) else { throw Failure.invalidJournal }
             let record = try JSONDecoder().decode(Record.self, from: bytes)
             guard record.version == 1, record.filename == target.lastPathComponent,
                   record.operation == operation,
                   validHash(record.expectedHash), validHash(record.preparedHash),
                   record.acknowledgedDisplacedHash.map(validHash) ?? true else { throw Failure.invalidJournal }
-            let result = Recovery(directory: directory, record: record)
+            let result = Recovery(directory: directory, record: record, storageTarget: layout.canonicalTarget)
             cache.lock.lock()
             if cache.values.count >= 2048 { cache.values.removeAll(keepingCapacity: true) }
-            cache.values[manifest.path] = (stamp, result)
+            cache.values[manifestPath] = (stamp, result)
             cache.lock.unlock()
             return result
     }
@@ -178,7 +217,7 @@ enum RetainedFileReplacement {
     /// Reconstruct after a process interruption. Only exact retained bytes plus
     /// exact current projection prove completion. All other cases stay fenced.
     @discardableResult static func classify(_ recovery: Recovery, target: URL) throws -> Recovery {
-        guard recovery.directory.deletingLastPathComponent().standardizedFileURL == base(target).standardizedFileURL,
+        guard recovery.directoryBasePath == (recovery.storageBasePath ?? base(target).path),
               recovery.record.filename == target.lastPathComponent else { throw Failure.invalidJournal }
         guard recovery.record.state != .conflict else { return recovery }
         var record = recovery.record
@@ -195,7 +234,7 @@ enum RetainedFileReplacement {
         guard displacedBefore != nil, displacedBefore == displacedAfter else {
             record.state = .conflict
             try save(record, in: recovery.directory)
-            return Recovery(directory: recovery.directory, record: record)
+            return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
         }
         record.displacedFingerprint = displacedAfter
         if record.state == .completed {
@@ -204,11 +243,11 @@ enum RetainedFileReplacement {
             // legitimate saves may already have advanced the visible document.
             if displaced.map(digest) == (record.acknowledgedDisplacedHash ?? record.expectedHash) {
                 try save(record, in: recovery.directory)
-                return Recovery(directory: recovery.directory, record: record)
+                return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
             }
             record.state = .conflict
             try save(record, in: recovery.directory)
-            return Recovery(directory: recovery.directory, record: record)
+            return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
         }
         let current = try? StableFileSnapshot.read(target)
         if displaced.map(digest) == record.expectedHash && current.map(digest) == record.preparedHash {
@@ -217,7 +256,7 @@ enum RetainedFileReplacement {
             record.state = .conflict
         }
         try save(record, in: recovery.directory)
-        return Recovery(directory: recovery.directory, record: record)
+        return Recovery(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
     }
 
     /// Explicit consent follows retained-copy export and exact observed hashes.
@@ -243,6 +282,7 @@ enum RetainedFileReplacement {
     /// interruption, including the window after the atomic swap.
     static func replace(_ target: URL, expectedHash: String, prepared: Data,
                         operation: UUID = UUID(),
+                        recoveryRoot: URL? = nil,
                         availableBytes: (() throws -> Int64)? = nil,
                         observe: ((String) throws -> Void)? = nil) throws -> Recovery {
         try assertReadable(target)
@@ -251,8 +291,17 @@ enum RetainedFileReplacement {
         // Reserve conservative full-copy fallback space plus room for recovery
         // journals before staging. APFS clones usually share data blocks.
         guard try (availableBytes?() ?? available(target)) >= Int64(prepared.count) * 2 + 64 * 1024 * 1024 else { throw Failure.insufficientSpace }
-        let directory = operationDirectory(target: target, operation: operation)
+        let storageTarget = recoveryRoot?.appendingPathComponent(target.lastPathComponent) ?? target
+        let directory = operationDirectory(target: storageTarget, operation: operation)
         try checkedDirectory(directory)
+        // Cross-volume exchange cannot preserve the original inode atomically.
+        // Reject before staging or touching the visible target.
+        var sourceInfo = stat(), stagingInfo = stat()
+        let sourceFD = open(target.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard sourceFD >= 0 else { throw Failure.invalidJournal }
+        defer { close(sourceFD) }
+        guard fstat(sourceFD, &sourceInfo) == 0, lstat(directory.path, &stagingInfo) == 0,
+              sourceInfo.st_dev == stagingInfo.st_dev else { throw Failure.unsupported(EXDEV) }
         let record = Record(version: 1, operation: operation, filename: target.lastPathComponent,
                             expectedHash: expectedHash, preparedHash: digest(prepared), state: .pending)
         try create(prepared, at: directory.appendingPathComponent("prepared"))
@@ -272,7 +321,7 @@ enum RetainedFileReplacement {
         try flushDirectory(target.deletingLastPathComponent())
         try flushDirectory(directory)
         try observe?("swapped")
-        let result = try classify(Recovery(directory: directory, record: record), target: target)
+        let result = try classify(Recovery(directory: directory, record: record, storageTarget: storageTarget), target: target)
         guard result.record.state == .completed else { throw Failure.unresolved(directory) }
         return result
     }

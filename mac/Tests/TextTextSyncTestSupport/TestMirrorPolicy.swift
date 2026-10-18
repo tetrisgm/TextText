@@ -17,13 +17,12 @@ public func makeTestMirrorPolicy(workspaceId: String, accountId: String? = nil, 
         }
 }
 
-private actor NativePolicyTestHost {
+actor NativePolicyTestHost {
     static let shared = NativePolicyTestHost()
     private var child: Process?, input: FileHandle?, output: FileHandle?
     private var buffered = Data()
     private var failed = false
     private func wait(_ fd: Int32, events: Int16, until deadline: UInt64) throws {
-        try Task.checkCancellation()
         let now = DispatchTime.now().uptimeNanoseconds
         guard now < deadline else { throw LocalVaultMirrorPolicy.Failure.timeout }
         var descriptor = pollfd(fd: fd, events: events, revents: 0)
@@ -36,6 +35,10 @@ private actor NativePolicyTestHost {
         try? input?.close(); try? output?.close()
     }
     func evaluate(context: String, script: String) throws -> String {
+        // Cancellation before publication cannot poison unrelated contexts.
+        // Once a request starts, drain its bounded response to keep this shared
+        // line protocol aligned; the production policy discards cancelled replies.
+        try Task.checkCancellation()
         guard !failed else { throw CocoaError(.fileReadUnknown) }
         do {
         if child == nil {
