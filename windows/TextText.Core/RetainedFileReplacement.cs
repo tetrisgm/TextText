@@ -193,6 +193,31 @@ public static class RetainedFileReplacement
         if(persist)SaveJson(Path.Combine(recovery.Directory, "manifest.json"), record);
         return recovery with { Record = record };
     }
+    sealed class ParentPins(List<SafeFileHandle> handles):IDisposable
+    {public void Dispose(){foreach(var handle in handles)handle.Dispose();}}
+    // Deny rename/delete of every pathname ancestor while a Windows mutation is
+    // active. Final file handles intentionally retain their existing semantics.
+    internal static IDisposable PinParents(params string[] paths)
+    {
+        var handles=new List<SafeFileHandle>();var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try {
+            foreach(var path in paths) {
+                CheckPath(path);
+                var parents=new Stack<string>();
+                for(var parent=Path.GetDirectoryName(Path.GetFullPath(path));!string.IsNullOrEmpty(parent);parent=Path.GetDirectoryName(parent))parents.Push(parent);
+                foreach(var parent in parents) {
+                    if(!seen.Add(parent)||!OperatingSystem.IsWindows())continue;
+                    var handle=CreateFileW(NativePath(parent),0,3,IntPtr.Zero,3,0x02200000,IntPtr.Zero);
+                    if(handle.IsInvalid||!GetFileInformationByHandle(handle,out var info)||(info.Attributes&(uint)FileAttributes.ReparsePoint)!=0||(info.Attributes&(uint)FileAttributes.Directory)==0) {
+                        handle.Dispose();throw new IOException("Workspace folder changed or could not be protected during the file operation.");
+                    }
+                    handles.Add(handle);
+                }
+                CheckPath(path);
+            }
+            return new ParentPins(handles);
+        }catch{foreach(var handle in handles)handle.Dispose();throw;}
+    }
     internal static IDisposable AcquireLease(string path,bool shared=false)
     {
         CheckPath(path);Directory.CreateDirectory(Path.GetDirectoryName(path)!);CheckPath(Path.GetDirectoryName(path)!);
@@ -222,6 +247,7 @@ public static class RetainedFileReplacement
         var recovery = new Recovery(directory, record);
         Create(recovery.Prepared, prepared); Create(recovery.Replacement, prepared);
         SaveJson(Path.Combine(directory, "manifest.json"), record, creating: true);
+        using var parentPins=PinParents(target,recovery.Prepared,recovery.Replacement,recovery.Displaced);
         observe?.Invoke("prepared");
         if (TextPackStore.Hash(Read(target)) != expectedHash) throw new RequiredException(operation);
         observe?.Invoke("beforeReplace");

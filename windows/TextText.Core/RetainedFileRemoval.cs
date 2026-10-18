@@ -20,10 +20,12 @@ public static class RetainedFileRemoval
         var record=new RetainedFileReplacement.Manifest(1,operation,Path.GetFileName(target),expectedHash,expectedHash,"pending",Kind:"removal");
         RetainedFileReplacement.Create(Path.Combine(directory,"prepared"),before);
         RetainedFileReplacement.SaveJson(Path.Combine(directory,"manifest.json"),record,creating:true);
+        using var parentPins=RetainedFileReplacement.PinParents(target,Path.Combine(directory,"displaced"));
         observe?.Invoke("prepared");
         if(TextPackStore.Hash(RetainedFileReplacement.Read(target))!=expectedHash)throw new RetainedFileReplacement.RequiredException(operation);
         observe?.Invoke("beforeCapture");
         var recovery=new RetainedFileReplacement.Recovery(directory,record);
+        RetainedFileReplacement.CheckPath(target);RetainedFileReplacement.CheckPath(recovery.Displaced);
         File.Move(target,recovery.Displaced,overwrite:false);
         observe?.Invoke("captured");
         var classified=RetainedFileReplacement.Classify(recovery,target);

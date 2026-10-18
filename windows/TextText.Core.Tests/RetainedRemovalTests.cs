@@ -13,6 +13,14 @@ static class RetainedRemovalTests
         ReplacementRecoveryRegistry Registry(TextPackStore store)=>new(store.Root,store.StateDirectory);
         var before=Pack("before");var expected=TextPackStore.Hash(before);
         {
+            var store=Store("parent-swap");store.Write("Folder/Note.textpack",before);
+            var parent=Path.Combine(store.Root,"Folder");var parked=parent+"-parked";var outside=Path.Combine(temp,"removal-parent-swap-outside");Directory.CreateDirectory(outside);
+            var outsidePath=Path.Combine(outside,"Note.textpack");File.WriteAllBytes(outsidePath,before);
+            Observe(store,phase=>{if(phase=="beforeCapture"){Directory.Move(parent,parked);Directory.CreateSymbolicLink(parent,outside);}});
+            var refused=Refuses(()=>store.Delete("Folder/Note.textpack",expected));
+            assert(refused&&File.Exists(outsidePath)&&File.ReadAllBytes(outsidePath).SequenceEqual(before)&&File.ReadAllBytes(Path.Combine(Directory.Exists(parked)?parked:parent,"Note.textpack")).SequenceEqual(before),"final parent-link substitution refuses removal and preserves both original and outside bytes");
+        }
+        {
             var store=Store("success");store.Write("Note.textpack",before);store.Delete("Note.textpack",expected);
             var entry=Registry(store).Entries().Single();var inspection=Registry(store).Inspect(entry);var marker=store.Intent("removed-id");
             assert(!File.Exists(store.Resolve("Note.textpack"))&&inspection.Prepared.SequenceEqual(before)&&inspection.Displaced.SequenceEqual(before),"successful removal retains both expected snapshot and actual displaced inode");
