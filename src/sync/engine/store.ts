@@ -470,7 +470,20 @@ async function applyEntry(layout: Layout, intent: EntryIntent, pendingDir: strin
   } else {
     const destination = intent.kind === "move" ? await targetPath(layout, intent.relativePath) : null;
     const destinationBytes = destination ? await maybeRead(destination) : null;
-    if (!removed && destinationBytes && intent.relativePath.normalize("NFC").toLowerCase() !== intent.basePath.normalize("NFC").toLowerCase()) {
+    let destinationAliasesSource = false;
+    if (!removed && destinationBytes && destination &&
+        intent.relativePath.normalize("NFC").toLowerCase() === intent.basePath.normalize("NFC").toLowerCase()) {
+      try {
+        const [sourceInfo, destinationInfo] = await Promise.all([fs.lstat(source), fs.lstat(destination)]);
+        destinationAliasesSource = sourceInfo.isFile() && destinationInfo.isFile() &&
+          sourceInfo.dev === destinationInfo.dev && sourceInfo.ino === destinationInfo.ino;
+      } catch (error) {
+        // A disappearing path cannot establish that an occupied target aliases
+        // the source. Keep the source and report the collision conservatively.
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    if (!removed && destinationBytes && !destinationAliasesSource) {
       result = conflict();
     } else {
       if (!removed) {

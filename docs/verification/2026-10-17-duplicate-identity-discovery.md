@@ -16,3 +16,11 @@ The missing-path fallback for direct content, path and identity reads uses the s
 - Independent root rerun: `node scripts/with-local-database.mjs node node_modules/vitest/vitest.mjs run src/lib/vault/server-store.test.ts src/local-vault/model.test.ts`, 55 passed, exit 0. Local Postgres only; `/private/tmp/texttext-t13-tag-review-tests.log`.
 
 This source change is not deployed. Full folder, active-editor, offline and restart combinations remain T13 work. External writes are not serialized by the server's internal lock; this change does not claim an atomic filesystem namespace snapshot. No user files were migrated or deleted. Rollback is the source commit; no format migration is required.
+
+## October 18: case-equivalent destination collision
+
+A real case-sensitive scratch filesystem reproduced a separate move bug: two distinct files with case-equivalent names and identical bytes were collapsed into one instead of returning a collision. The preflight now permits an occupied canonical-equivalent destination only when both regular-file paths identify the same device/inode. A disappearing path cannot establish that alias.
+
+The collision regression failed before the correction and the complete 38-test server-store suite passed afterward on a new isolated 128 MiB case-sensitive HFS+ image. Its owned `/dev/disk14` was detached; the image and red/green logs remain under the private scratch directory `texttext-case-sensitive-pvxet1x9`. A subsequent host-filesystem test verifies true case-only rename, exact bytes, final spelling and receipt replay; it passes and explicitly skips the distinct-file test on the case-insensitive host. Log: `/private/tmp/texttext-t13-case-alias-host.log`.
+
+This covers a pre-existing destination. Concurrent target appearance and interrupted-move provenance remain separate boundaries.

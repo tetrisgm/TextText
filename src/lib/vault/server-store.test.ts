@@ -410,6 +410,47 @@ describe("directory TextPack store", () => {
     });
   });
 
+  it("renames case-only spelling while retaining exact bytes and replaying its receipt", async () => {
+    const bytes = pack("case-only rename");
+    await writeVaultTextpack(input(root, "case-only-source", bytes));
+    const destination = "Notes/my note.textpack";
+    const mutation = { root, workspaceId, itemId, operationId: "case-only-move",
+      basePath: relativePath, baseRevision: hash(bytes), relativePath: destination };
+    const result = await moveVaultTextpack(mutation);
+    expect(result).toMatchObject({ status: "moved", relativePath: destination, revision: hash(bytes) });
+    expect(await moveVaultTextpack(mutation)).toEqual(result);
+    expect(await fs.readdir(path.join(root, workspaceId, "Notes"))).toEqual(["my note.textpack"]);
+    expect((await readVaultTextpack({ root, workspaceId, itemId }))?.bytes).toEqual(Buffer.from(bytes));
+  });
+
+  it("refuses a separately occupied case-equivalent destination even when pack bytes match", async (context) => {
+    const bytes = pack("distinct case-equivalent copy");
+    await writeVaultTextpack(input(root, "case-source", bytes));
+    const destination = "Notes/my note.textpack";
+    const sourceFile = path.join(root, workspaceId, relativePath);
+    const destinationFile = path.join(root, workspaceId, destination);
+    try { await fs.writeFile(destinationFile, bytes, { flag: "wx" }); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        context.skip("Requires a case-sensitive filesystem with two distinct directory entries");
+        return;
+      }
+      throw error;
+    }
+    const sourceBefore = await fs.stat(sourceFile), destinationBefore = await fs.stat(destinationFile);
+    expect(sourceBefore.ino).not.toBe(destinationBefore.ino);
+    const mutation = { root, workspaceId, itemId, operationId: "case-collision",
+      basePath: relativePath, baseRevision: hash(bytes), relativePath: destination };
+    const result = await moveVaultTextpack(mutation);
+    expect(result).toMatchObject({ status: "conflict", relativePath });
+    expect(await moveVaultTextpack(mutation)).toEqual(result);
+    expect(await fs.readFile(sourceFile)).toEqual(Buffer.from(bytes));
+    expect(await fs.readFile(destinationFile)).toEqual(Buffer.from(bytes));
+    expect((await fs.stat(sourceFile)).ino).toBe(sourceBefore.ino);
+    expect((await fs.stat(destinationFile)).ino).toBe(destinationBefore.ino);
+    expect((await readVaultTextpack({ root, workspaceId, itemId }))?.relativePath).toBe(relativePath);
+  });
+
   it("retains deleted packs and publishes tombstones without allowing stale resurrection", async () => {
     const bytes = pack("delete me");
     await writeVaultTextpack(input(root, "op-1", bytes));
