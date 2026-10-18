@@ -17,3 +17,8 @@ it("refuses unknown, ambiguous, mismatched and falsely authoritative rows",()=>{
  {...review,state:"completed",inspection:null,manifestRevision:null,folders:null,items:null,result:{...moved,future:true}},{...review,state:"cancelled"},{...review,folders:["../Notes"]},
  {...review,items:[{...command.items[0],future:true}]},{...review,requestHash:"c".repeat(64)+"\n"}])expect(()=>validateFolderSyncMoveRecovery(value)).toThrow();
 });
+
+it("accepts native JSON key ordering without weakening exact command/receipt values",()=>{
+ const reordered={...moved,items:[{revision:moved.items[0].revision,relativePath:moved.items[0].relativePath,itemId:moved.items[0].itemId}]};
+ expect(validateFolderSyncMoveRecovery({...review,state:"completed",inspection:null,manifestRevision:null,folders:null,items:null,result:reordered})).toMatchObject({state:"completed"});
+});

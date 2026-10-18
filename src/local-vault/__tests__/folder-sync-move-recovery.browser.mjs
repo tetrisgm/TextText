@@ -13,7 +13,7 @@ window.calls=[];window.mode='normal';window.release=()=>{};window.resolved=0;
 const state=()=>window.mode==='unavailable'?{...row,state:'unavailable',requestHash:null,inspection:null,manifestRevision:null,folders:null,items:null,resolutionBlocked:'The server is unavailable.'}:window.mode==='completed'?{...row,state:'completed',inspection:null,manifestRevision:null,folders:null,items:null,result:moved}:window.mode==='cancelled'?{...row,state:'cancelled',folders:null,items:null}:window.mode==='foreign'?{...row,command:{...command,operationId:'other'},id:'other'}:window.mode==='future'?{...row,future:true}:row;
 window.mount=(scope='one')=>{setVaultTransport(async(method,params)=>{
  window.calls.push({scope,method,params});
- if(method==='folderSyncMoveRead'){if(window.mode==='held')await new Promise(resolve=>window.release=resolve);return state();}
+ if(method==='folderSyncMoveRead'){if(window.mode==='held')await new Promise(resolve=>window.release=resolve);const next=state();if(window.mode==='reordered')return{...next,command:{items:command.items.map(i=>({revision:i.revision,relativePath:i.relativePath,itemId:i.itemId})),folders:command.folders,baseManifestRevision:command.baseManifestRevision,destination:command.destination,source:command.source,operationId:command.operationId}};return next;}
  if(method==='resolveFolderSyncMove'){if(window.mode==='reject')throw Error('Folder inspection changed. Inspect again.');return{resolved:true};}
  throw Error(method);
 });flushSync(()=>root.render(<FolderSyncMoveRecovery key={scope} entries={[row]} workspaceRoot={scope} disabled={false} onResolved={()=>window.resolved++}/>));};
@@ -40,9 +40,10 @@ try{
  await page.evaluate(()=>window.replaceTransport());await cancel();await page.getByText('Folder recovery finished.',{exact:false}).waitFor();
  const resolution=(await page.evaluate(()=>window.calls.filter(c=>c.method==='resolveFolderSyncMove')))[0];
  assert.equal(resolution.scope,'one');assert.deepEqual(resolution.params,{workspaceRoot:'one',id:'case-one',requestHash:'c'.repeat(64),inspection:'e'.repeat(64),localInspection:'d'.repeat(64),consent:true});
- for(const mode of ['completed','cancelled','unavailable','future','foreign','reject']){
+ for(const mode of ['reordered','completed','cancelled','unavailable','future','foreign','reject']){
   await page.evaluate(mode=>{window.mode=mode;window.mount(mode);},mode);await inspect();
-  if(mode==='completed'){await page.getByRole('button',{name:'Finish saved folder change',exact:true}).click();await page.getByText('Folder recovery finished.',{exact:false}).waitFor();}
+  if(mode==='reordered'){await cancel();await page.getByText('Folder recovery finished.',{exact:false}).waitFor();}
+  else if(mode==='completed'){await page.getByRole('button',{name:'Finish saved folder change',exact:true}).click();await page.getByText('Folder recovery finished.',{exact:false}).waitFor();}
   else if(mode==='cancelled'){await page.getByRole('button',{name:'Keep cancellation receipt',exact:true}).click();await page.getByText('Folder recovery finished.',{exact:false}).waitFor();}
   else if(mode==='unavailable'){await page.getByText('The server is unavailable.',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Cancel pending folder change',exact:true}).count(),0);}
   else if(mode==='reject'){await cancel();await page.getByRole('alert').waitFor();assert.equal(await page.getByRole('button',{name:'Cancel pending folder change',exact:true}).count(),0);}

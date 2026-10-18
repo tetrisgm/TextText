@@ -29,10 +29,12 @@ function command(v: unknown): v is Command {
   const parent = (s: string) => s.includes("/") ? s.slice(0, s.lastIndexOf("/")) : "";
   return v.source !== v.destination && parent(v.source) === parent(v.destination) && v.source.normalize("NFC").toLowerCase() === v.destination.normalize("NFC").toLowerCase() && v.folders.includes(v.source) && v.folders.every(p => p === v.source || p.startsWith(v.source + "/")) && v.items.every(i => i.relativePath.startsWith(v.source + "/"));
 }
+const itemKey = (rows: Item[]) => rows.map(i => [i.itemId, i.relativePath, i.revision]).sort((a,b) => a[0].localeCompare(b[0]));
+const commandKey = (c: Command) => JSON.stringify([c.operationId,c.source,c.destination,c.baseManifestRevision,[...c.folders].sort(),itemKey(c.items)]);
 function receipt(v: unknown, c: Command): v is Receipt {
   if (!object(v, ["operationId", "status", "source", "destination", "folders", "items", "manifestRevision"]) || v.operationId !== c.operationId || v.status !== "moved" || v.source !== c.source || v.destination !== c.destination || !digest(v.manifestRevision) || !folders(v.folders) || !items(v.items)) return false;
   const rebase = (p: string) => c.destination + p.slice(c.source.length);
-  return JSON.stringify([...v.folders].sort()) === JSON.stringify(c.folders.map(rebase).sort()) && JSON.stringify([...v.items].sort((a,b) => a.itemId.localeCompare(b.itemId))) === JSON.stringify(c.items.map(i => ({itemId:i.itemId,relativePath:rebase(i.relativePath),revision:i.revision})).sort((a,b) => a.itemId.localeCompare(b.itemId)));
+  return JSON.stringify([...v.folders].sort()) === JSON.stringify(c.folders.map(rebase).sort()) && JSON.stringify(itemKey(v.items)) === JSON.stringify(itemKey(c.items.map(i => ({itemId:i.itemId,relativePath:rebase(i.relativePath),revision:i.revision}))));
 }
 export function validateFolderSyncMoveRecovery(v: unknown): FolderSyncMoveRecoveryEntry {
   const fail = () => { throw Error("This saved folder change could not be verified. Reopen Recovery before continuing."); };
@@ -63,7 +65,7 @@ export function FolderSyncMoveRecovery({ entries, workspaceRoot, disabled, onRes
     setChosen(null); setResolved(false); setBusy(true); setError("");
     try {
       const next = validateFolderSyncMoveRecovery(await request("folderSyncMoveRead", {workspaceRoot,id:entry.id}, abort.signal));
-      if (next.id !== entry.id || JSON.stringify(next.command) !== JSON.stringify(entry.command) || next.expectedIdentity !== entry.expectedIdentity) throw Error("This is a different folder change. Reopen Recovery to continue.");
+      if (next.id !== entry.id || commandKey(next.command) !== commandKey(entry.command) || next.expectedIdentity !== entry.expectedIdentity) throw Error("This is a different folder change. Reopen Recovery to continue.");
       if (generation.current === captured && !abort.signal.aborted) setChosen(next);
     } catch (cause) { if (generation.current === captured && !abort.signal.aborted) setError(cause instanceof Error ? cause.message : "The saved folder change could not be inspected."); }
     finally { if (generation.current === captured && !abort.signal.aborted) setBusy(false); }

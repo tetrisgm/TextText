@@ -18,3 +18,7 @@ The UI offers cancellation only after server review, finishing a completed move,
 - Manual verification helper: 8 checks pass; `/private/tmp/texttext-folder-sync-review-gate-helper-20261018.log`. New Mac folder propagation/profile suites are required by the native filter rather than silently omitted.
 
 This is a real Chromium fixture with controlled bridge replies, not an installed app, real Safari gesture, server deployment, or six-client acceptance claim. Actual native recovery gates and real HTTP engine integration are separate receipts. No user data, production database or installed binary was changed by this slice.
+
+## Native JSON ordering follow-up
+
+Native JSON object key order is not a protocol field. Fresh-command and moved-receipt comparisons normalize their named values before comparing; unknown fields still refuse. Focused coverage is now 12 checks, including reordered native keys, and the actual Chromium fixture confirms fresh inspection/consent with reordered fields. Logs: `/private/tmp/texttext-folder-sync-review-key-order-unit-20261018.log` and `/private/tmp/texttext-folder-sync-review-key-order-browser-20261018.log`. The final complete local-vault check passes 510 tests in 66 files (`/private/tmp/texttext-folder-sync-review-shared-key-order-full-20261018.log`); TypeScript also passes (`/private/tmp/texttext-folder-sync-review-key-order-tsc-20261018.log`).
