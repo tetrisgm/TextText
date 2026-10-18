@@ -1105,26 +1105,15 @@ public actor LocalVaultSync {
     }
 
     private func moveLocal(from: String, to: String, expectedHash: String) throws {
-        let store = LocalVaultDocumentStore(root: root)
-        let observed = try store.readMetadata(path: from)
-        let itemId = MarkdownIdentityCodec.extract(from: observed.contents.markdown)?.itemId
-        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
-        let source = try store.url(for: from), destination = try store.url(for: to)
-        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        var error: NSError?
-        var result: Result<Void, Error>?
-        NSFileCoordinator().coordinate(writingItemAt: source, options: .forMoving,
-            writingItemAt: destination, options: [], error: &error) { source, destination in
-            result = Result {
-                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
-                guard try hash(at: source) == expectedHash else { throw LocalVaultSyncFailure.changed }
-                guard !FileManager.default.fileExists(atPath: destination.path) else { throw LocalVaultSyncFailure.conflict }
-                try FileManager.default.moveItem(at: source, to: destination)
-            }
+        // Store owns the durable move intent, actual destination verification,
+        // and both-path recovery fences for user and remote-originated moves.
+        do {
+            _ = try LocalVaultDocumentStore(root: root).rename(path: from, expectedHash: expectedHash, newPath: to)
+        } catch LocalVaultDocumentStore.Failure.changed {
+            throw LocalVaultSyncFailure.changed
+        } catch let error as CocoaError where error.code == .fileWriteFileExists {
+            throw LocalVaultSyncFailure.conflict
         }
-        if let error { throw error }
-        guard let result else { throw LocalVaultSyncFailure.changed }
-        try result.get()
     }
 
     public func reconcileRestored(itemId: String, path: String, lifecycle: String) async throws {

@@ -706,7 +706,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if method == "list", openError == nil { reply(id, result: .success(["root": "", "items": []])); return }
             reply(id, result: .failure(VaultBridgeError(openError ?? "Open a workspace folder first."))); return
         }
-        let replacementOperation = method == "replacementRead" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "recoveryList" || method == "recoveryAssetRead"
+        let replacementOperation = method == "replacementRead" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove" || method == "recoveryList" || method == "recoveryAssetRead"
         if replacementOperation && params["workspaceRoot"] as? String != root.path {
             reply(id, result: .failure(CancellationError())); return
         }
@@ -750,7 +750,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let page = try store.recoveryList(path: params["path"] as? String)
                     let assets = try store.recoveryAssets()
                     return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
-                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
+                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "sourcePath": ($0.sourcePath as Any?) ?? NSNull(), "sourcePresent": ($0.sourcePresent as Any?) ?? NSNull(), "sourceHash": ($0.sourceHash as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
                         "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
                 case "recoveryAssetRead":
                     let hash = try Self.string(params, "hash")
@@ -767,6 +767,18 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     }
                     return ["opaque": true, "path": recovered.path, "hash": hash, "data": bytes.base64EncodedString(),
                         "parseError": recovered.parseError ?? "This retained file cannot be opened as a TextPack."]
+                case "resolveMove":
+                    guard params["kind"] as? String == "move", let present = params["currentPresent"] as? Bool,
+                          let sourcePresent = params["sourcePresent"] as? Bool, let captured = params["captured"] as? Bool,
+                          present || params["currentHash"] is NSNull,
+                          sourcePresent || params["sourceHash"] is NSNull,
+                          captured || params["displacedHash"] is NSNull else { throw VaultBridgeError("The inspected move changed. Reopen Recovery before continuing.") }
+                    try store.resolveMove(id: Self.string(params, "id"), path: Self.string(params, "path"), sourcePath: Self.string(params, "sourcePath"),
+                        itemId: Self.string(params, "itemId"), preparedHash: Self.string(params, "preparedHash"),
+                        displacedHash: captured ? Self.string(params, "displacedHash") : nil, captured: captured,
+                        currentPresent: present, currentHash: present ? Self.string(params, "currentHash") : nil,
+                        sourcePresent: sourcePresent, sourceHash: sourcePresent ? Self.string(params, "sourceHash") : nil, beforeAcknowledge: requireRecoveryScope)
+                    return ["resolved": true]
                 case "resolveReplacement":
                     let kind = params["kind"] as? String ?? "replacement"
                     let present = params["currentPresent"] as? Bool ?? true
@@ -909,7 +921,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 let decorated = result.map { value in
                     method == "list" ? Self.withCapabilities(value, self?.connection?.capabilities) : value
                 }
-                if method == "resolveReplacement" || method == "cancelUncapturedDeletion", case .success = decorated { self?.connection?.schedule() }
+                if method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove", case .success = decorated { self?.connection?.schedule() }
                 self?.reply(id, result: decorated, current: conflictCurrent)
             }
         }

@@ -201,8 +201,8 @@ enum RetainedFileReplacement {
                   record.operation == operation,
                   validHash(record.expectedHash), validHash(record.preparedHash),
                   record.acknowledgedDisplacedHash.map(validHash) ?? true,
-                  (record.kind == nil || record.kind == "removal"),
-                  (record.state != .cancelled || record.kind == "removal") else { throw Failure.invalidJournal }
+                  (record.kind == nil || record.kind == "removal" || record.kind == "move"),
+                  (record.state != .cancelled || record.kind == "removal" || record.kind == "move") else { throw Failure.invalidJournal }
             let result = Recovery(directory: directory, record: record, storageTarget: layout.canonicalTarget)
             cache.lock.lock()
             if cache.values.count >= 2048 { cache.values.removeAll(keepingCapacity: true) }

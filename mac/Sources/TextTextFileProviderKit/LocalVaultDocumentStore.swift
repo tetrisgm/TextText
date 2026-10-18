@@ -161,6 +161,7 @@ public struct LocalVaultDocumentStore: Sendable {
     }
 
     public func read(path: String) throws -> Document {
+        try ReplacementRecoveryRegistry(root: root).assertPathReadable(path)
         let target = try url(for: path)
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
@@ -175,6 +176,7 @@ public struct LocalVaultDocumentStore: Sendable {
     /// Collection sorting reads text metadata without expanding image entries.
     /// Template callers can opt into the small JSON look entries without loading assets.
     public func readMetadata(path: String, includeTemplate: Bool = false) throws -> Document {
+        try ReplacementRecoveryRegistry(root: root).assertPathReadable(path)
         let target = try url(for: path)
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
@@ -206,7 +208,7 @@ public struct LocalVaultDocumentStore: Sendable {
                     templateAuthoringSourceJSON: templateSource.map { String(decoding: $0, as: UTF8.self) },
                     projectionJSON: projection.map { String(decoding: $0, as: UTF8.self) },
                     assets: [], logicalSize: Int(expanded))
-                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: contents.markdown)?.itemId)
+                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: contents.markdown)?.itemId, path: path)
                 return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents,
                     publishedAt: publishedAt(archive, prefix: prefix))
             }
@@ -345,6 +347,20 @@ public struct LocalVaultDocumentStore: Sendable {
             guard current.hash == expectedHash else { throw Failure.changed }
             return current
         }
+        if !FileManager.default.fileExists(atPath: source.path), FileManager.default.fileExists(atPath: destination.path) {
+            let registry = ReplacementRecoveryRegistry(root: root)
+            let candidates = try registry.entries().filter { $0.kind == "move" && $0.path == path && $0.destinationPath == newPath && $0.expectedHash == expectedHash }
+            guard !candidates.isEmpty else { throw Failure.changed }
+            for entry in candidates {
+                try registry.assertReadable(itemId: entry.itemId, path: newPath)
+                let inspection = try registry.inspect(entry)
+                let bytes = try StableFileSnapshot.read(destination)
+                guard bytes == inspection.prepared else { throw Failure.changed }
+                let document = try parseDocument(path: newPath, bytes: bytes, preserveHistory: true)
+                guard MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == entry.itemId else { throw Failure.changed }
+                return document
+            }
+        }
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: source, options: .forMoving,
@@ -353,8 +369,18 @@ public struct LocalVaultDocumentStore: Sendable {
                 let current = try readUncoordinated(path: path, url: from)
                 guard current.hash == expectedHash else { throw Failure.changed }
                 try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
-                // moveItem refuses an occupied destination, including a race.
-                try FileManager.default.moveItem(at: from, to: to)
+                guard let itemId = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId else { throw Failure.invalidPath }
+                let state = LocalVaultDeviceState.directory(root: root)
+                if FileManager.default.fileExists(atPath: state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName).path) {
+                    try RetainedReplacementProfile.prepare(root: root)
+                }
+                let registry = ReplacementRecoveryRegistry(root: root), operation = UUID()
+                _ = try RetainedFileMove.move(from, to: to, expectedHash: expectedHash, recoveryRoot: registry.recoveryRoot(path: path),
+                    operation: operation, lease: registry.captureLease(operation: operation)) { stage in
+                    if stage == "prepared" { try registry.register(operation: operation, itemId: itemId, path: path,
+                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "move", destinationPath: newPath) }
+                    try writeObservationForTesting?(stage == "prepared" ? "movePrepared" : stage)
+                }
                 try writeObservationForTesting?("renamed")
                 return Document(path: newPath, hash: current.hash, contents: current.contents, publishedAt: current.publishedAt)
             }
@@ -486,7 +512,7 @@ public struct LocalVaultDocumentStore: Sendable {
         // validates expanded entry sizes and rejects traversal/symlink entries.
         let bytes = try StableFileSnapshot.read(url)
         let document = try parseDocument(path: path, bytes: bytes, preserveHistory: false)
-        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId)
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId, path: path)
         try preserve(bytes, hash: document.hash)
         return document
     }

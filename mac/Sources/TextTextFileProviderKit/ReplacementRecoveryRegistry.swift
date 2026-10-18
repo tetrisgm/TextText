@@ -13,7 +13,10 @@ struct ReplacementRecoveryRegistry {
     private static let cache = EntryCache()
     private static func requireKnownFields(_ bytes: Data) throws {
         guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled", "explicitCancellation", "supersededBy"])) else { throw Failure.invalidRegistry }
+              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled", "explicitCancellation", "supersededBy", "destinationPath", "moveResolution"])) else { throw Failure.invalidRegistry }
+        if let value = fields["moveResolution"], !(value is NSNull) {
+            guard let receipt = value as? [String: Any], Set(receipt.keys).isSubset(of: Set(["preparedHash", "displacedHash", "captured", "currentHash", "currentPresent", "sourceHash", "sourcePresent"])) else { throw Failure.invalidRegistry }
+        }
         if let value = fields["explicitCancellation"], !(value is NSNull) {
             guard let receipt = value as? [String: Any], Set(receipt.keys).isSubset(of: Set(["preparedHash", "currentHash", "currentPresent"])) else { throw Failure.invalidRegistry }
         }
@@ -39,6 +42,17 @@ struct ReplacementRecoveryRegistry {
         var deletionIntentCancelled: Bool? = nil
         var explicitCancellation: ExplicitCancellation? = nil
         var supersededBy: UUID? = nil
+        var destinationPath: String? = nil
+        var moveResolution: MoveResolution? = nil
+    }
+    struct MoveResolution: Codable, Equatable {
+        let preparedHash: String
+        let displacedHash: String?
+        let captured: Bool
+        let currentHash: String?
+        let currentPresent: Bool
+        let sourceHash: String?
+        let sourcePresent: Bool
     }
     struct ExplicitCancellation: Codable, Equatable {
         let preparedHash: String
@@ -106,7 +120,7 @@ struct ReplacementRecoveryRegistry {
         var entry = try JSONDecoder().decode(Entry.self, from: original)
         let registry = ReplacementRecoveryRegistry(root: root)
         let principal = try RetainedReplacementProfile.principalHash(owner)
-        guard entry.version == 1, (entry.kind == nil || entry.kind == "removal"), entry.workspaceRootHash == registry.digest(Data(registry.root.path.utf8)),
+        guard entry.version == 1, (entry.kind == nil || entry.kind == "removal" || entry.kind == "move"), entry.workspaceRootHash == registry.digest(Data(registry.root.path.utf8)),
               owner.rootHash == entry.workspaceRootHash, !entry.itemId.isEmpty, entry.itemId.utf8.count <= 256,
               entry.operation.uuidString + ".json" == (path as NSString).lastPathComponent,
               registry.validHash(entry.expectedHash), registry.validHash(entry.preparedHash) else { throw Failure.invalidRegistry }
@@ -114,13 +128,14 @@ struct ReplacementRecoveryRegistry {
               entry.deletionMarkerPublished != true || (entry.kind == "removal" && entry.userDeletion == true),
               entry.deletionIntentCancelled != true || (entry.kind == "removal" && entry.userDeletion == true),
               entry.supersededBy == nil || (entry.kind == "removal" && entry.userDeletion == true && entry.deletionIntentCancelled == true && entry.supersededBy != entry.operation),
-              entry.kind != "removal" || entry.expectedHash == entry.preparedHash else { throw Failure.invalidRegistry }
+              (entry.kind != "removal" && entry.kind != "move") || entry.expectedHash == entry.preparedHash else { throw Failure.invalidRegistry }
         if let receipt = entry.explicitCancellation {
             guard entry.kind == "removal", entry.deletionIntentCancelled == true, entry.resolution == nil,
                   receipt.preparedHash == entry.preparedHash,
                   (receipt.currentPresent ? receipt.currentHash.map(registry.validHash) == true : receipt.currentHash == nil) else { throw Failure.invalidRegistry }
         }
         _ = try registry.target(entry)
+        try registry.validateMove(entry)
         guard entry.ownerHash == registry.digest(Data("unowned-local-workspace".utf8)) || entry.ownerHash == principal else { throw LocalVaultAccountRootOwnership.Failure.account }
         if entry.ownerHash == principal { return (original, false) }
         let retained = try registry.recovery(entry, persistRelocation: false)
@@ -134,6 +149,22 @@ struct ReplacementRecoveryRegistry {
     }
     func recoveryRoot(path: String) -> URL {
         root.appendingPathComponent(".texttext/retained-replacements/" + digest(Data(path.utf8)), isDirectory: true)
+    }
+    func moveDestination(_ entry: Entry) throws -> URL {
+        guard entry.kind == "move", let path = entry.destinationPath, path != entry.path else { throw Failure.invalidRegistry }
+        let visible = Entry(version: entry.version, operation: entry.operation, workspaceRootHash: entry.workspaceRootHash, ownerHash: entry.ownerHash,
+            itemId: entry.itemId, path: path, expectedHash: entry.expectedHash, preparedHash: entry.preparedHash, resolution: nil)
+        return try target(visible)
+    }
+    private func validateMove(_ entry: Entry) throws {
+        if entry.kind == "move" { _ = try moveDestination(entry) }
+        else { guard entry.destinationPath == nil, entry.moveResolution == nil else { throw Failure.invalidRegistry } }
+        if let receipt = entry.moveResolution {
+            guard entry.kind == "move", receipt.preparedHash == entry.preparedHash, entry.resolution == nil, entry.explicitCancellation == nil,
+                  receipt.captured ? receipt.displacedHash.map(validHash) == true : receipt.displacedHash == nil,
+                  receipt.currentPresent ? receipt.currentHash.map(validHash) == true : receipt.currentHash == nil,
+                  receipt.sourcePresent ? receipt.sourceHash.map(validHash) == true : receipt.sourceHash == nil else { throw Failure.invalidRegistry }
+        }
     }
     private func usesWorkspaceStaging(_ entry: Entry) -> Bool {
         entry.recoveryPath == ".texttext/retained-replacements/" + digest(Data(entry.path.utf8)) + "/" + (entry.path as NSString).lastPathComponent
@@ -208,15 +239,21 @@ struct ReplacementRecoveryRegistry {
         try RetainedFileReplacement.flushDirectory(directory.deletingLastPathComponent())
         try RetainedFileReplacement.flushDirectory(root)
     }
-    private func indexedPaths(itemId: String?) throws -> [URL] {
+    private func indexedPaths(itemId: String?, path: String?) throws -> [URL] {
+        func selected(_ index: [String: [URL]]) -> [URL] {
+            guard let itemId else { return index.filter { $0.key.hasPrefix("id:") }.values.flatMap { $0 } }
+            var selected = index["id:" + itemId] ?? []
+            if let path { selected += index["path:" + path] ?? [] }
+            var seen = Set<String>()
+            return selected.filter { seen.insert($0.path).inserted }
+        }
         for _ in 0..<3 {
             let generation = try directoryFingerprint()
             Self.cache.lock.lock()
             let cached = Self.cache.indexes[directory.path]
             Self.cache.lock.unlock()
             if let cached, cached.0 == generation {
-                if let itemId { return cached.1[itemId] ?? [] }
-                return cached.1.values.flatMap { $0 }
+                return selected(cached.1)
             }
             let paths = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { !$0.lastPathComponent.hasPrefix(".") }
             var index: [String: [URL]] = [:]
@@ -227,15 +264,18 @@ struct ReplacementRecoveryRegistry {
                 let bytes = try StableFileSnapshot.read(file, maximumBytes: 8192)
                 guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
                       let identity = fields["itemId"] as? String, !identity.isEmpty, identity.utf8.count <= 256 else { throw Failure.invalidRegistry }
-                index[identity, default: []].append(file)
+                index["id:" + identity, default: []].append(file)
+                if fields["kind"] as? String == "move", let source = fields["path"] as? String, let destination = fields["destinationPath"] as? String {
+                    index["path:" + source, default: []].append(file)
+                    index["path:" + destination, default: []].append(file)
+                }
             }
             guard generation == (try directoryFingerprint()) else { continue }
             Self.cache.lock.lock()
             if Self.cache.indexes.count >= 32 { Self.cache.indexes.removeAll(keepingCapacity: true) }
             Self.cache.indexes[directory.path] = (generation, index)
             Self.cache.lock.unlock()
-            if let itemId { return index[itemId] ?? [] }
-            return paths
+            return selected(index)
         }
         throw Failure.invalidRegistry
     }
@@ -244,13 +284,13 @@ struct ReplacementRecoveryRegistry {
         guard lstat(directory.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { throw Failure.invalidRegistry }
         return "\(info.st_dev):\(info.st_ino):\(info.st_size):\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)"
     }
-    func entries(itemId: String? = nil) throws -> [Entry] {
+    func entries(itemId: String? = nil, path: String? = nil) throws -> [Entry] {
         // An already-open store must also refuse an interrupted owner/profile
         // publication, even before its first document replacement is indexed.
         let principalHash = try ownerHash()
         guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
         guard directory.resolvingSymlinksInPath().path == directory.path else { throw Failure.invalidRegistry }
-        let paths = try indexedPaths(itemId: itemId)
+        let paths = try indexedPaths(itemId: itemId, path: path)
         let rootHash = digest(Data(root.path.utf8))
         var validatedTargets = Set<String>()
         return try paths.filter { !$0.lastPathComponent.hasPrefix(".") }.map { file in
@@ -270,7 +310,7 @@ struct ReplacementRecoveryRegistry {
                 Self.cache.values[file.path] = (stamp, entry)
                 Self.cache.lock.unlock()
             }
-            guard (itemId == nil || entry.itemId == itemId), entry.version == 1, (entry.kind == nil || entry.kind == "removal"), entry.operation.uuidString + ".json" == file.lastPathComponent,
+            guard (itemId == nil || entry.itemId == itemId || (entry.kind == "move" && (entry.path == path || entry.destinationPath == path))), entry.version == 1, (entry.kind == nil || entry.kind == "removal" || entry.kind == "move"), entry.operation.uuidString + ".json" == file.lastPathComponent,
                   entry.workspaceRootHash == rootHash,
                   entry.ownerHash == principalHash,
                   !entry.itemId.isEmpty, entry.itemId.utf8.count <= 256,
@@ -279,8 +319,9 @@ struct ReplacementRecoveryRegistry {
                   entry.deletionMarkerPublished != true || (entry.kind == "removal" && entry.userDeletion == true),
                   entry.deletionIntentCancelled != true || (entry.kind == "removal" && entry.userDeletion == true),
                   entry.supersededBy == nil || (entry.kind == "removal" && entry.userDeletion == true && entry.deletionIntentCancelled == true && entry.supersededBy != entry.operation),
-                  entry.kind != "removal" || entry.expectedHash == entry.preparedHash else { throw Failure.invalidRegistry }
+                  (entry.kind != "removal" && entry.kind != "move") || entry.expectedHash == entry.preparedHash else { throw Failure.invalidRegistry }
             if validatedTargets.insert(entry.path + "\0" + (entry.recoveryPath ?? entry.path)).inserted { _ = try target(entry) }
+            try validateMove(entry)
             if let receipt = entry.explicitCancellation {
                 guard entry.kind == "removal", entry.deletionIntentCancelled == true, entry.resolution == nil,
                       receipt.preparedHash == entry.preparedHash,
@@ -294,12 +335,14 @@ struct ReplacementRecoveryRegistry {
     }
     /// Must be durable before invoking the replacement primitive. Even failure
     /// before staging remains a visible refusal, never a silent replay success.
-    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false) throws {
+    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false, destinationPath: String? = nil) throws {
         var entry = Entry(version: 1, operation: operation, workspaceRootHash: digest(Data(root.path.utf8)), ownerHash: try ownerHash(), itemId: itemId, path: path,
                           expectedHash: expectedHash, preparedHash: preparedHash, resolution: nil)
         entry.kind = kind
+        entry.destinationPath = destinationPath
+        try validateMove(entry)
         entry.userDeletion = userDeletion ? true : nil
-        guard kind == nil || kind == "removal" else { throw Failure.invalidRegistry }
+        guard kind == nil || kind == "removal" || kind == "move" else { throw Failure.invalidRegistry }
         if workspaceStaging { entry.recoveryPath = ".texttext/retained-replacements/" + digest(Data(path.utf8)) + "/" + (path as NSString).lastPathComponent }
         guard !itemId.isEmpty, itemId.utf8.count <= 256, validHash(expectedHash), validHash(preparedHash) else { throw Failure.invalidRegistry }
         _ = try target(entry)
@@ -362,7 +405,7 @@ struct ReplacementRecoveryRegistry {
     }
     func inspectUncaptured(_ entry: Entry) throws -> (recovery: RetainedFileReplacement.Recovery, prepared: Data) {
         let retained = try recovery(entry, persistRelocation: false)
-        guard entry.kind == "removal", retained.record.state == .pending || retained.record.state == .cancelled else { throw Failure.invalidRegistry }
+        guard entry.kind == "removal" || entry.kind == "move", retained.record.state == .pending || retained.record.state == .cancelled || (entry.kind == "move" && retained.record.state == .conflict) else { throw Failure.invalidRegistry }
         var info = stat()
         guard lstat(retained.displaced.path, &info) != 0, errno == ENOENT else { throw Failure.invalidRegistry }
         let prepared = try StableFileSnapshot.read(retained.prepared)
@@ -383,7 +426,13 @@ struct ReplacementRecoveryRegistry {
     func isReadableWithoutMutation(_ entry: Entry) throws -> Bool {
         let retained = try recovery(entry, persistRelocation: false)
         let prepared = digest(try StableFileSnapshot.read(retained.prepared))
-        if retained.record.state == .cancelled { return entry.kind == "removal" && prepared == entry.preparedHash }
+        if retained.record.state == .cancelled { return (entry.kind == "removal" || entry.kind == "move") && prepared == entry.preparedHash }
+        if entry.kind == "move", let receipt = entry.moveResolution {
+            guard prepared == receipt.preparedHash else { return false }
+            if let expected = receipt.displacedHash { return digest(try StableFileSnapshot.read(retained.displaced)) == expected }
+            return try !removalHasCapturedInode(entry)
+        }
+        if entry.kind == "move", retained.record.state == .pending { return false }
         if entry.kind == "removal", retained.record.state == .pending {
             var info = stat()
             if lstat(retained.displaced.path, &info) != 0, errno == ENOENT {
@@ -535,11 +584,16 @@ struct ReplacementRecoveryRegistry {
             try save(recorded, creating: false)
         }
     }
+    /// Path-only preflight precedes NSFileCoordinator to refuse an active move
+    /// without waiting reentrantly on its coordinated source/destination writer.
+    func assertPathReadable(_ path: String) throws {
+        try assertReadable(itemId: "", path: path)
+    }
     /// Nil identity means a malformed/unidentified projection. Fail closed for
     /// any unresolved workspace entry instead of accepting a renamed candidate.
-    func assertReadable(itemId: String?, observeDeletionPublication: ((String) throws -> Void)? = nil) throws {
+    func assertReadable(itemId: String?, path: String? = nil, observeDeletionPublication: ((String) throws -> Void)? = nil) throws {
         var validatedTargets: [String: (URL, RetainedFileReplacement.Layout?)] = [:]
-        for entry in try entries(itemId: itemId) {
+        for entry in try entries(itemId: itemId, path: path) {
             let key = entry.path + "\0" + (entry.recoveryPath ?? entry.path)
             let location: (URL, RetainedFileReplacement.Layout?)
             if let existing = validatedTargets[key] { location = existing }
@@ -549,6 +603,25 @@ struct ReplacementRecoveryRegistry {
                 validatedTargets[key] = location
             }
             let retained = try recovery(entry, validatedTarget: location.0, layout: location.1)
+            if entry.kind == "move" {
+                try RetainedFileRemoval.withLease(at: captureLease(operation: entry.operation)) {
+                    let fresh = try recovery(entry, validatedTarget: location.0, layout: location.1)
+                    if let receipt = entry.moveResolution {
+                        let prepared = digest(try StableFileSnapshot.read(fresh.prepared))
+                        guard prepared == receipt.preparedHash else { throw Failure.invalidRegistry }
+                        if let expected = receipt.displacedHash {
+                            guard digest(try StableFileSnapshot.read(fresh.displaced)) == expected else { throw Failure.unresolved(entry.operation) }
+                        } else { _ = try inspectUncaptured(entry) }
+                        if fresh.record.state != (receipt.captured ? .completed : .cancelled) || (receipt.captured && fresh.record.acknowledgedDisplacedHash != receipt.displacedHash) {
+                            try RetainedFileMove.acceptCurrentState(fresh, displacedHash: receipt.displacedHash)
+                        }
+                    } else {
+                        let classified = try RetainedFileMove.classify(fresh, source: root.appendingPathComponent(entry.path), destination: moveDestination(entry))
+                        guard classified.record.state == .completed || classified.record.state == .cancelled else { throw Failure.unresolved(entry.operation) }
+                    }
+                }
+                continue
+            }
             if let resolution = entry.resolution {
                 if resolution.preparedFingerprint == (try? RetainedFileReplacement.fingerprint(retained.prepared)),
                    resolution.preparedFingerprint != nil,
@@ -636,6 +709,39 @@ struct ReplacementRecoveryRegistry {
             try save(entry, creating: false)
             _ = try RetainedFileRemoval.cancelAfterInspection(inspection.recovery)
             try LocalVaultDeviceState.clearDeletion(root: root, itemId: itemId, operation: operation, path: path, hash: entry.expectedHash)
+        }
+    }
+    func resolveMove(operation: UUID, observed: MoveResolution, current: Data?, source: Data?,
+                     validateCurrent: () throws -> Void, beforeAcknowledge: (() throws -> Void)? = nil) throws {
+        try RetainedFileRemoval.withLease(at: captureLease(operation: operation)) {
+            guard var entry = try entries().first(where: { $0.operation == operation }), entry.kind == "move" else { throw Failure.invalidRegistry }
+            let retained = try recovery(entry)
+            let prepared = try StableFileSnapshot.read(retained.prepared)
+            let captured = try removalHasCapturedInode(entry)
+            let displaced = captured ? try StableFileSnapshot.read(retained.displaced) : nil
+            guard digest(prepared) == observed.preparedHash, observed.preparedHash == entry.preparedHash,
+                  captured == observed.captured, displaced.map(digest) == observed.displacedHash,
+                  (current != nil) == observed.currentPresent, current.map(digest) == observed.currentHash,
+                  (source != nil) == observed.sourcePresent, source.map(digest) == observed.sourceHash else { throw Failure.observedVersionChanged }
+            try validateCurrent()
+            let destination = root.appendingPathComponent(".texttext/conflicts/" + operation.uuidString, isDirectory: true)
+            try RetainedFileReplacement.checkedDirectory(destination)
+            for bytes in [prepared, displaced, current, source].compactMap({ $0 }) {
+                let copy = destination.appendingPathComponent(digest(bytes) + ".textpack")
+                if FileManager.default.fileExists(atPath: copy.path) {
+                    guard try StableFileSnapshot.read(copy) == bytes else { throw Failure.observedVersionChanged }
+                } else { try RetainedFileReplacement.create(bytes, at: copy) }
+            }
+            try RetainedFileReplacement.flushDirectory(destination)
+            try RetainedFileReplacement.flushDirectory(destination.deletingLastPathComponent())
+            guard try StableFileSnapshot.read(retained.prepared) == prepared,
+                  (try removalHasCapturedInode(entry)) == captured else { throw Failure.observedVersionChanged }
+            if let displaced { guard try StableFileSnapshot.read(retained.displaced) == displaced else { throw Failure.observedVersionChanged } }
+            try validateCurrent()
+            try beforeAcknowledge?()
+            entry.moveResolution = observed
+            try save(entry, creating: false)
+            try RetainedFileMove.acceptCurrentState(retained, displacedHash: observed.displacedHash)
         }
     }
     /// Explicit user acknowledgement retains both snapshots and never changes

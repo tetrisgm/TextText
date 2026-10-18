@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import XCTest
+import ZIPFoundation
 import TextTextWorkspaceCore
 @testable import TextTextFileProviderKit
 
@@ -18,12 +19,12 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
     override func tearDownWithError() throws { if !preserveBenchmark { try? FileManager.default.removeItem(at: root) } }
-    private func pack(_ body: String) throws -> Data {
+    private func pack(_ body: String, itemId: String = "registry-item") throws -> Data {
         let scratch = root.appendingPathComponent("." + UUID().uuidString)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let document = try BuiltinTextPackDocument.create(title: "Registry", body: body)
-        let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: \"registry-item\"\ntitle: Registry\n---\n\n" + body,
+        let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: \"\(itemId)\"\ntitle: Registry\n---\n\n" + body,
             documentJSON: document.documentJSON, templateJSON: document.templateJSON, assets: [], sourceURL: nil, in: scratch)
         return try Data(contentsOf: TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: scratch))
     }
@@ -38,6 +39,201 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
             guard case RetainedFileReplacement.Failure.unresolved = error else { return XCTFail("Unexpected staging error: \(error)") }
         }
         return (operation, prepared, external)
+    }
+    func testProductionRenameMustNotAcknowledgeFinalGapForeignSource() throws {
+        let original = try pack("original"), foreign = try pack("foreign source at move boundary")
+        try original.write(to: target)
+        let destination = root.appendingPathComponent("Moved.textpack"), source = target
+        var writer = store
+        writer.writeObservationForTesting = { stage in if stage == "beforeRename" { try foreign.write(to: source, options: .atomic) } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"), "A move must verify the inode it actually moved before returning the old projection.")
+        XCTAssertEqual(try Data(contentsOf: destination), foreign, "The moved external version remains preserved at the exclusive destination.")
+        XCTAssertThrowsError(try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: "registry-item"), "A restarted caller must not silently ACK the stale move intent.")
+    }
+    private func acceptMove(_ row: LocalVaultDocumentStore.ReplacementRecoveryEntry, before: (() throws -> Void)? = nil) throws {
+        try store.resolveMove(id: row.id, path: row.path, sourcePath: try XCTUnwrap(row.sourcePath), itemId: row.itemId,
+            preparedHash: row.preparedHash, displacedHash: row.displacedHash, captured: row.captured,
+            currentPresent: row.currentPresent, currentHash: row.currentHash,
+            sourcePresent: try XCTUnwrap(row.sourcePresent), sourceHash: row.sourceHash, beforeAcknowledge: before)
+    }
+    func testMoveLostReplyReplaysExactPreparedAndLaterSaveWorks() throws {
+        let original = try pack("before move")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "moveCaptured" { throw Interrupted.stopped } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Folder/Moved.textpack"))
+        let replay = try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Folder/Moved.textpack")
+        XCTAssertEqual(replay.hash, hash(original))
+        let later = try pack("later legitimate save")
+        XCTAssertEqual(try store.replaceExact(path: replay.path, expectedHash: replay.hash, bytes: later).hash, hash(later))
+        XCTAssertEqual(try store.read(path: replay.path).hash, hash(later))
+        XCTAssertTrue(try store.replacementRecoveryList().isEmpty)
+    }
+    func testMoveConflictFencesForeignDestinationAndExplicitlyKeepsBothFiles() throws {
+        let original = try pack("baseline"), raced = try pack("foreign actual", itemId: "foreign-item")
+        try original.write(to: target)
+        let destination = root.appendingPathComponent("Moved.textpack")
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "beforeRename" { try raced.write(to: self.target, options: .atomic) } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        // Recreated source is also preserved and must be part of explicit consent.
+        let recreated = try pack("recreated source")
+        // Use opaque bytes to avoid deliberately introducing duplicate stable IDs.
+        try Data("opaque recreated source".utf8).write(to: target)
+        XCTAssertThrowsError(try store.read(path: "Moved.textpack"))
+        XCTAssertThrowsError(try store.readMetadata(path: "Moved.textpack"))
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertEqual(row.kind, "move"); XCTAssertTrue(row.captured)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "prepared").data, original)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "displaced").data, raced)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "source").data, Data("opaque recreated source".utf8))
+        XCTAssertThrowsError(try acceptMove(row, before: { throw Interrupted.stopped }))
+        XCTAssertThrowsError(try store.read(path: "Moved.textpack"))
+        try recreated.write(to: target, options: .atomic)
+        XCTAssertThrowsError(try acceptMove(row), "A changed source invalidates captured consent.")
+        try Data("opaque recreated source".utf8).write(to: target, options: .atomic)
+        try acceptMove(try XCTUnwrap(store.replacementRecoveryList().first))
+        XCTAssertEqual(try Data(contentsOf: destination), raced)
+        XCTAssertEqual(try Data(contentsOf: target), Data("opaque recreated source".utf8))
+        XCTAssertEqual(try store.read(path: "Moved.textpack").hash, hash(raced))
+        XCTAssertTrue(try store.replacementRecoveryList().first?.resolved == true)
+    }
+    func testUncapturedMoveCancelPreservesBothObservedPaths() throws {
+        let original = try pack("baseline")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "beforeRename" { try Data("changed source".utf8).write(to: self.target); throw Interrupted.stopped } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertFalse(row.captured); XCTAssertNil(row.displacedHash); XCTAssertFalse(row.currentPresent)
+        XCTAssertTrue(try store.replacementRecoveryRead(id: row.id, version: "displaced").absent)
+        try acceptMove(row)
+        XCTAssertEqual(try Data(contentsOf: target), Data("changed source".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Moved.textpack").path))
+        XCTAssertTrue(try store.replacementRecoveryList().first?.resolved == true)
+    }
+    func testMoveBeforeCaptureCancelAndDestinationCollisionPreserveSources() throws {
+        let original = try pack("baseline"), occupied = try pack("occupied")
+        try original.write(to: target)
+        let destination = root.appendingPathComponent("Moved.textpack")
+        try occupied.write(to: destination)
+        XCTAssertThrowsError(try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        XCTAssertEqual(try Data(contentsOf: destination), occupied)
+        XCTAssertEqual(try Data(contentsOf: target), original)
+        try FileManager.default.removeItem(at: destination)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "movePrepared" { throw Interrupted.stopped } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        XCTAssertEqual(try store.read(path: "Original.textpack").hash, hash(original))
+        XCTAssertEqual(try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack").hash, hash(original))
+    }
+    func testActiveMoveCannotBeCancelledByAnotherStore() throws {
+        let original = try pack("baseline")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { stage in
+            if stage == "movePrepared" {
+                XCTAssertThrowsError(try self.store.read(path: "Original.textpack"))
+                XCTAssertThrowsError(try self.store.readMetadata(path: "Original.textpack"))
+            }
+        }
+        XCTAssertEqual(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack").hash, hash(original))
+        XCTAssertEqual(try store.read(path: "Moved.textpack").hash, hash(original))
+    }
+    func testDuplicateMoveIdentityBlocksConsentButRetainedDownloadsRemain() throws {
+        let original = try pack("baseline")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { stage in
+            if stage == "moveCaptured" { try original.write(to: self.target); throw Interrupted.stopped }
+        }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        XCTAssertThrowsError(try registry.assertReadable(itemId: "registry-item"))
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertNotNil(row.resolutionBlocked)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "prepared").data, original)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "displaced").data, original)
+        XCTAssertThrowsError(try acceptMove(row))
+        XCTAssertEqual(try Data(contentsOf: target), original)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Moved.textpack")), original)
+    }
+    func testMoveParentSymlinkAtFinalBoundaryDoesNotMoveOutsideFile() throws {
+        let original = try pack("baseline"), outside = try pack("outside untouched")
+        let folder = root.appendingPathComponent("Folder"), outsideFolder = root.appendingPathComponent(".outside")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideFolder, withIntermediateDirectories: true)
+        try original.write(to: folder.appendingPathComponent("Original.textpack"))
+        try outside.write(to: outsideFolder.appendingPathComponent("Original.textpack"))
+        var writer = store
+        writer.writeObservationForTesting = { stage in
+            if stage == "beforeRename" {
+                try FileManager.default.moveItem(at: folder, to: self.root.appendingPathComponent("RetainedFolder"))
+                try FileManager.default.createSymbolicLink(at: folder, withDestinationURL: outsideFolder)
+            }
+        }
+        XCTAssertThrowsError(try writer.rename(path: "Folder/Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        XCTAssertEqual(try Data(contentsOf: outsideFolder.appendingPathComponent("Original.textpack")), outside)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("RetainedFolder/Original.textpack")), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Moved.textpack").path))
+    }
+    func testCompletedMoveAllowsLaterWriteThroughOriginalDescriptor() throws {
+        let original = try pack("baseline"), later = try pack("later external visible edit")
+        try original.write(to: target)
+        let descriptor = try FileHandle(forWritingTo: target)
+        defer { try? descriptor.close() }
+        _ = try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack")
+        try descriptor.truncate(atOffset: 0); try descriptor.write(contentsOf: later); try descriptor.synchronize()
+        XCTAssertEqual(try store.read(path: "Moved.textpack").hash, hash(later))
+    }
+    func testMoveConsentRefusesUnverifiableThirdLocationsWithoutHidingSnapshots() throws {
+        let original = try pack("baseline"), raced = try pack("raced", itemId: "foreign-item")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "beforeRename" { try raced.write(to: self.target, options: .atomic) } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        let other = root.appendingPathComponent("Third.textpack")
+        try FileManager.default.createSymbolicLink(at: other, withDestinationURL: root.appendingPathComponent("Moved.textpack"))
+        var row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertNotNil(row.resolutionBlocked)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "prepared").data, original)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "displaced").data, raced)
+        XCTAssertThrowsError(try acceptMove(row))
+        try FileManager.default.removeItem(at: other)
+        try Data("unparseable unrelated package".utf8).write(to: other)
+        row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertNotNil(row.resolutionBlocked)
+        XCTAssertThrowsError(try acceptMove(row))
+        try FileManager.default.removeItem(at: other)
+        try acceptMove(try XCTUnwrap(store.replacementRecoveryList().first))
+        XCTAssertEqual(try store.read(path: "Moved.textpack").hash, hash(raced))
+    }
+    func testMoveMalformedUTF8EndpointsRemainOpaqueAndExact() throws {
+        let original = try pack("baseline")
+        let archiveURL = root.appendingPathComponent(".invalid.textpack")
+        try original.write(to: archiveURL)
+        let archive = try Archive(url: archiveURL, accessMode: .update)
+        let markdown = try XCTUnwrap(archive.first(where: { $0.path.hasSuffix("text.md") }))
+        let name = markdown.path
+        try archive.remove(markdown)
+        let invalid = Data([0xff, 0xfe, 0x61])
+        try archive.addEntry(with: name, type: .file, uncompressedSize: Int64(invalid.count)) { position, size in
+            invalid.subdata(in: Int(position)..<Int(position) + size)
+        }
+        let opaque = try Data(contentsOf: archiveURL)
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "beforeRename" { try opaque.write(to: self.target, options: .atomic) } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "Moved.textpack"))
+        try opaque.write(to: target)
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        for version in ["current", "source"] {
+            let snapshot = try store.replacementRecoveryRead(id: row.id, version: version)
+            XCTAssertNil(snapshot.document); XCTAssertNotNil(snapshot.parseError)
+            XCTAssertEqual(snapshot.data, opaque); XCTAssertEqual(snapshot.hash, hash(opaque))
+        }
+        try acceptMove(row)
+        XCTAssertEqual(try Data(contentsOf: target), opaque)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Moved.textpack")), opaque)
     }
     func testRenamedCandidateCannotBypassReadOrLostReplyFence() throws {
         let (_, prepared, _) = try stagedConflict()
