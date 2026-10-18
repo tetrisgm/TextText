@@ -172,7 +172,10 @@ export async function createWindowsVaultTransport(view: NativeView) {
       }
     }
     if (method === "replacementRead") {
-      const result = await rpc.request<Read & { itemId: string; opaque?: boolean; parseError?: string }>("files.replacementRead", { ...params, ...recoveryScope }, signal);
+      const result = await rpc.request<(Read & { itemId: string; opaque?: boolean; parseError?: string }) | { absent: true; path: string; hash: null; data: null }>("files.replacementRead", { ...params, ...recoveryScope }, signal);
+      if ("absent" in result && result.absent === true && params.version === "current" &&
+        typeof result.path === "string" && result.hash === null && result.data === null) return result;
+      if ("absent" in result) throw new Error("Invalid local recovery response.");
       if (result.opaque) return { opaque: true, path: result.path, hash: result.hash, data: result.data, parseError: result.parseError };
       const pack = await openPack(bytes(result.data), result.path, result.hash, result.itemId);
       return { ...pack.file, data: result.data };

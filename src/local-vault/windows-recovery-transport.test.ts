@@ -72,3 +72,18 @@ it("returns opaque displaced bytes and binds explicit resolution and raw downloa
     expect(await transport.request("recoveryAssetRead", { id: "asset", hash: "d".repeat(64), workspaceRoot: "other" })).toMatchObject({ data: "AQID", byteLength: 3 });
   } finally { transport.destroy(); }
 });
+
+it("returns explicit removal absence without parsing a fabricated empty pack", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const absent = { absent: true, path: "Removed.textpack", hash: null, data: null };
+  const view = native(method => {
+    if (method === "native.status") return status;
+    if (method === "files.replacementRead") return absent;
+    throw new Error(method);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try {
+    expect(await transport.request("replacementRead", { id: "removed", version: "current" })).toEqual(absent);
+    await expect(transport.request("replacementRead", { id: "removed", version: "prepared" })).rejects.toThrow("Invalid local recovery response");
+  } finally { transport.destroy(); }
+});
